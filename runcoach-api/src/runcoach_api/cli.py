@@ -1,8 +1,15 @@
 import sys
 
+import uvicorn
+
+from runcoach_api.config import load_config
+from runcoach_api.main import app
+
 
 def serve() -> None:
-    ...  # filled in by T004
+    config = load_config()
+    print(f"Starting on {config.host}:{config.port}...", file=sys.stdout)
+    uvicorn.run(app, host=config.host, port=config.port)
 
 
 def main() -> None:
