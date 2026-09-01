@@ -1,3 +1,4 @@
+import errno
 import sys
 
 import uvicorn
@@ -22,7 +23,17 @@ def serve() -> None:
         sys.exit(1)
 
     print(f"Starting on {config.host}:{config.port}...", file=sys.stdout)
-    uvicorn.run(app, host=config.host, port=config.port)
+    try:
+        uvicorn.run(app, host=config.host, port=config.port)
+    except OSError as e:
+        in_use_errnos = {errno.EADDRINUSE}
+        wsa = getattr(errno, "WSAEADDRINUSE", None)
+        if wsa is not None:
+            in_use_errnos.add(wsa)
+        if e.errno in in_use_errnos:
+            print(f"Error: port {config.port} is already in use.", file=sys.stderr)
+            sys.exit(1)
+        raise
 
 
 def main() -> None:

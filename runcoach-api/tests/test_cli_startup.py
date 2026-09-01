@@ -8,6 +8,8 @@ value). Port-conflict handling (T005) is out of scope here.
 
 from __future__ import annotations
 
+import errno
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -128,3 +130,52 @@ def test_serve_corrupt_config_exits_nonzero_names_file_path(monkeypatch, capsys)
     assert bad_path in captured.err
     assert "Traceback" not in captured.err
     assert "Traceback" not in captured.out
+
+
+def test_cli_port_in_use_exits_nonzero_without_traceback(monkeypatch, capsys):
+    # Bind a real socket on a free port to get a concrete port number to
+    # test against, then keep it open for the duration of the test so the
+    # port number is meaningfully "in use" (even though the fake uvicorn.run
+    # below raises the OSError directly rather than actually attempting a
+    # bind -- see task Technical Notes).
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        port = sock.getsockname()[1]
+
+        fake_config = _FakeConfig(host="127.0.0.1", port=port)
+        monkeypatch.setattr(cli, "load_config", lambda: fake_config)
+
+        def fake_run(app, host, port):
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+        monkeypatch.setattr(cli.uvicorn, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli.serve()
+
+        assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert str(port) in captured.err
+        assert "already in use" in captured.err.lower()
+        assert "Traceback" not in captured.err
+        assert "Traceback" not in captured.out
+    finally:
+        sock.close()
+
+
+def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
+    fake_config = _FakeConfig(host="127.0.0.1", port=8123)
+    monkeypatch.setattr(cli, "load_config", lambda: fake_config)
+
+    def fake_run(app, host, port):
+        raise OSError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(cli.uvicorn, "run", fake_run)
+
+    with pytest.raises(OSError) as exc_info:
+        cli.serve()
+
+    assert exc_info.value.errno == errno.EACCES
