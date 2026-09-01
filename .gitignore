@@ -4,3 +4,7 @@
 .claude/worktrees/
 # Shipyard in-project data-dir breadcrumb (machine-local symlink/junction)
 .shipyard
+# Python
+__pycache__/
+*.pyc
+.venv/
