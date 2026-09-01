@@ -54,3 +54,35 @@ def test_load_config_present_and_well_formed_returns_config(isolated_config_path
 
     assert isinstance(result, config.Config)
     assert result.api_url == "http://example.test"
+
+
+def test_load_config_malformed_toml_exits_cleanly(isolated_config_path, capsys) -> None:
+    config_path = isolated_config_path
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("this is not [ valid toml", encoding="utf-8")
+
+    with pytest.raises(typer.Exit) as exc_info:
+        config.load_config()
+
+    assert exc_info.value.exit_code == 1
+
+    captured = capsys.readouterr()
+    assert str(config_path) in captured.err
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out
+
+
+def test_load_config_missing_api_url_field_exits_cleanly(isolated_config_path, capsys) -> None:
+    config_path = isolated_config_path
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_bytes(tomli_w.dumps({"other_field": "value"}).encode())
+
+    with pytest.raises(typer.Exit) as exc_info:
+        config.load_config()
+
+    assert exc_info.value.exit_code == 1
+
+    captured = capsys.readouterr()
+    assert "api_url" in captured.err
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out

@@ -133,11 +133,11 @@ def test_serve_corrupt_config_exits_nonzero_names_file_path(monkeypatch, capsys)
 
 
 def test_cli_port_in_use_exits_nonzero_without_traceback(monkeypatch, capsys):
-    # Bind a real socket on a free port to get a concrete port number to
-    # test against, then keep it open for the duration of the test so the
-    # port number is meaningfully "in use" (even though the fake uvicorn.run
-    # below raises the OSError directly rather than actually attempting a
-    # bind -- see task Technical Notes).
+    # Bind a real socket on a free port and keep it listening for the
+    # duration of the test, so the port is *genuinely* in use. serve()'s
+    # pre-flight probe (a plain socket bind attempted before uvicorn.run is
+    # ever called) must detect this real conflict and exit cleanly --
+    # uvicorn.run must never be reached.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.bind(("127.0.0.1", 0))
@@ -147,15 +147,16 @@ def test_cli_port_in_use_exits_nonzero_without_traceback(monkeypatch, capsys):
         fake_config = _FakeConfig(host="127.0.0.1", port=port)
         monkeypatch.setattr(cli, "load_config", lambda: fake_config)
 
-        def fake_run(app, host, port):
-            raise OSError(errno.EADDRINUSE, "Address already in use")
-
-        monkeypatch.setattr(cli.uvicorn, "run", fake_run)
+        calls = []
+        monkeypatch.setattr(
+            cli.uvicorn, "run", lambda *a, **k: calls.append((a, k))
+        )
 
         with pytest.raises(SystemExit) as exc_info:
             cli.serve()
 
         assert exc_info.value.code == 1
+        assert not calls
 
         captured = capsys.readouterr()
         assert str(port) in captured.err

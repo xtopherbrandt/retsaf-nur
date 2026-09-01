@@ -24,11 +24,12 @@ class ApiUnreachableError(Exception):
 def get_health(base_url: str) -> httpx.Response:
     """Call GET {base_url}/health and return the raw response.
 
-    Only network-layer failures (connection refused, bounded timeout) are
-    translated into ApiUnreachableError. Non-2xx responses are returned
+    Only network-layer failures (connection refused, bounded timeout, and
+    other transport-level errors such as a mid-response connection drop)
+    are translated into ApiUnreachableError. Non-2xx responses are returned
     unchanged - status-code and body-shape handling are the caller's job.
     """
     try:
         return client.get(f"{base_url}/health")
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+    except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc

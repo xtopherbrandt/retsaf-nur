@@ -68,6 +68,19 @@ def test_get_health_uses_bounded_five_second_timeout() -> None:
     assert timeout.pool == 5.0
 
 
+def test_get_health_translates_other_transport_errors(monkeypatch) -> None:
+    # A transport-layer failure other than connect/timeout (e.g. the API
+    # process crashes mid-response) must also become ApiUnreachableError,
+    # not propagate as a raw httpx.TransportError subclass.
+    def read_error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("boom", request=request)
+
+    _install_mock_client(read_error_handler, monkeypatch)
+    with pytest.raises(api_client.ApiUnreachableError) as exc_info:
+        api_client.get_health("http://example.test")
+    assert exc_info.value.base_url == "http://example.test"
+
+
 def test_get_health_does_not_swallow_non_2xx_response(monkeypatch) -> None:
     # Non-2xx responses are returned unchanged, not translated into
     # ApiUnreachableError - status-code handling is the caller's job (T010).

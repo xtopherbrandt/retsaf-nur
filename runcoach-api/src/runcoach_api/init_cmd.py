@@ -24,6 +24,7 @@ def main(argv: list[str]) -> None:
 
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
-        tomli_w.dumps({"host": args.host, "port": args.port, "data_dir": args.data_dir})
+        tomli_w.dumps({"host": args.host, "port": args.port, "data_dir": args.data_dir}),
+        encoding="utf-8",
     )
     print(f"Wrote config to {CONFIG_PATH}")
