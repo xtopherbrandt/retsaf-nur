@@ -8,3 +8,6 @@ members = ["runcoach-api", "runcoach-cli"]
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = ["pytest>=8"]

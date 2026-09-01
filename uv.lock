@@ -461,6 +461,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "tomli-w" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -475,6 +476,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.5" },
+    { name = "tomli-w", specifier = ">=1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 
@@ -505,6 +507,16 @@ requires-dist = [
 name = "runcoach-workspace"
 version = "0.0.0"
 source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "shellingham"
