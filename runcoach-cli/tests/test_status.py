@@ -74,3 +74,39 @@ def test_status_non2xx_response_exits_cleanly(monkeypatch) -> None:
     assert result.exit_code != 0
     assert "500" in result.output
     assert "internal server error" in result.output
+
+
+def test_status_malformed_response_fails_cleanly(monkeypatch) -> None:
+    def invalid_json_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not json at all", headers={"content-type": "application/json"})
+
+    _install_mock_client(invalid_json_handler, monkeypatch)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "could not be understood" in result.output
+
+
+def test_status_missing_version_field_fails_cleanly(monkeypatch) -> None:
+    def missing_version_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok"})
+
+    _install_mock_client(missing_version_handler, monkeypatch)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "could not be understood" in result.output
+
+
+def test_status_non_string_version_field_fails_cleanly(monkeypatch) -> None:
+    def non_string_version_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok", "version": 123})
+
+    _install_mock_client(non_string_version_handler, monkeypatch)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "could not be understood" in result.output

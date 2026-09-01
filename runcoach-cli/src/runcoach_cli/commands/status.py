@@ -1,10 +1,12 @@
 """``runcoach status`` -- render the API's health status and version.
 
 Loads config (the guard, T008), calls the API client (T009), and prints the
-health data as human-readable text. Request-failure handling (T016, this
-task) guards the network-layer call and the HTTP status code; malformed-body
-handling (T011) is a separate task that extends this same function further.
+health data as human-readable text. Request-failure handling (T016) guards
+the network-layer call and the HTTP status code; malformed-body handling
+(T011, this task) defensively parses the response body on top of that.
 """
+
+import json
 
 import typer
 
@@ -30,5 +32,14 @@ def status() -> None:
         typer.echo(f"Error: API returned {resp.status_code}: {resp.text}", err=True)
         raise typer.Exit(code=1)
 
-    body = resp.json()  # unguarded here -- T011 adds defensive parsing on top
-    typer.echo(f"API status: {body['status']} (version {body['version']})")
+    try:
+        body = resp.json()
+        status_val = body["status"]
+        version_val = body["version"]
+        if not isinstance(status_val, str) or not isinstance(version_val, str):
+            raise ValueError("unexpected field types in health response")
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+        typer.echo(f"Error: the API's response could not be understood: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"API status: {status_val} (version {version_val})")
