@@ -48,3 +48,29 @@ def test_status_happy_path_renders_ok_and_version(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "ok" in result.output
     assert "1.0.0" in result.output
+
+
+def test_status_unreachable_and_non2xx_exit_cleanly(monkeypatch) -> None:
+    def refusing_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    _install_mock_client(refusing_handler, monkeypatch)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "http://example.test" in result.output
+    assert "runcoach-api" in result.output
+
+
+def test_status_non2xx_response_exits_cleanly(monkeypatch) -> None:
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="internal server error")
+
+    _install_mock_client(error_handler, monkeypatch)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "500" in result.output
+    assert "internal server error" in result.output
