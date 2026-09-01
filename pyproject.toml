@@ -11,3 +11,12 @@ package = false
 
 [dependency-groups]
 dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+# Workspace members have same-named test modules (e.g. both runcoach-api/
+# and runcoach-cli/ have tests/test_config.py) with no __init__.py in their
+# tests/ dirs. The default "prepend" import mode can't disambiguate two
+# same-named modules across directories ("import file mismatch"). importlib
+# mode imports each test file by its own path instead of a shared module
+# namespace, which is the standard fix for this exact multi-package layout.
+addopts = "--import-mode=importlib"
