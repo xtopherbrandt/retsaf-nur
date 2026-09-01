@@ -1,0 +1,6 @@
+# Claude Code local memory (machine-specific paths — never commit)
+.claude/projects/
+# Shipyard task worktrees (temporary, created by builder subagents)
+.claude/worktrees/
+# Shipyard in-project data-dir breadcrumb (machine-local symlink/junction)
+.shipyard

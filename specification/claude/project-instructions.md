@@ -1,0 +1,75 @@
+# Run Coaching System — Project Instructions
+
+## Mission
+Produce a **complete, build-ready specification** for a software coaching system that trains a runner toward peak performance on a specific goal race. The specification must be detailed enough that Claude Code can implement the software directly from it, with no further research required. This project is two things in sequence: **(1) research the state of the art**, then **(2) turn that research into an implementable specification**.
+
+## The single success metric
+Peak performance is defined simply as **the athlete's average running pace over the full distance of the goal race**. Every design decision — training plan, adaptation logic, taper, recovery — is ultimately justified by whether it improves expected average race-day pace. When a trade-off is unclear, resolve it in favor of this metric.
+
+**Injury avoidance is part of this metric, not a competing concern:** an athlete who is injured, overtrained, or sidelined on race day produces zero performance. Protecting the athlete's health and durability through the training block is therefore a direct requirement of maximizing race-day pace, and the system must treat rising injury risk as a first-class reason to adapt.
+
+## Coaching model — autonomous and continuously adaptive
+The system **is the coach**. It acts **autonomously**: it makes and applies training decisions itself rather than proposing them for a human coach to approve. (It should still be transparent and explainable, and keep the athlete informed, but the decision authority is the system's.)
+
+The core thesis of the whole system is that **the best path to the athlete's goal is continuous adaptation of the training plan** — not a fixed plan with occasional revisions. Adaptation runs across **multiple, nested timescales**, and each decision fuses signals from all of them:
+- **Long-term trends** — multi-week to full-season trajectory of fitness, fatigue, and physiological adaptation; used to steer the macro plan (periodization, progression toward peak on race day).
+- **Short-term trends** — the last several days to few weeks; used to catch acute fatigue, overreaching, illness, injury risk, or faster/slower-than-expected response and adjust the near-term plan.
+- **Recent-workout feedback** — how the athlete responded to the most recent session(s): completion vs. prescription, HR/pace decoupling, perceived effort, recovery afterward.
+- **Current-workout baseline feedback** — signals captured at the *start of / during* the workout about how the athlete is responding *today*, used to calibrate the session in progress.
+- **Intra-workout adaptation (stretch goal — assess feasibility):** where the data pipeline allows it, the system should adapt the workout *while it is happening* (e.g. modify targets, intervals, or call it early) based on real-time response against the current-workout baseline. **Whether real-time, in-session adaptation is achievable on the Garmin platform is an open question the Phase 1 research must answer** — post-hoc FIT files are the default data path, while live in-session control likely requires on-device (Connect IQ) or live-streaming approaches. The research should determine what is actually possible and the spec should reflect that, treating full intra-workout adaptation as a goal, not a guaranteed feature.
+
+Every adaptation decision fuses **two kinds of input: objective device data and the athlete's subjective self-report** (see *System inputs* and the injury/subjective research doc below).
+
+## System inputs (parameterized — not hard-coded)
+The system is general-purpose: it works for **any athlete and any goal race**. The race and athlete are **inputs supplied at the start of program / plan development**; device and subjective feedback stream in **continuously** through the training block.
+- **Goal race input (at start):** date, distance, course elevation profile, and expected environmental conditions (temperature, humidity, wind).
+- **Athlete input (at start):** the individual's profile and historical training data, from which the system establishes their current physiological starting state.
+- **Objective device data (continuous):** raw signals from Garmin devices and paired sensors (see *Metrics philosophy*).
+- **Subjective athlete feedback (continuous):** the athlete's own self-reported state — especially **soreness, muscle/tendon strain and other early warning signs of developing injury, perceived recovery, sleep, stress, energy, and pain during or after running**, plus status and progress when recovering from an existing injury. The system must both collect this (structured questions, validated scales) and fuse it with device data when adapting. This is a primary input, not an afterthought, because many injury and overreaching signals appear in how the athlete *feels* before they appear in the device data.
+The *target athlete type* below defines who the system is **tuned and validated for** — it sets sensible defaults and priorities — but the software itself must accept any athlete profile and any road-race target as runtime inputs.
+
+## Scope decisions (settled — do not re-litigate without asking)
+- **Target athlete type (tuning target, not a limit):** the serious recreational / competitive amateur — an adult road racer training hard for a goal race (roughly 5K through marathon), who has consistent historical training data to learn from. Design defaults, priorities, and validation around this athlete. The system still accepts any athlete as input (see above).
+- **Data / device scope:** **Garmin-first, extensible.** Treat the Garmin ecosystem (Forerunner watches, HRM chest/arm straps, Garmin Connect, and the FIT data format) as the concrete primary data source and specify against it in full detail. But structure the data-ingestion and physiological-modeling layers behind an abstraction so additional wearables/vendors can be added later without redesign.
+- **Race types:** road racing specifically. Course elevation profile and environmental conditions matter and must be modeled.
+
+## Metrics philosophy — raw over derived
+- **Prioritize raw, measured data over vendor-derived metrics.** Prefer the underlying signals the device actually records — heart rate, pace/GPS, cadence, power (if available), running dynamics, HRV/RR intervals, elevation, and the timestamped raw streams in the FIT file — over proprietary "black-box" summary numbers such as Garmin's VO2max estimate, Training Status, Training Readiness, Body Battery, or Performance Condition.
+- **Treat vendor-derived metrics as, at best, secondary/corroborating signals**, never as the foundation of the state model, because their algorithms are undocumented, change without notice, and are not independently validated. Where the spec uses one, it must say why and note the risk.
+- **The system should derive its own metrics** of training load, training response/adaptation, fatigue, and readiness **from the raw data**, using transparent, documented, reproducible formulas that the spec defines in full. Owning the derivation is a first-class goal — it is what makes the adaptation logic explainable and vendor-independent. Established open methods (e.g. load models built from heart rate / pace, HRV trends from RR intervals) are the starting point; the system may extend or replace them with its own, but every derived metric must be specified transparently and grounded in the research.
+
+## Working method
+1. **Research before specifying.** Do not write specification sections until the underlying research for them is done and captured. Reading an output-format skill (docx, etc.) is a build-phase step, not a research-phase step.
+2. **Cite everything.** Every physiological claim, training principle, metric formula, injury-risk indicator, and device-data characteristic in the research docs must carry a source (peer-reviewed literature preferred; reputable coaching/sports-science/sports-medicine and official device/API documentation acceptable). Distinguish well-established science from contested or emerging methods, and flag the difference explicitly.
+3. **Prefer primary sources** for device data: Garmin/ANT+ FIT SDK docs, Garmin Connect / Health API and Connect IQ documentation, and published validation studies of the relevant sensors and derived metrics.
+4. **Be explicit about uncertainty.** Where the science is unsettled, a metric is a proprietary black box, or a capability (like real-time adaptation) may not be achievable, say so and specify a defensible default plus the assumption behind it.
+
+## Research agenda (Phase 1 deliverables)
+Produce distinct research documents covering:
+- **Exercise physiology of endurance running** — the trainable determinants of race pace (VO2max, lactate/anaerobic threshold, running economy, fractional utilization, durability/fatigue resistance), how each adapts to training, and the stimulus that drives each adaptation. How these translate to sustainable pace over the race distance.
+- **Wearable data collection & characteristics** — what Garmin devices and paired sensors actually **measure vs. estimate**; the FIT data model and available raw fields; sampling rates, accuracy/validity, and failure modes; how to obtain the data programmatically (Connect / Health API, FIT files, third-party routes). **Assess real-time / in-session data access** (Connect IQ apps, live streaming, broadcast sensors) versus post-hoc file transfer, since this determines whether intra-workout adaptation is feasible. Explicitly separate raw measured streams from vendor-derived black-box metrics, and assess which raw signals are usable for tracking physiological change over time.
+- **Subjective feedback, injury prevention & recovery** — the science of monitoring an athlete's self-reported state and using it to prevent injury and manage return from injury. Cover: the early signs and signals of overreaching, muscle/tendon soreness, strain, and developing overuse injury; **the specific questions to ask the athlete and validated instruments to use** (e.g. session-RPE, DOMS/soreness scales, wellness/readiness questionnaires, pain scales, sleep/stress/energy check-ins); **models for tracking** subjective load and risk over time (e.g. acute:chronic workload ratio and its critiques, monotony/strain, subjective wellness trends); how subjective and objective signals corroborate or diverge; and evidence-based **return-to-running / rehabilitation progression** frameworks for an athlete coming back from injury. This research grounds both the subjective-input schema and the injury-risk logic in the spec.
+- **State-of-the-art running coaching & periodization** — established training-plan structures (base/build/peak/taper, polarized vs. threshold vs. pyramidal distributions, workout typologies), and especially **adaptive and autonomous coaching**: how modern systems and coaches adjust a plan based on incoming data (acute vs. chronic load, HRV-guided training, performance-management-chart concepts, readiness/recovery signals), and how far real systems push automated, continuous, or in-session adjustment.
+- **From data to adaptation** — how to compute the system's **own** training-load, training-response, fatigue, readiness, and **injury-risk** metrics **from raw signals and subjective feedback**, translate them into an estimate of the athlete's current physiological state and trend, and turn that into concrete plan adjustments across the timescales named in the coaching model (long-term, short-term, recent-workout, current-workout, and — where feasible — intra-workout). This bridges the physiology, injury, and coaching research into the specification. Survey the open, documented methods available and evaluate them as candidates the system can adopt, extend, or replace.
+
+## Specification requirements (Phase 2 deliverable)
+The build-ready spec must define a system that can:
+- **Accept the goal race and athlete as inputs** at program start (fields listed under *System inputs* above) and translate the race into a pace/effort target.
+- **Establish the athlete's starting state** physiologically, inferred from historical raw training data.
+- **Collect structured subjective feedback** from the athlete (the questions, scales, and cadence defined by the injury/subjective research) and store it alongside device data.
+- **Compute the system's own metrics** of load, response, fatigue, readiness, and injury risk from raw data and subjective feedback via transparent, fully specified formulas — with any use of vendor-derived metrics explicitly justified and confined to a secondary role.
+- **Generate a training plan** made of detailed, prescriptive workouts, each targeting specific physiological determinants, with recovery and periodization built in.
+- **Continuously and autonomously adapt** the plan by fusing long-term trends, short-term trends, recent-workout feedback, current-workout baseline feedback, and subjective self-report — and, where the data pipeline supports it, adapt the workout intra-session in real time. Define the decision logic at each timescale and how the timescales and input types combine.
+- **Detect rising injury risk and manage return-to-run**: back off, insert recovery, or modify the plan when soreness/strain/overreaching signals rise, and follow a safe progression when bringing an athlete back from injury.
+- **Manage recovery and taper** so the athlete arrives at race day optimally recovered, healthy, and peaked.
+- Express everything the implementer needs: data schemas (raw device fields and subjective-feedback fields), ingestion interfaces (including any real-time path the research finds viable), the derived-metric and injury-risk formulas, the physiological state model, the multi-timescale adaptation algorithm/decision logic, workout representation, and how the system closes the loop from raw data + subjective feedback → derived metrics → state estimate → plan/workout change.
+
+## Deliverable structure & conventions
+- **Phase 1:** separate research documents (one per area above), each self-contained and fully cited.
+- **Phase 2:** a separate build-ready specification that references the research docs rather than repeating them.
+- Save durable outputs into this project (`project_write`) so every session and Claude Code can read them. Keep research docs and the spec as distinct docs.
+- Write in clear prose. Reserve tables/lists for genuinely enumerable content (data fields, workout parameters, metric definitions, questionnaire items).
+- When a section depends on an unsettled scientific question, a proprietary metric, or an uncertain platform capability, state the assumption chosen and why.
+
+## Definition of done
+The specification is complete when a competent implementer (human or Claude Code) could build the system from it without needing to do their own physiology, device, injury-science, or coaching research — every model, formula (including each system-derived metric), data field, questionnaire item, and decision rule they need is either specified or cited to a source the spec points them to.

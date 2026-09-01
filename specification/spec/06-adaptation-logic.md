@@ -1,0 +1,277 @@
+# Section 6 — Adaptation Logic
+
+*Build-ready specification, Phase 2. This section defines the **adaptation engine**: the logic that reads the derived metrics (Section 3), the physiological state model (Section 4), and the generated plan (Section 5), and turns them into a single concrete prescription for what the athlete does each day — adjusting, protecting, and where warranted regenerating the plan as new data arrives. It is the closed loop's controller. Where Sections 3–5 produce the system's knowledge (metrics, state, plan), Section 6 is where that knowledge is **acted on**: it composes the five nested adaptation timescales into one daily decision, arbitrates them when they conflict, owns the safety override that outranks the pace objective, and calls the Section 5 generator to re-periodize when the athlete has materially changed. It conforms to `research/00` as the decision authority — the arbitration ladder that is the system's constitution (`research/00` §1.2), the meta-rule that generates it (`research/00` §1.3), the subjective/objective conflict resolution (`research/00` §1.4), the down-regulate-freely / up-regulate-cautiously asymmetry (`research/00` §1.7), the fully-autonomous apply-and-notify posture (`research/00` §1.8–§1.9), and load-bearing finding 3 (adaptation is a five-timescale nested loop composed into one daily decision) — and cites `research/05` §5 for the five-timescale logic and its arbitration, and `research/03` for the subjective instruments, the ACWR critique, the injury/overtraining early-warning set, and the return-to-run framework. Per the project conventions, every rule is stated here in full; the evidence behind it lives in the cited docs and is not re-argued. Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates (`research/00` Part 3).*
+
+---
+
+## 6.1 What this section owns, and the boundaries it respects
+
+Section 6 owns the **adaptation logic**: the five-timescale nested loop, the arbitration that composes those loops into one prescription each day, the day-of readiness gate, the injury-risk verdict and the non-negotiable safety hard flags, the enforcement of the ramp-rate and monotony guardrails, the recent-workout re-anchoring trigger, and the decision of *when* to call the Section 5 generator for a fresh plan. It is the discharge of the project's build requirement to "monitor feedback from recent workouts and from multi-week trends, update its estimate of the athlete's physiological state, and adapt the plan accordingly." Four boundaries fix what this section is and is not.
+
+- **Section 6 adapts the plan; Section 5 generates it.** Section 5 is a pure generator — a function from `(state model, goal contract, athlete constraints, calendar) → plan` (§5.1). Section 6 is the controller that runs continuously on top of that plan: it reshapes the plan in flight (scaling today's session, re-anchoring the next few, injecting a recovery week), and when a material change makes the *whole* plan wrong it calls the generator for a new one (§6.3.4). Section 6 never re-implements the generator's periodization, intensity-distribution, or workout-instantiation logic; it invokes it. The division is the one Section 5 states: Section 5 answers "what is the right plan given what we know now," Section 6 answers "given today's signals, what does the athlete actually do, and has enough changed to warrant a new plan" (§5.1).
+- **Section 6 consumes metrics and state; it does not compute them.** The load chart, the HRV-trend verdict, the session-type residual-fatigue clock, the completion-vs-prescription features, and the ACWR/monotony/strain context are all Section 3's, read here as inputs (§3.10). The determinant trends and — above all — the confidences are Section 4's, read here as inputs (§4.7). Section 6 does not re-derive a metric or re-estimate a determinant; it *reads* them and decides what to do. The one inferential step Section 6 adds is the one Section 3 and Section 4 deliberately deferred to it: Section 3 computes the load-dynamics and subjective context but does **not** compute the injury-risk verdict or fire any hard flag (§3.9.3), and Section 6 does. Likewise the determinant *update* remains Section 4's filter (§4.3); Section 6's recent-workout loop only detects the workout-level trigger and routes the observation into that filter (§6.2.5).
+- **Section 6 owns the plan's autonomous changes; the athlete owns the goal and the safety pathway.** Consistent with the plan-versus-goal ownership boundary (`research/00` §1.9), everything Section 6 changes is *plan* — workout prescriptions, weekly volume and placement, intensity, the taper's trigger, full re-periodization — and it changes them autonomously (apply-and-notify, `research/00` §1.8; §6.9). The two matters Section 6 does not own are the **goal contract** (target pace and race date — the system may *propose* a change but only the athlete enacts one) and the **safety pathway** (a stop-and-escalate or seek-assessment instruction is athlete-facing because the athlete must act on it, §6.6). These are the same two exceptions the constitution names, and they are the only points at which the autonomous loop hands a decision to the athlete.
+- **Section 6 produces the decision-log entries; Section 9 owns the log's schema.** Every applied adaptation is logged with its inputs and the rule that fired (`research/00` §1.6; `research/05` §5.6). Section 6 is the producer of those entries — each arbitration outcome, each gate decision, each re-anchoring, each re-periodization emits a record of what changed, which signals drove it, and which arbitration rule resolved it. The first-class, queryable decision-log *schema*, and the explanation surface that reads it, are Section 9's (`decisions/01`); Section 6 guarantees that nothing changes the plan without emitting the record Section 9 formalizes.
+
+Everything in this section operates only on the raw-derived metrics and the owned state model, never on the quarantined vendor sidecar (§2.3.6; `research/00` §1.5). The adaptation engine is fully deterministic: given the same metrics, state, and plan, it produces the same prescription and the same log, which is what makes every change explainable and keeps the conversational interface (Section 8) an input/explanation layer rather than a second, opaque adaptation path (`decisions/01`; `research/00` §1.8).
+
+---
+
+## 6.2 The five-timescale nested loop
+
+Adaptation is not one decision but five, operating on nested timescales and composed into a single prescription each day (`research/00` Part 2, finding 3; `research/05` §5). Slower loops set the frame; faster loops adjust within it; a safety override (§6.4) sits above all of them; and the arbitration ladder (§6.5) resolves them when they disagree. The five loops, slowest to fastest, are the long-term mesocycle loop (§6.2.1), the short-term weekly-microcycle loop (§6.2.2), the recent-workout loop (§6.2.3), the day-of readiness gate (§6.2.4), and the optional intra-workout loop (§6.2.5). Each is specified below by its **inputs**, its **triggers**, its **actions**, and its **guardrails**, exactly as `research/05` §5 structures them. The loops share one state model and one plan, so their effects accumulate rather than compete: the long-term loop's re-periodization is the frame the weekly loop fills, whose day roles the readiness gate scales, whose sessions the intra-workout module trims.
+
+The nesting is what makes the system's response *cumulative rather than reactive* (the property Section 4's state model exists to provide, §4.1): a single bad day moves only the fastest loop (the readiness gate softens today's session), while a sustained trend propagates inward to the slow loops (a stalled determinant re-periodizes the block). This asymmetry — transient signals get transient responses, durable signals get durable responses — is enforced structurally by which loop a given signal is allowed to move, and it is the mechanism that keeps the engine from chasing noise while still reacting fast to real change.
+
+### 6.2.1 Long-term loop (mesocycle / multi-week)
+
+The slowest loop owns the plan's strategic direction: which determinant each block targets and how hard the athlete is being asked to ramp over the mesocycle.
+
+- **Inputs.** The state model and its short- and long-term determinant trends and confidences (Section 4 §4.2–§4.3); the race-pace projection and the determinant-decomposed gap-to-goal (Section 1 §1.4, the decomposition Section 4's profile enables, §4.7); the current phase in the base→build→peak→taper structure and weeks-to-race (Section 5 §5.5); and the chart's chronic-load trajectory (CTL, Section 3 §3.5).
+- **Triggers.** A scheduled mesocycle boundary; or a **material shift in which determinant dominates the gap-to-goal** (the largest addressable gap has moved from, say, threshold to durability as the athlete has improved); or a **stalled or negative long-term determinant trend** where a block's target determinant is not responding as expected.
+- **Actions.** (Re-)periodize by **calling the Section 5 generator** (§6.3.4) with the updated state model, so the mesocycle emphasis and intensity distribution shift toward the determinant with the largest addressable gap (`research/05` §5.1; the addressability logic Section 5 §5.7 owns), and adjust the CTL ramp target for the coming mesocycle. The long-term loop does not itself rewrite workouts — it decides that a re-plan is warranted and delegates the generation; the guardrails below bound what it may demand.
+- **Guardrails.** Never abandon the aerobic-base proportion (the ~80%-easy floor Section 5 §5.6 holds throughout); keep the mesocycle CTL ramp within the safe band the short-term loop enforces (§6.2.2); and treat every long-term change as a **proposal the faster loops still modulate day to day** — a re-periodized block is a frame, not a commitment to run every prescribed hard day regardless of readiness. Because up-regulation is the cautious direction (`research/00` §1.7; §6.7), a re-periodization that *raises* ambition — faster paces, more volume, harder key sessions — is damped when the determinant driving it is low-confidence (Section 4 §4.6): the long-term loop may always re-periodize toward the safe aerobic-base default, but it raises the ceiling only on a confident determinant estimate.
+
+### 6.2.2 Short-term loop (weekly microcycle)
+
+The weekly loop owns next week's shape: how much load, distributed how, with recovery placed — and it is where the ramp-rate and monotony guardrails are **enforced** (Section 5 plans the ramp; Section 6 caps it, §5.8 step 5).
+
+- **Inputs.** The last one-to-four weeks of the chart (CTL/ATL/TSB, Section 3 §3.5); the monotony and strain figures and the ACWR context flag (Section 3 §3.9); the injury-risk context (§6.4); adherence and the aggregate readiness history (the run of green/amber/red days, §6.2.4); and the athlete-availability constraints routed in from the conversational interface (days available, per-day time budget, travel; Section 8, `decisions/01`).
+- **Triggers.** Weekly planning; a **CTL ramp-rate outside its guardrail**; **rising monotony or strain**; a **run of amber/red days** signalling accumulated fatigue; or a new scheduling constraint from the athlete.
+- **Actions.** Set next week's **volume and intensity distribution** within the phase frame the long-term loop fixed: scale weekly load up or down, place the hard/easy/long/rest days across the available days honoring the recovery-time-course spacing (Section 5 §5.5.3), inject easy/rest variation to break monotony, and schedule the recovery/down week on its cadence. When the athlete's availability has changed, re-solve the week's placement within these same guardrails and report back what moved (the negotiation channel `decisions/01` specifies).
+- **Guardrails — the enforced caps.** These are the guardrails Section 5 §5.8 step 5 defers to this loop, stated here as the operative caps:
+  - **Ramp-rate and volume caps.** Two distinct caps bound weekly growth (`research/05` §5.2). The weekly **CTL rise** is held to a **soft default target of ~+5 CTL points per week** for the tuning-target amateur in a build phase (a working band of roughly **+3 to +7**), scaled down toward **~+2 to +4** in early base and for low training age, with a **hard ceiling of +8 CTL points per week** above which the planned week is scaled back. These figures are grounded in the widely-used practitioner ramp-rate guidance that a CTL rise of ~5–8 points/week is sustainable for most trained athletes, that a sustained rise above ~8/week is high-risk, and that a rise above ~10/week is an elite-only, week-or-less "crash" that mandates immediate recovery (Friel / TrainingPeaks ramp-rate guidance; consistent with `research/05` §5.2). The weekly **volume increase** is held in parallel to the classic **~10% per week** soft default (flagged heuristic). A planned week that would exceed either cap is scaled back to it. Both are shipped heuristic defaults, tunable per athlete as data accumulates; the CTL-rise band is **ratified provisionally** and flagged for back-port into the `research/00` Part 3 register once field data refines it (open item 2).
+  - **Monotony cap.** Weekly monotony is kept below **~2.0** (Foster; Section 3 §3.9.2; `research/03` §4.3). A week drifting toward samey daily loads triggers injected hard/easy variation.
+  - **Mandatory recovery cadence.** A recovery/down week is placed on Section 5's default **every-4th-week** cadence (§5.5.2; within the every-3–4-week range of `research/05` §5.2), tunable by training age and observed recovery. This cadence is mandatory, not advisory — the long-term loop's ambition cannot delete a scheduled recovery week.
+  - **ACWR is advisory only.** The acute-chronic workload ratio is read as a spike/context flag, **never as a hard gate**, because of the mathematical-coupling and spurious-correlation critique (Lolli) and the conceptual pitfalls (Impellizzeri) (`research/03` §4.1–4.2; `research/00` Part 3, ACWR row). The real ramp discipline is carried by the CTL ramp-rate cap and by monotony/strain, which are better-supported; ACWR only adds caution to the injury-risk context (§6.4).
+
+### 6.2.3 Recent-workout loop (last one-to-three sessions)
+
+This loop reads how the most recent sessions actually went and adjusts the immediate future — the paces the plan is anchored to and the next one-to-three sessions — while routing any genuine fitness signal into the state model.
+
+- **Inputs.** The per-session response features Section 3 extracted — completion-vs-prescription against the target bands Section 5 set (§3.2, §5.2.5), pace–HR decoupling (§3.6.1), efficiency factor (§3.6.2), HR-at-reference-pace (§3.6.3) — and any new qualifying maximal effort tagged per Section 5 §5.2.6.
+- **Triggers.** A workout completed **materially above or below prescription** (the completion contract's shortfall/overshoot, §5.2.5); **decoupling or EF materially better or worse than expected**; or a **qualifying maximal effort** (a race, time trial, or work segment run to volitional limit) that constitutes a new determinant observation.
+- **Actions.** Two distinct things, kept separate:
+  1. **Route the observation into the state model.** A new maximal effort or a corroborated response trend is handed to Section 4, which updates the determinant through its Kalman filter subject to its corroboration gate (§4.3.1, §4.3.3). Section 6 does **not** perform the determinant update — it detects the trigger and routes it; Section 4 owns the filter and decides how far the estimate moves. When Section 4 re-anchors threshold/CS/vVO₂max, every relative-anchored pace in the plan recomputes automatically (Section 5 §5.4.3) and Section 1 re-projects the race pace, so the plan's paces are current without a plan rewrite.
+  2. **Tweak the next one-to-three sessions.** Within the week the short-term loop placed, make the next key session slightly harder if the athlete is over-delivering with low decoupling (a sign the current prescription is too easy), or easier/rescheduled if they under-delivered or decoupled early (a sign of residual fatigue or an over-ambitious prescription). This is a bounded near-term adjustment, not a re-plan.
+- **Guardrails.** **Require corroboration before large re-anchoring** — a single hot session does not raise threshold or shift CS; the multi-week / ≥2-qualifying-effort bar (Section 3 §3.6.4, Section 4 §4.3.3) governs, and this loop only *flags* a candidate trend for Section 4 to adjudicate. A genuine maximal effort is the exception: it is a direct measurement, not a trend inference, and updates the fitted determinants immediately through the filter (§4.3.3). Near-term pace tweaks are bounded to small steps unless a genuine maximal effort justifies more, and — per the asymmetry — a tweak that makes the next session *harder* is the cautious direction and is damped on low-confidence state (§6.7).
+
+### 6.2.4 Day-of readiness gate (the daily loop)
+
+The fastest between-session loop runs every day before the prescribed session and decides whether the athlete is ready to execute it as written. It is the deferred piece Section 3 §3.10 and Section 4 hand here: Section 3 supplies the ingredients (the HRV verdict, resting-HR deviation, the session-type residual-fatigue clock, the subjective context), and Section 6 performs the **fusion** into a green/amber/red decision.
+
+- **Inputs — the readiness fusion.** Four channels, each interpreted against the athlete's own rolling baseline, never an absolute cutoff (`research/05` §2.4; `research/03` §4.4):
+  1. **Morning HRV verdict** — the 7-day rolling ln rMSSD versus the ±0.5·CV smallest-worthwhile-change band that Section 3 §3.7.3 emits (within/above band = normal; below band = suppressed).
+  2. **Resting-HR deviation** — the baseline-normalized morning resting-HR deviation Section 3 §3.7.4 supplies (elevated = stress/illness/incomplete recovery).
+  3. **The five-item wellness self-report** — fatigue, sleep, soreness, stress, mood, which Section 6 z-scores at this fusion step against the athlete's own 28–42-day rolling baseline from the raw wellness items Section 3 carries through from `context.subjective` (`research/03` §3.3, §4.4), plus sleep duration/quality and the lightweight illness flag (`research/03` §3.4).
+  4. **Prior-session residual fatigue** — the session-type recovery-cost clock Section 3 §3.5.5 attaches to each executed session (easy ≈ 1 day, threshold ≈ 24–48 h, VO₂max/severe ≈ 48–72 h, long ≈ 48–72 h+), so a hard session two days ago still weighs on today's readiness even when the autonomic signals have recovered.
+- **Triggers.** Every day, before the prescribed session.
+- **Actions — the green/amber/red gate** (the HRV-guided rule; Vesterinen, Plews; `research/05` §2.4, §5.4):
+  - **Green** → proceed with the prescribed session as written.
+  - **Amber** → **reduce** the session while preserving its physiological intent where possible: cut volume, drop the hardest interval set, or lower intensity one notch (e.g. threshold → steady, VO₂max → threshold). The session still happens; it is softened, not skipped.
+  - **Red** → **swap to easy/recovery or rest**; do **not** run the prescribed hard session. Reschedule the displaced key session rather than dropping it, if the week allows (handing the reschedule to the short-term loop).
+  - **Default fusion logic** (heuristic, `research/05` §2.4): **red** if HRV is below the SWC band **and** ≥ 2 wellness items are ≥ 1.5 z below baseline, **or** if any single injury-risk hard flag fires (§6.4); **amber** if either the HRV axis or the wellness axis is degraded but not both; **green** otherwise. The **subjective axis can veto to amber/red on its own**, because self-report is frequently the more responsive early signal (Saw et al.; `research/03` §1, §4.5). The gate reads **trends, not single readings**: a single below-baseline morning is weak evidence and a single good night does not instantly clear an accumulated multi-day suppression (`research/00` §1.4; §6.6).
+- **Guardrails.** The gate may **down-regulate freely but up-regulate only cautiously** (`research/00` §1.7; §6.7): a green day does **not** turn a scheduled easy day into a hard one — hard-session *placement* stays under the weekly plan's control, and the gate's only upward action is to *permit* the already-planned hard session, never to manufacture one. **Sustained red days** escalate to the short-term loop (trigger a deload) and to injury-risk review (§6.4). And when the morning HRV capture is **unavailable** (skipped, or failed the §2.4.3 valid-fraction gate, so Section 3 emitted `hrv_unavailable`, §3.7.4), the gate **widens its guardrails**: it drops the HRV axis, leans harder on the subjective and resting-HR axes, and biases conservative — an HRV-blind day resolves an ambiguous reading toward amber rather than green, because the system has lost its primary autonomic signal and must not over-read the remaining ones (§3.7.4, §2.4.5).
+
+### 6.2.5 Intra-workout loop (optional, on-device)
+
+Real-time in-session adaptation is possible on Garmin **only via on-device Connect IQ or ANT+/BLE sensor broadcast** — the official Activity/Health APIs are post-session only (`research/02` §6; `research/00` Part 2, finding 1). It is therefore an **optional on-device stretch module**, and the four between-session loops above are the core system; where the module is absent, its intent is approximated post-hoc by the recent-workout loop (§6.2.3).
+
+- **Inputs (on-device).** Live grade-adjusted pace-at-effort and heart rate during interval sets.
+- **Triggers.** Execution of a workout segment that carries an open-ended **performance-based cutoff** (Section 5 §5.2.3): a `work` segment whose termination condition is a pace-at-effort or HR-at-pace bound rather than a fixed count.
+- **Actions — performance-based interval cutoffs / autoregulation** (`research/05` §5.5; `research/04` §5.3): end an interval set when pace at the prescribed effort drifts past the cutoff, or HR at the prescribed pace rises past its bound — preventing "junk" reps once the session's quality has decayed. Optionally hold target pace via live feedback.
+- **Guardrails.** Conservative cutoffs; the module can **stop** work but never **add** unplanned hard work (the up-regulate-cautiously asymmetry applied in real time, `research/00` §1.7). If the module is absent, the fixed-count form of the workout is executed and the cutoff is evaluated post-session as a completion feature by the recent-workout loop (Section 5 §5.2.3; §6.2.3).
+
+---
+
+## 6.3 How the loops move the plan and the state
+
+The five loops read a shared state model and a shared plan; this subsection makes explicit the four ways they *write* — because keeping those write-paths distinct is what preserves the boundaries with Sections 4 and 5.
+
+### 6.3.1 Scaling today's session (readiness gate → plan, transient)
+
+The readiness gate's amber/red action edits **only today's session instance**, and only downward (or to rest). It does not touch the plan's structure, the state model, or any future session beyond triggering a reschedule of a displaced key session. This is the most reversible write in the system and the reason the gate is allowed to act autonomously every day.
+
+### 6.3.2 Tweaking the next sessions (recent-workout loop → plan, bounded)
+
+The recent-workout loop edits the **next one-to-three sessions** within the week the short-term loop placed — a bounded near-term adjustment. It does not re-periodize and does not, by itself, move a determinant.
+
+### 6.3.3 Re-anchoring (recent-workout loop → Section 4 → plan, via the filter)
+
+When a maximal effort or corroborated trend arrives, Section 6 routes it to Section 4, whose filter updates the determinant (§4.3). Because every plan pace is relative-anchored (Section 5 §5.4.3), the determinant update re-anchors the whole remaining plan with no rewrite, and Section 1 re-projects the race pace. Section 6's role is to detect and route; the update itself is Section 4's, and its corroboration gate is what prevents a single session from swinging a well-established estimate.
+
+### 6.3.4 Re-periodization (long-term loop → Section 5 generator → new plan)
+
+The heaviest write is a **full re-plan**, and it is the long-term loop's, exercised through the Section 5 generator. Section 6 owns the **trigger** — the decision that enough has changed to warrant a fresh plan — and Section 5 owns the **generation**. A re-periodization is triggered when:
+
+- the state model has shifted materially (a determinant has moved enough, or its confidence risen enough, that the largest-addressable-gap target changes and the current block is now aimed at the wrong determinant);
+- the **goal contract** changes (the athlete supplies a new target pace or race date — an athlete-owned input, §6.9, never applied unilaterally); or
+- a **schedule disruption** (extended illness, injury layoff, a travel block, a run of missed weeks) has made the existing calendar infeasible.
+
+On trigger, Section 6 calls the generator with the current state model, the (possibly updated) goal contract, the athlete's constraints, and the current chart state as the starting load from which the new ramp is planned (Section 5 §5.8 step 1). The generator returns a new plan; Section 6 applies it (apply-and-notify, §6.9) and emits the decision-log entry recording the trigger, the state change that caused it, and the resulting plan (Section 9). Re-periodization is bounded by the same guardrails as any long-term action: it never abandons the aerobic base, never deletes a mandatory recovery week, and raises ambition only on confident state (§6.2.1, §6.7). A re-periodization that *follows an injury layoff* enters through the return-to-run pathway (§6.4.4), not a normal build.
+
+---
+
+## 6.4 The injury-risk verdict and the non-negotiable hard flags
+
+This is the safety computation Section 3 §3.9.3 deliberately withheld and handed here. Section 3 computes the load-dynamics and subjective **context** — ACWR (advisory), monotony, strain, and the subjective pain/soreness trajectory carried through from `context.subjective`. Section 6 **fuses that context into an ordinal injury-risk verdict and fires the non-negotiable hard flags**, and the verdict sits at the very top of the arbitration ladder (§6.5), because an injured athlete averages zero pace and so this outranks the pace objective absolutely (`research/00` §1.2, rung 1; `research/03` §6; `research/05` §2.5, §5.6). Injury avoidance is not a competing objective; it is a constraint on pace maximization (`research/03` abstract, §6).
+
+### 6.4.1 The inputs Section 6 fuses
+
+- **Load-spike / ACWR context** (Section 3 §3.9.1) — used only as a soft spike flag that raises context, never as a gate (`research/03` §4.1–4.2).
+- **Monotony and strain** (Section 3 §3.9.2) — better-supported load-pattern risk signals than ACWR; high monotony (> ~2.0) or high strain carries real risk weight and directly informs the injection of easy/rest variation by the short-term loop.
+- **Subjective pain/soreness trajectory** — the pain traffic-light with localized-pain mapping (`research/03` §3.5), trended by Section 6: pain location, 0–10 intensity, whether it settles overnight, and whether it climbs week-over-week.
+- **Wellness and illness signals** — a sustained multi-item, multi-day wellness decline (the NFOR/OTS signature, `research/03` §2), and the lightweight illness flag.
+
+### 6.4.2 The pain traffic-light, conditioned on tissue type
+
+Pain is interpreted by the Silbernagel pain-monitoring model (`research/03` §3.5), on a 0–10 scale, conditioned on the tissue type the pain location implies:
+
+- **Green (0–2/10, settles overnight, stable week-to-week)** → proceed / progress load.
+- **Amber (3–5/10, settles by next morning, not worsening across weeks)** → hold load; do not progress; monitor closely.
+- **Red (> 5/10, or pain persisting into the next morning, or climbing week-over-week, or focal bony tenderness)** → reduce load / stop running; escalate.
+
+The "pain up to 5, must settle overnight, must not climb weekly" rule is the default for **tendon and muscle** presentations (where it was validated). **Bone stress injury is the hard-coded exception**: bone pain is treated far more conservatively — running through it is never acceptable, and even low-grade progressive localized bony pain or focal bony tenderness triggers *stop and escalate*, not the tendon-oriented amber (`research/03` §3.5, §5.4). Section 6 therefore conditions the traffic-light thresholds on the tissue type implied by the reported pain location before applying them.
+
+### 6.4.3 The ordinal verdict and the hard flags
+
+Section 6 emits an **ordinal injury-risk level** — **low / elevated / high / stop-and-escalate** — from the fused context (`research/05` §2.5). The level drives the arbitration ladder: *elevated* biases the short-term and readiness loops conservative (inject variation, favor amber); *high* downgrades the day and forces a load reduction regardless of the plan's ambition; *stop-and-escalate* halts the plan.
+
+The **non-negotiable hard flags** fire immediately and override everything, regardless of the pace objective and regardless of how any conversation is framed (`research/00` §1.2 rung 1; `decisions/01` guardrails; `research/03` §5.4, §6):
+
+- bone-stress-injury-pattern pain (focal bony tenderness, night pain, pain worsening with continued loading);
+- systemic illness beyond a mild cold (fever, and the systemic red flags `research/03` §6 enumerates);
+- RED-S / low-energy-availability indicators (recurrent BSI, menstrual disturbance, persistent underperformance);
+- acute/traumatic pain or swelling.
+
+When a hard flag fires, the system **stops the plan and surfaces the safety pathway** — a stop-and-escalate, seek-clinical-assessment, or return-to-run instruction. This is athlete-facing precisely because the athlete must act on it; it is one of the two matters the autonomous loop does not own (`research/00` §1.8; §6.9). The system **diagnoses nothing** — it detects patterns and routes to care (`research/03` §6). The LLM interface cannot talk the system past a hard flag, and the athlete cannot talk it into unsafe loading (`decisions/01`).
+
+### 6.4.4 The return-to-run pathway
+
+Once a hard flag has fired and the athlete is either cleared by a professional or is managing a minor, non-red-flag overuse complaint, Section 6 administers a **conservative, criteria-based graded return-to-run (RTR)** rather than resuming the normal build (`research/03` §5). The RTR is **criteria-based, not calendar-based**: progression is gated by symptom response, not elapsed time. Its rules:
+
+- The athlete must be **pain-free with daily activity/walking before running is introduced** (`research/03` §5.1).
+- Reintroduce running via **walk–run intervals**, progressing **duration/distance before speed and intensity**, and volume before pace (`research/03` §5.1–§5.2).
+- Gate each stage by the pain traffic-light (§6.4.2): advance a stage only after it is symptom-clear (green) across two-to-three sessions; **amber holds** the stage; **red regresses** one or more stages and/or re-escalates (`research/03` §5.2).
+- Step load in **small increments with a hold/step-back option**; the "10% per week" rule is a starting heuristic, not a validated law, and progression is individualized to the injury and the runner (`research/03` §5.1).
+- **Intensity is the last variable restored** — speed, hills, and race-specific work return only after full pain-free tolerance of easy volume (`research/03` §5.2).
+
+The RTR template (`research/03` §5.2, the staged walk–run progression) is the shipped default; specific durations are individualized, and for anything beyond minor soreness the system withholds "keep training" advice and defers to the athlete's clinician. When the athlete completes the RTR and returns to structured training, Section 6 triggers a re-periodization (§6.3.4) so Section 5 rebuilds the run-up toward the goal race from the athlete's now-reduced state, honoring whatever weeks-to-race remain — and if the layoff has made the original goal infeasible, the system *proposes* a goal-contract change but does not enact it, because the goal is athlete-owned (§6.9; `research/00` §1.9). That proposal follows the fixed order of remedy (`research/00` §1.9): a **revised (more realistic) target pace** for the existing race date first, and a **later race date** only as the costlier secondary option — never a change of race distance. Which one the athlete chooses remains theirs.
+
+---
+
+## 6.5 The arbitration ladder: composing the timescales into one daily prescription
+
+Each day the five loops each have an opinion about what the athlete should do; the arbitration ladder composes them into **one prescription** and resolves every conflict deterministically. The ladder is the system's constitution — it is adopted verbatim from `research/00` §1.2, which in turn elevates `research/05` §5.6 — and it is the single rule that decides the outcome when two loops or two signals disagree.
+
+### 6.5.1 Composing the prescription
+
+Absent conflict, the loops compose from slow to fast, each acting within the frame the slower ones set (`research/05` §5.6):
+
+1. The **long-term loop** has fixed the mesocycle intent and the intensity-distribution frame (§6.2.1).
+2. The **short-term loop** has already placed this day's role — hard, easy, long, or rest — in the week and set its volume within the ramp guardrails (§6.2.2).
+3. The **recent-workout loop** has re-anchored the paces (via Section 4) and tweaked the next sessions, so today's prescribed paces are current (§6.2.3).
+4. The **day-of readiness gate** scales or swaps today's session — green/amber/red (§6.2.4).
+5. If the athlete runs, the **intra-workout module** (where present) trims sets in real time (§6.2.5).
+
+### 6.5.2 The order of precedence (highest first)
+
+When the loops or the signals feeding them conflict, they are resolved in this strict order (`research/00` §1.2):
+
+1. **Safety / injury override.** If injury-risk is *high* or a hard flag fires (§6.4), **stop or escalate regardless of the pace objective**. This outranks everything; a *stop-and-escalate* halts the plan and surfaces the return-to-run / medical pathway (§6.4.4).
+2. **Day-of readiness, in the conservative direction.** A red readiness gate downgrades the session even when the plan wants a hard day (§6.2.4).
+3. **Short-term guardrails.** Ramp-rate caps, monotony limits, and the mandatory recovery-week cadence bound what the long-term ambition may demand (§6.2.2).
+4. **Recent-workout re-anchoring.** Updates to threshold/CS/paces and the tweaks to the next one-to-three sessions, applied within the bounds above (§6.2.3).
+5. **Long-term ambition (the pace objective).** Drives mesocycle emphasis and intensity distribution, and is deliberately the **lowest** priority when it conflicts with any of the above (§6.2.1).
+
+That the pace goal — the system's supreme objective (`research/00` §1.1) — sits at the *bottom* of the ladder is intentional and not a contradiction: the objective is maximized **subject to** the athlete arriving healthy and adapted, so the constraints that protect health and adaptation must be able to override the day's ambition (`research/00` §1.2). The lower rungs are the means; the top rungs are the constraints within which the means operate.
+
+### 6.5.3 The meta-rule
+
+A single meta-rule generates the whole ladder and extends to any conflict the ladder does not name explicitly (`research/00` §1.3):
+
+> **Faster, more conservative, safety-relevant signals may always veto slower, more ambitious ones — never the reverse.**
+
+This is the invariant the entire adaptation engine is built to honor. It is why the readiness gate can soften a planned hard day but never harden a planned easy one (§6.7), why a single maximal effort can update state but a single hot session cannot re-anchor threshold (§6.2.3), and why the safety override sits above the objective it exists to serve (§6.5.2). Every decision-log entry Section 6 emits records which rung of the ladder — which application of this meta-rule — resolved the day (`research/00` §1.6; Section 9).
+
+---
+
+## 6.6 Subjective/objective conflict resolution
+
+The readiness gate and the injury-risk verdict both fuse subjective self-report with objective device signals, and those two streams frequently move *differently* in response to load — that divergence is diagnostic, not a data error (`research/03` §4.5; Saw et al., `research/03` §1). Section 6 resolves the conflict by one rule, resolved as the decision authority (`research/00` §1.4):
+
+> **When subjective and objective signals disagree — or when the state estimate is low-confidence — the more conservative reading wins.**
+
+Concretely, following the four cases `research/03` §4.5 enumerates:
+
+- **Both degrade together** (wellness down, HRV down, higher HR/RPE at a standard pace) → high-confidence fatigue/maladaptation; reduce load.
+- **Subjective degrades, objective stable** → treat as an early warning, because self-report is often the more sensitive early signal (`research/03` §1); hold or ease load and watch for objective confirmation rather than dismissing the report. The **subjective axis may veto a hard session on its own** (§6.2.4).
+- **Objective degrades, subjective fine** → possible autonomic perturbation the athlete has not yet perceived (illness incubating, life stress, poor sleep); probe with the illness/stress check-in before progressing.
+- **Divergence in general** → log it and default to the more conservative interpretation.
+
+Both streams are interpreted on **trends, not single readings** (`research/00` §1.4): one below-baseline day is weak evidence, a coherent multi-day or multi-item decline is actionable, and a single good night does not instantly clear an accumulated multi-day suppression. This is the same "trends, not single readings" principle Section 3's 7-day rolling HRV mean (§3.7.4) and multi-week response-corroboration bar (§3.6.4) enforce upstream; Section 6 applies it again at the fusion step.
+
+The conservative default is deliberate and was chosen against an earlier "balanced" leaning (`research/00` §1.4, decision note): for the serious-amateur tuning target whose recovery capacity is the binding constraint, a missed hard session is cheaper than the overtraining or injury it guards against, and the system cannot distinguish functional from non-functional overreaching prospectively — it can only tell them apart retrospectively by how long a decrement persists (`research/03` §2.1), so it must assume the worse of the two whenever a decrement persists (`research/03` §6). Because self-report is also biased toward **under-reporting** near a goal race (athletes suppress symptoms they fear will cost them the race; `research/03` §6), the system treats *missing* reports and *implausibly flat* reports as signals in themselves rather than as reassurance.
+
+---
+
+## 6.7 The down-regulate-freely / up-regulate-cautiously asymmetry
+
+A single asymmetry governs the *direction* in which every fast loop is allowed to act, resolved as the decision authority (`research/00` §1.7):
+
+> **The system may reduce load freely in response to poor readiness, but may not manufacture hard work: a green day does not turn an easy day into a hard one on impulse. Placement of hard sessions stays under the control of the weekly plan.**
+
+This asymmetry is not a single rule in one place; it is a property every loop is built to honor:
+
+- **The readiness gate** (§6.2.4) may down-regulate to amber/red freely, but its only upward action is to *permit* the already-planned hard session on a green day — never to add one.
+- **The recent-workout loop** (§6.2.3) may ease or reschedule the next session freely on any fatigue signal, but makes the next session *harder* only cautiously, and only when the athlete is over-delivering with clean physiology.
+- **The long-term loop** (§6.2.1) may always re-periodize toward the safe aerobic-base default, but raises ambition — faster paces, more volume, harder key sessions — only on a *confident* determinant estimate.
+- **The intra-workout module** (§6.2.5) may stop a set early but never add unplanned work.
+
+**Low confidence tightens specifically the up direction** (`research/00` §1.7, Part 2 finding 8; Section 4 §4.6). The system may always reduce load on poor readiness regardless of state confidence, but it does not raise ambition off a low-confidence determinant: a confident CS or threshold rise justifies moving the athlete's paces and concentrating a block on pushing further; a shaky estimate does not, and the affected loop defaults to the always-valuable aerobic-base and volume work while the system gathers the maximal efforts (Section 5 §5.2.6) that would raise the confidence. This is the concrete behavior finding 8 requires — low confidence widens the guardrails — expressed as a directional rule: uncertainty never blocks the cautious action, only the ambitious one. It protects against both overreaching and the temptation to chase a single good signal (`research/00` §1.7).
+
+---
+
+## 6.8 The autonomy posture: apply-and-notify
+
+Section 6 runs **fully autonomously**: it applies adaptations — up to and including major re-periodizations after a material state-model shift — and explains them to the athlete *after the fact*, rather than requesting confirmation first (`research/00` §1.8; `research/05` §7's autonomy question, resolved in `research/00` §1.8–§1.9). Everything the system legitimately owns — the plan — applies without a confirmation step: the daily gate's softening, the recent-workout tweaks, the weekly re-solve, and the full re-periodization all take effect and are then surfaced with their explanation.
+
+There are exactly **two exceptions**, and both are matters the system does not own rather than checkpoints on what it does own (`research/00` §1.8–§1.9):
+
+- **The safety pathway.** A stop-and-escalate, return-to-run, or seek-clinical-assessment instruction (§6.4) is athlete-facing because the athlete must act on it. This is not the system asking permission to change the plan; it is the system routing a safety matter to the person who must decide about their own body.
+- **The goal contract.** The declared target pace and race date are the athlete's (`research/00` §1.9). Section 6 may **propose** a goal change — for instance when the race-pace projection has drifted far from the target, or when an injury layoff has made the goal infeasible (§6.4.4) — but never applies one unilaterally; a goal change takes effect only as an athlete-supplied input, exactly as the goal is set at program start. When Section 6 proposes one, it follows the fixed order of remedy (`research/00` §1.9): a **revised goal pace** first (primary, keeping the existing race date), a **later race date** second (the costlier, more disruptive alternative), and never a change of race distance — the ordering governing only what the system proposes, not which field the athlete ultimately elects to move.
+
+Every other change is apply-and-notify. This is a considered bet that, paired with the explainability of the decision log (`research/00` §1.6) and the negotiation channel below, autonomy plus after-the-fact transparency serves the athlete better than any confirmation checkpoint on the plan (`research/00` §1.8; the competitive survey notes this is a genuine trust bet, `research/06` §8).
+
+### 6.8.1 How chat-originated changes route
+
+The Conversational Coach Interface (Section 8) is **not a gating or confirmation mechanism** and never a second adaptation path (`decisions/01`; `research/00` §1.8). It touches the adaptation engine in exactly two ways, and both route through the machinery this section already defines:
+
+- **Inputs the athlete supplies in free text** — life constraints (travel, unavailable days, per-day time budget) and injury/soreness/subjective reports — are parsed into the same structured fields the forms would produce and fed to the entry points that already consume them: scheduling constraints into the **short-term weekly-microcycle loop** (§6.2.2), and pain/soreness/wellness into the **injury-risk verdict** (§6.4) and the **readiness fusion** (§6.2.4). The engine then re-solves within its existing guardrails and reports what moved.
+- **Explanation requests** read the decision log Section 6 produces (§6.1) and present the numbers the engine already computed — the state model, the derived metrics, the gap-to-goal decomposition, and the arbitration rung that fired — never new numbers the LLM invents (`decisions/01`).
+
+**Every chat-originated plan change routes through the same arbitration ladder (§6.5) as every other signal**, and the safety hard flags fire deterministically regardless of how the conversation is framed (`decisions/01` guardrails; `research/00` §1.2, §1.8). The LLM cannot talk the system past a red flag, and the athlete cannot talk the system into unsafe loading or past a mandatory recovery week. Chat supplies inputs and requests explanation; the deterministic engine of this section decides.
+
+---
+
+## 6.9 The acclimatization-state estimate (resolving Section 4 open item 2)
+
+Section 1 §1.4.4's altitude modifier reads a modeled *acclimatization state*, and Section 4 §4.7 carried no explicit acclimatization determinant, deferring to "Section 6 / plan scope" the question of whether one should be added. Section 6 resolves it: **an acclimatization-state estimate is not added to the daily adaptation loops as a tracked physiological determinant.** The decision and its reasoning:
+
+- **No reliable raw-data signal identifies it.** The individualization governing rule (`research/00` §3.1; Section 4 §4.5) permits individualizing a parameter only when it is identifiable from the athlete's own data and backed by enough quality data to beat the population default. Garmin raw streams carry no trustworthy field signal for heat- or altitude-acclimatization state; modeling it as a tracked determinant would be fitting noise, which the rule forbids.
+- **Acclimatization is a plan-scope preparation concern, not a daily-adaptation one.** Where the goal race's expected conditions warrant it (a hot or high-altitude target, Section 1 §1.2), the correct response is a **scheduled acclimation exposure** in the final weeks of the plan — a heat- or altitude-acclimation block placed in the peak/taper run-up — which is a *generation* concern (adjacent to Section 5's goal-race-condition parameterization, §5.5.4) and a *taper-timing* concern (Section 7), not a signal the five loops track day to day. Section 6's role is limited to triggering a re-periodization (§6.3.4) if the athlete's circumstances change such that an acclimation block should be scheduled or moved.
+- **Section 1's conservative default stands.** Until such a block is actually executed and could be credited, Section 1 §1.4.4 continues to default to the conservative **no-acclimatization** assumption for the pace target, exactly as it and Section 4 already do. This keeps the pace projection honest (it does not credit an adaptation the athlete has not made) and keeps the daily adaptation logic clean.
+
+This resolves the forward reference from Section 1 and closes Section 4 open item 2 in the conservative direction. The residual work — the detailed prescription of a heat/altitude acclimation block (protocol, timing relative to the taper, and how a completed block would be credited to the pace target) — is deferred to a later iteration and, per the 2026-08-31 open-items disposition, is **recorded in `future/future-directions.md` as out of scope for the initial release** (jointly homed there against Section 5 generation and Section 7 taper-adjacent timing); it does not block this section, because the no-acclimatization default is safe and already in force.
+
+---
+
+## 6.10 What this section hands to the rest of the system
+
+Section 6 delivers the adaptation engine: the five-timescale nested loop (long-term mesocycle, short-term weekly, recent-workout, day-of readiness, optional intra-workout), each with defined inputs, triggers, actions, and guardrails (§6.2); the four write-paths by which those loops move the plan and the state — scaling today, tweaking the next sessions, re-anchoring through Section 4's filter, and re-periodizing through Section 5's generator (§6.3); the injury-risk verdict and the non-negotiable hard flags that Section 3 deferred here, with the tissue-conditioned pain traffic-light and the criteria-based return-to-run pathway (§6.4); the arbitration ladder that composes the loops into one daily prescription and the meta-rule that generates it (§6.5); the subjective/objective conflict resolution and the down-regulate-freely / up-regulate-cautiously asymmetry (§6.6–§6.7); the fully-autonomous apply-and-notify posture with its two athlete-owned exceptions and the routing of chat-originated changes through the same arbitration (§6.8); and the resolution that keeps acclimatization a plan-scope concern rather than a tracked determinant (§6.9).
+
+Four explicit hand-offs carry forward. **Section 4** receives the recent-workout loop's routed observations — new maximal efforts and corroborated response trends — and updates the determinants through its own filter and corroboration gate; Section 6 detects and routes, Section 4 owns the update (§6.2.3, §6.3.3). **Section 5** is called by the long-term loop's re-periodization trigger and by the return-to-run rebuild, receiving the updated state model and constraints and returning a fresh plan that Section 6 applies (§6.3.4, §6.4.4); Section 6 also enforces the ramp-rate and monotony caps that Section 5 §5.8 planned but deferred here (§6.2.2). **Section 7** takes the taper trigger and the recovery-week slots this engine schedules and owns their depth, shape, and individualization; the mandatory recovery-week guardrails §6.2.2 enforces are shared with it, and the TSB trajectory the readiness and long-term loops read is the one Section 7's taper drives toward the race-day form band. **Sections 8 and 9** wrap the engine: Section 8 routes athlete free-text into the loop entry points (§6.8.1) and Section 9 formalizes the decision-log records Section 6 emits into the first-class, queryable explanation surface (§6.1). The division of labor with the neighboring sections is preserved throughout: Section 3 computes transparent metrics, Section 4 turns them into a state estimate with honest confidence, Section 5 turns that estimate and the goal into a periodized plan, and Section 6 turns that plan — day by day, under the arbitration ladder — into what the athlete actually does, while protecting the athlete's health as the constraint within which the pace objective is pursued.
+
+---
+
+*Open items logged for this section (see `spec_development_plan.md`): (1) **Heat/altitude acclimation-block prescription (from §6.9) — dispositioned 2026-08-31.** Section 6 resolves Section 4 open item 2 by declining to model acclimatization as a tracked daily determinant and assigning it to plan scope instead; the detailed prescription of an acclimation exposure block — protocol, timing relative to the taper, and how a completed block would be credited back to Section 1's pace target — is now recorded in `future/future-directions.md` as out of scope for the initial release, jointly homed against Section 5 and Section 7. Section 1's conservative no-acclimatization default remains in force, so this does not block any section. (2) **Ramp-rate CTL-rise band — fixed and provisionally ratified 2026-08-31.** §6.2.2 now ships a concrete weekly-CTL-rise band (soft target ~+5 CTL/week for the tuning-target amateur in build, working band ~+3–7, ~+2–4 in early base / for low training age, hard ceiling +8), grounded in the Friel/TrainingPeaks ramp-rate guidance (~5–8/week sustainable, >8 high-risk, >10 an elite-only short crash) and consistent with `research/05` §5.2, alongside the classic ~10%/week volume cap. The band is provisionally ratified and flagged for back-port into the `research/00` Part 3 register once field data refines it. Does not block.*
