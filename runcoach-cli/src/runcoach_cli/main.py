@@ -1,6 +1,6 @@
 import typer
 
-from runcoach_cli.commands import init
+from runcoach_cli.commands import init, status
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -11,6 +11,7 @@ def callback() -> None:
 
 
 app.command(name="init")(init.init)
+app.command(name="status")(status.status)
 
 
 def main():
