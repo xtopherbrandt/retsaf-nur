@@ -22,6 +22,7 @@ import sqlite3
 from pathlib import Path
 
 from runcoach_api import config as config_module
+from runcoach_api.ingestion.exceptions import DuplicateSessionError
 from runcoach_api.models import Record, RRInterval, Session
 
 DB_FILENAME = "runcoach.db"
@@ -175,9 +176,14 @@ def persist(
     """Write one ingested session's rows in a single transaction.
 
     Relies on the ``UNIQUE (source_device, start_time)`` constraint on
-    ``sessions`` as the sole dedup mechanism -- callers translate the
-    resulting ``sqlite3.IntegrityError`` into ``DuplicateSessionError``;
-    no application-level dedup-check-then-insert logic lives here.
+    ``sessions`` as the sole dedup mechanism -- no application-level
+    dedup-check-then-insert logic lives here (that would reintroduce a
+    TOCTOU race under concurrent uploads). The insert is attempted
+    directly; a resulting ``sqlite3.IntegrityError`` is caught here and
+    translated into ``DuplicateSessionError``, carrying the
+    ``session_id`` of the row that already occupies this
+    ``(source_device, start_time)`` slot (looked up *after* the
+    failure, never before it).
 
     The four inserts are split into private helpers (rather than
     inlined) so a mid-transaction failure can be simulated in tests by
@@ -186,11 +192,20 @@ def persist(
     that makes the chaos test possible without touching real DB
     internals.
     """
-    with conn:
-        _insert_session(conn, session)
-        _insert_records(conn, session.session_id, records)
-        _insert_rr_intervals(conn, session.session_id, rr_intervals)
-        _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
+    try:
+        with conn:
+            _insert_session(conn, session)
+            _insert_records(conn, session.session_id, records)
+            _insert_rr_intervals(conn, session.session_id, rr_intervals)
+            _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
+    except sqlite3.IntegrityError as exc:
+        cur = conn.execute(
+            "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
+            (session.source_device, session.start_time),
+        )
+        row = cur.fetchone()
+        existing_session_id = row[0] if row is not None else session.session_id
+        raise DuplicateSessionError(existing_session_id) from exc
 
 
 def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None:
