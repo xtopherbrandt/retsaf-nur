@@ -49,6 +49,7 @@ class Record:
     gct_balance: float | None = None
     step_length: float | None = None
     temperature: float | None = None
+    gps_degraded: bool | None = None
     sample_quality: list[str] = field(default_factory=list)
 
 

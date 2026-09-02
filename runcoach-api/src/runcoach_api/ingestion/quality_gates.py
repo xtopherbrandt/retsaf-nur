@@ -31,11 +31,19 @@ _MAX_INTERPOLATION_GAP_S = 5
 _CADENCE_LOCK_HR_TOLERANCE_BPM = 3
 _CADENCE_LOCK_MIN_CONSECUTIVE = 30
 
+# T029: centered moving-average window (samples) for barometric
+# altitude smoothing.
+_ALTITUDE_SMOOTHING_WINDOW = 3
+
 # Numeric per-sample fields eligible for linear interpolation across a
 # gap: every Record field except the time axis itself and the
-# non-numeric/annotation fields.
+# non-numeric/annotation fields. ``gps_degraded`` is a boolean flag,
+# not a continuous measurement, so it's excluded (like power_model)
+# rather than interpolated into a meaningless fractional value.
 _INTERPOLATABLE_FIELDS = tuple(
-    f.name for f in dataclasses.fields(Record) if f.name not in {"t", "sample_quality", "power_model"}
+    f.name
+    for f in dataclasses.fields(Record)
+    if f.name not in {"t", "sample_quality", "power_model", "gps_degraded"}
 )
 
 
@@ -96,6 +104,44 @@ def _flag_cadence_lock_runs(records: list[Record]) -> None:
         _tag_cadence_lock_span(records, run_start, len(records))
 
 
+def _flag_gps_degraded(records: list[Record]) -> None:
+    """Flag ``"gps_degraded"`` on any record whose ``gps_degraded``
+    field is ``True``.
+
+    The flag is expected to already be set on ``Record`` by the time
+    ``apply()`` runs (e.g. populated during FIT mapping from a
+    ``gps_accuracy``-like field) -- this only translates it into the
+    ``sample_quality`` marker; no GPS-accuracy heuristic is invented
+    here.
+    """
+    for record in records:
+        if record.gps_degraded is True and "gps_degraded" not in record.sample_quality:
+            record.sample_quality.append("gps_degraded")
+
+
+def _smooth_altitude(records: list[Record]) -> None:
+    """Smooth ``record.altitude`` in place via a small centered moving
+    average (``_ALTITUDE_SMOOTHING_WINDOW`` samples), pulling
+    barometric-altimeter noise/spikes toward their neighbors before
+    the values are considered final for storage.
+
+    Missing (``None``) altitude samples are skipped and don't
+    contribute to neighboring windows. A stream too short to extend a
+    window (handled by ``apply()``'s existing <2-record early return)
+    is a no-op.
+    """
+    half = _ALTITUDE_SMOOTHING_WINDOW // 2
+    n = len(records)
+    original = [r.altitude for r in records]
+    for i, record in enumerate(records):
+        if original[i] is None:
+            continue
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        window_values = [v for v in original[lo:hi] if v is not None]
+        record.altitude = sum(window_values) / len(window_values)
+
+
 def apply(session, records) -> None:
     """Apply the quality gates in place.
 
@@ -146,3 +192,8 @@ def apply(session, records) -> None:
     # T028: independent cadence-lock sub-check, run over the final
     # (post-resampling) ~1Hz record stream.
     _flag_cadence_lock_runs(records)
+
+    # T029: independent GPS-degraded flag + altitude-smoothing
+    # sub-check, run over the same final record stream.
+    _flag_gps_degraded(records)
+    _smooth_altitude(records)
