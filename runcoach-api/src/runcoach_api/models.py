@@ -29,6 +29,7 @@ class Session:
     hr_source: str | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
+    context: Context | None = None
 
 
 @dataclass
@@ -61,4 +62,18 @@ class RRInterval:
 
 @dataclass
 class Context:
-    device_info: dict[str, Any] = field(default_factory=dict)
+    """Environmental + provenance metadata for one ingested session (§2.2.4).
+
+    ``env_*`` fields require an external weather source keyed to the
+    session's time/location -- unavailable at ingestion time for the
+    FIT-upload route, so they stay ``None`` here rather than being
+    guessed from the device thermistor (`record.temperature`).
+    """
+
+    ingested_at: str | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
+    env_temperature_c: float | None = None
+    env_humidity_pct: float | None = None
+    env_wind_ms: float | None = None
+    env_wind_dir: str | None = None
+    subjective: dict[str, Any] | None = None

@@ -46,6 +46,14 @@ def create_session(file: UploadFile = File(...)) -> IngestResponse:
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: str):
-    # A later task fills in the real lookup, including the 404 case.
-    raise NotImplementedError
+def get_session(session_id: str) -> dict:
+    conn = db.get_connection()
+    try:
+        detail = db.get_session_detail(conn, session_id)
+    finally:
+        conn.close()
+
+    if detail is None:
+        raise HTTPException(404, f"session {session_id} not found")
+
+    return detail
