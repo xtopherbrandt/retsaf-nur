@@ -91,3 +91,50 @@ def test_get_health_does_not_swallow_non_2xx_response(monkeypatch) -> None:
     response = api_client.get_health("http://example.test")
     assert response.status_code == 500
     assert response.json() == {"detail": "boom"}
+
+
+def test_upload_fit_posts_multipart_to_sessions_and_returns_response(tmp_path, monkeypatch) -> None:
+    # A well-formed 201 response is returned unchanged; the file is sent as
+    # multipart form data under the "file" field, named after the path.
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+
+    def created_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/sessions"
+        assert request.method == "POST"
+        assert b'name="file"' in request.content
+        assert b"activity.fit" in request.content
+        assert b"binary-fit-content" in request.content
+        return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
+
+    _install_mock_client(created_handler, monkeypatch)
+    response = api_client.upload_fit("http://example.test", fit_path)
+    assert isinstance(response, httpx.Response)
+    assert response.status_code == 201
+    assert response.json() == {"session_id": "abc-123", "quality_flags": []}
+
+
+def test_upload_fit_raises_api_unreachable_on_connect_error(tmp_path, monkeypatch) -> None:
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+
+    def connect_error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    _install_mock_client(connect_error_handler, monkeypatch)
+    with pytest.raises(api_client.ApiUnreachableError) as exc_info:
+        api_client.upload_fit("http://example.test", fit_path)
+    assert exc_info.value.base_url == "http://example.test"
+
+
+def test_upload_fit_does_not_swallow_non_2xx_response(tmp_path, monkeypatch) -> None:
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="invalid FIT file")
+
+    _install_mock_client(error_handler, monkeypatch)
+    response = api_client.upload_fit("http://example.test", fit_path)
+    assert response.status_code == 400
+    assert response.text == "invalid FIT file"
