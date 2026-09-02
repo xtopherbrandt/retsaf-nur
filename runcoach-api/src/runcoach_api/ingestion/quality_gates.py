@@ -27,6 +27,10 @@ from runcoach_api.models import Record
 _GAP_TOLERANCE = 1e-6
 _MAX_INTERPOLATION_GAP_S = 5
 
+# T028: wrist-PPG cadence-lock detection thresholds.
+_CADENCE_LOCK_HR_TOLERANCE_BPM = 3
+_CADENCE_LOCK_MIN_CONSECUTIVE = 30
+
 # Numeric per-sample fields eligible for linear interpolation across a
 # gap: every Record field except the time axis itself and the
 # non-numeric/annotation fields.
@@ -50,13 +54,62 @@ def _interpolated_record(before: Record, after: Record, t: float) -> Record:
     return Record(**values)
 
 
-def apply(session, records) -> None:
-    """Apply the recording-mode/resampling quality gate in place.
+def _cadence_lock_candidate(record: Record) -> bool:
+    """True if this sample's heart_rate is implausibly close to cadence.
 
-    Mutates ``session.quality_flags`` and the ``records`` list object
-    itself (via ``records[:] = ...``, never a local rebind) so the
-    caller's list reflects any inserted interpolated samples.
+    Direct comparison (no ``cadence * 2`` or other transform) -- this
+    codebase's field-mapping conventions already store ``cadence`` as
+    the canonical value the HR sensor could plausibly lock onto.
     """
+    return (
+        record.heart_rate is not None
+        and record.cadence is not None
+        and abs(record.heart_rate - record.cadence) <= _CADENCE_LOCK_HR_TOLERANCE_BPM
+    )
+
+
+def _tag_cadence_lock_span(records: list[Record], start: int, end: int) -> None:
+    if end - start < _CADENCE_LOCK_MIN_CONSECUTIVE:
+        return
+    for record in records[start:end]:
+        if "cadence_lock" not in record.sample_quality:
+            record.sample_quality.append("cadence_lock")
+
+
+def _flag_cadence_lock_runs(records: list[Record]) -> None:
+    """Flag ``"cadence_lock"`` on any span of 30+ consecutive records
+    (by index, time-ordered, ~1 per second post-resampling) where
+    ``heart_rate`` stays within ``_CADENCE_LOCK_HR_TOLERANCE_BPM`` of
+    ``cadence`` -- a known wrist-PPG artefact where the sensor locks
+    onto cadence instead of true heart rate.
+    """
+    run_start: int | None = None
+    for i, record in enumerate(records):
+        if _cadence_lock_candidate(record):
+            if run_start is None:
+                run_start = i
+            continue
+        if run_start is not None:
+            _tag_cadence_lock_span(records, run_start, i)
+            run_start = None
+    if run_start is not None:
+        _tag_cadence_lock_span(records, run_start, len(records))
+
+
+def apply(session, records) -> None:
+    """Apply the quality gates in place.
+
+    Mutates ``session.quality_flags``/``session.hr_source`` and the
+    ``records`` list object itself (via ``records[:] = ...``, never a
+    local rebind) so the caller's list reflects any inserted
+    interpolated samples or added ``sample_quality`` flags.
+    """
+    # T028: default HR-source inference. Only set when not already
+    # known -- a chest-strap RR stream (T029, not yet implemented)
+    # takes precedence and must never be clobbered here.
+    if not session.hr_source:
+        session.hr_source = "wrist_ppg"
+
     if len(records) < 2:
         return
 
@@ -89,3 +142,7 @@ def apply(session, records) -> None:
         resampled.append(after)
 
     records[:] = resampled
+
+    # T028: independent cadence-lock sub-check, run over the final
+    # (post-resampling) ~1Hz record stream.
+    _flag_cadence_lock_runs(records)
