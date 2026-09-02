@@ -56,7 +56,11 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
             for frame in reader:
                 if isinstance(frame, fitdecode.FitDataMessage):
                     messages.append(frame)
-    except fitdecode.FitError as exc:
+    except (
+        fitdecode.FitCRCError,
+        fitdecode.FitEOFError,
+        fitdecode.FitParseError,
+    ) as exc:
         raise FitParseFailure(str(exc)) from exc
 
     return messages
