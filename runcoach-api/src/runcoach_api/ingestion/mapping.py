@@ -82,10 +82,6 @@ DEV_FIELD_CANONICAL_MAP: dict[str, tuple[str, float]] = {
 }
 
 
-def _messages_named(messages: list[fitdecode.FitDataMessage], name: str) -> list:
-    return [m for m in messages if m.name == name]
-
-
 def _first_named(messages: list[fitdecode.FitDataMessage], name: str):
     for m in messages:
         if m.name == name:

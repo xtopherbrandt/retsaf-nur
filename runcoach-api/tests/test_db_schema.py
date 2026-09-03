@@ -81,3 +81,77 @@ def test_sessions_unique_constraint_on_device_and_start_time():
         assert with_raises
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Schema reconciliation for databases created before a column was added
+# ---------------------------------------------------------------------------
+
+
+def test_init_schema_adds_columns_missing_from_a_preexisting_database():
+    """Regression: ``CREATE TABLE IF NOT EXISTS`` is a no-op against an
+    existing table, so a database created before ``gps_degraded`` (or
+    ``rr_carrier`` / ``rr_valid_fraction``) existed kept the old layout
+    and every INSERT naming the new column died with
+    ``sqlite3.OperationalError: table records has no column named
+    gps_degraded`` -- an HTTP 500 on a valid upload.
+
+    The whole test suite missed this because conftest.py builds a fresh
+    database per test, where the CREATE path always includes every
+    column. This test reproduces the real-world shape instead: an
+    already-created table that predates the column.
+    """
+    conn = db.get_connection()
+    try:
+        # A database as it looked before the columns were added.
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+              session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
+              sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
+              source_device TEXT, recording_interval TEXT, hr_source TEXT,
+              quality_flags TEXT, summary TEXT, context TEXT,
+              UNIQUE (source_device, start_time)
+            );
+            CREATE TABLE records (
+              session_id TEXT NOT NULL, t REAL NOT NULL, lat REAL, lon REAL,
+              distance REAL, speed REAL, heart_rate REAL, cadence REAL, altitude REAL,
+              power REAL, power_model TEXT, vertical_oscillation REAL,
+              ground_contact_time REAL, gct_balance REAL, step_length REAL,
+              temperature REAL, sample_quality TEXT
+            );
+            CREATE TABLE rr_intervals (
+              session_id TEXT NOT NULL, seq INTEGER NOT NULL, rr_ms REAL NOT NULL,
+              rr_source TEXT, is_artefact INTEGER DEFAULT 0
+            );
+            CREATE TABLE quarantine_sidecar (
+              session_id TEXT NOT NULL, field_name TEXT NOT NULL, value TEXT
+            );
+            """
+        )
+        conn.commit()
+
+        def columns(table):
+            return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+        assert "gps_degraded" not in columns("records")
+
+        db.init_schema(conn)
+
+        assert "gps_degraded" in columns("records")
+        assert "rr_carrier" in columns("rr_intervals")
+        assert "rr_valid_fraction" in columns("sessions")
+    finally:
+        conn.close()
+
+
+def test_init_schema_reconciliation_is_idempotent():
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.init_schema(conn)  # must not raise "duplicate column name"
+
+        cols = [row["name"] for row in conn.execute("PRAGMA table_info(records)")]
+        assert cols.count("gps_degraded") == 1
+    finally:
+        conn.close()

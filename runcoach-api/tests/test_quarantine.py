@@ -20,6 +20,7 @@ from runcoach_api.main import app
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_run.fit"
 TRAINING_EFFECT_FIXTURE = Path(__file__).parent / "fixtures" / "chest_strap_run.fit"
+STRESS_FIXTURE = Path(__file__).parent / "fixtures" / "sample_health_snapshot.fit"
 
 
 def _raw_fixture_bytes() -> bytes:
@@ -28,6 +29,10 @@ def _raw_fixture_bytes() -> bytes:
 
 def _raw_training_effect_fixture_bytes() -> bytes:
     return TRAINING_EFFECT_FIXTURE.read_bytes()
+
+
+def _raw_stress_fixture_bytes() -> bytes:
+    return STRESS_FIXTURE.read_bytes()
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +63,35 @@ def test_extract_finds_training_effect_fields_on_real_fixture() -> None:
 
     assert float(result["total_training_effect"]) == 2.8
     assert float(result["total_anaerobic_training_effect"]) == 0.0
+
+
+def test_extract_finds_stress_score_on_real_fixture() -> None:
+    # "Stress score" is a named §2.3.6 quarantine item.
+    # sample_health_snapshot.fit's session message carries a real
+    # non-null avg_stress (19), profile-resolved as session field 195
+    # -- not an unknown_NNN guess.
+    messages = fit_parser.decode(_raw_stress_fixture_bytes())
+
+    result = quarantine.extract(messages)
+
+    assert float(result["avg_stress"]) == 19
+
+
+def test_stress_score_never_reaches_the_canonical_schema() -> None:
+    with TestClient(app) as client:
+        post_response = client.post(
+            "/sessions",
+            files={"file": ("sample_health_snapshot.fit", _raw_stress_fixture_bytes())},
+        )
+        assert post_response.status_code == 201
+        session_id = post_response.json()["session_id"]
+
+        get_response = client.get(f"/sessions/{session_id}")
+
+    assert get_response.status_code == 200
+    body_lower = str(get_response.json()).lower()
+    assert "avg_stress" not in body_lower
+    assert "current_stress" not in body_lower
 
 
 def test_extract_returns_plain_string_values() -> None:

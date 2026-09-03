@@ -71,15 +71,48 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+# Columns added to already-shipped tables after the initial schema
+# landed. CREATE TABLE IF NOT EXISTS is a no-op against an existing
+# table, so a database created before one of these columns existed
+# keeps the old layout and every INSERT naming the new column fails
+# with "table X has no column named Y" -- a 500 on a perfectly valid
+# upload, which the test suite structurally cannot catch because
+# conftest.py builds a fresh database per test.
+#
+# This is not the migration framework F003 deliberately deferred to
+# F004: it is an additive, idempotent reconciliation of nullable
+# columns, which is all this schema has needed. A change that renames
+# or retypes a column still needs a real migration.
+_ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "records": {"gps_degraded": "INTEGER"},
+    "rr_intervals": {"rr_carrier": "TEXT"},
+    "sessions": {"rr_valid_fraction": "REAL"},
+}
+
+
+def _reconcile_added_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in _ADDED_COLUMNS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            # Table absent entirely -- CREATE TABLE above just made it
+            # with every column, or this database predates the table.
+            continue
+        for column, decl_type in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl_type}")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Create the canonical-schema tables if they don't already exist."""
+    """Create the canonical-schema tables if they don't already exist,
+    then additively reconcile any columns added after a database was
+    first created (see ``_ADDED_COLUMNS``)."""
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS sessions (
           session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
           sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
           source_device TEXT, recording_interval TEXT, hr_source TEXT,
-          quality_flags TEXT, summary TEXT, context TEXT,
+          rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
           UNIQUE (source_device, start_time)
         );
         CREATE TABLE IF NOT EXISTS records (
@@ -91,7 +124,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS rr_intervals (
           session_id TEXT NOT NULL REFERENCES sessions(session_id), seq INTEGER NOT NULL,
-          rr_ms REAL NOT NULL, rr_source TEXT, is_artefact INTEGER DEFAULT 0
+          rr_ms REAL NOT NULL, rr_source TEXT, rr_carrier TEXT, is_artefact INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS quarantine_sidecar (
           session_id TEXT NOT NULL REFERENCES sessions(session_id), field_name TEXT NOT NULL,
@@ -99,6 +132,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    _reconcile_added_columns(conn)
     conn.commit()
 
 
@@ -108,11 +142,11 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
         INSERT INTO sessions (
             session_id, athlete_id, start_time, sport, activity_tag,
             source_vendor, source_device, recording_interval, hr_source,
-            quality_flags, summary, context
+            rr_valid_fraction, quality_flags, summary, context
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
-            :quality_flags, :summary, :context
+            :rr_valid_fraction, :quality_flags, :summary, :context
         )
         """,
         {
@@ -125,6 +159,7 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "source_device": session.source_device,
             "recording_interval": session.recording_interval,
             "hr_source": session.hr_source,
+            "rr_valid_fraction": session.rr_valid_fraction,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context))
@@ -180,8 +215,10 @@ def _insert_rr_intervals(
 ) -> None:
     conn.executemany(
         """
-        INSERT INTO rr_intervals (session_id, seq, rr_ms, rr_source, is_artefact)
-        VALUES (:session_id, :seq, :rr_ms, :rr_source, :is_artefact)
+        INSERT INTO rr_intervals (
+            session_id, seq, rr_ms, rr_source, rr_carrier, is_artefact
+        )
+        VALUES (:session_id, :seq, :rr_ms, :rr_source, :rr_carrier, :is_artefact)
         """,
         [
             {
@@ -189,6 +226,7 @@ def _insert_rr_intervals(
                 "seq": rr.seq,
                 "rr_ms": rr.rr_ms,
                 "rr_source": rr.rr_source,
+                "rr_carrier": rr.rr_carrier,
                 "is_artefact": _bool_to_int(rr.is_artefact),
             }
             for rr in rr_intervals
@@ -272,7 +310,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         """
         SELECT session_id, athlete_id, start_time, sport, activity_tag,
                source_vendor, source_device, recording_interval, hr_source,
-               quality_flags, summary, context
+               rr_valid_fraction, quality_flags, summary, context
         FROM sessions WHERE session_id = ?
         """,
         (session_id,),
@@ -315,7 +353,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
 
     rr_cur = conn.execute(
         """
-        SELECT seq, rr_ms, rr_source, is_artefact
+        SELECT seq, rr_ms, rr_source, rr_carrier, is_artefact
         FROM rr_intervals WHERE session_id = ? ORDER BY seq
         """,
         (session_id,),
@@ -325,6 +363,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
             "seq": r["seq"],
             "rr_ms": r["rr_ms"],
             "rr_source": r["rr_source"],
+            "rr_carrier": r["rr_carrier"],
             "is_artefact": _int_to_bool(r["is_artefact"]),
         }
         for r in rr_cur.fetchall()
@@ -340,6 +379,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "source_device": row["source_device"],
         "recording_interval": row["recording_interval"],
         "hr_source": row["hr_source"],
+        "rr_valid_fraction": row["rr_valid_fraction"],
         "quality_flags": _json_load(row["quality_flags"], default=[]),
         "summary": _json_load(row["summary"]),
         "context": _json_load(row["context"]),

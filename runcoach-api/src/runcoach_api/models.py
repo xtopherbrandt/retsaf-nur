@@ -27,6 +27,10 @@ class Session:
     source_device: str | None = None
     recording_interval: float | None = None
     hr_source: str | None = None
+    # Surviving-beat fraction of the reconstructed RR series (§2.2.3,
+    # §2.4.3). None when the session carries no RR stream at all --
+    # distinct from 0.0, which means "had beats, none survived".
+    rr_valid_fraction: float | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None
@@ -57,7 +61,12 @@ class Record:
 class RRInterval:
     seq: int | None = None
     rr_ms: float | None = None
+    # Tier enum per §2.2.3 (chest_strap_ecg / overnight_ppg /
+    # health_snapshot_ppg / other) -- what §3's tier weighting reads.
     rr_source: str | None = None
+    # Which FIT carrier supplied this beat (§2.3.4 step 3). Kept
+    # separate so the tier enum above isn't overloaded.
+    rr_carrier: str | None = None
     is_artefact: bool | None = None
 
 

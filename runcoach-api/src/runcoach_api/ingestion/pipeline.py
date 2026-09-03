@@ -31,12 +31,16 @@ class IngestResult:
 def ingest_fit_bytes(raw: bytes) -> IngestResult:
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
-    # rr_reconstruction runs before quality_gates.apply() so a future
-    # chest-strap hr_source detection (rr_reconstruction is currently a
-    # stub) can set session.hr_source before apply()'s "default to
-    # wrist_ppg when not already set" guard runs -- see code-review
-    # Fix 5.
+    # rr_reconstruction runs before quality_gates.apply() so the
+    # chest-strap hr_source set during mapping (T024) is already in
+    # place before apply()'s "default to wrist_ppg when not already
+    # set" guard runs -- see code-review Fix 5.
     rr_intervals = rr_reconstruction.reconstruct(messages)
+    if rr_intervals:
+        # §2.2.3/§2.4.3 quality weight -- left None (not 0.0) for a
+        # session with no RR stream at all, so "no beats" and "beats,
+        # none survived" stay distinguishable downstream.
+        session.rr_valid_fraction = rr_reconstruction.valid_fraction(rr_intervals)
     quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
