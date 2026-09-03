@@ -92,10 +92,46 @@ def _first_named(messages: list[fitdecode.FitDataMessage], name: str):
     return None
 
 
+def _group_by_name(
+    messages: list[fitdecode.FitDataMessage],
+) -> dict[str, list[fitdecode.FitDataMessage]]:
+    """Bucket ``messages`` by ``.name`` in a single O(m) pass.
+
+    ``to_canonical`` looks up several message-type buckets (``session``,
+    ``sport``, ``file_id``, ``device_info``, ``record``) while mapping one
+    FIT file; grouping once here and then doing O(1) dict lookups avoids
+    an O(m) linear rescan of ``messages`` per lookup.
+    """
+    by_name: dict[str, list[fitdecode.FitDataMessage]] = {}
+    for m in messages:
+        by_name.setdefault(m.name, []).append(m)
+    return by_name
+
+
+def _first_of(by_name: dict[str, list], name: str):
+    msgs = by_name.get(name)
+    return msgs[0] if msgs else None
+
+
 def _semicircles_to_degrees(value: float | None) -> float | None:
     if value is None:
         return None
     return value * SEMICIRCLE_TO_DEGREES
+
+
+def _enhanced_or_plain(get_value_fn, base_name: str):
+    """Prefer ``enhanced_<base_name>``, falling back to plain ``<base_name>``.
+
+    ``get_value_fn`` is a one-arg callable (e.g. ``session_msg.get_value``
+    or ``msg.get_value``, both already bound to ``fallback=None``-style
+    lookup) -- this only expresses the enhanced-then-plain precedence
+    shared by ``avg_speed``/``max_speed`` (summary) and
+    ``speed``/``altitude`` (per-record).
+    """
+    value = get_value_fn(f"enhanced_{base_name}")
+    if value is None:
+        value = get_value_fn(base_name)
+    return value
 
 
 # Sentinel used when no source device can be determined (e.g.
@@ -108,6 +144,12 @@ _UNKNOWN_SOURCE_DEVICE = "unknown"
 
 
 def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str:
+    # NOTE: kept accepting the flat ``messages`` list (rather than the
+    # ``by_name`` grouped index built in ``to_canonical``) because tests
+    # call this helper directly with a raw message list -- see
+    # tests/test_duplicate_upload.py's ``_build_source_device([...])``
+    # call sites. It still does its own two short linear scans, but
+    # each is only run once per ``to_canonical`` call.
     file_id = _first_named(messages, "file_id")
     device_info = _first_named(messages, "device_info")
 
@@ -133,13 +175,8 @@ def _build_summary(session_msg) -> dict:
     def val(name):
         return session_msg.get_value(name, fallback=None)
 
-    avg_speed = val("enhanced_avg_speed")
-    if avg_speed is None:
-        avg_speed = val("avg_speed")
-
-    max_speed = val("enhanced_max_speed")
-    if max_speed is None:
-        max_speed = val("max_speed")
+    avg_speed = _enhanced_or_plain(val, "avg_speed")
+    max_speed = _enhanced_or_plain(val, "max_speed")
 
     summary = {
         "distance_m": val("total_distance"),
@@ -216,13 +253,11 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     lat = _semicircles_to_degrees(msg.get_value("position_lat", fallback=None))
     lon = _semicircles_to_degrees(msg.get_value("position_long", fallback=None))
 
-    speed = msg.get_value("enhanced_speed", fallback=None)
-    if speed is None:
-        speed = msg.get_value("speed", fallback=None)
+    def field(name):
+        return msg.get_value(name, fallback=None)
 
-    altitude = msg.get_value("enhanced_altitude", fallback=None)
-    if altitude is None:
-        altitude = msg.get_value("altitude", fallback=None)
+    speed = _enhanced_or_plain(field, "speed")
+    altitude = _enhanced_or_plain(field, "altitude")
 
     raw_cadence = msg.get_value("cadence", fallback=None)
     fractional_cadence = msg.get_value("fractional_cadence", fallback=None)
@@ -280,8 +315,10 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
     gating are out of this function's scope (handled elsewhere in the
     pipeline).
     """
-    session_msg = _first_named(messages, "session")
-    sport_msg = _first_named(messages, "sport")
+    by_name = _group_by_name(messages)
+
+    session_msg = _first_of(by_name, "session")
+    sport_msg = _first_of(by_name, "sport")
 
     sport = None
     if session_msg is not None:
@@ -289,18 +326,19 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
     if sport is None and sport_msg is not None:
         sport = sport_msg.get_value("sport", fallback=None)
 
+    record_msgs = by_name.get("record", [])
+
     start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
     if start_time is None:
         # Fall back to the earliest record timestamp -- still a native
         # field, no fabrication.
-        record_msgs = _messages_named(messages, "record")
         timestamps = [m.get_value("timestamp", fallback=None) for m in record_msgs]
         timestamps = [t for t in timestamps if t is not None]
         start_time = min(timestamps) if timestamps else datetime.now(timezone.utc)
 
     records: list[Record] = []
     unresolved_developer_fields: dict = {}
-    for record_msg in _messages_named(messages, "record"):
+    for record_msg in record_msgs:
         record, dev_unresolved = _build_record(record_msg, start_time)
         if record is not None:
             records.append(record)

@@ -119,6 +119,51 @@ def _flag_gps_degraded(records: list[Record]) -> None:
             record.sample_quality.append("gps_degraded")
 
 
+def _resample_and_flag_smart_recording(session, records: list[Record]) -> list[Record]:
+    """Detect smart-recording (non-uniform ``t`` spacing) and resample onto a
+    uniform 1s grid.
+
+    Flags ``"smart_recording"`` on ``session.quality_flags`` (once) as soon
+    as any consecutive gap isn't exactly 1s -- detected inline during the
+    single resampling pass below rather than via a separate upfront scan.
+    Gaps of <=5s are linearly interpolated onto 1s-spaced synthetic
+    records tagged ``"interpolated"``; gaps >5s are left unfilled (never
+    fabricating data across a real recording outage) and the record
+    immediately after the gap is tagged ``"interpolation_gap"`` instead.
+    """
+    ordered = sorted(records, key=lambda r: r.t)
+
+    resampled: list[Record] = [ordered[0]]
+    non_uniform = False
+    for before, after in zip(ordered, ordered[1:]):
+        delta = after.t - before.t
+
+        if abs(delta - 1) <= _GAP_TOLERANCE:
+            resampled.append(after)
+            continue
+
+        non_uniform = True
+
+        if delta > _MAX_INTERPOLATION_GAP_S:
+            # Don't fabricate data across a real gap -- just flag the
+            # sample that follows it.
+            if "interpolation_gap" not in after.sample_quality:
+                after.sample_quality.append("interpolation_gap")
+            resampled.append(after)
+            continue
+
+        # 1 < delta <= 5: fill the gap with 1s-spaced interpolated points.
+        steps = int(round(delta))
+        for step in range(1, steps):
+            resampled.append(_interpolated_record(before, after, before.t + step))
+        resampled.append(after)
+
+    if non_uniform and "smart_recording" not in session.quality_flags:
+        session.quality_flags.append("smart_recording")
+
+    return resampled
+
+
 def _smooth_altitude(records: list[Record]) -> None:
     """Smooth ``record.altitude`` in place via a small centered moving
     average (``_ALTITUDE_SMOOTHING_WINDOW`` samples), pulling
@@ -159,35 +204,7 @@ def apply(session, records) -> None:
     if len(records) < 2:
         return
 
-    ordered = sorted(records, key=lambda r: r.t)
-
-    non_uniform = any(abs((b.t - a.t) - 1) > _GAP_TOLERANCE for a, b in zip(ordered, ordered[1:]))
-    if non_uniform and "smart_recording" not in session.quality_flags:
-        session.quality_flags.append("smart_recording")
-
-    resampled: list[Record] = [ordered[0]]
-    for before, after in zip(ordered, ordered[1:]):
-        delta = after.t - before.t
-
-        if abs(delta - 1) <= _GAP_TOLERANCE:
-            resampled.append(after)
-            continue
-
-        if delta > _MAX_INTERPOLATION_GAP_S:
-            # Don't fabricate data across a real gap -- just flag the
-            # sample that follows it.
-            if "interpolation_gap" not in after.sample_quality:
-                after.sample_quality.append("interpolation_gap")
-            resampled.append(after)
-            continue
-
-        # 1 < delta <= 5: fill the gap with 1s-spaced interpolated points.
-        steps = int(round(delta))
-        for step in range(1, steps):
-            resampled.append(_interpolated_record(before, after, before.t + step))
-        resampled.append(after)
-
-    records[:] = resampled
+    records[:] = _resample_and_flag_smart_recording(session, records)
 
     # T028: independent cadence-lock sub-check, run over the final
     # (post-resampling) ~1Hz record stream.

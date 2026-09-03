@@ -17,6 +17,7 @@ back via ``json.loads(...)``.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import sqlite3
 from pathlib import Path
@@ -28,12 +29,44 @@ from runcoach_api.models import Record, RRInterval, Session
 DB_FILENAME = "runcoach.db"
 
 
+def _json_dump(value):
+    """``json.dumps(value)``, passing ``None`` through unchanged."""
+    return None if value is None else json.dumps(value)
+
+
+def _json_load(value, default=None):
+    """``json.loads(value)``, returning ``default`` when ``value`` is ``None``."""
+    return default if value is None else json.loads(value)
+
+
+def _bool_to_int(value):
+    """Python ``bool``/``None`` -> SQLite ``INTEGER``, preserving ``None``."""
+    return None if value is None else int(bool(value))
+
+
+def _int_to_bool(value):
+    """SQLite ``INTEGER``/``None`` -> Python ``bool``, preserving ``None``."""
+    return None if value is None else bool(value)
+
+
+# lru_cache(maxsize=1) below caches the parsed config across calls within a
+# process (avoiding a re-read/re-parse of the TOML file on every request).
+# Tests get isolation via the autouse `isolated_data_dir` fixture
+# (tests/conftest.py), which monkeypatches `config_module.load_config`
+# per-test *and* clears this cache before each test -- so a stale
+# lru_cache'd config from a previous test's monkeypatch is never seen.
+@functools.lru_cache(maxsize=1)
+def _load_config_cached() -> config_module.AppConfig:
+    return config_module.load_config()
+
+
 def get_connection() -> sqlite3.Connection:
     """Open (creating if needed) the SQLite database under AppConfig.data_dir."""
-    app_config = config_module.load_config()
+    app_config = _load_config_cached()
     data_dir: Path = app_config.data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(data_dir / DB_FILENAME)
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -76,22 +109,28 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             session_id, athlete_id, start_time, sport, activity_tag,
             source_vendor, source_device, recording_interval, hr_source,
             quality_flags, summary, context
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (
+            :session_id, :athlete_id, :start_time, :sport, :activity_tag,
+            :source_vendor, :source_device, :recording_interval, :hr_source,
+            :quality_flags, :summary, :context
+        )
         """,
-        (
-            session.session_id,
-            session.athlete_id,
-            session.start_time,
-            session.sport,
-            session.activity_tag,
-            session.source_vendor,
-            session.source_device,
-            session.recording_interval,
-            session.hr_source,
-            json.dumps(session.quality_flags),
-            json.dumps(session.summary),
-            json.dumps(dataclasses.asdict(session.context)) if session.context else None,
-        ),
+        {
+            "session_id": session.session_id,
+            "athlete_id": session.athlete_id,
+            "start_time": session.start_time,
+            "sport": session.sport,
+            "activity_tag": session.activity_tag,
+            "source_vendor": session.source_vendor,
+            "source_device": session.source_device,
+            "recording_interval": session.recording_interval,
+            "hr_source": session.hr_source,
+            "quality_flags": _json_dump(session.quality_flags),
+            "summary": _json_dump(session.summary),
+            "context": _json_dump(dataclasses.asdict(session.context))
+            if session.context
+            else None,
+        },
     )
 
 
@@ -103,29 +142,34 @@ def _insert_records(conn: sqlite3.Connection, session_id: str, records: list[Rec
             altitude, power, power_model, vertical_oscillation,
             ground_contact_time, gct_balance, step_length, temperature,
             gps_degraded, sample_quality
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (
+            :session_id, :t, :lat, :lon, :distance, :speed, :heart_rate, :cadence,
+            :altitude, :power, :power_model, :vertical_oscillation,
+            :ground_contact_time, :gct_balance, :step_length, :temperature,
+            :gps_degraded, :sample_quality
+        )
         """,
         [
-            (
-                session_id,
-                r.t,
-                r.lat,
-                r.lon,
-                r.distance,
-                r.speed,
-                r.heart_rate,
-                r.cadence,
-                r.altitude,
-                r.power,
-                r.power_model,
-                r.vertical_oscillation,
-                r.ground_contact_time,
-                r.gct_balance,
-                r.step_length,
-                r.temperature,
-                None if r.gps_degraded is None else int(bool(r.gps_degraded)),
-                json.dumps(r.sample_quality),
-            )
+            {
+                "session_id": session_id,
+                "t": r.t,
+                "lat": r.lat,
+                "lon": r.lon,
+                "distance": r.distance,
+                "speed": r.speed,
+                "heart_rate": r.heart_rate,
+                "cadence": r.cadence,
+                "altitude": r.altitude,
+                "power": r.power,
+                "power_model": r.power_model,
+                "vertical_oscillation": r.vertical_oscillation,
+                "ground_contact_time": r.ground_contact_time,
+                "gct_balance": r.gct_balance,
+                "step_length": r.step_length,
+                "temperature": r.temperature,
+                "gps_degraded": _bool_to_int(r.gps_degraded),
+                "sample_quality": _json_dump(r.sample_quality),
+            }
             for r in records
         ],
     )
@@ -137,16 +181,16 @@ def _insert_rr_intervals(
     conn.executemany(
         """
         INSERT INTO rr_intervals (session_id, seq, rr_ms, rr_source, is_artefact)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (:session_id, :seq, :rr_ms, :rr_source, :is_artefact)
         """,
         [
-            (
-                session_id,
-                rr.seq,
-                rr.rr_ms,
-                rr.rr_source,
-                int(bool(rr.is_artefact)),
-            )
+            {
+                "session_id": session_id,
+                "seq": rr.seq,
+                "rr_ms": rr.rr_ms,
+                "rr_source": rr.rr_source,
+                "is_artefact": _bool_to_int(rr.is_artefact),
+            }
             for rr in rr_intervals
         ],
     )
@@ -158,10 +202,10 @@ def _insert_quarantine_sidecar(
     conn.executemany(
         """
         INSERT INTO quarantine_sidecar (session_id, field_name, value)
-        VALUES (?, ?, ?)
+        VALUES (:session_id, :field_name, :value)
         """,
         [
-            (session_id, field_name, json.dumps(value))
+            {"session_id": session_id, "field_name": field_name, "value": _json_dump(value)}
             for field_name, value in quarantine_values.items()
         ],
     )
@@ -237,21 +281,6 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
     if row is None:
         return None
 
-    (
-        session_id_,
-        athlete_id,
-        start_time,
-        sport,
-        activity_tag,
-        source_vendor,
-        source_device,
-        recording_interval,
-        hr_source,
-        quality_flags,
-        summary,
-        context,
-    ) = row
-
     records_cur = conn.execute(
         """
         SELECT t, lat, lon, distance, speed, heart_rate, cadence, altitude,
@@ -263,23 +292,23 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
     )
     records = [
         {
-            "t": r[0],
-            "lat": r[1],
-            "lon": r[2],
-            "distance": r[3],
-            "speed": r[4],
-            "heart_rate": r[5],
-            "cadence": r[6],
-            "altitude": r[7],
-            "power": r[8],
-            "power_model": r[9],
-            "vertical_oscillation": r[10],
-            "ground_contact_time": r[11],
-            "gct_balance": r[12],
-            "step_length": r[13],
-            "temperature": r[14],
-            "gps_degraded": bool(r[15]) if r[15] is not None else None,
-            "sample_quality": json.loads(r[16]) if r[16] is not None else [],
+            "t": r["t"],
+            "lat": r["lat"],
+            "lon": r["lon"],
+            "distance": r["distance"],
+            "speed": r["speed"],
+            "heart_rate": r["heart_rate"],
+            "cadence": r["cadence"],
+            "altitude": r["altitude"],
+            "power": r["power"],
+            "power_model": r["power_model"],
+            "vertical_oscillation": r["vertical_oscillation"],
+            "ground_contact_time": r["ground_contact_time"],
+            "gct_balance": r["gct_balance"],
+            "step_length": r["step_length"],
+            "temperature": r["temperature"],
+            "gps_degraded": _int_to_bool(r["gps_degraded"]),
+            "sample_quality": _json_load(r["sample_quality"], default=[]),
         }
         for r in records_cur.fetchall()
     ]
@@ -292,23 +321,28 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         (session_id,),
     )
     rr_intervals = [
-        {"seq": r[0], "rr_ms": r[1], "rr_source": r[2], "is_artefact": bool(r[3])}
+        {
+            "seq": r["seq"],
+            "rr_ms": r["rr_ms"],
+            "rr_source": r["rr_source"],
+            "is_artefact": _int_to_bool(r["is_artefact"]),
+        }
         for r in rr_cur.fetchall()
     ]
 
     return {
-        "session_id": session_id_,
-        "athlete_id": athlete_id,
-        "start_time": start_time,
-        "sport": sport,
-        "activity_tag": activity_tag,
-        "source_vendor": source_vendor,
-        "source_device": source_device,
-        "recording_interval": recording_interval,
-        "hr_source": hr_source,
-        "quality_flags": json.loads(quality_flags) if quality_flags is not None else [],
-        "summary": json.loads(summary) if summary is not None else None,
-        "context": json.loads(context) if context is not None else None,
+        "session_id": row["session_id"],
+        "athlete_id": row["athlete_id"],
+        "start_time": row["start_time"],
+        "sport": row["sport"],
+        "activity_tag": row["activity_tag"],
+        "source_vendor": row["source_vendor"],
+        "source_device": row["source_device"],
+        "recording_interval": row["recording_interval"],
+        "hr_source": row["hr_source"],
+        "quality_flags": _json_load(row["quality_flags"], default=[]),
+        "summary": _json_load(row["summary"]),
+        "context": _json_load(row["context"]),
         "records": records,
         "rr_intervals": rr_intervals,
     }
