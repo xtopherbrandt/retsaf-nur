@@ -19,10 +19,15 @@ from runcoach_api.ingestion import fit_parser, quarantine
 from runcoach_api.main import app
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_run.fit"
+TRAINING_EFFECT_FIXTURE = Path(__file__).parent / "fixtures" / "chest_strap_run.fit"
 
 
 def _raw_fixture_bytes() -> bytes:
     return FIXTURE.read_bytes()
+
+
+def _raw_training_effect_fixture_bytes() -> bytes:
+    return TRAINING_EFFECT_FIXTURE.read_bytes()
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +45,19 @@ def test_extract_finds_training_load_peak_on_real_fixture() -> None:
     # Known-good value for this fixture's session message (verified via a
     # one-off fitdecode inspection: session.training_load_peak == 128.06...).
     assert float(result["training_load_peak"]) == 128.06283569335938
+
+
+def test_extract_finds_training_effect_fields_on_real_fixture() -> None:
+    # chest_strap_run.fit's session message carries real non-null
+    # Garmin Training Effect values (verified via a one-off fitdecode
+    # inspection: total_training_effect == 2.8,
+    # total_anaerobic_training_effect == 0.0).
+    messages = fit_parser.decode(_raw_training_effect_fixture_bytes())
+
+    result = quarantine.extract(messages)
+
+    assert float(result["total_training_effect"]) == 2.8
+    assert float(result["total_anaerobic_training_effect"]) == 0.0
 
 
 def test_extract_returns_plain_string_values() -> None:
@@ -103,3 +121,19 @@ def test_quarantine_sidecar_table_receives_training_load_peak() -> None:
     # db._insert_quarantine_sidecar), so read it back the same way.
     stored_value = json.loads(rows["training_load_peak"])
     assert float(stored_value) == 128.06283569335938
+
+
+def test_canonical_get_response_never_contains_training_effect() -> None:
+    with TestClient(app) as client:
+        post_response = client.post(
+            "/sessions",
+            files={"file": ("chest_strap_run.fit", _raw_training_effect_fixture_bytes())},
+        )
+        assert post_response.status_code == 201
+        session_id = post_response.json()["session_id"]
+
+        get_response = client.get(f"/sessions/{session_id}")
+
+    assert get_response.status_code == 200
+    body_lower = str(get_response.json()).lower()
+    assert "training_effect" not in body_lower

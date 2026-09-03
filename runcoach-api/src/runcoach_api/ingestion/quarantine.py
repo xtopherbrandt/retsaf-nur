@@ -7,13 +7,29 @@ so the "vendor-derived values never appear in the canonical schema"
 guarantee holds by construction (the two modules are disjoint), not
 because of any filtering step here.
 
-Currently registered: ``session.training_load_peak`` -- Garmin's
-proprietary Training Load metric (part of its Training Status
-feature), confirmed present with a real non-null value in the
-project's real fixture (``tests/fixtures/sample_run.fit``). Additional
-vendor-derived fields can be added to ``_VENDOR_DERIVED_FIELDS`` below
-once their semantics are confirmed against real fixture data -- never
-guessed from an ``unknown_NNN`` field name alone.
+Currently registered:
+
+- ``session.training_load_peak`` -- Garmin's proprietary Training Load
+  metric (part of its Training Status feature), confirmed present with
+  a real non-null value (128.06...) in ``tests/fixtures/sample_run.fit``.
+- ``session.total_training_effect`` / ``total_anaerobic_training_effect``
+  -- Garmin's proprietary Training Effect scores, confirmed present
+  with real non-null values (2.8 / 0.0) in
+  ``tests/fixtures/chest_strap_run.fit``.
+
+Additional vendor-derived fields can be added to
+``_VENDOR_DERIVED_FIELDS`` below once their semantics are confirmed
+against real fixture data -- never guessed from an ``unknown_NNN``
+field name alone. Notably, none of this repo's real fixtures carry a
+non-null VO2max estimate, Training Status, Training Readiness, Body
+Battery, Performance Condition, Race Predictor, recovery time, or
+stress score field (checked via a one-off ``fitdecode`` inspection
+across every fixture in ``tests/fixtures/`` before writing this) --
+Garmin's ``device_info.battery_*`` fields are the device's own
+hardware battery, not "Body Battery", and were confirmed as a false
+match, not added. These remain out of scope until a real fixture
+supplies one, the same external-fixture-dependency pattern already
+tracked for T022/T024.
 """
 
 from __future__ import annotations
@@ -26,7 +42,11 @@ import fitdecode
 # that a field's semantics be confirmed against real fixture data
 # before it's added here.
 _VENDOR_DERIVED_FIELDS: dict[str, tuple[str, ...]] = {
-    "session": ("training_load_peak",),
+    "session": (
+        "training_load_peak",
+        "total_training_effect",
+        "total_anaerobic_training_effect",
+    ),
 }
 
 

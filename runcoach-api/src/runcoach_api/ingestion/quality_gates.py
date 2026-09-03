@@ -196,7 +196,7 @@ def apply(session, records) -> None:
     interpolated samples or added ``sample_quality`` flags.
     """
     # T028: default HR-source inference. Only set when not already
-    # known -- a chest-strap RR stream (T029, not yet implemented)
+    # known -- a chest-strap RR stream (T024, set in mapping.py)
     # takes precedence and must never be clobbered here.
     if not session.hr_source:
         session.hr_source = "wrist_ppg"

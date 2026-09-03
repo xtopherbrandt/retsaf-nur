@@ -55,6 +55,7 @@ from datetime import datetime, timezone
 import fitdecode
 
 from runcoach_api import __version__
+from runcoach_api.ingestion import rr_reconstruction
 from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
@@ -190,6 +191,23 @@ def _build_summary(session_msg) -> dict:
         "calories": val("total_calories"),
     }
     return {k: v for k, v in summary.items() if v is not None}
+
+
+def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
+    """``chest_strap`` when any RR carrier has data, else ``None`` (left
+    for ``quality_gates.apply()``'s wrist-PPG default to fill in).
+
+    T024's task notes scope this task to only ``mapping.py`` and
+    ``rr_reconstruction.py`` -- ``pipeline.py`` (which also calls
+    ``rr_reconstruction.reconstruct()``, for persistence) is
+    deliberately not touched, so RR reconstruction runs twice per
+    ingest. Cheap and harmless at this project's single-athlete,
+    synchronous-request scope (see F003's NFR note); the alternative
+    (threading the already-reconstructed list back into ``mapping.py``)
+    would need a wiring change to ``pipeline.py`` this task's own file
+    list excludes.
+    """
+    return "chest_strap" if rr_reconstruction.reconstruct(messages) else None
 
 
 def _build_context(unresolved_developer_fields: dict | None = None) -> Context:
@@ -351,6 +369,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         source_vendor="garmin",
         start_time=start_time.isoformat(),
         source_device=_build_source_device(messages),
+        hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
         context=_build_context(unresolved_developer_fields),
     )
