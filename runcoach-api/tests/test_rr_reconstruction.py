@@ -177,6 +177,95 @@ def test_interval_deviating_from_local_median_flagged_even_within_absolute_range
     assert all(iv.is_artefact is False for iv in intervals if iv.seq != 5)
 
 
+# ---------------------------------------------------------------------------
+# T030: burst artefacts (runs of consecutive artefacts). A level-vs-local-
+# median rule inverts on these -- the burst becomes its own reference median
+# -- so detection keys on the dRR transition into and out of a run instead.
+# ---------------------------------------------------------------------------
+
+
+def _from_ms(values: list[float]) -> list:
+    """Reconstruct from a synthetic RR series given in milliseconds."""
+    seconds = tuple(v / 1000.0 for v in values)
+    return rr_reconstruction.reconstruct([_FakeMsg("hrv", values={"time": seconds})])
+
+
+def _artefact_flags(intervals) -> list[bool]:
+    return [iv.is_artefact for iv in intervals]
+
+
+def test_artefact_burst_at_series_start_is_fully_flagged() -> None:
+    # 6 doubled beats (1600ms) at the START of the series, then 20 healthy
+    # 800ms beats. The old centred-median window clamps at the boundary, so
+    # the burst was its own reference: 5 of the 6 artefacts were marked
+    # valid and a healthy beat was flagged instead (reported 0.923, true
+    # 0.769). The level ratio 1600/800 is ~2x -- a missed beat.
+    intervals = _from_ms([1600.0] * 6 + [800.0] * 20)
+
+    assert len(intervals) == 26
+    assert _artefact_flags(intervals) == [True] * 6 + [False] * 20
+    assert rr_reconstruction.valid_fraction(intervals) == 20 / 26
+
+
+def test_artefact_burst_mid_series_flagged_without_destroying_neighbours() -> None:
+    # 10 healthy, 6 doubled, 10 healthy. The old rule destroyed the healthy
+    # beats on both burst edges (reported 0.692, true 0.769).
+    intervals = _from_ms([800.0] * 10 + [1600.0] * 6 + [800.0] * 10)
+
+    assert len(intervals) == 26
+    assert _artefact_flags(intervals) == [False] * 10 + [True] * 6 + [False] * 10
+    # Explicitly: the beats immediately either side of the burst survive.
+    assert intervals[9].is_artefact is False
+    assert intervals[16].is_artefact is False
+    assert rr_reconstruction.valid_fraction(intervals) == 20 / 26
+
+
+def test_sustained_level_change_is_physiology_not_an_artefact() -> None:
+    # An abrupt but *sustained* step down (900 -> 600ms, ~67 -> 100bpm) is
+    # an interval start, not a strap fault: the level never returns, so the
+    # run has no surrounding level to deviate from.
+    intervals = _from_ms([900.0] * 12 + [600.0] * 24)
+
+    assert len(intervals) == 36
+    assert not any(iv.is_artefact for iv in intervals)
+    assert rr_reconstruction.valid_fraction(intervals) == 1.0
+
+
+def test_gradual_physiological_ramp_is_not_flagged_as_artefact() -> None:
+    # 900ms -> 510ms smoothly across 40 intervals (10ms per beat): no single
+    # step approaches the 20% relative criterion, so there is no transition
+    # anywhere and the whole series is one run.
+    ramp = [900.0 - 10.0 * i for i in range(40)]
+    assert ramp[-1] == 510.0
+
+    intervals = _from_ms(ramp)
+
+    assert len(intervals) == 40
+    assert not any(iv.is_artefact for iv in intervals)
+
+
+def test_isolated_implausible_interval_still_artefact_by_absolute_band() -> None:
+    # The 300-2000ms band (§2.4.3) runs independently of the run analysis.
+    values = [800.0] * 10
+    values[5] = 50.0
+
+    intervals = _from_ms(values)
+
+    assert intervals[5].is_artefact is True
+    assert all(iv.is_artefact is False for iv in intervals if iv.seq != 5)
+
+
+def test_artefact_criterion_does_not_disturb_real_chest_strap_fixture() -> None:
+    # Regression guard: the new criterion must leave the working path on
+    # real data essentially unchanged (T024 flagged 22 of 7220).
+    messages = fit_parser.decode(_raw(HRV_FIXTURE))
+
+    intervals = rr_reconstruction.reconstruct(messages)
+
+    assert 7100 <= len(intervals) <= 7300
+    assert rr_reconstruction.valid_fraction(intervals) > 0.95
+
+
 def test_sentinel_none_slots_discarded_not_treated_as_zero() -> None:
     intervals = rr_reconstruction.reconstruct(
         [_FakeMsg("hrv", values={"time": (0.80, None, 0.80, None, None)})]
