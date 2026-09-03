@@ -17,7 +17,11 @@ app = FastAPI(title="Run Coaching API")
 
 @app.on_event("startup")
 def on_startup() -> None:
-    db.init_schema(db.get_connection())
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+    finally:
+        conn.close()
 
 
 @app.get("/health", response_model=HealthResponse)

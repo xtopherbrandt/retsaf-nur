@@ -115,3 +115,41 @@ def test_startup_creates_data_dir_and_db_file(isolated_data_dir) -> None:
 
     assert isolated_data_dir.exists()
     assert (isolated_data_dir / db.DB_FILENAME).exists()
+
+
+def test_startup_closes_the_connection_it_opens(monkeypatch) -> None:
+    # Regression test: on_startup() previously opened a connection via
+    # db.get_connection() and passed it to db.init_schema() but never
+    # closed it, leaking a connection/file-descriptor handle for the
+    # app's lifetime. Wrap the real connection in a spy that records
+    # whether .close() was called, and assert it was -- by the time
+    # TestClient(app)'s __enter__ (which drives the lifespan startup
+    # event synchronously, per starlette.testclient.TestClient.__enter__
+    # calling portal.call(self.wait_startup)) returns.
+    real_get_connection = db.get_connection
+    opened_connections: list = []
+
+    class ConnectionSpy:
+        def __init__(self, real_conn) -> None:
+            self._real_conn = real_conn
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+            self._real_conn.close()
+
+        def __getattr__(self, name: str):
+            return getattr(self._real_conn, name)
+
+    def spy_get_connection():
+        spy = ConnectionSpy(real_get_connection())
+        opened_connections.append(spy)
+        return spy
+
+    monkeypatch.setattr(db, "get_connection", spy_get_connection)
+
+    with TestClient(app):
+        pass
+
+    assert len(opened_connections) == 1
+    assert opened_connections[0].closed is True
