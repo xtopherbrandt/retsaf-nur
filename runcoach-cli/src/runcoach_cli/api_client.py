@@ -14,6 +14,13 @@ import httpx
 # object, which could total up to ~20s worst case.
 client = httpx.Client(timeout=5.0)
 
+# FIT uploads can be up to 50MB (the API's own upload cap) - the 5s timeout
+# above is tuned for the tiny /health payload and is nowhere near enough for
+# a large multipart upload on a slow connection. Override just the upload
+# call's timeout rather than raising the shared client's default, so /health
+# and /status keep their fast, bounded 5s timeout.
+UPLOAD_TIMEOUT = 60.0
+
 
 class ApiUnreachableError(Exception):
     """Raised when the API cannot be reached (connection failure or timeout)."""
@@ -47,6 +54,10 @@ def upload_fit(base_url: str, file_path: Path) -> httpx.Response:
     """
     try:
         with open(file_path, "rb") as f:
-            return client.post(f"{base_url}/sessions", files={"file": (file_path.name, f)})
+            return client.post(
+                f"{base_url}/sessions",
+                files={"file": (file_path.name, f)},
+                timeout=UPLOAD_TIMEOUT,
+            )
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc

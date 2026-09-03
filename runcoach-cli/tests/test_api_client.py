@@ -127,6 +127,34 @@ def test_upload_fit_raises_api_unreachable_on_connect_error(tmp_path, monkeypatc
     assert exc_info.value.base_url == "http://example.test"
 
 
+def test_upload_fit_uses_longer_timeout_than_health_check(tmp_path, monkeypatch) -> None:
+    # FIT uploads can be up to 50MB (the API's own cap); the 5s timeout tuned
+    # for the tiny /health payload is nowhere near enough for a large
+    # multipart upload on a slow connection. upload_fit must use a longer,
+    # upload-appropriate timeout on its POST call - not silently inherit the
+    # health-check client's 5.0s default. We capture the timeout actually
+    # threaded through to the transport (httpx resolves it into
+    # request.extensions["timeout"] before the transport ever sees the
+    # request) rather than just asserting "no exception raised", since a 5s
+    # timeout never actually elapses against a fast local MockTransport.
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+
+    captured_timeouts: list[dict] = []
+
+    def created_handler(request: httpx.Request) -> httpx.Response:
+        captured_timeouts.append(request.extensions["timeout"])
+        return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
+
+    _install_mock_client(created_handler, monkeypatch)
+    api_client.upload_fit("http://example.test", fit_path)
+
+    assert len(captured_timeouts) == 1
+    upload_timeout = captured_timeouts[0]
+    assert upload_timeout["read"] > 5.0
+    assert upload_timeout["write"] > 5.0
+
+
 def test_upload_fit_does_not_swallow_non_2xx_response(tmp_path, monkeypatch) -> None:
     fit_path = tmp_path / "activity.fit"
     fit_path.write_bytes(b"binary-fit-content")
