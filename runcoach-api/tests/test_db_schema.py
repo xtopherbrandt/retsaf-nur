@@ -83,66 +83,102 @@ def test_sessions_unique_constraint_on_device_and_start_time():
         conn.close()
 
 
+
 # ---------------------------------------------------------------------------
 # Schema reconciliation for databases created before a column was added
 # ---------------------------------------------------------------------------
 
+# The verbatim schema as shipped at T017 (commit 12a8b5d) -- the oldest
+# database vintage that can exist in the wild. Copied from that commit
+# rather than hand-written, because a hand-written "old" schema only
+# reflects which columns the author remembers being new: the first
+# version of this test invented one that still had `context`, and so it
+# passed while a real T017-era database still 500'd on every upload.
+_T017_DDL = """
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
+      sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
+      source_device TEXT, recording_interval TEXT, hr_source TEXT,
+      quality_flags TEXT, summary TEXT,
+      UNIQUE (source_device, start_time)
+    );
+    CREATE TABLE records (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), t REAL NOT NULL,
+      lat REAL, lon REAL, distance REAL, speed REAL, heart_rate REAL, cadence REAL,
+      altitude REAL, power REAL, power_model TEXT, vertical_oscillation REAL,
+      ground_contact_time REAL, gct_balance REAL, step_length REAL, temperature REAL,
+      sample_quality TEXT
+    );
+    CREATE TABLE rr_intervals (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), seq INTEGER NOT NULL,
+      rr_ms REAL NOT NULL, rr_source TEXT, is_artefact INTEGER DEFAULT 0
+    );
+    CREATE TABLE quarantine_sidecar (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), field_name TEXT NOT NULL,
+      value TEXT
+    );
+"""
 
-def test_init_schema_adds_columns_missing_from_a_preexisting_database():
-    """Regression: ``CREATE TABLE IF NOT EXISTS`` is a no-op against an
-    existing table, so a database created before ``gps_degraded`` (or
-    ``rr_carrier`` / ``rr_valid_fraction``) existed kept the old layout
-    and every INSERT naming the new column died with
-    ``sqlite3.OperationalError: table records has no column named
-    gps_degraded`` -- an HTTP 500 on a valid upload.
 
-    The whole test suite missed this because conftest.py builds a fresh
-    database per test, where the CREATE path always includes every
-    column. This test reproduces the real-world shape instead: an
-    already-created table that predates the column.
-    """
+def _columns(conn, table):
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def test_init_schema_adds_every_column_missing_from_a_t017_era_database():
     conn = db.get_connection()
     try:
-        # A database as it looked before the columns were added.
-        conn.executescript(
-            """
-            CREATE TABLE sessions (
-              session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
-              sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
-              source_device TEXT, recording_interval TEXT, hr_source TEXT,
-              quality_flags TEXT, summary TEXT, context TEXT,
-              UNIQUE (source_device, start_time)
-            );
-            CREATE TABLE records (
-              session_id TEXT NOT NULL, t REAL NOT NULL, lat REAL, lon REAL,
-              distance REAL, speed REAL, heart_rate REAL, cadence REAL, altitude REAL,
-              power REAL, power_model TEXT, vertical_oscillation REAL,
-              ground_contact_time REAL, gct_balance REAL, step_length REAL,
-              temperature REAL, sample_quality TEXT
-            );
-            CREATE TABLE rr_intervals (
-              session_id TEXT NOT NULL, seq INTEGER NOT NULL, rr_ms REAL NOT NULL,
-              rr_source TEXT, is_artefact INTEGER DEFAULT 0
-            );
-            CREATE TABLE quarantine_sidecar (
-              session_id TEXT NOT NULL, field_name TEXT NOT NULL, value TEXT
-            );
-            """
-        )
+        conn.executescript(_T017_DDL)
         conn.commit()
 
-        def columns(table):
-            return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-
-        assert "gps_degraded" not in columns("records")
+        assert "context" not in _columns(conn, "sessions")
+        assert "gps_degraded" not in _columns(conn, "records")
 
         db.init_schema(conn)
 
-        assert "gps_degraded" in columns("records")
-        assert "rr_carrier" in columns("rr_intervals")
-        assert "rr_valid_fraction" in columns("sessions")
+        # Every column the current DDL declares must now be present --
+        # asserted against the DDL itself, not a remembered list.
+        for table, expected in db._expected_schema().items():
+            assert expected.keys() <= _columns(conn, table), table
     finally:
         conn.close()
+
+
+def test_real_ingest_succeeds_against_a_t017_era_database(isolated_data_dir):
+    """The assertion the first version of this test was missing.
+
+    Checking PRAGMA table_info proves the columns exist; it does not
+    prove an ingest works. This runs the actual pipeline end to end
+    against a stale database, which is what was really broken.
+    """
+    from pathlib import Path
+
+    from runcoach_api.ingestion.pipeline import ingest_fit_bytes
+
+    conn = db.get_connection()
+    try:
+        conn.executescript(_T017_DDL)
+        conn.commit()
+    finally:
+        conn.close()
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+    finally:
+        conn.close()
+
+    fixture = Path(__file__).parent / "fixtures" / "sample_run.fit"
+    result = ingest_fit_bytes(fixture.read_bytes())
+
+    assert result.session_id
+
+    conn = db.get_connection()
+    try:
+        detail = db.get_session_detail(conn, result.session_id)
+    finally:
+        conn.close()
+    assert detail is not None
+    assert len(detail["records"]) > 0
 
 
 def test_init_schema_reconciliation_is_idempotent():

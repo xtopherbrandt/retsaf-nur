@@ -225,7 +225,7 @@ def test_developer_field_carrier_merges_with_hrv_in_file_order() -> None:
     assert {iv.rr_source for iv in intervals} == {"chest_strap_ecg"}
 
 
-def test_developer_field_name_match_is_word_bounded_not_substring() -> None:
+def test_developer_field_name_match_is_token_bounded_not_substring() -> None:
     # A bare "rr" substring previously matched all of these, injecting
     # a power/elevation value into the RR stream as milliseconds *and*
     # flipping hr_source to chest_strap, which un-gates HR metrics on a
@@ -235,6 +235,20 @@ def test_developer_field_name_match_is_word_bounded_not_substring() -> None:
         record_msg = _FakeMsg("record", fields=[field])
 
         assert rr_reconstruction.reconstruct([record_msg]) == [], name
+
+
+def test_developer_field_snake_case_and_hyphenated_spellings_accepted() -> None:
+    # Regression on the first fix for the above: \brr\b treats "_" as a
+    # word character, so every snake_case spelling was silently
+    # rejected -- and snake_case is at least as likely as "RR Interval"
+    # for a real developer field.
+    for name in ("rr_interval", "rr_intervals", "rr_ms", "R-R Interval", "RR"):
+        field = _FakeFieldData(field=_dev_field(name), name=name, value=900)
+        record_msg = _FakeMsg("record", fields=[field])
+
+        intervals = rr_reconstruction.reconstruct([record_msg])
+
+        assert [iv.rr_ms for iv in intervals] == [900.0], name
 
 
 def test_developer_field_with_non_millisecond_units_ignored() -> None:
@@ -254,7 +268,11 @@ def test_non_numeric_developer_field_value_skipped_not_coerced() -> None:
 
 
 def test_native_non_developer_field_never_treated_as_carrier() -> None:
-    native = _FakeFieldData(field=object(), name="rr_placeholder", value=800)
+    # The name must be one the matcher *would* accept on a DevField, so
+    # this actually exercises the isinstance(..., DevField) guard. An
+    # earlier version used "rr_placeholder", which the matcher rejected
+    # on the name alone -- the test passed with the guard deleted.
+    native = _FakeFieldData(field=object(), name="RR Interval", value=800)
 
     assert rr_reconstruction.reconstruct([_FakeMsg("record", fields=[native])]) == []
 

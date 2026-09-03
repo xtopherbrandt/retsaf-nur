@@ -70,13 +70,25 @@ _ARTEFACT_WINDOW = 11
 # step 4). Not the carrier -- see module docstring.
 RR_SOURCE_CHEST_STRAP = "chest_strap_ecg"
 
-# Developer-field carrier matching. Word-boundary so "RR"/"RR Interval"
-# match but "Corrected Power", "Horizontal Error" and "Terrain" do not
-# -- a bare "rr" substring previously matched all of those, and a
+# Developer-field carrier matching. "rr" must stand alone as a token:
+# "RR", "RR Interval", "rr_interval", "rr_ms", "R-R Interval" match,
+# while "Corrected Power", "Horizontal Error" and "Terrain" do not.
+#
+# A bare "rr" substring previously matched all of the latter, and a
 # matched field would be injected into the RR stream as milliseconds
 # *and* flip hr_source to chest_strap, un-gating HR metrics on a
-# wrist-only session (§2.4.2).
-_DEV_FIELD_RR_NAME = re.compile(r"\brr\b", re.IGNORECASE)
+# wrist-only session (§2.4.2). The first fix for that used \brr\b,
+# which over-corrected: "_" is a word character to \b, so every
+# snake_case spelling (rr_interval, rr_ms) was silently rejected --
+# and snake_case is at least as likely as "RR Interval" for a
+# developer field. Letter-boundary lookarounds accept both, and the
+# optional separator also accepts the "R-R Interval" spelling (which
+# has no literal "rr" substring at all).
+#
+# The lookarounds are what keep the rejections: in "Corrected",
+# "Error" and "Terrain" the doubled r is flanked by letters, so none
+# of them match.
+_DEV_FIELD_RR_NAME = re.compile(r"(?<![A-Za-z])r[-_]?r(?![A-Za-z])", re.IGNORECASE)
 
 # Accepted unit spellings for a developer field declaring milliseconds.
 # A field declaring anything else (W, m, bpm, ...) is not a beat

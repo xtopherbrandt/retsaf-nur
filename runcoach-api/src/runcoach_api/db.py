@@ -71,68 +71,92 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
-# Columns added to already-shipped tables after the initial schema
-# landed. CREATE TABLE IF NOT EXISTS is a no-op against an existing
-# table, so a database created before one of these columns existed
-# keeps the old layout and every INSERT naming the new column fails
-# with "table X has no column named Y" -- a 500 on a perfectly valid
-# upload, which the test suite structurally cannot catch because
-# conftest.py builds a fresh database per test.
-#
-# This is not the migration framework F003 deliberately deferred to
-# F004: it is an additive, idempotent reconciliation of nullable
-# columns, which is all this schema has needed. A change that renames
-# or retypes a column still needs a real migration.
-_ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "records": {"gps_degraded": "INTEGER"},
-    "rr_intervals": {"rr_carrier": "TEXT"},
-    "sessions": {"rr_valid_fraction": "REAL"},
-}
+# The single source of truth for the canonical schema. Both table
+# creation and the column reconciliation below are derived from this
+# one string, so they cannot drift apart.
+_SCHEMA_DDL = """
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
+      sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
+      source_device TEXT, recording_interval TEXT, hr_source TEXT,
+      rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
+      UNIQUE (source_device, start_time)
+    );
+    CREATE TABLE IF NOT EXISTS records (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), t REAL NOT NULL,
+      lat REAL, lon REAL, distance REAL, speed REAL, heart_rate REAL, cadence REAL,
+      altitude REAL, power REAL, power_model TEXT, vertical_oscillation REAL,
+      ground_contact_time REAL, gct_balance REAL, step_length REAL, temperature REAL,
+      gps_degraded INTEGER, sample_quality TEXT
+    );
+    CREATE TABLE IF NOT EXISTS rr_intervals (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), seq INTEGER NOT NULL,
+      rr_ms REAL NOT NULL, rr_source TEXT, rr_carrier TEXT, is_artefact INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS quarantine_sidecar (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id), field_name TEXT NOT NULL,
+      value TEXT
+    );
+"""
 
 
-def _reconcile_added_columns(conn: sqlite3.Connection) -> None:
-    for table, columns in _ADDED_COLUMNS.items():
+def _expected_schema() -> dict[str, dict[str, str]]:
+    """``{table: {column: decl_type}}`` as ``_SCHEMA_DDL`` defines it,
+    read back from a throwaway in-memory database.
+
+    Deriving this from the DDL itself (rather than hand-listing the
+    columns added over time) is the point: a hand-maintained list only
+    ever contains the columns whoever edited it remembered, and the
+    first version of this function shipped missing ``sessions.context``
+    for exactly that reason.
+    """
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.executescript(_SCHEMA_DDL)
+        tables = [
+            row[0]
+            for row in probe.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        ]
+        return {
+            table: {row[1]: row[2] for row in probe.execute(f"PRAGMA table_info({table})")}
+            for table in tables
+        }
+    finally:
+        probe.close()
+
+
+def _reconcile_columns(conn: sqlite3.Connection) -> None:
+    """Additively add any column present in ``_SCHEMA_DDL`` but missing
+    from an already-created table.
+
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op against an existing
+    table, so a database created before a column was added keeps the
+    old layout and every INSERT naming that column fails with "table X
+    has no column named Y" -- a 500 on a perfectly valid upload. The
+    test suite structurally cannot catch that, because conftest.py
+    builds a fresh database per test where the CREATE path always
+    includes every column.
+
+    This is not the migration framework F003 deferred to F004: it adds
+    nullable columns only. A rename or retype still needs a real
+    migration, and will surface here as an error rather than being
+    silently papered over.
+    """
+    for table, expected in _expected_schema().items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if not existing:
-            # Table absent entirely -- CREATE TABLE above just made it
-            # with every column, or this database predates the table.
-            continue
-        for column, decl_type in columns.items():
+            continue  # table was just created with every column
+        for column, decl_type in expected.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl_type}")
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the canonical-schema tables if they don't already exist,
-    then additively reconcile any columns added after a database was
-    first created (see ``_ADDED_COLUMNS``)."""
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-          session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
-          sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
-          source_device TEXT, recording_interval TEXT, hr_source TEXT,
-          rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
-          UNIQUE (source_device, start_time)
-        );
-        CREATE TABLE IF NOT EXISTS records (
-          session_id TEXT NOT NULL REFERENCES sessions(session_id), t REAL NOT NULL,
-          lat REAL, lon REAL, distance REAL, speed REAL, heart_rate REAL, cadence REAL,
-          altitude REAL, power REAL, power_model TEXT, vertical_oscillation REAL,
-          ground_contact_time REAL, gct_balance REAL, step_length REAL, temperature REAL,
-          gps_degraded INTEGER, sample_quality TEXT
-        );
-        CREATE TABLE IF NOT EXISTS rr_intervals (
-          session_id TEXT NOT NULL REFERENCES sessions(session_id), seq INTEGER NOT NULL,
-          rr_ms REAL NOT NULL, rr_source TEXT, rr_carrier TEXT, is_artefact INTEGER DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS quarantine_sidecar (
-          session_id TEXT NOT NULL REFERENCES sessions(session_id), field_name TEXT NOT NULL,
-          value TEXT
-        );
-        """
-    )
-    _reconcile_added_columns(conn)
+    then additively reconcile any column added after a database was
+    first created (see ``_reconcile_columns``)."""
+    conn.executescript(_SCHEMA_DDL)
+    _reconcile_columns(conn)
     conn.commit()
 
 
