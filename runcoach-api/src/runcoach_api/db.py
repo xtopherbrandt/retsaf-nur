@@ -54,7 +54,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
           lat REAL, lon REAL, distance REAL, speed REAL, heart_rate REAL, cadence REAL,
           altitude REAL, power REAL, power_model TEXT, vertical_oscillation REAL,
           ground_contact_time REAL, gct_balance REAL, step_length REAL, temperature REAL,
-          sample_quality TEXT
+          gps_degraded INTEGER, sample_quality TEXT
         );
         CREATE TABLE IF NOT EXISTS rr_intervals (
           session_id TEXT NOT NULL REFERENCES sessions(session_id), seq INTEGER NOT NULL,
@@ -102,8 +102,8 @@ def _insert_records(conn: sqlite3.Connection, session_id: str, records: list[Rec
             session_id, t, lat, lon, distance, speed, heart_rate, cadence,
             altitude, power, power_model, vertical_oscillation,
             ground_contact_time, gct_balance, step_length, temperature,
-            sample_quality
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            gps_degraded, sample_quality
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -123,6 +123,7 @@ def _insert_records(conn: sqlite3.Connection, session_id: str, records: list[Rec
                 r.gct_balance,
                 r.step_length,
                 r.temperature,
+                None if r.gps_degraded is None else int(bool(r.gps_degraded)),
                 json.dumps(r.sample_quality),
             )
             for r in records
@@ -204,8 +205,15 @@ def persist(
             (session.source_device, session.start_time),
         )
         row = cur.fetchone()
-        existing_session_id = row[0] if row is not None else session.session_id
-        raise DuplicateSessionError(existing_session_id) from exc
+        if row is None:
+            # Not actually the dedup constraint -- e.g. a NOT NULL
+            # violation (sessions.sport) blocked the insert before
+            # anything committed. Fabricating a DuplicateSessionError
+            # here would misattribute a real validation failure as a
+            # 409 duplicate-upload response, so let the original
+            # IntegrityError propagate instead.
+            raise
+        raise DuplicateSessionError(row[0]) from exc
 
 
 def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None:
@@ -248,7 +256,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         """
         SELECT t, lat, lon, distance, speed, heart_rate, cadence, altitude,
                power, power_model, vertical_oscillation, ground_contact_time,
-               gct_balance, step_length, temperature, sample_quality
+               gct_balance, step_length, temperature, gps_degraded, sample_quality
         FROM records WHERE session_id = ? ORDER BY t
         """,
         (session_id,),
@@ -270,7 +278,8 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
             "gct_balance": r[12],
             "step_length": r[13],
             "temperature": r[14],
-            "sample_quality": json.loads(r[15]) if r[15] is not None else [],
+            "gps_degraded": bool(r[15]) if r[15] is not None else None,
+            "sample_quality": json.loads(r[16]) if r[16] is not None else [],
         }
         for r in records_cur.fetchall()
     ]

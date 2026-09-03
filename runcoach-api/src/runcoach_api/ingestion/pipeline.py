@@ -10,7 +10,6 @@ fills in exactly one of the stub modules called below.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
 from runcoach_api import db
@@ -21,7 +20,6 @@ from runcoach_api.ingestion import (
     quarantine,
     rr_reconstruction,
 )
-from runcoach_api.ingestion.exceptions import DuplicateSessionError
 
 
 @dataclass
@@ -33,15 +31,22 @@ class IngestResult:
 def ingest_fit_bytes(raw: bytes) -> IngestResult:
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
-    quality_gates.apply(session, records)
+    # rr_reconstruction runs before quality_gates.apply() so a future
+    # chest-strap hr_source detection (rr_reconstruction is currently a
+    # stub) can set session.hr_source before apply()'s "default to
+    # wrist_ppg when not already set" guard runs -- see code-review
+    # Fix 5.
     rr_intervals = rr_reconstruction.reconstruct(messages)
+    quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
     conn = db.get_connection()
     try:
+        # db.persist() is the single place a raw sqlite3 constraint
+        # violation is translated into DuplicateSessionError (see
+        # code-review Fix 2) -- no local except clause here duplicating
+        # that translation (see code-review Fix 6).
         db.persist(conn, session, records, rr_intervals, quarantine_values)
-    except sqlite3.IntegrityError as exc:
-        raise DuplicateSessionError(session.session_id) from exc
     finally:
         conn.close()
 

@@ -13,6 +13,7 @@ for real, never mocks ``fitdecode``.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,114 @@ def test_back_to_back_persist_calls_second_raises_duplicate_not_raw_integrity_er
 # ---------------------------------------------------------------------------
 # no false positives: distinct (source_device, start_time) pairs both succeed
 # ---------------------------------------------------------------------------
+
+
+def test_null_sport_not_null_violation_raises_integrity_error_not_duplicate() -> None:
+    """Regression (code-review Fix 2): ``persist()``'s ``IntegrityError``
+    handler used to assume every ``IntegrityError`` was the
+    ``UNIQUE(source_device, start_time)`` dedup constraint -- but
+    ``sessions.sport TEXT NOT NULL`` can also raise ``IntegrityError``
+    (e.g. a FIT file with no session/sport message reaching mapping
+    with ``sport=None``). Nothing is actually committed in that case,
+    so the post-failure dedup SELECT finds no row -- that must surface
+    the real ``sqlite3.IntegrityError``, not a fabricated
+    ``DuplicateSessionError`` referencing a session_id that was never
+    inserted.
+    """
+    session = Session(
+        session_id="s-null-sport-1",
+        sport=None,  # type: ignore[arg-type]
+        source_vendor="garmin",
+        start_time="2026-01-01T00:00:00+00:00",
+        source_device="null-sport-device",
+    )
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+
+        with pytest.raises(sqlite3.IntegrityError) as exc_info:
+            db.persist(conn, session, [], [], {})
+
+        assert not isinstance(exc_info.value, DuplicateSessionError)
+
+        # Nothing was committed -- confirm no partial row landed.
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE session_id = ?", ("s-null-sport-1",)
+        )
+        assert cur.fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_unresolvable_source_device_maps_to_sentinel_not_null() -> None:
+    """Regression (code-review Fix 3): SQLite's
+    ``UNIQUE(source_device, start_time)`` treats every ``NULL`` as
+    distinct from every other ``NULL``, so a real ``None`` value in
+    ``source_device`` would silently defeat dedup for two uploads with
+    the same ``start_time`` and no identifiable device. ``mapping._build_source_device``
+    must use a defined sentinel string instead of ``None`` when no
+    source device can be determined.
+    """
+    from runcoach_api.ingestion import mapping
+
+    class _NoDeviceMsg:
+        name = "file_id"
+
+        def get_value(self, name, fallback=None):
+            return fallback
+
+    result = mapping._build_source_device([_NoDeviceMsg()])
+
+    assert result is not None
+    assert isinstance(result, str)
+
+
+def test_two_persists_with_unresolvable_source_device_and_same_start_time_dedup() -> None:
+    """The sentinel from ``_build_source_device`` must actually let the
+    existing ``UNIQUE(source_device, start_time)`` constraint catch
+    same-``start_time`` duplicates from devices with no identifiable
+    ``source_device`` -- exercised directly at the ``db.persist()``
+    layer against whatever sentinel value ``mapping`` now produces for
+    "no device", rather than a real FIT fixture (none of this repo's
+    fixtures lack device info).
+    """
+    from runcoach_api.ingestion import mapping
+
+    class _NoDeviceMsg:
+        name = "file_id"
+
+        def get_value(self, name, fallback=None):
+            return fallback
+
+    sentinel_device = mapping._build_source_device([_NoDeviceMsg()])
+
+    session = Session(
+        session_id="s-no-device-1",
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-01-01T00:00:00+00:00",
+        source_device=sentinel_device,
+    )
+    session_retry = Session(
+        session_id="s-no-device-2",
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-01-01T00:00:00+00:00",
+        source_device=sentinel_device,
+    )
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.persist(conn, session, [], [], {})
+
+        with pytest.raises(DuplicateSessionError) as exc_info:
+            db.persist(conn, session_retry, [], [], {})
+
+        assert exc_info.value.existing_session_id == "s-no-device-1"
+    finally:
+        conn.close()
 
 
 def test_distinct_start_times_both_succeed_no_false_positive_collision() -> None:

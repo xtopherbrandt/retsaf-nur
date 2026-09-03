@@ -59,6 +59,17 @@ from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
 
+# T029 gps_degraded wiring (code-review fix): FIT's record.gps_accuracy
+# (field 31) is reported in meters (verified via fitdecode's own
+# profile field metadata, not a fixture -- no real fixture in this
+# repo's test corpus, checked via a one-off fitdecode inspection,
+# populates gps_accuracy on any record). >10m horizontal accuracy is
+# the commonly-used "moderate/degraded" threshold for consumer GPS
+# accuracy grading; this is unverified against real degraded-GPS data
+# and should be revisited once a fixture with the field populated
+# exists.
+_GPS_DEGRADED_ACCURACY_THRESHOLD_M = 10
+
 # Developer field name -> (Record attribute, multiplier to convert the
 # developer field's unit into the canonical unit already established
 # by the native-field path). Only fields with a canonical slot appear
@@ -87,7 +98,16 @@ def _semicircles_to_degrees(value: float | None) -> float | None:
     return value * SEMICIRCLE_TO_DEGREES
 
 
-def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str | None:
+# Sentinel used when no source device can be determined (e.g.
+# non-Garmin devices, or a file missing file_id/device_info). SQLite's
+# UNIQUE(source_device, start_time) constraint treats every NULL as
+# distinct from every other NULL, which would silently defeat dedup
+# for two such uploads sharing a start_time -- a non-NULL sentinel
+# string keeps the existing db-constraint-based dedup working.
+_UNKNOWN_SOURCE_DEVICE = "unknown"
+
+
+def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str:
     file_id = _first_named(messages, "file_id")
     device_info = _first_named(messages, "device_info")
 
@@ -100,7 +120,7 @@ def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str | None
     firmware = device_info.get_value("software_version", fallback=None) if device_info else None
 
     if product is None:
-        return None
+        return _UNKNOWN_SOURCE_DEVICE
     if firmware is None:
         return str(product)
     return f"{product} fw{firmware}"
@@ -113,13 +133,21 @@ def _build_summary(session_msg) -> dict:
     def val(name):
         return session_msg.get_value(name, fallback=None)
 
+    avg_speed = val("enhanced_avg_speed")
+    if avg_speed is None:
+        avg_speed = val("avg_speed")
+
+    max_speed = val("enhanced_max_speed")
+    if max_speed is None:
+        max_speed = val("max_speed")
+
     summary = {
         "distance_m": val("total_distance"),
         "duration_s": val("total_timer_time"),
         "avg_heart_rate": val("avg_heart_rate"),
         "max_heart_rate": val("max_heart_rate"),
-        "avg_speed": val("enhanced_avg_speed") or val("avg_speed"),
-        "max_speed": val("enhanced_max_speed") or val("max_speed"),
+        "avg_speed": avg_speed,
+        "max_speed": max_speed,
         "total_ascent_m": val("total_ascent"),
         "total_descent_m": val("total_descent"),
         "calories": val("total_calories"),
@@ -217,6 +245,11 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     if ground_contact_time is None:
         ground_contact_time = dev_resolved.get("ground_contact_time")
 
+    gps_accuracy = msg.get_value("gps_accuracy", fallback=None)
+    gps_degraded = None
+    if gps_accuracy is not None:
+        gps_degraded = gps_accuracy > _GPS_DEGRADED_ACCURACY_THRESHOLD_M
+
     record = Record(
         t=(ts - start_dt).total_seconds(),
         lat=lat,
@@ -233,6 +266,7 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
         gct_balance=msg.get_value("stance_time_percent", fallback=None),
         step_length=msg.get_value("step_length", fallback=None),
         temperature=msg.get_value("temperature", fallback=None),
+        gps_degraded=gps_degraded,
         sample_quality=[],
     )
     return record, dev_unresolved
