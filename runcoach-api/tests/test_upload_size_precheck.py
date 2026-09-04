@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import asyncio
 
+from fastapi.testclient import TestClient
+
 from runcoach_api.main import (
     MAX_UPLOAD_BYTES,
     ContentLengthLimitMiddleware,
     _MULTIPART_FRAMING_ALLOWANCE_BYTES,
+    app,
 )
 
 
@@ -129,6 +132,42 @@ def test_content_length_within_limit_reaches_inner_app() -> None:
     _run(middleware(scope, receive, send))
 
     assert len(inner_app_calls) == 1
+
+
+def test_spoofed_oversized_content_length_is_rejected_by_real_app() -> None:
+    """M1 (sprint-002 iteration-2 review): the tests above only prove
+    ``ContentLengthLimitMiddleware`` behaves correctly as a bare ASGI
+    callable driven directly -- none of them prove it is actually
+    mounted on ``runcoach_api.main.app`` via ``app.add_middleware(...)``.
+    A future refactor (e.g. the pending ``@app.on_event`` ->
+    lifespan-handler migration main.py already carries a
+    DeprecationWarning for) could drop or reorder that
+    ``add_middleware`` call and this whole suite would stay green.
+
+    This test goes through ``TestClient(app)`` -- the real, fully
+    assembled app object -- and spoofs a declared Content-Length far
+    above the precheck ceiling while sending a genuinely tiny body.
+    ``create_session``'s own ``file.file.read(MAX_UPLOAD_BYTES + 1)``
+    guard can *never* produce this 413: it only ever sees the tiny real
+    body (a few bytes, nowhere near MAX_UPLOAD_BYTES), and no multipart
+    parsing happens here at all, so that guard cannot even run. The
+    only component in the stack capable of rejecting this request
+    before FastAPI's routing/dependency resolution is
+    ContentLengthLimitMiddleware's declared-Content-Length precheck --
+    so a 413 here is proof the middleware is live on the real app.
+    """
+    huge_declared_length = MAX_UPLOAD_BYTES + _MULTIPART_FRAMING_ALLOWANCE_BYTES + 1
+    tiny_real_body = b"tiny-body-nowhere-near-the-declared-length"
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/sessions",
+            headers={"content-length": str(huge_declared_length)},
+            content=tiny_real_body,
+        )
+
+    assert response.status_code == 413
+    assert str(MAX_UPLOAD_BYTES) in response.text
 
 
 def test_missing_content_length_passes_through_as_accepted_residual_gap() -> None:
