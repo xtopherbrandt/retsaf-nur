@@ -299,6 +299,30 @@ def test_adjacent_bursts_of_unequal_length_both_flagged() -> None:
     assert rr_reconstruction.valid_fraction(intervals) == 20 / 30
 
 
+def test_three_adjacent_bursts_of_varying_length_all_flagged() -> None:
+    # Sprint-002 re-review, Stage 4.6 adversarial critic finding on
+    # commit 12bb6ba's local-dominance fix: three (or more) artefact
+    # bursts of different lengths back-to-back defeat a "longer than
+    # both immediate neighbours" check, because a *middle* burst can
+    # be taller than the shorter bursts flanking it -- a local length
+    # maximum -- without being anywhere near genuine baseline. The
+    # walk stopped there, read the true baseline further out as
+    # "materially different", and left the two outer bursts
+    # unflagged. Reproduced directly: only the middle 5-beat burst was
+    # flagged; the two 3-beat outer bursts (11 artefact beats total)
+    # were not.
+    intervals = _from_ms(
+        [800.0] * 20 + [1600.0] * 3 + [400.0] * 5 + [1600.0] * 3 + [800.0] * 20
+    )
+
+    assert len(intervals) == 51
+    assert (
+        _artefact_flags(intervals)
+        == [False] * 20 + [True] * 11 + [False] * 20
+    )
+    assert rr_reconstruction.valid_fraction(intervals) == 40 / 51
+
+
 def test_artefact_criterion_does_not_disturb_real_chest_strap_fixture() -> None:
     # Regression guard: the new criterion must leave the working path on
     # real data essentially unchanged (T024 flagged 22 of 7220).

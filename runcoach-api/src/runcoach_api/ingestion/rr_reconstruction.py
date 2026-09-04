@@ -29,17 +29,22 @@ step-down -- and is deliberately not flagged.
 
 **Chained baseline resolution (T037).** The transition-into/out-of-a-run
 test above assumed a burst's immediate neighbour is genuine baseline.
-Two bursts of *different* character sitting back-to-back (a
-doubled-beat run immediately followed by a halved-beat run, no healthy
-beats between -- an electrode dry-out / strap-slip signature) breaks
-that assumption: each burst's immediate neighbour is the *other*
-burst, so both read as "the level never returns" and neither gets
-flagged -- a sprint-002 re-review adversarial-critic finding, reported
-``valid_fraction`` 1.0 against a true ~0.714, worse than the bug T030
-itself fixed. ``_find_baseline_index`` walks past any run no longer
-than the run being classified to find baseline beyond both bursts
-instead of stopping at the immediate neighbour. See F003's Decision
-Log, 2026-09-04.
+Two (or more) bursts sitting back-to-back break that assumption: each
+burst's immediate neighbour is another burst, not baseline, so a
+pairwise comparison reads the pair as "the level never returns" and
+neither gets flagged -- a sprint-002 re-review adversarial-critic
+finding, reported ``valid_fraction`` 1.0 against a true ~0.714, worse
+than the bug T030 itself fixed. Two follow-up rounds (Stage 0
+code-review, then a second adversarial-critic pass) found that
+stopping at the first run merely longer than the run being classified,
+and then at the first run longer than *both* its own immediate
+neighbours, both still stop early inside a chain of three or more
+bursts of varying length. ``_find_baseline_index`` now scans the
+*entire* remainder of the series in each direction and returns the
+single longest run found -- the run most plausibly representing
+established baseline, regardless of how many bursts of whatever shape
+sit between it and the run being classified. See F003's Decision Log,
+2026-09-04.
 
 ``rr_source`` vs ``rr_carrier``. Spec §2.2.3 defines ``rr_source`` as a
 fixed **tier** enum (``chest_strap_ecg`` / ``overnight_ppg`` /
@@ -291,54 +296,39 @@ def _is_shorter_than_its_neighbours(
     return all(lengths[position] < lengths[other] for other in neighbours)
 
 
-def _is_locally_dominant(lengths: list[int], index: int) -> bool:
-    """A run is baseline-eligible when it is longer than every
-    immediate neighbour it has -- both, if interior; its one
-    neighbour, if at a series boundary -- i.e. a local length
-    maximum.
-
-    Sprint-002 re-review, Stage 0 code-review finding on T037's first
-    cut of ``_find_baseline_index``: stopping at the first run merely
-    *longer than the run being classified* is wrong when that run is
-    itself a burst that happens to be longer than an even-shorter
-    neighbouring burst (baseline-burstA(6)-burstB(4)-baseline: from
-    burstB's side, burstA is "longer than 4" but is not baseline).
-    Requiring a local maximum instead of a relative-to-origin
-    comparison means the walk only stops at a run nothing beside it
-    exceeds -- genuine baseline, not another burst that merely
-    out-sizes a shorter one.
-    """
-    has_left = index > 0
-    has_right = index < len(lengths) - 1
-    if has_left and lengths[index] <= lengths[index - 1]:
-        return False
-    if has_right and lengths[index] <= lengths[index + 1]:
-        return False
-    return True
-
-
 def _find_baseline_index(lengths: list[int], position: int, step: int) -> int | None:
-    """Walk from ``position`` in direction ``step`` (+1 or -1) past any
-    run that is not locally dominant (see ``_is_locally_dominant``) --
-    itself plausibly part of the same burst zone -- to the nearest run
-    that is, i.e. established baseline. Returns ``None`` if the walk
-    exits the series without finding one.
+    """The index of the *longest* run strictly beyond ``position`` in
+    direction ``step`` (+1 or -1) -- the run most plausibly
+    representing established baseline in that direction. Returns
+    ``None`` when there is nothing beyond ``position`` that way (a
+    series boundary).
 
-    T037: two adjacent bursts of different character (a doubled-beat
-    run immediately followed by a halved-beat run, no healthy beats
-    between) each have the *other* burst as their immediate neighbour,
-    not genuine baseline. Comparing only the immediate neighbour's
-    level reads that pairing as a sustained change and neither burst
-    gets flagged. Chaining past every non-dominant run finds the real
-    baseline beyond both bursts instead, regardless of how the bursts'
-    own lengths compare to each other.
+    T037 + two rounds of sprint-002 re-review critic/code-review
+    findings converge on this: neither "the immediate neighbour"
+    (original T030 pairwise check), nor "the first run longer than the
+    run being classified", nor "the first run longer than *both* of
+    its own immediate neighbours" (a local length maximum) is
+    sufficient once three or more artefact bursts of *varying* length
+    sit back-to-back -- a middle burst can out-size the shorter bursts
+    flanking it (a local maximum) while still being nowhere near
+    genuine baseline further out, and the walk would stop there.
+    Scanning the *entire* remainder of the series in one direction and
+    keeping the single longest run found is what "the prevailing level
+    is what surrounds it" (``_is_shorter_than_its_neighbours``'s
+    docstring) actually means: no chain of bursts, however shaped, can
+    out-run genuine baseline's length without itself becoming
+    implausible as a burst by the same length-extent principle applied
+    everywhere else in this module.
     """
+    best_index: int | None = None
+    best_length = -1
     index = position + step
     while 0 <= index < len(lengths):
-        if _is_locally_dominant(lengths, index):
-            return index
+        if lengths[index] > best_length:
+            best_length = lengths[index]
+            best_index = index
         index += step
-    return None
+    return best_index
 
 
 def _burst_run_indices(values: list[float]) -> set[int]:
