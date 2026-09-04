@@ -5,8 +5,11 @@ session's ``Record`` stream. "Smart recording" devices only emit a
 sample when something changes, so consecutive samples aren't reliably
 1s apart. This gate:
 
+- Classifies ``session.recording_interval`` as the spec 2.2.3
+  descriptor ``1hz`` / ``smart`` / ``irregular``, using spec 2.4.1
+  step 1's *predominance* rule (T031) -- not a single stray gap.
 - Flags ``"smart_recording"`` on ``session.quality_flags`` (once) when
-  any consecutive gap isn't exactly 1s.
+  that verdict isn't ``1hz``.
 - Linearly interpolates onto a uniform 1s grid for gaps of <=5s,
   inserting synthetic ``Record``s tagged ``"interpolated"`` in their
   ``sample_quality``.
@@ -26,6 +29,27 @@ from runcoach_api.models import Record
 
 _GAP_TOLERANCE = 1e-6
 _MAX_INTERPOLATION_GAP_S = 5
+
+# T031 / spec 2.4.1 step 1: "Uniform ~1s spacing -> 1hz. *Predominantly*
+# larger, irregular gaps -> smart/irregular." The predominance rule needs
+# a numeric cut-off the spec does not fix, so this is a spec-introduced
+# implementation default (recorded in F003's Decision Log), mirroring how
+# 2.4.1 frames its own 5s gap threshold: tunable, not an open scientific
+# question.
+#
+# A stream is 1hz when at least this fraction of its consecutive
+# timestamp deltas are ~1s. 0.95 sits in a very wide empty band: the real
+# Garmin 1Hz corpus tops out at 0.102% non-1s deltas (2 of 1960 in
+# chest_strap_run.fit -- one 81s auto-pause, one 11s dropout), while a
+# genuinely smart-recorded stream only emits a sample when a value
+# changes and so is nowhere near 95% 1s-spaced. Isolated auto-pauses and
+# dropouts are already handled per-sample as ``interpolation_gap``; the
+# session-level verdict must not be decided by them.
+_UNIFORM_1HZ_MIN_FRACTION = 0.95
+
+_RECORDING_INTERVAL_1HZ = "1hz"
+_RECORDING_INTERVAL_SMART = "smart"
+_RECORDING_INTERVAL_IRREGULAR = "irregular"
 
 # T028: wrist-PPG cadence-lock detection thresholds.
 _CADENCE_LOCK_HR_TOLERANCE_BPM = 3
@@ -119,30 +143,60 @@ def _flag_gps_degraded(records: list[Record]) -> None:
             record.sample_quality.append("gps_degraded")
 
 
-def _resample_and_flag_smart_recording(session, records: list[Record]) -> list[Record]:
-    """Detect smart-recording (non-uniform ``t`` spacing) and resample onto a
-    uniform 1s grid.
+def _classify_recording_interval(deltas: list[float]) -> str:
+    """Apply spec 2.4.1 step 1's *predominance* rule to the consecutive
+    ``t`` deltas of a record stream.
 
-    Flags ``"smart_recording"`` on ``session.quality_flags`` (once) as soon
-    as any consecutive gap isn't exactly 1s -- detected inline during the
-    single resampling pass below rather than via a separate upfront scan.
-    Gaps of <=5s are linearly interpolated onto 1s-spaced synthetic
-    records tagged ``"interpolated"``; gaps >5s are left unfilled (never
+    - At least ``_UNIFORM_1HZ_MIN_FRACTION`` of deltas ~1s -> ``1hz``.
+      Isolated auto-pauses/dropouts don't demote the session.
+    - Otherwise the stream is non-uniform. If most of its non-1s gaps are
+      still inside the ``_MAX_INTERPOLATION_GAP_S`` interpolation ceiling
+      it looks like smart recording (the device skipping unchanged
+      samples) -> ``smart``; if they predominantly exceed that ceiling the
+      stream is fragmented beyond what resampling can honestly fill ->
+      ``irregular``.
+    """
+    uniform = sum(1 for d in deltas if abs(d - 1) <= _GAP_TOLERANCE)
+    if uniform >= _UNIFORM_1HZ_MIN_FRACTION * len(deltas):
+        return _RECORDING_INTERVAL_1HZ
+
+    non_uniform_gaps = [d for d in deltas if abs(d - 1) > _GAP_TOLERANCE]
+    unfillable = sum(1 for d in non_uniform_gaps if d > _MAX_INTERPOLATION_GAP_S)
+    if unfillable * 2 > len(non_uniform_gaps):
+        return _RECORDING_INTERVAL_IRREGULAR
+    return _RECORDING_INTERVAL_SMART
+
+
+def _resample_and_flag_smart_recording(session, records: list[Record]) -> list[Record]:
+    """Detect smart-recording (non-uniform ``t`` spacing), classify the
+    session's ``recording_interval`` and resample onto a uniform 1s grid.
+
+    Sets ``session.recording_interval`` to the spec 2.2.3 descriptor
+    (``1hz`` / ``smart`` / ``irregular``) via the predominance rule in
+    ``_classify_recording_interval``, and flags ``"smart_recording"`` on
+    ``session.quality_flags`` (once) when the verdict isn't ``1hz`` -- a
+    single stray gap in an otherwise 1Hz file no longer down-weights the
+    whole session.
+
+    Resampling itself is unconditional and unchanged by the verdict: gaps
+    of <=5s are linearly interpolated onto 1s-spaced synthetic records
+    tagged ``"interpolated"``; gaps >5s are left unfilled (never
     fabricating data across a real recording outage) and the record
     immediately after the gap is tagged ``"interpolation_gap"`` instead.
     """
     ordered = sorted(records, key=lambda r: r.t)
 
+    session.recording_interval = _classify_recording_interval(
+        [after.t - before.t for before, after in zip(ordered, ordered[1:])]
+    )
+
     resampled: list[Record] = [ordered[0]]
-    non_uniform = False
     for before, after in zip(ordered, ordered[1:]):
         delta = after.t - before.t
 
         if abs(delta - 1) <= _GAP_TOLERANCE:
             resampled.append(after)
             continue
-
-        non_uniform = True
 
         if delta > _MAX_INTERPOLATION_GAP_S:
             # Don't fabricate data across a real gap -- just flag the
@@ -158,7 +212,10 @@ def _resample_and_flag_smart_recording(session, records: list[Record]) -> list[R
             resampled.append(_interpolated_record(before, after, before.t + step))
         resampled.append(after)
 
-    if non_uniform and "smart_recording" not in session.quality_flags:
+    if (
+        session.recording_interval != _RECORDING_INTERVAL_1HZ
+        and "smart_recording" not in session.quality_flags
+    ):
         session.quality_flags.append("smart_recording")
 
     return resampled
@@ -202,6 +259,11 @@ def apply(session, records) -> None:
         session.hr_source = "wrist_ppg"
 
     if len(records) < 2:
+        # No consecutive delta exists, so no spacing can be observed.
+        # Report the non-permissive verdict rather than claiming 1hz:
+        # 2.4.1's output gates whether uniform-sampling metrics may run,
+        # and they cannot meaningfully run on a 0/1-sample stream.
+        session.recording_interval = _RECORDING_INTERVAL_IRREGULAR
         return
 
     records[:] = _resample_and_flag_smart_recording(session, records)

@@ -25,7 +25,10 @@ class Session:
     athlete_id: str | None = None
     activity_tag: str | None = None
     source_device: str | None = None
-    recording_interval: float | None = None
+    # §2.2.3 descriptor, not a numeric period: "1hz" / "smart" /
+    # "irregular", set by the recording-mode gate (§2.4.1). Matches the
+    # TEXT column in db.py's sessions DDL.
+    recording_interval: str | None = None
     hr_source: str | None = None
     # Surviving-beat fraction of the reconstructed RR series (§2.2.3,
     # §2.4.3). None when the session carries no RR stream at all --

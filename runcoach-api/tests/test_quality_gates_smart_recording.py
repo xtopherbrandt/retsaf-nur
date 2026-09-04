@@ -111,6 +111,81 @@ def test_apply_mutates_the_same_list_object_passed_in() -> None:
     assert [r.t for r in original_list_object] == [0.0, 1.0, 2.0, 3.0, 4.0]
 
 
+def test_uniform_1s_stream_is_classified_1hz() -> None:
+    session = _session()
+    records = [Record(t=float(i)) for i in range(10)]
+
+    quality_gates.apply(session, records)
+
+    assert session.recording_interval == "1hz"
+
+
+def test_predominantly_irregular_stream_classifies_smart_and_resamples() -> None:
+    """A genuine smart-recorded stream: (almost) no 1s deltas, gaps all
+    inside the 5s interpolation ceiling. Must classify ``smart``, raise
+    the flag, and resample onto the full 1s grid exactly as before.
+    """
+    session = _session()
+    ts = [0.0, 3.0, 7.0, 10.0, 14.0, 17.0, 21.0, 24.0]
+    records = [Record(t=t, heart_rate=100.0 + t) for t in ts]
+
+    quality_gates.apply(session, records)
+
+    assert session.recording_interval == "smart"
+    assert "smart_recording" in session.quality_flags
+    assert [r.t for r in records] == [float(i) for i in range(25)]
+    assert not any("interpolation_gap" in r.sample_quality for r in records)
+    # Every synthetic point is tagged; every real sample is untouched.
+    real = set(ts)
+    for record in records:
+        expected = [] if record.t in real else ["interpolated"]
+        assert record.sample_quality == expected
+
+
+def test_predominantly_unfillable_gaps_classify_irregular() -> None:
+    session = _session()
+    records = [Record(t=t) for t in (0.0, 10.0, 20.0, 30.0, 41.0)]
+
+    quality_gates.apply(session, records)
+
+    assert session.recording_interval == "irregular"
+    assert "smart_recording" in session.quality_flags
+    assert [r.t for r in records] == [0.0, 10.0, 20.0, 30.0, 41.0]
+
+
+def test_isolated_long_gap_in_a_1hz_stream_stays_1hz_but_still_marks_the_gap() -> None:
+    """The `chest_strap_run.fit` shape: ~2000 1s samples with a single
+    81s auto-pause. Per-sample ``interpolation_gap`` handling is
+    unchanged, but the session-level verdict stays ``1hz``.
+    """
+    session = _session()
+    ts = [float(i) for i in range(200)] + [float(280 + i) for i in range(200)]
+    records = [Record(t=t) for t in ts]
+
+    quality_gates.apply(session, records)
+
+    assert session.recording_interval == "1hz"
+    assert "smart_recording" not in session.quality_flags
+    assert [r.t for r in records] == ts
+    by_t = {r.t: r for r in records}
+    assert "interpolation_gap" in by_t[280.0].sample_quality
+    assert sum("interpolation_gap" in r.sample_quality for r in records) == 1
+
+
+def test_isolated_short_gap_in_a_1hz_stream_stays_1hz_but_is_still_interpolated() -> None:
+    session = _session()
+    ts = [float(i) for i in range(200)] + [float(202 + i) for i in range(200)]
+    records = [Record(t=t, heart_rate=120.0) for t in ts]
+
+    quality_gates.apply(session, records)
+
+    assert session.recording_interval == "1hz"
+    assert "smart_recording" not in session.quality_flags
+    by_t = {r.t: r for r in records}
+    assert by_t[200.0].sample_quality == ["interpolated"]
+    assert by_t[201.0].sample_quality == ["interpolated"]
+
+
 def test_flag_not_duplicated_across_multiple_gaps() -> None:
     session = _session()
     records = [
