@@ -40,7 +40,7 @@ _MAX_INTERPOLATION_GAP_S = 5
 # A stream is 1hz when at least this fraction of its consecutive
 # timestamp deltas are ~1s. 0.95 sits in a very wide empty band: the real
 # Garmin 1Hz corpus tops out at 0.102% non-1s deltas (2 of 1960 in
-# chest_strap_run.fit -- one 81s auto-pause, one 11s dropout), while a
+# wrist_ppg_run.fit -- one 81s auto-pause, one 11s dropout), while a
 # genuinely smart-recorded stream only emits a sample when a value
 # changes and so is nowhere near 95% 1s-spaced. Isolated auto-pauses and
 # dropouts are already handled per-sample as ``interpolation_gap``; the
@@ -114,6 +114,13 @@ def _flag_cadence_lock_runs(records: list[Record]) -> None:
     ``heart_rate`` stays within ``_CADENCE_LOCK_HR_TOLERANCE_BPM`` of
     ``cadence`` -- a known wrist-PPG artefact where the sensor locks
     onto cadence instead of true heart rate.
+
+    Callers must scope this to wrist-only sessions (spec §2.4.2 step 3:
+    "On a wrist-only session, where reported HR stays within ±3 bpm of
+    step rate...") -- see ``apply()``'s ``hr_source`` gate. A
+    chest-strap session's HR happening to sit on the same number as
+    cadence is not this artefact and must not be masked by it (T034
+    item 1).
     """
     run_start: int | None = None
     for i, record in enumerate(records):
@@ -231,6 +238,22 @@ def _smooth_altitude(records: list[Record]) -> None:
     contribute to neighboring windows. A stream too short to extend a
     window (handled by ``apply()``'s existing <2-record early return)
     is a no-op.
+
+    T034 item 4: the raw measured value is overwritten in place with
+    no record that smoothing happened, so any sample this actually
+    averaged (i.e. its window included more than just itself) is
+    tagged ``"altitude_smoothed"`` in ``sample_quality`` -- making the
+    transformation visible downstream (e.g. E003's GAP, which consumes
+    this stream) rather than indistinguishable from a raw measurement.
+    A window that resolves to a single contributing value (no non-None
+    neighbor) is a true no-op and stays untagged.
+
+    Does not flag suspected barometric drift (spec §2.4.4's other
+    altitude-gate clause) -- deferred, not implemented; see F003's
+    Decision Log, 2026-09-03 "T034 item 5" entry for why (§2.4.4 names
+    the drift phenomenon but fixes no detection rule/threshold to
+    implement against, and no fixture in this repo's corpus exhibits
+    real multi-hour barometric drift to validate one against).
     """
     half = _ALTITUDE_SMOOTHING_WINDOW // 2
     n = len(records)
@@ -242,6 +265,8 @@ def _smooth_altitude(records: list[Record]) -> None:
         hi = min(n, i + half + 1)
         window_values = [v for v in original[lo:hi] if v is not None]
         record.altitude = sum(window_values) / len(window_values)
+        if len(window_values) > 1 and "altitude_smoothed" not in record.sample_quality:
+            record.sample_quality.append("altitude_smoothed")
 
 
 def apply(session, records) -> None:
@@ -269,8 +294,16 @@ def apply(session, records) -> None:
     records[:] = _resample_and_flag_smart_recording(session, records)
 
     # T028: independent cadence-lock sub-check, run over the final
-    # (post-resampling) ~1Hz record stream.
-    _flag_cadence_lock_runs(records)
+    # (post-resampling) ~1Hz record stream. Scoped to wrist-only
+    # sessions per spec §2.4.2 step 3 -- a chest-strap session (gold-
+    # standard HR) whose reported HR happens to sit on the same number
+    # as cadence is not the wrist-PPG artefact this gate exists to
+    # catch (T034 item 1). ``hr_source`` is already resolved by this
+    # point: mapping.py's chest-strap RR detection runs before
+    # quality_gates.apply(), and the default above only fills in
+    # "wrist_ppg" when it wasn't already set.
+    if session.hr_source == "wrist_ppg":
+        _flag_cadence_lock_runs(records)
 
     # T029: independent GPS-degraded flag + altitude-smoothing
     # sub-check, run over the same final record stream.

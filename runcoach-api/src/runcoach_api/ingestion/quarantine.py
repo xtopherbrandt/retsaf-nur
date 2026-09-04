@@ -15,12 +15,15 @@ Currently registered:
 - ``session.total_training_effect`` / ``total_anaerobic_training_effect``
   -- Garmin's proprietary Training Effect scores, confirmed present
   with real non-null values (2.8 / 0.0) in
-  ``tests/fixtures/chest_strap_run.fit``.
+  ``tests/fixtures/wrist_ppg_run.fit``.
 - ``session.avg_stress`` -- Garmin's proprietary stress score
   ("stress score" is a named §2.3.6 quarantine item), confirmed
-  non-null in ``tests/fixtures/sample_health_snapshot.fit`` (19) and
-  ``tests/fixtures/T024_chest_strap_HRV.fit`` (14). Profile-resolved
-  (``session`` field 195), not an ``unknown_NNN`` guess.
+  non-null (19) in ``tests/fixtures/sample_health_snapshot.fit``.
+  Profile-resolved (``session`` field 195), not an ``unknown_NNN``
+  guess. (Previously also cited against
+  ``tests/fixtures/T024_chest_strap_HRV.fit``, deleted per T034 item 7
+  -- it carried zero ``hrv`` messages despite its name and was
+  referenced by no test.)
 
 Additional vendor-derived fields can be added to
 ``_VENDOR_DERIVED_FIELDS`` below once their semantics are confirmed

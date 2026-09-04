@@ -5,11 +5,12 @@ Own file per T024's task notes (not shared with any other test file).
 ``dev_fields_run.fit`` is the only fixture in this repo's corpus that
 carries ``hrv`` (#78) messages -- confirmed via a one-off ``fitdecode``
 inspection: 3127 ``hrv`` messages with real beat-to-beat ``time``
-arrays like ``(0.641, 0.634, None, None, None)``. Despite their names,
-neither ``chest_strap_run.fit`` nor ``T024_chest_strap_HRV.fit``
-contains any ``hrv`` message or RR-bearing developer field, so the
+arrays like ``(0.641, 0.634, None, None, None)``. ``wrist_ppg_run.fit``
+(renamed from ``chest_strap_run.fit`` per T034 item 7 -- its real data
+carries no ``hrv`` message and no RR-bearing developer field, so the
+old name was misleading) contains no RR carrier at all, so the
 hrv-carrier path is exercised against ``dev_fields_run.fit``'s real
-``fitdecode`` output and ``chest_strap_run.fit`` covers the
+``fitdecode`` output and ``wrist_ppg_run.fit`` covers the
 legitimate "no RR carrier present" case its real data actually is.
 
 The developer-field carrier has no real fixture to test against (no
@@ -34,7 +35,7 @@ import fitdecode
 from runcoach_api.ingestion import fit_parser, mapping, rr_reconstruction
 
 HRV_FIXTURE = Path(__file__).parent / "fixtures" / "dev_fields_run.fit"
-NO_RR_FIXTURE = Path(__file__).parent / "fixtures" / "chest_strap_run.fit"
+NO_RR_FIXTURE = Path(__file__).parent / "fixtures" / "wrist_ppg_run.fit"
 
 
 def _raw(path: Path) -> bytes:
@@ -99,9 +100,9 @@ def test_hr_source_set_to_chest_strap_when_rr_data_present() -> None:
 
 
 def test_no_rr_carrier_present_returns_empty_list_on_real_fixture() -> None:
-    # chest_strap_run.fit is a real Garmin export that, despite its
-    # name, carries no hrv message and no RR developer field --
-    # reconstruct() must not fabricate data, just return [].
+    # wrist_ppg_run.fit is a real Garmin export that carries no hrv
+    # message and no RR developer field -- reconstruct() must not
+    # fabricate data, just return [].
     messages = fit_parser.decode(_raw(NO_RR_FIXTURE))
 
     assert rr_reconstruction.reconstruct(messages) == []

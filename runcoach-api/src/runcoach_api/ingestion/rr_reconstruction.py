@@ -321,7 +321,7 @@ def reconstruct(messages: list[fitdecode.FitDataMessage]) -> list[RRInterval]:
     Returns ``[]`` when no carrier has any RR data -- a real,
     non-error outcome for a chest-strap-worn device whose FIT export
     doesn't include beat-to-beat data (this repo's own
-    ``chest_strap_run.fit`` fixture is exactly such a case).
+    ``wrist_ppg_run.fit`` fixture is exactly such a case).
     """
     candidates = _collect_candidates(messages)
     if not candidates:

@@ -18,6 +18,7 @@ from runcoach_api import db
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
+    MissingSportError,
     NotAFitFileError,
     OversizedUploadError,
 )
@@ -65,6 +66,23 @@ def test_fit_parse_failure_maps_to_400(monkeypatch) -> None:
         response = _post_fit(client)
 
     assert response.status_code == 400
+
+
+def test_missing_sport_maps_to_400(monkeypatch) -> None:
+    """T034 item 2: a file with no session/sport message must not
+    reach db.persist and surface as an unhandled 500 -- MissingSportError
+    maps to a clean 400."""
+
+    def raise_it(raw: bytes):
+        raise MissingSportError("no session or sport message found")
+
+    monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
+
+    with TestClient(app) as client:
+        response = _post_fit(client)
+
+    assert response.status_code == 400
+    assert "Traceback" not in response.text
 
 
 def test_duplicate_session_maps_to_409(monkeypatch) -> None:

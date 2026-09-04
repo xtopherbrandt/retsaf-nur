@@ -82,6 +82,21 @@ def test_cadence_lock_not_flagged_below_30_consecutive_records() -> None:
     assert all(r.sample_quality == [] for r in records)
 
 
+def test_cadence_lock_not_flagged_on_chest_strap_session() -> None:
+    """T034 item 1: spec §2.4.2 step 3 scopes the cadence-lock check to
+    "on a wrist-only session" -- a chest-strap session (gold-standard
+    HR) reporting HR that happens to sit on the same number as step
+    rate is not the wrist-PPG artefact this gate exists to catch, and
+    must not be masked in downstream decoupling/load logic.
+    """
+    session = _session(hr_source="chest_strap")
+    locked = [Record(t=float(i), heart_rate=150, cadence=148) for i in range(32)]
+
+    quality_gates.apply(session, locked)
+
+    assert all(r.sample_quality == [] for r in locked)
+
+
 def test_cadence_lock_run_exactly_at_threshold_is_flagged() -> None:
     session = _session()
     # Exactly 30 consecutive matching records -- the boundary case for

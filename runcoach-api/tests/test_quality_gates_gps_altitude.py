@@ -96,6 +96,41 @@ def test_single_record_stream_altitude_unchanged() -> None:
     assert records[0].altitude == 100.0
 
 
+def test_smoothed_altitude_samples_are_flagged_altitude_smoothed() -> None:
+    """T034 item 4: the raw barometric sample is overwritten in place
+    with no marker that smoothing occurred -- E003's GAP consumes this
+    smoothed value, and without a flag there is no way to tell a
+    smoothed sample from a genuinely-measured one, or recompute if the
+    3-sample window proves wrong, without re-ingesting.
+    """
+    session = _session()
+    raw = [100.0, 150.0, 101.0, 102.0, 99.0]
+    records = [Record(t=float(i), altitude=alt) for i, alt in enumerate(raw)]
+
+    quality_gates.apply(session, records)
+
+    assert all("altitude_smoothed" in r.sample_quality for r in records)
+
+
+def test_altitude_smoothed_flag_not_added_when_no_neighbor_contributes() -> None:
+    """An isolated altitude sample with no non-None neighbor in its
+    window is a smoothing no-op -- it must not be flagged as smoothed
+    when nothing actually changed."""
+    session = _session()
+    records = [
+        Record(t=0.0, altitude=100.0, heart_rate=140.0),
+        Record(t=1.0, altitude=None, heart_rate=141.0),
+        Record(t=2.0, altitude=None, heart_rate=142.0),
+        Record(t=3.0, altitude=None, heart_rate=143.0),
+        Record(t=4.0, altitude=99.0, heart_rate=144.0),
+    ]
+
+    quality_gates.apply(session, records)
+
+    assert "altitude_smoothed" not in records[0].sample_quality
+    assert "altitude_smoothed" not in records[4].sample_quality
+
+
 def test_gps_degraded_true_on_two_record_stream_altitude_still_smoothed_noop_when_flat() -> None:
     """Sanity check that the two independent sub-checks don't interfere
     with each other on a small stream."""

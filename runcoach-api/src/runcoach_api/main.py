@@ -4,6 +4,7 @@ from runcoach_api import __version__, db
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
+    MissingSportError,
     NotAFitFileError,
     OversizedUploadError,
 )
@@ -40,6 +41,8 @@ def create_session(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(400, f"not a valid FIT file: {exc}") from exc
     except FitParseFailure as exc:
         raise HTTPException(400, f"file could not be parsed: {exc}") from exc
+    except MissingSportError as exc:
+        raise HTTPException(400, f"sport could not be determined: {exc}") from exc
     except DuplicateSessionError as exc:
         raise HTTPException(
             409, f"already ingested as session {exc.existing_session_id}"

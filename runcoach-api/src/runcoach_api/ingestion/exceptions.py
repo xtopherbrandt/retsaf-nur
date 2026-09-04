@@ -30,3 +30,16 @@ class DuplicateSessionError(Exception):
 
 class OversizedUploadError(Exception):
     """Raised when the upload exceeds the configured size limit."""
+
+
+class MissingSportError(Exception):
+    """Raised when no ``sport`` can be determined from the FIT file.
+
+    ``sessions.sport`` is ``NOT NULL`` (spec §2.2.1 enum field); a file
+    with neither a ``session`` nor a ``sport`` message (e.g. a watch
+    that died mid-activity) leaves ``mapping.to_canonical`` with no
+    value to map. Raised in ``mapping.py`` -- before a ``Session`` with
+    an invalid ``sport`` is ever constructed -- rather than letting the
+    ``NOT NULL`` violation surface at ``db.persist`` time as an
+    unhandled 500 (T034 item 2).
+    """

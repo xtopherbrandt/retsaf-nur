@@ -34,7 +34,7 @@ from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_RUN = FIXTURES / "sample_run.fit"
-CHEST_STRAP_RUN = FIXTURES / "chest_strap_run.fit"
+WRIST_PPG_RUN = FIXTURES / "wrist_ppg_run.fit"
 
 
 def _ingest_into_fresh_db(
@@ -68,7 +68,7 @@ def test_two_different_real_fixtures_get_different_session_ids(
 ) -> None:
     """Determinism must not come at the cost of uniqueness per activity."""
     first = _ingest_into_fresh_db(tmp_path / "db-a", monkeypatch, SAMPLE_RUN)
-    second = _ingest_into_fresh_db(tmp_path / "db-b", monkeypatch, CHEST_STRAP_RUN)
+    second = _ingest_into_fresh_db(tmp_path / "db-b", monkeypatch, WRIST_PPG_RUN)
 
     assert first["session_id"] != second["session_id"]
 

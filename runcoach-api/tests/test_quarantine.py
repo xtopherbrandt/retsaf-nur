@@ -19,7 +19,7 @@ from runcoach_api.ingestion import fit_parser, quarantine
 from runcoach_api.main import app
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_run.fit"
-TRAINING_EFFECT_FIXTURE = Path(__file__).parent / "fixtures" / "chest_strap_run.fit"
+TRAINING_EFFECT_FIXTURE = Path(__file__).parent / "fixtures" / "wrist_ppg_run.fit"
 STRESS_FIXTURE = Path(__file__).parent / "fixtures" / "sample_health_snapshot.fit"
 
 
@@ -53,7 +53,7 @@ def test_extract_finds_training_load_peak_on_real_fixture() -> None:
 
 
 def test_extract_finds_training_effect_fields_on_real_fixture() -> None:
-    # chest_strap_run.fit's session message carries real non-null
+    # wrist_ppg_run.fit's session message carries real non-null
     # Garmin Training Effect values (verified via a one-off fitdecode
     # inspection: total_training_effect == 2.8,
     # total_anaerobic_training_effect == 0.0).
@@ -161,7 +161,7 @@ def test_canonical_get_response_never_contains_training_effect() -> None:
     with TestClient(app) as client:
         post_response = client.post(
             "/sessions",
-            files={"file": ("chest_strap_run.fit", _raw_training_effect_fixture_bytes())},
+            files={"file": ("wrist_ppg_run.fit", _raw_training_effect_fixture_bytes())},
         )
         assert post_response.status_code == 201
         session_id = post_response.json()["session_id"]

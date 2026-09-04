@@ -19,7 +19,7 @@ from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-RUNNING_FIXTURES = ("chest_strap_run.fit", "sample_run.fit", "dev_fields_run.fit")
+RUNNING_FIXTURES = ("wrist_ppg_run.fit", "sample_run.fit", "dev_fields_run.fit")
 
 
 @pytest.mark.parametrize("fixture_name", RUNNING_FIXTURES)

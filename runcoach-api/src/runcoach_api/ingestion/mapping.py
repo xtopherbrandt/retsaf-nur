@@ -56,6 +56,7 @@ import fitdecode
 
 from runcoach_api import __version__
 from runcoach_api.ingestion import rr_reconstruction
+from runcoach_api.ingestion.exceptions import MissingSportError
 from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
@@ -69,6 +70,14 @@ SEMICIRCLE_TO_DEGREES = 180 / 2**31
 # accuracy grading; this is unverified against real degraded-GPS data
 # and should be revisited once a fixture with the field populated
 # exists.
+#
+# T034 item 6 (sprint-002 review, confirmed non-blocking): flagged as
+# an invented constant with no citable source in `research/02`.
+# Accepted as-is rather than swapped for an equally-unsourced number --
+# see F003's Decision Log, 2026-09-03 "T034 item 6" entry. It stays
+# inert (0 of 10,235 real record messages across the fixture corpus
+# populate gps_accuracy at all) until a real degraded-GPS fixture
+# exists to validate against.
 _GPS_DEGRADED_ACCURACY_THRESHOLD_M = 10
 
 # Developer field name -> (Record attribute, multiplier to convert the
@@ -250,7 +259,10 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
     return "chest_strap" if rr_reconstruction.reconstruct(messages) else None
 
 
-def _build_context(unresolved_developer_fields: dict | None = None) -> Context:
+def _build_context(
+    unresolved_developer_fields: dict | None = None,
+    raw_sport_value: int | None = None,
+) -> Context:
     provenance = {
         # §2.7.2 -- direct FIT file upload via POST /sessions, no
         # Garmin Connect Developer Program partnership involved.
@@ -264,6 +276,14 @@ def _build_context(unresolved_developer_fields: dict | None = None) -> Context:
         # than silently dropped or guessed into a slot. One example
         # value per field name is enough for provenance purposes.
         provenance["unresolved_developer_fields"] = unresolved_developer_fields
+    if raw_sport_value is not None:
+        # T034 item 3 -- an FIT sport enum integer fitdecode's profile
+        # has no name for (e.g. 60) is mapped to the canonical "other"
+        # bucket (spec/references/F003-canonical-schema.md §2.2.1:
+        # sport is running/other) rather than leaking the raw vendor
+        # int into a field the schema defines as enum/string. The raw
+        # value is preserved here, never silently dropped.
+        provenance["raw_sport_value"] = raw_sport_value
     return Context(
         ingested_at=datetime.now(timezone.utc).isoformat(),
         provenance=provenance,
@@ -384,6 +404,25 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
     if sport is None and sport_msg is not None:
         sport = sport_msg.get_value("sport", fallback=None)
 
+    if sport is None:
+        # T034 item 2 -- sessions.sport is NOT NULL (spec §2.2.1); a
+        # file with neither a session nor a sport message (e.g. a watch
+        # that died mid-activity) has nothing to map. Raise here, before
+        # a Session is ever constructed, rather than letting the
+        # NOT NULL violation surface at db.persist as an unhandled 500.
+        raise MissingSportError(
+            "no session or sport message found -- cannot determine sport"
+        )
+
+    raw_sport_value: int | None = None
+    if isinstance(sport, int):
+        # T034 item 3 -- fitdecode's FIT profile has no name for this
+        # value; the canonical schema's sport enum is running/other
+        # (spec/references/F003-canonical-schema.md §2.2.1), so an
+        # unmapped raw int is not a valid value for it.
+        raw_sport_value = sport
+        sport = "other"
+
     record_msgs = by_name.get("record", [])
 
     start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
@@ -414,7 +453,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         source_device=source_device,
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
-        context=_build_context(unresolved_developer_fields),
+        context=_build_context(unresolved_developer_fields, raw_sport_value),
     )
 
     return session, records
