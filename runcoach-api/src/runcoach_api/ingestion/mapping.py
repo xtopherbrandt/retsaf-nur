@@ -49,7 +49,7 @@ canonical units and are passed through unchanged. Two conversions are
 
 from __future__ import annotations
 
-import uuid
+import hashlib
 from datetime import datetime, timezone
 
 import fitdecode
@@ -138,6 +138,50 @@ def _enhanced_or_plain(get_value_fn, base_name: str):
 # for two such uploads sharing a start_time -- a non-NULL sentinel
 # string keeps the existing db-constraint-based dedup working.
 _UNKNOWN_SOURCE_DEVICE = "unknown"
+
+# T032 -- session_id derivation. F003's Configuration section fixes the
+# derivation as (source_device, start_time), which is also the tuple the
+# UNIQUE (source_device, start_time) constraint on `sessions` already
+# dedups on; deriving the id from the same tuple makes the id itself
+# stable per activity (spec §2.2.1: "opaque string, stable"), so a
+# database rebuilt from the FIT corpus -- the normal local-first
+# recovery path -- reproduces the same ids rather than dangling every
+# decision-log reference to them.
+#
+# The DB constraint is NOT replaced by this: it stays as the race guard
+# per F003's Error Handling (a concurrent duplicate insert is caught at
+# the constraint and mapped to 409, never a check-then-insert TOCTOU).
+#
+# Hash choice: sha256 truncated to 32 hex chars, over the two fields
+# joined by a NUL byte. The separator is what stops ("ab", "c") and
+# ("a", "bc") from colliding; NUL cannot occur in either an ISO-8601
+# timestamp or a device string built from FIT profile values. sha256 is
+# not a security boundary here (nothing authenticates on this id) --
+# it is used purely as a stable, well-distributed function; 128 bits is
+# far beyond collision range for a single athlete's activity corpus.
+_SESSION_ID_HEX_LENGTH = 32
+_SESSION_ID_FIELD_SEPARATOR = b"\x00"
+
+
+def derive_session_id(source_device: str, start_time: str) -> str:
+    """The deterministic ``session_id`` for a ``(source_device, start_time)`` pair.
+
+    ``start_time`` is the canonical ISO-8601 string as stored on
+    ``sessions.start_time`` -- passing the stored form (rather than a
+    ``datetime``) keeps the id a function of exactly the values the
+    UNIQUE constraint compares, so the id and the dedup key can never
+    disagree about what "the same activity" means.
+
+    Exposed (not private) because it is the recompute path: anything
+    holding the tuple -- a rebuild, a backfill, a decision-log
+    reconciliation -- can regenerate the id without the FIT file.
+    """
+    digest = hashlib.sha256(
+        source_device.encode("utf-8")
+        + _SESSION_ID_FIELD_SEPARATOR
+        + start_time.encode("utf-8")
+    ).hexdigest()
+    return digest[:_SESSION_ID_HEX_LENGTH]
 
 
 def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str:
@@ -359,12 +403,15 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         for name, value in dev_unresolved.items():
             unresolved_developer_fields.setdefault(name, value)
 
+    start_time_iso = start_time.isoformat()
+    source_device = _build_source_device(messages)
+
     session = Session(
-        session_id=str(uuid.uuid4()),
+        session_id=derive_session_id(source_device, start_time_iso),
         sport=sport,
         source_vendor="garmin",
-        start_time=start_time.isoformat(),
-        source_device=_build_source_device(messages),
+        start_time=start_time_iso,
+        source_device=source_device,
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
         context=_build_context(unresolved_developer_fields),
