@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — Sprint 002
+## 2026-09-04 — Sprint 002: FIT File Ingestion
+
+### Added
+- **F003 — FIT File Ingestion**: parses a Garmin FIT file into a trustworthy, vendor-neutral canonical record — flagging quality issues (RR artefact bursts, GPS/altitude degradation, smart-recording gaps, wrist-PPG HR gating) instead of hiding them, and keeping vendor black-box inferences (VO2max, Training Status, Body Battery, etc.) quarantined out of the decision path. Rejects oversized, corrupt, non-FIT, and duplicate uploads. Unblocks E003–E010 (derived metrics through loop closure), which build on this canonical output.
 
 ### Changed
 - **F003 / T032 — `session_id` is now deterministic**: derived as a truncated SHA-256 over `(source_device, start_time)` — the same tuple the `UNIQUE (source_device, start_time)` constraint dedups on — instead of a random UUID. Re-ingesting the same activity into a rebuilt database now reproduces the same `session_id` (spec §2.2.1, "stable per activity"). The DB-level UNIQUE constraint is unchanged and remains the concurrent-upload race guard.
