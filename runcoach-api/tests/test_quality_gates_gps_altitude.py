@@ -96,6 +96,29 @@ def test_single_record_stream_altitude_unchanged() -> None:
     assert records[0].altitude == 100.0
 
 
+def test_single_record_stream_still_flags_gps_degraded() -> None:
+    """Sprint-002 re-review, Stage 0 code-review finding: apply()'s
+    ``len(records) < 2`` early return (needed for resampling/
+    cadence-lock, which require a delta) used to skip gps_degraded
+    flagging and altitude smoothing too, even though both operate
+    correctly on a single record on their own."""
+    session = _session()
+    records = [Record(t=0.0, gps_degraded=True)]
+
+    quality_gates.apply(session, records)
+
+    assert "gps_degraded" in records[0].sample_quality
+
+
+def test_empty_record_stream_does_not_raise() -> None:
+    session = _session()
+    records: list[Record] = []
+
+    quality_gates.apply(session, records)
+
+    assert records == []
+
+
 def test_smoothed_altitude_samples_are_flagged_altitude_smoothed() -> None:
     """T034 item 4: the raw barometric sample is overwritten in place
     with no marker that smoothing occurred -- E003's GAP consumes this
@@ -149,11 +172,18 @@ def test_gps_degraded_true_on_two_record_stream_altitude_still_smoothed_noop_whe
 
 
 def test_interpolated_record_gps_degraded_is_not_corrupted_to_a_float() -> None:
-    """Regression: gps_degraded is a boolean flag, not a continuous
-    measurement -- it must be excluded from the resampler's linear
-    interpolation (like the existing power_model exclusion) so a
-    synthetic record between two real ones never ends up with a
-    fractional (neither True/False/None) gps_degraded value.
+    """gps_degraded is a boolean flag, not a continuous measurement --
+    it must be excluded from the resampler's linear interpolation
+    (like the existing power_model exclusion) so a synthetic record
+    between two real ones never ends up with a fractional (neither
+    True/False/None) gps_degraded value.
+
+    Sprint-002 re-review, Stage 0 code-review finding: excluding it
+    from linear interpolation is not the same as leaving it unset --
+    a synthetic sample straddling a GPS-degraded stretch is itself
+    inside that stretch and must inherit the flag (conservatively, via
+    OR of its real neighbours) rather than silently reading as
+    "not degraded".
     """
     session = _session()
     # t=0,1,4 -- a 3s gap that gets filled with interpolated records.
@@ -167,4 +197,51 @@ def test_interpolated_record_gps_degraded_is_not_corrupted_to_a_float() -> None:
 
     by_t = {r.t: r for r in records}
     for synthetic_t in (2.0, 3.0):
-        assert by_t[synthetic_t].gps_degraded in (None, True, False)
+        assert by_t[synthetic_t].gps_degraded is True
+
+
+def test_interpolated_record_gps_degraded_false_when_neither_neighbor_degraded() -> None:
+    session = _session()
+    records = [
+        Record(t=0.0, altitude=100.0, gps_degraded=False),
+        Record(t=1.0, altitude=100.0, gps_degraded=False),
+        Record(t=4.0, altitude=100.0, gps_degraded=False),
+    ]
+
+    quality_gates.apply(session, records)
+
+    by_t = {r.t: r for r in records}
+    for synthetic_t in (2.0, 3.0):
+        assert by_t[synthetic_t].gps_degraded is False
+
+
+def test_interpolated_record_gps_degraded_none_when_neither_neighbor_reported() -> None:
+    session = _session()
+    records = [
+        Record(t=0.0, altitude=100.0, gps_degraded=None),
+        Record(t=1.0, altitude=100.0, gps_degraded=None),
+        Record(t=4.0, altitude=100.0, gps_degraded=None),
+    ]
+
+    quality_gates.apply(session, records)
+
+    by_t = {r.t: r for r in records}
+    for synthetic_t in (2.0, 3.0):
+        assert by_t[synthetic_t].gps_degraded is None
+
+
+def test_interpolated_record_gps_degraded_true_when_only_one_neighbor_reported_degraded() -> None:
+    """Conservative OR: one neighbour reporting True is enough to flag
+    the synthetic sample, even when the other neighbour never reported
+    gps_accuracy at all (None, not False)."""
+    session = _session()
+    records = [
+        Record(t=1.0, altitude=100.0, gps_degraded=True),
+        Record(t=4.0, altitude=100.0, gps_degraded=None),
+    ]
+
+    quality_gates.apply(session, records)
+
+    by_t = {r.t: r for r in records}
+    for synthetic_t in (2.0, 3.0):
+        assert by_t[synthetic_t].gps_degraded is True

@@ -268,7 +268,7 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
 
 def _build_context(
     unresolved_developer_fields: dict | None = None,
-    raw_sport_value: int | None = None,
+    raw_sport_value: int | str | None = None,
 ) -> Context:
     provenance = {
         # §2.7.2 -- direct FIT file upload via POST /sessions, no
@@ -285,11 +285,13 @@ def _build_context(
         provenance["unresolved_developer_fields"] = unresolved_developer_fields
     if raw_sport_value is not None:
         # T034 item 3 -- an FIT sport enum integer fitdecode's profile
-        # has no name for (e.g. 60) is mapped to the canonical "other"
-        # bucket (spec/references/F003-canonical-schema.md §2.2.1:
-        # sport is running/other) rather than leaking the raw vendor
-        # int into a field the schema defines as enum/string. The raw
-        # value is preserved here, never silently dropped.
+        # has no name for (e.g. 60), or a resolved name that isn't
+        # "running" (e.g. "cycling"), is mapped to the canonical
+        # "other" bucket (spec/references/F003-canonical-schema.md
+        # §2.2.1: sport is running/other) rather than leaking the raw
+        # vendor value into a field the schema defines as a two-value
+        # enum. The raw value is preserved here, never silently
+        # dropped.
         provenance["raw_sport_value"] = raw_sport_value
     return Context(
         ingested_at=datetime.now(timezone.utc).isoformat(),
@@ -420,12 +422,26 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
             "sport", "no session or sport message found -- cannot determine sport"
         )
 
-    raw_sport_value: int | None = None
+    raw_sport_value: int | str | None = None
     if isinstance(sport, int):
         # T034 item 3 -- fitdecode's FIT profile has no name for this
         # value; the canonical schema's sport enum is running/other
         # (spec/references/F003-canonical-schema.md §2.2.1), so an
         # unmapped raw int is not a valid value for it.
+        raw_sport_value = sport
+        sport = "other"
+    elif sport != "running":
+        # Sprint-002 re-review, Stage 0 code-review finding: only an
+        # unmapped raw int was bucketed above -- a fitdecode-resolved
+        # name fitdecode's own profile *does* have (e.g. "cycling",
+        # "hiking") passed through unchanged, and the schema's enum
+        # has no slot for it either (running/other, per the same
+        # §2.2.1 reference). Every non-"running" name is bucketed into
+        # "other" the same way an unmapped int already is, with the
+        # original name preserved in provenance rather than dropped --
+        # spec's own @should scenario: "stored with sport set
+        # accordingly... excluded from running-specific downstream
+        # computation, not rejected".
         raw_sport_value = sport
         sport = "other"
 

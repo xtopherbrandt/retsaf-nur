@@ -282,6 +282,23 @@ def test_adjacent_bursts_mirrored_halved_then_doubled_both_flagged() -> None:
     assert rr_reconstruction.valid_fraction(intervals) == 20 / 28
 
 
+def test_adjacent_bursts_of_unequal_length_both_flagged() -> None:
+    # Sprint-002 re-review, Stage 0 code-review finding on T037's own
+    # fix: _find_baseline_index stopped at the *first* longer run,
+    # which is wrong when that run is itself a burst -- a shorter
+    # burst (4 beats) directly next to a longer burst (6 beats) let
+    # the walk treat the longer burst as "baseline" (6 > 4), read the
+    # true baseline beyond it as materially different, and never flag
+    # the shorter burst. Baseline-eligibility now requires a run to be
+    # longer than *every* immediate neighbour it has (a local length
+    # maximum), not merely longer than the run being classified.
+    intervals = _from_ms([800.0] * 10 + [1600.0] * 6 + [400.0] * 4 + [800.0] * 10)
+
+    assert len(intervals) == 30
+    assert _artefact_flags(intervals) == [False] * 10 + [True] * 10 + [False] * 10
+    assert rr_reconstruction.valid_fraction(intervals) == 20 / 30
+
+
 def test_artefact_criterion_does_not_disturb_real_chest_strap_fixture() -> None:
     # Regression guard: the new criterion must leave the working path on
     # real data essentially unchanged (T024 flagged 22 of 7220).

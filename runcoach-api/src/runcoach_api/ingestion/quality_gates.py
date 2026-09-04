@@ -85,9 +85,31 @@ _INTERPOLATABLE_FIELDS = tuple(
 )
 
 
+def _interpolated_gps_degraded(before: Record, after: Record) -> bool | None:
+    """OR of the two real neighbours' ``gps_degraded`` values, ignoring
+    whichever side never reported ``gps_accuracy`` at all (``None``).
+
+    Sprint-002 re-review, Stage 0 code-review finding: excluding
+    ``gps_degraded`` from linear interpolation (see
+    ``_INTERPOLATABLE_FIELDS``) stops it being averaged into a
+    meaningless fraction, but a synthetic sample straddling a real
+    GPS-degraded stretch is itself inside that stretch -- leaving it
+    unset read as "not degraded" to any downstream consumer. OR is the
+    conservative direction (flag rather than hide, matching this
+    module's other quality gates): a sample is only left ``None`` when
+    *neither* neighbour ever reported ``gps_accuracy``.
+    """
+    known = [v for v in (before.gps_degraded, after.gps_degraded) if v is not None]
+    return any(known) if known else None
+
+
 def _interpolated_record(before: Record, after: Record, t: float) -> Record:
     fraction = (t - before.t) / (after.t - before.t)
-    values: dict[str, object] = {"t": t, "sample_quality": ["interpolated"]}
+    values: dict[str, object] = {
+        "t": t,
+        "sample_quality": ["interpolated"],
+        "gps_degraded": _interpolated_gps_degraded(before, after),
+    }
     for name in _INTERPOLATABLE_FIELDS:
         before_value = getattr(before, name)
         after_value = getattr(after, name)
@@ -302,24 +324,32 @@ def apply(session, records) -> None:
         # Report the non-permissive verdict rather than claiming 1hz:
         # 2.4.1's output gates whether uniform-sampling metrics may run,
         # and they cannot meaningfully run on a 0/1-sample stream.
+        # Resampling and the cadence-lock run-length check both need a
+        # delta, so they're skipped below -- but gps_degraded and
+        # altitude smoothing (T029) each operate on a single record
+        # already (a 0/1-sample stream is a documented no-op for both,
+        # see their own docstrings), so unlike this sprint-002
+        # re-review found them wrongly skipped alongside the interval
+        # verdict when a session has fewer than 2 records.
         session.recording_interval = _RECORDING_INTERVAL_IRREGULAR
-        return
+    else:
+        records[:] = _resample_and_flag_smart_recording(session, records)
 
-    records[:] = _resample_and_flag_smart_recording(session, records)
-
-    # T028: independent cadence-lock sub-check, run over the final
-    # (post-resampling) ~1Hz record stream. Scoped to wrist-only
-    # sessions per spec §2.4.2 step 3 -- a chest-strap session (gold-
-    # standard HR) whose reported HR happens to sit on the same number
-    # as cadence is not the wrist-PPG artefact this gate exists to
-    # catch (T034 item 1). ``hr_source`` is already resolved by this
-    # point: mapping.py's chest-strap RR detection runs before
-    # quality_gates.apply(), and the default above only fills in
-    # "wrist_ppg" when it wasn't already set.
-    if session.hr_source == "wrist_ppg":
-        _flag_cadence_lock_runs(records)
+        # T028: independent cadence-lock sub-check, run over the final
+        # (post-resampling) ~1Hz record stream. Scoped to wrist-only
+        # sessions per spec §2.4.2 step 3 -- a chest-strap session
+        # (gold-standard HR) whose reported HR happens to sit on the
+        # same number as cadence is not the wrist-PPG artefact this
+        # gate exists to catch (T034 item 1). ``hr_source`` is already
+        # resolved by this point: mapping.py's chest-strap RR
+        # detection runs before quality_gates.apply(), and the default
+        # above only fills in "wrist_ppg" when it wasn't already set.
+        if session.hr_source == "wrist_ppg":
+            _flag_cadence_lock_runs(records)
 
     # T029: independent GPS-degraded flag + altitude-smoothing
-    # sub-check, run over the same final record stream.
+    # sub-check, run over the same final record stream -- unlike the
+    # branch above, both handle a 0/1-record stream correctly on their
+    # own, so they run regardless of how many records there are.
     _flag_gps_degraded(records)
     _smooth_altitude(records)

@@ -291,11 +291,37 @@ def _is_shorter_than_its_neighbours(
     return all(lengths[position] < lengths[other] for other in neighbours)
 
 
+def _is_locally_dominant(lengths: list[int], index: int) -> bool:
+    """A run is baseline-eligible when it is longer than every
+    immediate neighbour it has -- both, if interior; its one
+    neighbour, if at a series boundary -- i.e. a local length
+    maximum.
+
+    Sprint-002 re-review, Stage 0 code-review finding on T037's first
+    cut of ``_find_baseline_index``: stopping at the first run merely
+    *longer than the run being classified* is wrong when that run is
+    itself a burst that happens to be longer than an even-shorter
+    neighbouring burst (baseline-burstA(6)-burstB(4)-baseline: from
+    burstB's side, burstA is "longer than 4" but is not baseline).
+    Requiring a local maximum instead of a relative-to-origin
+    comparison means the walk only stops at a run nothing beside it
+    exceeds -- genuine baseline, not another burst that merely
+    out-sizes a shorter one.
+    """
+    has_left = index > 0
+    has_right = index < len(lengths) - 1
+    if has_left and lengths[index] <= lengths[index - 1]:
+        return False
+    if has_right and lengths[index] <= lengths[index + 1]:
+        return False
+    return True
+
+
 def _find_baseline_index(lengths: list[int], position: int, step: int) -> int | None:
     """Walk from ``position`` in direction ``step`` (+1 or -1) past any
-    run no longer than the run being classified -- itself plausibly
-    part of the same burst -- to the nearest run that is strictly
-    longer, i.e. established baseline. Returns ``None`` if the walk
+    run that is not locally dominant (see ``_is_locally_dominant``) --
+    itself plausibly part of the same burst zone -- to the nearest run
+    that is, i.e. established baseline. Returns ``None`` if the walk
     exits the series without finding one.
 
     T037: two adjacent bursts of different character (a doubled-beat
@@ -303,16 +329,13 @@ def _find_baseline_index(lengths: list[int], position: int, step: int) -> int | 
     between) each have the *other* burst as their immediate neighbour,
     not genuine baseline. Comparing only the immediate neighbour's
     level reads that pairing as a sustained change and neither burst
-    gets flagged. Chaining past any run that isn't itself longer than
-    the run in question finds the real baseline beyond both bursts
-    instead. By construction the run returned is always longer than
-    ``lengths[position]``, so this also subsumes the old
-    "shorter than its neighbours" tie-break for the interior case.
+    gets flagged. Chaining past every non-dominant run finds the real
+    baseline beyond both bursts instead, regardless of how the bursts'
+    own lengths compare to each other.
     """
-    own_length = lengths[position]
     index = position + step
     while 0 <= index < len(lengths):
-        if lengths[index] > own_length:
+        if _is_locally_dominant(lengths, index):
             return index
         index += step
     return None

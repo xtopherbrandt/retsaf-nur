@@ -104,3 +104,22 @@ def test_named_sport_string_passes_through_unchanged() -> None:
 
     assert session.sport == "running"
     assert "raw_sport_value" not in session.context.provenance
+
+
+def test_named_non_running_sport_string_maps_to_other() -> None:
+    # Sprint-002 re-review, Stage 0 code-review finding: only an
+    # *unmapped raw int* sport value was coerced to "other" (item 3
+    # above) -- a fitdecode-resolved name fitdecode's own profile does
+    # have, like "cycling", is not an int and passed through this
+    # module unchanged, storing a value the canonical schema's sport
+    # enum (spec/references/F003-canonical-schema.md §2.2.1:
+    # running/other) has no slot for.
+    messages = [
+        _FakeMsg("session", {"sport": "cycling", "start_time": _START}),
+        _record_msg(),
+    ]
+
+    session, _records = mapping.to_canonical(messages)
+
+    assert session.sport == "other"
+    assert session.context.provenance["raw_sport_value"] == "cycling"

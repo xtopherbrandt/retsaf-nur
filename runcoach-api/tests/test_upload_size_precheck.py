@@ -139,10 +139,10 @@ def test_spoofed_oversized_content_length_is_rejected_by_real_app() -> None:
     ``ContentLengthLimitMiddleware`` behaves correctly as a bare ASGI
     callable driven directly -- none of them prove it is actually
     mounted on ``runcoach_api.main.app`` via ``app.add_middleware(...)``.
-    A future refactor (e.g. the pending ``@app.on_event`` ->
-    lifespan-handler migration main.py already carries a
-    DeprecationWarning for) could drop or reorder that
-    ``add_middleware`` call and this whole suite would stay green.
+    A future refactor (e.g. main.py's startup hook, already migrated
+    from ``@app.on_event`` to a ``lifespan`` handler once) could drop
+    or reorder that ``add_middleware`` call and this whole suite would
+    stay green.
 
     This test goes through ``TestClient(app)`` -- the real, fully
     assembled app object -- and spoofs a declared Content-Length far
