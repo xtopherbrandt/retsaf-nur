@@ -57,6 +57,19 @@ _CADENCE_LOCK_MIN_CONSECUTIVE = 30
 
 # T029: centered moving-average window (samples) for barometric
 # altitude smoothing.
+#
+# S1 (sprint-002 review): spec §2.4.4 says altitude is smoothed "before
+# grade is taken" but fixes no window size, and neither `research/02`
+# §3.4 nor `research/00` names one either (checked directly -- both
+# describe barometric drift as a phenomenon, not a smoothing-window
+# formula). Accepted as an explicit spec-introduced implementation
+# default, tunable -- not a citable formula constant -- matching the
+# treatment `_UNIFORM_1HZ_MIN_FRACTION` gives its own uncited
+# predominance cut-off above. 3 samples (~3s post-resampling) is a
+# light touch chosen to knock down single-sample barometric noise
+# spikes without smearing real short climbs/descents into the grade
+# signal. See F003's Decision Log, 2026-09-03 "S1 altitude smoothing
+# window" entry.
 _ALTITUDE_SMOOTHING_WINDOW = 3
 
 # Numeric per-sample fields eligible for linear interpolation across a

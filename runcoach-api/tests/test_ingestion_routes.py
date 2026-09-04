@@ -19,6 +19,7 @@ from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
     MissingSportError,
+    MissingStartTimeError,
     NotAFitFileError,
     OversizedUploadError,
 )
@@ -75,6 +76,24 @@ def test_missing_sport_maps_to_400(monkeypatch) -> None:
 
     def raise_it(raw: bytes):
         raise MissingSportError("no session or sport message found")
+
+    monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
+
+    with TestClient(app) as client:
+        response = _post_fit(client)
+
+    assert response.status_code == 400
+    assert "Traceback" not in response.text
+
+
+def test_missing_start_time_maps_to_400(monkeypatch) -> None:
+    """M3 (sprint-002 review): a file with no session.start_time and no
+    record timestamps must not reach db.persist with a wall-clock-derived
+    session_id and surface as a silently-nondeterministic 201 --
+    MissingStartTimeError maps to a clean 400."""
+
+    def raise_it(raw: bytes):
+        raise MissingStartTimeError("no session.start_time and no record timestamps found")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
 

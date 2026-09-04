@@ -43,3 +43,21 @@ class MissingSportError(Exception):
     ``NOT NULL`` violation surface at ``db.persist`` time as an
     unhandled 500 (T034 item 2).
     """
+
+
+class MissingStartTimeError(Exception):
+    """Raised when no ``start_time`` can be determined from the FIT file.
+
+    ``derive_session_id()`` hashes ``(source_device, start_time)`` --
+    commit 8f7e488 (T032) made ``session_id`` a deterministic function
+    of that tuple specifically so re-ingesting identical file bytes
+    always reproduces the same id, matching the
+    ``UNIQUE (source_device, start_time)`` dedup constraint. A file
+    with no ``session.start_time`` field and no ``record`` timestamps
+    (e.g. a corrupt/truncated capture) has no native value to derive
+    ``start_time`` from; falling back to ``datetime.now()`` would
+    silently reintroduce the wall-clock non-determinism T032 closed.
+    Raised in ``mapping.py`` -- before a ``Session`` is ever constructed
+    -- mirroring ``MissingSportError``'s treatment of the analogous
+    missing-sport case (T034 item 2 / sprint-002 review M3).
+    """

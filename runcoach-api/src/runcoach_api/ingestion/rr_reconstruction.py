@@ -93,6 +93,23 @@ _ARTEFACT_WINDOW = 11
 # beat (~1/2). At a series boundary only one neighbour exists, so this
 # near-integer ratio is what separates a genuine burst from a series
 # that simply starts or ends at a different level.
+#
+# M2 (sprint-002 review): neither `research/02` (checked directly --
+# §3.2 says only "filtering physiologically impossible RR jumps", no
+# ratio or tolerance) nor `research/00` names a specific
+# integer-ratio/tolerance test for missed/doubled-beat detection at a
+# series boundary, unlike the sibling constants in this module (the 20%
+# relative-jump criterion and 300-2000ms band cited to spec §2.4.3; the
+# 11-beat median window traced to Lipponen & Tarvainen 2019). (2, 3, 4)
+# covers one-missed/two-missed/three-missed-beat multiples (and their
+# reciprocals for extra beats) as the plausible small-N cases; 15%
+# tolerance is the same order of magnitude as the 20% relative-jump
+# criterion these values are applied alongside. Accepted as an explicit
+# spec-introduced implementation default, tunable -- not a citable
+# formula constant -- matching the treatment
+# `quality_gates._UNIFORM_1HZ_MIN_FRACTION` gives its own uncited
+# predominance cut-off. See F003's Decision Log, 2026-09-03 "M2
+# boundary-ratio burst constants" entry.
 _BOUNDARY_RATIO_MULTIPLES = (2, 3, 4)
 _BOUNDARY_RATIO_TOLERANCE = 0.15
 

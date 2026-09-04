@@ -56,7 +56,7 @@ import fitdecode
 
 from runcoach_api import __version__
 from runcoach_api.ingestion import rr_reconstruction
-from runcoach_api.ingestion.exceptions import MissingSportError
+from runcoach_api.ingestion.exceptions import MissingSportError, MissingStartTimeError
 from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
@@ -431,7 +431,20 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         # field, no fabrication.
         timestamps = [m.get_value("timestamp", fallback=None) for m in record_msgs]
         timestamps = [t for t in timestamps if t is not None]
-        start_time = min(timestamps) if timestamps else datetime.now(timezone.utc)
+        if not timestamps:
+            # M3 (sprint-002 review) -- neither a session.start_time nor
+            # any record timestamp exists to derive start_time from.
+            # derive_session_id() hashes (source_device, start_time); a
+            # datetime.now() fallback here would silently reintroduce the
+            # wall-clock non-determinism T032 (commit 8f7e488) closed,
+            # since re-ingesting identical bytes a second later would
+            # mint a different session_id. Raised here -- before a
+            # Session is ever constructed -- mirroring MissingSportError.
+            raise MissingStartTimeError(
+                "no session.start_time and no record timestamps found -- "
+                "cannot determine start_time"
+            )
+        start_time = min(timestamps)
 
     records: list[Record] = []
     unresolved_developer_fields: dict = {}
