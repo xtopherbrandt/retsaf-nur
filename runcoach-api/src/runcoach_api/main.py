@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
@@ -85,17 +87,18 @@ class ContentLengthLimitMiddleware:
         await self.app(scope, receive, send)
 
 
-app = FastAPI(title="Run Coaching API")
-app.add_middleware(ContentLengthLimitMiddleware, max_bytes=MAX_UPLOAD_BYTES)
-
-
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     conn = db.get_connection()
     try:
         db.init_schema(conn)
     finally:
         conn.close()
+    yield
+
+
+app = FastAPI(title="Run Coaching API", lifespan=lifespan)
+app.add_middleware(ContentLengthLimitMiddleware, max_bytes=MAX_UPLOAD_BYTES)
 
 
 @app.get("/health", response_model=HealthResponse)
