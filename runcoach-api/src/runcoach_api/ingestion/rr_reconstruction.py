@@ -27,6 +27,20 @@ can no longer serve as its own reference. A run whose level never
 returns is a sustained change -- an interval start, a recovery
 step-down -- and is deliberately not flagged.
 
+**Chained baseline resolution (T037).** The transition-into/out-of-a-run
+test above assumed a burst's immediate neighbour is genuine baseline.
+Two bursts of *different* character sitting back-to-back (a
+doubled-beat run immediately followed by a halved-beat run, no healthy
+beats between -- an electrode dry-out / strap-slip signature) breaks
+that assumption: each burst's immediate neighbour is the *other*
+burst, so both read as "the level never returns" and neither gets
+flagged -- a sprint-002 re-review adversarial-critic finding, reported
+``valid_fraction`` 1.0 against a true ~0.714, worse than the bug T030
+itself fixed. ``_find_baseline_index`` walks past any run no longer
+than the run being classified to find baseline beyond both bursts
+instead of stopping at the immediate neighbour. See F003's Decision
+Log, 2026-09-04.
+
 ``rr_source`` vs ``rr_carrier``. Spec §2.2.3 defines ``rr_source`` as a
 fixed **tier** enum (``chest_strap_ecg`` / ``overnight_ppg`` /
 ``health_snapshot_ppg`` / ``other``), and §2.3.4 step 4 says to set
@@ -277,6 +291,33 @@ def _is_shorter_than_its_neighbours(
     return all(lengths[position] < lengths[other] for other in neighbours)
 
 
+def _find_baseline_index(lengths: list[int], position: int, step: int) -> int | None:
+    """Walk from ``position`` in direction ``step`` (+1 or -1) past any
+    run no longer than the run being classified -- itself plausibly
+    part of the same burst -- to the nearest run that is strictly
+    longer, i.e. established baseline. Returns ``None`` if the walk
+    exits the series without finding one.
+
+    T037: two adjacent bursts of different character (a doubled-beat
+    run immediately followed by a halved-beat run, no healthy beats
+    between) each have the *other* burst as their immediate neighbour,
+    not genuine baseline. Comparing only the immediate neighbour's
+    level reads that pairing as a sustained change and neither burst
+    gets flagged. Chaining past any run that isn't itself longer than
+    the run in question finds the real baseline beyond both bursts
+    instead. By construction the run returned is always longer than
+    ``lengths[position]``, so this also subsumes the old
+    "shorter than its neighbours" tie-break for the interior case.
+    """
+    own_length = lengths[position]
+    index = position + step
+    while 0 <= index < len(lengths):
+        if lengths[index] > own_length:
+            return index
+        index += step
+    return None
+
+
 def _burst_run_indices(values: list[float]) -> set[int]:
     """Indices belonging to a run attributed as an artefact burst.
 
@@ -299,15 +340,20 @@ def _burst_run_indices(values: list[float]) -> set[int]:
         has_after = position < len(runs) - 1
 
         if has_before and has_after:
-            before, after = levels[position - 1], levels[position + 1]
+            before_index = _find_baseline_index(lengths, position, -1)
+            after_index = _find_baseline_index(lengths, position, 1)
+            if before_index is None or after_index is None:
+                # No established baseline on at least one side -- can't
+                # confirm a return-to-baseline, so treat conservatively
+                # as not a burst (T037).
+                continue
+            before, after = levels[before_index], levels[after_index]
             # The level must come back to where it was, otherwise this
             # transition is a sustained change, not a burst.
             if _differs_materially(after, before):
                 continue
             surrounding = (before + after) / 2
-            is_burst = _is_shorter_than_its_neighbours(
-                lengths, position, (position - 1, position + 1)
-            ) and _differs_materially(level, surrounding)
+            is_burst = _differs_materially(level, surrounding)
         else:
             # Boundary-adjacent: only one neighbour exists, so "does the
             # level return" cannot be asked. Require the neighbour to be

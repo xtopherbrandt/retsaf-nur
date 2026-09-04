@@ -256,6 +256,32 @@ def test_isolated_implausible_interval_still_artefact_by_absolute_band() -> None
     assert all(iv.is_artefact is False for iv in intervals if iv.seq != 5)
 
 
+def test_adjacent_bursts_of_different_character_both_flagged() -> None:
+    # T037: a doubled-beat burst immediately followed by a halved-beat
+    # burst, both surrounded by genuine baseline -- a plausible
+    # electrode dry-out / strap-slip signature. Each burst's immediate
+    # neighbour is the *other* burst, not baseline, so a naive
+    # immediate-neighbour comparison reads both transitions as a
+    # sustained change and flags neither (sprint-002 re-review,
+    # adversarial critic finding: reported valid_fraction 1.0 against a
+    # true ~0.714 -- worse than the bug T030 itself fixed).
+    intervals = _from_ms([800.0] * 10 + [1600.0] * 4 + [400.0] * 4 + [800.0] * 10)
+
+    assert len(intervals) == 28
+    assert _artefact_flags(intervals) == [False] * 10 + [True] * 8 + [False] * 10
+    assert rr_reconstruction.valid_fraction(intervals) == 20 / 28
+
+
+def test_adjacent_bursts_mirrored_halved_then_doubled_both_flagged() -> None:
+    # Mirror of the above: halved-beat burst immediately followed by a
+    # doubled-beat burst.
+    intervals = _from_ms([800.0] * 10 + [400.0] * 4 + [1600.0] * 4 + [800.0] * 10)
+
+    assert len(intervals) == 28
+    assert _artefact_flags(intervals) == [False] * 10 + [True] * 8 + [False] * 10
+    assert rr_reconstruction.valid_fraction(intervals) == 20 / 28
+
+
 def test_artefact_criterion_does_not_disturb_real_chest_strap_fixture() -> None:
     # Regression guard: the new criterion must leave the working path on
     # real data essentially unchanged (T024 flagged 22 of 7220).
