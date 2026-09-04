@@ -215,7 +215,7 @@ def test_unresolvable_source_device_maps_to_sentinel_not_null() -> None:
         def get_value(self, name, fallback=None):
             return fallback
 
-    result = mapping._build_source_device([_NoDeviceMsg()])
+    result = mapping._build_source_device(mapping._group_by_name([_NoDeviceMsg()]))
 
     assert result is not None
     assert isinstance(result, str)
@@ -238,7 +238,7 @@ def test_two_persists_with_unresolvable_source_device_and_same_start_time_dedup(
         def get_value(self, name, fallback=None):
             return fallback
 
-    sentinel_device = mapping._build_source_device([_NoDeviceMsg()])
+    sentinel_device = mapping._build_source_device(mapping._group_by_name([_NoDeviceMsg()]))
 
     session = Session(
         session_id="s-no-device-1",

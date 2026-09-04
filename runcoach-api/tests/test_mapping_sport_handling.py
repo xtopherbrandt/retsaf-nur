@@ -3,8 +3,9 @@
 - Item 2: a FIT file with neither a ``session`` nor a ``sport``
   message (a watch that died mid-activity) must not reach
   ``db.persist`` with ``sport=None`` and surface as an unhandled 500 --
-  ``mapping.to_canonical`` raises a typed ``MissingSportError`` before
-  a ``Session`` is even constructed.
+  ``mapping.to_canonical`` raises a typed
+  ``MissingCanonicalFieldError`` before a ``Session`` is even
+  constructed.
 - Item 3: a raw FIT ``sport`` enum integer fitdecode's profile has no
   name for (e.g. ``60``, confirmed via a one-off ``fitdecode``
   inspection of ``tests/fixtures/sample_health_snapshot.fit`` --
@@ -23,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from runcoach_api.ingestion import fit_parser, mapping
-from runcoach_api.ingestion.exceptions import MissingSportError
+from runcoach_api.ingestion.exceptions import MissingCanonicalFieldError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STRESS_FIXTURE = FIXTURES / "sample_health_snapshot.fit"
@@ -56,7 +57,8 @@ def _record_msg(timestamp=_START, **extra):
 
 
 # ---------------------------------------------------------------------------
-# Item 2: no session, no sport message -> MissingSportError, not sport=None
+# Item 2: no session, no sport message -> MissingCanonicalFieldError,
+# not sport=None
 # ---------------------------------------------------------------------------
 
 
@@ -65,8 +67,10 @@ def test_no_session_and_no_sport_message_raises_missing_sport_error() -> None:
     # session/sport roll-up message at all.
     messages = [_record_msg(heart_rate=140)]
 
-    with pytest.raises(MissingSportError):
+    with pytest.raises(MissingCanonicalFieldError) as exc_info:
         mapping.to_canonical(messages)
+
+    assert exc_info.value.field == "sport"
 
 
 # ---------------------------------------------------------------------------

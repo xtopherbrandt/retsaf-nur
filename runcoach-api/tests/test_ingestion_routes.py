@@ -18,10 +18,8 @@ from runcoach_api import db
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
-    MissingSportError,
-    MissingStartTimeError,
+    MissingCanonicalFieldError,
     NotAFitFileError,
-    OversizedUploadError,
 )
 from runcoach_api.main import app
 
@@ -71,11 +69,11 @@ def test_fit_parse_failure_maps_to_400(monkeypatch) -> None:
 
 def test_missing_sport_maps_to_400(monkeypatch) -> None:
     """T034 item 2: a file with no session/sport message must not
-    reach db.persist and surface as an unhandled 500 -- MissingSportError
-    maps to a clean 400."""
+    reach db.persist and surface as an unhandled 500 --
+    MissingCanonicalFieldError("sport", ...) maps to a clean 400."""
 
     def raise_it(raw: bytes):
-        raise MissingSportError("no session or sport message found")
+        raise MissingCanonicalFieldError("sport", "no session or sport message found")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
 
@@ -90,10 +88,12 @@ def test_missing_start_time_maps_to_400(monkeypatch) -> None:
     """M3 (sprint-002 review): a file with no session.start_time and no
     record timestamps must not reach db.persist with a wall-clock-derived
     session_id and surface as a silently-nondeterministic 201 --
-    MissingStartTimeError maps to a clean 400."""
+    MissingCanonicalFieldError("start_time", ...) maps to a clean 400."""
 
     def raise_it(raw: bytes):
-        raise MissingStartTimeError("no session.start_time and no record timestamps found")
+        raise MissingCanonicalFieldError(
+            "start_time", "no session.start_time and no record timestamps found"
+        )
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
 
@@ -115,18 +115,6 @@ def test_duplicate_session_maps_to_409(monkeypatch) -> None:
 
     assert response.status_code == 409
     assert "existing-123" in response.text
-
-
-def test_oversized_upload_maps_to_413(monkeypatch) -> None:
-    def raise_it(raw: bytes):
-        raise OversizedUploadError("file too large")
-
-    monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
-
-    with TestClient(app) as client:
-        response = _post_fit(client)
-
-    assert response.status_code == 413
 
 
 def test_unplanned_exception_does_not_leak_traceback(monkeypatch) -> None:

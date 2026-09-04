@@ -2,13 +2,13 @@
 from wall-clock time.
 
 ``to_canonical()`` requires either a ``session`` or ``sport`` message to
-determine ``sport`` (else ``MissingSportError``, T034 item 2) -- but
-does NOT require a ``session`` message to determine ``start_time``,
-since ``sport`` can come from a standalone ``sport`` message while
-``session_msg`` stays ``None``. Before this fix, that path (or any file
-with a ``session`` message present but no ``start_time`` field, and
-zero/timestamp-less ``record`` messages) fell through to
-``datetime.now(timezone.utc)``.
+determine ``sport`` (else ``MissingCanonicalFieldError("sport", ...)``,
+T034 item 2) -- but does NOT require a ``session`` message to determine
+``start_time``, since ``sport`` can come from a standalone ``sport``
+message while ``session_msg`` stays ``None``. Before this fix, that
+path (or any file with a ``session`` message present but no
+``start_time`` field, and zero/timestamp-less ``record`` messages)
+fell through to ``datetime.now(timezone.utc)``.
 
 Since ``derive_session_id()`` hashes ``(source_device, start_time)``,
 and the entire point of commit 8f7e488 ("derive session_id
@@ -19,9 +19,10 @@ non-determinism T032 closed: re-ingesting identical bytes at a
 different wall-clock second would produce a different ``session_id``
 and defeat the ``UNIQUE(source_device, start_time)`` dedup constraint.
 
-``mapping.to_canonical`` now raises ``MissingStartTimeError`` instead
-of substituting a plausible-looking wall-clock value, mirroring
-``MissingSportError``'s treatment of the analogous missing-sport gap.
+``mapping.to_canonical`` now raises
+``MissingCanonicalFieldError("start_time", ...)`` instead of
+substituting a plausible-looking wall-clock value, mirroring the
+analogous missing-sport gap's treatment.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from __future__ import annotations
 import pytest
 
 from runcoach_api.ingestion import mapping
-from runcoach_api.ingestion.exceptions import MissingStartTimeError
+from runcoach_api.ingestion.exceptions import MissingCanonicalFieldError
 
 
 class _FakeMsg:
@@ -53,8 +54,9 @@ def test_sport_message_with_no_session_and_no_record_timestamps_raises() -> None
     from."""
     messages = [_FakeMsg("sport", {"sport": "running"})]
 
-    with pytest.raises(MissingStartTimeError):
+    with pytest.raises(MissingCanonicalFieldError) as exc_info:
         mapping.to_canonical(messages)
+    assert exc_info.value.field == "start_time"
 
 
 def test_session_message_with_no_start_time_and_no_record_timestamps_raises() -> None:
@@ -63,8 +65,9 @@ def test_session_message_with_no_start_time_and_no_record_timestamps_raises() ->
     timestamp either."""
     messages = [_FakeMsg("session", {"sport": "running"})]
 
-    with pytest.raises(MissingStartTimeError):
+    with pytest.raises(MissingCanonicalFieldError) as exc_info:
         mapping.to_canonical(messages)
+    assert exc_info.value.field == "start_time"
 
 
 def test_session_message_with_no_start_time_but_record_timestamps_present_does_not_raise() -> None:

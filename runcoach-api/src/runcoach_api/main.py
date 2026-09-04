@@ -7,10 +7,8 @@ from runcoach_api import __version__, db
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
-    MissingSportError,
-    MissingStartTimeError,
+    MissingCanonicalFieldError,
     NotAFitFileError,
-    OversizedUploadError,
 )
 from runcoach_api.ingestion.pipeline import ingest_fit_bytes
 from runcoach_api.schemas import HealthResponse, IngestResponse
@@ -64,6 +62,7 @@ class ContentLengthLimitMiddleware:
     def __init__(self, app: ASGIApp, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.precheck_ceiling = max_bytes + _MULTIPART_FRAMING_ALLOWANCE_BYTES
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -76,8 +75,7 @@ class ContentLengthLimitMiddleware:
                 declared_bytes = int(content_length)
             except ValueError:
                 declared_bytes = None
-            precheck_ceiling = self.max_bytes + _MULTIPART_FRAMING_ALLOWANCE_BYTES
-            if declared_bytes is not None and declared_bytes > precheck_ceiling:
+            if declared_bytes is not None and declared_bytes > self.precheck_ceiling:
                 response = PlainTextResponse(
                     f"upload exceeds {self.max_bytes} byte limit", status_code=413
                 )
@@ -116,16 +114,12 @@ def create_session(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(400, f"not a valid FIT file: {exc}") from exc
     except FitParseFailure as exc:
         raise HTTPException(400, f"file could not be parsed: {exc}") from exc
-    except MissingSportError as exc:
-        raise HTTPException(400, f"sport could not be determined: {exc}") from exc
-    except MissingStartTimeError as exc:
-        raise HTTPException(400, f"start_time could not be determined: {exc}") from exc
+    except MissingCanonicalFieldError as exc:
+        raise HTTPException(400, f"{exc.field} could not be determined: {exc}") from exc
     except DuplicateSessionError as exc:
         raise HTTPException(
             409, f"already ingested as session {exc.existing_session_id}"
         ) from exc
-    except OversizedUploadError as exc:
-        raise HTTPException(413, str(exc)) from exc
     return IngestResponse(session_id=result.session_id, quality_flags=result.quality_flags)
 
 

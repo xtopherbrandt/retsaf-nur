@@ -67,6 +67,7 @@ fixture-dependency caveat as ``mapping.py``'s
 from __future__ import annotations
 
 import re
+import statistics
 
 import fitdecode
 
@@ -202,14 +203,6 @@ def _collect_candidates(messages) -> list[tuple[float, str]]:
     return candidates
 
 
-def _median(values: list[float]) -> float:
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[mid]
-    return (ordered[mid - 1] + ordered[mid]) / 2
-
-
 def _local_median(values: list[float], index: int) -> float | None:
     half = _ARTEFACT_WINDOW // 2
     lo = max(0, index - half)
@@ -217,7 +210,7 @@ def _local_median(values: list[float], index: int) -> float | None:
     window = values[lo:hi]
     if not window:
         return None
-    return _median(window)
+    return statistics.median(window)
 
 
 def _differs_materially(level: float, reference: float) -> bool:
@@ -296,7 +289,7 @@ def _burst_run_indices(values: list[float]) -> set[int]:
     if len(runs) < 2:
         return set()
 
-    levels = [_median(values[lo:hi]) for lo, hi in runs]
+    levels = [statistics.median(values[lo:hi]) for lo, hi in runs]
     lengths = [hi - lo for lo, hi in runs]
     flagged: set[int] = set()
 

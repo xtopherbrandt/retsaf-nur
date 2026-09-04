@@ -28,36 +28,26 @@ class DuplicateSessionError(Exception):
         self.existing_session_id = existing_session_id
 
 
-class OversizedUploadError(Exception):
-    """Raised when the upload exceeds the configured size limit."""
+class MissingCanonicalFieldError(Exception):
+    """Raised when a required canonical field has no derivable value.
 
-
-class MissingSportError(Exception):
-    """Raised when no ``sport`` can be determined from the FIT file.
-
-    ``sessions.sport`` is ``NOT NULL`` (spec §2.2.1 enum field); a file
-    with neither a ``session`` nor a ``sport`` message (e.g. a watch
-    that died mid-activity) leaves ``mapping.to_canonical`` with no
-    value to map. Raised in ``mapping.py`` -- before a ``Session`` with
-    an invalid ``sport`` is ever constructed -- rather than letting the
+    Generalizes what were previously two class-per-field exceptions
+    (``MissingSportError`` / ``MissingStartTimeError``): both fired in
+    ``mapping.to_canonical`` when a NOT NULL canonical column --
+    ``sessions.sport`` (spec §2.2.1 enum field; T034 item 2) or
+    ``sessions.start_time`` (needed by ``derive_session_id()``, which
+    hashes ``(source_device, start_time)`` per commit 8f7e488 / T032;
+    falling back to ``datetime.now()`` would silently reintroduce the
+    wall-clock non-determinism T032 closed) -- had nothing to map,
+    before a ``Session`` was ever constructed, rather than letting a
     ``NOT NULL`` violation surface at ``db.persist`` time as an
-    unhandled 500 (T034 item 2).
+    unhandled 500. Structurally identical per-field raises are
+    collapsed into one exception carrying ``field`` as data, the same
+    shape ``DuplicateSessionError`` (``db.py``) uses for
+    ``existing_session_id`` -- one class, translated at one call site,
+    rather than one class per field.
     """
 
-
-class MissingStartTimeError(Exception):
-    """Raised when no ``start_time`` can be determined from the FIT file.
-
-    ``derive_session_id()`` hashes ``(source_device, start_time)`` --
-    commit 8f7e488 (T032) made ``session_id`` a deterministic function
-    of that tuple specifically so re-ingesting identical file bytes
-    always reproduces the same id, matching the
-    ``UNIQUE (source_device, start_time)`` dedup constraint. A file
-    with no ``session.start_time`` field and no ``record`` timestamps
-    (e.g. a corrupt/truncated capture) has no native value to derive
-    ``start_time`` from; falling back to ``datetime.now()`` would
-    silently reintroduce the wall-clock non-determinism T032 closed.
-    Raised in ``mapping.py`` -- before a ``Session`` is ever constructed
-    -- mirroring ``MissingSportError``'s treatment of the analogous
-    missing-sport case (T034 item 2 / sprint-002 review M3).
-    """
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field

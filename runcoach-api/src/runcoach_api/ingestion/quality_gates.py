@@ -24,6 +24,7 @@ only flags and interpolates raw samples, per T023's scope.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 
 from runcoach_api.models import Record
 
@@ -207,11 +208,11 @@ def _resample_and_flag_smart_recording(session, records: list[Record]) -> list[R
     ordered = sorted(records, key=lambda r: r.t)
 
     session.recording_interval = _classify_recording_interval(
-        [after.t - before.t for before, after in zip(ordered, ordered[1:])]
+        [after.t - before.t for before, after in itertools.pairwise(ordered)]
     )
 
     resampled: list[Record] = [ordered[0]]
-    for before, after in zip(ordered, ordered[1:]):
+    for before, after in itertools.pairwise(ordered):
         delta = after.t - before.t
 
         if abs(delta - 1) <= _GAP_TOLERANCE:

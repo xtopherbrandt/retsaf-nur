@@ -56,7 +56,7 @@ import fitdecode
 
 from runcoach_api import __version__
 from runcoach_api.ingestion import rr_reconstruction
-from runcoach_api.ingestion.exceptions import MissingSportError, MissingStartTimeError
+from runcoach_api.ingestion.exceptions import MissingCanonicalFieldError
 from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
@@ -193,15 +193,13 @@ def derive_session_id(source_device: str, start_time: str) -> str:
     return digest[:_SESSION_ID_HEX_LENGTH]
 
 
-def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str:
-    # NOTE: kept accepting the flat ``messages`` list (rather than the
-    # ``by_name`` grouped index built in ``to_canonical``) because tests
-    # call this helper directly with a raw message list -- see
-    # tests/test_duplicate_upload.py's ``_build_source_device([...])``
-    # call sites. It still does its own two short linear scans, but
-    # each is only run once per ``to_canonical`` call.
-    file_id = _first_named(messages, "file_id")
-    device_info = _first_named(messages, "device_info")
+def _build_source_device(by_name: dict[str, list[fitdecode.FitDataMessage]]) -> str:
+    # Reuses the ``by_name`` grouping ``to_canonical`` already built via
+    # ``_group_by_name`` -- see tests/test_duplicate_upload.py's
+    # ``_build_source_device(_group_by_name([...]))`` call sites for the
+    # direct-call test path.
+    file_id = _first_of(by_name, "file_id")
+    device_info = _first_of(by_name, "device_info")
 
     product = None
     if file_id is not None:
@@ -218,12 +216,21 @@ def _build_source_device(messages: list[fitdecode.FitDataMessage]) -> str:
     return f"{product} fw{firmware}"
 
 
+def _getter(msg):
+    """Bind a ``.get_value(name, fallback=None)`` lookup to ``msg``.
+
+    ``_build_summary`` and ``_build_record`` both need this same
+    one-line closure over a different message object -- factored out
+    once rather than redefined per call site.
+    """
+    return lambda name: msg.get_value(name, fallback=None)
+
+
 def _build_summary(session_msg) -> dict:
     if session_msg is None:
         return {}
 
-    def val(name):
-        return session_msg.get_value(name, fallback=None)
+    val = _getter(session_msg)
 
     avg_speed = _enhanced_or_plain(val, "avg_speed")
     max_speed = _enhanced_or_plain(val, "max_speed")
@@ -331,8 +338,7 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     lat = _semicircles_to_degrees(msg.get_value("position_lat", fallback=None))
     lon = _semicircles_to_degrees(msg.get_value("position_long", fallback=None))
 
-    def field(name):
-        return msg.get_value(name, fallback=None)
+    field = _getter(msg)
 
     speed = _enhanced_or_plain(field, "speed")
     altitude = _enhanced_or_plain(field, "altitude")
@@ -410,8 +416,8 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         # that died mid-activity) has nothing to map. Raise here, before
         # a Session is ever constructed, rather than letting the
         # NOT NULL violation surface at db.persist as an unhandled 500.
-        raise MissingSportError(
-            "no session or sport message found -- cannot determine sport"
+        raise MissingCanonicalFieldError(
+            "sport", "no session or sport message found -- cannot determine sport"
         )
 
     raw_sport_value: int | None = None
@@ -439,10 +445,11 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
             # wall-clock non-determinism T032 (commit 8f7e488) closed,
             # since re-ingesting identical bytes a second later would
             # mint a different session_id. Raised here -- before a
-            # Session is ever constructed -- mirroring MissingSportError.
-            raise MissingStartTimeError(
+            # Session is ever constructed -- mirroring the sport case above.
+            raise MissingCanonicalFieldError(
+                "start_time",
                 "no session.start_time and no record timestamps found -- "
-                "cannot determine start_time"
+                "cannot determine start_time",
             )
         start_time = min(timestamps)
 
@@ -456,7 +463,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
             unresolved_developer_fields.setdefault(name, value)
 
     start_time_iso = start_time.isoformat()
-    source_device = _build_source_device(messages)
+    source_device = _build_source_device(by_name)
 
     session = Session(
         session_id=derive_session_id(source_device, start_time_iso),
