@@ -40,6 +40,16 @@ T038 fixed only the seam -- the module, its import path, the
 ``pipeline.py``. T039 added the Tier-2 branch and T041 the Tier-1
 branch ahead of it; a file matching no branch is still left exactly as
 ``mapping.py`` produced it, which is today's behaviour unchanged.
+
+T043 added the **quality gates** (reference document §5) on top of the
+Tier-1 branch: a capture that is too short, retained too few of its
+beats, or recorded none at all is stored with its flags but yields no
+reading -- ``hrv_source_tier`` and ``rmssd_precomputed`` both stay
+``None``, and never a ``0``/``-1`` sentinel. The gates run *after* the
+discriminator has decided the file is a resting capture, so a
+90-second ordinary run is never flagged; the beatless row runs after
+the Tier-2 branch instead, because a Health Snapshot is a zero-beat
+resting-shaped file that Tier 2 reads perfectly well.
 """
 
 from __future__ import annotations
@@ -48,7 +58,7 @@ from typing import Any
 
 import fitdecode
 
-from runcoach_api.ingestion import rmssd
+from runcoach_api.ingestion import rmssd, rr_reconstruction
 from runcoach_api.models import Context, RRInterval, Session
 
 # The empirically observed Garmin Health Snapshot ``sport`` value.
@@ -92,6 +102,29 @@ _RESTING_MAX_MEAN_SPEED_MS = 1.0
 # avg HR 60 and any short hard effort is 150+, which leaves generous headroom
 # for a stressed or unwell resting morning.
 _RESTING_MAX_AVG_HEART_RATE_BPM = 100
+
+# --- the Tier-1 quality gates (T043, F004 reference document §5) -------------
+#
+# A capture that fails any of these is stored as a session with its quality
+# flags, but yields no resting-HRV reading: ``hrv_source_tier`` and
+# ``rmssd_precomputed`` are both left ``None``. The upload always succeeds --
+# F003's posture is to flag quality, never to refuse a valid FIT file, and the
+# Decision Log records "store the session, derive no reading" explicitly.
+
+# CITED. The *lower* bound of §2.4.5's "2-5 minute resting measurement"
+# protocol -- the same sentence ``_RESTING_MAX_DURATION_S`` takes its 300 s
+# from. Inclusive: a capture *of* two minutes is inside the protocol, only one
+# shorter than 120 s falls outside it.
+_RESTING_MIN_DURATION_S = 120.0
+
+# CITED. §2.4.3's default rejects a sample retaining under 80% of its beats
+# (spec §3 for the raw-RR tier). Inclusive at the bound: exactly 0.80 retained
+# is not "below 0.80".
+_RESTING_MIN_VALID_FRACTION = 0.80
+
+_FLAG_CAPTURE_TOO_SHORT = "hrv_capture_too_short"
+_FLAG_CAPTURE_LOW_QUALITY = "hrv_capture_low_quality"
+_FLAG_CAPTURE_NO_BEATS = "hrv_capture_no_beats"
 
 # Where the Tier-1 reading itself is recorded. ``rmssd_precomputed`` cannot
 # carry it -- §2.2.3 reserves that field for a *device-supplied* scalar on the
@@ -181,7 +214,163 @@ def classify(
     if _classify_tier_1(session, rr_intervals):
         return None
     _classify_tier_2(messages, session)
+    _gate_a_beatless_resting_capture(session, rr_intervals)
     return None
+
+
+def _resting_profile_duration(session: Session) -> float | None:
+    """The capture's duration if its duration/intensity profile is a resting
+    one, otherwise ``None`` (F004 reference document §2)::
+
+        duration_s is not None AND 0 < duration_s <= 300
+        AND (
+              (distance_m present AND distance_m / duration_s <= 1.0)
+           OR (distance_m absent AND avg_heart_rate present
+               AND avg_heart_rate <= 100)
+            )
+
+    Returning the duration rather than a bare ``bool`` is what lets the
+    quality gates re-use the same reading of ``session.summary`` instead of
+    re-deriving it; ``None`` is unambiguous here because a profile that
+    matches always has a duration strictly greater than zero.
+
+    Deliberately *not* including the beats condition. Tier-1 candidacy needs
+    both -- ``_classify_tier_1`` checks the beats itself -- but the beatless
+    half of the same profile is what row 3 of the quality-gate outline is
+    about, and that case has to stay recognisable after the Tier-2 branch has
+    had its turn.
+
+    ``session.summary`` is read with ``.get()`` throughout, never subscripted:
+    ``mapping._build_summary`` strips its ``None`` values, so a file with no
+    distance has **no** ``"distance_m"`` key at all -- not a key holding
+    ``None``. Subscripting would turn every indoor capture into a 500 on a
+    perfectly valid upload.
+    """
+    summary = session.summary or {}
+    duration_s = summary.get("duration_s")
+    distance_m = summary.get("distance_m")
+    avg_heart_rate = summary.get("avg_heart_rate")
+
+    # The divisor is established here, before any speed is computed: a
+    # degenerate file can carry ``total_timer_time`` 0, and a duration that
+    # fails this check can never reach the division below.
+    if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
+        return None
+
+    if distance_m is not None:
+        # The distance arm wins whenever distance is present: the heart-rate
+        # arm below is a **fallback for absent distance**, not a second
+        # chance. A capture that demonstrably moved is not rescued by a low
+        # average heart rate.
+        at_rest = distance_m / duration_s <= _RESTING_MAX_MEAN_SPEED_MS
+    elif avg_heart_rate is not None:
+        at_rest = avg_heart_rate <= _RESTING_MAX_AVG_HEART_RATE_BPM
+    else:
+        # No usable intensity signal at all, so there is nothing to
+        # discriminate on and the conservative outcome is no reading.
+        at_rest = False
+
+    return duration_s if at_rest else None
+
+
+def _surviving_fraction(session: Session, rr_intervals: list[RRInterval]) -> float | None:
+    """The retained-beat fraction for this capture, or ``None`` when there is
+    no beat stream to have a fraction of.
+
+    ``pipeline.py`` computes it with ``rr_reconstruction.valid_fraction`` and
+    parks it on the session *only when beats exist*, deliberately leaving it
+    ``None`` -- not ``0.0`` -- otherwise; ``models.Session`` documents that
+    distinction as load-bearing, and this function preserves it rather than
+    defaulting one to the other.
+
+    The recompute is for callers that reach ``classify()`` without going
+    through ``pipeline.py`` -- it is a public function, and F004's own suites
+    drive it directly. With beats in hand the fraction is derivable, so
+    deriving it is strictly better than mistaking an unpopulated field for
+    "no beats"; ``valid_fraction`` is the same function ``pipeline.py`` calls,
+    so the two paths cannot drift apart.
+    """
+    if session.rr_valid_fraction is not None:
+        return session.rr_valid_fraction
+    if rr_intervals:
+        return rr_reconstruction.valid_fraction(rr_intervals)
+    return None
+
+
+def _apply_quality_gates(
+    session: Session, duration_s: float, rr_intervals: list[RRInterval]
+) -> bool:
+    """Rows 1-3 of F004's quality-gate outline. Returns whether any gate failed.
+
+    | Gate               | Rule                       | Flag                    |
+    |---|---|---|
+    | Minimum duration   | shorter than 120 s         | hrv_capture_too_short   |
+    | Artefact survival  | valid fraction below 0.80  | hrv_capture_low_quality |
+    | No surviving beats | valid fraction is ``None`` | hrv_capture_no_beats    |
+
+    Every gate that applies raises its own flag -- they are independent
+    findings, and the ``_raise_flag`` dedup guard already prevents repeats.
+    None of them writes a value: a failed gate leaves ``hrv_source_tier`` and
+    ``rmssd_precomputed`` ``None``, never ``0`` or ``-1``. E003 takes
+    ``ln(rMSSD)``, so a sentinel there is undefined at best and a silent
+    domain error at worst -- the same reason ``rmssd.resting_rmssd`` answers
+    "no value" with ``None`` rather than ``0.0``.
+
+    **``is None`` is checked before the float comparison, and that ordering is
+    the point of row 3.** A naive ``if fraction < 0.80:`` raises ``TypeError``
+    on the ``None`` a beatless session legitimately carries, and that surfaces
+    to the client as a **500 on a perfectly valid upload**. The two rows are
+    also never collapsed by defaulting ``None`` to ``0.0``: "no beats at all"
+    and "beats recorded, none survived filtering" are genuinely different
+    findings and E003 reads them differently.
+    """
+    failed = False
+
+    if duration_s < _RESTING_MIN_DURATION_S:
+        _raise_flag(session, _FLAG_CAPTURE_TOO_SHORT)
+        failed = True
+
+    fraction = _surviving_fraction(session, rr_intervals)
+    if fraction is None:
+        _raise_flag(session, _FLAG_CAPTURE_NO_BEATS)
+        failed = True
+    elif fraction < _RESTING_MIN_VALID_FRACTION:
+        _raise_flag(session, _FLAG_CAPTURE_LOW_QUALITY)
+        failed = True
+
+    return failed
+
+
+def _gate_a_beatless_resting_capture(session: Session, rr_intervals: list[RRInterval]) -> None:
+    """Row 3, on the only path that can actually reach it.
+
+    ``rr_valid_fraction`` is ``None`` exactly when the beat stream is empty --
+    that is ``pipeline.py``'s rule -- and an empty beat stream is precisely
+    what keeps a file out of ``_classify_tier_1``. So the "beat stream is
+    empty, so ``rr_valid_fraction`` is null" row of the scenario outline can
+    only be reported here: on a file whose duration/intensity profile *is* a
+    resting capture but which recorded no beats -- a strap that dropped out,
+    or a capture started before the sensor paired.
+
+    **Runs after the Tier-2 branch, and only if Tier 2 declined.** Both Health
+    Snapshot fixtures are zero-beat, ~120 s, low-heart-rate files -- the same
+    profile -- and they are perfectly good Tier-2 readings. Flagging them as
+    failed captures, or running before ``_classify_tier_2`` and pre-empting
+    them, would destroy a working reading; ``activity_tag`` being set is the
+    signal that Tier 2 recognised the file.
+
+    No ``activity_tag`` is written here. The file yielded nothing and was
+    claimed by no tier, so tagging it ``resting_hrv_check`` would assert a
+    classification the gates have just declined to make.
+    """
+    if rr_intervals or session.activity_tag is not None:
+        return
+
+    duration_s = _resting_profile_duration(session)
+    if duration_s is None:
+        return
+
+    _apply_quality_gates(session, duration_s, rr_intervals)
 
 
 def _classify_tier_1(session: Session, rr_intervals: list[RRInterval]) -> bool:
@@ -244,26 +433,22 @@ def _classify_tier_1(session: Session, rr_intervals: list[RRInterval]) -> bool:
     if not rr_intervals:
         return False
 
-    summary = session.summary or {}
-    duration_s = summary.get("duration_s")
-    distance_m = summary.get("distance_m")
-    avg_heart_rate = summary.get("avg_heart_rate")
-
-    # The divisor is established here, before any speed is computed: a
-    # degenerate file can carry ``total_timer_time`` 0, and a duration
-    # that fails this check can never reach the division below.
-    if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
+    duration_s = _resting_profile_duration(session)
+    if duration_s is None:
         return False
 
-    if distance_m is not None:
-        at_rest = distance_m / duration_s <= _RESTING_MAX_MEAN_SPEED_MS
-    elif avg_heart_rate is not None:
-        at_rest = avg_heart_rate <= _RESTING_MAX_AVG_HEART_RATE_BPM
-    else:
-        at_rest = False
-
-    if not at_rest:
-        return False
+    # T043's gates run *here* -- after the discriminator above has decided
+    # this file is a resting capture, and never before it. A flag on a file
+    # that was never a candidate is noise: a 90-second ordinary run is under
+    # 120 s but has no capture quality to report.
+    if _apply_quality_gates(session, duration_s, rr_intervals):
+        # Routed in the sense that matters to ``classify`` -- the file has
+        # been recognised and answered -- but no reading is derived. The
+        # session keeps its flags and both HRV fields stay ``None``; there is
+        # deliberately no fall-through to the Tier-2 device scalar, because
+        # §2.4.5's hierarchy is highest-fidelity-first and a failed Tier-1
+        # capture yields *no reading*, not a downgraded one.
+        return True
 
     session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
     session.hrv_source_tier = _TIER_CHEST_STRAP_RAW
