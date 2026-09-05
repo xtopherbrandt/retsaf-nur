@@ -19,6 +19,11 @@ runcoach-api = "runcoach_api.cli:main"
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    # T048: property-based tests for RR burst detection
+    # (tests/test_rr_reconstruction_properties.py). Per-package dev
+    # dependency, not workspace-root -- the root group carries only
+    # `pytest` as workspace-level tooling.
+    "hypothesis>=6.100",
 ]
 
 [build-system]
