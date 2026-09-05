@@ -167,6 +167,67 @@ _FLAG_READING_UNAVAILABLE = "hrv_reading_unavailable"
 # distinguishable in the same loosely typed dict.
 _PROVENANCE_SIGNAL_DISAGREEMENT = "hrv_signal_disagreement"
 
+# --- the quarantine boundary, made mechanically checkable (T046) -------------
+#
+# Every name this module reads a value under, split into the two things such a
+# name can be. F004 asserts the quarantine boundary as a **negative
+# invariant** -- no field registered in ``quarantine._VENDOR_DERIVED_FIELDS``
+# may ever populate ``rmssd_precomputed`` or ``hrv_source_tier`` -- and an
+# invariant phrased over code rather than over data needs a set to be phrased
+# over. Spec §2.2.3 draws the line these two constants sit on: Garmin's
+# overnight HRV *Status classification* is a vendor-derived composite and is
+# quarantined; the numeric rMSSD underneath it is a standard statistic and is
+# admissible. The label is a black box, the number is not.
+#
+# ``test_hrv_quarantine_boundary.py`` reconciles both constants against this
+# module's *actual* field reads, recovered from its AST -- so a later task that
+# adds a read without declaring it fails that test rather than silently
+# narrowing the invariant to something that proves nothing. Adding a read means
+# adding its name to exactly one of these two sets.
+
+#: The values this module reads **as HRV inputs**: names whose value can decide
+#: whether a resting-HRV reading is produced, or what it is. This is the set
+#: the quarantine registry must stay disjoint from.
+#:
+#: - ``rmssd_hrv`` -- the Tier-2 capability signal, off the ``session``
+#:   message. The admissible numeric statistic, never the black-box label.
+#: - ``raw_sport_value`` -- the Tier-2 identity signal, read from the
+#:   provenance ``mapping.py`` already records rather than re-parsed.
+#: - ``duration_s`` / ``distance_m`` / ``avg_heart_rate`` -- the three
+#:   ``session.summary`` keys of the Tier-1 resting discriminator (reference
+#:   document §2).
+#: - ``rr_valid_fraction`` -- the artefact-survival quality gate (§5).
+HRV_INPUT_FIELDS: frozenset[str] = frozenset(
+    {
+        "rmssd_hrv",
+        "raw_sport_value",
+        "duration_s",
+        "distance_m",
+        "avg_heart_rate",
+        "rr_valid_fraction",
+    }
+)
+
+#: Names this module reads that are **not** HRV inputs: plumbing on the
+#: canonical ``Session`` carrying no measurement of its own. ``summary`` and
+#: ``context`` are the containers whose keys ``HRV_INPUT_FIELDS`` enumerates
+#: above; ``quality_flags`` and ``activity_tag`` are this module's own output,
+#: read back only to dedup a flag and to see whether an earlier tier already
+#: claimed the file.
+#:
+#: Declared rather than merely omitted, so the AST reconciliation has a bucket
+#: for every read. It is **not** an escape hatch for a quarantined name: the
+#: boundary test asserts the quarantine registry is disjoint from every name
+#: this module reads, both sets together.
+HRV_NON_INPUT_READS: frozenset[str] = frozenset(
+    {
+        "summary",
+        "context",
+        "quality_flags",
+        "activity_tag",
+    }
+)
+
 
 def _session_rmssd_hrv(messages: list[fitdecode.FitDataMessage]) -> Any:
     """The capability signal: ``rmssd_hrv`` off the ``session`` message.
