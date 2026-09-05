@@ -180,8 +180,15 @@ def test_new_fields_survive_a_full_ingest_to_get_round_trip() -> None:
     body = detail.json()
     for name in _NEW_SESSION_FIELDS:
         assert name in body, f"GET /sessions/{{id}} is missing {name}"
-        # T038 writes nothing; T039 onwards populate these.
-        assert body[name] is None, f"{name} should still be null after T038"
+    # T038 wrote nothing here and this asserted all three stayed null;
+    # T039's Tier-2 branch now routes this very fixture, so the round
+    # trip is asserted against the values it writes instead. What the
+    # test is for is unchanged: the three columns survive ingest ->
+    # SQLite -> GET. The routing rules themselves are owned by
+    # tests/test_resting_hrv_tier2.py.
+    assert body["hrv_source_tier"] == "health_snapshot"
+    assert body["rmssd_precomputed"] == 37
+    assert body["rr_source"] == "health_snapshot_ppg"
 
 
 def test_post_201_response_does_not_leak_the_new_fields() -> None:
@@ -254,7 +261,11 @@ def test_ingest_works_against_a_data_dir_the_server_never_booted() -> None:
 
     assert detail is not None
     for name in _NEW_SESSION_FIELDS:
-        assert detail[name] is None
+        assert name in detail.keys()
+    # Same T038 -> T039 update as above: the fixture is a Health
+    # Snapshot, so the Tier-2 branch now populates these. The point of
+    # the test is the data dir, not the values.
+    assert detail["hrv_source_tier"] == "health_snapshot"
 
 
 def test_new_columns_are_added_to_a_preexisting_database() -> None:
