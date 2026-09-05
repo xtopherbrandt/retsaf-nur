@@ -169,5 +169,14 @@ def test_canonical_get_response_never_contains_training_effect() -> None:
         get_response = client.get(f"/sessions/{session_id}")
 
     assert get_response.status_code == 200
-    body_lower = str(get_response.json()).lower()
+    body = get_response.json()
+    body_lower = str(body).lower()
     assert "training_effect" not in body_lower
+
+    # T036 item 2 -- confirm hr_source gating for a wrist-PPG-only
+    # fixture survives the full round trip, not just the quarantine
+    # check above. quality_gates.apply()'s default-fill sets
+    # hr_source = "wrist_ppg" when chest-strap RR detection (which
+    # requires an hrv/dev-field carrier, absent here) did not already
+    # set it.
+    assert body["hr_source"] == "wrist_ppg"

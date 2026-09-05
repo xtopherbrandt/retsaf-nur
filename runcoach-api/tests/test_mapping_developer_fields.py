@@ -129,5 +129,25 @@ def test_full_ingest_of_real_fixture_succeeds_end_to_end() -> None:
             "/sessions", files={"file": ("dev_fields_run.fit", _raw_fixture_bytes())}
         )
 
-    assert response.status_code == 201
-    assert response.json()["session_id"]
+        assert response.status_code == 201
+        session_id = response.json()["session_id"]
+        assert session_id
+
+        get_response = client.get(f"/sessions/{session_id}")
+
+    assert get_response.status_code == 200
+    body = get_response.json()
+
+    # T036 item 1 -- confirm the chest-strap RR reconstruction survives
+    # the full mapping -> persist -> GET round trip, not just the unit
+    # level. Exact string: mapping._infer_hr_source sets "chest_strap"
+    # (mapping.py:252-266); "chest_strap_ecg" is RRInterval.rr_source's
+    # tier enum, a different field entirely.
+    assert body["hr_source"] == "chest_strap"
+
+    # This fixture's hrv messages are the carrier -- confirm rr_carrier
+    # provenance made it through persistence onto at least one interval.
+    assert any(iv["rr_carrier"] == "hrv" for iv in body["rr_intervals"])
+
+    assert body["rr_valid_fraction"] is not None
+    assert 0.0 <= body["rr_valid_fraction"] <= 1.0
