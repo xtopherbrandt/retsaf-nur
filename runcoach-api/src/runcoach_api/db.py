@@ -80,6 +80,7 @@ _SCHEMA_DDL = """
       sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
       source_device TEXT, recording_interval TEXT, hr_source TEXT,
       rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
+      rmssd_precomputed REAL, hrv_source_tier TEXT, rr_source TEXT,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -137,10 +138,15 @@ def _reconcile_columns(conn: sqlite3.Connection) -> None:
     builds a fresh database per test where the CREATE path always
     includes every column.
 
-    This is not the migration framework F003 deferred to F004: it adds
-    nullable columns only. A rename or retype still needs a real
-    migration, and will surface here as an error rather than being
-    silently papered over.
+    This is not a migration framework, and none is coming: F004 chose a
+    documented corpus rebuild over one (see
+    ``spec/references/F004-detection-and-quality-rules.md`` §7,
+    following the T032 precedent), so the earlier forward reference to
+    "the migration framework F003 deferred to F004" no longer describes
+    anything that will be built. What this does is add nullable columns
+    only -- which is all F004's three new session-level columns need. A
+    rename or retype still needs a real migration, and will surface here
+    as an error rather than being silently papered over.
     """
     for table, expected in _expected_schema().items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -166,11 +172,13 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
         INSERT INTO sessions (
             session_id, athlete_id, start_time, sport, activity_tag,
             source_vendor, source_device, recording_interval, hr_source,
-            rr_valid_fraction, quality_flags, summary, context
+            rr_valid_fraction, quality_flags, summary, context,
+            rmssd_precomputed, hrv_source_tier, rr_source
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
-            :rr_valid_fraction, :quality_flags, :summary, :context
+            :rr_valid_fraction, :quality_flags, :summary, :context,
+            :rmssd_precomputed, :hrv_source_tier, :rr_source
         )
         """,
         {
@@ -184,6 +192,11 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "recording_interval": session.recording_interval,
             "hr_source": session.hr_source,
             "rr_valid_fraction": session.rr_valid_fraction,
+            "rmssd_precomputed": session.rmssd_precomputed,
+            "hrv_source_tier": session.hrv_source_tier,
+            # Session-level (§2.2.3), not the per-beat rr_intervals.rr_source
+            # written by _insert_rr_intervals -- see models.Session.
+            "rr_source": session.rr_source,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context))
@@ -334,7 +347,8 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         """
         SELECT session_id, athlete_id, start_time, sport, activity_tag,
                source_vendor, source_device, recording_interval, hr_source,
-               rr_valid_fraction, quality_flags, summary, context
+               rr_valid_fraction, quality_flags, summary, context,
+               rmssd_precomputed, hrv_source_tier, rr_source
         FROM sessions WHERE session_id = ?
         """,
         (session_id,),
@@ -404,6 +418,11 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "recording_interval": row["recording_interval"],
         "hr_source": row["hr_source"],
         "rr_valid_fraction": row["rr_valid_fraction"],
+        "rmssd_precomputed": row["rmssd_precomputed"],
+        "hrv_source_tier": row["hrv_source_tier"],
+        # Session-level (§2.2.3). The per-beat carrier of the same enum
+        # is each entry's own "rr_source" under "rr_intervals" below.
+        "rr_source": row["rr_source"],
         "quality_flags": _json_load(row["quality_flags"], default=[]),
         "summary": _json_load(row["summary"]),
         "context": _json_load(row["context"]),

@@ -63,6 +63,11 @@ def test_rr_reconstruction_runs_before_quality_gates_apply(monkeypatch) -> None:
     monkeypatch.setattr(pipeline.rr_reconstruction, "reconstruct", fake_reconstruct)
     monkeypatch.setattr(pipeline.quarantine, "extract", fake_extract)
     monkeypatch.setattr(pipeline.db, "get_connection", lambda: Mock(close=Mock()))
+    # Third db interaction to stub, alongside get_connection/persist:
+    # ingest_fit_bytes reconciles the schema on the connection it opens
+    # (so a caller that never boots the ASGI app still gets its tables),
+    # and the Mock connection above can't answer PRAGMA table_info.
+    monkeypatch.setattr(pipeline.db, "init_schema", lambda conn: None)
     monkeypatch.setattr(pipeline.db, "persist", fake_persist)
 
     pipeline.ingest_fit_bytes(b"irrelevant")

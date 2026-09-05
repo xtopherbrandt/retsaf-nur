@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from runcoach_api import db
 from runcoach_api.ingestion import (
     fit_parser,
+    hrv_classification,
     mapping,
     quality_gates,
     quarantine,
@@ -41,11 +42,29 @@ def ingest_fit_bytes(raw: bytes) -> IngestResult:
         # session with no RR stream at all, so "no beats" and "beats,
         # none survived" stay distinguishable downstream.
         session.rr_valid_fraction = rr_reconstruction.valid_fraction(rr_intervals)
+    # Unconditional, and deliberately OUTSIDE the `if rr_intervals:`
+    # above: a Garmin Health Snapshot carries zero beats, so putting
+    # this inside the branch would make the entire Tier-2 resting-HRV
+    # path dead code. `rr_intervals` being [] is an input to classify(),
+    # not a reason to skip it. Pinned by
+    # tests/test_hrv_pipeline_wiring.py. Runs before quality_gates.apply
+    # so any flag it raises is already on the session when apply() runs.
+    hrv_classification.classify(messages, session, rr_intervals)
     quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
     conn = db.get_connection()
     try:
+        # Idempotent, and the reason it is here rather than only in
+        # main.py's lifespan: the lifespan runs on *server startup*, so
+        # any caller that drives ingestion without booting the ASGI app
+        # -- the CLI ingest path, a batch import, F004's acceptance
+        # probe -- hits a data dir whose sessions table was never
+        # created and fails with a bare "no such table: sessions". It
+        # also means a column added to _SCHEMA_DDL (F004 adds three) is
+        # reconciled onto a pre-existing database by the first upload
+        # after the upgrade, not only by the next server restart.
+        db.init_schema(conn)
         # db.persist() is the single place a raw sqlite3 constraint
         # violation is translated into DuplicateSessionError (see
         # code-review Fix 2) -- no local except clause here duplicating

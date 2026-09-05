@@ -34,6 +34,25 @@ class Session:
     # §2.4.3). None when the session carries no RR stream at all --
     # distinct from 0.0, which means "had beats, none survived".
     rr_valid_fraction: float | None = None
+    # --- resting-HRV capture (F004, §2.2.3) -------------------------------
+    # Device-computed resting rMSSD in milliseconds. Numeric wrist tiers
+    # only -- None for Tier 1 (chest-strap raw), where the value is
+    # computed from the beats instead. Bypasses §2.4.3 artefact
+    # filtering, there being no beats to filter, so the non-positive
+    # check is the only validity gate it gets.
+    rmssd_precomputed: float | None = None
+    # Which tier the reading came from: "chest_strap_raw" /
+    # "health_snapshot" / "health_api_overnight". None on every
+    # non-HRV session, which is most of them.
+    hrv_source_tier: str | None = None
+    # The **session-level** rr_source of §2.2.3 -- distinct from
+    # ``RRInterval.rr_source`` below, which is per beat and lives in a
+    # different table. §2.2.3 defines the enum at RR-stream level, but
+    # F003 modelled it per beat, and a Tier-2 reading has no beats at
+    # all -- so the same enum needs a session-level home too. The
+    # per-beat column stays the Tier-1 carrier; this one is what E003
+    # reads.
+    rr_source: str | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None
