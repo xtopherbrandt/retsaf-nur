@@ -20,14 +20,17 @@ does not catch it. Measured divergence on a synthetic resting series
 with one 6-beat doubled burst: 74.98 (pairwise, correct) vs 76.43
 (compact-then-diff) against a true 75.39.
 
-T038 fixes only this seam -- the module, its import path and the
-``resting_rmssd`` signature -- so that the F004 walking skeleton is
-wired end to end. The arithmetic above is T042's; until it lands
-``resting_rmssd`` reports "no value available" for every input, which
-is exactly what a Tier-2-only build should see.
+T038 fixed only this seam -- the module, its import path and the
+``resting_rmssd`` signature -- so that the F004 walking skeleton was
+wired end to end. T042 supplies the arithmetic described above; the
+adjacency rule and the ``None``/``0.0`` distinction are pinned by
+``tests/test_resting_rmssd.py``.
 """
 
 from __future__ import annotations
+
+import itertools
+import math
 
 from runcoach_api.models import RRInterval
 
@@ -36,13 +39,50 @@ def resting_rmssd(rr_intervals: list[RRInterval]) -> float | None:
     """Root mean square of successive differences over a resting capture,
     in milliseconds, or ``None`` when no value can be derived.
 
+    The walk is strictly pairwise over ``rr_intervals`` **as given**.
+    ``rr_reconstruction.reconstruct()`` flags rather than excises and
+    emits one beat per candidate in original merge order, so list order
+    already *is* series adjacency: there is nothing to compact, and
+    nothing to re-sort either -- ``seq`` is ``int | None``, so sorting
+    on it would invite a subtle reorder for no gain.
+
+    A pair contributes ``(curr.rr_ms - prev.rr_ms) ** 2`` only when both
+    of its beats are usable, which means unflagged *and* carrying a
+    value:
+
+    * ``is_artefact`` is ``bool | None``, and only ``True`` excludes --
+      a beat left ``None`` was never judged an artefact, so it counts.
+    * ``rr_ms`` is ``float | None``, and a null beat is non-contributing
+      rather than a ``TypeError``, exactly like a flagged one.
+
     ``None`` -- not ``0.0`` -- is the "no value" answer, matching the
     ``rr_valid_fraction`` convention documented on ``models.Session``:
-    zero is a real measurement, absence is not.
+    zero is a real measurement, absence is not. So a series yielding
+    fewer than one contributing pair (empty, a lone beat, every beat
+    flagged, or flags placed so that every pair touches one) returns
+    ``None``, while a clean two-beat series with no variation returns a
+    genuine ``0.0``. E003 takes ``ln(rMSSD)``, so that distinction has
+    to survive all the way out of this function.
 
-    T038 ships the seam without the arithmetic (see the module
-    docstring); every input therefore yields ``None`` today. T042
-    supplies the pairwise computation and the tests that pin it to the
-    adjacency rule.
+    Pure over its argument: reads only the list handed to it, touches
+    neither the DB, the session nor the messages, and mutates nothing.
     """
-    return None
+    squares = [
+        (curr.rr_ms - prev.rr_ms) ** 2
+        for prev, curr in itertools.pairwise(rr_intervals)
+        if _contributes(prev) and _contributes(curr)
+    ]
+
+    if not squares:
+        return None
+
+    return math.sqrt(sum(squares) / len(squares))
+
+
+def _contributes(beat: RRInterval) -> bool:
+    """Whether ``beat`` may take part in a successive difference.
+
+    Not an artefact judgement of its own -- detection is
+    ``rr_reconstruction``'s job and this only reads its verdict.
+    """
+    return beat.is_artefact is not True and beat.rr_ms is not None
