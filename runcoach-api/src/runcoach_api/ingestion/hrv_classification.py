@@ -31,9 +31,13 @@ return value, so a later tier can be added without touching
   feed in-run wrist PPG into the readiness trend, an absolute §2.2.3 /
   §2.4.5 prohibition (T039, implemented below).
 - **Tier 1 outranks Tier 2** on a capture carrying both, because
-  §2.4.5 orders the hierarchy highest-fidelity-first -- so the Tier-1
-  branch runs first and short-circuits (T045 pins the full precedence
-  contract).
+  §2.4.5 orders the hierarchy highest-fidelity-first: the fully-owned
+  computation beats the black-box scalar. The Tier-1 branch therefore
+  runs first and short-circuits, and the device's unused ``rmssd_hrv``
+  is recorded in provenance under ``unused_device_rmssd_hrv`` rather
+  than dropped -- ``rmssd_precomputed`` stays ``None``, because §2.2.3
+  reserves it for a device-supplied value on the numeric wrist tiers
+  and E003 reads its populated-ness to tell the tiers apart (T045).
 
 T038 fixed only the seam -- the module, its import path, the
 ``classify`` signature and the unconditional call site in
@@ -136,6 +140,22 @@ _FLAG_CAPTURE_NO_BEATS = "hrv_capture_no_beats"
 # records the opposite thing: a device value that *lost* to this computation.
 _PROVENANCE_COMPUTED_RMSSD = "computed_resting_rmssd_ms"
 
+# The device-supplied scalar that *lost* to the Tier-1 computation above
+# (T045, F004 reference document §3). §2.4.5 orders the hierarchy
+# highest-fidelity-first, so a capture carrying both raw beats and a session
+# ``rmssd_hrv`` resolves to the fully-owned computation -- but the device's
+# number is not thereby thrown away: it is recorded here so the audit trail
+# says what was ignored and why the two numbers might differ.
+#
+# Deliberately distinct from ``_PROVENANCE_COMPUTED_RMSSD`` above and from
+# ``_PROVENANCE_SIGNAL_DISAGREEMENT`` below. All three land in the same
+# ``dict[str, Any]`` and mean different things -- this system's reading, a
+# rejected device scalar, and a device scalar on a file that is not a snapshot
+# at all -- so collapsing any two onto one key would make them
+# indistinguishable to E003, and would silently overwrite the reading with the
+# value that lost to it.
+_PROVENANCE_UNUSED_DEVICE_RMSSD = "unused_device_rmssd_hrv"
+
 # Bare string literal on ``session.quality_flags``, matching
 # ``quality_gates.py``'s "smart_recording" convention: no enum, no
 # registry, no flags table.
@@ -210,8 +230,19 @@ def classify(
     it routes: §2.4.5 orders the hierarchy highest-fidelity-first, so a
     capture carrying both raw beats and a device ``rmssd_hrv`` resolves
     to the fully-owned computation rather than to the black-box scalar.
+
+    **That precedence is a contract, not an accident of statement
+    order.** The ``return`` below is what implements it, and a refactor
+    that reordered these two lines would silently invert the hierarchy;
+    ``test_resting_hrv_tier_precedence.py`` pins the outcome so it
+    cannot. It also pins the second half of the rule: the device value
+    that lost is written to provenance by ``_classify_tier_1``, never
+    discarded and never smuggled into ``rmssd_precomputed``. No corpus
+    fixture carries both signals -- the strap captures have beats and no
+    scalar, the snapshots a scalar and zero ``hrv`` messages -- so that
+    suite is necessarily synthetic and says so.
     """
-    if _classify_tier_1(session, rr_intervals):
+    if _classify_tier_1(messages, session, rr_intervals):
         return None
     _classify_tier_2(messages, session)
     _gate_a_beatless_resting_capture(session, rr_intervals)
@@ -373,11 +404,19 @@ def _gate_a_beatless_resting_capture(session: Session, rr_intervals: list[RRInte
     _apply_quality_gates(session, duration_s, rr_intervals)
 
 
-def _classify_tier_1(session: Session, rr_intervals: list[RRInterval]) -> bool:
+def _classify_tier_1(
+    messages: list[fitdecode.FitDataMessage],
+    session: Session,
+    rr_intervals: list[RRInterval],
+) -> bool:
     """The chest-strap resting capture (F004 reference document §2).
 
     Returns whether the file was routed, so ``classify`` can stop before
-    the Tier-2 branch.
+    the Tier-2 branch -- which is how §2.4.5's highest-fidelity-first
+    hierarchy is enforced: on a capture carrying both raw beats and a
+    device ``rmssd_hrv``, this branch wins and the device's scalar is
+    left unused. It takes ``messages`` for that reason alone: to see the
+    device value it is about to ignore, so it can record it (T045).
 
     The predicate, ratified 2026-09-05 and fixed against
     ``strap_hrv_sample_run.fit``::
@@ -436,6 +475,24 @@ def _classify_tier_1(session: Session, rr_intervals: list[RRInterval]) -> bool:
     duration_s = _resting_profile_duration(session)
     if duration_s is None:
         return False
+
+    # T045. The file is a Tier-1 capture, so this branch has claimed it and
+    # ``classify`` will not reach Tier 2 -- which means any device-supplied
+    # ``rmssd_hrv`` on the same capture is now unused. Recorded *before* the
+    # gates rather than after the reading, because the gate-failure path
+    # short-circuits too: a capture answered with a flag has ignored the
+    # device's number just as thoroughly as one answered with a computation,
+    # and this entry is then the only surviving record that the file carried a
+    # scalar at all. Absent, never ``None``, when there was no device value --
+    # a key holding ``None`` would assert that one was observed and ignored.
+    device_rmssd_hrv = _session_rmssd_hrv(messages)
+    if device_rmssd_hrv is not None:
+        # Stored exactly as observed, uncoerced and unvalidated: Tier 2's
+        # non-positive check gates a value it is about to *store* as a reading,
+        # and nothing here is being stored as one. An audit record that
+        # normalised what it saw could not be compared against what the device
+        # reported.
+        _provenance(session)[_PROVENANCE_UNUSED_DEVICE_RMSSD] = device_rmssd_hrv
 
     # T043's gates run *here* -- after the discriminator above has decided
     # this file is a resting capture, and never before it. A flag on a file
