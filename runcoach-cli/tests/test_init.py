@@ -1,23 +1,10 @@
 import tomllib
 
-import pytest
 from typer.testing import CliRunner
 
-from runcoach_cli import config
 from runcoach_cli.main import app
 
 runner = CliRunner()
-
-
-@pytest.fixture(autouse=True)
-def isolated_config_path(tmp_path, monkeypatch):
-    """Point CONFIG_PATH at a throwaway location for every test in this module.
-
-    Never touches the real ``~/.runcoach/`` directory.
-    """
-    config_path = tmp_path / ".runcoach" / "cli.toml"
-    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
-    return config_path
 
 
 def test_init_writes_config_and_refuses_overwrite_without_force(isolated_config_path):

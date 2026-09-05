@@ -14,19 +14,13 @@ import pytest
 from runcoach_cli import api_client
 
 
-def _install_mock_client(handler, monkeypatch) -> None:
-    """Swap the module-level client for one backed by a MockTransport."""
-    mock_client = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
-    monkeypatch.setattr(api_client, "client", mock_client)
-
-
-def test_get_health_returns_response_and_raises_on_unreachable(monkeypatch) -> None:
+def test_get_health_returns_response_and_raises_on_unreachable(install_mock_client) -> None:
     # 1. Server responds 200 with a well-formed body -> returned unchanged.
     def ok_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/health"
         return httpx.Response(200, json={"status": "ok", "version": "0.1.0"})
 
-    _install_mock_client(ok_handler, monkeypatch)
+    install_mock_client(ok_handler)
     response = api_client.get_health("http://example.test")
     assert isinstance(response, httpx.Response)
     assert response.status_code == 200
@@ -36,7 +30,7 @@ def test_get_health_returns_response_and_raises_on_unreachable(monkeypatch) -> N
     def connect_error_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    _install_mock_client(connect_error_handler, monkeypatch)
+    install_mock_client(connect_error_handler)
     with pytest.raises(api_client.ApiUnreachableError) as exc_info:
         api_client.get_health("http://example.test")
     assert exc_info.value.base_url == "http://example.test"
@@ -48,7 +42,7 @@ def test_get_health_returns_response_and_raises_on_unreachable(monkeypatch) -> N
     def timeout_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.TimeoutException("timed out", request=request)
 
-    _install_mock_client(timeout_handler, monkeypatch)
+    install_mock_client(timeout_handler)
     started = time.monotonic()
     with pytest.raises(api_client.ApiUnreachableError) as exc_info:
         api_client.get_health("http://example.test")
@@ -68,32 +62,32 @@ def test_get_health_uses_bounded_five_second_timeout() -> None:
     assert timeout.pool == 5.0
 
 
-def test_get_health_translates_other_transport_errors(monkeypatch) -> None:
+def test_get_health_translates_other_transport_errors(install_mock_client) -> None:
     # A transport-layer failure other than connect/timeout (e.g. the API
     # process crashes mid-response) must also become ApiUnreachableError,
     # not propagate as a raw httpx.TransportError subclass.
     def read_error_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadError("boom", request=request)
 
-    _install_mock_client(read_error_handler, monkeypatch)
+    install_mock_client(read_error_handler)
     with pytest.raises(api_client.ApiUnreachableError) as exc_info:
         api_client.get_health("http://example.test")
     assert exc_info.value.base_url == "http://example.test"
 
 
-def test_get_health_does_not_swallow_non_2xx_response(monkeypatch) -> None:
+def test_get_health_does_not_swallow_non_2xx_response(install_mock_client) -> None:
     # Non-2xx responses are returned unchanged, not translated into
     # ApiUnreachableError - status-code handling is the caller's job (T010).
     def error_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"detail": "boom"})
 
-    _install_mock_client(error_handler, monkeypatch)
+    install_mock_client(error_handler)
     response = api_client.get_health("http://example.test")
     assert response.status_code == 500
     assert response.json() == {"detail": "boom"}
 
 
-def test_upload_fit_posts_multipart_to_sessions_and_returns_response(tmp_path, monkeypatch) -> None:
+def test_upload_fit_posts_multipart_to_sessions_and_returns_response(tmp_path, install_mock_client) -> None:
     # A well-formed 201 response is returned unchanged; the file is sent as
     # multipart form data under the "file" field, named after the path.
     fit_path = tmp_path / "activity.fit"
@@ -107,27 +101,27 @@ def test_upload_fit_posts_multipart_to_sessions_and_returns_response(tmp_path, m
         assert b"binary-fit-content" in request.content
         return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
 
-    _install_mock_client(created_handler, monkeypatch)
+    install_mock_client(created_handler)
     response = api_client.upload_fit("http://example.test", fit_path)
     assert isinstance(response, httpx.Response)
     assert response.status_code == 201
     assert response.json() == {"session_id": "abc-123", "quality_flags": []}
 
 
-def test_upload_fit_raises_api_unreachable_on_connect_error(tmp_path, monkeypatch) -> None:
+def test_upload_fit_raises_api_unreachable_on_connect_error(tmp_path, install_mock_client) -> None:
     fit_path = tmp_path / "activity.fit"
     fit_path.write_bytes(b"binary-fit-content")
 
     def connect_error_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    _install_mock_client(connect_error_handler, monkeypatch)
+    install_mock_client(connect_error_handler)
     with pytest.raises(api_client.ApiUnreachableError) as exc_info:
         api_client.upload_fit("http://example.test", fit_path)
     assert exc_info.value.base_url == "http://example.test"
 
 
-def test_upload_fit_uses_longer_timeout_than_health_check(tmp_path, monkeypatch) -> None:
+def test_upload_fit_uses_longer_timeout_than_health_check(tmp_path, install_mock_client) -> None:
     # FIT uploads can be up to 50MB (the API's own cap); the 5s timeout tuned
     # for the tiny /health payload is nowhere near enough for a large
     # multipart upload on a slow connection. upload_fit must use a longer,
@@ -146,7 +140,7 @@ def test_upload_fit_uses_longer_timeout_than_health_check(tmp_path, monkeypatch)
         captured_timeouts.append(request.extensions["timeout"])
         return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
 
-    _install_mock_client(created_handler, monkeypatch)
+    install_mock_client(created_handler)
     api_client.upload_fit("http://example.test", fit_path)
 
     assert len(captured_timeouts) == 1
@@ -155,14 +149,14 @@ def test_upload_fit_uses_longer_timeout_than_health_check(tmp_path, monkeypatch)
     assert upload_timeout["write"] > 5.0
 
 
-def test_upload_fit_does_not_swallow_non_2xx_response(tmp_path, monkeypatch) -> None:
+def test_upload_fit_does_not_swallow_non_2xx_response(tmp_path, install_mock_client) -> None:
     fit_path = tmp_path / "activity.fit"
     fit_path.write_bytes(b"binary-fit-content")
 
     def error_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, text="invalid FIT file")
 
-    _install_mock_client(error_handler, monkeypatch)
+    install_mock_client(error_handler)
     response = api_client.upload_fit("http://example.test", fit_path)
     assert response.status_code == 400
     assert response.text == "invalid FIT file"

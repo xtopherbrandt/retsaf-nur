@@ -8,26 +8,17 @@ that contract (POST /sessions multipart -> 201 {session_id, quality_flags}).
 
 import httpx
 import pytest
-import tomli_w
 from typer.testing import CliRunner
 
-from runcoach_cli import api_client, config
 from runcoach_cli.main import app
 
 runner = CliRunner()
 
-
-@pytest.fixture(autouse=True)
-def isolated_config_path(tmp_path, monkeypatch):
-    """Point CONFIG_PATH at a throwaway location with a pre-written config.
-
-    Never touches the real ``~/.runcoach/`` directory.
-    """
-    config_path = tmp_path / ".runcoach" / "cli.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_bytes(tomli_w.dumps({"api_url": "http://example.test"}).encode())
-    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
-    return config_path
+# Every command exercised here calls ``load_config()`` first, so it needs real
+# config content on disk -- the bare autouse ``isolated_config_path`` only
+# redirects the path. ``prewritten_config`` (see conftest.py) layers the
+# content on; applied module-wide because every test below needs it.
+pytestmark = pytest.mark.usefixtures("prewritten_config")
 
 
 @pytest.fixture
@@ -38,13 +29,7 @@ def fit_file(tmp_path):
     return path
 
 
-def _install_mock_client(handler, monkeypatch) -> None:
-    """Swap the module-level api_client for one backed by a MockTransport."""
-    mock_client = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
-    monkeypatch.setattr(api_client, "client", mock_client)
-
-
-def test_ingest_happy_path_renders_session_id_and_quality_flags(monkeypatch, fit_file) -> None:
+def test_ingest_happy_path_renders_session_id_and_quality_flags(install_mock_client, fit_file) -> None:
     def created_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/sessions"
         assert request.method == "POST"
@@ -53,7 +38,7 @@ def test_ingest_happy_path_renders_session_id_and_quality_flags(monkeypatch, fit
             json={"session_id": "abc-123", "quality_flags": ["low_gps_accuracy"]},
         )
 
-    _install_mock_client(created_handler, monkeypatch)
+    install_mock_client(created_handler)
 
     result = runner.invoke(app, ["ingest", str(fit_file)])
 
@@ -62,11 +47,11 @@ def test_ingest_happy_path_renders_session_id_and_quality_flags(monkeypatch, fit
     assert "low_gps_accuracy" in result.output
 
 
-def test_ingest_happy_path_with_no_quality_flags(monkeypatch, fit_file) -> None:
+def test_ingest_happy_path_with_no_quality_flags(install_mock_client, fit_file) -> None:
     def created_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(201, json={"session_id": "xyz-789", "quality_flags": []})
 
-    _install_mock_client(created_handler, monkeypatch)
+    install_mock_client(created_handler)
 
     result = runner.invoke(app, ["ingest", str(fit_file)])
 
@@ -75,11 +60,11 @@ def test_ingest_happy_path_with_no_quality_flags(monkeypatch, fit_file) -> None:
     assert "none" in result.output
 
 
-def test_ingest_unreachable_api_exits_cleanly(monkeypatch, fit_file) -> None:
+def test_ingest_unreachable_api_exits_cleanly(install_mock_client, fit_file) -> None:
     def refusing_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    _install_mock_client(refusing_handler, monkeypatch)
+    install_mock_client(refusing_handler)
 
     result = runner.invoke(app, ["ingest", str(fit_file)])
 
@@ -88,11 +73,11 @@ def test_ingest_unreachable_api_exits_cleanly(monkeypatch, fit_file) -> None:
     assert "http://example.test" in result.output
 
 
-def test_ingest_non2xx_response_exits_cleanly(monkeypatch, fit_file) -> None:
+def test_ingest_non2xx_response_exits_cleanly(install_mock_client, fit_file) -> None:
     def error_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, text="invalid FIT file")
 
-    _install_mock_client(error_handler, monkeypatch)
+    install_mock_client(error_handler)
 
     result = runner.invoke(app, ["ingest", str(fit_file)])
 
@@ -101,7 +86,7 @@ def test_ingest_non2xx_response_exits_cleanly(monkeypatch, fit_file) -> None:
     assert "invalid FIT file" in result.output
 
 
-def test_ingest_missing_path_exits_nonzero(monkeypatch, tmp_path) -> None:
+def test_ingest_missing_path_exits_nonzero(tmp_path) -> None:
     missing_path = tmp_path / "does-not-exist.fit"
 
     result = runner.invoke(app, ["ingest", str(missing_path)])

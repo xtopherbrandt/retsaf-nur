@@ -8,40 +8,25 @@ tasks (T016, T011) layered onto the same call site afterward.
 
 import httpx
 import pytest
-import tomli_w
 from typer.testing import CliRunner
 
-from runcoach_cli import api_client, config
 from runcoach_cli.main import app
 
 runner = CliRunner()
 
-
-@pytest.fixture(autouse=True)
-def isolated_config_path(tmp_path, monkeypatch):
-    """Point CONFIG_PATH at a throwaway location with a pre-written config.
-
-    Never touches the real ``~/.runcoach/`` directory.
-    """
-    config_path = tmp_path / ".runcoach" / "cli.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_bytes(tomli_w.dumps({"api_url": "http://example.test"}).encode())
-    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
-    return config_path
+# Every command exercised here calls ``load_config()`` first, so it needs real
+# config content on disk -- the bare autouse ``isolated_config_path`` only
+# redirects the path. ``prewritten_config`` (see conftest.py) layers the
+# content on; applied module-wide because every test below needs it.
+pytestmark = pytest.mark.usefixtures("prewritten_config")
 
 
-def _install_mock_client(handler, monkeypatch) -> None:
-    """Swap the module-level api_client for one backed by a MockTransport."""
-    mock_client = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
-    monkeypatch.setattr(api_client, "client", mock_client)
-
-
-def test_status_happy_path_renders_ok_and_version(monkeypatch) -> None:
+def test_status_happy_path_renders_ok_and_version(install_mock_client) -> None:
     def ok_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/health"
         return httpx.Response(200, json={"status": "ok", "version": "1.0.0"})
 
-    _install_mock_client(ok_handler, monkeypatch)
+    install_mock_client(ok_handler)
 
     result = runner.invoke(app, ["status"])
 
@@ -50,11 +35,11 @@ def test_status_happy_path_renders_ok_and_version(monkeypatch) -> None:
     assert "1.0.0" in result.output
 
 
-def test_status_unreachable_and_non2xx_exit_cleanly(monkeypatch) -> None:
+def test_status_unreachable_and_non2xx_exit_cleanly(install_mock_client) -> None:
     def refusing_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)
 
-    _install_mock_client(refusing_handler, monkeypatch)
+    install_mock_client(refusing_handler)
 
     result = runner.invoke(app, ["status"])
 
@@ -63,11 +48,11 @@ def test_status_unreachable_and_non2xx_exit_cleanly(monkeypatch) -> None:
     assert "runcoach-api" in result.output
 
 
-def test_status_non2xx_response_exits_cleanly(monkeypatch) -> None:
+def test_status_non2xx_response_exits_cleanly(install_mock_client) -> None:
     def error_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="internal server error")
 
-    _install_mock_client(error_handler, monkeypatch)
+    install_mock_client(error_handler)
 
     result = runner.invoke(app, ["status"])
 
@@ -76,11 +61,11 @@ def test_status_non2xx_response_exits_cleanly(monkeypatch) -> None:
     assert "internal server error" in result.output
 
 
-def test_status_malformed_response_fails_cleanly(monkeypatch) -> None:
+def test_status_malformed_response_fails_cleanly(install_mock_client) -> None:
     def invalid_json_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="not json at all", headers={"content-type": "application/json"})
 
-    _install_mock_client(invalid_json_handler, monkeypatch)
+    install_mock_client(invalid_json_handler)
 
     result = runner.invoke(app, ["status"])
 
@@ -88,11 +73,11 @@ def test_status_malformed_response_fails_cleanly(monkeypatch) -> None:
     assert "could not be understood" in result.output
 
 
-def test_status_missing_version_field_fails_cleanly(monkeypatch) -> None:
+def test_status_missing_version_field_fails_cleanly(install_mock_client) -> None:
     def missing_version_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "ok"})
 
-    _install_mock_client(missing_version_handler, monkeypatch)
+    install_mock_client(missing_version_handler)
 
     result = runner.invoke(app, ["status"])
 
@@ -100,11 +85,11 @@ def test_status_missing_version_field_fails_cleanly(monkeypatch) -> None:
     assert "could not be understood" in result.output
 
 
-def test_status_non_string_version_field_fails_cleanly(monkeypatch) -> None:
+def test_status_non_string_version_field_fails_cleanly(install_mock_client) -> None:
     def non_string_version_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "ok", "version": 123})
 
-    _install_mock_client(non_string_version_handler, monkeypatch)
+    install_mock_client(non_string_version_handler)
 
     result = runner.invoke(app, ["status"])
 

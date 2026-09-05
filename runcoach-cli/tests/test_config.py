@@ -16,17 +16,6 @@ import typer
 from runcoach_cli import config
 
 
-@pytest.fixture(autouse=True)
-def isolated_config_path(tmp_path, monkeypatch):
-    """Point CONFIG_PATH at a throwaway location for every test in this module.
-
-    Never touches the real ``~/.runcoach/`` directory.
-    """
-    config_path = tmp_path / ".runcoach" / "cli.toml"
-    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
-    return config_path
-
-
 def test_load_config_missing_exits_before_network_call(monkeypatch, capsys) -> None:
     # Spy on httpx.Client construction: if load_config's failure path ever
     # constructs an HTTP client, this fails the test immediately instead of
