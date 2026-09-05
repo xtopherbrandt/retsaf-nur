@@ -11,6 +11,7 @@ from runcoach_api.ingestion.exceptions import (
     FitParseFailure,
     MissingCanonicalFieldError,
     NotAFitFileError,
+    TooManyRecordsError,
 )
 from runcoach_api.ingestion.pipeline import ingest_fit_bytes
 from runcoach_api.schemas import HealthResponse, IngestResponse
@@ -117,6 +118,15 @@ def create_session(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(400, f"not a valid FIT file: {exc}") from exc
     except FitParseFailure as exc:
         raise HTTPException(400, f"file could not be parsed: {exc}") from exc
+    except TooManyRecordsError as exc:
+        # 413, not 400 and not a quality flag: "this upload is too
+        # large" stays one semantic bucket whether the byte cap or the
+        # record ceiling is the dimension that trips it.
+        raise HTTPException(
+            413,
+            f"upload exceeds {exc.limit} record message limit "
+            f"(reached {exc.count})",
+        ) from exc
     except MissingCanonicalFieldError as exc:
         raise HTTPException(400, f"{exc.field} could not be determined: {exc}") from exc
     except DuplicateSessionError as exc:

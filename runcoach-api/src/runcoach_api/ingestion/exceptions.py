@@ -51,3 +51,30 @@ class MissingCanonicalFieldError(Exception):
     def __init__(self, field: str, message: str) -> None:
         super().__init__(message)
         self.field = field
+
+
+class TooManyRecordsError(Exception):
+    """Raised when a FIT file carries more ``record`` messages than
+    ``fit_parser.MAX_RECORD_MESSAGES`` allows.
+
+    The 50MB upload cap bounds an upload's *bytes*; it does not bound
+    how many ``record`` messages those bytes decode into. A file of
+    unusually small per-record messages can sit well under the byte cap
+    while carrying far more records than any realistic activity, so the
+    record count is bounded separately -- and enforced *during* decode,
+    since a ceiling that trips only after the full list is materialised
+    would have already spent the memory it exists to bound.
+
+    Carries the observed ``count`` and the ``limit`` it exceeded as
+    data, the same shape ``DuplicateSessionError`` uses for
+    ``existing_session_id``, so the ``main.py`` boundary can report both
+    without re-deriving them.
+    """
+
+    def __init__(self, count: int, limit: int) -> None:
+        super().__init__(
+            f"FIT file carries more than {limit} record messages "
+            f"(reached {count}); refusing to decode further"
+        )
+        self.count = count
+        self.limit = limit

@@ -24,10 +24,34 @@ import io
 
 import fitdecode
 
-from runcoach_api.ingestion.exceptions import FitParseFailure, NotAFitFileError
+from runcoach_api.ingestion.exceptions import (
+    FitParseFailure,
+    NotAFitFileError,
+    TooManyRecordsError,
+)
 
 _FIT_MAGIC = b".FIT"
 _MAGIC_OFFSET = 8
+
+# Ceiling on ``record`` messages accepted from a single FIT file.
+#
+#   base    21,600 records = 6 h x 3600 s at 1Hz -- F003's NFR ("single
+#                            athlete, realistic activity durations up to
+#                            several hours at 1Hz").
+#   ceiling 100,000 records ~ 28 h at 1Hz, ~4.6x the base.
+#
+# The 4.6x multiple is this codebase's own engineering judgement, not
+# something the domain spec derives; it is logged as such in F003's
+# Decision Log. 100,000 sits far beyond any single running activity --
+# including a 100-mile ultra -- while still being a real bound: the
+# largest fixture in the corpus (``dev_fields_run.fit``) carries ~3,118
+# records, so the ceiling keeps ~32x headroom over anything real.
+#
+# Enforced inside ``decode()``'s per-frame loop rather than in
+# ``quality_gates``: by the time the gates run, ``mapping.to_canonical``
+# has already materialised the full record list and the memory this
+# bound exists to protect is already spent.
+MAX_RECORD_MESSAGES = 100_000
 
 
 def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
@@ -39,6 +63,12 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         FitParseFailure: the bytes carry a valid FIT header but
             ``fitdecode`` fails to parse the body (bad CRC, malformed
             definition/data records, etc.).
+        TooManyRecordsError: the stream carries more than
+            ``MAX_RECORD_MESSAGES`` ``record`` messages. Raised from
+            inside the frame loop, the moment the ceiling is passed --
+            the reader is abandoned there and the remaining frames are
+            never pulled, so a hostile file costs only the frames read
+            up to that point.
     """
     magic = raw[_MAGIC_OFFSET : _MAGIC_OFFSET + len(_FIT_MAGIC)]
     if magic != _FIT_MAGIC:
@@ -47,6 +77,7 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         )
 
     messages: list[fitdecode.FitDataMessage] = []
+    record_count = 0
     try:
         with fitdecode.FitReader(
             io.BytesIO(raw),
@@ -55,6 +86,12 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         ) as reader:
             for frame in reader:
                 if isinstance(frame, fitdecode.FitDataMessage):
+                    if frame.name == "record":
+                        record_count += 1
+                        if record_count > MAX_RECORD_MESSAGES:
+                            raise TooManyRecordsError(
+                                count=record_count, limit=MAX_RECORD_MESSAGES
+                            )
                     messages.append(frame)
     except (
         fitdecode.FitCRCError,
