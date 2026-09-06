@@ -18,7 +18,7 @@ on. Every assertion below exists to make that shortcut fail a test.
 **Same device, different times -- deliberately.** Varying ``source_device`` as
 well would let the whole file pass for the wrong reason: it would prove that
 two *different* devices don't collide, not that two same-device same-day
-readings are both kept. ``_capture()`` therefore holds the device fixed and
+readings are both kept. ``capture()`` therefore holds the device fixed and
 varies only ``start_time``.
 
 **And the inverse must stay true.** A genuinely re-uploaded identical file is
@@ -74,25 +74,19 @@ DEVICE_FIRMWARE = 17.4
 EXPECTED_DEVICE = f"{DEVICE_PRODUCT} fw{DEVICE_FIRMWARE}"
 
 
-class _FakeMsg:
-    """Minimal stand-in for a ``fitdecode.FitDataMessage``.
-
-    The same shape ``test_mapping_sport_handling.py`` and
-    ``test_resting_hrv_tier2.py`` use: only ``.name``,
-    ``get_value(name, fallback=None)`` and ``.fields`` are read by
-    ``mapping.to_canonical`` and ``hrv_classification.classify``.
-    """
-
-    def __init__(self, name: str, values: dict) -> None:
-        self.name = name
-        self._values = values
-        self.fields: list = []
-
-    def get_value(self, name, fallback=None):
-        return self._values.get(name, fallback)
+# ``fake_msg`` and ``post_fit`` come from ``conftest.py``, shared with the
+# four other ``test_resting_hrv_*`` modules. This module keeps its own
+# message builder rather than using the shared ``synthetic``: the retention
+# guarantee is about *two captures from one identifiable device*, so these
+# message sets carry ``file_id`` / ``device_info`` and vary ``start_time``,
+# neither of which the shared two-message builder does. It uses ``post_fit``
+# rather than ``ingest`` for the same reason its own upload helper returned
+# the raw response: the 409 on a genuine re-upload is the thing under test,
+# and a helper that asserted 201 would swallow it.
 
 
-def _messages(start: datetime, rmssd_hrv: int) -> list[_FakeMsg]:
+@pytest.fixture
+def messages(fake_msg):
     """A sport-60 Health Snapshot message set: one file_id, one device_info,
     one session roll-up carrying ``rmssd_hrv``, and one record.
 
@@ -101,35 +95,44 @@ def _messages(start: datetime, rmssd_hrv: int) -> list[_FakeMsg]:
     retention guarantee has to hold for identifiable devices, which is the
     case that actually occurs.
     """
-    return [
-        _FakeMsg("file_id", {"garmin_product": DEVICE_PRODUCT}),
-        _FakeMsg(
-            "device_info",
-            {"garmin_product": DEVICE_PRODUCT, "software_version": DEVICE_FIRMWARE},
-        ),
-        _FakeMsg(
-            "session",
-            {
-                "sport": 60,
-                "start_time": start,
-                "rmssd_hrv": rmssd_hrv,
-                "total_timer_time": 120.0,
-            },
-        ),
-        _FakeMsg("record", {"timestamp": start, "heart_rate": 58}),
-    ]
+
+    def _messages(start: datetime, rmssd_hrv: int) -> list:
+        return [
+            fake_msg("file_id", {"garmin_product": DEVICE_PRODUCT}),
+            fake_msg(
+                "device_info",
+                {"garmin_product": DEVICE_PRODUCT, "software_version": DEVICE_FIRMWARE},
+            ),
+            fake_msg(
+                "session",
+                {
+                    "sport": 60,
+                    "start_time": start,
+                    "rmssd_hrv": rmssd_hrv,
+                    "total_timer_time": 120.0,
+                },
+            ),
+            fake_msg("record", {"timestamp": start, "heart_rate": 58}),
+        ]
+
+    return _messages
 
 
-def _capture(start: datetime, rmssd_hrv: int):
+@pytest.fixture
+def capture(messages):
     """One classified resting-HRV capture, ready to persist.
 
     Drives the real ``mapping.to_canonical`` -> ``hrv_classification.classify``
     path so ``session_id``, ``source_device`` and ``rmssd_precomputed`` are all
     produced by production code rather than hand-written.
     """
-    session, records = mapping.to_canonical(_messages(start, rmssd_hrv))
-    hrv_classification.classify(_messages(start, rmssd_hrv), session, [])
-    return session, records
+
+    def _capture(start: datetime, rmssd_hrv: int):
+        session, records = mapping.to_canonical(messages(start, rmssd_hrv))
+        hrv_classification.classify(messages(start, rmssd_hrv), session, [])
+        return session, records
+
+    return _capture
 
 
 def _persist(conn: sqlite3.Connection, session, records) -> None:
@@ -155,33 +158,28 @@ def _session_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
-def _ingest(client: TestClient, filename: str):
-    raw = (FIXTURES / filename).read_bytes()
-    return client.post("/sessions", files={"file": (filename, raw)})
-
-
 # ---------------------------------------------------------------------------
 # The premise: the pair really is same-device, same-day, different-time
 # ---------------------------------------------------------------------------
 
 
-def test_the_two_captures_share_a_device_and_a_calendar_date() -> None:
+def test_the_two_captures_share_a_device_and_a_calendar_date(capture) -> None:
     """Guards the whole file against passing for the wrong reason. If these
     two captures ever differed by device or by date, every retention
     assertion below would be proving something far weaker than F004 asks."""
-    first, _ = _capture(MORNING, FIRST_RMSSD)
-    second, _ = _capture(LATER_THAT_MORNING, SECOND_RMSSD)
+    first, _ = capture(MORNING, FIRST_RMSSD)
+    second, _ = capture(LATER_THAT_MORNING, SECOND_RMSSD)
 
     assert first.source_device == second.source_device == EXPECTED_DEVICE
     assert first.start_time[:10] == second.start_time[:10]
     assert first.start_time != second.start_time
 
 
-def test_the_two_captures_are_both_tier_2_readings() -> None:
+def test_the_two_captures_are_both_tier_2_readings(capture) -> None:
     """Both carry a reading, so "both retained" is a claim about readings and
     not merely about two empty session rows."""
-    first, _ = _capture(MORNING, FIRST_RMSSD)
-    second, _ = _capture(LATER_THAT_MORNING, SECOND_RMSSD)
+    first, _ = capture(MORNING, FIRST_RMSSD)
+    second, _ = capture(LATER_THAT_MORNING, SECOND_RMSSD)
 
     for session, expected in ((first, FIRST_RMSSD), (second, SECOND_RMSSD)):
         assert session.hrv_source_tier == "health_snapshot"
@@ -189,12 +187,12 @@ def test_the_two_captures_are_both_tier_2_readings() -> None:
         assert session.activity_tag == "health_snapshot"
 
 
-def test_same_day_captures_at_different_times_get_distinct_session_ids() -> None:
+def test_same_day_captures_at_different_times_get_distinct_session_ids(capture) -> None:
     """``derive_session_id`` hashes ``(source_device, start_time)``. Same
     device, different time -> different id, so the two never contend for one
     primary key in the first place."""
-    first, _ = _capture(MORNING, FIRST_RMSSD)
-    second, _ = _capture(LATER_THAT_MORNING, SECOND_RMSSD)
+    first, _ = capture(MORNING, FIRST_RMSSD)
+    second, _ = capture(LATER_THAT_MORNING, SECOND_RMSSD)
 
     assert first.session_id != second.session_id
 
@@ -204,27 +202,27 @@ def test_same_day_captures_at_different_times_get_distinct_session_ids() -> None
 # ---------------------------------------------------------------------------
 
 
-def test_two_same_day_readings_persist_as_two_rows(conn) -> None:
+def test_two_same_day_readings_persist_as_two_rows(conn, capture) -> None:
     """The task's first failing test: two sport-60 message sets carrying
     ``rmssd_hrv`` 37 and 41 at two different ``start_time``s on one calendar
     date produce two distinct session rows."""
-    _persist(conn, *_capture(MORNING, FIRST_RMSSD))
-    _persist(conn, *_capture(LATER_THAT_MORNING, SECOND_RMSSD))
+    _persist(conn, *capture(MORNING, FIRST_RMSSD))
+    _persist(conn, *capture(LATER_THAT_MORNING, SECOND_RMSSD))
 
     rows = _session_rows(conn)
 
     assert len(rows) == 2
     assert {row["session_id"] for row in rows} == {
-        _capture(MORNING, FIRST_RMSSD)[0].session_id,
-        _capture(LATER_THAT_MORNING, SECOND_RMSSD)[0].session_id,
+        capture(MORNING, FIRST_RMSSD)[0].session_id,
+        capture(LATER_THAT_MORNING, SECOND_RMSSD)[0].session_id,
     }
 
 
-def test_each_same_day_row_keeps_its_own_rmssd_and_timestamp(conn) -> None:
+def test_each_same_day_row_keeps_its_own_rmssd_and_timestamp(conn, capture) -> None:
     """"...with their own timestamps". Neither reading is overwritten by the
     other, and the second does not inherit the first's value."""
-    _persist(conn, *_capture(MORNING, FIRST_RMSSD))
-    _persist(conn, *_capture(LATER_THAT_MORNING, SECOND_RMSSD))
+    _persist(conn, *capture(MORNING, FIRST_RMSSD))
+    _persist(conn, *capture(LATER_THAT_MORNING, SECOND_RMSSD))
 
     rows = _session_rows(conn)
 
@@ -235,22 +233,22 @@ def test_each_same_day_row_keeps_its_own_rmssd_and_timestamp(conn) -> None:
     assert [row["rmssd_precomputed"] for row in rows] == [FIRST_RMSSD, SECOND_RMSSD]
 
 
-def test_the_second_same_day_capture_is_not_rejected_as_a_duplicate(conn) -> None:
+def test_the_second_same_day_capture_is_not_rejected_as_a_duplicate(conn, capture) -> None:
     """Dedup is keyed on ``(source_device, start_time)`` and must stay that
     way. A second reading later the same morning is a new reading, not a
     re-upload -- ``db.persist`` must not raise."""
-    _persist(conn, *_capture(MORNING, FIRST_RMSSD))
+    _persist(conn, *capture(MORNING, FIRST_RMSSD))
 
-    _persist(conn, *_capture(LATER_THAT_MORNING, SECOND_RMSSD))  # must not raise
+    _persist(conn, *capture(LATER_THAT_MORNING, SECOND_RMSSD))  # must not raise
 
     assert len(_session_rows(conn)) == 2
 
 
-def test_both_same_day_readings_read_back_independently(conn) -> None:
+def test_both_same_day_readings_read_back_independently(conn, capture) -> None:
     """Retrieval, not just storage: ``get_session_detail`` returns each
     reading's own value, so nothing collapses on the way out either."""
-    first, _ = _capture(MORNING, FIRST_RMSSD)
-    second, _ = _capture(LATER_THAT_MORNING, SECOND_RMSSD)
+    first, _ = capture(MORNING, FIRST_RMSSD)
+    second, _ = capture(LATER_THAT_MORNING, SECOND_RMSSD)
     _persist(conn, first, [])
     _persist(conn, second, [])
 
@@ -264,7 +262,7 @@ def test_both_same_day_readings_read_back_independently(conn) -> None:
     assert second_detail["start_time"] == LATER_THAT_MORNING.isoformat()
 
 
-def test_a_third_reading_on_the_same_day_is_also_retained(conn) -> None:
+def test_a_third_reading_on_the_same_day_is_also_retained(conn, capture) -> None:
     """"Several", not "two". A latest-wins or keep-the-first rule that
     survived the two-reading case would be caught here."""
     for start, rmssd in (
@@ -272,7 +270,7 @@ def test_a_third_reading_on_the_same_day_is_also_retained(conn) -> None:
         (LATER_THAT_MORNING, SECOND_RMSSD),
         (LATER_STILL, 44),
     ):
-        _persist(conn, *_capture(start, rmssd))
+        _persist(conn, *capture(start, rmssd))
 
     rows = _session_rows(conn)
 
@@ -281,11 +279,11 @@ def test_a_third_reading_on_the_same_day_is_also_retained(conn) -> None:
     assert len({row["start_time"][:10] for row in rows}) == 1  # all one calendar date
 
 
-def test_the_order_the_readings_arrive_in_does_not_change_the_outcome(conn) -> None:
+def test_the_order_the_readings_arrive_in_does_not_change_the_outcome(conn, capture) -> None:
     """A later-timestamped capture uploaded *first* must not cause the
     earlier one to be treated as stale and dropped."""
-    _persist(conn, *_capture(LATER_THAT_MORNING, SECOND_RMSSD))
-    _persist(conn, *_capture(MORNING, FIRST_RMSSD))
+    _persist(conn, *capture(LATER_THAT_MORNING, SECOND_RMSSD))
+    _persist(conn, *capture(MORNING, FIRST_RMSSD))
 
     rows = _session_rows(conn)
 
@@ -331,15 +329,15 @@ def test_no_day_level_column_or_index_has_been_introduced(conn) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_re_persisting_the_identical_capture_is_still_a_duplicate(conn) -> None:
+def test_re_persisting_the_identical_capture_is_still_a_duplicate(conn, capture) -> None:
     """"Retain every reading" must not degrade into "never deduplicate".
     Same device *and* same instant is the existing duplicate-upload case --
     consistent with ``test_duplicate_upload.py``."""
-    first, records = _capture(MORNING, FIRST_RMSSD)
+    first, records = capture(MORNING, FIRST_RMSSD)
     _persist(conn, first, records)
 
     with pytest.raises(DuplicateSessionError) as exc_info:
-        _persist(conn, *_capture(MORNING, FIRST_RMSSD))
+        _persist(conn, *capture(MORNING, FIRST_RMSSD))
 
     assert exc_info.value.existing_session_id == first.session_id
     assert len(_session_rows(conn)) == 1
@@ -350,7 +348,7 @@ def test_re_persisting_the_identical_capture_is_still_a_duplicate(conn) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_both_real_snapshot_fixtures_come_from_the_same_device() -> None:
+def test_both_real_snapshot_fixtures_come_from_the_same_device(post_fit) -> None:
     """The premise of the end-to-end test below: ``sample_health_snapshot.fit``
     and ``strap_health_snapshot.fit`` were recorded on one device
     (fr945_lte fw17.4) at different instants, so retaining both is the
@@ -359,7 +357,7 @@ def test_both_real_snapshot_fixtures_come_from_the_same_device() -> None:
     starts = set()
     for filename in SNAPSHOT_FIXTURES:
         with TestClient(app) as client:
-            response = _ingest(client, filename)
+            response = post_fit(client, filename)
             assert response.status_code == 201, response.text
             body = client.get(f"/sessions/{response.json()['session_id']}").json()
         devices.add(body["source_device"])
@@ -369,14 +367,14 @@ def test_both_real_snapshot_fixtures_come_from_the_same_device() -> None:
     assert len(starts) == 2
 
 
-def test_two_real_snapshots_from_one_device_both_survive_ingestion() -> None:
+def test_two_real_snapshots_from_one_device_both_survive_ingestion(post_fit) -> None:
     """Both fixtures route Tier 2 (37 ms and 51 ms). Uploaded into one
     database, both must still be there afterwards with their own values --
     the second must not displace the first."""
     with TestClient(app) as client:
         session_ids = {}
         for filename in SNAPSHOT_FIXTURES:
-            response = _ingest(client, filename)
+            response = post_fit(client, filename)
             assert response.status_code == 201, response.text
             session_ids[filename] = response.json()["session_id"]
 
@@ -398,17 +396,17 @@ def test_two_real_snapshots_from_one_device_both_survive_ingestion() -> None:
     assert count == 2
 
 
-def test_re_uploading_one_snapshot_is_still_a_409_and_leaves_the_other_alone() -> None:
+def test_re_uploading_one_snapshot_is_still_a_409_and_leaves_the_other_alone(post_fit) -> None:
     """The duplicate-upload path is unchanged by any of the above: a genuine
     re-upload is rejected 409 as a no-op, while the *other* day's reading is
     untouched."""
     with TestClient(app) as client:
-        first = _ingest(client, "sample_health_snapshot.fit")
+        first = post_fit(client, "sample_health_snapshot.fit")
         assert first.status_code == 201
-        other = _ingest(client, "strap_health_snapshot.fit")
+        other = post_fit(client, "strap_health_snapshot.fit")
         assert other.status_code == 201
 
-        again = _ingest(client, "sample_health_snapshot.fit")
+        again = post_fit(client, "sample_health_snapshot.fit")
         assert again.status_code == 409
         assert first.json()["session_id"] in again.text
 

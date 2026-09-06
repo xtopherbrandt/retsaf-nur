@@ -52,7 +52,6 @@ real-fixture requirement does not bite. The real gate fixture is still asserted 
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -83,50 +82,31 @@ GATE_FLAGS = (FLAG_TOO_SHORT, FLAG_LOW_QUALITY, FLAG_NO_BEATS)
 # what §5's fixed vocabulary exists to prevent.
 FLAG_READING_UNAVAILABLE = "hrv_reading_unavailable"
 
-_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+# ``synthetic``, ``classified`` and ``ingest`` come from ``conftest.py``,
+# shared with the four other ``test_resting_hrv_*`` modules. The shared
+# ``classified`` carries this module's three-parameter signature --
+# ``classified(messages, rr_intervals=None, valid_fraction=None)`` -- which
+# was the drifted one: the other four modules' copies lacked
+# ``valid_fraction`` entirely, and omitting it leaves ``rr_valid_fraction``
+# exactly as ``mapping.to_canonical`` set it, which is what they were
+# already asserting against. ``synthetic`` defaults ``sport`` to
+# ``"running"``, as this module's own copy did.
 
 
-class _FakeMsg:
-    """Minimal stand-in for a ``fitdecode.FitDataMessage``.
-
-    The same shape ``test_resting_hrv_tier1.py`` and ``test_resting_hrv_tier2.py`` use:
-    only ``.name``, ``get_value(name, fallback=None)`` and ``.fields`` are read by
-    ``mapping.to_canonical`` and by ``hrv_classification.classify``.
-    """
-
-    def __init__(self, name: str, values: dict) -> None:
-        self.name = name
-        self._values = values
-        self.fields: list = []
-
-    def get_value(self, name, fallback=None):
-        return self._values.get(name, fallback)
-
-
-def _synthetic(**session_extra):
-    """A two-message file routed through the real ``mapping.to_canonical``.
-
-    ``_build_summary`` strips its ``None`` values, so omitting ``total_distance`` leaves
-    the summary with **no** ``distance_m`` key at all -- exactly what a real GPS-less
-    indoor capture produces.
-    """
-    values = {"sport": "running", "start_time": _START}
-    values.update(session_extra)
-    return [
-        _FakeMsg("session", values),
-        _FakeMsg("record", {"timestamp": _START, "heart_rate": 60}),
-    ]
-
-
-def _resting(**session_extra):
+@pytest.fixture
+def resting(synthetic):
     """A message set that clears T041's discriminator: 150 s, no distance, avg HR 60.
 
     Every gate test starts from a file the Tier-1 branch *would* route, so a failure
     below can only be the gate under test and never the discriminator.
     """
-    values = {"total_timer_time": 150.0, "avg_heart_rate": 60}
-    values.update(session_extra)
-    return _synthetic(**values)
+
+    def _resting(**session_extra):
+        values = {"total_timer_time": 150.0, "avg_heart_rate": 60}
+        values.update(session_extra)
+        return synthetic(**values)
+
+    return _resting
 
 
 def _beats(count: int = 8, artefacts: int = 0) -> list[RRInterval]:
@@ -146,20 +126,6 @@ def _beats(count: int = 8, artefacts: int = 0) -> list[RRInterval]:
     ]
 
 
-def _classified(messages, rr_intervals=None, valid_fraction=None):
-    """Map, then classify -- optionally with the ``rr_valid_fraction`` pipeline would set.
-
-    ``pipeline.py`` assigns ``session.rr_valid_fraction`` between mapping and
-    ``classify()``, so setting it here reproduces the real call order rather than
-    inventing one.
-    """
-    session, _records = mapping.to_canonical(messages)
-    if valid_fraction is not None:
-        session.rr_valid_fraction = valid_fraction
-    hrv_classification.classify(messages, session, rr_intervals or [])
-    return session
-
-
 def _assert_no_reading(session) -> None:
     """The shared "Then" of all three rows: stored, flagged, but no reading.
 
@@ -173,47 +139,38 @@ def _assert_no_reading(session) -> None:
     assert "computed_resting_rmssd_ms" not in provenance
 
 
-def _ingest(client: TestClient, filename: str) -> dict:
-    raw = (FIXTURES / filename).read_bytes()
-    post = client.post("/sessions", files={"file": (filename, raw)})
-    assert post.status_code == 201, post.text
-    detail = client.get(f"/sessions/{post.json()['session_id']}")
-    assert detail.status_code == 200, detail.text
-    return detail.json()
-
-
 # ---------------------------------------------------------------------------
 # Row 1 -- minimum duration, 120 s (§2.4.5's "2-5 minute" lower bound)
 # ---------------------------------------------------------------------------
 
 
-def test_a_capture_under_two_minutes_raises_too_short() -> None:
+def test_a_capture_under_two_minutes_raises_too_short(resting, classified) -> None:
     """The first failing test of T043: a Tier-1 capture whose ``total_timer_time`` is
     under 120 s is stored with its flag and yields no reading."""
-    session = _classified(
-        _resting(total_timer_time=90.0), rr_intervals=_beats(), valid_fraction=1.0
+    session = classified(
+        resting(total_timer_time=90.0), rr_intervals=_beats(), valid_fraction=1.0
     )
 
     assert FLAG_TOO_SHORT in session.quality_flags
     _assert_no_reading(session)
 
 
-def test_the_minimum_duration_bound_is_inclusive() -> None:
+def test_the_minimum_duration_bound_is_inclusive(resting, classified) -> None:
     """120 s is the protocol's lower bound, so a capture *of* two minutes is inside it.
     Only "shorter than 120 s" fails -- the same inclusive treatment T041 gave 300 s."""
-    session = _classified(
-        _resting(total_timer_time=120.0), rr_intervals=_beats(), valid_fraction=1.0
+    session = classified(
+        resting(total_timer_time=120.0), rr_intervals=_beats(), valid_fraction=1.0
     )
 
     assert FLAG_TOO_SHORT not in session.quality_flags
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
-def test_one_millisecond_under_the_bound_fails() -> None:
+def test_one_millisecond_under_the_bound_fails(resting, classified) -> None:
     """119.999 s is the first step outside the protocol. Pinned so the comparison can
     never be relaxed to ``<=`` without a test going red."""
-    session = _classified(
-        _resting(total_timer_time=119.999), rr_intervals=_beats(), valid_fraction=1.0
+    session = classified(
+        resting(total_timer_time=119.999), rr_intervals=_beats(), valid_fraction=1.0
     )
 
     assert FLAG_TOO_SHORT in session.quality_flags
@@ -226,14 +183,18 @@ def test_one_millisecond_under_the_bound_fails() -> None:
 
 
 @pytest.mark.parametrize("fraction", [0.0, 0.5, 0.799])
-def test_a_capture_retaining_under_eighty_percent_raises_low_quality(fraction: float) -> None:
+def test_a_capture_retaining_under_eighty_percent_raises_low_quality(
+    fraction: float,
+    resting,
+    classified,
+) -> None:
     """§2.4.3's default rejects a sample retaining <80% of beats.
 
     ``0.0`` is included deliberately: "beats recorded, none survived filtering" is a
     *low quality* finding, not a *no beats* one. Collapsing it into row 3 would lose the
     distinction ``models.Session.rr_valid_fraction`` documents as load-bearing."""
-    session = _classified(
-        _resting(), rr_intervals=_beats(), valid_fraction=fraction
+    session = classified(
+        resting(), rr_intervals=_beats(), valid_fraction=fraction
     )
 
     assert FLAG_LOW_QUALITY in session.quality_flags
@@ -242,20 +203,27 @@ def test_a_capture_retaining_under_eighty_percent_raises_low_quality(fraction: f
 
 
 @pytest.mark.parametrize("fraction", [0.80, 0.998, 1.0])
-def test_a_capture_retaining_at_least_eighty_percent_still_reads(fraction: float) -> None:
+def test_a_capture_retaining_at_least_eighty_percent_still_reads(
+    fraction: float,
+    resting,
+    classified,
+) -> None:
     """The bound is inclusive: exactly 80% retained is not "under 80%". 0.998 is
     ``dev_fields_run.fit``'s own measured fraction, kept here as a realistic value."""
-    session = _classified(_resting(), rr_intervals=_beats(), valid_fraction=fraction)
+    session = classified(resting(), rr_intervals=_beats(), valid_fraction=fraction)
 
     assert FLAG_LOW_QUALITY not in session.quality_flags
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
-def test_the_surviving_fraction_is_read_from_the_beats_when_the_session_lacks_it() -> None:
+def test_the_surviving_fraction_is_read_from_the_beats_when_the_session_lacks_it(
+    resting,
+    classified,
+) -> None:
     """``classify()`` is public and reachable without ``pipeline.py`` -- T041's own suite
     calls it that way. When the session carries no precomputed fraction but beats are in
     hand, the fraction is derived from them rather than mistaken for "no beats"."""
-    session = _classified(_resting(), rr_intervals=_beats(count=10, artefacts=4))
+    session = classified(resting(), rr_intervals=_beats(count=10, artefacts=4))
 
     assert session.rr_valid_fraction is None
     assert FLAG_LOW_QUALITY in session.quality_flags
@@ -268,22 +236,25 @@ def test_the_surviving_fraction_is_read_from_the_beats_when_the_session_lacks_it
 # ---------------------------------------------------------------------------
 
 
-def test_a_resting_capture_with_an_empty_beat_stream_raises_no_beats() -> None:
+def test_a_resting_capture_with_an_empty_beat_stream_raises_no_beats(
+    resting,
+    classified,
+) -> None:
     """``pipeline.py`` leaves ``rr_valid_fraction`` ``None`` for a session with no RR
     stream at all. A resting-shaped capture that recorded no beats is reported as such
     rather than failing silently."""
-    session = _classified(_resting(), rr_intervals=[])
+    session = classified(resting(), rr_intervals=[])
 
     assert session.rr_valid_fraction is None
     assert FLAG_NO_BEATS in session.quality_flags
     _assert_no_reading(session)
 
 
-def test_no_beats_does_not_raise_type_error_on_a_null_fraction() -> None:
+def test_no_beats_does_not_raise_type_error_on_a_null_fraction(resting, classified) -> None:
     """The 500-on-a-valid-upload regression: ``is None`` must be checked *before* the
     float comparison. Asserted as a behavioural test rather than a comment, because a
     naive ``< 0.80`` is a ``TypeError`` here and nothing else in the suite catches it."""
-    session = _classified(_resting(total_timer_time=90.0), rr_intervals=[])
+    session = classified(resting(total_timer_time=90.0), rr_intervals=[])
 
     # Both findings are independent and both apply; neither masks the other.
     assert FLAG_NO_BEATS in session.quality_flags
@@ -291,18 +262,18 @@ def test_no_beats_does_not_raise_type_error_on_a_null_fraction() -> None:
     _assert_no_reading(session)
 
 
-def test_no_beats_is_not_raised_when_beats_survived() -> None:
+def test_no_beats_is_not_raised_when_beats_survived(resting, classified) -> None:
     """The negative half of row 3: a healthy capture must not carry the flag."""
-    session = _classified(_resting(), rr_intervals=_beats(), valid_fraction=1.0)
+    session = classified(resting(), rr_intervals=_beats(), valid_fraction=1.0)
 
     assert FLAG_NO_BEATS not in session.quality_flags
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
-def test_a_beatless_capture_does_not_reach_a_tier_1_reading() -> None:
+def test_a_beatless_capture_does_not_reach_a_tier_1_reading(resting, classified) -> None:
     """Belt and braces on the Tier-1 necessary condition: flagging the beatless case
     must not have turned it into a route."""
-    session = _classified(_resting(), rr_intervals=[])
+    session = classified(resting(), rr_intervals=[])
 
     assert session.activity_tag is None
     _assert_no_reading(session)
@@ -313,12 +284,12 @@ def test_a_beatless_capture_does_not_reach_a_tier_1_reading() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_ninety_second_ordinary_run_raises_no_gate_flag() -> None:
+def test_a_ninety_second_ordinary_run_raises_no_gate_flag(synthetic, classified) -> None:
     """The noise guard, and the reason the gates sit *inside* the Tier-1 branch: a 90 s
     run at 3.2 m/s is under 120 s, but it was never a resting capture, so
     ``hrv_capture_too_short`` would be a meaningless finding on it."""
-    session = _classified(
-        _synthetic(total_timer_time=90.0, total_distance=289.0, avg_heart_rate=165),
+    session = classified(
+        synthetic(total_timer_time=90.0, total_distance=289.0, avg_heart_rate=165),
         rr_intervals=_beats(),
         valid_fraction=0.5,
     )
@@ -327,12 +298,12 @@ def test_a_ninety_second_ordinary_run_raises_no_gate_flag() -> None:
 
 
 @pytest.mark.parametrize("filename", ["dev_fields_run.fit", "sample_run.fit", "wrist_ppg_run.fit"])
-def test_no_ordinary_fixture_picks_up_a_gate_flag(filename: str) -> None:
+def test_no_ordinary_fixture_picks_up_a_gate_flag(filename: str, ingest) -> None:
     """Real files, through the real API. ``wrist_ppg_run.fit`` carries no RR stream at
     all -- so its ``rr_valid_fraction`` is genuinely ``None`` -- and it must still not
     be flagged: it is a run, not a resting capture."""
     with TestClient(app) as client:
-        body = _ingest(client, filename)
+        body = ingest(client, filename)
 
     assert [f for f in body["quality_flags"] if f in GATE_FLAGS] == []
     assert body["hrv_source_tier"] is None
@@ -343,24 +314,24 @@ def test_no_ordinary_fixture_picks_up_a_gate_flag(filename: str) -> None:
     ("filename", "rmssd"),
     [("sample_health_snapshot.fit", 37), ("strap_health_snapshot.fit", 51)],
 )
-def test_a_health_snapshot_keeps_its_tier_2_reading(filename: str, rmssd: int) -> None:
+def test_a_health_snapshot_keeps_its_tier_2_reading(filename: str, rmssd: int, ingest) -> None:
     """Regression guard on T039. Both snapshots are zero-beat, 120.1 s, low-heart-rate
     files -- exactly the shape rows 1 and 3 describe -- so a gate that ran before the
     Tier-2 branch, or that ignored whether Tier 2 had claimed the file, would strip a
     working reading and flag it as a failed capture."""
     with TestClient(app) as client:
-        body = _ingest(client, filename)
+        body = ingest(client, filename)
 
     assert body["hrv_source_tier"] == "health_snapshot"
     assert body["rmssd_precomputed"] == rmssd
     assert [f for f in body["quality_flags"] if f in GATE_FLAGS] == []
 
 
-def test_a_long_resting_shaped_file_is_not_gated() -> None:
+def test_a_long_resting_shaped_file_is_not_gated(resting, classified) -> None:
     """A capture outside the 300 s upper bound is not a Tier-1 candidate at all, so it
     is silently not routed -- never flagged. The gates report on captures, not on files."""
-    session = _classified(
-        _resting(total_timer_time=1800.0), rr_intervals=[], valid_fraction=None
+    session = classified(
+        resting(total_timer_time=1800.0), rr_intervals=[], valid_fraction=None
     )
 
     assert [f for f in session.quality_flags if f in GATE_FLAGS] == []
@@ -371,11 +342,11 @@ def test_a_long_resting_shaped_file_is_not_gated() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_every_applicable_gate_raises_its_own_flag() -> None:
+def test_every_applicable_gate_raises_its_own_flag(resting, classified) -> None:
     """"Raise each that applies" -- they are independent findings. A 90 s capture whose
     beats mostly failed filtering is both too short *and* low quality."""
-    session = _classified(
-        _resting(total_timer_time=60.0), rr_intervals=_beats(), valid_fraction=0.25
+    session = classified(
+        resting(total_timer_time=60.0), rr_intervals=_beats(), valid_fraction=0.25
     )
 
     assert FLAG_TOO_SHORT in session.quality_flags
@@ -383,10 +354,10 @@ def test_every_applicable_gate_raises_its_own_flag() -> None:
     _assert_no_reading(session)
 
 
-def test_a_gate_flag_is_not_duplicated() -> None:
+def test_a_gate_flag_is_not_duplicated(resting) -> None:
     """``quality_gates.py``'s ``if flag not in session.quality_flags`` convention: bare
     string literals on a ``list[str]``, no enum, no registry, no flags table."""
-    messages = _resting(total_timer_time=90.0)
+    messages = resting(total_timer_time=90.0)
     session, _records = mapping.to_canonical(messages)
     session.quality_flags.append(FLAG_TOO_SHORT)
     hrv_classification.classify(messages, session, _beats())
@@ -395,10 +366,10 @@ def test_a_gate_flag_is_not_duplicated() -> None:
     assert session.quality_flags.count(FLAG_TOO_SHORT) == 1
 
 
-def test_gate_flags_are_plain_strings() -> None:
+def test_gate_flags_are_plain_strings(resting, classified) -> None:
     """They are persisted through ``db.py``'s ``_json_dump``/``_json_load`` TEXT
     convention and surface verbatim in both responses -- no new plumbing."""
-    session = _classified(_resting(total_timer_time=90.0), rr_intervals=[])
+    session = classified(resting(total_timer_time=90.0), rr_intervals=[])
 
     assert all(isinstance(flag, str) for flag in session.quality_flags)
     assert set(session.quality_flags) >= {FLAG_TOO_SHORT, FLAG_NO_BEATS}
@@ -409,12 +380,12 @@ def test_gate_flags_are_plain_strings() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_gate_fixture_passes_all_three_gates() -> None:
+def test_the_gate_fixture_passes_all_three_gates(ingest) -> None:
     """``strap_hrv_sample_run.fit`` is 150.797 s of real chest-strap beats. If any gate
     were mis-signed -- ``>`` for ``<``, or the 120/300 bounds swapped -- this reading
     would disappear, so it is the positive control the whole file is written around."""
     with TestClient(app) as client:
-        body = _ingest(client, GATE_FIXTURE)
+        body = ingest(client, GATE_FIXTURE)
 
     assert [f for f in body["quality_flags"] if f in GATE_FLAGS] == []
     assert body["activity_tag"] == "resting_hrv_check"
@@ -443,17 +414,17 @@ def test_a_failing_capture_uploads_successfully_and_is_stored() -> None:
     assert detail.json()["rmssd_precomputed"] is None
 
 
-def test_a_failed_gate_never_writes_a_zero_or_negative_sentinel() -> None:
+def test_a_failed_gate_never_writes_a_zero_or_negative_sentinel(resting, classified) -> None:
     """E003 takes ``ln(rMSSD)``. ``0`` and ``-1`` are both falsy *and* both catastrophic
     there -- ``ln(0)`` is undefined and ``ln(-1)`` is a domain error -- which is why
     ``rmssd.resting_rmssd`` returns ``None`` rather than ``0.0`` for "no value" and why
     a failed gate must do the same."""
     for messages, beats, fraction in (
-        (_resting(total_timer_time=90.0), _beats(), 1.0),
-        (_resting(), _beats(), 0.5),
-        (_resting(), [], None),
+        (resting(total_timer_time=90.0), _beats(), 1.0),
+        (resting(), _beats(), 0.5),
+        (resting(), [], None),
     ):
-        session = _classified(messages, rr_intervals=beats, valid_fraction=fraction)
+        session = classified(messages, rr_intervals=beats, valid_fraction=fraction)
 
         assert session.rmssd_precomputed is None
         assert session.rmssd_precomputed is not False
@@ -465,7 +436,7 @@ def test_a_failed_gate_never_writes_a_zero_or_negative_sentinel() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_single_beat_capture_yields_no_reading() -> None:
+def test_a_single_beat_capture_yields_no_reading(resting, classified) -> None:
     """A strap that paired and then dropped: one beat, so **zero contributing pairs**
     and ``rmssd.resting_rmssd`` answers ``None``.
 
@@ -475,7 +446,7 @@ def test_a_single_beat_capture_yields_no_reading() -> None:
     ``chest_strap_ecg``: a completed chest-strap reading carrying no number and no
     explanation, which E003 would read as a tier that produced a value it cannot find.
     "No derivable statistic" is a gate failure like any other -- flagged, not stamped."""
-    session = _classified(_resting(), rr_intervals=_beats(count=1))
+    session = classified(resting(), rr_intervals=_beats(count=1))
 
     assert session.rr_valid_fraction is None
     assert FLAG_READING_UNAVAILABLE in session.quality_flags
@@ -483,7 +454,7 @@ def test_a_single_beat_capture_yields_no_reading() -> None:
     _assert_no_reading(session)
 
 
-def test_a_beat_stream_with_no_usable_pair_yields_no_reading() -> None:
+def test_a_beat_stream_with_no_usable_pair_yields_no_reading(resting, classified) -> None:
     """The same finding by a different route, and the reason the check is on the
     statistic rather than on ``len(rr_intervals)``: two beats, neither flagged -- so
     ``valid_fraction`` is ``1.0`` and the artefact gate is silent -- but one carries a
@@ -493,13 +464,16 @@ def test_a_beat_stream_with_no_usable_pair_yields_no_reading() -> None:
         RRInterval(seq=0, rr_ms=None, rr_source="chest_strap_ecg", is_artefact=False),
         RRInterval(seq=1, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False),
     ]
-    session = _classified(_resting(), rr_intervals=beats)
+    session = classified(resting(), rr_intervals=beats)
 
     assert FLAG_READING_UNAVAILABLE in session.quality_flags
     _assert_no_reading(session)
 
 
-def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path() -> None:
+def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path(
+    resting,
+    classified,
+) -> None:
     """The regression this check must not cause. ``0.0`` is a genuine measurement of zero
     beat-to-beat variability, not an absence -- the ``None``/``0.0`` distinction
     ``models.Session.rr_valid_fraction`` documents and ``rmssd.resting_rmssd`` was built
@@ -509,7 +483,7 @@ def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path() -> None:
         RRInterval(seq=i, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False)
         for i in range(6)
     ]
-    session = _classified(_resting(), rr_intervals=beats)
+    session = classified(resting(), rr_intervals=beats)
 
     assert FLAG_READING_UNAVAILABLE not in session.quality_flags
     assert session.activity_tag == "resting_hrv_check"
@@ -518,10 +492,10 @@ def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path() -> None:
     assert session.context.provenance["computed_resting_rmssd_ms"] == 0.0
 
 
-def test_a_healthy_capture_does_not_raise_the_unavailable_flag() -> None:
+def test_a_healthy_capture_does_not_raise_the_unavailable_flag(resting, classified) -> None:
     """The negative control: the flag is raised only when the statistic is genuinely
     underivable, never on an ordinary Tier-1 reading."""
-    session = _classified(_resting(), rr_intervals=_beats())
+    session = classified(resting(), rr_intervals=_beats())
 
     assert FLAG_READING_UNAVAILABLE not in session.quality_flags
     assert session.hrv_source_tier == "chest_strap_raw"
