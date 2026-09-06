@@ -6,7 +6,11 @@ here. ``get_connection`` creates the directory if needed and returns a
 connection with foreign keys enabled; ``init_schema`` is idempotent
 DDL for the four canonical-schema tables; ``persist`` writes one
 ingested session (session header, records, RR intervals, and
-quarantined sidecar values) in a single transaction.
+quarantined sidecar values) in a single transaction, and
+``delete_session`` removes that same row set in one -- children first,
+parent last -- which is what makes re-ingesting a file possible after
+the ``UNIQUE (source_device, start_time)`` constraint has claimed its
+slot.
 
 TEXT-column serialization convention: ``sessions.quality_flags``,
 ``sessions.summary``, ``sessions.context``, and
@@ -353,6 +357,77 @@ def persist(
             # IntegrityError propagate instead.
             raise
         raise DuplicateSessionError(row[0]) from exc
+
+
+def _child_tables() -> list[str]:
+    """Every table other than ``sessions`` that carries a ``session_id``,
+    read out of ``_SCHEMA_DDL`` rather than hand-listed.
+
+    Derived for the same reason ``_expected_schema`` is: a hand-written
+    list only ever holds the tables whoever edited it remembered, and a
+    forgotten one leaves orphan rows behind a delete -- rows the next
+    ingest of the same file cannot displace, which is a *worse* state
+    than the 409 the delete route exists to relieve. Adding a table to
+    the DDL with a ``session_id`` column is therefore all it takes to
+    have ``delete_session`` clean it up.
+    """
+    return [
+        table
+        for table, columns in _expected_schema().items()
+        if table != "sessions" and "session_id" in columns
+    ]
+
+
+def _delete_child_rows(conn: sqlite3.Connection, session_id: str) -> None:
+    """Remove one session's rows from every child table.
+
+    A private helper rather than an inlined loop for the same reason
+    ``persist``'s four insert helpers are: it is the seam a test
+    monkeypatches to simulate a mid-transaction failure, since
+    ``sqlite3.Connection`` is an immutable C type and cannot be patched
+    itself.
+    """
+    for table in _child_tables():
+        # Table names come from the DDL, never from a caller; the
+        # session_id -- which does -- is bound as a parameter.
+        conn.execute(f"DELETE FROM {table} WHERE session_id = ?", (session_id,))
+
+
+def delete_session(conn: sqlite3.Connection, session_id: str) -> bool:
+    """Delete one session and all of its child rows in a single
+    transaction. Returns ``True`` when a session row was removed and
+    ``False`` when ``session_id`` did not exist, so the caller (the
+    ``DELETE /sessions/{id}`` route) can turn that into a 404.
+
+    **Children first, parent last, explicitly.** The DDL declares no
+    ``ON DELETE`` action and ``get_connection`` runs
+    ``PRAGMA foreign_keys = ON``, so deleting the parent first is not
+    merely unsupported -- it raises ``IntegrityError``. Relying on a
+    cascade was considered and rejected on those two facts read out of
+    the code, not on SQLite's documented default (which is the opposite
+    of what this connection does).
+
+    This is a **hard** delete, deliberately. A tombstoned row would keep
+    occupying its ``UNIQUE (source_device, start_time)`` slot and go on
+    answering a re-upload with a 409 -- the exact problem the route
+    exists to solve (F004, 2026-09-06 amendment: an athlete whose
+    capture ingested during the upgrade window recovers by deleting the
+    session and uploading the file again). Nothing here reclassifies or
+    backfills anything; delete-and-re-ingest is the sanctioned recovery.
+
+    ``with conn:`` is the whole atomicity story: SQLite opens an
+    implicit transaction on the first DELETE and rolls it back if
+    anything raises, so a failure part-way through leaves the session
+    fully intact rather than stripped of its beats.
+    """
+    with conn:
+        _delete_child_rows(conn, session_id)
+        cur = conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        # rowcount on the parent delete, rather than a preceding SELECT:
+        # existence and removal are then decided by one statement inside
+        # one transaction, so two concurrent deletes cannot both report
+        # success (the second finds no row and returns False).
+        return cur.rowcount > 0
 
 
 def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None:

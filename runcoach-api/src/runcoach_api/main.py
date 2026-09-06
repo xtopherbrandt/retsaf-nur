@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from starlette.datastructures import Headers
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from runcoach_api import __version__, db
@@ -151,3 +151,35 @@ def get_session(session_id: str) -> dict:
         raise HTTPException(404, f"session {session_id} not found")
 
     return detail
+
+
+@app.delete("/sessions/{session_id}", status_code=204, response_class=Response)
+def delete_session(session_id: str) -> Response:
+    """Remove one session and every row that hangs off it.
+
+    The recovery path out of F004's 2026-09-06 upgrade window: a capture
+    ingested before the athlete added their activity-profile name to
+    ``api.toml`` carries no reading, adding the name reclassifies
+    nothing already stored, and ``UNIQUE (source_device, start_time)``
+    answered a re-upload with a 409. Deleting the session frees that
+    slot, so *configure, delete, upload again* actually works. The 409
+    itself is unchanged -- this route is what makes it survivable, not a
+    relaxation of it.
+
+    404 on an unknown id, matching ``get_session``'s message shape; the
+    id is otherwise unvalidated, since it reaches nothing but a bound
+    parameter in a ``DELETE ... WHERE session_id = ?``.
+    """
+    conn = db.get_connection()
+    try:
+        deleted = db.delete_session(conn, session_id)
+    finally:
+        conn.close()
+
+    if not deleted:
+        raise HTTPException(404, f"session {session_id} not found")
+
+    # An explicit empty 204 rather than a serialized ``None``: a 204 must
+    # carry no body at all, and returning None through the default JSON
+    # response class would emit a four-byte ``null``.
+    return Response(status_code=204)
