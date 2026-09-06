@@ -517,3 +517,113 @@ def test_under_ceiling_upload_still_succeeds() -> None:
         )
 
     assert response.status_code == 201, response.text
+
+
+# ---------------------------------------------------------------------------
+# The message names the ceiling that actually tripped
+#
+# All three ceilings share ``TooManyRecordsError`` -- deliberately, so the
+# 413 boundary in ``main.py`` stays one ``except`` clause and the exception
+# type stays stable for callers. But a shared type must not mean a shared
+# *noun*: a strap-paired workout that trips ``MAX_RR_BEATS`` was told it had
+# too many "record messages", which is false (it may carry none at all) and
+# leaves the user with nothing actionable. The count and limit were always
+# right; only the unit was wrong.
+# ---------------------------------------------------------------------------
+
+
+def test_record_ceiling_names_record_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fit_parser, "MAX_RECORD_MESSAGES", 10)
+    _install_fake_reader(monkeypatch, [_fake_record_frame() for _ in range(11)])
+
+    with pytest.raises(TooManyRecordsError) as excinfo:
+        fit_parser.decode(_HEADER_ONLY)
+
+    assert excinfo.value.unit == "record messages"
+    assert str(excinfo.value) == (
+        "FIT file carries more than 10 record messages "
+        "(reached 11); refusing to decode further"
+    )
+
+
+def test_data_message_ceiling_names_data_messages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A file of 11 ``device_info`` messages carries **zero** records.
+
+    Telling its uploader they have too many "record messages" names a
+    quantity that is literally 0 in their file.
+    """
+    monkeypatch.setattr(fit_parser, "MAX_DATA_MESSAGES", 10)
+    _install_fake_reader(
+        monkeypatch, [_fake_named_frame("device_info") for _ in range(11)]
+    )
+
+    with pytest.raises(TooManyRecordsError) as excinfo:
+        fit_parser.decode(_HEADER_ONLY)
+
+    assert excinfo.value.unit == "data messages"
+    assert "record" not in str(excinfo.value)
+    assert str(excinfo.value) == (
+        "FIT file carries more than 10 data messages "
+        "(reached 11); refusing to decode further"
+    )
+
+
+def test_beat_ceiling_names_rr_beats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Six ``hrv`` messages, twelve beats, zero records: the exact case the
+    finding names. The overflowing quantity is beats, not records."""
+    monkeypatch.setattr(fit_parser, "MAX_RR_BEATS", 10)
+    _install_fake_reader(monkeypatch, [_fake_hrv_frame(2) for _ in range(6)])
+
+    with pytest.raises(TooManyRecordsError) as excinfo:
+        fit_parser.decode(_HEADER_ONLY)
+
+    assert excinfo.value.unit == "RR beats"
+    assert "record" not in str(excinfo.value)
+    assert str(excinfo.value) == (
+        "FIT file carries more than 10 RR beats "
+        "(reached 12); refusing to decode further"
+    )
+
+
+def test_the_three_ceilings_do_not_share_a_noun() -> None:
+    """A regression guard on the fix itself: three ceilings, three messages.
+
+    Any collapse of the three back onto one shared noun -- the state this
+    test was written to end -- fails here.
+    """
+    rendered = {
+        str(TooManyRecordsError(count=2, limit=1, unit=unit))
+        for unit in ("record messages", "data messages", "RR beats")
+    }
+    assert len(rendered) == 3
+
+
+@pytest.mark.parametrize(
+    ("ceiling", "expected_unit"),
+    [
+        ("MAX_RECORD_MESSAGES", "record messages"),
+        ("MAX_DATA_MESSAGES", "data messages"),
+        ("MAX_RR_BEATS", "RR beats"),
+    ],
+)
+def test_413_body_names_the_ceiling_that_tripped(
+    monkeypatch: pytest.MonkeyPatch, ceiling: str, expected_unit: str
+) -> None:
+    """The noun has to survive all the way into the response body.
+
+    ``dev_fields_run.fit`` trips every one of the three when that ceiling
+    alone is lowered: 3,118 records, far more data messages, and 7,220
+    beats. The status stays 413 in all three cases -- only the noun moves.
+    """
+    monkeypatch.setattr(fit_parser, ceiling, 5)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/sessions",
+            files={"file": (LARGEST_FIXTURE, _fixture_bytes(LARGEST_FIXTURE))},
+        )
+
+    assert response.status_code == 413
+    assert expected_unit in response.json()["detail"]

@@ -120,11 +120,14 @@ def create_session(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(400, f"file could not be parsed: {exc}") from exc
     except TooManyRecordsError as exc:
         # 413, not 400 and not a quality flag: "this upload is too
-        # large" stays one semantic bucket whether the byte cap or the
-        # record ceiling is the dimension that trips it.
+        # large" stays one semantic bucket whichever dimension trips it
+        # -- the byte cap or any of the parser's three decode ceilings.
+        # One bucket, one status, but ``exc.unit`` names the quantity
+        # that actually overflowed, so a beat overrun is not reported as
+        # a record overrun in a file that carries no records at all.
         raise HTTPException(
             413,
-            f"upload exceeds {exc.limit} record message limit "
+            f"upload exceeds the limit of {exc.limit} {exc.unit} "
             f"(reached {exc.count})",
         ) from exc
     except MissingCanonicalFieldError as exc:

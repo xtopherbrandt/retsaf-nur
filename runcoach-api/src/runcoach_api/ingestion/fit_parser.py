@@ -125,6 +125,16 @@ MAX_DATA_MESSAGES = 500_000
 # Until that lands, this bound caps volume, not time.
 MAX_RR_BEATS = 150_000
 
+# The noun each ceiling reports when it trips. The three share
+# ``TooManyRecordsError`` so the 413 boundary stays one ``except``
+# clause, but they must not share a *noun*: a beat overrun in a
+# strap-paired file with zero ``record`` messages was previously
+# reported as too many "record messages", naming a quantity that is 0
+# in that file. Plural, because they render as "more than N <unit>".
+_UNIT_RECORD_MESSAGES = "record messages"
+_UNIT_DATA_MESSAGES = "data messages"
+_UNIT_RR_BEATS = "RR beats"
+
 
 def _hrv_beat_count(frame: fitdecode.FitDataMessage) -> int:
     """Beats carried by one ``hrv`` message's ``time`` array.
@@ -195,19 +205,25 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
                     data_message_count += 1
                     if data_message_count > MAX_DATA_MESSAGES:
                         raise TooManyRecordsError(
-                            count=data_message_count, limit=MAX_DATA_MESSAGES
+                            count=data_message_count,
+                            limit=MAX_DATA_MESSAGES,
+                            unit=_UNIT_DATA_MESSAGES,
                         )
                     if frame.name == "record":
                         record_count += 1
                         if record_count > MAX_RECORD_MESSAGES:
                             raise TooManyRecordsError(
-                                count=record_count, limit=MAX_RECORD_MESSAGES
+                                count=record_count,
+                                limit=MAX_RECORD_MESSAGES,
+                                unit=_UNIT_RECORD_MESSAGES,
                             )
                     elif frame.name == "hrv":
                         beat_count += _hrv_beat_count(frame)
                         if beat_count > MAX_RR_BEATS:
                             raise TooManyRecordsError(
-                                count=beat_count, limit=MAX_RR_BEATS
+                                count=beat_count,
+                                limit=MAX_RR_BEATS,
+                                unit=_UNIT_RR_BEATS,
                             )
                     messages.append(frame)
     except (
