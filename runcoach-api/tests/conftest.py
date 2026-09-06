@@ -126,6 +126,29 @@ def _synthetic(sport="running", **session_extra):
     ]
 
 
+def _multi_session(*sessions):
+    """A file carrying **more than one** ``session`` message, plus one ``record``.
+
+    Real Garmin multisport and multi-lap files carry one ``session`` roll-up per
+    leg. ``mapping.to_canonical`` builds its canonical ``Session`` from
+    ``_first_of(by_name, "session")`` -- the *first* one only -- while
+    ``rr_reconstruction.reconstruct`` walks every ``hrv`` message in the file. The
+    summary and the beat stream therefore describe different spans, which is what
+    ``hrv_classification`` refuses to classify on (F004 ref doc §2.1).
+
+    Each positional argument is one session message's field dict; ``sport`` and
+    ``start_time`` default the way ``_synthetic`` defaults them, and either may be
+    overridden per session.
+    """
+    messages = []
+    for session_extra in sessions:
+        values = {"sport": "running", "start_time": SYNTHETIC_START}
+        values.update(session_extra)
+        messages.append(_FakeMsg("session", values))
+    messages.append(_FakeMsg("record", {"timestamp": SYNTHETIC_START, "heart_rate": 60}))
+    return messages
+
+
 def _classified(messages, rr_intervals=None, valid_fraction=None):
     """Map, then classify -- optionally with the ``rr_valid_fraction`` the
     pipeline would have set.
@@ -179,6 +202,12 @@ def fake_msg() -> type[_FakeMsg]:
 def synthetic():
     """``synthetic(sport="running", **session_extra)`` -> message list."""
     return _synthetic
+
+
+@pytest.fixture
+def multi_session():
+    """``multi_session(*session_field_dicts)`` -> message list with N ``session`` messages."""
+    return _multi_session
 
 
 @pytest.fixture

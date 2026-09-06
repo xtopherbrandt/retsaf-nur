@@ -101,10 +101,15 @@ _RESTING_MAX_DURATION_S = 300.0
 # 0.718 m/s of GPS drift, not travel.
 _RESTING_MAX_MEAN_SPEED_MS = 1.0
 
-# SPEC-INTRODUCED IMPLEMENTATION DEFAULT, same treatment. The GPS-less
-# fallback, chosen for **separation, not precision**: the gate fixture is
-# avg HR 60 and any short hard effort is 150+, which leaves generous headroom
-# for a stressed or unwell resting morning.
+# SPEC-INTRODUCED IMPLEMENTATION DEFAULT, same treatment. Chosen for
+# **separation, not precision**: the gate fixture is avg HR 60 and any short
+# hard effort is 150+, which leaves generous headroom for a stressed or unwell
+# resting morning.
+#
+# Amended 2026-09-06 (critic pass): this used to be described as "the GPS-less
+# fallback". It is not a fallback -- it is the *only* corroborating signal the
+# discriminator has, and it is now required on every Tier-1 route. See
+# ``_resting_profile_duration``.
 _RESTING_MAX_AVG_HEART_RATE_BPM = 100
 
 # --- the Tier-1 quality gates (T043, F004 reference document §5) -------------
@@ -166,6 +171,13 @@ _FLAG_READING_UNAVAILABLE = "hrv_reading_unavailable"
 # a Tier-1 computation -- a different situation that must stay
 # distinguishable in the same loosely typed dict.
 _PROVENANCE_SIGNAL_DISAGREEMENT = "hrv_signal_disagreement"
+
+# Provenance key for the multi-session refusal (2026-09-06 critic pass). A
+# *provenance* entry and deliberately not a quality flag: see ``classify`` for
+# the argument, and ``_PROVENANCE_SIGNAL_DISAGREEMENT`` above for the
+# precedent -- F004's existing channel for "the classifier saw something and
+# declined to act on it" is the audit trail, not the flag list.
+_PROVENANCE_MULTI_SESSION_UNCLASSIFIED = "hrv_multi_session_unclassified"
 
 # --- the quarantine boundary, made mechanically checkable (T046) -------------
 #
@@ -254,6 +266,16 @@ def _session_rmssd_hrv(messages: list[fitdecode.FitDataMessage]) -> Any:
     return None
 
 
+def _session_message_count(messages: list[fitdecode.FitDataMessage]) -> int:
+    """How many ``session`` messages the decoded file carries.
+
+    Counted off the decoded messages rather than added to ``mapping.py``: the
+    ambiguity below is F004's problem, not F003's, and ``mapping.to_canonical``
+    is untouched by this guard exactly as it is by the rest of this module.
+    """
+    return sum(1 for message in messages if message.name == "session")
+
+
 def _numeric(value: Any) -> float | int | None:
     """``value`` when it is a real number, otherwise ``None``.
 
@@ -335,7 +357,63 @@ def classify(
     fixture carries both signals -- the strap captures have beats and no
     scalar, the snapshots a scalar and zero ``hrv`` messages -- so that
     suite is necessarily synthetic and says so.
+
+    **A file carrying more than one ``session`` message is refused before
+    either tier** (2026-09-06, sprint-003 critic pass; reference document
+    §2.1). ``mapping.to_canonical`` builds the canonical ``Session`` from
+    ``_first_of(by_name, "session")`` -- the *first* session message only --
+    while ``rr_reconstruction.reconstruct`` walks **every** ``hrv`` message in
+    the file. On a multi-session file the summary this module discriminates on
+    and the beat stream it would compute from therefore describe different
+    spans, and the reproduction is not subtle: a 240 s / 150 m / 92 bpm leg
+    followed by a two-hour run, 7000 beats file-wide, routed as an *unflagged*
+    ``resting_hrv_check`` / ``chest_strap_raw`` reading whose rMSSD came from
+    in-run beats -- and the tag then excluded that two-hour run from training
+    load as well.
+
+    ``_first_of`` is F003 code and is unchanged; what F004 changed is its
+    status, from a summary-*fidelity* choice into a
+    classification-*correctness* dependency. F004 therefore owns the
+    consequence, and answers it the only way a review fix may: **it refuses to
+    route a file it cannot confidently classify.** No segmentation, no
+    per-session beat attribution, no "pick the best leg" heuristic -- that is a
+    feature, and it belongs in its own task.
+
+    **Both tiers refuse, not only Tier 1.** Tier 2's hazard is different in
+    kind and equally real. Its two signals come from two different places:
+    ``raw_sport_value`` off the provenance ``mapping.py`` wrote for the *first*
+    session message, and ``rmssd_hrv`` off the first session message that
+    happens to *carry* one -- ``_session_rmssd_hrv`` skips those that do not.
+    With more than one session those need not be the same message, so a
+    sport-60 snapshot leg can supply the identity while a 90-minute run leg
+    supplies the number, the two "agree", and in-run wrist-PPG rMSSD is stored
+    as a resting reading. That is exactly the §2.2.3 prohibition row 2's
+    identity guard exists to make impossible, reached by crossing two messages
+    rather than by disagreeing on one. Two signals only corroborate when they
+    come off the same session, and nothing here establishes that they do.
+
+    **Recorded in provenance, and deliberately not as a quality flag.** The
+    refusal must be visible rather than silent, but a ``hrv_capture_*`` flag
+    asserts a finding *about a resting capture*, and a multi-session file has
+    not been established to be one -- that is the whole reason it is refused.
+    Multi-session FIT files are also entirely ordinary: every multisport and
+    multi-leg activity is one, so flagging them would put a permanent HRV
+    quality flag on every triathlon upload and train the reader to ignore the
+    flag. ``_classify_tier_2``'s row 2 already settled this same question the
+    same way, in the same module, for the same reason ("there is no Tier-2
+    reading for ``hrv_reading_unavailable`` to be about"): the audit trail is
+    where F004 records what it saw and declined to act on. The count goes in
+    because it is the entire reason for the refusal and is **not** otherwise
+    recoverable from the stored session -- the canonical summary is the first
+    leg's and says nothing about a second leg existing.
     """
+    session_message_count = _session_message_count(messages)
+    if session_message_count > 1:
+        _provenance(session)[_PROVENANCE_MULTI_SESSION_UNCLASSIFIED] = {
+            "session_message_count": session_message_count
+        }
+        return None
+
     if _classify_tier_1(messages, session, rr_intervals):
         return None
     _classify_tier_2(messages, session)
@@ -348,15 +426,43 @@ def _resting_profile_duration(session: Session) -> float | None:
     one, otherwise ``None`` (F004 reference document §2)::
 
         duration_s is not None AND 0 < duration_s <= 300
-        AND at least one intensity *signal* is present, where a signal is:
-              distance_m present AND distance_m > 0   ->  a mean speed
-              avg_heart_rate present                  ->  a heart rate
-        AND every signal that IS present agrees:
-              (mean speed present  ->  distance_m / duration_s <= 1.0)
-          AND (avg_heart_rate present  ->  avg_heart_rate <= 100)
+        AND avg_heart_rate is present AND avg_heart_rate <= 100
+        AND (distance_m present AND distance_m > 0
+                 ->  distance_m / duration_s <= 1.0)
 
-    **The two arms are an AND over the signals that exist, not a fallback
-    chain, and that is a correctness fix rather than a stylistic one.**
+    **A heart rate is required; a distance can only veto** (amended 2026-09-06,
+    sprint-003 critic pass). The 2026-09-06 zero-distance amendment drew its
+    line at exactly ``distance_m > 0``, which tests a *sentinel* rather than
+    informativeness: 5 m over 240 s is not evidence of stillness either -- it is
+    GPS jitter -- yet it satisfied the presence test and routed a capture with
+    no heart-rate corroboration at all.
+
+    No threshold on the distance can fix that, and reaching for one is the trap.
+    The gate fixture is 108.21 m over 150.797 s of **pure GPS drift**, which the
+    reference document says in so many words; 5 m over 240 s is the same
+    observation at a smaller magnitude, and any cut between them would be
+    invented rather than measured. The line is drawn on the other axis instead.
+
+    A distance below walking pace is the **absence of counter-evidence, never
+    evidence**: a stationary maximal effort -- indoor trainer, rowing erg,
+    treadmill rep -- produces exactly the same reading as lying still, which is
+    the very argument "Why the heart-rate arm exists" has always made. Nothing a
+    distance field can say distinguishes rest from effort. A heart rate can, so
+    it must be present and must agree; the distance keeps its veto and loses its
+    vote. This is the same principle the zero-distance amendment stated, carried
+    to its conclusion rather than stopped at the sentinel.
+
+    The gate fixture is unaffected -- it carries ``avg_heart_rate = 60`` -- and
+    so is the genuine indoor waking capture (``0.0`` m at 55 bpm), which never
+    depended on the distance arm for its route. What changes is that a capture
+    whose *only* evidence is a distance no longer routes.
+
+    Historically this was a two-armed conjunction, and that shape's own history
+    is preserved below because both amendments' reasoning still constrains the
+    rule.
+
+    **The two arms were an AND over the signals that exist, not a fallback
+    chain, and that was a correctness fix rather than a stylistic one.**
     ``mapping._build_summary`` strips only ``None``, so an indoor session
     carrying ``total_distance = 0.0`` has a ``distance_m`` key holding ``0.0``
     -- present-and-zero, not absent. A treadmill, rowing-erg or
@@ -395,6 +501,11 @@ def _resting_profile_duration(session: Session) -> float | None:
     would stand in for the heart-rate arm it must never replace. Anything not
     strictly greater than zero is not a measurement of movement.
 
+    Since the critic-pass amendment above, *no* distance can stand in for the
+    heart rate, so the stakes on that paragraph are lower than they were -- but
+    it is still what stops ``-500 / 240`` from being computed and read as a
+    satisfied speed bound, and both remain true of the code below.
+
     The mirror case -- a present-and-zero ``avg_heart_rate`` -- is knowingly
     left alone (``IDEA-009``). It is near-unreachable, because Garmin encodes
     an absent heart rate as the invalid sentinel rather than as 0, so it has
@@ -432,27 +543,22 @@ def _resting_profile_duration(session: Session) -> float | None:
     if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
         return None
 
-    # A distance is an intensity signal only when it is a positive measurement.
-    # ``0.0`` is what a device with nothing to report writes, and a negative
-    # value can only be corruption; neither carries intensity information, so
-    # neither may satisfy the presence test below on its own. Computing the
-    # speed here is what keeps "is this a signal" and "does the signal agree"
-    # from drifting apart into two separately-maintained conditions.
-    mean_speed_ms = (
-        distance_m / duration_s if distance_m is not None and distance_m > 0 else None
-    )
-
-    if mean_speed_ms is None and avg_heart_rate is None:
-        # No usable intensity signal at all, so there is nothing to
-        # discriminate on and the conservative outcome is no reading.
+    # The heart rate is *required*, because it is the only signal that can
+    # corroborate rest. A distance can only veto. Absent it there is nothing to
+    # discriminate on, and the conservative outcome is no reading.
+    if avg_heart_rate is None:
+        return None
+    if avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
         return None
 
-    # Every signal that is present must agree the capture is at rest; neither
-    # can rescue the other, each can only veto.
-    if mean_speed_ms is not None and mean_speed_ms > _RESTING_MAX_MEAN_SPEED_MS:
-        return None
-    if avg_heart_rate is not None and avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
-        return None
+    # The distance's veto, and only its veto. Computed only for a positive
+    # distance: ``0.0`` is what a device with nothing to report writes and a
+    # negative value can only be corruption, so neither yields a mean speed to
+    # veto with. The check is against the *speed*, not the distance, and it is
+    # computed after the duration check above has established a usable divisor.
+    if distance_m is not None and distance_m > 0:
+        if distance_m / duration_s > _RESTING_MAX_MEAN_SPEED_MS:
+            return None
 
     return duration_s
 
@@ -612,9 +718,11 @@ def _classify_tier_1(
     effort. It is **not** consulted only when distance is missing: a
     present-and-zero distance is what an indoor session actually logs,
     and treating it as a satisfied distance arm let that maximal effort
-    straight through. Since 2026-09-06 a zero distance is not a signal at
-    all, so such a file needs the heart rate to route rather than merely
-    to survive it. See ``_resting_profile_duration``.
+    straight through. Since the 2026-09-06 critic pass it is not an "arm"
+    at all: the heart rate is **required** on every Tier-1 route, because
+    it is the only signal that can tell rest from a stationary maximal
+    effort, and a distance can only veto. See
+    ``_resting_profile_duration``.
 
     **A reading that cannot be computed is not a reading.** The tier
     fields are written only once ``rmssd.resting_rmssd`` has produced a

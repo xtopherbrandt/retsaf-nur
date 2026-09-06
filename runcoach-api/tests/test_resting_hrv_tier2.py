@@ -426,3 +426,96 @@ def test_a_non_numeric_device_value_on_a_non_snapshot_file_is_not_a_disagreement
     assert "hrv_signal_disagreement" not in session.context.provenance
     assert session.hrv_source_tier is None
     assert session.activity_tag is None
+
+
+# ---------------------------------------------------------------------------
+# Multi-session files -- refused here too, and for a reason of Tier 2's own
+# (F004 ref doc §2.1, 2026-09-06 critic pass)
+# ---------------------------------------------------------------------------
+
+
+def test_a_multi_session_file_never_pairs_the_two_signals_across_messages(
+    multi_session,
+    classified,
+) -> None:
+    """**The Tier-2 hazard, which is different in kind from Tier 1's and just as
+    real.** Tier 2's two signals are read from two different places:
+    ``raw_sport_value`` comes from the provenance ``mapping.py`` wrote off
+    ``_first_of(by_name, "session")`` -- the *first* session message -- while
+    ``_session_rmssd_hrv`` scans the messages and returns the first ``rmssd_hrv``
+    it finds, **skipping** a session message that does not carry one.
+
+    On the file below those are not the same message. Leg 1 is a genuine sport-60
+    Health Snapshot with no device value; leg 2 is a 90-minute run whose firmware
+    attached an ``rmssd_hrv`` computed from in-run wrist PPG. The identity signal
+    is taken from leg 1 and the capability signal from leg 2, they "agree", and
+    the run's number is stored as a resting-HRV reading -- precisely the §2.2.3
+    prohibition row 2's identity guard exists to make impossible, reached by
+    crossing two messages instead of by disagreeing on one.
+
+    So Tier 2 refuses as well. The signals are only corroborating when they come
+    off the same session, and with more than one session nothing establishes that
+    they do."""
+    session = classified(
+        multi_session(
+            {"sport": 60, "total_timer_time": 120.0},
+            {"sport": "running", "total_timer_time": 5400.0, "rmssd_hrv": 44},
+        )
+    )
+
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert session.rmssd_precomputed is None
+    assert session.rr_source is None
+    assert session.quality_flags == []
+    assert session.context.provenance["hrv_multi_session_unclassified"] == {
+        "session_message_count": 2
+    }
+
+
+def test_a_multi_session_file_of_two_snapshots_is_refused_too(
+    multi_session, classified
+) -> None:
+    """Not rescued by both legs agreeing either: two snapshots in one file are two
+    readings, and the canonical schema stores one ``rmssd_precomputed`` per session
+    row. Picking leg 1's number and discarding leg 2's would silently drop a
+    reading; F004 refuses instead and leaves the choice to a real multi-session
+    task."""
+    session = classified(
+        multi_session(
+            {"sport": 60, "total_timer_time": 120.0, "rmssd_hrv": 37},
+            {"sport": 60, "total_timer_time": 120.0, "rmssd_hrv": 51},
+        )
+    )
+
+    assert session.hrv_source_tier is None
+    assert session.rmssd_precomputed is None
+
+
+def test_the_row_2_disagreement_record_is_not_written_for_a_multi_session_file(
+    multi_session,
+    classified,
+) -> None:
+    """The refusal precedes the routing table rather than sitting inside it. A
+    ``hrv_signal_disagreement`` entry asserts that this file's identity and
+    capability signals were compared and disagreed; on a multi-session file they
+    were never comparable in the first place, so recording one would be a false
+    statement about what was observed."""
+    session = classified(
+        multi_session(
+            {"sport": "running", "total_timer_time": 5400.0, "rmssd_hrv": 44},
+            {"sport": 60, "total_timer_time": 120.0},
+        )
+    )
+
+    assert "hrv_signal_disagreement" not in session.context.provenance
+    assert "hrv_multi_session_unclassified" in session.context.provenance
+
+
+@pytest.mark.parametrize("filename", sorted(SNAPSHOT_FIXTURES))
+def test_both_snapshot_fixtures_carry_exactly_one_session_message(filename: str) -> None:
+    """The guard must not be able to reach either Tier-2 happy path. Asserted
+    against the real decoded files rather than assumed."""
+    messages = fit_parser.decode((FIXTURES / filename).read_bytes())
+
+    assert sum(1 for m in messages if m.name == "session") == 1

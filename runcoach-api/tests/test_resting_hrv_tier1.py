@@ -1,33 +1,38 @@
 """T041: Tier 1 -- the chest-strap resting-capture discriminator (F004 ref doc §2).
 
 The predicate ratified 2026-09-05, amended 2026-09-06 after Stage-0 review found
-the original OR shape routed a present-and-zero distance as stillness, and amended
+the original OR shape routed a present-and-zero distance as stillness, amended
 again the same day after goal verification found that a present-and-zero distance
-was *still* satisfying the conjunction's presence test on its own:
+was *still* satisfying the conjunction's presence test on its own, and amended a
+third time by the sprint-003 critic pass, which observed that the previous fix had
+drawn its line at a **sentinel** (``distance_m > 0``) rather than at
+informativeness -- 5 m over 240 s is GPS jitter and routed unflagged with no heart
+rate at all:
 
 ```
 tier1 := rr_intervals is non-empty
      AND duration_s is not None AND 0 < duration_s <= 300
-     AND at_rest, where:
-
-         distance_signal   = distance_m is present AND distance_m > 0
-         heart_rate_signal = avg_heart_rate is present
-
-         if not (distance_signal or heart_rate_signal):
-             at_rest = False        # no usable intensity signal at all
-         else:
-             at_rest = True
-             if distance_signal:
-                 at_rest = distance_m / duration_s <= 1.0
-             if at_rest and heart_rate_signal:
-                 at_rest = avg_heart_rate <= 100
+     AND avg_heart_rate is present AND avg_heart_rate <= 100
+     AND (distance_m is present AND distance_m > 0
+              ->  distance_m / duration_s <= 1.0)
 ```
 
-Every **present** intensity signal must agree, and a distance is only a *signal*
-when it is a positive measurement. **A zero distance is not evidence of stillness
--- it is a device reporting no distance**, so it cannot be the sole reason a
-capture routes: the heart-rate arm must be there and must agree. The whole rule is
-pinned row by row by ``test_the_resting_profile_contract``.
+**A heart rate is required; a distance can only veto.** No threshold on the
+distance could have closed the gap: the gate fixture is 108.21 m over 150.797 s of
+*pure GPS drift*, so 5 m over 240 s is the same observation at a smaller magnitude
+and any cut between them would be invented. A distance below walking pace is the
+absence of counter-evidence, never evidence -- a stationary maximal effort on an
+erg or a trainer reads identically to lying still. Only a heart rate separates the
+two, so it must be present and must agree; the distance keeps its veto and loses
+its vote. The gate fixture (``avg_heart_rate = 60``) and the genuine indoor waking
+capture (``0.0`` m at 55 bpm) are both unaffected. The whole rule is pinned row by
+row by ``test_the_resting_profile_contract``.
+
+**A file with more than one ``session`` message is refused outright**, before
+either tier. ``mapping.to_canonical`` maps the *first* session; RR reconstruction
+walks the *whole file*; so the summary this discriminator reads and the beats it
+would compute from describe different spans. See the multi-session section at the
+foot of this module.
 
 **Raw-RR presence alone must never route**, and that is the single bright line
 the reference document draws in boldface. ``dev_fields_run.fit`` is an ordinary
@@ -334,9 +339,20 @@ def test_a_present_distance_above_walking_pace_vetoes_regardless_of_heart_rate(
 
 
 def test_a_boundary_speed_of_exactly_one_metre_per_second_routes(synthetic, classified) -> None:
-    """The bound is inclusive: ``<= 1.0``."""
+    """The bound is inclusive: ``<= 1.0``.
+
+    **Amended 2026-09-06 (sprint-003 critic pass).** This capture used to carry no
+    ``avg_heart_rate`` at all, and its passing was the incidental pin on exactly the
+    behaviour that pass removed: a distance arm routing a capture on its own. A
+    distance can now only *veto*, never corroborate, so an HR-less file cannot route
+    whatever its distance -- and the test could no longer express its own subject,
+    which is the inclusivity of the ``<= 1.0`` bound. A corroborating 60 bpm is
+    supplied so that bound is still what decides the outcome; the HR-less profile it
+    used to carry is now pinned deliberately, and in the opposite direction, as
+    ``walking-pace-no-heart-rate`` in ``_PROFILE_CONTRACT``."""
     session = classified(
-        synthetic(total_timer_time=200.0, total_distance=200.0), rr_intervals=_beats()
+        synthetic(total_timer_time=200.0, total_distance=200.0, avg_heart_rate=60),
+        rr_intervals=_beats(),
     )
 
     assert session.hrv_source_tier == "chest_strap_raw"
@@ -572,6 +588,40 @@ _PROFILE_CONTRACT = [
         True,
         id="both-bounds-inclusive-by-design",
     ),
+    # --- 2026-09-06, the critic pass: a distance never corroborates rest -----
+    #
+    # The zero-distance amendment drew its line at exactly ``distance_m > 0``,
+    # which tests a *sentinel* rather than informativeness. Five metres over four
+    # minutes is GPS jitter; it is no more evidence of stillness than ``0.0`` is.
+    # And the gate fixture's own 108.21 m over 150.797 s is the same observation
+    # at a larger magnitude -- the reference document calls it drift in so many
+    # words -- so no threshold on the distance itself can separate the two
+    # without being invented. The line is drawn on the other axis instead: a
+    # present distance below walking pace is the **absence of counter-evidence,
+    # never evidence**, because a stationary maximal effort -- erg, indoor
+    # trainer, treadmill rep -- produces exactly the same reading. Only a heart
+    # rate can tell rest from effort, so it must be present and must agree. The
+    # distance keeps its veto and loses its vote.
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 5.0},
+        False,
+        id="gps-jitter-no-heart-rate--the-critic-pass-case",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 100.0},
+        False,
+        id="slow-drift-no-heart-rate",
+    ),
+    pytest.param(
+        {"total_timer_time": 200.0, "total_distance": 200.0},
+        False,
+        id="walking-pace-no-heart-rate",
+    ),
+    pytest.param(
+        {"total_timer_time": 150.797, "total_distance": 108.21},
+        False,
+        id="the-gate-fixture-profile-stripped-of-its-heart-rate",
+    ),
 ]
 
 
@@ -699,3 +749,137 @@ def test_a_boolean_heart_rate_is_not_a_numeric_intensity_signal(synthetic, class
     )
 
     assert session.hrv_source_tier is None
+
+
+# ---------------------------------------------------------------------------
+# Multi-session files -- refused, because the summary and the beats describe
+# different spans (F004 ref doc §2.1, 2026-09-06 critic pass)
+# ---------------------------------------------------------------------------
+
+# The reproduction the critic pass filed, verbatim: a short easy leg followed by
+# a two-hour run in one file. ``mapping.to_canonical`` builds its canonical
+# ``Session`` from ``_first_of(by_name, "session")``, so the discriminator sees
+# leg 1's 240 s / 150 m / 92 bpm; ``rr_reconstruction.reconstruct`` walks every
+# ``hrv`` message in the file, so the rMSSD would be computed over both legs.
+# Before the refusal this routed as an **unflagged** ``resting_hrv_check`` /
+# ``chest_strap_raw`` reading -- a two-hour run turned into a resting-HRV
+# datapoint whose number came from in-run beats, and simultaneously excluded
+# from training load by its own tag.
+_MULTI_SESSION_REPRODUCTION = (
+    {"total_timer_time": 240.0, "total_distance": 150.0, "avg_heart_rate": 92},
+    {"total_timer_time": 7200.0, "total_distance": 20000.0, "avg_heart_rate": 150},
+)
+
+
+def test_the_multi_session_reproduction_is_not_routed_by_tier_1(
+    multi_session, classified
+) -> None:
+    """**The gap.** Leg 1 alone satisfies every arm of the discriminator -- 240 s,
+    0.625 m/s, 92 bpm -- and there is nothing in the first ``session`` message to
+    say a second leg exists. The beats are the whole file's.
+
+    F004 does not attempt to segment the file, attribute beats to a leg, or pick a
+    "best" session: it refuses to route a file it cannot confidently classify.
+    Multi-session support is a feature, not a review fix."""
+    session = classified(
+        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+    )
+
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert session.rr_source is None
+    assert session.rmssd_precomputed is None
+    assert "computed_resting_rmssd_ms" not in session.context.provenance
+
+
+def test_the_refusal_is_recorded_in_provenance_rather_than_left_silent(
+    multi_session, classified
+) -> None:
+    """The refusal is **visible**, and it is visible in provenance rather than as a
+    quality flag.
+
+    Provenance is this module's established channel for "F004 saw something and
+    declined to act on it" -- ``hrv_signal_disagreement`` is the precedent, and it
+    raises no flag either, for the same reason spelled out in ``_classify_tier_2``:
+    a quality flag asserts a finding *about a capture*, and this file has not been
+    established to be one. The count is recorded because it is the whole reason for
+    the refusal and is not otherwise recoverable from the stored session -- the
+    canonical summary is leg 1's and says nothing about leg 2 existing."""
+    session = classified(
+        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+    )
+
+    assert session.context.provenance["hrv_multi_session_unclassified"] == {
+        "session_message_count": 2
+    }
+
+
+def test_the_refusal_raises_no_quality_flag(multi_session, classified) -> None:
+    """A multi-session FIT file is **ordinary** -- every multisport and multi-leg
+    activity is one. Flagging each of them ``hrv_capture_*`` would assert an HRV
+    finding about files that never claimed to be HRV captures, and would put a
+    permanent HRV quality flag on every triathlon upload. The existing flag
+    vocabulary is all about a capture that *was* recognised (§5's gate table plus
+    ``hrv_reading_unavailable``), and none of it fits a file whose identity was
+    never established. No new flag is invented for it either."""
+    session = classified(
+        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+    )
+
+    assert session.quality_flags == []
+
+
+def test_a_beatless_multi_session_file_is_not_gated_either(
+    multi_session, classified
+) -> None:
+    """The beatless quality gate is refused on the same grounds and by the same
+    guard. ``_gate_a_beatless_resting_capture`` reports "this resting capture
+    recorded no beats" -- a statement about a capture, and leg 1's profile is not
+    evidence that the *file* is one."""
+    session = classified(multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=[])
+
+    assert session.quality_flags == []
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+
+
+def test_a_multi_session_file_of_two_resting_legs_is_still_refused(
+    multi_session, classified
+) -> None:
+    """Not a heuristic on whether the *other* legs look restful either. Two resting
+    legs in one file are two readings, and F004 stores one session per file with one
+    ``rmssd_precomputed``; deriving a single number over both legs' beats and
+    stamping it with leg 1's start time would be the same fabrication in a
+    friendlier disguise. Refuse, and let a real multi-session task decide."""
+    session = classified(
+        multi_session(
+            {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": 58},
+            {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": 57},
+        ),
+        rr_intervals=_beats(64),
+    )
+
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+
+
+def test_a_single_session_file_carries_no_refusal_marker(synthetic, classified) -> None:
+    """The guard is scoped to the case it is about: one ``session`` message routes
+    exactly as before and gains no provenance entry. Without this the marker could
+    be written unconditionally and every assertion above would still pass."""
+    session = classified(
+        synthetic(total_timer_time=150.797, total_distance=108.21, avg_heart_rate=60),
+        rr_intervals=_beats(),
+    )
+
+    assert session.hrv_source_tier == "chest_strap_raw"
+    assert "hrv_multi_session_unclassified" not in session.context.provenance
+
+
+def test_the_gate_fixture_carries_exactly_one_session_message() -> None:
+    """The guard must not be able to reach the GO/NO-GO fixture. Asserted against
+    the real decoded file rather than assumed, because "how many ``session``
+    messages does a real capture carry" is precisely a fitdecode question."""
+    messages = fit_parser.decode((FIXTURES / GATE_FIXTURE).read_bytes())
+
+    assert sum(1 for m in messages if m.name == "session") == 1
