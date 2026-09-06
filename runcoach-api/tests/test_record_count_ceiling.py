@@ -13,11 +13,19 @@ The latter two close a sprint-003 review finding: T053's bound was
 scoped to ``record`` messages only, so a file made entirely of ``hrv``
 messages -- the carrier this sprint's resting-HRV feature actually
 consumes -- passed the byte cap and the record ceiling while being
-counted by nothing. At ~2 bytes per packed beat, ~100,000 beats is a
-~200KB upload, and those beats feed ``rr_reconstruction``, whose
-baseline scan is O(n^2) in the number of runs (measured on adversarial
-alternating beats: 2,000 -> 0.24s, 8,000 -> 11s, 16,000 -> 65s), run
-twice per ingest from a sync endpoint that pins a threadpool worker.
+counted by nothing. At ~2 bytes per packed beat, an unbounded beat
+series is a tiny upload.
+
+Both added ceilings are **volume backstops**, not CPU-time budgets.
+The beats do feed ``rr_reconstruction``, whose baseline scan is O(n^2)
+in the number of runs and which runs twice per ingest from a sync
+endpoint -- but that curve is only steep on adversarial input (every
+beat its own run), and pricing the ceiling off it would reject honest
+training data: at the corpus's own 2.316 beats/sec, a 3-hour long run
+is 25,016 beats. ``MAX_RR_BEATS`` is therefore set past any plausible
+activity (~18h) and the quadratic is fixed separately, in IDEA-008.
+``test_the_beat_ceiling_clears_a_projected_multi_hour_session`` is
+what holds that line.
 
 Three properties carry the weight here, and all three are asserted:
 
@@ -211,7 +219,7 @@ def test_the_two_added_ceilings_are_the_shipped_numbers() -> None:
     """Pinned so a later edit has to argue with the reasoning in
     ``fit_parser``'s comments rather than quietly slide them."""
     assert fit_parser.MAX_DATA_MESSAGES == 500_000
-    assert fit_parser.MAX_RR_BEATS == 20_000
+    assert fit_parser.MAX_RR_BEATS == 150_000
 
 
 def test_over_ceiling_stream_raises_too_many_records(
@@ -451,16 +459,33 @@ def test_real_fixture_still_decodes_under_the_shipped_ceiling(fixture_name: str)
     assert messages
 
 
-def test_largest_rr_bearing_fixture_has_headroom_under_the_beat_ceiling() -> None:
-    """``dev_fields_run.fit`` -- not ``strap_hrv_sample_run.fit`` -- is
-    the corpus's RR-heaviest file: 3,127 ``hrv`` messages carrying 7,220
-    real beats (15,635 array slots). That is the calibration point for
-    ``MAX_RR_BEATS``, and it must clear it with room to spare.
+def test_the_beat_ceiling_clears_a_projected_multi_hour_session() -> None:
+    """What ``MAX_RR_BEATS`` costs, in hours of training.
+
+    The corpus's RR-heaviest file is ``dev_fields_run.fit`` (3,127
+    ``hrv`` messages, 7,220 real beats, 15,635 array slots) -- *not*
+    ``strap_hrv_sample_run.fit``, which carries 156. But clearing a
+    52-minute fixture is a weak claim for a marathon-focused system, so
+    the fixture is used for its *rate* instead: 7,220 beats over its
+    1Hz record stream is ~2.3 beats/sec (~139 bpm), and the ceiling has
+    to clear a long run projected at that rate.
+
+    At 2.316 beats/sec: 3h = 25,016 beats, 4h = 33,355, 5h = 41,693.
+    ``MAX_RR_BEATS`` = 150,000 is ~18 hours -- past any plausible
+    single activity, ultras included. Anyone lowering this number is
+    choosing a maximum workout duration; this test says which one.
     """
-    beats = _beat_count(fit_parser.decode(_fixture_bytes(LARGEST_FIXTURE)))
+    messages = fit_parser.decode(_fixture_bytes(LARGEST_FIXTURE))
+    beats = _beat_count(messages)
+    seconds = sum(1 for m in messages if m.name == "record")  # 1Hz stream
+    beats_per_second = beats / seconds
 
     assert beats > 7_000  # calibration: the corpus's RR-heaviest file
-    assert beats * 2 < fit_parser.MAX_RR_BEATS
+    assert 2.0 < beats_per_second < 2.6  # ~139 bpm
+
+    four_hour_session = beats_per_second * 4 * 3600
+    assert four_hour_session > 33_000  # sanity: the projection is real
+    assert four_hour_session < fit_parser.MAX_RR_BEATS
 
 
 def test_largest_fixture_has_orders_of_magnitude_of_headroom() -> None:

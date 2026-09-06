@@ -82,42 +82,48 @@ MAX_DATA_MESSAGES = 500_000
 
 # Ceiling on RR beats carried by ``hrv`` (#78) messages.
 #
-# This is the bound that closes the sprint-003 review finding. Beats
-# are not just another message count: ``rr_reconstruction`` turns them
-# into a series whose baseline scan (``_find_baseline_index``) is
-# O(n^2) in the number of runs, and ``reconstruct()`` runs *twice* per
-# ingest (``mapping._infer_hr_source`` and ``pipeline.ingest_fit_bytes``)
-# on a sync endpoint that pins an anyio threadpool worker for its whole
-# duration. A packed ``hrv`` message costs ~2 bytes per beat, so the
-# amplification is bought at ~200KB of upload per 100,000 beats.
+# This is the bound that closes the sprint-003 review finding: beats
+# ride on ``hrv`` messages, which ``MAX_RECORD_MESSAGES`` cannot see,
+# and ~2 bytes per packed beat means a very large beat series is a
+# very small upload. It is a **memory/volume backstop**, sized so that
+# no legitimate activity is ever rejected -- *not* a CPU-time budget.
 #
-# Measured on this repo against adversarial alternating beats (every
-# beat its own run, the worst case for the baseline scan):
+# Sizing, from the corpus's own beat rate. ``dev_fields_run.fit``
+# carries 7,220 real beats over 3,118 seconds of 1Hz records = 2.316
+# beats/sec (~139 bpm), so at that rate:
 #
-#   2,000 -> 0.24s | 4,000 -> 0.96s | 8,000 -> 11.2s
-#   16,000 -> 64.0s | 20,000 -> 88.1s | 100,000 -> ~1h (extrapolated)
+#   1h -> ~8,340 | 2h -> ~16,670 | 3h -> ~25,010 | 4h -> ~33,340
+#   5h -> ~41,680 | 18h -> ~150,000
 #
-# So the ceiling is chosen from a *time* budget, not from the headroom
-# multiple ``MAX_RECORD_MESSAGES`` could afford (32x over the corpus):
-# records cost O(n) downstream, beats O(n^2), and a 32x-style beat
-# ceiling would bound nothing anyone would wait for.
+# This is a marathon-focused coaching system: a 3-hour strap-paired
+# long run is a core session, not an edge case, and an ultra is a
+# planned-for one. 150,000 beats is ~18 hours at that rate and ~21x
+# the RR-heaviest fixture, so the ceiling sits past any plausible
+# single activity while still bounding what ``decode()`` will
+# materialise and hand on.
 #
-#   largest RR fixture  7,220 real beats (``dev_fields_run.fit``:
-#                       3,127 ``hrv`` messages, 15,635 array slots) --
-#                       ``strap_hrv_sample_run.fit`` is far smaller at
-#                       156 beats. 20,000 keeps 2.8x over the corpus's
-#                       RR-heaviest file, and real beat series (long
-#                       runs, few transitions) cost far less than the
-#                       adversarial case: that same 7,220-beat fixture
-#                       reconstructs in 0.04s.
-#   worst case          ~88s per reconstruct, ~3 min per hostile
-#                       ingest, against ~2h unbounded -- a ~40x cut.
+# What this ceiling deliberately does NOT do. ``rr_reconstruction``
+# turns these beats into a series whose baseline scan
+# (``_find_baseline_index``) is O(n^2) in the number of *runs*, and
+# ``reconstruct()`` runs twice per ingest (``mapping._infer_hr_source``
+# and ``pipeline.ingest_fit_bytes``) on a sync endpoint that pins an
+# anyio threadpool worker for its whole duration. Measured here on
+# adversarial alternating beats -- every beat its own run, the O(n^2)
+# worst case -- 8,000 -> 11.2s, 16,000 -> 64.0s, 20,000 -> 88.1s; a
+# hostile series at *this* ceiling still costs roughly an hour of CPU.
 #
-# The residual cost is the O(n^2) scan itself, which is pre-existing
-# F003 code outside this fix's scope and is filed separately as an
-# IDEA. This bound stops a hostile file from reaching it in quantity;
-# it does not make the scan cheap.
-MAX_RR_BEATS = 20_000
+# That cost is accepted under the local-first, single-athlete threat
+# model: the only uploader is the athlete, on their own machine,
+# against their own data. Real RR series cost nothing like it -- they
+# do not alternate every beat, so they hold few runs: the 7,220-beat
+# fixture reconstructs in 0.04s. Choosing a ceiling from the hostile
+# curve would have bound the honest case (20,000 beats rejects a
+# 3-hour long run) while the hostile case stayed expensive anyway.
+#
+# The actual fix for the quadratic is IDEA-008: linearise
+# ``_find_baseline_index`` and memoize the double ``reconstruct()``.
+# Until that lands, this bound caps volume, not time.
+MAX_RR_BEATS = 150_000
 
 
 def _hrv_beat_count(frame: fitdecode.FitDataMessage) -> int:
