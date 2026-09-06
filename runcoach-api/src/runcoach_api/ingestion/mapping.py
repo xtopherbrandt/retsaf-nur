@@ -269,6 +269,7 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
 def _build_context(
     unresolved_developer_fields: dict | None = None,
     raw_sport_value: int | str | None = None,
+    sport_profile_name: str | None = None,
 ) -> Context:
     provenance = {
         # §2.7.2 -- direct FIT file upload via POST /sessions, no
@@ -293,6 +294,26 @@ def _build_context(
         # enum. The raw value is preserved here, never silently
         # dropped.
         provenance["raw_sport_value"] = raw_sport_value
+    if sport_profile_name is not None:
+        # T056 -- the athlete-typed activity-profile name from the FIT
+        # session message, lifted verbatim beside raw_sport_value. It is
+        # free text with no canonical slot, so provenance is where it
+        # belongs; nothing routes on it here.
+        #
+        # Absent means *no key at all*, never a None value, and the
+        # distinction is deliberate: a key holding None would assert
+        # that a profile name was observed and was empty. This lift
+        # records only what the file actually carried. T064's
+        # undeclared-candidate note makes the opposite -- and equally
+        # correct -- choice, recording {"sport_profile_name": null},
+        # because that note is a finding about a file the system
+        # examined: "we looked, and it claimed nothing."
+        #
+        # The guard above therefore checks ``is not None`` rather than
+        # truthiness: an empty-string profile name was still observed,
+        # and collapsing it into absence would erase exactly the
+        # distinction this comment just drew.
+        provenance["sport_profile_name"] = sport_profile_name
     return Context(
         ingested_at=datetime.now(timezone.utc).isoformat(),
         provenance=provenance,
@@ -445,6 +466,16 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         raw_sport_value = sport
         sport = "other"
 
+    # T056 -- the session message's own field is the single key. All ten
+    # corpus fixtures agree with the ``sport`` message's ``name``, but
+    # falling back to it would create a second route that a future
+    # disagreement between the two turns into a routing difference.
+    sport_profile_name = (
+        session_msg.get_value("sport_profile_name", fallback=None)
+        if session_msg is not None
+        else None
+    )
+
     record_msgs = by_name.get("record", [])
 
     start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
@@ -489,7 +520,9 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         source_device=source_device,
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
-        context=_build_context(unresolved_developer_fields, raw_sport_value),
+        context=_build_context(
+            unresolved_developer_fields, raw_sport_value, sport_profile_name
+        ),
     )
 
     return session, records
