@@ -31,6 +31,24 @@ Three layers, and all three are needed:
    to nothing. The AST-recovered set is *also* checked against the
    quarantine registry directly, so the boundary cannot be dodged by
    filing a quarantined name under the non-input escape hatch.
+   **What layer 2 cannot see, stated plainly.** The AST walk recovers a
+   field name only where the source *names* it -- as a literal, or as a
+   module-level string constant. One shape defeats that by construction:
+   iterating a message's own field list and matching at runtime, the way
+   ``rr_reconstruction._developer_field_candidates`` does::
+
+       for field_data in msg.fields:
+           if field_data.units == "ms":
+               ...
+
+   No field name appears anywhere in that source, so there is nothing to
+   collect and nothing to report -- a quarantined value reached this way
+   would pass layer 2 in silence. Making bare ``.fields`` access loud was
+   rejected: it would fire on every ordinary iteration and train the
+   reader to ignore the failure. ``hrv_classification`` does not iterate
+   ``.fields`` today, and layers 1 and 3 still hold if it ever does; this
+   is a documented limit, not a covered case.
+
 3. **Fixture-based regression** -- ``sample_health_snapshot.fit``
    carries quarantined ``avg_stress = 19`` and admissible
    ``rmssd_hrv = 37`` on the **same session message**. The stress score
@@ -100,7 +118,14 @@ class _FieldReadCollector(ast.NodeVisitor):
 
     - ``x.get("name")`` / ``x.get_value("name")`` / ``x.has_field("name")``
       -- the decoded-message and dict lookups (``message.get_value``,
-      ``summary.get``, ``_provenance(session).get``).
+      ``summary.get``, ``_provenance(session).get``). ``get_values``,
+      ``get_field`` and ``get_fields`` are watched alongside them:
+      ``fitdecode.records.FitDataMessage`` exposes all five, each
+      taking the same ``field_name_or_num`` first argument, and a read
+      through a sibling accessor is the same read.
+    - ``getattr(x, "name")`` -- an attribute read spelled dynamically.
+      The literal (and module-constant) form is recoverable, so it is
+      collected; a genuinely dynamic name lands in ``unresolved``.
     - ``session.name`` in a *load* position -- attribute reads off the
       canonical ``Session``. Stores are excluded deliberately: writing
       ``session.rmssd_precomputed`` is the module's *output*, not an
@@ -140,6 +165,14 @@ class _FieldReadCollector(ast.NodeVisitor):
     = 60`` is a *value*, not a key) is unresolvable too, rather than
     being injected into ``names`` as a bogus field name.
 
+    **A lookup with no key in the positional slot is unresolvable, not
+    absent.** ``visit_Call`` used to require ``node.args``, so
+    ``msg.get_value(field_name_or_num="avg_stress")`` -- legal, because
+    ``fitdecode.records`` declares that parameter positional-or-keyword
+    -- left ``node.args`` empty and the call was skipped outright.
+    Keyword-passed, ``**kwargs``-spread and ``*args``-starred keys now
+    all land in ``unresolved`` instead.
+
     Loudness is scoped to *lookup call* keys. Subscript slices get the
     same constant resolution but stay quiet when unresolvable, because
     ``x[i]`` is overwhelmingly ordinary indexing (and ``list[str]`` an
@@ -147,7 +180,9 @@ class _FieldReadCollector(ast.NodeVisitor):
     report noise, not smuggling.
     """
 
-    _LOOKUP_METHODS = frozenset({"get", "get_value", "has_field"})
+    _LOOKUP_METHODS = frozenset(
+        {"get", "get_value", "get_values", "get_field", "get_fields", "has_field"}
+    )
 
     def __init__(self, constants: dict[str, str] | None = None) -> None:
         self.names: set[str] = set()
@@ -162,15 +197,34 @@ class _FieldReadCollector(ast.NodeVisitor):
             return self._constants.get(node.id)
         return None
 
+    def _key_position(self, func: ast.expr) -> int | None:
+        """Which positional argument carries the field name, if any."""
+        if isinstance(func, ast.Attribute) and func.attr in self._LOOKUP_METHODS:
+            return 0
+        if isinstance(func, ast.Name) and func.id == "getattr":
+            return 1
+        return None
+
     def visit_Call(self, node: ast.Call) -> None:
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr in self._LOOKUP_METHODS and node.args:
-            key = node.args[0]
-            resolved = self._resolve(key)
-            if resolved is not None:
-                self.names.add(resolved)
+        position = self._key_position(node.func)
+        if position is not None:
+            if len(node.args) > position:
+                key = node.args[position]
+                resolved = self._resolve(key)
+                if resolved is not None:
+                    self.names.add(resolved)
+                else:
+                    self.unresolved.add(ast.unparse(key))
             else:
-                self.unresolved.add(ast.unparse(key))
+                # The key is not in the positional slot at all: passed by
+                # keyword (``get_value(field_name_or_num="avg_stress")``,
+                # which ``fitdecode`` accepts), spread from a ``**kwargs``
+                # mapping, or swallowed by a ``*args`` star before it. The
+                # call reads *some* field and this collector cannot say
+                # which, so it is reported rather than skipped -- skipping
+                # is what let the keyword spelling read a quarantined
+                # field with every assertion below staying green.
+                self.unresolved.add(ast.unparse(node))
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -430,7 +484,9 @@ def test_the_collector_resolves_a_module_level_constant_lookup_key() -> None:
     assert not collector.unresolved
 
 
-@pytest.mark.parametrize("method", ["get", "get_value", "has_field"])
+@pytest.mark.parametrize(
+    "method", ["get", "get_value", "get_values", "get_field", "get_fields", "has_field"]
+)
 def test_constant_resolution_covers_every_lookup_method(method: str) -> None:
     collector = _collect_reads(
         f'_KEY = "avg_stress"\ndef f(x):\n    return x.{method}(_KEY)\n'
@@ -515,3 +571,104 @@ def test_a_non_string_constant_is_not_mistaken_for_a_field_name() -> None:
 
     assert not collector.names
     assert collector.unresolved == {"_RAW_SPORT"}
+
+
+# ---------------------------------------------------------------------------
+# 5. the two bypasses the collector used to be blind to
+#
+# ``visit_Call`` used to require ``node.args`` -- a positional key -- so
+# a lookup written with the key passed *by keyword* left ``node.args``
+# empty and the call was skipped outright: neither collected nor
+# reported. ``fitdecode.records`` makes that spelling legal (its
+# ``field_name_or_num`` parameter is positional-or-keyword), so
+#
+#     msg.get_value(field_name_or_num="avg_stress")
+#
+# read a quarantined field while both section-2 assertions stayed green.
+# The second bypass was the *method* set: only ``get``/``get_value``/
+# ``has_field`` were watched, while ``FitDataMessage`` exposes
+# ``get_values``/``get_field``/``get_fields`` reading the same named
+# field, and ``getattr(obj, "name")`` reaches an attribute dynamically.
+# ---------------------------------------------------------------------------
+
+
+def test_a_keyword_passed_lookup_key_is_not_invisible() -> None:
+    """The shape that used to be skipped entirely must now be loud."""
+    collector = _collect_reads(
+        "def f(msg):\n"
+        '    return msg.get_value(field_name_or_num="avg_stress", fallback=None)\n'
+    )
+
+    assert collector.unresolved, "a keyword-passed lookup key was silently skipped"
+    assert any("avg_stress" in entry for entry in collector.unresolved)
+
+
+def test_the_reconciliation_bites_on_a_keyword_passed_quarantined_read() -> None:
+    """The permanent proof, against the real module source.
+
+    Take ``hrv_classification`` as it is on disk, append a read of a
+    quarantined field with the key passed by keyword, and confirm the
+    guard now refuses it. Before the fix the collector skipped the call
+    outright, every section-2 assertion passed, and the quarantined
+    read fed the HRV decision unnoticed. The source is doctored **in
+    memory only** -- the file on disk is never written.
+    """
+    banned = sorted(_banned_session_fields())[0]
+    real_source = Path(hrv_classification.__file__).read_text(encoding="utf-8")
+    doctored = (
+        f"{real_source}\n\n\n"
+        "def _smuggle(message):\n"
+        f'    return message.get_value(field_name_or_num="{banned}", fallback=None)\n'
+    )
+
+    collector = _collect_reads(doctored)
+
+    # It is reported rather than dropped...
+    assert collector.unresolved
+    assert any(banned in entry for entry in collector.unresolved)
+    # ...and the report reaches the assertion the reconciliation runs.
+    with pytest.raises(AssertionError, match="cannot be resolved"):
+        _assert_every_lookup_key_is_resolvable(collector)
+
+
+def test_a_sibling_reader_method_is_watched_too() -> None:
+    """``get_values`` reads the same named field ``get_value`` does."""
+    banned = sorted(_banned_session_fields())[0]
+    real_source = Path(hrv_classification.__file__).read_text(encoding="utf-8")
+    doctored = (
+        f'{real_source}\n\n_FIELD_SMUGGLED = "{banned}"\n\n\n'
+        "def _smuggle(message):\n"
+        "    return message.get_values(_FIELD_SMUGGLED)\n"
+    )
+
+    discovered = frozenset(_collect_reads(doctored).names)
+
+    assert banned in discovered
+    assert _banned_session_fields() & discovered == {banned}
+
+
+def test_a_getattr_read_is_collected_under_its_literal_name() -> None:
+    """``getattr(session, "avg_stress")`` is an attribute read spelled
+    dynamically; the literal form is recoverable, so it is collected."""
+    collector = _collect_reads('def f(obj):\n    return getattr(obj, "avg_stress", None)\n')
+
+    assert "avg_stress" in collector.names
+    assert not collector.unresolved
+
+
+def test_a_dynamic_getattr_is_reported_rather_than_ignored() -> None:
+    collector = _collect_reads("def f(obj, name):\n    return getattr(obj, name)\n")
+
+    assert not collector.names
+    assert collector.unresolved == {"name"}
+
+
+def test_doctoring_never_touches_the_module_on_disk() -> None:
+    """Every bite test above rewrites source in memory, never on disk."""
+    path = Path(hrv_classification.__file__)
+    before = path.read_bytes()
+
+    test_the_reconciliation_bites_on_a_keyword_passed_quarantined_read()
+    test_a_sibling_reader_method_is_watched_too()
+
+    assert path.read_bytes() == before

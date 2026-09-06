@@ -82,6 +82,22 @@ MAX_DATA_MESSAGES = 500_000
 
 # Ceiling on RR beats carried by ``hrv`` (#78) messages.
 #
+# ``hrv`` messages only, and deliberately so. ``rr_reconstruction``
+# reads RR beats from a *second* carrier: ms-unit developer fields on
+# ``record`` messages (``_developer_field_candidates``), so one record
+# message can contribute beats this counter never sees. That carrier is
+# bounded by ``MAX_RECORD_MESSAGES`` rather than by this ceiling: one
+# beat per matching developer field per message, over at most 100,000
+# ``record`` messages -- so the single-RR-field shape every real dev-
+# field file uses tops out near 100,000 beats, under the 150,000 here.
+# Counting them in this loop was
+# considered and rejected: it would mean restating
+# ``_is_ms_developer_field``'s three-part predicate (``DevField`` type,
+# RR name regex, optional ms units) in this module, where it could drift
+# out of step with the matcher that actually decides what becomes a
+# candidate -- two matchers that silently disagree are worse than one
+# ceiling that says which carrier it bounds.
+#
 # This is the bound that closes the sprint-003 review finding: beats
 # ride on ``hrv`` messages, which ``MAX_RECORD_MESSAGES`` cannot see,
 # and ~2 bytes per packed beat means a very large beat series is a
@@ -99,8 +115,19 @@ MAX_DATA_MESSAGES = 500_000
 # long run is a core session, not an edge case, and an ultra is a
 # planned-for one. 150,000 beats is ~18 hours at that rate and ~21x
 # the RR-heaviest fixture, so the ceiling sits past any plausible
-# single activity while still bounding what ``decode()`` will
-# materialise and hand on.
+# single activity while still bounding the beat volume ``decode()``
+# hands on to ``rr_reconstruction``.
+#
+# That volume, not memory. ``_hrv_beat_count`` counts numeric slots
+# only, so ``hrv`` messages whose ``time`` arrays are entirely
+# invalid-padded score ``beat_count == 0`` however many of them a file
+# carries -- what those frames cost in memory is bounded by
+# ``MAX_DATA_MESSAGES`` and by ``main.MAX_UPLOAD_BYTES`` (50MB), which
+# at ~2 bytes per packed slot admits on the order of 25M materialised
+# tuple slots. Counting real beats rather than slots is still right
+# here: it mirrors ``rr_reconstruction._hrv_candidates`` exactly, so
+# the number compared is the number the downstream stage will actually
+# process, and fixed-width padding does not eat the headroom.
 #
 # What this ceiling deliberately does NOT do. ``rr_reconstruction``
 # turns these beats into a series whose baseline scan
