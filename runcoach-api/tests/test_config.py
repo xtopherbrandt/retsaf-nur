@@ -169,11 +169,7 @@ def test_load_config_blank_resting_hrv_profile_entry_is_rejected(tmp_path, entry
 
     # Must be rejected *as a bad value*, not incidentally by `extra="forbid"`
     # -- the latter would pass even with the validator deleted.
-    assert any(
-        error["loc"][:1] == ("resting_hrv_profile_names",)
-        and error["type"] != "extra_forbidden"
-        for error in exc_info.value.errors()
-    ), exc_info.value.errors()
+    _assert_field_value_error(exc_info)
 
 
 def _assert_field_value_error(exc_info):
