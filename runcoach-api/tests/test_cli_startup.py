@@ -18,6 +18,18 @@ from pydantic import ValidationError
 
 from runcoach_api import cli
 from runcoach_api.config import AppConfig, ConfigCorruptError, ConfigNotFoundError
+from runcoach_api.config import load_config as real_load_config
+
+# Bound here, at import time, on purpose. ``conftest.isolated_data_dir`` is
+# autouse and does ``monkeypatch.setattr(db_module.config_module,
+# "load_config", ...)`` -- and ``config_module`` *is* ``runcoach_api.config``,
+# so for the duration of every test the attribute on that module is a stub
+# returning a ready-made ``AppConfig``. A function-local
+# ``from runcoach_api.config import load_config`` therefore resolves to the
+# stub, and a test meaning to exercise the real loader silently exercises the
+# fake one instead -- observed here as "DID NOT RAISE SystemExit" against an
+# api.toml that plainly lacks a required field. This alias is captured before
+# any fixture runs and is unaffected.
 
 
 @dataclass
@@ -180,3 +192,225 @@ def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
         cli.serve()
 
     assert exc_info.value.errno == errno.EACCES
+
+
+# ---------------------------------------------------------------------------
+# T060 -- the missing-field remediation message.
+#
+# `resting_hrv_profile_names` is a *breaking* config change (F004's 2026-09-06
+# amendment): every api.toml written before it fails startup. The validation
+# error is the only upgrade path the athlete gets, and pydantic's own `msg` for
+# a missing field is the bare "Field required", which names nothing to write.
+#
+# The error shapes below were enumerated against the vendored pydantic 2.13.5 /
+# pydantic-core 2.46.5 under `.venv/` before these assertions were written, per
+# `.claude/rules/project-testing.md` -- the discriminator is a real observation,
+# not an assumption about what pydantic emits:
+#
+#   missing field alone      -> [0] type='missing'         loc=('resting_hrv_profile_names',)
+#   missing + invalid port   -> [0] type='less_than_equal' loc=('port',)
+#                               [1] type='missing'         loc=('resting_hrv_profile_names',)
+#   invalid port alone       -> [0] type='less_than_equal' loc=('port',)
+#   blank entry in the list  -> [0] type='value_error'     loc=('resting_hrv_profile_names',)
+#   a bare string, not list  -> [0] type='list_type'       loc=('resting_hrv_profile_names',)
+#   unknown key in api.toml  -> [0] type='extra_forbidden' loc=('nope',)
+#
+# The second row is why the remediation is gated on `errors()[0]` rather than on
+# "any error mentions the field": `_make_validation_error` above raises *both* a
+# port error and the missing-field error, because the amendment made the field
+# required and that helper never supplies it. An "any" rule would therefore
+# attach upgrade instructions to a failure that has nothing to do with the new
+# field -- and since the pre-existing test asserts only `"port" in captured.err`,
+# it would have shipped green and silent.
+# ---------------------------------------------------------------------------
+
+_REMEDIATION_MARKERS = (
+    "resting_hrv_profile_names = []",
+    "RUNCOACH_RESTING_HRV_PROFILE_NAMES",
+)
+
+
+def _make_missing_field_error() -> ValidationError:
+    """A real ValidationError whose *only* error is the missing new field."""
+    try:
+        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"))
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+
+
+def _serve_expecting_exit(monkeypatch, loader) -> None:
+    """Drive `serve()` with `loader` and assert a clean non-zero exit."""
+    monkeypatch.setattr(cli, "load_config", loader)
+    calls = []
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: calls.append((a, k)))
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.serve()
+
+    assert exc_info.value.code == 1
+    assert not calls
+
+
+def _raising(error: ValidationError):
+    return lambda: (_ for _ in ()).throw(error)
+
+
+def test_serve_missing_resting_hrv_profile_names_states_what_to_write(
+    monkeypatch, capsys
+):
+    _serve_expecting_exit(monkeypatch, _raising(_make_missing_field_error()))
+
+    captured = capsys.readouterr()
+    err = captured.err
+
+    # Names the field.
+    assert "resting_hrv_profile_names" in err
+    # Gives a literal the athlete can paste into api.toml verbatim.
+    assert "resting_hrv_profile_names = []" in err
+    # Names the environment-variable alternative, and that its value is parsed
+    # as JSON -- a bare `RUNCOACH_RESTING_HRV_PROFILE_NAMES=HRV Snapshot` does
+    # not parse at all.
+    assert "RUNCOACH_RESTING_HRV_PROFILE_NAMES" in err
+    assert "JSON" in err
+    # `db._load_config_cached` is lru_cache(maxsize=1), so an api.toml edit
+    # takes effect only on the next start.
+    assert "restart" in err.lower()
+    # Says what to write; never suggests the system will assume anything.
+    assert "no default" in err.lower()
+    assert "Traceback" not in err
+    assert "Traceback" not in captured.out
+
+
+def test_serve_missing_field_message_comes_from_a_real_pre_amendment_toml(
+    monkeypatch, capsys, tmp_path
+):
+    """The same message, driven through the real `load_config` on a real file.
+
+    `_make_missing_field_error` builds the error from a constructor call; this
+    pins that a genuine pre-amendment `api.toml` on disk produces the identical
+    `errors()[0]` shape, rather than trusting the stand-in. The env var is
+    cleared first: it overrides the TOML file, so an ambient value would make
+    the config load cleanly and quietly delete this test's premise.
+
+    `real_load_config` is the module-level alias, not a fresh import -- see the
+    note beside it for why importing it here would reach `conftest`'s stub.
+    """
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    api_toml = tmp_path / "api.toml"
+    api_toml.write_text(
+        'host = "127.0.0.1"\n'
+        "port = 8000\n"
+        f'data_dir = "{(tmp_path / "data").as_posix()}"\n',
+        encoding="utf-8",
+    )
+
+    _serve_expecting_exit(monkeypatch, lambda: real_load_config(api_toml))
+
+    captured = capsys.readouterr()
+    assert "resting_hrv_profile_names = []" in captured.err
+    # The bare pydantic message is replaced, not merely decorated.
+    assert "Field required" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_serve_unrelated_validation_error_carries_no_resting_hrv_remediation(
+    monkeypatch, capsys
+):
+    """The gotcha this task exists to close.
+
+    `_make_validation_error()` raises an invalid `port` *and* the missing
+    `resting_hrv_profile_names` together. The error actually being reported is
+    the port one, so the upgrade instructions must not ride along with it.
+    """
+    error = _make_validation_error()
+    # Guard the premise. Without these, a future change that stops bundling the
+    # two errors would leave this test passing while testing nothing.
+    assert error.errors()[0]["loc"] == ("port",)
+    assert any(
+        e["type"] == "missing" and e["loc"] == ("resting_hrv_profile_names",)
+        for e in error.errors()
+    ), "premise: the helper's error also carries the missing new field"
+
+    _serve_expecting_exit(monkeypatch, _raising(error))
+
+    captured = capsys.readouterr()
+    assert "port" in captured.err
+    for marker in _REMEDIATION_MARKERS:
+        assert marker not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_serve_blank_profile_name_renders_the_validators_own_message(
+    monkeypatch, capsys
+):
+    """A blank entry is `type='value_error'`, not `'missing'`.
+
+    T054's field validator already writes an actionable message; the generic
+    rendering path must carry it through unchanged rather than replace it with
+    the missing-field upgrade text, which would be wrong advice -- the field is
+    present, and `[]` is not what this athlete meant to write.
+    """
+    try:
+        AppConfig(
+            host="localhost",
+            port=8000,
+            data_dir=Path("/tmp"),
+            resting_hrv_profile_names=["  "],
+        )
+    except ValidationError as exc:
+        error = exc
+    else:
+        raise AssertionError("expected a blank profile name to be rejected")
+
+    assert error.errors()[0]["type"] == "value_error"
+
+    _serve_expecting_exit(monkeypatch, _raising(error))
+
+    captured = capsys.readouterr()
+    assert "resting_hrv_profile_names" in captured.err
+    assert "is blank" in captured.err
+    for marker in _REMEDIATION_MARKERS:
+        assert marker not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_serve_wrong_type_for_profile_names_renders_generically(monkeypatch, capsys):
+    """`resting_hrv_profile_names = "HRV Snapshot"` is `type='list_type'`.
+
+    It names the right field but is not the missing-field case, so it takes the
+    generic path too: the discriminator is the error *type* and the reported
+    position, never the field name on its own.
+    """
+    try:
+        AppConfig(
+            host="localhost",
+            port=8000,
+            data_dir=Path("/tmp"),
+            resting_hrv_profile_names="HRV Snapshot",
+        )
+    except ValidationError as exc:
+        error = exc
+    else:
+        raise AssertionError("expected a bare string to be rejected")
+
+    assert error.errors()[0]["type"] == "list_type"
+
+    _serve_expecting_exit(monkeypatch, _raising(error))
+
+    captured = capsys.readouterr()
+    assert "resting_hrv_profile_names" in captured.err
+    assert "valid list" in captured.err
+    for marker in _REMEDIATION_MARKERS:
+        assert marker not in captured.err
+
+
+def test_cli_startup_init_help_documents_the_resting_hrv_profile_flag():
+    """`build_parser()`'s `init` entry lists the subcommand's own flags.
+
+    T059 adds the repeatable `--resting-hrv-profile` flag to `init_cmd`;
+    `cli.py` owns the help line that advertises it, and a fresh install that
+    hits the missing-field error reaches `init` through exactly this text.
+    """
+    help_text = cli.build_parser().format_help()
+    assert "--resting-hrv-profile" in help_text
