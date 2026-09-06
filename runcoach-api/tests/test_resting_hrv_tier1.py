@@ -1,15 +1,25 @@
 """T041: Tier 1 -- the chest-strap resting-capture discriminator (F004 ref doc §2).
 
-The predicate ratified 2026-09-05 and fixed against the gate fixture:
+The predicate ratified 2026-09-05, amended 2026-09-06 after Stage-0 review found
+the original OR shape routed a present-and-zero distance as stillness:
 
 ```
 tier1 := rr_intervals is non-empty
-     AND duration_s is not None AND duration_s <= 300
-     AND (
-           (distance_m present AND distance_m / duration_s <= 1.0)
-        OR (distance_m absent AND avg_heart_rate present AND avg_heart_rate <= 100)
-         )
+     AND duration_s is not None AND 0 < duration_s <= 300
+     AND at_rest, where:
+
+         at_rest = True
+         if distance_m is present:
+             at_rest = distance_m / duration_s <= 1.0
+         if at_rest and avg_heart_rate is present:
+             at_rest = avg_heart_rate <= 100
+         elif distance_m is absent:
+             at_rest = False        # no usable intensity signal at all
 ```
+
+Every **present** intensity signal must agree. A zero distance is read as "this
+device reports no distance", not as evidence of stillness, so the heart-rate arm
+decides — see ``test_a_present_zero_distance_still_consults_the_heart_rate_arm``.
 
 **Raw-RR presence alone must never route**, and that is the single bright line
 the reference document draws in boldface. ``dev_fields_run.fit`` is an ordinary
@@ -297,9 +307,14 @@ def test_movement_above_walking_pace_does_not_route(
     assert session.activity_tag is None
 
 
-def test_the_distance_arm_wins_when_distance_is_present(synthetic, classified) -> None:
-    """The heart-rate arm is a **fallback for missing distance**, not a second chance.
-    A capture that genuinely moved is not rescued by a low average heart rate."""
+def test_a_present_distance_above_walking_pace_vetoes_regardless_of_heart_rate(
+    synthetic, classified
+) -> None:
+    """A capture that genuinely moved is not rescued by a low average heart rate.
+
+    Under the conjunction rule every present signal must agree, so the distance
+    veto stands on its own — this is the direction that was always correct, and
+    it is unchanged by the 2026-09-06 amendment."""
     session = classified(
         synthetic(total_timer_time=200.0, total_distance=600.0, avg_heart_rate=52),
         rr_intervals=_beats(),
