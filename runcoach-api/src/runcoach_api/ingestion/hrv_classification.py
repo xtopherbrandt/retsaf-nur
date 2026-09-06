@@ -348,9 +348,11 @@ def _resting_profile_duration(session: Session) -> float | None:
     one, otherwise ``None`` (F004 reference document §2)::
 
         duration_s is not None AND 0 < duration_s <= 300
-        AND at least one intensity signal is present
-        AND every intensity signal that IS present agrees:
-              (distance_m present  ->  distance_m / duration_s <= 1.0)
+        AND at least one intensity *signal* is present, where a signal is:
+              distance_m present AND distance_m > 0   ->  a mean speed
+              avg_heart_rate present                  ->  a heart rate
+        AND every signal that IS present agrees:
+              (mean speed present  ->  distance_m / duration_s <= 1.0)
           AND (avg_heart_rate present  ->  avg_heart_rate <= 100)
 
     **The two arms are an AND over the signals that exist, not a fallback
@@ -359,7 +361,7 @@ def _resting_profile_duration(session: Session) -> float | None:
     carrying ``total_distance = 0.0`` has a ``distance_m`` key holding ``0.0``
     -- present-and-zero, not absent. A treadmill, rowing-erg or
     indoor-trainer interval logs exactly that, and ``0.0 / 240 = 0.0 <= 1.0``
-    satisfies the distance arm outright. Under a fallback reading the
+    satisfies the distance *comparison* outright. Under a fallback reading the
     heart-rate arm was then never consulted, and a **maximal effort** routed
     as a resting capture -- the §2.2.3 prohibition the heart-rate arm exists
     to enforce, leaking through the one branch a fallback never takes.
@@ -367,6 +369,36 @@ def _resting_profile_duration(session: Session) -> float | None:
     The direction the old wording *did* get right is preserved: a capture
     that demonstrably moved is still not rescued by a low average heart rate.
     Under an AND neither signal can rescue the other; each can only veto.
+
+    **A zero distance is not evidence of stillness -- it is a device
+    reporting no distance** (amended 2026-09-06). Making the predicate a
+    conjunction closed the case where the heart rate disagreed, but left one
+    arm's worth of residue: a present-and-zero ``distance_m`` still satisfied
+    "at least one intensity signal is present" while carrying no intensity
+    information at all. With ``avg_heart_rate`` absent, the heart-rate arm was
+    skipped as missing, and the conjunction collapsed to the single arm that
+    **every** zero-distance capture satisfies unconditionally -- so any
+    <= 300 s GPS-less capture with beats and no session-level average heart
+    rate routed as rest regardless of its actual intensity. It was found by
+    driving the real API during the sprint-003 review: the gate fixture's
+    ``session`` message was patched to ``total_distance = 0`` with no
+    ``avg_heart_rate``, and its 156 beats came back a full unflagged Tier-1
+    reading. Zero is therefore **not a signal**; it falls through to requiring
+    a heart rate, exactly as an absent distance does.
+
+    A **negative** ``distance_m`` is answered the same way, and deliberately.
+    ``total_distance`` is an unsigned FIT field, so a negative value can only
+    come from a crafted or corrupt definition record -- the same provenance as
+    the ``tuple`` and ``str`` values ``_numeric`` already reports as absent --
+    and reading it literally would repeat the zero mistake in a worse form:
+    ``-500 / 240`` clears the speed bound comfortably, so a garbage field
+    would stand in for the heart-rate arm it must never replace. Anything not
+    strictly greater than zero is not a measurement of movement.
+
+    The mirror case -- a present-and-zero ``avg_heart_rate`` -- is knowingly
+    left alone (``IDEA-009``). It is near-unreachable, because Garmin encodes
+    an absent heart rate as the invalid sentinel rather than as 0, so it has
+    neither a fixture nor a reproduction to constrain a change to it.
 
     Returning the duration rather than a bare ``bool`` is what lets the
     quality gates re-use the same reading of ``session.summary`` instead of
@@ -400,16 +432,24 @@ def _resting_profile_duration(session: Session) -> float | None:
     if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
         return None
 
-    if distance_m is None and avg_heart_rate is None:
+    # A distance is an intensity signal only when it is a positive measurement.
+    # ``0.0`` is what a device with nothing to report writes, and a negative
+    # value can only be corruption; neither carries intensity information, so
+    # neither may satisfy the presence test below on its own. Computing the
+    # speed here is what keeps "is this a signal" and "does the signal agree"
+    # from drifting apart into two separately-maintained conditions.
+    mean_speed_ms = (
+        distance_m / duration_s if distance_m is not None and distance_m > 0 else None
+    )
+
+    if mean_speed_ms is None and avg_heart_rate is None:
         # No usable intensity signal at all, so there is nothing to
         # discriminate on and the conservative outcome is no reading.
         return None
 
-    # Every signal that is present must agree the capture is at rest. A
-    # present-and-zero distance is a real reading of "did not move", not a
-    # missing one, so it must not stand in for the heart-rate check the way an
-    # absent distance does.
-    if distance_m is not None and distance_m / duration_s > _RESTING_MAX_MEAN_SPEED_MS:
+    # Every signal that is present must agree the capture is at rest; neither
+    # can rescue the other, each can only veto.
+    if mean_speed_ms is not None and mean_speed_ms > _RESTING_MAX_MEAN_SPEED_MS:
         return None
     if avg_heart_rate is not None and avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
         return None
@@ -572,7 +612,9 @@ def _classify_tier_1(
     effort. It is **not** consulted only when distance is missing: a
     present-and-zero distance is what an indoor session actually logs,
     and treating it as a satisfied distance arm let that maximal effort
-    straight through. See ``_resting_profile_duration``.
+    straight through. Since 2026-09-06 a zero distance is not a signal at
+    all, so such a file needs the heart rate to route rather than merely
+    to survive it. See ``_resting_profile_duration``.
 
     **A reading that cannot be computed is not a reading.** The tier
     fields are written only once ``rmssd.resting_rmssd`` has produced a

@@ -1,25 +1,33 @@
 """T041: Tier 1 -- the chest-strap resting-capture discriminator (F004 ref doc §2).
 
 The predicate ratified 2026-09-05, amended 2026-09-06 after Stage-0 review found
-the original OR shape routed a present-and-zero distance as stillness:
+the original OR shape routed a present-and-zero distance as stillness, and amended
+again the same day after goal verification found that a present-and-zero distance
+was *still* satisfying the conjunction's presence test on its own:
 
 ```
 tier1 := rr_intervals is non-empty
      AND duration_s is not None AND 0 < duration_s <= 300
      AND at_rest, where:
 
-         at_rest = True
-         if distance_m is present:
-             at_rest = distance_m / duration_s <= 1.0
-         if at_rest and avg_heart_rate is present:
-             at_rest = avg_heart_rate <= 100
-         elif distance_m is absent:
+         distance_signal   = distance_m is present AND distance_m > 0
+         heart_rate_signal = avg_heart_rate is present
+
+         if not (distance_signal or heart_rate_signal):
              at_rest = False        # no usable intensity signal at all
+         else:
+             at_rest = True
+             if distance_signal:
+                 at_rest = distance_m / duration_s <= 1.0
+             if at_rest and heart_rate_signal:
+                 at_rest = avg_heart_rate <= 100
 ```
 
-Every **present** intensity signal must agree. A zero distance is read as "this
-device reports no distance", not as evidence of stillness, so the heart-rate arm
-decides — see ``test_a_present_zero_distance_still_consults_the_heart_rate_arm``.
+Every **present** intensity signal must agree, and a distance is only a *signal*
+when it is a positive measurement. **A zero distance is not evidence of stillness
+-- it is a device reporting no distance**, so it cannot be the sole reason a
+capture routes: the heart-rate arm must be there and must agree. The whole rule is
+pinned row by row by ``test_the_resting_profile_contract``.
 
 **Raw-RR presence alone must never route**, and that is the single bright line
 the reference document draws in boldface. ``dev_fields_run.fit`` is an ordinary
@@ -45,8 +53,10 @@ corpus is a GPS-less capture, so that class is covered synthetically here -- it 
 threshold logic over already-mapped summary values, not fitdecode parsing behaviour, so
 ``.claude/rules/project-testing.md``'s real-fixture requirement does not bite.
 
-**No usable intensity signal means no route.** Distance absent *and* average heart rate
-absent leaves nothing to discriminate on, and the conservative outcome is no reading.
+**No usable intensity signal means no route.** Distance absent, zero or negative *and*
+average heart rate absent leaves nothing to discriminate on, and the conservative outcome
+is no reading. A negative distance is impossible in an unsigned FIT field, so it can only
+be corruption and is answered exactly as an absent one is.
 
 **``rmssd_precomputed`` stays ``None`` on Tier 1.** Per §2.2.3 it is "populated only for
 the numeric wrist tiers"; the Tier-1 reading *is* the computed value, and mixing the two
@@ -494,6 +504,151 @@ def test_a_moving_capture_with_a_resting_heart_rate_still_does_not_route(
         rr_intervals=_beats(),
     )
 
+    assert session.hrv_source_tier is None
+
+
+# ---------------------------------------------------------------------------
+# The ratified profile contract, as one table (F004 ref doc §2, 2026-09-06)
+# ---------------------------------------------------------------------------
+
+# Every row of the discriminator's contract, in one place. The single-case tests
+# above still carry the argument for *why* each arm exists; this table is what
+# the predicate as a whole is pinned to, so a future amendment has one place to
+# be argued with rather than a dozen scattered assertions to reconcile.
+#
+# "absent" is expressed the way a real file expresses it -- by omitting the
+# ``session`` field, which ``mapping._build_summary`` then strips, leaving no
+# key at all. Present-and-zero is expressed by passing ``0.0``, which survives
+# that stripping. That distinction is the entire subject of the 2026-09-06
+# amendment and must never be flattened into ``None`` here.
+_PROFILE_CONTRACT = [
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 175},
+        False,
+        id="zero-distance-hard-effort--the-Stage-0-case-stays-fixed",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0},
+        False,
+        id="zero-distance-no-heart-rate--the-2026-09-06-fix",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 55},
+        True,
+        id="zero-distance-resting-heart-rate--genuine-indoor-capture",
+    ),
+    pytest.param(
+        {"total_timer_time": 150.797, "total_distance": 108.21, "avg_heart_rate": 60},
+        True,
+        id="the-gate-fixture-profile",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "avg_heart_rate": 175},
+        False,
+        id="no-distance-hard-effort",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0},
+        False,
+        id="no-distance-no-heart-rate--no-usable-signal",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 800.0, "avg_heart_rate": 175},
+        False,
+        id="moving-and-working",
+    ),
+    pytest.param(
+        {"total_timer_time": 0.0, "total_distance": 108.0, "avg_heart_rate": 60},
+        False,
+        id="degenerate-zero-duration",
+    ),
+    pytest.param(
+        {"total_timer_time": 300.001, "total_distance": 0.0, "avg_heart_rate": 50},
+        False,
+        id="one-millisecond-over-the-ceiling",
+    ),
+    pytest.param(
+        {"total_timer_time": 300.0, "total_distance": 300.0, "avg_heart_rate": 100},
+        True,
+        id="both-bounds-inclusive-by-design",
+    ),
+]
+
+
+@pytest.mark.parametrize(("session_extra", "routes"), _PROFILE_CONTRACT)
+def test_the_resting_profile_contract(
+    session_extra: dict,
+    routes: bool,
+    synthetic,
+    classified,
+) -> None:
+    """The whole discriminator, row by row, driven through the real mapping path.
+
+    Row 2 -- zero distance, no heart rate -- is the 2026-09-06 amendment. Before
+    it, ``0.0 / 240 = 0.0 <= 1.0`` satisfied "at least one intensity signal is
+    present" while carrying no intensity information at all; the heart-rate arm
+    was skipped as absent; and the conjunction collapsed to a single arm that
+    **any** zero-distance capture satisfied unconditionally. It was reproduced
+    end-to-end against the real API during the sprint-003 review by patching the
+    gate fixture's ``session`` message: a 240 s capture with 156 beats and no
+    ``avg_heart_rate`` came back a full Tier-1 reading, unflagged.
+
+    Rows 1 and 3 are the pair that constrains the fix from both sides: the same
+    zero distance must not rescue a maximal effort, and must not condemn a
+    genuine indoor waking capture. Only the heart-rate arm can tell those two
+    apart -- which is exactly why a zero distance may not stand in for it."""
+    session = classified(synthetic(**session_extra), rr_intervals=_beats())
+    provenance = session.context.provenance if session.context else {}
+
+    if routes:
+        assert session.activity_tag == "resting_hrv_check"
+        assert session.hrv_source_tier == "chest_strap_raw"
+        assert session.rr_source == "chest_strap_ecg"
+        assert session.rmssd_precomputed is None
+        assert "computed_resting_rmssd_ms" in provenance
+    else:
+        assert session.activity_tag is None
+        assert session.hrv_source_tier is None
+        assert session.rr_source is None
+        assert "computed_resting_rmssd_ms" not in provenance
+
+
+# ---------------------------------------------------------------------------
+# Negative distance -- impossible, therefore not a measurement
+# ---------------------------------------------------------------------------
+
+
+def test_a_negative_distance_is_not_an_intensity_signal(synthetic, classified) -> None:
+    """``total_distance`` is an unsigned FIT field, so a negative value can only
+    arrive from a crafted or corrupt definition record -- the same provenance as
+    the ``tuple`` and ``str`` values ``_numeric`` already answers ``None`` for.
+
+    It is therefore treated the way every other uninterpretable value is treated:
+    as **absent**, not as evidence. Reading it literally would be strictly worse,
+    and in the same direction the zero case was wrong -- ``-500 / 240`` is
+    comfortably ``<= 1.0``, so a garbage field would satisfy the stillness test
+    outright and stand in for the heart-rate arm it must never replace.
+
+    Absent means the heart-rate arm decides, and here it agrees: 55 bpm routes."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=-500.0, avg_heart_rate=55),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert session.summary["distance_m"] == -500.0  # present, and still not a signal
+    assert session.hrv_source_tier == "chest_strap_raw"
+
+
+def test_a_negative_distance_alone_does_not_route(synthetic, classified) -> None:
+    """The other half of treating it as absent, and the half that matters: with no
+    heart rate to fall through to there is no usable intensity signal at all, so a
+    corrupt distance field can never route a capture on its own."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=-500.0), rr_intervals=_beats()
+    )
+
+    assert session.activity_tag is None
     assert session.hrv_source_tier is None
 
 
