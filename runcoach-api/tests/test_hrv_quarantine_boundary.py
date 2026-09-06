@@ -113,23 +113,64 @@ class _FieldReadCollector(ast.NodeVisitor):
     it. Over-collection costs a one-line classification in
     ``HRV_NON_INPUT_READS``; under-collection would let a read slip past
     the invariant.
+
+    **Lookup keys are resolved through module-level constants.** The
+    collector originally accepted string *literals* only, which left it
+    blind to ``hrv_classification``'s own dominant convention -- a named
+    constant per key (``_SNAPSHOT_RAW_SPORT_VALUE``, ``_PROVENANCE_*``,
+    ``_FLAG_*``). An edit written that idiomatic way::
+
+        _FIELD_BODY_BATTERY = "body_battery"
+        ...
+        msg.get_value(_FIELD_BODY_BATTERY, fallback=None)
+
+    passes an ``ast.Name``, was silently dropped, and so appeared in
+    neither the "unclassified" nor the "stale" half of the
+    reconciliation -- leaving both green while a quarantined
+    vendor-derived field fed the HRV decision. ``constants`` is the
+    module's own ``{target: value}`` map over top-level string-constant
+    assignments, and a ``Name`` key is resolved through it.
+
+    **An unresolvable lookup key is recorded, never ignored.** Silent
+    non-collection is what made the guard defeatable in the first place,
+    so a key that is neither a string literal nor a resolvable
+    module-level string constant lands in ``unresolved`` and
+    ``_assert_every_lookup_key_is_resolvable`` turns that into a
+    failure. A constant bound to a non-string (``_SNAPSHOT_RAW_SPORT_VALUE
+    = 60`` is a *value*, not a key) is unresolvable too, rather than
+    being injected into ``names`` as a bogus field name.
+
+    Loudness is scoped to *lookup call* keys. Subscript slices get the
+    same constant resolution but stay quiet when unresolvable, because
+    ``x[i]`` is overwhelmingly ordinary indexing (and ``list[str]`` an
+    annotation) rather than a field read -- making those loud would
+    report noise, not smuggling.
     """
 
     _LOOKUP_METHODS = frozenset({"get", "get_value", "has_field"})
 
-    def __init__(self) -> None:
+    def __init__(self, constants: dict[str, str] | None = None) -> None:
         self.names: set[str] = set()
+        self.unresolved: set[str] = set()
+        self._constants = constants or {}
+
+    def _resolve(self, node: ast.expr) -> str | None:
+        """The string this key node denotes, or ``None`` if unknowable."""
+        if isinstance(node, ast.Constant):
+            return node.value if isinstance(node.value, str) else None
+        if isinstance(node, ast.Name):
+            return self._constants.get(node.id)
+        return None
 
     def visit_Call(self, node: ast.Call) -> None:
         func = node.func
-        if (
-            isinstance(func, ast.Attribute)
-            and func.attr in self._LOOKUP_METHODS
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-            and isinstance(node.args[0].value, str)
-        ):
-            self.names.add(node.args[0].value)
+        if isinstance(func, ast.Attribute) and func.attr in self._LOOKUP_METHODS and node.args:
+            key = node.args[0]
+            resolved = self._resolve(key)
+            if resolved is not None:
+                self.names.add(resolved)
+            else:
+                self.unresolved.add(ast.unparse(key))
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -142,19 +183,57 @@ class _FieldReadCollector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Subscript(self, node: ast.Subscript) -> None:
-        if (
-            isinstance(node.ctx, ast.Load)
-            and isinstance(node.slice, ast.Constant)
-            and isinstance(node.slice.value, str)
-        ):
-            self.names.add(node.slice.value)
+        if isinstance(node.ctx, ast.Load):
+            resolved = self._resolve(node.slice)
+            if resolved is not None:
+                self.names.add(resolved)
         self.generic_visit(node)
+
+
+def _module_level_string_constants(tree: ast.Module) -> dict[str, str]:
+    """``{target: value}`` for every top-level ``NAME = "literal"``.
+
+    One pass over the module body only: a name bound inside a function
+    is not a module-level constant, and resolving through one would be
+    guessing at flow rather than reading a declaration.
+    """
+    constants: dict[str, str] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets = [statement.target]
+        else:
+            continue
+        value = statement.value
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                constants[target.id] = value.value
+    return constants
+
+
+def _collect_reads(source: str) -> _FieldReadCollector:
+    """Walk ``source``, resolving lookup keys through its own constants."""
+    tree = ast.parse(source)
+    collector = _FieldReadCollector(_module_level_string_constants(tree))
+    collector.visit(tree)
+    return collector
+
+
+def _assert_every_lookup_key_is_resolvable(collector: _FieldReadCollector) -> None:
+    assert not collector.unresolved, (
+        "lookup key(s) cannot be resolved to a field name statically, so the "
+        "reconciliation below is blind to them: "
+        f"{sorted(collector.unresolved)}"
+    )
 
 
 def _names_read_by_the_classification_module() -> frozenset[str]:
     source = Path(hrv_classification.__file__).read_text(encoding="utf-8")
-    collector = _FieldReadCollector()
-    collector.visit(ast.parse(source))
+    collector = _collect_reads(source)
+    _assert_every_lookup_key_is_resolvable(collector)
     return frozenset(collector.names)
 
 
@@ -315,3 +394,124 @@ def test_stress_reaches_only_the_sidecar_and_rmssd_only_the_session_row() -> Non
     assert row is not None
     assert row[0] == FIXTURE_DEVICE_RMSSD
     assert row[1] == "health_snapshot"
+
+
+# ---------------------------------------------------------------------------
+# 4. the collector itself cannot be dodged by the module's own convention
+#
+# The reconciliation in section 2 is only as good as what the collector
+# sees. It used to see *string literals only*, while
+# ``hrv_classification``'s dominant convention is a named constant per key
+# (``_SNAPSHOT_RAW_SPORT_VALUE``, ``_PROVENANCE_*``, ``_FLAG_*``). An edit
+# written the module's own idiomatic way --
+#
+#     _FIELD_BODY_BATTERY = "body_battery"
+#     ...
+#     msg.get_value(_FIELD_BODY_BATTERY, fallback=None)
+#
+# -- passes an ``ast.Name``, was silently never collected, and so was
+# neither "unclassified" nor "stale": both assertions above stayed green
+# while a quarantined vendor-derived field fed the HRV decision. That is
+# precisely the failure this module exists to prevent, so the collector
+# now resolves module-level string constants, and *fails loudly* on a
+# lookup key it cannot resolve rather than dropping it on the floor.
+# ---------------------------------------------------------------------------
+
+
+def test_the_collector_resolves_a_module_level_constant_lookup_key() -> None:
+    """A named constant used as a lookup key is collected under its value."""
+    collector = _collect_reads(
+        '_FIELD_BODY_BATTERY = "body_battery"\n'
+        "def f(msg):\n"
+        "    return msg.get_value(_FIELD_BODY_BATTERY, fallback=None)\n"
+    )
+
+    assert "body_battery" in collector.names
+    assert not collector.unresolved
+
+
+@pytest.mark.parametrize("method", ["get", "get_value", "has_field"])
+def test_constant_resolution_covers_every_lookup_method(method: str) -> None:
+    collector = _collect_reads(
+        f'_KEY = "avg_stress"\ndef f(x):\n    return x.{method}(_KEY)\n'
+    )
+
+    assert "avg_stress" in collector.names
+
+
+def test_the_collector_fails_loudly_on_an_unresolvable_lookup_key() -> None:
+    """Silent non-collection is what made the guard defeatable.
+
+    A key that is neither a literal nor a resolvable module-level
+    constant must be *reported*, not ignored -- otherwise the next
+    indirection (a parameter, an attribute, a dict lookup) reopens the
+    exact hole the constant map just closed.
+    """
+    collector = _collect_reads("def f(msg, key):\n    return msg.get_value(key)\n")
+
+    assert not collector.names
+    assert collector.unresolved == {"key"}
+
+
+def test_an_unresolvable_lookup_key_is_reported_by_the_reconciliation() -> None:
+    """The loud failure has to reach an assertion, not just an attribute."""
+    with pytest.raises(AssertionError, match="cannot be resolved"):
+        _assert_every_lookup_key_is_resolvable(
+            _collect_reads("def f(msg, key):\n    return msg.get_value(key)\n")
+        )
+
+
+def test_no_lookup_key_in_the_classification_module_is_unresolvable() -> None:
+    """The live guard, against the real source.
+
+    Every lookup key in ``hrv_classification`` must be recoverable
+    statically. The moment one is not, the reconciliation above is
+    blind to it and this fails rather than passing quietly.
+    """
+    _assert_every_lookup_key_is_resolvable(
+        _collect_reads(Path(hrv_classification.__file__).read_text(encoding="utf-8"))
+    )
+
+
+def test_the_reconciliation_bites_on_a_constant_indirected_quarantined_read() -> None:
+    """The permanent form of the manual proof, mirroring
+    ``test_the_disjointness_assertion_actually_bites``.
+
+    Take the real module source, append a read of a quarantined field
+    written the module's own idiomatic way -- a named constant, not a
+    literal -- and confirm the collector now sees it. Before the fix
+    this returned the untouched set and the guard stayed green while a
+    quarantined field fed the decision.
+    """
+    banned = sorted(_banned_session_fields())[0]
+    real_source = Path(hrv_classification.__file__).read_text(encoding="utf-8")
+    doctored = (
+        f'{real_source}\n\n_FIELD_SMUGGLED = "{banned}"\n\n\n'
+        "def _smuggle(message):\n"
+        "    return message.get_value(_FIELD_SMUGGLED, fallback=None)\n"
+    )
+
+    discovered = frozenset(_collect_reads(doctored).names)
+
+    # The guard sees it...
+    assert banned in discovered
+    # ...and both section-2 assertions it feeds now fail on it.
+    declared = frozenset(hrv_classification.HRV_INPUT_FIELDS) | frozenset(
+        hrv_classification.HRV_NON_INPUT_READS
+    )
+    assert discovered - declared == {banned}
+    assert _banned_session_fields() & discovered == {banned}
+
+
+def test_a_non_string_constant_is_not_mistaken_for_a_field_name() -> None:
+    """``_SNAPSHOT_RAW_SPORT_VALUE = 60`` is a *value*, not a key.
+
+    Resolving it into the discovered set would inject a bogus name and
+    fail the reconciliation for the wrong reason.
+    """
+    collector = _collect_reads(
+        "_RAW_SPORT = 60\ndef f(x):\n    return x.get(_RAW_SPORT)\n"
+    )
+
+    assert not collector.names
+    assert collector.unresolved == {"_RAW_SPORT"}
