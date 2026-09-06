@@ -42,7 +42,16 @@ ZERO_BEAT_FIXTURE = FIXTURES / "sample_health_snapshot.fit"
 # taken here, so the call must fire on both sides of the conditional.
 BEAT_BEARING_FIXTURE = FIXTURES / "dev_fields_run.fit"
 
-_NEW_SESSION_FIELDS = ("rmssd_precomputed", "hrv_source_tier", "rr_source")
+# ``resting_rmssd_ms`` joined the set with the 2026-09-06 amendment (T055).
+# It is the **resolved** field E003 reads on either tier; ``rmssd_precomputed``
+# stays the device-only audit record. T055 ships the column with no writer, so
+# it is null on every row here -- T065 populates it on both tiers.
+_NEW_SESSION_FIELDS = (
+    "rmssd_precomputed",
+    "hrv_source_tier",
+    "rr_source",
+    "resting_rmssd_ms",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +198,8 @@ def test_new_fields_survive_a_full_ingest_to_get_round_trip() -> None:
     assert body["hrv_source_tier"] == "health_snapshot"
     assert body["rmssd_precomputed"] == 37
     assert body["rr_source"] == "health_snapshot_ppg"
+    # T055 adds the column and no writer: null on every row until T065.
+    assert body["resting_rmssd_ms"] is None
 
 
 def test_post_201_response_does_not_leak_the_new_fields() -> None:
@@ -232,7 +243,7 @@ def test_session_rr_source_is_distinct_from_the_per_beat_rr_source() -> None:
     finally:
         conn.close()
 
-    assert {"rmssd_precomputed", "hrv_source_tier", "rr_source"} <= session_columns
+    assert set(_NEW_SESSION_FIELDS) <= session_columns
     assert "rr_source" in beat_columns
 
 
@@ -270,7 +281,10 @@ def test_ingest_works_against_a_data_dir_the_server_never_booted() -> None:
 
 def test_new_columns_are_added_to_a_preexisting_database() -> None:
     """``_reconcile_columns`` handles additive nullable columns, so a
-    database created before F004 must gain the three without a migration."""
+    database created before F004 must gain all of ``_NEW_SESSION_FIELDS``
+    without a migration -- including ``resting_rmssd_ms``, which the
+    2026-09-06 amendment adds to an already-upgraded database a second
+    time."""
     from runcoach_api import db
     from runcoach_api.models import Session
 
@@ -294,7 +308,7 @@ def test_new_columns_are_added_to_a_preexisting_database() -> None:
         db.init_schema(conn)
 
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
-        assert {"rmssd_precomputed", "hrv_source_tier", "rr_source"} <= columns
+        assert set(_NEW_SESSION_FIELDS) <= columns
 
         # and the INSERT naming them still works against the reconciled table
         db.persist(
@@ -318,6 +332,113 @@ def test_new_columns_are_added_to_a_preexisting_database() -> None:
     assert detail["rmssd_precomputed"] is None
     assert detail["hrv_source_tier"] is None
     assert detail["rr_source"] is None
+    assert detail["resting_rmssd_ms"] is None
+
+
+# ---------------------------------------------------------------------------
+# T055: the resolved column, added with no writer
+# ---------------------------------------------------------------------------
+
+
+def test_resting_rmssd_ms_is_null_on_an_ordinary_run() -> None:
+    """F004 @must "An ordinary run is never treated as a resting-HRV reading"
+    now names ``resting_rmssd_ms`` among the fields that must all be null.
+
+    ``dev_fields_run.fit`` is the beat-bearing negative -- 3127 ``hrv``
+    messages, so the column is reached on the branch that *does* have beats.
+    """
+    from runcoach_api import db
+
+    result = pipeline.ingest_fit_bytes(BEAT_BEARING_FIXTURE.read_bytes())
+
+    conn = db.get_connection()
+    try:
+        detail = db.get_session_detail(conn, result.session_id)
+    finally:
+        conn.close()
+
+    assert detail is not None
+    assert "resting_rmssd_ms" in detail.keys()
+    assert detail["activity_tag"] is None
+    assert detail["hrv_source_tier"] is None
+    assert detail["rmssd_precomputed"] is None
+    assert detail["resting_rmssd_ms"] is None
+
+
+def test_nothing_in_the_pipeline_writes_resting_rmssd_ms_yet() -> None:
+    """T055 ships infrastructure with no behaviour: the column is null on
+    every row of every corpus fixture, including the two the classifier
+    actively routes. T065 is what fills it in; if this test starts failing,
+    a writer landed early and the no-backfill guarantee needs re-checking.
+    """
+    from runcoach_api import db
+
+    for fixture in (ZERO_BEAT_FIXTURE, BEAT_BEARING_FIXTURE):
+        pipeline.ingest_fit_bytes(fixture.read_bytes())
+
+    conn = db.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT session_id, resting_rmssd_ms FROM sessions"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert len(rows) == 2
+    assert all(row["resting_rmssd_ms"] is None for row in rows), [tuple(r) for r in rows]
+
+
+def test_a_real_resting_rmssd_ms_round_trips_as_a_json_number_equal_to_37() -> None:
+    """Confirms the gotcha rather than assuming it.
+
+    F004's demo probe asserts ``.resting_rmssd_ms == 37`` with ``jq -e`` on a
+    ``REAL`` column, so the stored float must reach the HTTP body as a JSON
+    number that compares equal to the integer literal. No writer exists yet,
+    so the value is persisted directly through ``db.persist`` -- the same
+    ``_insert_session`` path T065 will drive -- and read back over the real
+    ``GET /sessions/{id}`` route.
+    """
+    import json
+
+    from runcoach_api import db
+    from runcoach_api.models import Session
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.persist(
+            conn,
+            Session(
+                session_id="s-real-affinity-1",
+                sport="running",
+                source_vendor="garmin",
+                start_time="2026-02-02T06:00:00+00:00",
+                source_device="affinity-device",
+                activity_tag="resting_hrv_check",
+                hrv_source_tier="chest_strap_raw",
+                resting_rmssd_ms=37.0,
+            ),
+            [],
+            [],
+            {},
+        )
+        stored = conn.execute(
+            "SELECT typeof(resting_rmssd_ms) AS t, resting_rmssd_ms AS v"
+            " FROM sessions WHERE session_id = 's-real-affinity-1'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert stored["t"] == "real"
+    assert stored["v"] == 37
+
+    with TestClient(app) as client:
+        detail = client.get("/sessions/s-real-affinity-1")
+
+    assert detail.status_code == 200
+    assert detail.json()["resting_rmssd_ms"] == 37
+    # ...and as jq sees it: a bare JSON number, not a string.
+    assert isinstance(json.loads(detail.text)["resting_rmssd_ms"], float)
 
 
 # ---------------------------------------------------------------------------

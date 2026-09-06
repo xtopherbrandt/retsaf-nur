@@ -81,6 +81,13 @@ _SCHEMA_DDL = """
       source_device TEXT, recording_interval TEXT, hr_source TEXT,
       rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
       rmssd_precomputed REAL, hrv_source_tier TEXT, rr_source TEXT,
+      -- resting_rmssd_ms is the RESOLVED field E003 reads on either tier
+      -- (device value on Tier 2, system-computed on Tier 1);
+      -- rmssd_precomputed above stays the device-only audit record. Same
+      -- nullability and REAL affinity as that column deliberately. Added
+      -- 2026-09-06; _reconcile_columns lands it on an existing database
+      -- and no backfill fills it, so pre-amendment rows stay NULL.
+      resting_rmssd_ms REAL,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -144,9 +151,19 @@ def _reconcile_columns(conn: sqlite3.Connection) -> None:
     following the T032 precedent), so the earlier forward reference to
     "the migration framework F003 deferred to F004" no longer describes
     anything that will be built. What this does is add nullable columns
-    only -- which is all F004's three new session-level columns need. A
+    only -- which is all F004's four new session-level columns need
+    (``resting_rmssd_ms`` joined them with the 2026-09-06 amendment). A
     rename or retype still needs a real migration, and will surface here
     as an error rather than being silently papered over.
+
+    **Adding a column is all this does.** It never writes a value into
+    one, and the 2026-09-06 Decision Log makes that explicit for
+    ``resting_rmssd_ms``: pre-amendment ``resting_hrv_check`` rows keep
+    it NULL even though their computed value is sitting in
+    ``context.provenance.computed_resting_rmssd_ms``, because those rows
+    were produced by the inference predicate that amendment exists to
+    discredit. Recovery is re-ingestion under the declaration rule, not
+    a backfill.
     """
     for table, expected in _expected_schema().items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -173,12 +190,12 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             session_id, athlete_id, start_time, sport, activity_tag,
             source_vendor, source_device, recording_interval, hr_source,
             rr_valid_fraction, quality_flags, summary, context,
-            rmssd_precomputed, hrv_source_tier, rr_source
+            rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
             :rr_valid_fraction, :quality_flags, :summary, :context,
-            :rmssd_precomputed, :hrv_source_tier, :rr_source
+            :rmssd_precomputed, :resting_rmssd_ms, :hrv_source_tier, :rr_source
         )
         """,
         {
@@ -193,6 +210,9 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "hr_source": session.hr_source,
             "rr_valid_fraction": session.rr_valid_fraction,
             "rmssd_precomputed": session.rmssd_precomputed,
+            # The resolved E003-facing value; rmssd_precomputed above is
+            # the device-only audit. See models.Session.
+            "resting_rmssd_ms": session.resting_rmssd_ms,
             "hrv_source_tier": session.hrv_source_tier,
             # Session-level (§2.2.3), not the per-beat rr_intervals.rr_source
             # written by _insert_rr_intervals -- see models.Session.
@@ -348,7 +368,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         SELECT session_id, athlete_id, start_time, sport, activity_tag,
                source_vendor, source_device, recording_interval, hr_source,
                rr_valid_fraction, quality_flags, summary, context,
-               rmssd_precomputed, hrv_source_tier, rr_source
+               rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source
         FROM sessions WHERE session_id = ?
         """,
         (session_id,),
@@ -419,6 +439,10 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "hr_source": row["hr_source"],
         "rr_valid_fraction": row["rr_valid_fraction"],
         "rmssd_precomputed": row["rmssd_precomputed"],
+        # The resolved reading E003 reads regardless of tier. Distinct
+        # from rmssd_precomputed above, which stays the device-only
+        # audit -- a Tier-1 reading populates this and leaves that null.
+        "resting_rmssd_ms": row["resting_rmssd_ms"],
         "hrv_source_tier": row["hrv_source_tier"],
         # Session-level (§2.2.3). The per-beat carrier of the same enum
         # is each entry's own "rr_source" under "rr_intervals" below.

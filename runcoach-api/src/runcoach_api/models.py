@@ -41,6 +41,19 @@ class Session:
     # filtering, there being no beats to filter, so the non-positive
     # check is the only validity gate it gets.
     rmssd_precomputed: float | None = None
+    # The **resolved** resting rMSSD in milliseconds -- the field E003
+    # reads, whichever tier produced the reading: the device value on
+    # Tier 2, the system-computed value on Tier 1. ``rmssd_precomputed``
+    # above keeps its narrower device-only meaning as the audit record,
+    # so the two are never interchangeable: a successful Tier-1 reading
+    # populates this and leaves that one None.
+    #
+    # Always > 0 when set (F004's non-positive gate) and None when no
+    # reading was derived, so a consumer need not know the tier to know
+    # what a value means. Added by the 2026-09-06 amendment with **no
+    # writer** (T055); T065 populates it on both tiers. Pre-amendment
+    # rows keep it None -- there is deliberately no backfill.
+    resting_rmssd_ms: float | None = None
     # Which tier the reading came from: "chest_strap_raw" /
     # "health_snapshot" / "health_api_overnight". None on every
     # non-HRV session, which is most of them.
