@@ -448,3 +448,107 @@ def test_the_health_snapshots_still_take_the_tier_2_path(
     assert session.hrv_source_tier == "health_snapshot"
     assert session.rmssd_precomputed == expected_rmssd
     assert session.rr_source == "health_snapshot_ppg"
+
+
+# ---------------------------------------------------------------------------
+# Present-and-zero distance -- the R3 leak the two arms' AND closes
+# ---------------------------------------------------------------------------
+
+
+def test_a_present_zero_distance_still_consults_the_heart_rate_arm() -> None:
+    """**The R3 leak.** ``mapping._build_summary`` strips only ``None``, so an indoor
+    session carrying ``total_distance = 0.0`` has a ``distance_m`` key holding ``0.0``
+    -- present-and-zero, not absent. A treadmill, rowing-erg or indoor-trainer interval
+    logs exactly that, and ``0.0 / 240 = 0.0 <= 1.0`` satisfies the distance arm
+    outright. If the distance arm short-circuits, a **maximal effort** at avg HR 165 is
+    written as ``resting_hrv_check`` / ``chest_strap_raw`` carrying an rMSSD derived
+    from it -- the §2.2.3 prohibition the heart-rate arm exists to enforce, leaking
+    through the one branch a fallback-shaped predicate never takes.
+
+    The two signals must therefore **agree** whenever both are present."""
+    session = _classified(
+        _synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=165),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert session.summary["distance_m"] == 0.0  # present, not stripped
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert session.rr_source is None
+    assert "computed_resting_rmssd_ms" not in (
+        session.context.provenance if session.context else {}
+    )
+
+
+def test_a_present_zero_distance_resting_capture_still_routes() -> None:
+    """The twin, and the reason the fix is an AND rather than a heart-rate-only rule: a
+    genuine indoor morning capture also logs ``total_distance = 0.0``. It agrees with
+    both arms -- 0.0 m/s and 55 bpm -- so it must still produce a Tier-1 reading."""
+    session = _classified(
+        _synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=55),
+        rr_intervals=_beats(),
+    )
+
+    assert session.activity_tag == "resting_hrv_check"
+    assert session.hrv_source_tier == "chest_strap_raw"
+    assert session.rr_source == "chest_strap_ecg"
+    assert session.rmssd_precomputed is None
+
+
+def test_a_moving_capture_with_a_resting_heart_rate_still_does_not_route() -> None:
+    """The other half of the AND, carried over unchanged from the old fallback reading:
+    a low average heart rate does not rescue a capture that demonstrably moved."""
+    session = _classified(
+        _synthetic(total_timer_time=200.0, total_distance=600.0, avg_heart_rate=52),
+        rr_intervals=_beats(),
+    )
+
+    assert session.hrv_source_tier is None
+
+
+# ---------------------------------------------------------------------------
+# Non-numeric summary values -- a crafted definition record must not be a 500
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "session_extra",
+    [
+        {"total_timer_time": (150.0, 1.0), "total_distance": 10.0, "avg_heart_rate": 60},
+        {"total_timer_time": "150", "total_distance": 10.0, "avg_heart_rate": 60},
+        {"total_timer_time": 150.0, "total_distance": (10.0, 2.0)},
+        {"total_timer_time": 150.0, "avg_heart_rate": ("60", "61")},
+        {"total_timer_time": 150.0, "avg_heart_rate": "60"},
+    ],
+)
+def test_a_non_numeric_summary_value_is_treated_as_absent_not_a_500(
+    session_extra: dict,
+) -> None:
+    """``fitdecode`` types a field by the **file's own declared base type**, not the
+    global profile: ``reader.py`` (verified at lines 797-806 of the vendored copy)
+    returns ``tuple(base_type.parse(v) for v in raw_value)`` whenever the declared size
+    holds more than one element, so a crafted or corrupt definition record can make any
+    of these three a ``tuple`` -- or a ``str``, from a string base type. Comparing one
+    raises ``TypeError``, which ``main.py`` does not catch: a **500 on a malformed
+    upload** rather than a stored session. ``rr_reconstruction._hrv_candidates`` already
+    guards the identical hazard with ``isinstance``; this is the same convention.
+
+    A non-numeric value is treated as **absent**, so each row above loses an arm and no
+    reading is derived."""
+    session = _classified(_synthetic(**session_extra), rr_intervals=_beats())
+
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+
+
+def test_a_boolean_heart_rate_is_not_a_numeric_intensity_signal() -> None:
+    """``bool`` is an ``int`` subclass, so ``True <= 100`` is ``True`` and a bare
+    ``isinstance(value, (int, float))`` would accept it as an average heart rate of
+    1 bpm. It is not a measurement, so it is treated as absent -- which leaves this
+    GPS-less file with no intensity signal at all."""
+    session = _classified(
+        _synthetic(total_timer_time=180.0, avg_heart_rate=True), rr_intervals=_beats()
+    )
+
+    assert session.hrv_source_tier is None

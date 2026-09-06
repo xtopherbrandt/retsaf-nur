@@ -254,6 +254,39 @@ def _session_rmssd_hrv(messages: list[fitdecode.FitDataMessage]) -> Any:
     return None
 
 
+def _numeric(value: Any) -> float | int | None:
+    """``value`` when it is a real number, otherwise ``None``.
+
+    ``fitdecode`` types a field by the **file's own declared base type**, not by
+    the global profile: ``reader.py`` returns
+    ``tuple(base_type.parse(v) for v in raw_value)`` whenever the declared size
+    holds more than one element, so a crafted or corrupt definition record can
+    hand this module a ``tuple`` (or a ``str``, from a string base type) where a
+    scalar was expected. Comparing one -- ``(1, 2) <= 0`` -- raises ``TypeError``,
+    and ``main.py`` catches only ``NotAFitFileError``, ``FitParseFailure``,
+    ``TooManyRecordsError``, ``MissingCanonicalFieldError`` and
+    ``DuplicateSessionError``, so it would reach the client as a **500 on a
+    malformed upload** rather than a stored session with flags.
+
+    ``rr_reconstruction._hrv_candidates`` already guards the identical hazard the
+    same way; this is that convention, applied at the two places this module
+    compares a decoded value.
+
+    ``bool`` is excluded explicitly: it is an ``int`` subclass, so ``True <= 100``
+    is legal and an unguarded numeric check would read a flag as a heart rate of
+    1 bpm or store ``True`` as a millisecond rMSSD.
+
+    A non-numeric value is answered ``None`` -- **treated as absent** -- rather
+    than raising: F003's posture is to flag quality, never to refuse a valid FIT
+    file, and an uninterpretable field is exactly a field the file did not supply.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    return None
+
+
 def _provenance(session: Session) -> dict[str, Any]:
     """``session.context.provenance``, creating the ``Context`` if absent.
 
@@ -315,16 +348,34 @@ def _resting_profile_duration(session: Session) -> float | None:
     one, otherwise ``None`` (F004 reference document §2)::
 
         duration_s is not None AND 0 < duration_s <= 300
-        AND (
-              (distance_m present AND distance_m / duration_s <= 1.0)
-           OR (distance_m absent AND avg_heart_rate present
-               AND avg_heart_rate <= 100)
-            )
+        AND at least one intensity signal is present
+        AND every intensity signal that IS present agrees:
+              (distance_m present  ->  distance_m / duration_s <= 1.0)
+          AND (avg_heart_rate present  ->  avg_heart_rate <= 100)
+
+    **The two arms are an AND over the signals that exist, not a fallback
+    chain, and that is a correctness fix rather than a stylistic one.**
+    ``mapping._build_summary`` strips only ``None``, so an indoor session
+    carrying ``total_distance = 0.0`` has a ``distance_m`` key holding ``0.0``
+    -- present-and-zero, not absent. A treadmill, rowing-erg or
+    indoor-trainer interval logs exactly that, and ``0.0 / 240 = 0.0 <= 1.0``
+    satisfies the distance arm outright. Under a fallback reading the
+    heart-rate arm was then never consulted, and a **maximal effort** routed
+    as a resting capture -- the §2.2.3 prohibition the heart-rate arm exists
+    to enforce, leaking through the one branch a fallback never takes.
+
+    The direction the old wording *did* get right is preserved: a capture
+    that demonstrably moved is still not rescued by a low average heart rate.
+    Under an AND neither signal can rescue the other; each can only veto.
 
     Returning the duration rather than a bare ``bool`` is what lets the
     quality gates re-use the same reading of ``session.summary`` instead of
     re-deriving it; ``None`` is unambiguous here because a profile that
     matches always has a duration strictly greater than zero.
+
+    All three values are read through ``_numeric``: a ``tuple`` or ``str``
+    from a crafted definition record is treated as absent rather than
+    compared, because comparing it is a ``TypeError`` and an unhandled 500.
 
     Deliberately *not* including the beats condition. Tier-1 candidacy needs
     both -- ``_classify_tier_1`` checks the beats itself -- but the beatless
@@ -339,9 +390,9 @@ def _resting_profile_duration(session: Session) -> float | None:
     perfectly valid upload.
     """
     summary = session.summary or {}
-    duration_s = summary.get("duration_s")
-    distance_m = summary.get("distance_m")
-    avg_heart_rate = summary.get("avg_heart_rate")
+    duration_s = _numeric(summary.get("duration_s"))
+    distance_m = _numeric(summary.get("distance_m"))
+    avg_heart_rate = _numeric(summary.get("avg_heart_rate"))
 
     # The divisor is established here, before any speed is computed: a
     # degenerate file can carry ``total_timer_time`` 0, and a duration that
@@ -349,20 +400,21 @@ def _resting_profile_duration(session: Session) -> float | None:
     if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
         return None
 
-    if distance_m is not None:
-        # The distance arm wins whenever distance is present: the heart-rate
-        # arm below is a **fallback for absent distance**, not a second
-        # chance. A capture that demonstrably moved is not rescued by a low
-        # average heart rate.
-        at_rest = distance_m / duration_s <= _RESTING_MAX_MEAN_SPEED_MS
-    elif avg_heart_rate is not None:
-        at_rest = avg_heart_rate <= _RESTING_MAX_AVG_HEART_RATE_BPM
-    else:
+    if distance_m is None and avg_heart_rate is None:
         # No usable intensity signal at all, so there is nothing to
         # discriminate on and the conservative outcome is no reading.
-        at_rest = False
+        return None
 
-    return duration_s if at_rest else None
+    # Every signal that is present must agree the capture is at rest. A
+    # present-and-zero distance is a real reading of "did not move", not a
+    # missing one, so it must not stand in for the heart-rate check the way an
+    # absent distance does.
+    if distance_m is not None and distance_m / duration_s > _RESTING_MAX_MEAN_SPEED_MS:
+        return None
+    if avg_heart_rate is not None and avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
+        return None
+
+    return duration_s
 
 
 def _surviving_fraction(session: Session, rr_intervals: list[RRInterval]) -> float | None:
@@ -483,12 +535,14 @@ def _classify_tier_1(
     ``strap_hrv_sample_run.fit``::
 
         tier1 := rr_intervals is non-empty
-             AND duration_s is not None AND duration_s <= 300
-             AND (
-                   (distance_m present AND distance_m / duration_s <= 1.0)
-                OR (distance_m absent AND avg_heart_rate present
-                    AND avg_heart_rate <= 100)
-                 )
+             AND _resting_profile_duration(session) is not None
+
+    The duration/intensity half lives on
+    ``_resting_profile_duration`` and is documented there, once. It used to be
+    restated here in full and the two copies had already drifted -- this one had
+    lost the ``0 <`` lower bound that stops a degenerate ``total_timer_time`` 0
+    from reaching the division. Only the conditions this function owns are stated
+    here.
 
     **Raw-RR presence alone must never route**, and this is the one
     bright line the reference document draws in boldface.
@@ -515,20 +569,21 @@ def _classify_tier_1(
     the readiness ladder as rest. The allowance for a missing distance
     is needed so an indoor waking capture still routes; the heart-rate
     arm is what keeps that allowance from swallowing every GPS-less hard
-    effort. It is a **fallback for absent distance**, not a second
-    chance: a capture that demonstrably moved is not rescued by a low
-    average heart rate.
+    effort. It is **not** consulted only when distance is missing: a
+    present-and-zero distance is what an indoor session actually logs,
+    and treating it as a satisfied distance arm let that maximal effort
+    straight through. See ``_resting_profile_duration``.
 
-    **No usable intensity signal means no route.** Distance absent *and*
-    average heart rate absent leaves nothing to discriminate on, and the
-    conservative outcome is no reading.
-
-    ``session.summary`` is read with ``.get()`` throughout, never
-    subscripted: ``mapping._build_summary`` strips its ``None`` values,
-    so a file with no distance has **no** ``"distance_m"`` key at all --
-    not a key holding ``None``. Both Health Snapshot fixtures are in
-    that state, and subscripting would turn every indoor capture into a
-    500 on a perfectly valid upload.
+    **A reading that cannot be computed is not a reading.** The tier
+    fields are written only once ``rmssd.resting_rmssd`` has produced a
+    value. A stream of a single beat -- a strap that paired and then
+    dropped -- has zero contributing pairs and no statistic, yet
+    ``valid_fraction`` on one unflagged beat is ``1.0`` and clears the
+    0.80 gate; stamping ``chest_strap_raw`` on it would assert a
+    completed chest-strap reading carrying no number and no explanation.
+    ``0.0`` is *not* that case: it is a genuine measurement of zero
+    variability, which is why the test is ``is None`` and never
+    falsiness.
     """
     if not rr_intervals:
         return False
@@ -568,14 +623,32 @@ def _classify_tier_1(
         # capture yields *no reading*, not a downgraded one.
         return True
 
+    # The statistic is computed *before* the tier is stamped, and "no derivable
+    # statistic" is a gate failure like any other. ``resting_rmssd`` answers
+    # ``None`` when no pair contributes -- a single-beat stream, or one whose
+    # beats carry no ``rr_ms`` -- and neither case is caught by the gates above:
+    # ``valid_fraction`` on one unflagged beat is ``1.0``. Writing the tier
+    # fields first would leave a session stamped as a completed chest-strap
+    # reading carrying no number and no explanation.
+    computed = rmssd.resting_rmssd(rr_intervals)
+    if computed is None:
+        # Row 4's flag, which is the feature's existing vocabulary for "this
+        # capture was recognised but yielded no usable number". Not
+        # ``_FLAG_CAPTURE_NO_BEATS``: there *are* beats here, and saying
+        # otherwise would be a false statement about the stream.
+        _raise_flag(session, _FLAG_READING_UNAVAILABLE)
+        return True
+
+    # ``is None`` above, never falsiness: ``0.0`` is a genuine measurement of
+    # zero beat-to-beat variability and takes the success path, the same
+    # ``None``/``0.0`` distinction ``models.Session.rr_valid_fraction``
+    # documents and ``rmssd.resting_rmssd`` was built around.
     session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
     session.hrv_source_tier = _TIER_CHEST_STRAP_RAW
     session.rr_source = _RR_SOURCE_CHEST_STRAP
     # ``rmssd_precomputed`` is left ``None`` on purpose -- see
     # ``_PROVENANCE_COMPUTED_RMSSD``.
-    computed = rmssd.resting_rmssd(rr_intervals)
-    if computed is not None:
-        _provenance(session)[_PROVENANCE_COMPUTED_RMSSD] = computed
+    _provenance(session)[_PROVENANCE_COMPUTED_RMSSD] = computed
     return True
 
 
@@ -608,18 +681,49 @@ def _classify_tier_2(messages: list[fitdecode.FitDataMessage], session: Session)
     The string ``"Health Snapshot"`` in ``sport.name`` /
     ``sport_profile_name`` is deliberately never matched on: it is free
     text and locale-dependent (reference document §1).
+
+    **There is deliberately no duration bound here, and its absence is a
+    decision rather than an oversight.** Tier 1 caps a capture at 300 s,
+    but Tier 2 routes a sport-60 file of any length: ``sport == 60`` is
+    treated as sufficient identity on its own, because a device only
+    emits that sport code for a Health Snapshot -- a two-minute,
+    zero-calorie non-session by construction. The counter-argument is
+    recorded with the decision (F004 Decision Log, 2026-09-06): the value
+    60 is *unconfirmed in Garmin's published enum* -- see
+    ``_SNAPSHOT_RAW_SPORT_VALUE`` -- so that identity rests on an
+    unratified enum, and a duration bound would have been a cheap second
+    guard. The user chose to keep the current behaviour; do not add one
+    without reopening that entry.
+
+    ``rmssd_hrv`` is read through ``_numeric``. It is compared against
+    zero and then *stored* as a reading, and a ``tuple`` or ``str`` from a
+    crafted definition record would raise ``TypeError`` on that
+    comparison -- an unhandled 500 on a malformed upload. A non-numeric
+    value is treated as absent, which puts the file on row 3.
     """
-    rmssd_hrv = _session_rmssd_hrv(messages)
+    rmssd_hrv = _numeric(_session_rmssd_hrv(messages))
     raw_sport_value = _provenance(session).get("raw_sport_value")
     is_snapshot = raw_sport_value == _SNAPSHOT_RAW_SPORT_VALUE
 
     if not is_snapshot:
         if rmssd_hrv is not None:
-            # Row 2. No quality flag: a non-snapshot file is not a
-            # resting capture at all, so it has no capture quality to
-            # report -- materially different from row 3, where the file
-            # *is* a snapshot and genuinely yielded nothing. Both
-            # observed values are recorded so the audit trail says what
+            # Row 2. This branch raises no flag *of its own*: the file is
+            # not a Health Snapshot, so there is no Tier-2 reading for
+            # ``hrv_reading_unavailable`` to be about -- materially
+            # different from row 3, where the file *is* a snapshot and
+            # genuinely yielded nothing.
+            #
+            # It does **not** claim the file is exempt from every gate.
+            # ``classify`` runs ``_gate_a_beatless_resting_capture`` after
+            # this branch returns, and a row-2 file whose own profile is a
+            # resting one -- short, low intensity, no beats -- is genuinely
+            # the "beat stream is empty" case §5 describes, whichever tier
+            # declined it first. It is flagged ``hrv_capture_no_beats``
+            # there, correctly, and
+            # ``test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless``
+            # pins that so this comment cannot drift back into over-claiming.
+            #
+            # Both observed values are recorded so the audit trail says what
             # disagreed with what.
             _provenance(session)[_PROVENANCE_SIGNAL_DISAGREEMENT] = {
                 "rmssd_hrv": rmssd_hrv,

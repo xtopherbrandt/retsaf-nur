@@ -74,6 +74,15 @@ FLAG_LOW_QUALITY = "hrv_capture_low_quality"
 FLAG_NO_BEATS = "hrv_capture_no_beats"
 GATE_FLAGS = (FLAG_TOO_SHORT, FLAG_LOW_QUALITY, FLAG_NO_BEATS)
 
+# Row 4 of the same scenario outline. Named there for the Tier-2 device scalar
+# ("device rmssd_hrv is zero or negative" / "absent on a sport-60 file"), it is the
+# feature's existing vocabulary for "this capture was recognised but yielded no
+# usable number" -- which is exactly the Tier-1 case where the beat stream holds no
+# contributing pair. ``hrv_capture_no_beats`` would be a false statement about a
+# stream that does have beats, and inventing a fourth flag for the same finding is
+# what §5's fixed vocabulary exists to prevent.
+FLAG_READING_UNAVAILABLE = "hrv_reading_unavailable"
+
 _START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
@@ -449,3 +458,70 @@ def test_a_failed_gate_never_writes_a_zero_or_negative_sentinel() -> None:
         assert session.rmssd_precomputed is None
         assert session.rmssd_precomputed is not False
         assert session.hrv_source_tier is None
+
+
+# ---------------------------------------------------------------------------
+# No derivable statistic -- a tier claiming a reading that does not exist
+# ---------------------------------------------------------------------------
+
+
+def test_a_single_beat_capture_yields_no_reading() -> None:
+    """A strap that paired and then dropped: one beat, so **zero contributing pairs**
+    and ``rmssd.resting_rmssd`` answers ``None``.
+
+    Every gate above passes -- ``valid_fraction`` on one unflagged beat is ``1.0``, which
+    clears 0.80, and 150 s clears 120 s -- so nothing else stops it. Without this check
+    the session is stamped ``resting_hrv_check`` / ``chest_strap_raw`` /
+    ``chest_strap_ecg``: a completed chest-strap reading carrying no number and no
+    explanation, which E003 would read as a tier that produced a value it cannot find.
+    "No derivable statistic" is a gate failure like any other -- flagged, not stamped."""
+    session = _classified(_resting(), rr_intervals=_beats(count=1))
+
+    assert session.rr_valid_fraction is None
+    assert FLAG_READING_UNAVAILABLE in session.quality_flags
+    assert session.activity_tag is None
+    _assert_no_reading(session)
+
+
+def test_a_beat_stream_with_no_usable_pair_yields_no_reading() -> None:
+    """The same finding by a different route, and the reason the check is on the
+    statistic rather than on ``len(rr_intervals)``: two beats, neither flagged -- so
+    ``valid_fraction`` is ``1.0`` and the artefact gate is silent -- but one carries a
+    null ``rr_ms``, which ``resting_rmssd`` treats as non-contributing exactly like a
+    flagged beat. No pair contributes, so there is no statistic."""
+    beats = [
+        RRInterval(seq=0, rr_ms=None, rr_source="chest_strap_ecg", is_artefact=False),
+        RRInterval(seq=1, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False),
+    ]
+    session = _classified(_resting(), rr_intervals=beats)
+
+    assert FLAG_READING_UNAVAILABLE in session.quality_flags
+    _assert_no_reading(session)
+
+
+def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path() -> None:
+    """The regression this check must not cause. ``0.0`` is a genuine measurement of zero
+    beat-to-beat variability, not an absence -- the ``None``/``0.0`` distinction
+    ``models.Session.rr_valid_fraction`` documents and ``rmssd.resting_rmssd`` was built
+    around. ``is None`` is therefore the only correct test; a falsiness check would
+    silently convert a real reading into a quality flag."""
+    beats = [
+        RRInterval(seq=i, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(6)
+    ]
+    session = _classified(_resting(), rr_intervals=beats)
+
+    assert FLAG_READING_UNAVAILABLE not in session.quality_flags
+    assert session.activity_tag == "resting_hrv_check"
+    assert session.hrv_source_tier == "chest_strap_raw"
+    assert session.rr_source == "chest_strap_ecg"
+    assert session.context.provenance["computed_resting_rmssd_ms"] == 0.0
+
+
+def test_a_healthy_capture_does_not_raise_the_unavailable_flag() -> None:
+    """The negative control: the flag is raised only when the statistic is genuinely
+    underivable, never on an ordinary Tier-1 reading."""
+    session = _classified(_resting(), rr_intervals=_beats())
+
+    assert FLAG_READING_UNAVAILABLE not in session.quality_flags
+    assert session.hrv_source_tier == "chest_strap_raw"

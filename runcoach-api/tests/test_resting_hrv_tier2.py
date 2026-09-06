@@ -230,12 +230,51 @@ def test_the_disagreement_records_a_null_raw_sport_for_a_named_sport() -> None:
 
 
 def test_row_2_raises_no_quality_flag() -> None:
-    """Deliberate, and materially different from row 3: a non-snapshot file
-    is not a resting capture at all, so there is no capture quality to report.
-    Row 3's file genuinely *is* a snapshot and genuinely yielded nothing."""
+    """Row 2 raises no flag **of its own**, and that is materially different from
+    row 3: the file is not a Health Snapshot, so there is no Tier-2 reading for
+    ``hrv_reading_unavailable`` to be about. Row 3's file genuinely *is* a snapshot
+    and genuinely yielded nothing.
+
+    The first case alone could not tell that apart from "row 2 suppresses every
+    flag". With no ``total_timer_time`` the summary carries no ``duration_s``, so
+    the beatless resting-capture gate that runs after this branch exits before it
+    can raise anything -- the assertion would hold against an implementation that
+    flagged every row-2 file with a duration. The second case supplies one."""
     session = _classified(_synthetic(11, rmssd_hrv=44))
 
+    assert session.summary is not None and "duration_s" not in session.summary
     assert session.quality_flags == []
+
+    # Same row, now with a duration, so the gate downstream genuinely runs -- and
+    # still finds nothing to report, because a 90-minute 18 km file is not a
+    # resting-shaped capture whatever its sport says.
+    moving = _classified(
+        _synthetic(11, rmssd_hrv=44, total_timer_time=5400.0, total_distance=18000.0)
+    )
+
+    assert moving.summary["duration_s"] == 5400.0
+    assert moving.quality_flags == []
+
+
+def test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless() -> None:
+    """The limit of the sentence above, pinned so the comment cannot drift back into
+    claiming more than it means.
+
+    A file that declined Tier 2 on the identity signal can still *be* a resting-shaped
+    capture: 150 s, avg HR 58, no beats. §5's third gate is about the capture's own
+    shape -- "beat stream is empty, so ``rr_valid_fraction`` is null" -- and it does not
+    ask which tier declined the file first. So ``hrv_capture_no_beats`` is correct here
+    and is raised; what row 2 withholds is ``hrv_reading_unavailable``, the flag that
+    would assert this file was a snapshot whose reading came out empty."""
+    session = _classified(
+        _synthetic(11, rmssd_hrv=44, total_timer_time=150.0, avg_heart_rate=58)
+    )
+
+    assert "hrv_capture_no_beats" in session.quality_flags
+    assert "hrv_reading_unavailable" not in session.quality_flags
+    assert session.hrv_source_tier is None
+    assert session.rmssd_precomputed is None
+    assert session.activity_tag is None
 
 
 def test_the_disagreement_key_does_not_collide_with_the_t045_key() -> None:
@@ -356,3 +395,49 @@ def test_classify_still_mutates_by_reference_and_returns_none() -> None:
 
     assert hrv_classification.classify(messages, session, []) is None
     assert session.hrv_source_tier == "health_snapshot"
+
+
+# ---------------------------------------------------------------------------
+# A non-numeric rmssd_hrv -- a crafted definition record must not be a 500
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", [(37, 38), "37", ("37",), True, False])
+def test_a_non_numeric_device_value_is_treated_as_absent(value) -> None:
+    """``fitdecode`` types a field by the **file's own declared base type**, not the
+    global profile: ``reader.py`` (lines 797-806 of the vendored copy) returns
+    ``tuple(base_type.parse(v) for v in raw_value)`` whenever the declared size holds
+    more than one element. A crafted or corrupt definition record can therefore make
+    ``rmssd_hrv`` a ``tuple`` -- or a ``str``, from a string base type -- and
+    ``(37, 38) <= 0`` raises ``TypeError``. ``main.py`` catches only
+    ``NotAFitFileError`` / ``FitParseFailure`` / ``TooManyRecordsError`` /
+    ``MissingCanonicalFieldError`` / ``DuplicateSessionError``, so it would surface as a
+    **500 on a malformed upload**. ``rr_reconstruction._hrv_candidates`` guards the same
+    hazard with ``isinstance`` and says so in a comment; this is that convention.
+
+    ``bool`` is included because it is an ``int`` subclass: ``True <= 0`` is perfectly
+    legal and would store ``True`` as a millisecond rMSSD.
+
+    Treated as **absent**, which puts a sport-60 file on row 3: tagged, no reading,
+    flag raised."""
+    session = _classified(_synthetic(60, rmssd_hrv=value))
+
+    assert session.activity_tag == "health_snapshot"
+    assert session.rmssd_precomputed is None
+    assert session.hrv_source_tier is None
+    assert session.rr_source is None
+    assert "hrv_reading_unavailable" in session.quality_flags
+
+
+@pytest.mark.parametrize("value", [(44, 45), "44"])
+def test_a_non_numeric_device_value_on_a_non_snapshot_file_is_not_a_disagreement(
+    value,
+) -> None:
+    """The row-2 half of the same guard. A value that is not a number is not a
+    capability signal, so nothing disagreed with the identity signal and there is
+    nothing to record -- the file is left exactly as ``mapping.py`` produced it."""
+    session = _classified(_synthetic(11, rmssd_hrv=value))
+
+    assert "hrv_signal_disagreement" not in session.context.provenance
+    assert session.hrv_source_tier is None
+    assert session.activity_tag is None

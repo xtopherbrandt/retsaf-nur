@@ -292,11 +292,20 @@ def test_a_tier_1_capture_with_no_device_value_records_no_unused_key() -> None:
     assert "unused_device_rmssd_hrv" not in _provenance(session)
 
 
-def test_a_non_resting_run_carrying_beats_and_a_device_value_records_no_unused_key() -> None:
-    """Precedence applies only when Tier 1 actually fires. A 90-minute run with
-    beats and a device scalar is not a Tier-1 capture, so nothing was "unused" by
-    a computation that never happened -- Tier 2 takes it, and its value goes to
-    ``rmssd_precomputed`` where it belongs."""
+def test_a_sport_60_file_outside_the_tier_1_window_routes_tier_2_with_no_unused_key() -> None:
+    """Precedence applies only when Tier 1 actually fires. This file is a sport-60
+    Health Snapshot whose duration/distance profile puts it outside the Tier-1
+    discriminator, so nothing was "unused" by a computation that never happened --
+    Tier 2 takes it, and its value goes to ``rmssd_precomputed`` where it belongs.
+
+    **What this test does and does not bless.** It is named for its assertion --
+    Tier-2 routing plus the absence of the T045 key -- and not for the shape of its
+    input. The synthetic input is deliberately extreme (5400 s / 18 km) to put the
+    file unambiguously outside Tier 1's 300 s window; it is *not* an assertion that a
+    90-minute run is a good Health Snapshot. That Tier 2 carries no duration bound at
+    all is a separate, explicit decision -- see the F004 Decision Log entry of
+    2026-09-06 and the note in ``_classify_tier_2``'s docstring -- resting on
+    ``sport == 60`` being emitted only by a Health Snapshot."""
     session = _classified(
         _resting_capture(total_timer_time=5400.0, total_distance=18000.0), _beats()
     )
