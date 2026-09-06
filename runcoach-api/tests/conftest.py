@@ -38,7 +38,14 @@ from runcoach_api.ingestion import hrv_classification, mapping
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     data_dir = tmp_path / "data"
-    fake_config = AppConfig(host="127.0.0.1", port=8000, data_dir=data_dir)
+    # `resting_hrv_profile_names=[]` is the default *test* posture, and it is
+    # an explicit declaration rather than a default: it says no activity
+    # profile means a resting capture, so Tier 1 routes nothing here. A suite
+    # that needs a declaration opts in by building its own `AppConfig` with
+    # the profile names it wants.
+    fake_config = AppConfig(
+        host="127.0.0.1", port=8000, data_dir=data_dir, resting_hrv_profile_names=[]
+    )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: fake_config)
     db_module._load_config_cached.cache_clear()
     return data_dir

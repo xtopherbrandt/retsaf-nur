@@ -1,6 +1,7 @@
 """Application configuration loading for the Run Coaching API.
 
-Reads ``host``, ``port``, and ``data_dir`` from a local TOML config
+Reads ``host``, ``port``, ``data_dir`` and ``resting_hrv_profile_names``
+from a local TOML config
 file (``~/.runcoach/api.toml`` by default), with ``RUNCOACH_``-prefixed
 environment variables taking priority over the file's values.
 
@@ -16,7 +17,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -51,8 +52,46 @@ class AppConfig(BaseSettings):
     host: str
     port: int = Field(ge=1, le=65535)
     data_dir: Path
+    # Declared LAST deliberately. Pydantic v2 orders `ValidationError.errors()`
+    # by field-definition order, and `cli.serve()` renders only `errors()[0]`;
+    # `test_cli_startup` builds a real error from an out-of-range `port` and
+    # asserts "port" reaches stderr. Moving this field above `port` would
+    # silently reorder that message.
+    #
+    # The athlete's Tier-1 resting-HRV declaration: a FIT file routes Tier 1
+    # only when its `sport_profile_name` appears here (exact, case-sensitive)
+    # or the upload carried an explicit override. See F004's 2026-09-06
+    # amendment.
+    #
+    # NO DEFAULT -- not even `[]`. An athlete who uses only Health Snapshot
+    # writes `resting_hrv_profile_names = []` explicitly; a `default_factory`
+    # would reinstate the behavioural default "Tier 1 derives nothing" under
+    # the guise of a value, which is precisely what the amendment exists to
+    # prevent, and what `AppConfig`'s no-defaults rule already forbids.
+    resting_hrv_profile_names: list[str]
 
     model_config = SettingsConfigDict(env_prefix="RUNCOACH_", extra="forbid")
+
+    @field_validator("resting_hrv_profile_names")
+    @classmethod
+    def _reject_blank_profile_names(cls, names: list[str]) -> list[str]:
+        """Reject empty and whitespace-only entries.
+
+        Matching against `sport_profile_name` is exact and case-sensitive, so
+        a `""` entry would silently match every file whose profile name is
+        empty or absent -- turning a config typo into a blanket Tier-1 route.
+        `str.strip()` covers every Unicode space, so a non-breaking space or a
+        tab is caught alongside a plain blank.
+        """
+        for index, name in enumerate(names):
+            if not name.strip():
+                raise ValueError(
+                    f"entry {index} is blank; a resting-HRV profile name must be "
+                    "the exact activity-profile name as it appears on the watch "
+                    '(e.g. "HRV Snapshot"). Write an empty list to declare that '
+                    "no profile means a resting capture."
+                )
+        return names
 
     @classmethod
     def settings_customise_sources(

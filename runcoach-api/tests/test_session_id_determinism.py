@@ -42,7 +42,9 @@ def _ingest_into_fresh_db(
 ) -> dict:
     """Point the DB layer at ``data_dir`` (which must not yet exist as a
     database) and upload ``fixture`` through the real HTTP route."""
-    fake_config = AppConfig(host="127.0.0.1", port=8000, data_dir=data_dir)
+    fake_config = AppConfig(
+        host="127.0.0.1", port=8000, data_dir=data_dir, resting_hrv_profile_names=[]
+    )
     monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: fake_config)
     db._load_config_cached.cache_clear()
 
