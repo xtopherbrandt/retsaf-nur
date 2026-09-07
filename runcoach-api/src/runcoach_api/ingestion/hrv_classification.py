@@ -93,12 +93,34 @@ opposite for a value that then lived only in provenance. See
 ``_classify_tier_1`` for that argument in full. The invariant is what lets
 a consumer take ``ln(resting_rmssd_ms)`` unguarded without first asking
 which tier produced it, which is the entire point of a resolved column.
+
+**T064 made the refusals observable** (F004; resolution **R5**, ratified
+2026-09-06). Declaration closed ``IDEA-010`` and made this feature's worst
+property worse: **the false-negative direction is invisible by
+construction** -- a missing reading is indistinguishable from a day the
+athlete did not measure, and an unconfigured profile refuses everything.
+Every Tier-1 refusal on a file that carries beats now writes a
+**provenance note** saying what the file claimed and what refused it:
+``hrv_undeclared_capture_candidate`` when the profile was not configured,
+``hrv_declared_capture_vetoed`` when a configured name was contradicted by
+the file's own duration/heart-rate/distance profile, and
+``hrv_resting_capture_override`` for what a per-upload override did. R5
+settled two things the first specification left open (T058's Findings 3 and
+4): the note fires **even when a veto fired**, and it **names which veto** --
+without which ``strap_cool_down_walk.fit``, undeclared *and* vetoed, ingested
+with no route, no flag and no record at all.
+
+**A note is not a flag, and that distinction is load-bearing.** A
+``hrv_capture_*`` flag asserts a finding about a *recognised* capture; a
+refused file was never recognised as one. See the ``_PROVENANCE_*`` block
+below, which states the same rule the multi-session refusal and
+``_classify_tier_2``'s row 2 already follow.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import fitdecode
 
@@ -229,6 +251,132 @@ _PROVENANCE_SIGNAL_DISAGREEMENT = "hrv_signal_disagreement"
 # precedent -- F004's existing channel for "the classifier saw something and
 # declined to act on it" is the audit trail, not the flag list.
 _PROVENANCE_MULTI_SESSION_UNCLASSIFIED = "hrv_multi_session_unclassified"
+
+# --- T064: what a refused file records (F004; resolution R5) -----------------
+#
+# The three keys below are the third, fourth and fifth instances of the same
+# convention ``_PROVENANCE_SIGNAL_DISAGREEMENT`` and
+# ``_PROVENANCE_MULTI_SESSION_UNCLASSIFIED`` established: **a refusal that is
+# not a finding goes to provenance, never to a quality flag.** A
+# ``hrv_capture_*`` flag asserts a finding about a *recognised* capture; every
+# file these keys describe was refused before it could be recognised as one, so
+# a flag would be a false statement about it -- and it would fire on every
+# ordinary run carrying ``hrv`` messages, training the reader to ignore it.
+# ``_gate_a_beatless_resting_capture`` and ``_apply_quality_gates`` own the
+# other side of that line: they speak about captures Tier 1 *claimed*.
+#
+# They exist because the declaration amendment made F004's worst property worse.
+# The false-negative direction is invisible by construction -- a missing reading
+# is indistinguishable from a day the athlete did not measure -- and requiring a
+# declaration makes that direction *more* likely, because an unconfigured
+# profile refuses everything. These notes convert "no reading, no explanation"
+# into "no reading, and here is what the file claimed and what refused it".
+
+# The undeclared refusal: a file with beats whose profile the athlete never
+# configured. Payload ``{"sport_profile_name": <as read>, "vetoed_by": <veto or
+# None>}``.
+#
+# Distinct from ``_PROVENANCE_DECLARED_CAPTURE_VETOED`` below, which is the
+# opposite athlete: one who *did* the setup step. The two lead to different
+# actions -- "configure this name" versus "this file contradicted your
+# declaration" -- so collapsing them onto one key would make the athlete who
+# configured their profile indistinguishable from the one who did not.
+#
+# **The recorded name is diagnostic, never a recommendation.** On this corpus
+# every non-snapshot file reads ``'Run'``, and adding *that* to config restores
+# the pre-amendment behaviour exactly: every short easy activity on the running
+# profile routes again, caught only by the demoted vetoes, which is the design
+# ``IDEA-010`` exists to kill. **A general-purpose activity profile must never
+# be listed.** The note reports what the file claimed; it never asserts the
+# claim is true or safe to trust.
+#
+# **The note is prospective and cannot rescue the session that produced it.**
+# ``db.py``'s ``UNIQUE (source_device, start_time)`` answers a re-upload with a
+# 409 and adding a name to config reclassifies nothing already stored. Acting on
+# it means *configure the profile, then delete the session (T072) and upload
+# again, or capture again* -- never *re-upload over the top*.
+_PROVENANCE_UNDECLARED_CANDIDATE = "hrv_undeclared_capture_candidate"
+
+# The declared refusal: a configured profile name, killed by a veto. Payload
+# ``{"sport_profile_name": <as read>, "vetoed_by": <veto>}``.
+#
+# **Added by R5** (T058 Finding 3). Before it, the athlete who did declare -- who
+# did the setup step the whole amendment asks of them -- got no route, no flag
+# and no note, and was silently discarded. The observability argument that
+# justifies the undeclared note applies here with *more* force, not less.
+#
+# ``vetoed_by`` is never ``None`` on this key: a declared file that passes every
+# veto routes, so there is no refusal to record.
+_PROVENANCE_DECLARED_CAPTURE_VETOED = "hrv_declared_capture_vetoed"
+
+# What the per-upload override did. Payload ``{"honoured": True}``, or
+# ``{"honoured": False, "reason": <a veto name, or _OVERRIDE_NOT_HONOURED_NO_BEATS>}``.
+#
+# **One key rather than three**, though F004 names three override notes: it
+# keeps the "distinguishable in one dict" convention manageable at five keys and
+# makes the honoured and refused cases queryable together. It is separate from
+# the two above because the override is a *per-upload act* the athlete performed
+# on one specific file, and its answer belongs to that act rather than to the
+# file's profile name -- which the override route need not even have.
+#
+# ``honoured`` is a statement about the **declaration**, not about the reading:
+# ``True`` means the override was accepted and Tier 1 claimed the file. Whether
+# a number came out of it is ``resting_rmssd_ms``'s business, and a capture that
+# was claimed and then failed a §5 gate is a *recognised* capture answered with a
+# flag -- the note/flag split this whole block rests on.
+_PROVENANCE_RESTING_CAPTURE_OVERRIDE = "hrv_resting_capture_override"
+
+# The one non-veto reason an override can go unhonoured: the beats gate, which
+# precedes the declaration and is normatively ordered that way. F004 states it
+# as its own scenario -- "an override on a file with no beats reports that it did
+# nothing" -- because a beatless file must fall through to Tier 2, so the
+# override genuinely cannot be honoured and saying so is the entire content.
+_OVERRIDE_NOT_HONOURED_NO_BEATS = "no_beats"
+
+# --- the veto vocabulary (T064; R5's "must name which veto") -----------------
+#
+# R5 requires the note to name **which** veto fired: a note that does not say
+# why does not discharge the goal, because "configure your profile" and "this
+# file was 6000 seconds long" are different diagnoses and the athlete cannot act
+# on the wrong one. These are the names, one per branch of
+# ``_resting_profile``, which is the only place they are produced.
+#
+# They are the *reasons*, not the rules: the rules, their thresholds and their
+# citations live on ``_resting_profile_duration`` and are unchanged. Splitting
+# "absent" from "out of range" (and from "too high") is deliberate -- a file with
+# no ``avg_heart_rate`` at all and one reading 140 bpm are refused by the same
+# clause and are entirely different situations to the person reading the note.
+#
+# Named after the *canonical summary key* rather than the FIT field, because the
+# note is read alongside ``session.summary``, which is where a reader will go to
+# check it.
+_VETO_DURATION_UNREADABLE = "duration_unreadable"
+_VETO_DISTANCE_UNREADABLE = "distance_unreadable"
+_VETO_HEART_RATE_UNREADABLE = "heart_rate_unreadable"
+_VETO_DURATION_ABSENT = "duration_absent"
+_VETO_DURATION_OUT_OF_RANGE = "duration_out_of_range"
+_VETO_HEART_RATE_ABSENT = "heart_rate_absent"
+_VETO_HEART_RATE_TOO_HIGH = "heart_rate_too_high"
+_VETO_MEAN_SPEED_TOO_HIGH = "mean_speed_too_high"
+
+#: Every reason a note's ``vetoed_by`` / ``reason`` can name, declared once so
+#: the suite can reconcile it in **both** directions -- a name the module can
+#: emit that no probe produces is an unexercised branch, and a name in this set
+#: that nothing can reach is a false promise of the kind ``IDEA-013`` names.
+#: Same discipline as ``HRV_INPUT_FIELDS``, and for the same reason: a set
+#: phrased over code needs an independent list to be reconciled against.
+HRV_VETO_REASONS: frozenset[str] = frozenset(
+    {
+        _VETO_DURATION_UNREADABLE,
+        _VETO_DISTANCE_UNREADABLE,
+        _VETO_HEART_RATE_UNREADABLE,
+        _VETO_DURATION_ABSENT,
+        _VETO_DURATION_OUT_OF_RANGE,
+        _VETO_HEART_RATE_ABSENT,
+        _VETO_HEART_RATE_TOO_HIGH,
+        _VETO_MEAN_SPEED_TOO_HIGH,
+    }
+)
 
 # --- the quarantine boundary, made mechanically checkable (T046) -------------
 #
@@ -482,6 +630,16 @@ def classify(
     because it is the entire reason for the refusal and is **not** otherwise
     recoverable from the stored session -- the canonical summary is the first
     leg's and says nothing about a second leg existing.
+
+    **No T064 note is written on this path**, and that is a consequence of the
+    ordering rather than a second decision (T058 **Finding 14**, derived): the
+    refusal precedes both tiers, and the three notes describe a *Tier-1*
+    refusal -- what the file claimed, and which veto contradicted it. Neither
+    question has an answer here, because the summary and the beat stream
+    describe different spans, which is the whole reason the file is refused. The
+    multi-session entry above is already the record of what happened, and a
+    second note asserting "undeclared" would attribute the refusal to the wrong
+    cause.
     """
     session_message_count = _session_message_count(messages)
     if session_message_count > 1:
@@ -624,8 +782,37 @@ def _intensity_signal(raw: Any) -> Any:
     return value
 
 
+class _RestingProfile(NamedTuple):
+    """What the veto set answered about one file: a duration, or a reason.
+
+    Exactly one field is ever set -- ``duration_s`` when nothing here
+    contradicts a resting capture, ``vetoed_by`` when something does. They are
+    returned **together** rather than by two functions because T064's notes need
+    the reason and ``_classify_tier_1`` needs the duration, and F004 defines the
+    veto set *as* the demoted pre-amendment predicate: a second function
+    computing "why" beside one computing "whether" would be two copies of one
+    rule, which is exactly the drift ``_classify_tier_1`` records having already
+    happened once in this module.
+    """
+
+    duration_s: float | None
+    vetoed_by: str | None
+
+
 def _resting_profile_duration(session: Session) -> float | None:
-    """The capture's duration if **no veto fires**, otherwise ``None``
+    """The capture's duration if **no veto fires**, otherwise ``None``.
+
+    The predicate's answer without its reason, for the two callers that only
+    need to know *whether* the file contradicts a resting capture:
+    ``_gate_a_beatless_resting_capture``, and the suites that drive the veto set
+    directly. ``_resting_profile`` below is the implementation and the only
+    place the rules are written; this is a projection of it, never a second copy.
+    """
+    return _resting_profile(session).duration_s
+
+
+def _resting_profile(session: Session) -> _RestingProfile:
+    """The capture's duration if **no veto fires**, otherwise the veto's name
     (F004 reference document §2).
 
     **This is the veto set, and only the veto set** (F004's 2026-09-06
@@ -649,6 +836,21 @@ def _resting_profile_duration(session: Session) -> float | None:
     gates re-use the same reading of ``session.summary`` instead of re-deriving it,
     and what lets T064's undeclared-candidate note tell a clean-but-undeclared file
     from a vetoed one without evaluating the set twice.
+
+    **Returning the veto's name beside it is R5's requirement** (T064): a refused
+    file records a provenance note that must say *which* veto fired, and the only
+    place that answer exists is here. The names are the ``_VETO_*`` constants and
+    are reconciled against ``HRV_VETO_REASONS``; each ``return`` below carries
+    exactly one. They are a *report*, not a rule -- the rules, their thresholds
+    and their citations are unchanged, and remain the only thing this function
+    decides.
+
+    **Order matters to the name, not to the answer.** More than one veto can be
+    true of one file -- ``strap_run_hrv.fit`` is both 6000 s and 140 bpm -- and
+    the note names the first in the fixed order below (rule 2 over the three
+    fields, then duration, then heart rate, then speed), which is the order the
+    refusal was already evaluated in. Naming the first is not a claim that it is
+    the only one.
 
     **A heart rate is required; a distance can only veto** (amended 2026-09-06,
     sprint-003 critic pass). The 2026-09-06 zero-distance amendment drew its
@@ -739,8 +941,8 @@ def _resting_profile_duration(session: Session) -> float | None:
     sentinel is stripped to no key at all, which is the *reachable* path to the
     same answer.
 
-    ``None`` is unambiguous as the refusal answer because a file that clears
-    every veto always has a duration strictly greater than zero.
+    A ``None`` ``duration_s`` is unambiguous as the refusal answer because a file
+    that clears every veto always has a duration strictly greater than zero.
 
     All three values are read through ``_intensity_signal``, which wraps
     ``_numeric``: a ``tuple`` or ``str`` from a crafted definition record is
@@ -773,17 +975,31 @@ def _resting_profile_duration(session: Session) -> float | None:
     # Rule 2, evaluated first and over all three fields at once. A veto is a
     # statement about the *file*, not about one signal, so it is answered
     # before any signal is weighed -- and it must not be reachable only on the
-    # branch some other arm happens to take.
-    if _VETO in (duration_s, distance_m, avg_heart_rate):
-        return None
+    # branch some other arm happens to take. The loop is over a fixed literal
+    # pairing so that each field's name travels with its value; it changes no
+    # outcome the ``_VETO in (...)`` membership test gave, only what is
+    # reported about it.
+    for signal, unreadable in (
+        (duration_s, _VETO_DURATION_UNREADABLE),
+        (distance_m, _VETO_DISTANCE_UNREADABLE),
+        (avg_heart_rate, _VETO_HEART_RATE_UNREADABLE),
+    ):
+        if signal is _VETO:
+            return _RestingProfile(None, unreadable)
 
     # The divisor is established here, before any speed is computed: a
     # degenerate file can carry ``total_timer_time`` 0, and a duration that
     # fails this check can never reach the division below. ``_ABSENT`` covers
     # both the missing key and that degenerate zero, which the ``0 <`` bound
-    # would refuse anyway -- the two readings agree here, and only here.
-    if duration_s is _ABSENT or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
-        return None
+    # would refuse anyway -- the two readings agree here, and only here. They
+    # are two branches rather than one ``or`` so the note can tell "the file
+    # reported no duration" from "the file reported one and it is outside the
+    # protocol"; a present-and-zero duration is reported as *absent*, which is
+    # the reading convention's own answer for it and not a second opinion.
+    if duration_s is _ABSENT:
+        return _RestingProfile(None, _VETO_DURATION_ABSENT)
+    if not 0 < duration_s <= _RESTING_MAX_DURATION_S:
+        return _RestingProfile(None, _VETO_DURATION_OUT_OF_RANGE)
 
     # The heart rate is *required*, because it is the only signal that can
     # corroborate rest. A distance can only veto. Absent it there is nothing to
@@ -791,9 +1007,9 @@ def _resting_profile_duration(session: Session) -> float | None:
     # present-and-zero heart rate is absent by rule 1: a zero is a device
     # reporting nothing, never a measured heart rate of zero.
     if avg_heart_rate is _ABSENT:
-        return None
+        return _RestingProfile(None, _VETO_HEART_RATE_ABSENT)
     if avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
-        return None
+        return _RestingProfile(None, _VETO_HEART_RATE_TOO_HIGH)
 
     # The distance's veto, and only its veto. Every distance reaching this line
     # is strictly positive -- ``_intensity_signal`` has already answered
@@ -804,9 +1020,9 @@ def _resting_profile_duration(session: Session) -> float | None:
     # duration check above has established a usable divisor.
     if distance_m is not _ABSENT:
         if distance_m / duration_s > _RESTING_MAX_MEAN_SPEED_MS:
-            return None
+            return _RestingProfile(None, _VETO_MEAN_SPEED_TOO_HIGH)
 
-    return duration_s
+    return _RestingProfile(duration_s, None)
 
 
 def _surviving_fraction(session: Session, rr_intervals: list[RRInterval]) -> float | None:
@@ -962,14 +1178,127 @@ def _declared(
     reads from its AST and cannot resolve a computed key, and one unresolvable
     key blinds the entire ``HRV_INPUT_FIELDS`` reconciliation.
     """
-    if resting_capture_override:
-        return True
+    return resting_capture_override or _declared_by_profile_name(session, profile_names)
 
-    sport_profile_name = _provenance(session).get("sport_profile_name")
+
+def _declared_by_profile_name(
+    session: Session, profile_names: Sequence[str] | None
+) -> bool:
+    """The config half of the disjunction, on its own.
+
+    Split out of ``_declared`` by T064 because the two routes need **different
+    notes** when a veto refuses the file: the config route's note reports the
+    profile name that was declared, while the override route's reports that a
+    per-upload act could not be honoured. ``_declared`` remains the predicate
+    ``_classify_tier_1`` routes on, so the disjunction is still stated once and
+    the split cannot change what routes.
+
+    Every word of the matching rule is documented on ``_declared`` above.
+    """
+    sport_profile_name = _claimed_profile_name(session)
     if not isinstance(sport_profile_name, str):
         return False
 
     return sport_profile_name in (profile_names or ())
+
+
+def _claimed_profile_name(session: Session) -> Any:
+    """The activity-profile name the file claimed, exactly as ``mapping.py``
+    lifted it -- or ``None`` when it claimed nothing.
+
+    ``.get`` with no default is the whole point: T056's lift **omits the key**
+    when the file carried no ``sport_profile_name``, so ``None`` here means "the
+    file claimed nothing" rather than "the file claimed null". T064's note then
+    records that ``None`` **explicitly**, which is the deliberate asymmetry
+    against the lift: the lift records only what was there, while the note
+    asserts a finding -- *we looked, and the file claimed nothing* -- which is
+    what makes a third-party exporter that omits the field diagnosable rather
+    than mysterious. Both halves are right and neither should be "fixed" to
+    match the other.
+
+    Returned **uncoerced**, whatever type the file carried. A non-``str`` name is
+    not a veto (T058 Finding 12) and normalising it would destroy the diagnostic:
+    the note's job is to hand back the precise value that failed to match --
+    trailing space, wrong case, wrong type and all -- which is what makes exact,
+    case-sensitive matching tolerable. The value is already in provenance
+    verbatim under the same name, so recording it a second time adds no
+    serialisation hazard that T056's lift did not already carry.
+
+    The key is a string **literal** for the AST guard, exactly as in ``_declared``.
+    """
+    return _provenance(session).get("sport_profile_name")
+
+
+def _record_refused_declaration(
+    session: Session,
+    vetoed_by: str,
+    profile_names: Sequence[str] | None,
+    resting_capture_override: bool,
+) -> None:
+    """Write the note for a file with beats that a **veto** refused (R5).
+
+    R5, ratified 2026-09-06, resolves T058's Findings 3 and 4 together: *any
+    file examined and not routed records a provenance note naming the veto that
+    fired*, on both the declared and the undeclared side. Before it, a vetoed
+    file got no route, no flag and no note on either side --
+    ``strap_cool_down_walk.fit`` is the corpus's proof, undeclared *and* vetoed
+    at 1.0356 m/s, ingesting with no observable record whatsoever.
+
+    Which note depends on **how the athlete declared**, because that is what
+    decides the action the note implies:
+
+    * an **override** -- the per-upload act could not be honoured, and the
+      reason is the veto. The override is a claim about *intent*, never about
+      the data, so it cannot rescue a 6000 s file or a 140 bpm one.
+    * a **configured profile name** -- the declaration was made and the file
+      contradicted it. This is the athlete who did the setup step, and R5's
+      argument for observability applies to them with more force, not less.
+    * **neither** -- the undeclared candidate, now carrying the veto that fired
+      alongside the name the file claimed.
+
+    Both routes can be satisfied at once, and then **both notes are written**.
+    T058's **Finding 7** (which note a doubly-declared file records) is
+    explicitly among the findings the resolutions document left deferred, so
+    each note here states only what is true of its own route -- the override was
+    not honoured; a configured name was vetoed -- and neither claims the other
+    route would have behaved differently. Choosing one would be answering a
+    question that was deliberately not answered.
+    """
+    if resting_capture_override:
+        _provenance(session)[_PROVENANCE_RESTING_CAPTURE_OVERRIDE] = {
+            "honoured": False,
+            "reason": vetoed_by,
+        }
+    if _declared_by_profile_name(session, profile_names):
+        _provenance(session)[_PROVENANCE_DECLARED_CAPTURE_VETOED] = {
+            "sport_profile_name": _claimed_profile_name(session),
+            "vetoed_by": vetoed_by,
+        }
+    if not _declared(session, profile_names, resting_capture_override):
+        _record_undeclared_candidate(session, vetoed_by)
+
+
+def _record_undeclared_candidate(session: Session, vetoed_by: str | None) -> None:
+    """The undeclared note: a file with beats whose profile is not configured.
+
+    ``vetoed_by`` is written **explicitly as ``None``** on a clean refusal
+    rather than omitted, and that is the whole diagnostic value of the key. A
+    clean undeclared capture is the *actionable* refusal -- configure that
+    profile and captures like it will route -- while a vetoed one contradicted
+    itself anyway and configuring the name would change nothing. A consumer that
+    has to infer which it is from a missing key will get it wrong, and this note
+    exists precisely so that a false negative is not left to inference.
+
+    It is also what keeps the population R5 knowingly admitted filterable. Since
+    the note no longer waits for the vetoes to pass, every ordinary run carrying
+    ``hrv`` messages records one -- 3 of this corpus's 10 fixtures on top of the
+    2 genuine captures -- and ``vetoed_by is null`` is the query that separates
+    the two.
+    """
+    _provenance(session)[_PROVENANCE_UNDECLARED_CANDIDATE] = {
+        "sport_profile_name": _claimed_profile_name(session),
+        "vetoed_by": vetoed_by,
+    }
 
 
 def _classify_tier_1(
@@ -1026,14 +1355,17 @@ def _classify_tier_1(
     *Vetoes before the declaration decides refusal.* ``beats AND declared AND
     NOT vetoed`` reads naturally as beats -> declared -> vetoed, under which an
     **undeclared** file never reaches the veto evaluation at all. T064's
-    provenance note needs the opposite: it fires only for a file that has beats
-    and passes every veto but is not declared, so it must be able to tell
-    ``strap_hrv_sample_run.fit`` (clean, undeclared -> note) from
-    ``strap_run_hrv.fit`` (6000 s, 140 bpm -> no note). Evaluating
-    beats -> vetoes -> declaration is what lets T064 read the answer already
-    computed here instead of calling ``_resting_profile_duration`` a second
-    time -- and a duplicated predicate is exactly the drift the note below
-    records having already happened once in this function.
+    provenance notes need the opposite: since R5 a refused file records *which
+    veto fired* on both the declared and the undeclared side, so the veto's
+    answer must exist before the declaration is consulted. It is also what lets
+    the undeclared note tell ``strap_hrv_sample_run.fit`` (clean, undeclared ->
+    ``vetoed_by`` null, the actionable refusal) from ``strap_run_hrv.fit``
+    (6000 s -> ``vetoed_by`` named). Evaluating beats -> vetoes -> declaration
+    is what lets T064 read the answer already computed here instead of
+    evaluating the set a second time -- and a duplicated predicate is exactly
+    the drift this function records having already happened once, which is why
+    ``_resting_profile`` returns the reason beside the duration rather than
+    having a second function derive it.
 
     **Both declaration routes are subject to every veto.** The override is a
     claim about *intent*, never about the data: it cannot rescue a 6000 s file
@@ -1142,14 +1474,37 @@ def _classify_tier_1(
     # 1. Beats, first and normatively so -- see the docstring. A beatless file
     #    must fall through to Tier 2 rather than be claimed and answered here.
     if not rr_intervals:
+        # T064. The one note the beats gate owes: an override the athlete
+        # applied to this specific upload could not be honoured, and F004 makes
+        # that its own scenario ("an override on a file with no beats reports
+        # that it did nothing"). Tier 2 is still evaluated afterwards and may
+        # well route the file -- the two are not alternatives.
+        #
+        # No *undeclared* note here (contract table A8): the note is gated on
+        # beats, R5 moved only the veto gate, and without that gate every
+        # beatless upload -- every Health Snapshot, every wrist-PPG run -- would
+        # carry one, which is noise no ``vetoed_by`` value could filter. And no
+        # note for a beatless **configured** declaration either: that is T058's
+        # Finding 5, which the resolutions document leaves explicitly deferred,
+        # so answering it here would pre-empt a decision that is not this
+        # module's to take today.
+        if resting_capture_override:
+            _provenance(session)[_PROVENANCE_RESTING_CAPTURE_OVERRIDE] = {
+                "honoured": False,
+                "reason": _OVERRIDE_NOT_HONOURED_NO_BEATS,
+            }
         return False
 
     # 2. The vetoes, before the declaration is consulted: a file that
     #    contradicts its own declaration is refused whichever route declared
     #    it, and T064 needs this answer computed once, here.
-    duration_s = _resting_profile_duration(session)
-    if duration_s is None:
+    profile = _resting_profile(session)
+    if profile.vetoed_by is not None:
+        _record_refused_declaration(
+            session, profile.vetoed_by, profile_names, resting_capture_override
+        )
         return False
+    duration_s = profile.duration_s
 
     # 3. The declaration -- the athlete saying this file was *meant* as a
     #    measurement, and since T069 the **only** thing that can authorise a
@@ -1158,7 +1513,22 @@ def _classify_tier_1(
     #    two lines above, so an ``or`` here would make the declaration a no-op
     #    and restore ``IDEA-010`` verbatim.
     if not _declared(session, profile_names, resting_capture_override):
+        # T064's headline note, and the clean case it was specified for: this
+        # file is a capture in every respect the system can check, and the only
+        # thing missing is the athlete's declaration. ``vetoed_by`` is null,
+        # which is what makes it the actionable one.
+        _record_undeclared_candidate(session, None)
         return False
+
+    # T064. The override was accepted and this branch is about to claim the
+    # file, which is what ``honoured`` asserts -- not that a reading came out.
+    # Written here rather than at the success point below so that a capture
+    # claimed by the override and then refused by a §5 quality gate still says
+    # where its route came from; a gate failure is a finding about a recognised
+    # capture, and losing the declaration's provenance to it would recreate the
+    # silence R5 was ratified to end.
+    if resting_capture_override:
+        _provenance(session)[_PROVENANCE_RESTING_CAPTURE_OVERRIDE] = {"honoured": True}
 
     # T045. The file is a Tier-1 capture, so this branch has claimed it and
     # ``classify`` will not reach Tier 2 -- which means any device-supplied

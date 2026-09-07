@@ -758,12 +758,18 @@ def test_the_beats_gate_is_evaluated_before_the_declaration_in_source_order() ->
     The docstring is stripped first -- it *describes* the ordering, in the
     opposite textual order, so searching the whole source would pin the prose
     rather than the code.
+
+    The veto call is ``_resting_profile(`` since T064, which needed the veto's
+    *name* as well as its answer; ``_resting_profile_duration`` is now a
+    projection of it and is still what the beatless gate and the veto suites
+    call. The assertion is unchanged in meaning -- only in which call it looks
+    for.
     """
     source = inspect.getsource(hrv_classification._classify_tier_1)
     body = source[source.rindex('"""') + 3 :]
 
     beats_gate = body.index("if not rr_intervals")
-    vetoes = body.index("_resting_profile_duration(")
+    vetoes = body.index("_resting_profile(")
     declaration = body.index("_declared(")
 
     assert beats_gate < vetoes < declaration
