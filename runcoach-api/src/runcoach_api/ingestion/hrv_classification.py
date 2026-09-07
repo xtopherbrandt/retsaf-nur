@@ -1065,8 +1065,12 @@ def _resting_profile(session: Session) -> _RestingProfile:
     quietly hand the predicate to whichever arm is left. A **non-finite** value
     is answered the same way, and that one is not a nicety: every comparison
     against a ``nan`` is ``False``, so before the 2026-09-07 screen a ``nan``
-    ``avg_heart_rate`` or ``total_distance`` declined *every* veto and routed a
-    file as a full reading with no flag at all. See ``_intensity_signal``'s
+    silently defeated **the one arm it appeared in** while the file's remaining
+    arms were innocently satisfied -- a ``nan`` ``total_distance`` left the speed
+    arm declining beside a genuine 58 bpm, a ``nan`` ``avg_heart_rate`` left the
+    ceiling declining beside an honestly still 100 m over 240 s. One corrupt
+    field is enough: the file passed the whole veto set and routed as a full
+    reading with no flag at all. See ``_intensity_signal``'s
     **Scope** paragraph for where the screen lives and why; this docstring used
     to claim ``_numeric`` was untouched, which stopped being true in code review
     iteration 3.
