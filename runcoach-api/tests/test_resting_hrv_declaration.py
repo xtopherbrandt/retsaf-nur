@@ -161,13 +161,19 @@ changes how the whole of Table B must be read.
   ``strap_cool_down_walk.fit`` (B32) and ``strap_run_hrv.fit`` (B34) are used
   only where a *declaration* is supplied, which removes one of the two reasons
   they were over-determined and is stated at each such call site.
-* **D5 / Finding 17** is untouched here. R4 ratified "beats present", so the
-  beatless row stays reachable through ``_gate_a_beatless_resting_capture``,
-  which is **not** declaration-gated today: an undeclared beatless
-  resting-shaped file still raises ``hrv_capture_no_beats``. That contradicts
-  the recognised-capture principle and is **T066's**, by that task's own
-  statement; T069 deliberately leaves it alone rather than red-flagging two
-  waves early.
+* **D5 / Finding 17** is untouched here and was **closed by T066** two waves
+  later. R4 ratified "beats present", which T066 implemented as the Tier-1 gate
+  reading ``hrv`` *messages* rather than the reconstructed stream: a file
+  carrying ``hrv`` messages that reconstruct to zero beats now claims Tier 1, is
+  flagged, and does not fall through to Tier 2, which is what makes §5's row 3
+  reachable on the Tier-1 path at all. T066 also declaration-gated
+  ``_gate_a_beatless_resting_capture``, which when T069 ran was **not** gated: an
+  undeclared beatless resting-shaped file raised ``hrv_capture_no_beats``,
+  contradicting the recognised-capture principle. T069 deliberately left both
+  alone rather than red-flagging two waves early. **A5 below is the row that
+  constrains T066's change and it is unchanged**: ``sample_health_snapshot.fit``
+  carries zero ``hrv`` messages, so "beats present" still refuses it and it still
+  routes Tier 2.
 
 
 Adversarial probe table (``.claude/rules/learnings/adversarial-input-probes...``)

@@ -127,7 +127,7 @@ declared (override), each veto no       override not honoured          as above 
 declared, clean, beats         **T1**   none (or override honoured)    --    none
 declared, clean, 100 s         no*      none -- recognised, flagged    --    hrv_capture_too_short
 override, no beats             no       override not honoured          no_beats no_beats+
-undeclared, no beats           no       **none** (A8)                  --    no_beats+
+undeclared, no beats           no       **none** (A8)                  --    **none**+
 declared (config), no beats    no       **none** (Finding 5, deferred) --    no_beats+
 multi-session, declared        no       **none** (Finding 14)          --    none
 ============================== ======== ============================== ===== =====
@@ -135,15 +135,22 @@ multi-session, declared        no       **none** (Finding 14)          --    non
 \\* "recognised and answered with a flag" rather than refused -- the §5 quality
 band, which is a different band from the veto band and is not this module's.
 
-+ **Not this task's flag, and a finding rather than a footnote.**
-``_gate_a_beatless_resting_capture`` raises ``hrv_capture_no_beats`` on any
-resting-*shaped* beatless file Tier 2 declined, with no reference to the
-declaration -- so a file that was never recognised as a capture carries a flag
-asserting a finding about one. That is the note/flag boundary this module rests
-on, crossed from the other side; it is T058's Finding 17 / row D5, and **T066
-owns it by that task's own statement**. Nothing here changes it, and
-``test_an_override_on_a_beatless_file_reports_that_it_did_nothing`` pins the
-coexistence so T066 changes it deliberately rather than discovering it.
++ **Not this task's flag. Reported by T064, resolved by T066.** When this module
+was written, ``_gate_a_beatless_resting_capture`` raised ``hrv_capture_no_beats``
+on any resting-*shaped* beatless file Tier 2 declined, with no reference to the
+declaration -- so a file that was never recognised as a capture carried a flag
+asserting a finding about one, the note/flag boundary this module rests on
+crossed from the other side. T064 left it and pinned it; **T066 declaration-gated
+the gate** (T058 Finding 17 / row D5), which is why the undeclared row above now
+reads "none" while the two declared rows keep the flag.
+
+The override row keeps its flag deliberately: ``declared`` is one disjunction in
+F004 and T066 gated on the whole of it, so a per-upload override is a declaration
+here as everywhere else. The note and the flag are not in tension -- the note
+says the *Tier-1 route* could not be taken, the flag says what the declared
+capture recorded. ``test_an_override_on_a_beatless_file_reports_that_it_did_nothing``
+still pins the coexistence and is unchanged by T066; its argument now lives in
+``test_resting_hrv_quality_gates.py``'s probe table.
 
 Three probe results worth recording rather than a bare pass:
 
@@ -165,7 +172,8 @@ Three probe results worth recording rather than a bare pass:
 3. **A beatless file is flagged while being refused** -- the ``+`` footnote
    above. Found by probing the override-on-a-beatless-file scenario and
    expecting silence; the flag was already there, from a gate that predates the
-   declaration rule. Reported to T066 rather than fixed here.
+   declaration rule. Reported to T066 rather than fixed here, and **fixed there**
+   for the undeclared route.
 """
 
 from __future__ import annotations
@@ -704,15 +712,19 @@ def test_an_override_on_a_beatless_file_reports_that_it_did_nothing(
     scenario. Without the note the athlete's deliberate per-upload act vanishes
     without trace.
 
-    **Probe result worth recording rather than a bare pass.** This file *also*
-    comes back carrying ``hrv_capture_no_beats``, and that flag does not come
-    from this task. ``_gate_a_beatless_resting_capture`` raises it on any
-    resting-shaped beatless file Tier 2 declined, with no reference to the
-    declaration -- so a file that was never recognised as a capture carries a
-    quality flag asserting a finding about one, which is the contradiction
-    T058's Finding 17 / D5 names and **T066 owns by its own statement**. It is
-    asserted here rather than worked around, so the note and the flag are seen
-    to coexist and T066 has a row to change deliberately."""
+    **Probe result worth recording rather than a bare pass, and its resolution.**
+    This file *also* comes back carrying ``hrv_capture_no_beats``, and that flag
+    does not come from this task. When T064 wrote this row,
+    ``_gate_a_beatless_resting_capture`` raised it on any resting-shaped beatless
+    file Tier 2 declined with no reference to the declaration -- so a file never
+    recognised as a capture carried a quality flag asserting a finding about one,
+    the contradiction T058's Finding 17 / D5 names. **T066 declaration-gated that
+    gate**, and this row is the one place the coexistence survives on purpose: an
+    override *is* a declaration (F004 states ``declared`` as one disjunction), so
+    the flag is now a finding about a capture the athlete did declare. The note
+    and the flag say different things -- the note that the Tier-1 route could not
+    be taken, the flag what the declared capture recorded -- and the assertion is
+    left exactly as T064 wrote it because T066's change did not move it."""
     session = classified(
         synthetic(**CLEAN_CAPTURE),
         rr_intervals=[],

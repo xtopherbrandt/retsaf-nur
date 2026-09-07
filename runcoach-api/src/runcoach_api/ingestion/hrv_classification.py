@@ -115,6 +115,23 @@ with no route, no flag and no record at all.
 refused file was never recognised as one. See the ``_PROVENANCE_*`` block
 below, which states the same rule the multi-session refusal and
 ``_classify_tier_2``'s row 2 already follow.
+
+**T066 applied that distinction to the last place still breaking it, and
+implemented resolution R4** (T058 **Finding 17 / row D5**, the highest-severity
+row of the declaration contract). Two halves:
+
+- ``_gate_a_beatless_resting_capture`` is **declaration-gated**. It used to fire
+  on any beatless, resting-*shaped*, unclaimed file with no reference to the
+  declaration, so a file the system had explicitly not recognised carried a flag
+  asserting a finding about a recognised one -- the note/flag boundary above,
+  crossed from the other side.
+- The Tier-1 beats gate reads ``hrv`` **messages** rather than the reconstructed
+  stream. F004's normative block says "beats present" while the reference
+  document says "``rr_intervals`` is non-empty", and the two differ on exactly
+  one input: a file whose ``hrv`` messages reconstruct to zero beats. R4 ratified
+  the feature file's wording, which keeps §5's ``hrv_capture_no_beats`` row
+  reachable *on the Tier-1 path* instead of leaving it a false promise. See
+  ``_hrv_messages_present`` for the argument and for R4's revisit condition.
 """
 
 from __future__ import annotations
@@ -484,6 +501,52 @@ def _session_message_count(messages: list[fitdecode.FitDataMessage]) -> int:
     return sum(1 for message in messages if message.name == "session")
 
 
+def _hrv_messages_present(messages: list[fitdecode.FitDataMessage]) -> bool:
+    """Whether the file carries any ``hrv`` (#78) message at all.
+
+    **This is F004's "beats present", and resolution R4 is why it is spelled over
+    *messages* rather than over the reconstructed stream** (T058 **Finding 17**,
+    the highest-severity row of the declaration contract). The two normative
+    blocks word the Tier-1 beats gate differently -- the feature file says
+    ``beats present``, the reference document says ``rr_intervals is
+    non-empty`` -- and they differ on exactly one input: a file carrying ``hrv``
+    messages that reconstruct to **zero** beats, because every ``time`` slot was
+    an invalid sentinel or every candidate was dropped.
+
+    R4 ratified the feature file's wording, on the authority rule and on the
+    amendment's own justification, which argues in terms of ``hrv`` *messages*
+    ("real snapshots carry **zero** ``hrv`` messages"). Two consequences, both
+    intended and both pinned in ``test_resting_hrv_quality_gates.py``:
+
+    1. §5's ``hrv_capture_no_beats`` gate is **reachable on the Tier-1 path**.
+       Under the other reading ``_apply_quality_gates``' third row could never
+       fire there -- with a non-empty ``rr_intervals`` in hand
+       ``_surviving_fraction`` always answers a float -- so the row would be a
+       false promise and would have to be deleted.
+    2. Such a file **claims Tier 1 and does not fall through to Tier 2**. The
+       fall-through concern was weighed and judged theoretical: T057 decoded
+       Health Snapshots as carrying zero ``hrv`` messages, so they never reach
+       this branch, and a degenerate strap capture has no ``rmssd_hrv`` and
+       nothing to gain from Tier 2. **R4 carries a revisit condition** -- a
+       fixture with ``hrv`` messages *and* a usable ``rmssd_hrv`` breaks the
+       reasoning. T066 re-measured all ten corpus fixtures against it: the five
+       ``rmssd_hrv`` carriers each hold **zero** ``hrv`` messages, so the
+       condition does not fire today.
+
+    ``rr_intervals`` is still consulted alongside this in ``_classify_tier_1``,
+    and the disjunction is not a hedge. On a real file a non-empty reconstructed
+    stream *implies* ``hrv`` messages, so the two agree; ``classify()`` is also a
+    public function that F004's own suites drive directly with a hand-built beat
+    stream and no ``hrv`` messages behind it, and refusing those would be
+    refusing a beat stream the caller is holding. Beats in hand, or the messages
+    that were meant to produce them, are both "beats present".
+
+    Counted off the decoded messages exactly as ``_session_message_count`` counts
+    ``session`` ones -- ``mapping.to_canonical`` is untouched by this module.
+    """
+    return any(message.name == "hrv" for message in messages)
+
+
 def _numeric(value: Any) -> float | int | None:
     """``value`` when it is a real number, otherwise ``None``.
 
@@ -657,7 +720,12 @@ def classify(
     ):
         return None
     _classify_tier_2(messages, session)
-    _gate_a_beatless_resting_capture(session, rr_intervals)
+    _gate_a_beatless_resting_capture(
+        session,
+        rr_intervals,
+        profile_names=profile_names,
+        resting_capture_override=resting_capture_override,
+    )
     return None
 
 
@@ -1093,16 +1161,24 @@ def _apply_quality_gates(
     return failed
 
 
-def _gate_a_beatless_resting_capture(session: Session, rr_intervals: list[RRInterval]) -> None:
-    """Row 3, on the only path that can actually reach it.
+def _gate_a_beatless_resting_capture(
+    session: Session,
+    rr_intervals: list[RRInterval],
+    *,
+    profile_names: Sequence[str] | None = None,
+    resting_capture_override: bool = False,
+) -> None:
+    """Row 3 for the file that carries no ``hrv`` message at all.
 
     ``rr_valid_fraction`` is ``None`` exactly when the beat stream is empty --
-    that is ``pipeline.py``'s rule -- and an empty beat stream is precisely
-    what keeps a file out of ``_classify_tier_1``. So the "beat stream is
-    empty, so ``rr_valid_fraction`` is null" row of the scenario outline can
-    only be reported here: on a file whose duration/intensity profile *is* a
-    resting capture but which recorded no beats -- a strap that dropped out,
-    or a capture started before the sensor paired.
+    that is ``pipeline.py``'s rule -- and since **R4** the file that recorded no
+    ``hrv`` message at all is precisely the one ``_classify_tier_1`` refuses at
+    its beats gate. So this is where the "beat stream is empty, so
+    ``rr_valid_fraction`` is null" row is reported for such a file: a strap that
+    dropped out, or a capture started before the sensor paired. Its sibling case
+    -- ``hrv`` messages that reconstruct to zero beats -- is claimed by Tier 1
+    and answered by ``_apply_quality_gates`` on that path instead; see
+    ``_hrv_messages_present`` for why the two are split there.
 
     **Runs after the Tier-2 branch, and only if Tier 2 declined.** Both Health
     Snapshot fixtures are zero-beat, ~120 s, low-heart-rate files -- the same
@@ -1111,11 +1187,47 @@ def _gate_a_beatless_resting_capture(session: Session, rr_intervals: list[RRInte
     them, would destroy a working reading; ``activity_tag`` being set is the
     signal that Tier 2 recognised the file.
 
+    **Declaration-gated (T066; T058 Finding 17 / row D5), and this is the whole
+    subject of that task.** A ``hrv_capture_*`` flag asserts a finding *about a
+    recognised capture*; a provenance note records a file that was examined and
+    refused. Before T066 this function fired on any beatless, resting-*shaped*,
+    unclaimed file with no reference to the declaration -- so a file the system
+    had explicitly not recognised carried a flag asserting a finding about one,
+    which is the note/flag boundary this module rests on, crossed from the other
+    side. It is the same invariant ``classify``'s multi-session refusal and
+    T064's flagless undeclared note already keep, and F004 states it in its own
+    words twice ("a flag asserts a finding about a *recognised* capture, and this
+    file has not been recognised as one"). The spec's scenario outline lists the
+    beatless row with no declaration qualifier, so the literal text permits
+    either reading; consistency with the stated principle decides it. Recorded
+    here so it is not re-litigated by a reader who finds the outline first.
+
+    **Gated on the whole of ``_declared``, never on the config half alone.** F004
+    states the declaration once, as a disjunction, and an upload-time override is
+    a deliberate act of intent about one specific file. Splitting it here would
+    make the flag mean "recognised on one route only", a distinction no scenario
+    draws -- and it would rest on T058's **Finding 5**, which the resolutions
+    document leaves explicitly deferred: were that finding to resolve toward a
+    note for a beatless *configured* declaration, the two routes would become
+    indistinguishable and the split indefensible. The consequence is deliberate
+    and pinned: an override on a beatless file records
+    ``{"honoured": false, "reason": "no_beats"}`` *and* raises this flag. The two
+    say different things -- the note reports that the Tier-1 *route* could not be
+    taken, the flag reports what the declared capture recorded.
+
+    The vetoes are still evaluated after the declaration, via
+    ``_resting_profile_duration``: a declared file that contradicts its own
+    declaration is not a recognised capture either, and T064 has already written
+    it a note naming the veto.
+
     No ``activity_tag`` is written here. The file yielded nothing and was
     claimed by no tier, so tagging it ``resting_hrv_check`` would assert a
     classification the gates have just declined to make.
     """
     if rr_intervals or session.activity_tag is not None:
+        return
+
+    if not _declared(session, profile_names, resting_capture_override):
         return
 
     duration_s = _resting_profile_duration(session)
@@ -1318,12 +1430,21 @@ def _classify_tier_1(
     left unused. It takes ``messages`` for that reason alone: to see the
     device value it is about to ignore, so it can record it (T045).
 
-    The predicate, as amended 2026-09-06, landed additively by T063 and
-    completed by T069::
+    The predicate, as amended 2026-09-06, landed additively by T063, completed by
+    T069 and given R4's beats gate by T066::
 
-        tier1 := rr_intervals is non-empty                        # beats
+        tier1 := beats present                                    # R4; see below
              AND _resting_profile_duration(session) is not None   # the vetoes
              AND _declared(...)                                   # the authoriser
+
+    where ``beats present`` is ``rr_intervals or _hrv_messages_present(messages)``
+    -- **``hrv`` messages, not the reconstructed stream**. That is resolution
+    **R4**, settling T058's Finding 17; the whole argument, including why
+    ``rr_intervals`` is consulted beside the messages and R4's own revisit
+    condition, lives on ``_hrv_messages_present``. The consequence that matters
+    here: a declared file whose ``hrv`` messages reconstruct to **zero** beats is
+    claimed by this branch and answered by ``_apply_quality_gates`` with
+    ``hrv_capture_no_beats``, rather than falling through to Tier 2.
 
     **Nothing is inferred.** ``_declared`` is the only term that can say yes; the
     other two can only say no. The demoted duration/distance/heart-rate rules keep
@@ -1350,7 +1471,8 @@ def _classify_tier_1(
     ``sample_health_snapshot.fit`` carries that exact profile name -- and it
     would route a perfectly valid snapshot **nowhere**. The order used to hold
     by accident of statement order; it is a stated contract now, with a
-    scenario behind it.
+    scenario behind it. R4 does not weaken it: "beats present" is still evaluated
+    first and a snapshot still has no ``hrv`` message to satisfy it.
 
     *Vetoes before the declaration decides refusal.* ``beats AND declared AND
     NOT vetoed`` reads naturally as beats -> declared -> vetoed, under which an
@@ -1473,7 +1595,12 @@ def _classify_tier_1(
     """
     # 1. Beats, first and normatively so -- see the docstring. A beatless file
     #    must fall through to Tier 2 rather than be claimed and answered here.
-    if not rr_intervals:
+    #
+    #    **"Beats present" means ``hrv`` messages, not a non-empty reconstructed
+    #    stream** -- resolution R4, settling T058's Finding 17. The whole
+    #    argument, including R4's revisit condition and why ``rr_intervals`` is
+    #    still consulted beside it, lives on ``_hrv_messages_present``.
+    if not rr_intervals and not _hrv_messages_present(messages):
         # T064. The one note the beats gate owes: an override the athlete
         # applied to this specific upload could not be honoured, and F004 makes
         # that its own scenario ("an override on a file with no beats reports
@@ -1488,6 +1615,13 @@ def _classify_tier_1(
         # Finding 5, which the resolutions document leaves explicitly deferred,
         # so answering it here would pre-empt a decision that is not this
         # module's to take today.
+        #
+        # Since R4 this branch is reached only by a file carrying **no ``hrv``
+        # message at all**, which is exactly the population A8 was arguing about.
+        # A file whose ``hrv`` messages reconstruct to zero beats now passes this
+        # gate and does get an undeclared note further down -- correctly, because
+        # under "beats present" it *has* beats and is a capture the athlete
+        # simply never declared.
         if resting_capture_override:
             _provenance(session)[_PROVENANCE_RESTING_CAPTURE_OVERRIDE] = {
                 "honoured": False,

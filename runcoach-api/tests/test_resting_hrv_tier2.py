@@ -241,13 +241,28 @@ def test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless(
     claiming more than it means.
 
     A file that declined Tier 2 on the identity signal can still *be* a resting-shaped
-    capture: 150 s, avg HR 58, no beats. §5's third gate is about the capture's own
-    shape -- "beat stream is empty, so ``rr_valid_fraction`` is null" -- and it does not
-    ask which tier declined the file first. So ``hrv_capture_no_beats`` is correct here
-    and is raised; what row 2 withholds is ``hrv_reading_unavailable``, the flag that
-    would assert this file was a snapshot whose reading came out empty."""
+    **declared** capture: 150 s, avg HR 58, no beats, on a configured profile. §5's
+    third gate is about the capture's own shape -- "beat stream is empty, so
+    ``rr_valid_fraction`` is null" -- and it does not ask which tier declined the file
+    first. So ``hrv_capture_no_beats`` is correct here and is raised; what row 2
+    withholds is ``hrv_reading_unavailable``, the flag that would assert this file was
+    a snapshot whose reading came out empty.
+
+    **The declaration became load-bearing at T066** (T058 Finding 17 / row D5): the
+    beatless gate is now reachable only for a file the athlete declared, because a flag
+    asserts a finding about a *recognised* capture. Before T066 this row passed
+    undeclared, which meant it would have stayed green against an implementation that
+    flagged every beatless file in the corpus. Its undeclared control is the row
+    below."""
     session = classified(
-        synthetic(11, rmssd_hrv=44, total_timer_time=150.0, avg_heart_rate=58)
+        synthetic(
+            11,
+            rmssd_hrv=44,
+            total_timer_time=150.0,
+            avg_heart_rate=58,
+            sport_profile_name="HRV Snapshot",
+        ),
+        profile_names=["HRV Snapshot"],
     )
 
     assert "hrv_capture_no_beats" in session.quality_flags
@@ -255,6 +270,29 @@ def test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless(
     assert session.hrv_source_tier is None
     assert session.rmssd_precomputed is None
     assert session.activity_tag is None
+
+
+def test_an_undeclared_resting_shaped_row_2_file_is_not_flagged_beatless(
+    synthetic,
+    classified,
+) -> None:
+    """The control for the row above, and T066's half of the note/flag boundary.
+
+    Byte-for-byte the same file, minus the declaration. Row 2 already refuses to write
+    a reading; a ``hrv_capture_no_beats`` flag on top would assert a finding about a
+    capture nothing has recognised -- the same reason row 2 withholds
+    ``hrv_reading_unavailable`` from it, applied to the gate that runs afterwards.
+    The signal disagreement is still recorded, because that is a provenance note about
+    a file that was examined, which is exactly what a note is for."""
+    session = classified(
+        synthetic(11, rmssd_hrv=44, total_timer_time=150.0, avg_heart_rate=58)
+    )
+
+    assert session.quality_flags == []
+    assert session.hrv_source_tier is None
+    assert session.rmssd_precomputed is None
+    assert session.activity_tag is None
+    assert "hrv_signal_disagreement" in session.context.provenance
 
 
 def test_the_disagreement_key_does_not_collide_with_the_t045_key(synthetic, classified) -> None:

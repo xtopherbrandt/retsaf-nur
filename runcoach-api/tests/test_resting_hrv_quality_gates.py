@@ -58,9 +58,109 @@ file is a resting capture" requires an explicit athlete declaration -- ``_classi
 returns *before* ``_apply_quality_gates`` on an undeclared file, so an undeclared capture
 raises no gate flag at all. The two fixtures ``resting`` and ``declared_classify`` supply
 the two halves of that declaration; the gates, their thresholds and their citations are
-untouched. The behavioural question this raises -- whether the beatless gate should still
-be reachable at all now that a declared beatless file falls through to Tier 2 -- is
-**T066's**, deliberately not this module's.
+untouched.
+
+**T066 answered the question T069 left open here, in two halves.**
+
+*Half one -- row 3's precondition.* ``_gate_a_beatless_resting_capture`` is now
+declaration-gated. It used to fire on any beatless, resting-*shaped*, unclaimed file with
+no reference to the declaration, so a file the system had explicitly not recognised
+carried a flag asserting a finding about a recognised capture -- T058 **Finding 17 / row
+D5**, pinned by T064 rather than fixed so this task would change it deliberately. The gate
+is on the whole of ``_declared``: an upload-time override is a declaration too, and F004
+states the disjunction once.
+
+*Half two -- resolution **R4**, "beats present".* The Tier-1 beats gate now reads ``hrv``
+*messages*, not the reconstructed stream, so a file carrying ``hrv`` messages that
+reconstruct to **zero** beats claims Tier 1, is flagged, and does not fall through to
+Tier 2. That is what makes §5's row 3 reachable *on the Tier-1 path* -- with a non-empty
+``rr_intervals`` in hand ``_surviving_fraction`` always answers a float, so under the
+reference document's wording the row could never fire there and would be a false promise.
+
+Adversarial probe table (``.claude/rules/learnings/adversarial-input-probes...``)
+================================================================================
+
+Every row driven through ``mapping.to_canonical`` -> ``classify`` this session, or through
+a real fixture end to end. The inputs the gated predicate actually reads: the presence of
+``hrv`` messages, the reconstructed beat stream, the three ``session.summary`` intensity
+signals (through ``_intensity_signal``), ``context.provenance["sport_profile_name"]``, the
+configured name list and the override boolean.
+
+**The invariant being proved: no file the system did not recognise carries an ``hrv_*``
+flag.** It holds on every row below.
+
+================================== ================= ======================= ============================ =====
+input                              route             flag                    note                         tier
+================================== ================= ======================= ============================ =====
+0 ``hrv`` msgs, clean 150 s        undeclared        **none**                --                           --
+0 ``hrv`` msgs, clean 150 s        config            hrv_capture_no_beats    -- (Finding 5, deferred)     --
+0 ``hrv`` msgs, clean 150 s        override          hrv_capture_no_beats    override, ``no_beats``       --
+0 ``hrv`` msgs, **each of the 8    all three         **none**                override note only, and only --
+vetoes**                                                                     on the override route
+``hrv`` msgs -> 0 beats, clean     undeclared        **none**                undeclared, ``vetoed_by``    --
+                                                                             null
+``hrv`` msgs -> 0 beats, clean     config            hrv_capture_no_beats    --                           --
+``hrv`` msgs -> 0 beats, clean     override          hrv_capture_no_beats    override, **honoured**       --
+``hrv`` msgs -> 0 beats, 6000 s    undeclared        **none**                undeclared,                  --
+                                                                             duration_out_of_range
+``hrv`` msgs -> 0 beats, 6000 s    config            **none**                declared-vetoed              --
+``hrv`` msgs -> 0 beats, 6000 s    override          **none**                override, not honoured,      --
+                                                                             ``duration_out_of_range``
+``hrv`` msgs -> 0 beats,           undeclared        **none**                undeclared                   **T2**
+sport 60 + rmssd_hrv 37            config/override   hrv_capture_no_beats    (override honoured)          --
+0 ``hrv`` msgs, sport 60 +         all three         **none**                override note only           **T2**
+rmssd_hrv 37
+single beat, clean                 undeclared        **none**                undeclared                   --
+single beat, clean                 config/override   hrv_reading_unavailable (override honoured)          --
+eight beats, clean                 undeclared        **none**                undeclared                   --
+eight beats, clean                 config/override   **none**                (override honoured)          **T1**
+================================== ================= ======================= ============================ =====
+
+Four results argued rather than merely passed:
+
+1. **The override route keeps its flag, and the T064 pin therefore stays green.**
+   ``test_an_override_on_a_beatless_file_reports_that_it_did_nothing`` asserts the
+   ``{"honoured": false, "reason": "no_beats"}`` note and ``hrv_capture_no_beats``
+   together, and both still hold. Gating on the config half alone would have removed the
+   flag there, but ``declared`` is one disjunction in F004 and the split would rest on
+   T058's deferred **Finding 5**: were a beatless *configured* declaration to gain a note
+   later, the two routes become indistinguishable and the split indefensible. The note and
+   the flag are not in tension -- the note says the Tier-1 *route* could not be taken, the
+   flag says what the declared capture recorded.
+2. **A ``hrv``-carrying file that reconstructs to zero beats and is override-declared
+   records ``{"honoured": true}``**, where the same file with **zero** ``hrv`` messages
+   records ``{"honoured": false, "reason": "no_beats"}``. That is R4 working exactly as
+   ratified: the first file has beats present and *is* claimed by Tier 1, and ``honoured``
+   is a statement about the declaration rather than about the reading.
+3. **R4's revisit condition was checked against the real corpus and does not fire.** R4
+   says its reasoning fails if a file carries ``hrv`` messages *and* a usable
+   ``rmssd_hrv``. All ten fixtures were decoded this session: the five ``rmssd_hrv``
+   carriers (``sample_health_snapshot`` 37, ``strap_health_snapshot`` 51,
+   ``strap_health_snapshot_hrv`` 90, and neither run) hold **zero** ``hrv`` messages, and
+   the five ``hrv`` carriers hold no ``rmssd_hrv``. No corpus file reconstructs to zero
+   beats from a non-empty ``hrv`` set either, which is why the R4 rows above are
+   synthetic: nothing real occupies that state, and saying so is the finding.
+4. **An undeclared beatless resting-shaped file now has neither a flag nor a note.**
+   Removing the flag is this task's point, and the absent note is contract row A8 (the
+   undeclared note is gated on beats, or every Health Snapshot and wrist-PPG run would
+   carry one). The two together mean such a file is silent -- which is R5's observability
+   goal pushed against, and is recorded here rather than papered over. It is *not*
+   reopened here: R5 explicitly scoped its notes to files with beats, and T058's
+   **Finding 5** owns the declared half of the same question.
+
+**Perturbation evidence, both halves separately** (the discipline
+``contract-tables-need-an-independent-oracle`` asks for -- delete the rule, watch the row
+go red). Run at T066 against the 431-test ``-k resting_hrv`` selection:
+
+* Remove the **declaration gate** from ``_gate_a_beatless_resting_capture`` and exactly two
+  rows go red -- this module's ``..._undeclared_beatless_resting_shaped_file_raises_no_gate_flag``
+  and ``test_resting_hrv_tier2``'s ``..._undeclared_resting_shaped_row_2_file_is_not_flagged_beatless``.
+  Every declared row stays green, so the gate is pinned by its *negative* class and not by
+  a row that would pass either way.
+* Revert the **R4 beats gate** to ``rr_intervals``-only and exactly one row goes red --
+  ``test_a_beatless_hrv_carrier_claims_tier_1_and_does_not_fall_to_tier_2`` -- while its
+  zero-``hrv``-message control stays green. The two changes are therefore independent and
+  neither is carrying the other's evidence.
 
 Synthetic ``_FakeMsg`` message sets are used for the threshold rows, following
 ``test_quality_gates_smart_recording.py``: these are threshold checks over already-mapped
@@ -95,6 +195,18 @@ DECLARED_PROFILE = "HRV Snapshot"
 # negative below. It replaced ``strap_hrv_sample_run.fit`` at T069, which is now
 # the corpus's undeclared negative and can no longer route at all.
 GATE_FIXTURE = "strap_hrv_capture.fit"
+
+# The Tier-2 fixture whose *declared* route must still be Tier 2: zero ``hrv``
+# messages, so R4's beats gate never claims it. Named here because T066's own
+# verification list calls for it end to end and not only at the unit boundary.
+SNAPSHOT_FIXTURE = "sample_health_snapshot.fit"
+SNAPSHOT_PROFILE = "Health Snapshot"
+SNAPSHOT_DEVICE_RMSSD = 37
+
+# The empirically observed Garmin Health Snapshot ``sport`` value -- the Tier-2
+# identity signal, spelled here as ``conftest``'s ``SNAPSHOT_SPORT`` is, so the
+# R4 rows below can build a file that Tier 2 *would* read.
+SNAPSHOT_SPORT = 60
 
 FLAG_TOO_SHORT = "hrv_capture_too_short"
 FLAG_LOW_QUALITY = "hrv_capture_low_quality"
@@ -345,6 +457,195 @@ def test_a_beatless_capture_does_not_reach_a_tier_1_reading(resting, declared_cl
 
     assert session.activity_tag is None
     _assert_no_reading(session)
+
+
+# ---------------------------------------------------------------------------
+# Row 3's precondition -- the flag is a finding about a *declared* capture
+# (T066; T058 Finding 17 / row D5)
+# ---------------------------------------------------------------------------
+
+
+def _beatless_hrv_carrier(fake_msg, messages):
+    """``messages`` plus one ``hrv`` message whose every ``time`` slot is the FIT
+    invalid sentinel.
+
+    ``fitdecode`` parses an invalid slot to ``None`` and
+    ``rr_reconstruction._hrv_candidates`` drops it, so the file **carries ``hrv``
+    messages and reconstructs to zero beats** -- the single input on which F004's
+    two normative wordings of the beats gate disagree (T058 Finding 17), and the
+    one R4 resolves toward "beats present".
+    """
+    return [*messages, fake_msg("hrv", {"time": (None, None, None)})]
+
+
+def test_an_undeclared_beatless_resting_shaped_file_raises_no_gate_flag(
+    synthetic, classified
+) -> None:
+    """T066's first failing test. A flag asserts a finding **about a recognised
+    capture**; an undeclared file has not been recognised as one, so
+    ``hrv_capture_no_beats`` on it asserts a finding about something the system
+    does not claim.
+
+    Before T066 ``_gate_a_beatless_resting_capture`` fired on any beatless,
+    resting-*shaped*, unclaimed file with no reference to the declaration -- the
+    note/flag boundary the rest of this feature rests on, crossed from the other
+    side. It is the same invariant the multi-session refusal and T064's flagless
+    undeclared note already keep; the spec's outline lists the beatless row with
+    no declaration qualifier, so consistency with the stated principle decides
+    it rather than the literal text.
+    """
+    session = classified(
+        synthetic(total_timer_time=150.0, avg_heart_rate=60, sport_profile_name="Run"),
+        rr_intervals=[],
+    )
+
+    assert session.rr_valid_fraction is None
+    assert [f for f in session.quality_flags if f in GATE_FLAGS] == []
+    assert FLAG_READING_UNAVAILABLE not in session.quality_flags
+    _assert_no_reading(session)
+
+
+def test_a_declared_beatless_resting_shaped_file_still_raises_no_beats(
+    resting, declared_classify
+) -> None:
+    """The other direction of the same precondition, and the reason T066 *gates*
+    the flag rather than deleting it: the athlete who declared the profile and
+    whose strap recorded nothing is exactly who §5 row 3 exists to tell.
+
+    The same file as the undeclared row above in every respect the data can
+    show; only the declaration differs."""
+    session = declared_classify(resting(), rr_intervals=[])
+
+    assert FLAG_NO_BEATS in session.quality_flags
+    _assert_no_reading(session)
+
+
+def test_an_override_declared_beatless_file_still_raises_no_beats(
+    resting, classified
+) -> None:
+    """``declared`` is a **disjunction** and T066 gates on the whole of it, not on
+    the config half.
+
+    F004 states the rule once -- a configured profile name **OR** an upload-time
+    override -- and splitting it here would make the flag mean "recognised on one
+    route only", a distinction no scenario draws. It would also rest on T058's
+    **Finding 5** (whether a beatless *configured* declaration records a note),
+    which the resolutions document leaves explicitly deferred: if that finding
+    later resolves toward a note, the two routes become indistinguishable and a
+    route-split gate becomes indefensible.
+
+    So the ``{"honoured": false, "reason": "no_beats"}`` note and this flag
+    coexist deliberately. They say different things: the note reports that the
+    *Tier-1 route* could not be taken, and the flag reports what the declared
+    capture recorded."""
+    session = classified(
+        resting(sport_profile_name="Run"),
+        rr_intervals=[],
+        resting_capture_override=True,
+    )
+
+    assert FLAG_NO_BEATS in session.quality_flags
+    _assert_no_reading(session)
+
+
+def test_a_beatless_hrv_carrier_claims_tier_1_and_does_not_fall_to_tier_2(
+    fake_msg, synthetic, classified
+) -> None:
+    """**R4**, ratified 2026-09-06, on the one input the two wordings disagree on.
+
+    F004's normative block says the gate is "beats present"; the reference
+    document says "``rr_intervals`` is non-empty". They differ for a file
+    carrying ``hrv`` messages that reconstruct to **zero** beats, and R4 resolves
+    to the feature file's wording -- consistent with the authority rule and with
+    the amendment's own justification, which argues in terms of ``hrv``
+    *messages* ("real snapshots carry zero ``hrv`` messages").
+
+    Both consequences are intended and both are asserted here: such a file
+    **claims Tier 1 and is flagged**, and it **does not fall through to Tier 2**.
+    The file is built Tier-2 eligible on purpose -- ``sport`` 60 plus a device
+    ``rmssd_hrv`` -- because that is the only way to tell the two readings apart:
+    under the reference document's wording Tier 1 declines, Tier 2 reads the
+    device scalar, and no flag is raised at all.
+
+    R4's fall-through concern was weighed and judged theoretical on the evidence,
+    and this file is the shape it was weighed against: a degenerate strap capture
+    has no ``rmssd_hrv`` and nothing to gain from Tier 2. **The corpus was
+    re-measured at T066 and no fixture carries ``hrv`` messages alongside a
+    usable ``rmssd_hrv``** -- the five ``rmssd_hrv`` carriers all have zero
+    ``hrv`` messages -- which is the condition under which R4 said it must be
+    revisited. This synthetic is therefore deliberately *not* a claim that such a
+    file exists; it is the discriminating input, and it is synthetic because
+    nothing real occupies that state."""
+    messages = _beatless_hrv_carrier(
+        fake_msg,
+        synthetic(
+            SNAPSHOT_SPORT,
+            total_timer_time=150.0,
+            avg_heart_rate=60,
+            rmssd_hrv=SNAPSHOT_DEVICE_RMSSD,
+            sport_profile_name=DECLARED_PROFILE,
+        ),
+    )
+
+    session = classified(messages, rr_intervals=[], profile_names=[DECLARED_PROFILE])
+
+    # Consequence 1 -- §5 row 3 is reachable on the Tier-1 path, which is what
+    # keeps it from being a false promise.
+    assert FLAG_NO_BEATS in session.quality_flags
+    # Consequence 2 -- Tier 1 claimed the file, so Tier 2 never ran.
+    assert session.hrv_source_tier is None
+    assert session.rmssd_precomputed is None
+    assert session.activity_tag is None
+    _assert_no_reading(session)
+
+
+def test_a_file_with_zero_hrv_messages_still_falls_through_to_tier_2(
+    synthetic, classified
+) -> None:
+    """The control for the row above, and the normative ordering it must not
+    defeat: **the beats gate is evaluated before the declaration**.
+
+    Identical in every field to the R4 row -- declared, resting-shaped, sport 60,
+    a device ``rmssd_hrv`` -- except that it carries no ``hrv`` message at all.
+    That is what a real Health Snapshot is, and claiming it for Tier 1 would
+    route a valid snapshot **nowhere**. Without this control the R4 row above
+    would stay green against an implementation that simply deleted the beats
+    gate."""
+    session = classified(
+        synthetic(
+            SNAPSHOT_SPORT,
+            total_timer_time=150.0,
+            avg_heart_rate=60,
+            rmssd_hrv=SNAPSHOT_DEVICE_RMSSD,
+            sport_profile_name=DECLARED_PROFILE,
+        ),
+        rr_intervals=[],
+        profile_names=[DECLARED_PROFILE],
+    )
+
+    assert session.hrv_source_tier == "health_snapshot"
+    assert session.rmssd_precomputed == SNAPSHOT_DEVICE_RMSSD
+    assert [f for f in session.quality_flags if f in GATE_FLAGS] == []
+
+
+def test_a_declared_health_snapshot_routes_tier_2_unflagged(declared_config, ingest) -> None:
+    """The same control on the real file, end to end -- T063's ordering contract,
+    which T066 must not defeat.
+
+    ``sample_health_snapshot.fit`` carries **zero** ``hrv`` messages and the
+    profile name ``'Health Snapshot'``, so declaring that name is the exact
+    configuration under which a beats gate read as "declared first" would strip a
+    working Tier-2 reading and answer it with a failed-capture flag."""
+    declared_config(SNAPSHOT_PROFILE)
+
+    with TestClient(app) as client:
+        body = ingest(client, SNAPSHOT_FIXTURE)
+
+    assert body["activity_tag"] == "health_snapshot"
+    assert body["hrv_source_tier"] == "health_snapshot"
+    assert body["rmssd_precomputed"] == SNAPSHOT_DEVICE_RMSSD
+    assert body["resting_rmssd_ms"] == SNAPSHOT_DEVICE_RMSSD
+    assert [f for f in body["quality_flags"] if f in GATE_FLAGS] == []
 
 
 # ---------------------------------------------------------------------------
