@@ -43,8 +43,16 @@ def _post_fit(client: TestClient):
     )
 
 
+# Every stub below takes ``**_declaration``: since T063 ``create_session``
+# forwards the upload-time resting-capture override to ``ingest_fit_bytes`` by
+# keyword, and a stub with a bare ``(raw)`` signature would fail with a
+# ``TypeError`` before its own ``raise`` ever ran -- turning a 400-mapping test
+# into a 500-mapping one. The stubs still ignore the value: what is under test
+# here is the exception-to-status mapping, not the declaration.
+
+
 def test_not_a_fit_file_maps_to_400(monkeypatch) -> None:
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise NotAFitFileError("missing FIT header")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
@@ -56,7 +64,7 @@ def test_not_a_fit_file_maps_to_400(monkeypatch) -> None:
 
 
 def test_fit_parse_failure_maps_to_400(monkeypatch) -> None:
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise FitParseFailure("corrupt record")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
@@ -72,7 +80,7 @@ def test_missing_sport_maps_to_400(monkeypatch) -> None:
     reach db.persist and surface as an unhandled 500 --
     MissingCanonicalFieldError("sport", ...) maps to a clean 400."""
 
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise MissingCanonicalFieldError("sport", "no session or sport message found")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
@@ -90,7 +98,7 @@ def test_missing_start_time_maps_to_400(monkeypatch) -> None:
     session_id and surface as a silently-nondeterministic 201 --
     MissingCanonicalFieldError("start_time", ...) maps to a clean 400."""
 
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise MissingCanonicalFieldError(
             "start_time", "no session.start_time and no record timestamps found"
         )
@@ -105,7 +113,7 @@ def test_missing_start_time_maps_to_400(monkeypatch) -> None:
 
 
 def test_duplicate_session_maps_to_409(monkeypatch) -> None:
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise DuplicateSessionError(existing_session_id="existing-123")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)
@@ -118,7 +126,7 @@ def test_duplicate_session_maps_to_409(monkeypatch) -> None:
 
 
 def test_unplanned_exception_does_not_leak_traceback(monkeypatch) -> None:
-    def raise_it(raw: bytes):
+    def raise_it(raw: bytes, **_declaration):
         raise RuntimeError("something unexpected broke")
 
     monkeypatch.setattr("runcoach_api.main.ingest_fit_bytes", raise_it)

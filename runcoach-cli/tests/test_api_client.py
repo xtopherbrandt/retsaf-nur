@@ -160,3 +160,56 @@ def test_upload_fit_does_not_swallow_non_2xx_response(tmp_path, install_mock_cli
     response = api_client.upload_fit("http://example.test", fit_path)
     assert response.status_code == 400
     assert response.text == "invalid FIT file"
+
+
+# ---------------------------------------------------------------------------
+# T063 -- the upload-time resting-capture override
+# ---------------------------------------------------------------------------
+
+
+def _capture_request_content(install_mock_client) -> list[bytes]:
+    captured: list[bytes] = []
+
+    def created_handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
+
+    install_mock_client(created_handler)
+    return captured
+
+
+def test_upload_fit_sends_the_resting_capture_flag_alongside_the_file(
+    tmp_path, install_mock_client
+) -> None:
+    # F004's upload-time override: the athlete declaring *this file* a resting
+    # capture, for a file recorded on a profile the config does not name. It
+    # rides in the same multipart body as the file, as a form field the API
+    # reads with ``Form(...)``.
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+    captured = _capture_request_content(install_mock_client)
+
+    api_client.upload_fit("http://example.test", fit_path, resting_capture=True)
+
+    assert b'name="resting_capture"' in captured[0]
+    assert b"true" in captured[0]
+    # The file part is not displaced by the new one.
+    assert b'name="file"' in captured[0]
+    assert b"binary-fit-content" in captured[0]
+
+
+def test_upload_fit_spells_out_false_rather_than_sending_a_blank_part(
+    tmp_path, install_mock_client
+) -> None:
+    # An *empty* form value is not a bool pydantic accepts -- verified against
+    # the installed pydantic's ``TypeAdapter(bool)``, which raises on "" -- so
+    # the client must never send a blank part. Spelling "false" out keeps one
+    # wire shape for both answers instead of two.
+    fit_path = tmp_path / "activity.fit"
+    fit_path.write_bytes(b"binary-fit-content")
+    captured = _capture_request_content(install_mock_client)
+
+    api_client.upload_fit("http://example.test", fit_path)
+
+    assert b'name="resting_capture"' in captured[0]
+    assert b"false" in captured[0]

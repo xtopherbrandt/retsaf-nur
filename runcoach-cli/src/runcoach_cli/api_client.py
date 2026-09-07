@@ -44,19 +44,28 @@ def get_health(base_url: str) -> httpx.Response:
         raise ApiUnreachableError(base_url) from exc
 
 
-def upload_fit(base_url: str, file_path: Path) -> httpx.Response:
+def upload_fit(
+    base_url: str, file_path: Path, resting_capture: bool = False
+) -> httpx.Response:
     """Upload the FIT file at ``file_path`` via POST {base_url}/sessions.
 
     Only network-layer failures are translated into ApiUnreachableError.
     Non-2xx responses are returned unchanged - status-code and body-shape
     handling are the caller's job. No FIT-format validation happens here;
     the API owns that.
+
+    ``resting_capture`` is F004's upload-time Tier-1 declaration, sent as a
+    form field in the same multipart body as the file. It is always sent, and
+    always spelled out as "true"/"false": an *empty* form value is not a bool
+    the API's pydantic coercion accepts, so a blank part would be a 422 rather
+    than a "no". One wire shape for both answers.
     """
     try:
         with open(file_path, "rb") as f:
             return client.post(
                 f"{base_url}/sessions",
                 files={"file": (file_path.name, f)},
+                data={"resting_capture": "true" if resting_capture else "false"},
                 timeout=UPLOAD_TIMEOUT,
             )
     except httpx.TransportError as exc:

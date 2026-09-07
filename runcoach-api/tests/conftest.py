@@ -15,7 +15,14 @@ process. That cache is cleared here, before each test's monkeypatch
 takes effect, so a stale cached config from a previous test never
 leaks into this one.
 
-Everything below ``isolated_data_dir`` is the resting-HRV helper set --
+``declared_config`` (T063) layers on top for the suites that need the
+athlete's Tier-1 declaration: it rebuilds the same ``AppConfig`` with
+``resting_hrv_profile_names`` populated and clears the cache again. It is
+opt-in, never autouse -- a declaration is the whole subject of the tests that
+want one, and handing it to every test would silently re-route captures four
+other modules assert are refused.
+
+Everything below ``declared_config`` is the resting-HRV helper set --
 one ``_FakeMsg``, one ``_synthetic``, one ``_classified``, one
 ``_ingest`` -- shared by the five ``test_resting_hrv_*.py`` modules that
 previously each carried their own drifting copy. See the section comment
@@ -49,6 +56,42 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: fake_config)
     db_module._load_config_cached.cache_clear()
     return data_dir
+
+
+@pytest.fixture
+def declared_config(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """``declared_config("HRV Snapshot")`` -- the athlete's Tier-1 declaration.
+
+    Rebuilds the ``AppConfig`` ``isolated_data_dir`` installed, this time with
+    ``resting_hrv_profile_names`` populated, and clears
+    ``db._load_config_cached`` so ``pipeline.ingest_fit_bytes`` reads the new
+    list rather than the ``lru_cache(maxsize=1)``'d empty one. Both halves are
+    required: that cache is exactly why editing ``api.toml`` needs a server
+    restart in production, and it would make this fixture a silent no-op
+    without the clear.
+
+    ``data_dir`` stays pointed at the same per-test ``tmp_path`` the autouse
+    fixture chose, so declaring a profile never un-isolates the store.
+
+    Called with no arguments it declares the **empty list** explicitly -- the
+    "athlete who uses only Health Snapshot" posture, which differs from never
+    calling the fixture only in that it re-clears the cache.
+    """
+
+    def _declare(*profile_names: str) -> AppConfig:
+        declared = AppConfig(
+            host="127.0.0.1",
+            port=8000,
+            data_dir=isolated_data_dir,
+            resting_hrv_profile_names=list(profile_names),
+        )
+        monkeypatch.setattr(
+            db_module.config_module, "load_config", lambda *a, **k: declared
+        )
+        db_module._load_config_cached.cache_clear()
+        return declared
+
+    return _declare
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +199,15 @@ def _multi_session(*sessions):
     return messages
 
 
-def _classified(messages, rr_intervals=None, valid_fraction=None):
+def _classified(
+    messages,
+    rr_intervals=None,
+    valid_fraction=None,
+    profile_names=None,
+    resting_capture_override=False,
+):
     """Map, then classify -- optionally with the ``rr_valid_fraction`` the
-    pipeline would have set.
+    pipeline would have set, and optionally with the athlete's declaration.
 
     ``pipeline.py`` assigns ``session.rr_valid_fraction`` between mapping
     and ``classify()``, so setting it here reproduces the real call order
@@ -166,33 +215,51 @@ def _classified(messages, rr_intervals=None, valid_fraction=None):
     attribute exactly as ``mapping.to_canonical`` left it, which is the
     state the four modules that never set it were already asserting
     against.
+
+    ``profile_names`` and ``resting_capture_override`` are T063's declaration
+    seam, forwarded **by keyword** exactly as ``pipeline.ingest_fit_bytes``
+    forwards them. They default to "no profile declares Tier 1, and this
+    upload claimed nothing", which is the posture every pre-declaration module
+    was already written against -- so the suites that never pass them keep
+    their existing meaning rather than acquiring a declaration by accident.
     """
     session, _records = mapping.to_canonical(messages)
     if valid_fraction is not None:
         session.rr_valid_fraction = valid_fraction
-    hrv_classification.classify(messages, session, rr_intervals or [])
+    hrv_classification.classify(
+        messages,
+        session,
+        rr_intervals or [],
+        profile_names=profile_names,
+        resting_capture_override=resting_capture_override,
+    )
     return session
 
 
-def _post_fit(client, filename: str):
+def _post_fit(client, filename: str, data=None):
     """POST one fixture to ``/sessions`` and return the raw response.
 
     For tests asserting on the *upload* outcome itself -- a 409 duplicate,
     a rejected capture -- where a helper that asserted 201 would swallow
     the very thing under test.
+
+    ``data`` carries any extra multipart form part -- ``{"resting_capture":
+    "true"}`` for T063's upload-time override. It is omitted from the request
+    entirely when ``None``, so the default upload is byte-for-byte the one
+    every pre-T063 test already sent.
     """
     raw = (FIXTURES / filename).read_bytes()
-    return client.post("/sessions", files={"file": (filename, raw)})
+    return client.post("/sessions", files={"file": (filename, raw)}, data=data)
 
 
-def _ingest(client, filename: str) -> dict:
+def _ingest(client, filename: str, data=None) -> dict:
     """Upload one fixture and return its canonical ``GET /sessions/{id}`` body.
 
     The round trip is the point: the tags and tiers these modules assert on
     are what E003 reads back out of the store, not what ``classify()`` left
     in memory.
     """
-    post = _post_fit(client, filename)
+    post = _post_fit(client, filename, data)
     assert post.status_code == 201, post.text
     detail = client.get(f"/sessions/{post.json()['session_id']}")
     assert detail.status_code == 200, detail.text
@@ -219,17 +286,18 @@ def multi_session():
 
 @pytest.fixture
 def classified():
-    """``classified(messages, rr_intervals=None, valid_fraction=None)``."""
+    """``classified(messages, rr_intervals=None, valid_fraction=None,
+    profile_names=None, resting_capture_override=False)``."""
     return _classified
 
 
 @pytest.fixture
 def ingest():
-    """``ingest(client, filename)`` -> canonical GET body."""
+    """``ingest(client, filename, data=None)`` -> canonical GET body."""
     return _ingest
 
 
 @pytest.fixture
 def post_fit():
-    """``post_fit(client, filename)`` -> raw POST response."""
+    """``post_fit(client, filename, data=None)`` -> raw POST response."""
     return _post_fit

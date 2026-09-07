@@ -14,12 +14,24 @@ from runcoach_cli import config
 from runcoach_cli.api_client import ApiUnreachableError, upload_fit
 
 
-def ingest(path: Path = typer.Argument(..., exists=True)) -> None:
+def ingest(
+    path: Path = typer.Argument(..., exists=True),
+    resting_capture: bool = typer.Option(
+        False,
+        "--resting-capture",
+        help=(
+            "Declare this file a resting-HRV capture, overriding the "
+            "resting_hrv_profile_names config for this upload only. For a "
+            "capture recorded on an activity profile that is not configured "
+            "-- a one-off, or a historical file."
+        ),
+    ),
+) -> None:
     """Upload the FIT file at PATH to the configured API's /sessions endpoint."""
     cfg = config.load_config()  # T008's guard -- exits before this point if config is missing
 
     try:
-        resp = upload_fit(cfg.api_url, path)
+        resp = upload_fit(cfg.api_url, path, resting_capture=resting_capture)
     except ApiUnreachableError:
         typer.echo(
             f"Error: could not reach API at {cfg.api_url}. "

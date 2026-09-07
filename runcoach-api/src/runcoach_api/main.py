@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -108,12 +108,31 @@ def health() -> HealthResponse:
 
 
 @app.post("/sessions", response_model=IngestResponse, status_code=201)
-def create_session(file: UploadFile = File(...)) -> IngestResponse:
+def create_session(
+    file: UploadFile = File(...),
+    resting_capture: bool = Form(False),
+) -> IngestResponse:
+    """Ingest one uploaded FIT file.
+
+    ``resting_capture`` is F004's upload-time Tier-1 declaration: the athlete
+    saying *this* file was a resting-HRV capture. It exists because the config
+    path cannot rescue a file already recorded on the wrong activity profile,
+    and adding a name to ``resting_hrv_profile_names`` reclassifies nothing
+    already stored.
+
+    Optional and defaulting to ``False``, so an upload that sends only the file
+    part -- every client that predates the amendment -- keeps working
+    unchanged. It is a real ``bool`` rather than a string the route
+    reinterprets, so ``"true"``/``"1"``/``"on"``/``"yes"`` and their negatives
+    are coerced by pydantic and anything else is a 422: the one input on this
+    path that carries nothing but the athlete's intent must never be guessed
+    at.
+    """
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"upload exceeds {MAX_UPLOAD_BYTES} byte limit")
     try:
-        result = ingest_fit_bytes(raw)
+        result = ingest_fit_bytes(raw, resting_capture_override=resting_capture)
     except NotAFitFileError as exc:
         raise HTTPException(400, f"not a valid FIT file: {exc}") from exc
     except FitParseFailure as exc:

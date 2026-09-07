@@ -97,6 +97,14 @@ KNOWN_CLASSIFICATION_INPUTS = frozenset(
         "avg_heart_rate",
         # the artefact-survival quality gate
         "rr_valid_fraction",
+        # T063 -- the Tier-1 *declaration* signal, off the provenance
+        # ``mapping.py`` lifts it into (T056). It decides whether a resting-HRV
+        # reading is produced at all, so it is an HRV **input** and belongs
+        # inside the disjointness invariant, not in ``HRV_NON_INPUT_READS``.
+        # Added here in the same commit as the ``HRV_INPUT_FIELDS`` entry and
+        # the read itself: this set and that one are reconciled in both
+        # directions, so the three edits are locked to each other.
+        "sport_profile_name",
     }
 )
 

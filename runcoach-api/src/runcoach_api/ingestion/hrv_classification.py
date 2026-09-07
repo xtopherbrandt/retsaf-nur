@@ -58,6 +58,7 @@ resting-shaped file that Tier 2 reads perfectly well.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import fitdecode
@@ -209,6 +210,14 @@ _PROVENANCE_MULTI_SESSION_UNCLASSIFIED = "hrv_multi_session_unclassified"
 #:   ``session.summary`` keys of the Tier-1 resting discriminator (reference
 #:   document §2).
 #: - ``rr_valid_fraction`` -- the artefact-survival quality gate (§5).
+#: - ``sport_profile_name`` -- the Tier-1 **declaration** signal (T063), read
+#:   from the provenance ``mapping.py`` lifts it into (T056), never re-parsed
+#:   and never read through ``has_field()``. It is an *input* rather than
+#:   plumbing because it decides whether a Tier-1 reading is produced at all,
+#:   which is exactly the property this set is defined over. It is deliberately
+#:   **not** in ``HRV_NON_INPUT_READS``: that set's own docstring calls itself
+#:   "not an escape hatch", and only membership here puts the name inside the
+#:   disjointness invariant.
 HRV_INPUT_FIELDS: frozenset[str] = frozenset(
     {
         "rmssd_hrv",
@@ -217,6 +226,7 @@ HRV_INPUT_FIELDS: frozenset[str] = frozenset(
         "distance_m",
         "avg_heart_rate",
         "rr_valid_fraction",
+        "sport_profile_name",
     }
 )
 
@@ -331,11 +341,27 @@ def classify(
     messages: list[fitdecode.FitDataMessage],
     session: Session,
     rr_intervals: list[RRInterval],
+    *,
+    profile_names: Sequence[str] | None = None,
+    resting_capture_override: bool = False,
 ) -> None:
     """Route one ingested file to a resting-HRV tier, or leave it alone.
 
     Mutates ``session`` in place and returns ``None`` -- the
     ``quality_gates.apply`` contract.
+
+    **The athlete's declaration arrives as parameters, never by importing
+    config** (T063, F004's stated implementation seam). ``profile_names`` is
+    the configured ``resting_hrv_profile_names`` list and
+    ``resting_capture_override`` is the per-upload flag; ``pipeline.py`` reads
+    the first from ``db._load_config_cached()`` and threads the second down
+    from ``POST /sessions``. Keeping the seam here is what lets the
+    ``test_resting_hrv_*`` suites drive this function directly, and it is why
+    this module has no config import to go stale.
+
+    Both are keyword-only and both default to "nothing is declared", so a
+    caller that predates the declaration keeps its exact previous meaning
+    rather than acquiring a route by accident.
 
     Must be called for **every** file, including ones with zero beats:
     a Garmin Health Snapshot is precisely a zero-beat file, so the whole
@@ -414,7 +440,13 @@ def classify(
         }
         return None
 
-    if _classify_tier_1(messages, session, rr_intervals):
+    if _classify_tier_1(
+        messages,
+        session,
+        rr_intervals,
+        profile_names=profile_names,
+        resting_capture_override=resting_capture_override,
+    ):
         return None
     _classify_tier_2(messages, session)
     _gate_a_beatless_resting_capture(session, rr_intervals)
@@ -814,10 +846,113 @@ def _gate_a_beatless_resting_capture(session: Session, rr_intervals: list[RRInte
     _apply_quality_gates(session, duration_s, rr_intervals)
 
 
+def _declared(
+    session: Session,
+    profile_names: Sequence[str] | None,
+    resting_capture_override: bool,
+) -> bool:
+    """Whether the athlete declared this file a resting capture (T063).
+
+    F004's 2026-09-06 amendment, stated as a **disjunction** in the feature
+    file's normative block::
+
+        declared = session.sport_profile_name is in config
+                       `resting_hrv_profile_names`
+                   OR the upload carried an explicit resting-capture override
+
+    **The empty list is not a kill switch.** ``resting_hrv_profile_names = []``
+    is the athlete saying "no activity profile means a resting capture" -- an
+    explicit Tier-2-only declaration -- and it says nothing at all about a
+    per-upload override, which is a separate, deliberate act of intent about
+    one specific file. So an empty list *plus* an override still declares
+    (resolution **R3**; T058 Finding 6, the row no scenario covered and the one
+    a reader of the Decision Log's prose would get backwards).
+
+    **Matching is exact and case-sensitive, and that is forced by a real
+    collision rather than a hypothetical one.** The corpus holds the athlete's
+    own ``'HRV Snapshot'`` and Garmin's built-in ``'Health Snapshot'``, and both
+    contain "Snapshot": a substring match would send a Health Snapshot down the
+    Tier-1 branch, reaching the §2.2.3/§2.4.5 anti-mixing prohibition by way of
+    a config convenience. No trimming and no case folding either -- "case
+    insensitive and trimmed" was the rejected option, and the usual objection
+    (a typo fails silently) is answered by T064's provenance note rather than
+    by loosening the comparison. ``'Health Snapshot'`` must never be offered as
+    a config value: it already routes via Tier 2's numeric ``sport == 60``
+    identity, and listing it would give one file two routes into one decision.
+
+    **A profile name that is not a ``str`` is undeclared, never a veto**
+    (T058 Finding 12). ``fitdecode`` returns an ``int`` where it cannot resolve
+    an enum, so a non-``str`` value off the ``session`` message is not
+    hypothetical -- but the reading convention's veto is scoped to the three
+    *intensity* signals, because a veto says the file's data is corrupt. A
+    corrupt *identity* field says only that the athlete did not declare, which
+    is the conservative answer and the one the exact match already gives. The
+    ``isinstance`` guard states that rather than leaving it to fall out of
+    ``in``, so a later reader does not have to re-derive why it is safe.
+
+    **Read through ``context.provenance``, never ``has_field()``** -- the same
+    discipline resolution R1 imposes on ``session.summary``. ``mapping.py``
+    lifts the field once (T056) and omits the key entirely when the file
+    carried nothing, so ``.get`` answering ``None`` *is* "the file claimed no
+    profile", which matches nothing. The key is a string **literal** on
+    purpose: ``test_hrv_quarantine_boundary`` recovers this module's field
+    reads from its AST and cannot resolve a computed key, and one unresolvable
+    key blinds the entire ``HRV_INPUT_FIELDS`` reconciliation.
+    """
+    if resting_capture_override:
+        return True
+
+    sport_profile_name = _provenance(session).get("sport_profile_name")
+    if not isinstance(sport_profile_name, str):
+        return False
+
+    return sport_profile_name in (profile_names or ())
+
+
+def _inference_authorises_tier_1(
+    rr_intervals: list[RRInterval], duration_s: float | None
+) -> bool:
+    """The **pre-amendment** Tier-1 predicate, demoted but not yet removed.
+
+    Ratified 2026-09-05 and fixed against ``strap_hrv_sample_run.fit``::
+
+        tier1 := rr_intervals is non-empty
+             AND _resting_profile_duration(session) is not None
+
+    stated here verbatim, over the two values ``_classify_tier_1`` has already
+    computed. **T069 deletes this function and its call site**, which is the
+    change that actually closes ``IDEA-010``; T063 only adds the declaration
+    beside it, so that every commit in between is green and any red is a
+    genuine regression.
+
+    **It is honest about being currently shadowed, and that is worth stating
+    rather than hiding.** The amendment's veto set (V1..V4) and this predicate
+    are *the same rules* -- the vetoes are exactly what
+    ``_resting_profile_duration`` answers ``None`` for -- so at the call site
+    below both terms are already known true and
+
+        (declared OR inferred) AND NOT vetoed  ==  NOT vetoed
+
+    There is therefore **no input** the declaration arm routes and this arm
+    refuses, and no fixture can prove the declaration load-bearing while both
+    exist. It is proved by perturbation instead:
+    ``test_resting_hrv_declaration.py`` stubs this function out and watches a
+    declared capture still route and an undeclared one stop. Naming the arm is
+    what makes that possible; leaving it as an implicit fall-through would make
+    the declaration untestable until T069, which is precisely the "the fallback
+    becomes the branch tests do not take" failure this amendment exists to
+    reject.
+    """
+    return bool(rr_intervals) and duration_s is not None
+
+
 def _classify_tier_1(
     messages: list[fitdecode.FitDataMessage],
     session: Session,
     rr_intervals: list[RRInterval],
+    *,
+    profile_names: Sequence[str] | None = None,
+    resting_capture_override: bool = False,
 ) -> bool:
     """The chest-strap resting capture (F004 reference document §2).
 
@@ -828,11 +963,39 @@ def _classify_tier_1(
     left unused. It takes ``messages`` for that reason alone: to see the
     device value it is about to ignore, so it can record it (T045).
 
-    The predicate, ratified 2026-09-05 and fixed against
-    ``strap_hrv_sample_run.fit``::
+    The predicate, as amended 2026-09-06 and implemented additively by T063::
 
-        tier1 := rr_intervals is non-empty
-             AND _resting_profile_duration(session) is not None
+        tier1 := rr_intervals is non-empty                    # beats
+             AND _resting_profile_duration(session) is not None   # the vetoes
+             AND (_declared(...) OR _inference_authorises_tier_1(...))
+
+    **Two orderings are normative, and only one of them is obvious.**
+
+    *Beats before declaration.* ``classify()`` returns early when this branch
+    claims a file, so a declared-but-beatless file that "claimed" Tier 1 would
+    never reach Tier 2. That is reachable the moment ``'Health Snapshot'`` is
+    listed in config -- real snapshots carry **zero** ``hrv`` messages, and
+    ``sample_health_snapshot.fit`` carries that exact profile name -- and it
+    would route a perfectly valid snapshot **nowhere**. The order used to hold
+    by accident of statement order; it is a stated contract now, with a
+    scenario behind it.
+
+    *Vetoes before the declaration decides refusal.* ``beats AND declared AND
+    NOT vetoed`` reads naturally as beats -> declared -> vetoed, under which an
+    **undeclared** file never reaches the veto evaluation at all. T064's
+    provenance note needs the opposite: it fires only for a file that has beats
+    and passes every veto but is not declared, so it must be able to tell
+    ``strap_hrv_sample_run.fit`` (clean, undeclared -> note) from
+    ``strap_run_hrv.fit`` (6000 s, 140 bpm -> no note). Evaluating
+    beats -> vetoes -> declaration is what lets T064 read the answer already
+    computed here instead of calling ``_resting_profile_duration`` a second
+    time -- and a duplicated predicate is exactly the drift the note below
+    records having already happened once in this function.
+
+    **Both declaration routes are subject to every veto.** The override is a
+    claim about *intent*, never about the data: it cannot rescue a 6000 s file
+    or a 140 bpm one. It is otherwise the branch tests do not take, which is
+    precisely how the zero-distance bug survived six waves.
 
     The duration/intensity half lives on
     ``_resting_profile_duration`` and is documented there, once. It used to be
@@ -886,11 +1049,27 @@ def _classify_tier_1(
     variability, which is why the test is ``is None`` and never
     falsiness.
     """
+    # 1. Beats, first and normatively so -- see the docstring. A beatless file
+    #    must fall through to Tier 2 rather than be claimed and answered here.
     if not rr_intervals:
         return False
 
+    # 2. The vetoes, before the declaration is consulted: a file that
+    #    contradicts its own declaration is refused whichever route declared
+    #    it, and T064 needs this answer computed once, here.
     duration_s = _resting_profile_duration(session)
     if duration_s is None:
+        return False
+
+    # 3. The declaration -- the athlete saying this file was *meant* as a
+    #    measurement. ``OR``-ed with the pre-amendment inference arm, which
+    #    T069 removes; until then this is additive and nothing that routed
+    #    before stops routing. See ``_inference_authorises_tier_1`` for why the
+    #    demoted arm is a named function rather than an implicit fall-through.
+    if not (
+        _declared(session, profile_names, resting_capture_override)
+        or _inference_authorises_tier_1(rr_intervals, duration_s)
+    ):
         return False
 
     # T045. The file is a Tier-1 capture, so this branch has claimed it and
@@ -979,9 +1158,16 @@ def _classify_tier_2(messages: list[fitdecode.FitDataMessage], session: Session)
     the messages. A named sport (``"running"``) leaves the key absent,
     which is correctly *not* 60.
 
-    The string ``"Health Snapshot"`` in ``sport.name`` /
-    ``sport_profile_name`` is deliberately never matched on: it is free
-    text and locale-dependent (reference document §1).
+    **Tier 2 never matches on a name**, and that is now a statement about
+    *this branch* rather than about the module (corrected 2026-09-06, T063).
+    ``"Health Snapshot"`` in ``sport.name`` or ``sport_profile_name`` is free
+    text and locale-dependent, so it would be wrong on any non-English watch
+    where the numeric ``sport == 60`` identity is not (reference document §1).
+    Tier **1** does match ``sport_profile_name``, against the athlete's own
+    configured list -- see ``_declared`` -- and the two facts are consistent
+    rather than in tension: it is exactly because ``'Health Snapshot'`` already
+    has a numeric route here that it must never be listed as a Tier-1 profile
+    name, which would give one file two routes into the same decision.
 
     **There is deliberately no duration bound here, and its absence is a
     decision rather than an oversight.** Tier 1 caps a capture at 300 s,

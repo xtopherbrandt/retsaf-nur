@@ -92,3 +92,41 @@ def test_ingest_missing_path_exits_nonzero(tmp_path) -> None:
     result = runner.invoke(app, ["ingest", str(missing_path)])
 
     assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# T063 -- --resting-capture, the upload-time declaration
+# ---------------------------------------------------------------------------
+
+
+def _capture_request_content(install_mock_client) -> list[bytes]:
+    captured: list[bytes] = []
+
+    def created_handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(201, json={"session_id": "abc-123", "quality_flags": []})
+
+    install_mock_client(created_handler)
+    return captured
+
+
+def test_resting_capture_flag_reaches_the_upload(install_mock_client, fit_file) -> None:
+    # The one-off and historical-file path: a capture recorded on an activity
+    # profile that is not in ``resting_hrv_profile_names`` cannot be rescued by
+    # editing config, because config reclassifies nothing already stored.
+    captured = _capture_request_content(install_mock_client)
+
+    result = runner.invoke(app, ["ingest", str(fit_file), "--resting-capture"])
+
+    assert result.exit_code == 0
+    assert b'name="resting_capture"' in captured[0]
+    assert b"true" in captured[0]
+
+
+def test_the_flag_is_off_unless_asked_for(install_mock_client, fit_file) -> None:
+    captured = _capture_request_content(install_mock_client)
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0
+    assert b"false" in captured[0]

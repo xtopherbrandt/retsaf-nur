@@ -29,7 +29,16 @@ class IngestResult:
     quality_flags: list[str]
 
 
-def ingest_fit_bytes(raw: bytes) -> IngestResult:
+def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> IngestResult:
+    """Ingest one FIT file's bytes and persist the session it describes.
+
+    ``resting_capture_override`` is F004's upload-time Tier-1 declaration --
+    the athlete saying *this* file was a resting capture, for a file recorded
+    on an activity profile the config does not name. It is threaded down from
+    ``POST /sessions``'s form field and defaults to ``False``, so the CLI
+    ingest path, a batch import and F004's own acceptance probe all keep their
+    existing meaning.
+    """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
     # rr_reconstruction runs before quality_gates.apply() so the
@@ -49,7 +58,21 @@ def ingest_fit_bytes(raw: bytes) -> IngestResult:
     # not a reason to skip it. Pinned by
     # tests/test_hrv_pipeline_wiring.py. Runs before quality_gates.apply
     # so any flag it raises is already on the session when apply() runs.
-    hrv_classification.classify(messages, session, rr_intervals)
+    #
+    # The athlete's Tier-1 declaration is handed over as explicit keyword
+    # arguments (F004's stated seam, T063): `hrv_classification` must not
+    # import config, which is what keeps the `test_resting_hrv_*` suites able
+    # to drive `classify()` directly. `_load_config_cached` is
+    # `lru_cache(maxsize=1)`, so editing `api.toml` needs a server restart to
+    # take effect -- documented in F004's amendment as the athlete workflow,
+    # not a defect of this call site.
+    hrv_classification.classify(
+        messages,
+        session,
+        rr_intervals,
+        profile_names=db._load_config_cached().resting_hrv_profile_names,
+        resting_capture_override=resting_capture_override,
+    )
     quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
