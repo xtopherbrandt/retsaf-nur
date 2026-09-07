@@ -10,7 +10,10 @@ members = ["runcoach-api", "runcoach-cli"]
 package = false
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
 
 [tool.pytest.ini_options]
 # Workspace members have same-named test modules (e.g. both runcoach-api/
@@ -20,3 +23,13 @@ dev = ["pytest>=8"]
 # mode imports each test file by its own path instead of a shared module
 # namespace, which is the standard fix for this exact multi-package layout.
 addopts = "--import-mode=importlib"
+
+[tool.ruff]
+# T070: declare-only. This repo writes long prose docstrings
+# (hrv_classification.py is ~70% docstring), so line-length is set above
+# ruff's 88-char default to match the existing corpus (longest line today
+# is 108 chars) rather than flagging it. Lint selection is left at ruff's
+# default rule set on purpose -- first run should be informative, not
+# punitive. Do not add `ruff format` or narrow/widen the rule set here;
+# that's a separate, reviewed decision.
+line-length = 110
