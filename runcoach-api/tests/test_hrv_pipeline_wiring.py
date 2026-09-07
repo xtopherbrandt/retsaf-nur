@@ -341,7 +341,7 @@ def test_new_columns_are_added_to_a_preexisting_database() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T055: the resolved column, added with no writer
+# T055/T065: the resolved column, and the writer that gave it meaning
 # ---------------------------------------------------------------------------
 
 
@@ -411,10 +411,14 @@ def test_a_real_resting_rmssd_ms_round_trips_as_a_json_number_equal_to_37() -> N
 
     F004's demo probe asserts ``.resting_rmssd_ms == 37`` with ``jq -e`` on a
     ``REAL`` column, so the stored float must reach the HTTP body as a JSON
-    number that compares equal to the integer literal. No writer exists yet,
-    so the value is persisted directly through ``db.persist`` -- the same
-    ``_insert_session`` path T065 will drive -- and read back over the real
-    ``GET /sessions/{id}`` route.
+    number that compares equal to the integer literal. The value is persisted
+    directly through ``db.persist`` -- deliberately isolating the
+    storage/serialisation seam from the classifier -- and read back over the real
+    ``GET /sessions/{id}`` route. T065 is the writer, and it reaches the column
+    through this same ``_insert_session`` path; driving the pipeline here would
+    make a REAL-affinity round-trip failure indistinguishable from a
+    classification failure, so the number is placed by hand and only the seam
+    under test is exercised. The sibling test above covers the writer.
     """
     import json
 

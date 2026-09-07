@@ -275,6 +275,12 @@ SNAPSHOT_FIXTURE = "sample_health_snapshot.fit"
 SNAPSHOT_PROFILE = "Health Snapshot"
 SNAPSHOT_DEVICE_RMSSD = 37
 
+# The Tier-2 identity signal, spelled here as ``conftest``'s ``SNAPSHOT_SPORT``
+# is, so the synthetic beatless row below can be given somewhere to fall
+# *through to*. A refusal that lands nowhere and a refusal that hands the file
+# to Tier 2 are indistinguishable on a ``running`` synthetic.
+SNAPSHOT_SPORT = 60
+
 # A clean declared synthetic's profile, matching the real fixture's numbers so a
 # synthetic row and the real file cannot drift apart.
 CLEAN_CAPTURE = {
@@ -747,9 +753,43 @@ def test_an_override_on_a_beatless_snapshot_still_routes_tier_2(
 def test_a_declared_file_with_no_beats_is_not_claimed_by_tier_1(
     declaration, synthetic, classified
 ) -> None:
-    session = classified(synthetic(**CLEAN_CAPTURE), rr_intervals=[], **declaration)
+    """A5-A8: **beats before declaration.** A declared, veto-clean file carrying
+    no beats must not be *claimed* by Tier 1 -- it must fall through, on both
+    declaration routes.
 
+    ``_classify_tier_1`` is the only refusal standing between this input and a
+    Tier-1 route: ``CLEAN_CAPTURE`` passes every veto and ``declaration``
+    satisfies the authoriser, so the beats gate is the single mechanism under
+    test (``contract-tables-need-an-independent-oracle``: a fixture refused by
+    more than one rule pins none of them).
+
+    **The fall-through is asserted, not the absence of a route**, and that
+    distinction is the whole point. ``_routed`` reads ``hrv_source_tier``, which
+    a *claimed* beatless file leaves null anyway -- it is tagged
+    ``resting_hrv_check`` by T075's hoist, answered ``hrv_capture_no_beats``, and
+    ``classify()`` short-circuits before Tier 2. So ``not _routed(session)``
+    holds identically whether Tier 1 refused the file or claimed and failed it,
+    and cannot fail against the rule this test's name states. The row is
+    therefore given somewhere to land: ``sport`` 60 plus a device ``rmssd_hrv``
+    make it a Tier-2 reading, so "Tier 1 did not claim it" becomes the observable
+    "Tier 2 answered it". Delete the beats guard from ``_classify_tier_1`` and
+    every assertion below goes red.
+    """
+    session = classified(
+        synthetic(SNAPSHOT_SPORT, rmssd_hrv=SNAPSHOT_DEVICE_RMSSD, **CLEAN_CAPTURE),
+        rr_intervals=[],
+        **declaration,
+    )
+
+    # Tier 1 did not claim it: the file reached Tier 2 and was answered there.
+    assert session.activity_tag == "health_snapshot"
+    assert session.hrv_source_tier == "health_snapshot"
+    assert session.rr_source == "health_snapshot_ppg"
+    assert session.rmssd_precomputed == SNAPSHOT_DEVICE_RMSSD
+    assert session.resting_rmssd_ms == SNAPSHOT_DEVICE_RMSSD
+    # ...and it carries none of the marks a Tier-1 claim would have left.
     assert not _routed(session)
+    assert "hrv_capture_no_beats" not in (session.quality_flags or [])
 
 
 def test_the_beats_gate_is_evaluated_before_the_declaration_in_source_order() -> None:

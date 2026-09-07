@@ -5,9 +5,12 @@ Tier-1 route any more. The three profile rules ratified 2026-09-05 keep their
 exact thresholds and citations and have lost their vote: they can only *veto*.
 What routes is the athlete's own declaration::
 
-    tier1 := rr_intervals is non-empty                            # beats, FIRST
+    tier1 := beats present                                        # R4, FIRST
          AND no veto fires                                        # the demoted rules
          AND declared                                             # the only authoriser
+
+    beats present := rr_intervals is non-empty
+                  OR an ``hrv`` (#78) message is present          # R4 (T066)
 
     declared := session.sport_profile_name is in the configured
                     ``resting_hrv_profile_names``
@@ -18,6 +21,13 @@ What routes is the athlete's own declaration::
             OR NOT (duration_s present AND 0 < duration_s <= 300)
             OR NOT (avg_heart_rate present AND avg_heart_rate <= 100)
             OR (distance_m present AND distance_m / duration_s > 1.0)
+
+**The beats gate reads the messages, not the reconstructed stream** -- resolution
+**R4**, landed by T066. A declared file whose ``hrv`` messages all reconstruct to
+**zero** beats therefore *claims* Tier 1 and is answered by
+``hrv_capture_no_beats``; it does not fall through to Tier 2. See
+``_hrv_messages_present`` for the full argument and for R4's revisit condition,
+and ``_classify_tier_1`` for why "beats present" is still evaluated first.
 
 **A capture the athlete never declared does not route, however restful it looks.**
 That is the observable consequence of T069 and the reason this module was
