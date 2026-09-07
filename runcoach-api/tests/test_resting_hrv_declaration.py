@@ -773,7 +773,9 @@ def test_a_declared_file_with_no_beats_is_not_claimed_by_tier_1(
     therefore given somewhere to land: ``sport`` 60 plus a device ``rmssd_hrv``
     make it a Tier-2 reading, so "Tier 1 did not claim it" becomes the observable
     "Tier 2 answered it". Delete the beats guard from ``_classify_tier_1`` and
-    every assertion below goes red.
+    the five Tier-2 assertions and the ``hrv_capture_no_beats`` assertion go red.
+    ``not _routed`` deliberately does not, for the reason given above -- which is
+    exactly why it is no longer the pin, and is kept only as a corroborating mark.
     """
     session = classified(
         synthetic(SNAPSHOT_SPORT, rmssd_hrv=SNAPSHOT_DEVICE_RMSSD, **CLEAN_CAPTURE),
