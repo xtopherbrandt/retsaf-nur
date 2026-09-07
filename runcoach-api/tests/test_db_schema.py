@@ -482,3 +482,313 @@ def test_a_t017_era_database_also_gains_resting_rmssd_ms():
         conn.close()
 
     assert "resting_rmssd_ms" in cols
+
+
+# ---------------------------------------------------------------------------
+# T076 -- the published amendment-window predicate, pinned in both directions.
+# ---------------------------------------------------------------------------
+
+# The predicate F004's Data Model and the CHANGELOG's "No backfill" paragraph
+# publish for E003, spelled here exactly as it is published so the prose and the
+# pin cannot drift apart. Two terms, and T076 confirmed empirically that a third
+# is not needed -- see the test below.
+WINDOW_PREDICATE = "hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL"
+
+# Every way a **post-amendment** row can be a resting-HRV capture the system
+# recognised and yet carry no reading. This is the negative class of the
+# published predicate: each row must NOT be selected by it.
+#
+# Oracle provenance, stated because it changes the rows' evidential weight
+# (`.claude/rules/learnings/contract-tables-need-an-independent-oracle.md`):
+# the rows were enumerated from **F004's own "A capture failing a quality gate
+# yields no reading" Scenario Outline plus its two amendment scenarios**
+# (computed zero; declared-but-beatless), which is the spec's own enumeration of
+# "recognised, but no reading" -- not from reading the classifier's branches.
+# They were then reconciled against ``hrv_classification.py``, and two cases the
+# outline does not name were added from that reconciliation and are marked as
+# such: the *override* route to beatlessness, and the Tier-2 unparseable
+# ``rmssd_hrv``. The vetoed and undeclared rows are controls -- they are not
+# recognised captures at all, so a predicate that selected one would be wrong
+# for a different reason than the ones above.
+#
+# Each entry is (name, expected quality flag or None, expected activity_tag).
+_POST_AMENDMENT_NON_READINGS = (
+    # -- F004's Scenario Outline, Tier 1 ------------------------------------
+    ("tier1_declared_too_short", "hrv_capture_too_short", "resting_hrv_check"),
+    ("tier1_declared_low_quality", "hrv_capture_low_quality", "resting_hrv_check"),
+    ("tier1_declared_beatless", "hrv_capture_no_beats", "resting_hrv_check"),
+    ("tier1_declared_hrv_msgs_zero_beats", "hrv_capture_no_beats", "resting_hrv_check"),
+    ("tier1_declared_computed_zero", "hrv_reading_unavailable", "resting_hrv_check"),
+    ("tier1_declared_no_derivable_pair", "hrv_reading_unavailable", "resting_hrv_check"),
+    # -- reconciliation addition: the *other* declaration route -------------
+    ("tier1_override_beatless", "hrv_capture_no_beats", "resting_hrv_check"),
+    # -- F004's Scenario Outline, Tier 2 ------------------------------------
+    ("tier2_device_value_absent", "hrv_reading_unavailable", "health_snapshot"),
+    ("tier2_device_value_zero", "hrv_reading_unavailable", "health_snapshot"),
+    ("tier2_device_value_negative", "hrv_reading_unavailable", "health_snapshot"),
+    # -- reconciliation addition: "the Tier-2 coercion keeps its own meaning"
+    ("tier2_device_value_unparseable", "hrv_reading_unavailable", "health_snapshot"),
+    # -- controls: never recognised as a capture, so never tagged or flagged
+    ("undeclared_capture", None, None),
+    ("declared_but_vetoed_duration", None, None),
+    ("declared_but_vetoed_heart_rate", None, None),
+)
+
+
+def test_the_published_window_predicate_selects_the_window_and_nothing_else(
+    synthetic, classified
+):
+    """T076. The two-sided pin on the predicate F004 and the CHANGELOG publish.
+
+        SELECT session_id FROM sessions
+         WHERE hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL
+
+    T077 established the **positive** half -- that state is reachable on an
+    upgraded database. Publishing the query as *the* window-exclusion predicate
+    makes a second and much stronger claim that nothing had checked: that it
+    selects **only** the window. E003 is told to exclude what this matches, so a
+    legitimate post-amendment row inside it would be a real reading silently
+    deleted from the readiness trend -- the same class of silent error the whole
+    amendment exists to remove, pointed the other way.
+
+    Both directions are therefore established here against **constructed rows**,
+    not against a reading of the code:
+
+    *Positive.* Two pre-amendment reading rows -- one of each tier -- are
+    inserted into a pre-amendment ``sessions`` table and the database is then
+    upgraded by ``init_schema``. Both are selected.
+
+    *Negative.* Every post-amendment way a recognised capture can end with no
+    reading is driven through the **real** ``mapping.to_canonical`` ->
+    ``hrv_classification.classify`` pair and persisted through the real
+    ``db.persist``, so it is the actual writers under test rather than a model
+    of them. See ``_POST_AMENDMENT_NON_READINGS`` for the enumeration and where
+    it came from. **None is selected**, and the reason is structural: both tiers
+    write ``hrv_source_tier`` and ``resting_rmssd_ms`` at the same single
+    success point, past every gate, so a post-amendment row cannot hold one
+    without the other.
+
+    **The conclusion, which is the deliverable: a third term is not needed.**
+    Each candidate was checked and refused. ``activity_tag IS NOT NULL``
+    excludes nothing the tier term does not -- a gated post-amendment capture
+    is tagged too, as the table below asserts row by row.
+    ``quality_flags = '[]'`` is actively wrong: ``quality_gates.apply`` runs
+    *after* ``classify()`` and appends ``smart_recording`` / ``gps_degraded``
+    / ``cadence_lock`` to any session, so a good pre-amendment reading recorded
+    under smart recording would fall out of the window and its inference-era
+    verdict would reach E003 unexcluded. A bound on
+    ``json_extract(context, '$.ingested_at')`` does work, but it needs a
+    per-install release timestamp and reads a JSON blob rather than a column,
+    where the tier/reading pair separates the two eras structurally.
+
+    The rows are asserted afterwards to be genuinely gated -- tagged, flagged,
+    tier null -- so this cannot pass by having constructed nothing, the failure
+    mode ``contract-tables-need-an-independent-oracle`` warns about.
+
+    **Perturbation evidence** (delete the rule, watch the row go red), run at
+    T076 and both times against the headline assertion rather than the guards:
+
+    * Write ``hrv_source_tier`` on Tier 2's row-3 branch (absent / non-positive
+      device value) and four constructed rows join the window.
+    * Write ``hrv_source_tier`` before Tier 1's ``computed <= 0`` gate and the
+      computed-zero row joins it.
+
+    Neither perturbation reddens any other test in the ``db_schema`` selection,
+    so this is the pin carrying that evidence and not a borrowed one.
+    """
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from runcoach_api.models import RRInterval
+
+    declared_profile = "HRV Snapshot"
+    snapshot_sport = 60
+    base = datetime(2026, 3, 1, tzinfo=UTC)
+
+    def flat(rr_ms, n):
+        """Beats whose successive differences are all exactly zero (or, with
+        ``rr_ms`` ``None``, a stream from which no pair can contribute)."""
+        return [
+            RRInterval(seq=i, rr_ms=rr_ms, rr_source="chest_strap_ecg", is_artefact=False)
+            for i in range(n)
+        ]
+
+    def varied(n=6):
+        """A beat stream yielding a strictly positive rMSSD."""
+        values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
+        return [
+            RRInterval(
+                seq=i,
+                rr_ms=values[i % len(values)],
+                rr_source="chest_strap_ecg",
+                is_artefact=False,
+            )
+            for i in range(n)
+        ]
+
+    class _HrvMsg:
+        """One ``hrv`` message whose beat array reconstructs to nothing -- R4's
+        "beats present, zero beats reconstructed" state, which no corpus file
+        occupies and which claims Tier 1 rather than falling through."""
+
+        name = "hrv"
+
+        def __init__(self) -> None:
+            self.fields: list = []
+
+        def get_value(self, name, fallback=None):
+            return [None] if name == "time" else fallback
+
+    def resting(n, **extra):
+        values = {
+            "total_timer_time": 150.0,
+            "avg_heart_rate": 60,
+            "sport_profile_name": declared_profile,
+            "start_time": base + timedelta(minutes=n),
+        }
+        values.update(extra)
+        return synthetic(**values)
+
+    def snapshot(n, **extra):
+        return synthetic(
+            sport=snapshot_sport, start_time=base + timedelta(minutes=n), **extra
+        )
+
+    declared = [declared_profile]
+
+    # Built in the same order as ``_POST_AMENDMENT_NON_READINGS``.
+    non_readings = [
+        classified(resting(1, total_timer_time=100.0), varied(), 1.0, declared),
+        classified(resting(2), varied(), 0.5, declared),
+        classified(resting(3), [], None, declared),
+        classified(resting(4) + [_HrvMsg()], [], None, declared),
+        classified(resting(5), flat(1000.0, 6), 1.0, declared),
+        classified(resting(6), flat(None, 2), 1.0, declared),
+        classified(
+            synthetic(
+                total_timer_time=150.0,
+                avg_heart_rate=60,
+                start_time=base + timedelta(minutes=7),
+            ),
+            [],
+            None,
+            [],
+            True,
+        ),
+        classified(snapshot(8)),
+        classified(snapshot(9, rmssd_hrv=0)),
+        classified(snapshot(10, rmssd_hrv=-5)),
+        classified(snapshot(11, rmssd_hrv=("crafted",))),
+        classified(resting(12, sport_profile_name="Run"), varied(), 1.0, declared),
+        classified(resting(13, total_timer_time=6000.0), varied(), 1.0, declared),
+        classified(resting(14, avg_heart_rate=140), varied(), 1.0, declared),
+    ]
+
+    # The two post-amendment **successes**, which satisfy the scoped invariant
+    # and must equally not be selected -- for the opposite reason.
+    successes = [
+        classified(resting(20), varied(), 1.0, declared),
+        classified(snapshot(21, rmssd_hrv=37)),
+    ]
+
+    assert len(non_readings) == len(_POST_AMENDMENT_NON_READINGS)
+
+    pre_amendment_context = json.dumps(
+        {
+            "ingested_at": "2026-09-05T06:12:00+00:00",
+            "provenance": {"computed_resting_rmssd_ms": 41.52},
+        }
+    )
+
+    conn = db.get_connection()
+    try:
+        conn.executescript(_PRE_AMENDMENT_SESSIONS_DDL)
+        for session_id, start, tag, tier, rr_source, precomputed in (
+            (
+                "pre-tier1",
+                "2026-09-05T06:10:00+00:00",
+                "resting_hrv_check",
+                "chest_strap_raw",
+                "chest_strap_ecg",
+                None,
+            ),
+            (
+                "pre-tier2",
+                "2026-09-05T06:40:00+00:00",
+                "health_snapshot",
+                "health_snapshot",
+                "health_snapshot_ppg",
+                37,
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO sessions (
+                    session_id, start_time, sport, activity_tag, source_vendor,
+                    source_device, rr_valid_fraction, quality_flags, summary,
+                    context, rmssd_precomputed, hrv_source_tier, rr_source
+                ) VALUES (?, ?, 'running', ?, 'garmin', 'FR945-LTE', 1.0, '[]',
+                          '{"duration_s": 150.797}', ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    start,
+                    tag,
+                    pre_amendment_context,
+                    precomputed,
+                    tier,
+                    rr_source,
+                ),
+            )
+        conn.commit()
+
+        # The upgrade the amendment performs on a real install.
+        db.init_schema(conn)
+
+        for session in non_readings + successes:
+            db.persist(conn, session, [], [], {})
+
+        selected = {
+            row["session_id"]
+            for row in conn.execute(
+                f"SELECT session_id FROM sessions WHERE {WINDOW_PREDICATE}"
+            )
+        }
+        stored = {
+            row["session_id"]: row
+            for row in conn.execute(
+                "SELECT session_id, hrv_source_tier, resting_rmssd_ms, activity_tag,"
+                " quality_flags FROM sessions"
+            )
+        }
+    finally:
+        conn.close()
+
+    # --- direction 1: it selects the window --------------------------------
+    assert {"pre-tier1", "pre-tier2"} <= selected, (
+        "the published predicate must select every pre-amendment reading row, "
+        "on either tier -- that is the window E003 is told to exclude"
+    )
+
+    # --- direction 2: it selects nothing else ------------------------------
+    assert selected == {"pre-tier1", "pre-tier2"}, (
+        "the published predicate selected a post-amendment row. E003 is told to "
+        "exclude everything this matches, so a legitimate row inside it is a "
+        "real reading silently deleted from the readiness trend. Unexpected: "
+        f"{sorted(selected - {'pre-tier1', 'pre-tier2'})}"
+    )
+
+    # --- the constructed rows are genuinely what the table claims ----------
+    # Without this the negative half could pass by having built nothing.
+    for session, (name, flag, tag) in zip(non_readings, _POST_AMENDMENT_NON_READINGS):
+        row = stored[session.session_id]
+        assert row["activity_tag"] == tag, name
+        flags = json.loads(row["quality_flags"])
+        assert flags == ([flag] if flag else []), f"{name}: {flags}"
+        assert row["hrv_source_tier"] is None, name
+        assert row["resting_rmssd_ms"] is None, name
+
+    for session in successes:
+        row = stored[session.session_id]
+        assert row["hrv_source_tier"] is not None
+        assert row["resting_rmssd_ms"] > 0

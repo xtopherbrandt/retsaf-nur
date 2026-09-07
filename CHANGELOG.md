@@ -5,9 +5,12 @@
 F004's **Amendment 2026-09-06**. Tier 1 stops inferring that a recording was *meant* as a
 measurement and requires the athlete to say so. This supersedes the sprint-003 "Known limitation"
 below — **IDEA-010** and **IDEA-007** are resolved, and the hold it placed on the next epic
-(*"E003 should not consume `activity_tag` or the HRV tiers until it is resolved"*) is lifted. F004
-itself remains `in-progress`: the capture contract is now settled and E003-ready, but the feature's
-own status is not promoted by this release.
+(*"E003 should not consume `activity_tag` or the HRV tiers until it is resolved"*) is lifted **for
+rows written from this release onward, and only for those**. The amendment resolved the *rule*;
+nothing rewrote the *rows*. See *No backfill* below for the predicate that identifies the
+pre-amendment window and what E003 must do about it. F004 itself remains `in-progress`: the capture
+contract is now settled and E003-ready, but the feature's own status is not promoted by this
+release.
 
 ### Migration required
 
@@ -60,6 +63,50 @@ names nothing to write.
 **No backfill.** Pre-amendment `resting_hrv_check` rows keep `resting_rmssd_ms` null — the computed
 value for those rows lives only in `context.provenance.computed_resting_rmssd_ms`. Recovery is
 re-ingestion under the declaration rule (see `DELETE /sessions/{id}` below).
+
+**The pre-amendment window, and the query that identifies it.** Nothing rewrote those rows, so an
+upgraded database carries readings produced by the inference predicate this amendment exists to
+discredit, sitting beside readings produced by the declaration rule with nothing in the data to
+tell them apart — except this:
+
+```sql
+SELECT * FROM sessions
+ WHERE hrv_source_tier IS NOT NULL
+   AND resting_rmssd_ms IS NULL     -- no post-amendment writer ran on this row
+```
+
+**E003 must exclude this window rather than inherit it.** Every row it returns predates the
+amendment: its `hrv_source_tier` is an inference-era verdict, and on Tier 1 its `activity_tag` is
+too. They are not remediable — `mapping.py` has never persisted `sport_profile_name`, so no stored
+row carries the field the declaration rule needs — so exclusion is the disposition, not repair. The
+window empties only as the athlete re-ingests the original files.
+
+**Two terms, and the second one is the whole predicate.** It was confirmed in both directions
+against a constructed database rather than taken on faith, and the negative direction is the one
+that mattered: *every* post-amendment way a recognised capture can end with no reading — both
+declaration routes, all three quality gates, a computed rMSSD of zero, no derivable pair, and each
+Tier-2 device-value failure — was driven through the real classifier and persisted, and **none of
+them is selected.** Both tiers write `hrv_source_tier` and `resting_rmssd_ms` at the same single
+success point past every gate, so no post-amendment row can hold one without the other. No third
+term is needed, and each candidate for one was checked and refused. `activity_tag IS NOT NULL`
+excludes nothing the tier term does not already exclude — a gated post-amendment capture *is*
+tagged — so it would only make the predicate look as though it discriminated on something it does
+not. `quality_flags = '[]'` is worse than redundant: `quality_gates.apply` runs *after*
+`classify()` and appends `smart_recording`, `gps_degraded` and `cadence_lock` to any session, so a
+perfectly good pre-amendment reading recorded under smart recording would drop out of the window
+and its inference-era verdict would flow into E003 unexcluded. A bound on
+`json_extract(context, '$.ingested_at')` does work, but it needs a per-install release timestamp
+and reads a JSON blob rather than a column; the tier/reading pair separates the two eras
+structurally and needs no constant. Pinned in both directions by
+`test_the_published_window_predicate_selects_the_window_and_nothing_else`.
+
+**It covers both fields the sprint-003 hold named.** The hold named `activity_tag` *and* the HRV
+tiers, and the predicate keys only on the tier — which is sufficient here because the pre-amendment
+Tier-1 branch wrote `activity_tag = 'resting_hrv_check'` and `hrv_source_tier = 'chest_strap_raw'`
+on adjacent lines at one success point (verified against `9465ded`), so no stored row carries the
+inference-era tag without the tier. A pre-amendment capture that *failed* a gate was never tagged
+at all. The one `activity_tag` this predicate does not return is `health_snapshot`, which Tier 2's
+numeric `sport == 60` identity produced and which the amendment did not touch.
 
 ### Changed
 
@@ -163,8 +210,17 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
 
 > **Both limitations below are resolved by the Sprint 004 declaration amendment at the top of this
 > file.** IDEA-010 is closed by requiring an explicit declaration; IDEA-007 by the `resting_rmssd_ms`
-> column. The E003 hold stated here is lifted. The text is left standing because it is the argument
-> for *why* the amendment exists, and because the migration note above is only legible against it.
+> column. **The E003 hold stated here is lifted for rows written from Sprint 004 onward, and stands
+> for every row written before it.** The amendment resolved the rule; it rewrote no rows, so a
+> session stored under the old predicate still carries the `activity_tag` and `hrv_source_tier` that
+> predicate produced. On those rows the hold's own words continue to apply verbatim: **E003 must not
+> consume `activity_tag` or the HRV tiers.** They are identified by the *No backfill* predicate at
+> the top of this file — `hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL` — and E003 must
+> exclude them explicitly. Nothing remediates them: re-adjudication is impossible (no stored row
+> carries `sport_profile_name`), and the corpus-rebuild decision stands, so the window empties only
+> by re-ingestion. The text is left standing because it is the argument for *why* the amendment
+> exists, because the migration note above is only legible against it, and now because the hold it
+> states is still live for part of the table.
 
 - **F004's Tier-1 discriminator cannot yet distinguish a deliberate resting capture from any short, easy activity.** The predicate asks whether a file is short and low-intensity; it does not ask whether the athlete *intended* it as a measurement. A separately-recorded cool-down walk, an aborted run, or a stretching block is therefore recorded as a resting-HRV reading with an rMSSD computed from a standing beat stream — and is simultaneously excluded from training load. Both failures are silent. This is a gap in the specification rather than a defect in the code, tracked as **IDEA-010**, and F004 deliberately remains `in-progress`: **E003 should not consume `activity_tag` or the HRV tiers until it is resolved.**
 - The system-computed Tier-1 rMSSD has no session column and lives in `context.provenance` (**IDEA-007**). E003's natural query against `rmssd_precomputed` returns null for every Tier-1 capture, so a column is needed before the readiness trend is built.
