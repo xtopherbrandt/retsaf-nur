@@ -599,7 +599,9 @@ def _numeric(value: Any) -> float | int | None:
     Screened here rather than at either comparison because this is the documented
     chokepoint for "not a real number", and both call sites deserve it:
     ``_resting_profile_duration`` reads a non-finite duration as a **veto**,
-    which is what its own rule 2 already says an unreadable value must be.
+    under rule 2's *structurally impossible* class -- widened on 2026-09-07 to
+    name non-finite alongside negative, because ``inf`` reads as positive and
+    the convention's table would otherwise have taken it literally.
 
     A non-numeric value is answered ``None`` -- **treated as absent** -- rather
     than raising: F003's posture is to flag quality, never to refuse a valid FIT
@@ -785,7 +787,8 @@ def _intensity_signal(raw: Any) -> Any:
         present, non-numeric              ->  _VETO     (rule 2, unparseable)
         present, numeric, exactly zero    ->  _ABSENT   (rule 1, degenerate)
         present, numeric, negative        ->  _VETO     (rule 2, impossible)
-        present, numeric, positive        ->  the value
+        present, numeric, non-finite      ->  _VETO     (rule 2, impossible)
+        present, numeric, positive+finite ->  the value
 
     **Stated once and applied to all three fields**, which is the entire point:
     this is the third instance of one shape -- a present-but-uninformative value
@@ -858,16 +861,27 @@ def _intensity_signal(raw: Any) -> Any:
       **changed ratified behaviour** for ``total_distance`` (F004 Decision Log,
       2026-09-06) and settles ``avg_heart_rate``, which both normative veto
       blocks accept as written (resolution **R2**, T058 Finding 2).
+      A **non-finite** value joins this class for the same reason and by the
+      same provenance: no working device writes an ``inf`` or a ``nan`` into an
+      unsigned scalar, so it is a corrupt definition record by another route.
+      It reads as *positive* on ``inf``, which is why it needed saying -- the
+      row above it in the table would otherwise have taken it literally
+      (F004 Decision Log, 2026-09-07).
 
     Reading a negative distance *literally* was never the alternative and is
     worth restating, because it is why the value cannot simply be compared:
     ``-500 / 240`` clears the 1.0 m/s bound comfortably, so a garbage field
     would read as a **satisfied** stillness test.
 
-    **Scope.** ``_resting_profile_duration`` only. ``_numeric`` itself is
-    unchanged and shared with ``_classify_tier_2``, where an unparseable
-    ``rmssd_hrv`` genuinely does mean "no usable device value" -- the presence
-    discrimination lives *around* ``_numeric``, never inside it.
+    **Scope.** ``_resting_profile_duration`` only. The *presence*
+    discrimination lives *around* ``_numeric``, never inside it: ``_numeric`` is
+    shared with ``_classify_tier_2``, where an unparseable ``rmssd_hrv``
+    genuinely does mean "no usable device value", and that asymmetry is the
+    reason this normalisation is stated here rather than there. ``_numeric``
+    itself was **not** unchanged, as this sentence used to claim: it gained a
+    ``math.isfinite`` screen on 2026-09-07 (code review iteration 3), which is
+    what routes a non-finite value into rule 2's veto rather than letting the
+    positive row take it literally.
     """
     if raw is _MISSING:
         return _ABSENT

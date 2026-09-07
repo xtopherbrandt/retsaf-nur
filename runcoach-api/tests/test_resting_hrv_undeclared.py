@@ -476,6 +476,32 @@ _VETO_ROWS = [
         "duration_unreadable",
         id="duration-negative-structurally-impossible",
     ),
+    # Non-finite, one row per field. ``inf`` is the reason these exist: it is
+    # *present, numeric and positive*, so before the 2026-09-07 decision the
+    # normalisation table took it literally. They pin the screen at ``_numeric``
+    # rather than at either comparison -- move it into ``_classify_tier_2``'s
+    # row-3 gate and the rMSSD tests stay green while these go red, which is the
+    # whole argument for the chokepoint.
+    pytest.param(
+        {"total_timer_time": float("inf"), "avg_heart_rate": 60},
+        "duration_unreadable",
+        id="duration-inf-reads-as-positive",
+    ),
+    pytest.param(
+        {"total_timer_time": float("nan"), "avg_heart_rate": 60},
+        "duration_unreadable",
+        id="duration-nan",
+    ),
+    pytest.param(
+        {"total_timer_time": 150.0, "avg_heart_rate": float("inf")},
+        "heart_rate_unreadable",
+        id="heart-rate-inf",
+    ),
+    pytest.param(
+        {"total_timer_time": 150.0, "total_distance": float("inf"), "avg_heart_rate": 60},
+        "distance_unreadable",
+        id="distance-inf",
+    ),
     pytest.param({"avg_heart_rate": 60}, "duration_absent", id="duration-key-absent"),
     pytest.param(
         {"total_timer_time": 0.0, "avg_heart_rate": 60},

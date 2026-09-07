@@ -367,3 +367,48 @@ def test_compact_then_diff_invents_a_difference_that_never_existed() -> None:
     assert not math.isclose(
         resting_rmssd(beats), fabricated, rel_tol=0, abs_tol=1e-6
     )
+
+
+def test_a_non_finite_beat_is_non_contributing_rather_than_poisoning_the_walk() -> None:
+    """One unusable beat costs its two pairs, not the whole capture.
+
+    ``inf`` and ``nan`` are ``float`` instances carrying no measurement, so they
+    are treated exactly as a ``None`` beat already was: non-contributing. The
+    alternative -- letting them into the sum -- makes the *entire* rMSSD ``inf``
+    or ``nan`` from a single bad beat, and ``nan <= 0`` is ``False``, so the
+    classifier's non-positive gate would pass it through to
+    ``resting_rmssd_ms``.
+
+    Adjacency still holds across the hole: the excluded beat drops pairs
+    ``(1,2)`` and ``(2,3)``, and no synthetic ``(1,3)`` pair is manufactured --
+    the same rule the flagged-beat cases above pin.
+    """
+    clean = _beats([1000.0, 1020.0, 1000.0, 1020.0])
+
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        poisoned = _beats([1000.0, 1020.0, bad, 1000.0, 1020.0])
+        result = resting_rmssd(poisoned)
+
+        assert result is not None
+        assert math.isfinite(result), f"{bad!r} reached the result as {result!r}"
+        assert result > 0
+        # The surviving pairs are exactly the clean series' pairs.
+        assert result == resting_rmssd(clean)
+
+
+def test_an_overflowing_sum_of_finite_squares_answers_none() -> None:
+    """The ``float | None`` contract holds even when every input is finite.
+
+    ``_contributes`` guarantees finite beats, so the only remaining route to a
+    non-finite result is arithmetic: each squared difference here is a finite
+    ``1e308``, but their **sum** overflows to ``inf`` silently -- float addition
+    saturates rather than raising, unlike ``(a - b) ** 2`` itself, which raises
+    ``OverflowError`` above ~1.3e154 and so never reaches the mean.
+
+    Not reachable from a file -- ``rr_reconstruction._out_of_band`` flags
+    anything outside the plausible RR band long before this -- but
+    ``resting_rmssd`` is a public function whose contract says a returned float
+    is a usable measurement, and E003 is told it may ``ln()`` the column this
+    feeds. Pinned so the guard cannot be dropped silently by a later refactor.
+    """
+    assert resting_rmssd(_beats([0.0, 1e154, 0.0, 1e154, 0.0])) is None
