@@ -129,6 +129,7 @@ would leave E003 unable to tell which tier produced the number it is reading.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -1708,3 +1709,63 @@ def test_the_real_captures_carry_exactly_one_session_message(filename: str) -> N
     messages = fit_parser.decode((FIXTURES / filename).read_bytes())
 
     assert sum(1 for m in messages if m.name == "session") == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "label"),
+    [
+        (float("inf"), "inf"),
+        (float("-inf"), "-inf"),
+        (float("nan"), "nan"),
+    ],
+)
+def test_a_non_finite_beat_does_not_reach_the_tier_1_success_point(
+    value: float, label: str, declared_capture
+) -> None:
+    """A non-finite ``rr_ms`` must not become a Tier-1 reading.
+
+    The mirror of ``test_a_non_finite_device_value_is_treated_as_absent`` on the
+    other tier. ``_numeric`` closed the Tier-2 hole, but it is not on this path:
+    Tier 1's value comes from ``rmssd.resting_rmssd`` over the beat stream, and
+    its gate is the same *comparison* shape -- ``inf <= 0`` and ``nan <= 0`` are
+    both ``False``, so both cleared it and reached the single success point.
+
+    All three forms poison the walk rather than one of them: a difference taken
+    against ``-inf`` squares to ``inf`` just as one against ``inf`` does, so the
+    sign accident that saved ``-inf`` on Tier 2 does not save it here.
+
+    The consequences are the two the amendment published a promise about:
+
+    * ``inf`` is stored as ``resting_rmssd_ms``, and ``ln(inf)`` is ``inf`` --
+      E003's rolling trend and SWC band are poisoned with no error raised.
+    * ``nan`` is stored by SQLite as ``NULL`` while ``hrv_source_tier`` stays
+      set, which is precisely the shape T076's amendment-window predicate
+      selects -- so a genuine post-amendment reading is misfiled as a
+      pre-amendment inference-era row. It also violates T077's scoped invariant
+      directly: a non-null tier that does *not* imply a positive column.
+
+    ``_out_of_band`` does not save this. It flags ``inf`` but returns ``False``
+    for ``nan`` (a NaN comparison is false in both directions), so a NaN beat is
+    never marked an artefact and contributes to the walk.
+
+    The fix treats a non-finite beat the way the module already treats a null
+    one -- **non-contributing, not fatal** -- so the surrounding beats still
+    yield a reading rather than the whole capture being discarded for one bad
+    value.
+    """
+    beats = _beats(8)
+    beats[3] = RRInterval(seq=3, rr_ms=value, rr_source="chest_strap_ecg")
+
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=100.0,
+        avg_heart_rate=58,
+        rr_intervals=beats,
+    )
+
+    assert session.hrv_source_tier == "chest_strap_raw"
+    assert session.resting_rmssd_ms is not None
+    assert math.isfinite(session.resting_rmssd_ms), (
+        f"{label} reached the success point as {session.resting_rmssd_ms!r}"
+    )
+    assert session.resting_rmssd_ms > 0

@@ -216,8 +216,17 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
   window predicate selects, so a genuine post-amendment reading would have been misfiled as an
   inference-era row and excluded from the readiness read. Non-finite values are now rejected where
   every other unreadable value is, and land on the no-reading row with `hrv_reading_unavailable`
-  like any other unusable device value. This restores the guarantee this release publishes for
-  `resting_rmssd_ms`: **always > 0 when set**.
+  like any other unusable device value.
+- **The same hole existed on Tier 1 and is closed with it.** `_numeric` is not on that path: a
+  Tier-1 value comes from `rmssd.resting_rmssd` over the beat stream, and its gate is the identical
+  `<= 0` comparison, so `inf` and `nan` cleared it there too. One non-finite `rr_ms` propagates
+  through the sum and poisons the whole capture rather than just its own pair, and the artefact
+  filter does not catch it: `rr_reconstruction._out_of_band` flags an `inf` but returns `False` for
+  a `nan`, because every comparison against a NaN is false, so a NaN beat was never judged an
+  artefact upstream. A non-finite beat is now **non-contributing**, exactly as a null beat already
+  was, so the surrounding beats still yield a reading instead of the capture being discarded for
+  one bad value. Together these two restore the guarantee this release publishes for
+  `resting_rmssd_ms` — **always > 0 when set** — on *both* tiers; until now it held on neither.
 - **Normative-text corrections**, each of which contradicted a sibling passage rather than the
   code: the window predicate returns pre-amendment reading rows of **both** tiers (the paragraph
   above previously said it never returns `health_snapshot`, contradicting itself 30 lines earlier);

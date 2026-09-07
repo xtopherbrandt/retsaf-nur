@@ -54,6 +54,13 @@ def resting_rmssd(rr_intervals: list[RRInterval]) -> float | None:
       a beat left ``None`` was never judged an artefact, so it counts.
     * ``rr_ms`` is ``float | None``, and a null beat is non-contributing
       rather than a ``TypeError``, exactly like a flagged one.
+    * a **non-finite** ``rr_ms`` is non-contributing for the same reason. It
+      is not a measurement, and it is not merely its own pair's problem: a
+      single ``inf`` or ``nan`` propagates through the sum and poisons the
+      whole capture's rMSSD. ``rr_reconstruction._out_of_band`` flags an
+      ``inf`` but *not* a ``nan`` -- every comparison against a NaN is false,
+      so it is never judged an artefact upstream and would otherwise arrive
+      here unflagged.
 
     ``None`` -- not ``0.0`` -- is the "no value" answer, matching the
     ``rr_valid_fraction`` convention documented on ``models.Session``:
@@ -76,13 +83,31 @@ def resting_rmssd(rr_intervals: list[RRInterval]) -> float | None:
     if not squares:
         return None
 
-    return math.sqrt(sum(squares) / len(squares))
+    result = math.sqrt(sum(squares) / len(squares))
+
+    # The contract this function advertises is ``float | None``, where the
+    # float is a usable measurement -- and E003 is told it may ``ln()`` the
+    # column this feeds. ``_contributes`` already refuses non-finite beats, so
+    # this is the backstop for a finite stream whose squares overflow, not a
+    # second line of defence against the same input. ``None`` is the honest
+    # answer: a value was attempted and no usable one came out.
+    if not math.isfinite(result):
+        return None
+
+    return result
 
 
 def _contributes(beat: RRInterval) -> bool:
     """Whether ``beat`` may take part in a successive difference.
 
     Not an artefact judgement of its own -- detection is
-    ``rr_reconstruction``'s job and this only reads its verdict.
+    ``rr_reconstruction``'s job and this only reads its verdict. The
+    finiteness test is not a second opinion on that verdict either: it is the
+    same "carrying a value" question ``rr_ms is not None`` asks, for a value
+    that is present but is not a number.
     """
-    return beat.is_artefact is not True and beat.rr_ms is not None
+    return (
+        beat.is_artefact is not True
+        and beat.rr_ms is not None
+        and math.isfinite(beat.rr_ms)
+    )
