@@ -293,8 +293,11 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
 > session stored under the old predicate still carries the `activity_tag` and `hrv_source_tier` that
 > predicate produced. On those rows the hold's own words continue to apply verbatim: **E003 must not
 > consume `activity_tag` or the HRV tiers.** They are identified by the *No backfill* predicate at
-> the top of this file — `hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL` — and E003 must
-> exclude them explicitly. Nothing remediates them: re-adjudication is impossible (no stored row
+> the top of this file — `hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL` — and E003's
+> **readiness read** must exclude them explicitly. **Training load takes the opposite disposition**
+> (Decision Log, 2026-09-07): rTSS and the PMC ignore `activity_tag` on these rows and count them as
+> ordinary sessions, because the window is a verdict about HRV *provenance*, not about whether the
+> session happened. Nothing remediates them: re-adjudication is impossible (no stored row
 > carries `sport_profile_name`), and the corpus-rebuild decision stands, so the window empties only
 > by re-ingestion. The text is left standing because it is the argument for *why* the amendment
 > exists, because the migration note above is only legible against it, and now because the hold it
