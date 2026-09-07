@@ -45,9 +45,22 @@ BEAT_BEARING_FIXTURE = FIXTURES / "dev_fields_run.fit"
 # ``resting_rmssd_ms`` joined the set with the 2026-09-06 amendment (T055).
 # It is the **resolved** field E003 reads on either tier; ``rmssd_precomputed``
 # stays the device-only audit record. T055 shipped the column with no writer;
-# **T065 is the writer** -- it is populated for every successful reading of
-# either tier and null for every other outcome, which is what closes IDEA-007's
-# null-shaped trap structurally rather than by convention.
+# **T065 is the writer** -- for every row *this module writes*, it is populated
+# for every successful reading of either tier and null for every other outcome.
+#
+# **Scoped to post-amendment rows** (T077), the same scoping the corrected form
+# at ``test_the_pipeline_writes_resting_rmssd_ms_for_a_reading_and_only_for_one``
+# below carries. It is not a claim about the ``sessions`` table: the amendment
+# added the column with **no backfill**, so on an upgraded database a
+# pre-amendment reading of *either* tier carries a non-null ``hrv_source_tier``
+# and a null ``resting_rmssd_ms``. IDEA-007's null-shaped trap is therefore not
+# closed outright -- it is closed structurally *within the amendment window's
+# complement*, and survives inside the window, where a consumer must guard the
+# read or exclude the window rather than take ``ln()`` unconditionally. The
+# residual state is pinned by
+# ``test_the_residual_null_state_is_reachable_on_an_upgraded_database`` in
+# ``test_db_schema.py``, and the window predicate by
+# ``test_the_published_window_predicate_selects_the_window_and_nothing_else``.
 _NEW_SESSION_FIELDS = (
     "rmssd_precomputed",
     "hrv_source_tier",

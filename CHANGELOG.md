@@ -105,8 +105,21 @@ tiers, and the predicate keys only on the tier — which is sufficient here beca
 Tier-1 branch wrote `activity_tag = 'resting_hrv_check'` and `hrv_source_tier = 'chest_strap_raw'`
 on adjacent lines at one success point (verified against `9465ded`), so no stored row carries the
 inference-era tag without the tier. A pre-amendment capture that *failed* a gate was never tagged
-at all. The one `activity_tag` this predicate does not return is `health_snapshot`, which Tier 2's
-numeric `sport == 60` identity produced and which the amendment did not touch.
+at all.
+
+**What the predicate returns, and what it does not.** It returns the pre-amendment **reading** rows
+of *both* tiers, because there is no backfill on either: a pre-amendment Tier-2 reading carries
+`hrv_source_tier = 'health_snapshot'` and a null `resting_rmssd_ms` exactly as a Tier-1 one carries
+`'chest_strap_raw'` and a null. So both `activity_tag` values appear among its rows —
+`resting_hrv_check` on Tier 1 and `health_snapshot` on Tier 2 — which is why the paragraph above
+says the `hrv_source_tier` is an inference-era verdict *and, on Tier 1, so is the `activity_tag`*:
+the Tier-2 tag came from the numeric `sport == 60` identity the amendment never touched, and is
+still trustworthy on a row that is nonetheless inside the window. What the predicate does **not**
+return is any **post-amendment** row, of either tier, reading or not. *(Corrected 2026-09-07, code
+review iteration 3, finding S2: this previously read "the one `activity_tag` this predicate does not
+return is `health_snapshot`", which contradicted the paragraph above it and would have told a
+consumer that pre-amendment Tier-2 readings sit outside the window and are safe to `ln()`. They are
+inside it, and their `resting_rmssd_ms` is null.)*
 
 ### Changed
 
@@ -185,9 +198,36 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
   reopened.
 - **This is not a clean sweep.** Ten of that table's seventeen findings were deferred rather than
   resolved and go to review for triage; F10 — the reference document's §2 still reads as though the
-  demoted predicate authorises a route — is the most likely to mislead a future reader and is filed
-  as **IDEA-019**. Also open from this sprint: **IDEA-015**, **IDEA-016**, **IDEA-017**,
-  **IDEA-018**, **IDEA-020**, **IDEA-021**, **IDEA-022** and **IDEA-023**.
+  demoted predicate authorises a route — was the most likely to mislead a future reader and was
+  filed as **IDEA-019**. *That triage has since happened:* **F10 and IDEA-019 are resolved** (see
+  *Fixed in review* below); F5, F7, F9 and F11–F16 remain deferred. Also open from this sprint:
+  **IDEA-015**, **IDEA-016**, **IDEA-017**, **IDEA-018**, **IDEA-020**, **IDEA-021**, **IDEA-022**
+  and **IDEA-023**.
+
+### Fixed in review
+
+- **A non-finite device rMSSD is no longer stored as a reading.** `inf` and `nan` are `float`
+  instances, so they passed the "is this a number?" screen and then defeated the *comparison* the
+  Tier-2 gate is made of — `inf <= 0` and `nan <= 0` are both `False`. A Health Snapshot whose
+  `rmssd_hrv` was non-finite was therefore stored as a full reading with **no quality flag**: `inf`
+  went into `resting_rmssd_ms` literally and would poison E003's `ln(rMSSD)` trend and its
+  ±0.5·CV SWC band silently, and `nan` was stored by SQLite as `NULL`, manufacturing a row with a
+  non-null `hrv_source_tier` and a null `resting_rmssd_ms` — exactly the shape the pre-amendment
+  window predicate selects, so a genuine post-amendment reading would have been misfiled as an
+  inference-era row and excluded from the readiness read. Non-finite values are now rejected where
+  every other unreadable value is, and land on the no-reading row with `hrv_reading_unavailable`
+  like any other unusable device value. This restores the guarantee this release publishes for
+  `resting_rmssd_ms`: **always > 0 when set**.
+- **Normative-text corrections**, each of which contradicted a sibling passage rather than the
+  code: the window predicate returns pre-amendment reading rows of **both** tiers (the paragraph
+  above previously said it never returns `health_snapshot`, contradicting itself 30 lines earlier);
+  F004's Data Model and the pipeline-wiring pin scoped their remaining unqualified restatements of
+  the `resting_rmssd_ms` invariant; the feature file's "there is no delete or reclassify route"
+  clause corrected to name `DELETE /sessions/{id}`, which this same sprint shipped (**IDEA-025**
+  closed); `F004-detection-and-quality-rules.md` §2 restated with the declaration as the routing
+  term and the 2026-09-05 conditions as the veto set, with a two-axis contract table (**IDEA-019**
+  and Finding 10 closed); and §2's claim that the zero-`avg_heart_rate` case is unhandled corrected
+  — it is closed by the stated `session.summary` convention in the same document.
 
 ## 2026-09-06 — Sprint 003: Resting-HRV Capture
 

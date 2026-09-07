@@ -349,10 +349,20 @@ def test_the_residual_null_state_is_reachable_on_an_upgraded_database():
     precisely the state the contract claimed could not exist.
 
     The hazard is worse inside the window than the general one the claim was
-    written to close: Tier-1 rows drop silently out of
-    ``WHERE resting_rmssd_ms IS NOT NULL`` while Tier-2 wrist-PPG rows survive,
-    so the series looks like continuous Tier-2 data and §2.4.5's
-    tier-change baseline reset never fires.
+    written to close, but it is **not** differential tier survival -- corrected
+    2026-09-07 (code review iteration 3, S1). There is no backfill on *either*
+    tier, so a pre-amendment Tier-2 row's ``resting_rmssd_ms`` is null exactly as
+    a Tier-1 row's is, and both drop out of
+    ``WHERE resting_rmssd_ms IS NOT NULL`` **together** --
+    ``test_the_published_window_predicate_selects_the_window_and_nothing_else``
+    below selects its ``pre-tier1`` and its ``pre-tier2`` case alike. What is left
+    is an **era-wide hole**: every reading taken before the amendment disappears
+    from the series at once, with no error and no empty result, and the trend
+    resumes on the far side as though the eras were contiguous. §2.4.5's
+    tier-change baseline reset is not the mechanism that fails -- no tier survives
+    the filter for the series to change *from*. The differential-survival reading
+    belonged to ``rmssd_precomputed``, whose Tier-1 rows really were the only null
+    ones; it does not transfer to this column.
 
     This asserts **reachability**, not desirability. The residual state is the
     correct outcome of the no-backfill decision; what was wrong was the prose

@@ -150,6 +150,7 @@ row of the declaration contract). Two halves:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any, NamedTuple
 
@@ -583,6 +584,23 @@ def _numeric(value: Any) -> float | int | None:
     is legal and an unguarded numeric check would read a flag as a heart rate of
     1 bpm or store ``True`` as a millisecond rMSSD.
 
+    **Non-finite floats are excluded too**, and for the same reason ``bool`` is:
+    ``inf`` and ``nan`` are ``float`` instances that pass every ``isinstance``
+    check and then defeat the *comparisons* the callers gate on. ``inf <= 0`` is
+    ``False`` and ``nan <= 0`` is ``False``, so without this screen both would clear
+    ``_classify_tier_2``'s non-positive gate and be stored as a reading, with
+    no quality flag -- ``inf`` poisoning E003's ``ln(rMSSD)`` trend, and ``nan``
+    landing in SQLite as ``NULL`` and so manufacturing exactly the
+    non-null-tier / null-column shape T076's amendment-window predicate selects.
+    ``fitdecode`` maps only the FIT invalid sentinel to ``None``
+    (``types.py:375``), so a crafted or corrupt definition record is a live route
+    for one -- the same threat class the ``tuple``/``str`` guard above closes --
+    and ``classify()`` is a public entry point F004's own suites drive directly.
+    Screened here rather than at either comparison because this is the documented
+    chokepoint for "not a real number", and both call sites deserve it:
+    ``_resting_profile_duration`` reads a non-finite duration as a **veto**,
+    which is what its own rule 2 already says an unreadable value must be.
+
     A non-numeric value is answered ``None`` -- **treated as absent** -- rather
     than raising: F003's posture is to flag quality, never to refuse a valid FIT
     file, and an uninterpretable field is exactly a field the file did not supply.
@@ -590,7 +608,7 @@ def _numeric(value: Any) -> float | int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return value
+        return value if math.isfinite(value) else None
     return None
 
 

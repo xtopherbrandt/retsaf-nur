@@ -555,6 +555,61 @@ def test_a_non_numeric_device_value_is_treated_as_absent(value, synthetic, class
     assert "hrv_reading_unavailable" in session.quality_flags
 
 
+@pytest.mark.parametrize(
+    ("value", "label"),
+    [
+        (float("inf"), "inf"),
+        (float("-inf"), "-inf"),
+        (float("nan"), "nan"),
+    ],
+)
+def test_a_non_finite_device_value_is_treated_as_absent(
+    value: float,
+    label: str,
+    synthetic,
+    classified,
+) -> None:
+    """A non-finite ``rmssd_hrv`` is **not a real number** and must land on row 3.
+
+    ``inf`` and ``nan`` are ``float`` instances, so the pre-fix ``_numeric``
+    handed them straight through, and the row-3 gate is a *comparison*:
+    ``inf <= 0`` is ``False`` and ``nan <= 0`` is ``False``, so both cleared it
+    and were stored as a reading -- ``resting_rmssd_ms`` set, ``hrv_source_tier``
+    ``'health_snapshot'``, and no quality flag at all. Only ``-inf`` was caught,
+    and by accident of the sign rather than by the guard.
+
+    Both survivors break a promise this feature publishes in four places
+    (``db.py``'s column comment, this module's docstring, F004's Data Model, the
+    CHANGELOG): ``resting_rmssd_ms`` is **always > 0 when set**.
+
+    * ``inf`` poisons E003's 7-day rolling ``ln(rMSSD)`` trend and its
+      +/-0.5*CV SWC band with no error raised -- ``ln(inf)`` is ``inf``.
+    * ``nan`` is worse in a different direction: SQLite stores a Python ``NaN``
+      as ``NULL``, manufacturing a row with a non-null ``hrv_source_tier`` and a
+      null ``resting_rmssd_ms`` -- exactly the shape T076's amendment-window
+      predicate selects, so a genuine post-amendment reading would be misfiled
+      as a pre-amendment inference-era row and silently excluded.
+
+    Reachability is the same threat class ``_numeric`` already exists to close:
+    ``fitdecode`` maps only the FIT invalid sentinel to ``None``
+    (``types.py:375``), so a crafted or corrupt definition record can hand this
+    module a non-finite float; and ``classify()`` is a public entry point this
+    feature's own suites drive directly.
+
+    The fix is in ``_numeric`` -- the documented chokepoint for "not a real
+    number" -- not in the row-3 comparison, so the second call site
+    (``_resting_profile_duration``) gets the same protection.
+    """
+    session = classified(synthetic(60, rmssd_hrv=value))
+
+    assert session.activity_tag == "health_snapshot", label
+    assert session.rmssd_precomputed is None, label
+    assert session.resting_rmssd_ms is None, label
+    assert session.hrv_source_tier is None, label
+    assert session.rr_source is None, label
+    assert "hrv_reading_unavailable" in session.quality_flags, label
+
+
 @pytest.mark.parametrize("value", [(44, 45), "44"])
 def test_a_non_numeric_device_value_on_a_non_snapshot_file_is_not_a_disagreement(
     value,
