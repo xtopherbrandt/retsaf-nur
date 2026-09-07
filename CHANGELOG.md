@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-06 — Sprint 004: Resting-HRV Capture, cycle 2 (declaration amendment)
+## 2026-09-07 — Sprint 004: Resting-HRV Capture, cycle 2 (declaration amendment)
 
 F004's **Amendment 2026-09-06**. Tier 1 stops inferring that a recording was *meant* as a
 measurement and requires the athlete to say so. This supersedes the sprint-003 "Known limitation"
@@ -8,9 +8,14 @@ below — **IDEA-010** and **IDEA-007** are resolved, and the hold it placed on 
 (*"E003 should not consume `activity_tag` or the HRV tiers until it is resolved"*) is lifted **for
 rows written from this release onward, and only for those**. The amendment resolved the *rule*;
 nothing rewrote the *rows*. See *No backfill* below for the predicate that identifies the
-pre-amendment window and what E003 must do about it. F004 itself remains `in-progress`: the capture
-contract is now settled and E003-ready, but the feature's own status is not promoted by this
-release.
+pre-amendment window and what E003 must do about it.
+
+**F004 is `released` with this entry.** The capture contract is settled and E003-ready. The feature
+was held `in-progress` through sprint-003 and `approved` through the first sprint-004 review; both
+holds are now lifted. Review verification: 888 tests passing with no failures or skips, the
+feature's demo probe green against a real server at the released commit, all 50 acceptance criteria
+MET, and the two live defects found during review — a non-finite rMSSD stored as a reading, and a
+`nan` intensity field routing a non-capture — fixed and pinned. See *Fixed in review* below.
 
 ### Migration required
 
