@@ -1,25 +1,44 @@
-"""T041: Tier 1 -- the chest-strap resting-capture discriminator (F004 ref doc §2).
+"""T041/T069: Tier 1 -- the chest-strap resting capture (F004 ref doc §2).
 
-The predicate ratified 2026-09-05, amended 2026-09-06 after Stage-0 review found
-the original OR shape routed a present-and-zero distance as stillness, amended
-again the same day after goal verification found that a present-and-zero distance
-was *still* satisfying the conjunction's presence test on its own, and amended a
-third time by the sprint-003 critic pass, which observed that the previous fix had
-drawn its line at a **sentinel** (``distance_m > 0``) rather than at
-informativeness -- 5 m over 240 s is GPS jitter and routed unflagged with no heart
-rate at all:
+**T069 removed the inference arm.** Nothing about a file's shape can authorise a
+Tier-1 route any more. The three profile rules ratified 2026-09-05 keep their
+exact thresholds and citations and have lost their vote: they can only *veto*.
+What routes is the athlete's own declaration::
 
-and amended a fourth time by T061, which stated the ``session.summary`` reading
-convention once instead of deciding it per field -- so a present-but-unparseable
-or structurally impossible value is now a **veto** rather than an absence:
+    tier1 := rr_intervals is non-empty                            # beats, FIRST
+         AND no veto fires                                        # the demoted rules
+         AND declared                                             # the only authoriser
 
-```
-tier1 := rr_intervals is non-empty
-     AND no summary field is present-but-unparseable or structurally impossible
-     AND duration_s is present AND 0 < duration_s <= 300
-     AND avg_heart_rate is present AND avg_heart_rate <= 100
-     AND (distance_m is present  ->  distance_m / duration_s <= 1.0)
-```
+    declared := session.sport_profile_name is in the configured
+                    ``resting_hrv_profile_names``
+                OR the upload carried an explicit resting-capture override
+
+    vetoed  := any summary field is present-but-unparseable or structurally
+                    impossible
+            OR NOT (duration_s present AND 0 < duration_s <= 300)
+            OR NOT (avg_heart_rate present AND avg_heart_rate <= 100)
+            OR (distance_m present AND distance_m / duration_s > 1.0)
+
+**A capture the athlete never declared does not route, however restful it looks.**
+That is the observable consequence of T069 and the reason this module was
+rewritten rather than extended: before it, every routing assertion here passed on
+the *inference* arm, so not one of them could tell the two rules apart. They can
+now, because every capture that routes below says out loud why it routes -- the
+fixtures are built by ``declared_capture``, its mirror ``undeclared_capture``
+exists for the negative class, and ``_PROFILE_CONTRACT`` is driven across both.
+
+The veto set's own history is preserved below, because its reasoning still
+constrains the rule even though its role has changed. It was amended 2026-09-06
+after Stage-0 review found the original OR shape routed a present-and-zero
+distance as stillness; again the same day after goal verification found that a
+present-and-zero distance was *still* satisfying the conjunction's presence test
+on its own; a third time by the sprint-003 critic pass, which observed that the
+previous fix had drawn its line at a **sentinel** (``distance_m > 0``) rather than
+at informativeness -- 5 m over 240 s is GPS jitter and routed unflagged with no
+heart rate at all; and a fourth time by T061, which stated the ``session.summary``
+reading convention once instead of deciding it per field, so a
+present-but-unparseable or structurally impossible value is a **veto** rather than
+an absence.
 
 "Present" throughout means **present and informative**: a key absent from the
 summary and a key holding exactly zero are both "nothing reported" (and a FIT
@@ -27,14 +46,15 @@ field declared with the invalid sentinel is the former, because
 ``mapping._build_summary`` strips ``None``).
 
 **A heart rate is required; a distance can only veto.** No threshold on the
-distance could have closed the gap: the gate fixture is 108.21 m over 150.797 s of
+distance could have closed the gap: ``strap_hrv_sample_run.fit`` is 108.21 m over 150.797 s of
 *pure GPS drift*, so 5 m over 240 s is the same observation at a smaller magnitude
 and any cut between them would be invented. A distance below walking pace is the
 absence of counter-evidence, never evidence -- a stationary maximal effort on an
 erg or a trainer reads identically to lying still. Only a heart rate separates the
 two, so it must be present and must agree; the distance keeps its veto and loses
-its vote. The gate fixture (``avg_heart_rate = 60``) and the genuine indoor waking
-capture (``0.0`` m at 55 bpm) are both unaffected. The whole rule is pinned row by
+its vote. Neither real capture is affected -- ``strap_hrv_sample_run.fit`` carries
+``avg_heart_rate = 60`` and ``strap_hrv_capture.fit`` 64 -- and nor is the genuine
+indoor waking capture (``0.0`` m at 55 bpm). The whole rule is pinned row by
 row by ``test_the_resting_profile_contract``.
 
 **A file with more than one ``session`` message is refused outright**, before
@@ -49,13 +69,28 @@ the reference document draws in boldface. ``dev_fields_run.fit`` is an ordinary
 0.998; a "beats present -> Tier 1" rule converts it into a resting-HRV reading and
 poisons E003's readiness trend -- the §2.2.3 prohibition this guard enforces.
 
-**The gate fixture, measured with fitdecode (2026-09-04, re-verified 2026-09-05):**
-``strap_hrv_sample_run.fit`` -- 149 ``hrv`` messages / 156 beats, ``total_timer_time``
-150.797 s, ``total_distance`` 108.21 m (mean 0.718 m/s), ``sport`` running (raw 1),
-``sub_sport`` generic, ``avg_heart_rate`` 60, **no** ``rmssd_hrv``. It was recorded
-strap-paired, lying still, *on the running activity profile* -- which is why the file
-name reads oddly and why ``sport``/``sub_sport`` carry no signal at all here and are
-deliberately not gated on. The 108 m of "distance" is GPS drift.
+**The two real files that isolate the declaration, measured with fitdecode (T057):**
+
+* ``strap_hrv_capture.fit`` -- the **declared positive**. 149 ``hrv`` messages / 165
+  beats, ``total_timer_time`` 150.476 s, ``total_distance`` **0.0**,
+  ``avg_heart_rate`` 64, ``sport`` generic, ``sport_profile_name``
+  **``'HRV Snapshot'``** -- the athlete's own custom FR945 LTE profile, which is the
+  declaration the amendment routes on.
+* ``strap_hrv_sample_run.fit`` -- the **undeclared negative**, and the file that
+  makes T069 observable. 149 ``hrv`` messages / 156 beats, ``total_timer_time``
+  150.797 s, ``total_distance`` 108.21 m (mean 0.718 m/s, pure GPS drift),
+  ``avg_heart_rate`` 60, ``sport`` running (raw 1), ``sport_profile_name``
+  **``'Run'``**. It is a genuine resting capture, recorded strap-paired and lying
+  still on the running activity profile, and it passes **every veto**: it is
+  refused for one reason only, that the athlete never declared it. Until T069 it
+  was this module's Tier-1 *positive*. Do not rename it -- the odd name is the
+  discriminator problem itself, and a rename would touch every reference.
+
+``strap_cool_down_walk.fit`` is deliberately **not** used as a pin anywhere here.
+It is refused three ways over (1.0356 m/s, 118.874 s, undeclared), so an assertion
+that it does not route would pass with any one of those rules deleted --
+``.claude/rules/learnings/contract-tables-need-an-independent-oracle.md``, using
+this exact file. It is evidence, not a check.
 
 **The heart-rate arm is not decoration.** Without it, a file with no ``distance_m``
 reduces the predicate to "beats present AND duration <= 300 s", and a chest-strap-paired
@@ -96,10 +131,23 @@ from runcoach_api.models import RRInterval
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# The GO/NO-GO gate fixture. Do not rename it: the name reads oddly because the
-# capture was recorded on the running profile while lying still, which is exactly
-# the discriminator problem this module solves. A rename would touch every reference.
-GATE_FIXTURE = "strap_hrv_sample_run.fit"
+# The athlete's own custom FR945 LTE activity profile. Garmin's built-in
+# 'Health Snapshot' is deliberately never used as a Tier-1 declaration: it already
+# routes via Tier 2's numeric ``sport == 60`` identity, and listing it would give
+# one file two routes into the same decision.
+DECLARED_PROFILE = "HRV Snapshot"
+
+# The Tier-1 **positive**, recorded on that profile: 149 ``hrv`` messages / 165
+# beats, 150.476 s, 0.0 m, avg HR 64, no ``rmssd_hrv``. It replaced
+# ``strap_hrv_sample_run.fit`` as this module's positive control at T069.
+DECLARED_FIXTURE = "strap_hrv_capture.fit"
+
+# The corpus's **undeclared negative** -- the file T069 made observable. A genuine
+# resting capture on the 'Run' profile: 156 beats, 150.797 s, 108.21 m (0.718 m/s),
+# avg HR 60. It passes every veto and is refused solely because it was never
+# declared, which is what no synthetic and no other fixture can prove. Do not
+# rename it: the odd name *is* the discriminator problem this module solves.
+UNDECLARED_FIXTURE = "strap_hrv_sample_run.fit"
 
 # Files that must never reach a Tier-1 reading:
 #   dev_fields_run.fit  -- 7220 beats, 3117.009 s, 3.215 m/s: the R3 trap itself.
@@ -116,6 +164,14 @@ SNAPSHOT_FIXTURES = {"sample_health_snapshot.fit": 37, "strap_health_snapshot.fi
 # ``synthetic`` defaults ``sport`` to ``"running"``, which is what this module's
 # own copy did -- ``sport`` carries no signal for the Tier-1 discriminator and is
 # deliberately not gated on, so no call site here passes it.
+#
+# ``declared_capture`` and ``undeclared_capture`` below wrap the pair, and the
+# **name at the call site is the point**. T069's task file forbids defaulting a
+# declaration inside ``conftest._synthetic``/``_classified``, because a global
+# default makes a regression on the undeclared path -- the direction this
+# amendment introduces -- invisible in every suite at once. These two are the
+# opposite of that: module-local, mutually exclusive, and each call site says
+# which one it is, so a row that routes visibly says *why* it routes.
 
 
 def _beats(count: int = 8) -> list[RRInterval]:
@@ -126,69 +182,282 @@ def _beats(count: int = 8) -> list[RRInterval]:
     ]
 
 
-def _classify_fixture(filename: str):
-    """Decode a real fixture and drive the full mapping + reconstruction + classify path."""
+@pytest.fixture
+def declared_capture(synthetic, classified):
+    """``declared_capture(rr_intervals=..., **session_extra)`` -- a synthetic
+    capture the athlete **declared**, classified.
+
+    Both halves of the declaration are spelled here once: the session message
+    carries ``sport_profile_name = 'HRV Snapshot'`` (through the real
+    ``mapping.to_canonical``, so the name reaches ``context.provenance`` the way a
+    real file's does), and the same name is passed to ``classify`` as the
+    configured ``resting_hrv_profile_names`` list.
+
+    Every routing assertion in this module goes through it, because since T069 a
+    Tier-1 route has exactly one authoriser and a test that routed without naming
+    it would be asserting an outcome it cannot explain.
+    """
+
+    def _declared_capture(rr_intervals=None, **session_extra):
+        return classified(
+            synthetic(sport_profile_name=DECLARED_PROFILE, **session_extra),
+            rr_intervals=rr_intervals,
+            profile_names=[DECLARED_PROFILE],
+        )
+
+    return _declared_capture
+
+
+@pytest.fixture
+def undeclared_capture(synthetic, classified):
+    """The mirror: the identical file on the ``'Run'`` profile, with the same
+    configured list.
+
+    ``'Run'`` rather than "no profile name at all" on purpose -- it is what every
+    non-snapshot file in the corpus actually reads, so the undeclared rows here
+    are the real population rather than a degenerate one. The absent-name and
+    non-``str`` forms are enumerated in ``test_resting_hrv_declaration.py``.
+    """
+
+    def _undeclared_capture(rr_intervals=None, **session_extra):
+        return classified(
+            synthetic(sport_profile_name="Run", **session_extra),
+            rr_intervals=rr_intervals,
+            profile_names=[DECLARED_PROFILE],
+        )
+
+    return _undeclared_capture
+
+
+def _classify_fixture(filename: str, profile_names=None, resting_capture_override=False):
+    """Decode a real fixture and drive the full mapping + reconstruction + classify path.
+
+    ``profile_names`` defaults to "nothing is declared", which is the posture the
+    autouse ``isolated_data_dir`` config installs and the one every negative below
+    wants. A caller expecting a route passes the name explicitly.
+    """
     messages = fit_parser.decode((FIXTURES / filename).read_bytes())
     session, _records = mapping.to_canonical(messages)
     rr_intervals = rr_reconstruction.reconstruct(messages)
-    hrv_classification.classify(messages, session, rr_intervals)
+    hrv_classification.classify(
+        messages,
+        session,
+        rr_intervals,
+        profile_names=profile_names,
+        resting_capture_override=resting_capture_override,
+    )
     return session, rr_intervals
 
 
 # ---------------------------------------------------------------------------
-# The gate fixture -- a real chest-strap resting capture routes to Tier 1
+# The declared positive -- a real declared chest-strap capture routes to Tier 1
 # ---------------------------------------------------------------------------
 
 
-def test_the_gate_fixture_round_trips_as_a_tier_1_reading(ingest) -> None:
+def test_the_declared_fixture_round_trips_as_a_tier_1_reading(declared_config, ingest) -> None:
     """F004 @must: "A chest-strap resting capture has its rMSSD computed from the
-    raw beats". Asserted end to end through the API, because the tag is what E003
-    reads back out of the store."""
+    raw beats", and the amendment's "A declared capture on a configured profile
+    routes as Tier 1". Asserted end to end through the API, because the tag is what
+    E003 reads back out of the store -- and through ``declared_config``, because
+    since T069 the config list is what authorises the route."""
+    declared_config(DECLARED_PROFILE)
+
     with TestClient(app) as client:
-        body = ingest(client, GATE_FIXTURE)
+        body = ingest(client, DECLARED_FIXTURE)
 
     assert body["activity_tag"] == "resting_hrv_check"
     assert body["hrv_source_tier"] == "chest_strap_raw"
     assert body["rr_source"] == "chest_strap_ecg"
 
 
-def test_the_gate_fixture_leaves_the_device_field_null(ingest) -> None:
+def test_the_declared_fixture_leaves_the_device_field_null(declared_config, ingest) -> None:
     """§2.2.3: ``rmssd_precomputed`` is "populated only for the numeric wrist tiers".
     The Tier-1 reading is the *computed* value; putting it in the device-supplied
     field is the §2.4.5 violation -- E003 could no longer tell the tiers apart."""
+    declared_config(DECLARED_PROFILE)
+
     with TestClient(app) as client:
-        body = ingest(client, GATE_FIXTURE)
+        body = ingest(client, DECLARED_FIXTURE)
 
     assert body["rmssd_precomputed"] is None
 
 
-def test_the_gate_fixture_still_carries_its_beat_rows(ingest) -> None:
+def test_the_declared_fixture_still_carries_its_beat_rows(declared_config, ingest) -> None:
     """Unlike Tier 2, a Tier-1 reading has real beats and they are persisted: the
     computation is the system's own, over the artefact-filtered stream."""
+    declared_config(DECLARED_PROFILE)
+
     with TestClient(app) as client:
-        body = ingest(client, GATE_FIXTURE)
+        body = ingest(client, DECLARED_FIXTURE)
 
-    assert len(body["rr_intervals"]) == 156
+    assert len(body["rr_intervals"]) == 165
 
 
-def test_the_gate_fixtures_rmssd_is_computed_from_its_beats() -> None:
+def test_the_declared_fixtures_rmssd_is_computed_from_its_beats() -> None:
     """The reading is not merely tagged -- ``rmssd.resting_rmssd`` (T042, strict
     pairwise adjacency) is actually wired, and its value is recorded rather than
     discarded. ``rmssd_precomputed`` cannot carry it, so provenance does."""
-    session, rr_intervals = _classify_fixture(GATE_FIXTURE)
+    session, rr_intervals = _classify_fixture(
+        DECLARED_FIXTURE, profile_names=[DECLARED_PROFILE]
+    )
 
     expected = resting_rmssd(rr_intervals)
     assert expected is not None
     assert session.context.provenance["computed_resting_rmssd_ms"] == pytest.approx(expected)
 
 
-def test_the_gate_fixture_is_not_discriminated_by_sport() -> None:
-    """The capture was recorded on the *running* profile while lying still, so
-    ``sport`` carries no signal here. Pinned so a future reader does not "simplify"
-    the predicate into a sport check that would silently stop working."""
-    session, _rr = _classify_fixture(GATE_FIXTURE)
+def test_the_declared_fixture_is_not_discriminated_by_sport() -> None:
+    """A custom "Other" profile decodes ``sport = 'generic'``, which is distinctive
+    across today's corpus and therefore tempting -- but it is true of *any* custom
+    activity, so it is corroboration and never the key. Pinned so a future reader
+    does not "simplify" the declaration into a sport check that would silently
+    admit every custom profile the athlete ever creates.
 
-    assert session.sport == "running"
+    The canonical value asserted here is ``'other'``, not ``'generic'``:
+    ``mapping.to_canonical`` buckets the decoded ``'generic'`` into F003's
+    vendor-neutral vocabulary, and this module reads the canonical ``Session``.
+    Worth pinning as its own fact -- a sport-based shortcut written from the
+    fixture-corpus table's raw ``'generic'`` would not even match what reaches the
+    classifier, which is a second, quieter reason not to write one."""
+    session, _rr = _classify_fixture(DECLARED_FIXTURE, profile_names=[DECLARED_PROFILE])
+
+    assert session.sport == "other"
+    assert session.hrv_source_tier == "chest_strap_raw"
+
+
+def test_the_declared_fixture_does_not_route_without_the_declaration() -> None:
+    """The control that makes every assertion above mean something.
+
+    The identical bytes, with an empty configured list -- the posture a fresh
+    install ships -- do not route. Without this row the five tests above would pass
+    on any rule that happened to accept the file, which is exactly how the
+    inference arm survived six waves."""
+    session, rr_intervals = _classify_fixture(DECLARED_FIXTURE, profile_names=[])
+
+    assert len(rr_intervals) == 165
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert session.rr_source is None
+    assert "computed_resting_rmssd_ms" not in session.context.provenance
+
+
+# ---------------------------------------------------------------------------
+# The undeclared negative -- T069's whole subject, on a real file
+# ---------------------------------------------------------------------------
+#
+# ``strap_hrv_sample_run.fit`` is the only artefact in the corpus that isolates the
+# declaration mechanism *alone*: a genuine resting capture, real beats, passing
+# every demoted veto, refused for one reason and one reason only. Delete the
+# declaration check and these rows go red; delete any veto and they stay green.
+
+
+def test_an_undeclared_capture_does_not_route_however_restful_it_looks(ingest) -> None:
+    """F004 @must: "An undeclared capture does not route, however restful it looks".
+
+    End to end, on the file that was this module's Tier-1 positive until T069. It
+    is 150.797 s at 0.718 m/s with an average heart rate of 60 and 156 real
+    chest-strap beats -- it satisfies every rule the pre-amendment predicate had --
+    and it is refused because ``'Run'`` is not a declaration."""
+    with TestClient(app) as client:
+        body = ingest(client, UNDECLARED_FIXTURE)
+
+    assert body["activity_tag"] is None
+    assert body["hrv_source_tier"] is None
+    assert body["resting_rmssd_ms"] is None
+    assert body["rmssd_precomputed"] is None
+    assert body["rr_source"] is None
+
+
+def test_the_undeclared_capture_raises_no_quality_flag(ingest) -> None:
+    """"And no quality flag is raised, because it was never recognised as a
+    capture." A flag asserts a finding *about a recognised capture*; this file was
+    refused, so it is not one. Scoped to F004's own ``hrv_`` flags -- F003's
+    ``smart_recording`` is a finding about the record stream and is unrelated."""
+    with TestClient(app) as client:
+        body = ingest(client, UNDECLARED_FIXTURE)
+
+    assert [flag for flag in body["quality_flags"] if flag.startswith("hrv_")] == []
+
+
+def test_the_undeclared_capture_passes_every_veto() -> None:
+    """The assumption the two rows above rest on, asserted rather than believed.
+
+    If this file tripped a veto it would be refused twice over and could not pin
+    the declaration at all -- the ``strap_cool_down_walk.fit`` mistake. Driving
+    ``_resting_profile_duration`` directly is what shows the veto set is silent on
+    it: the refusal upstream can only be the declaration."""
+    session, rr_intervals = _classify_fixture(UNDECLARED_FIXTURE)
+
+    assert len(rr_intervals) == 156
+    assert hrv_classification._resting_profile_duration(session) == pytest.approx(150.797)
+    assert session.context.provenance["sport_profile_name"] == "Run"
+
+
+def test_the_undeclared_capture_routes_once_the_athlete_declares_it() -> None:
+    """The same bytes, declared. Together with the row above this is the whole
+    mechanism in two lines: identical file, identical vetoes, opposite outcome, and
+    the *only* thing that differs is what the athlete configured.
+
+    Listing ``'Run'`` is precisely what F004 tells the athlete never to do -- a
+    general-purpose activity profile restores the pre-amendment behaviour for every
+    short easy activity on it. It is used here because holding the *file* constant
+    is the only way to show the configured list is the variable, and the next test
+    makes the same point via the override, which carries no such warning."""
+    session, _rr = _classify_fixture(UNDECLARED_FIXTURE, profile_names=["Run"])
+
+    assert session.activity_tag == "resting_hrv_check"
+    assert session.hrv_source_tier == "chest_strap_raw"
+
+
+def test_an_empty_config_list_refuses_the_declared_fixture_end_to_end(
+    declared_config, ingest
+) -> None:
+    """F004 @must: "An athlete who uses only Health Snapshot declares that
+    explicitly" -- ``resting_hrv_profile_names = []``, through the real API.
+
+    The end-to-end half of the control above. ``declared_config()`` with no
+    arguments writes the empty list *explicitly*, which is the posture a fresh
+    install ships and the one E001's no-zero-config rule requires: an athlete who
+    wants no Tier-1 route says so rather than getting it by omission. The file is
+    a perfectly good declared-shaped capture and still yields nothing."""
+    declared_config()
+
+    with TestClient(app) as client:
+        body = ingest(client, DECLARED_FIXTURE)
+
+    assert body["activity_tag"] is None
+    assert body["hrv_source_tier"] is None
+    assert body["resting_rmssd_ms"] is None
+    assert body["rmssd_precomputed"] is None
+
+
+def test_an_empty_config_list_leaves_tier_2_untouched(declared_config, ingest) -> None:
+    """"And Tier 2 routing is unaffected." The same empty list, a real Health
+    Snapshot: Tier 2 routes on the numeric ``sport == 60`` identity and has never
+    consulted a profile name, so the Tier-1 kill switch cannot reach it.
+
+    Asserted in the same configuration as the row above rather than in the default
+    one, because "unaffected" is a claim about *that* configuration."""
+    declared_config()
+
+    with TestClient(app) as client:
+        body = ingest(client, "sample_health_snapshot.fit")
+
+    assert body["activity_tag"] == "health_snapshot"
+    assert body["hrv_source_tier"] == "health_snapshot"
+    assert body["rmssd_precomputed"] == 37
+
+
+def test_the_undeclared_capture_routes_on_an_upload_time_override() -> None:
+    """F004 @must: "An upload-time override declares a file the config does not
+    cover" -- the second declaration route, on the one real file it exists for.
+    ``strap_hrv_sample_run.fit`` was already recorded on the wrong profile, and no
+    config edit can reach back and fix that."""
+    session, _rr = _classify_fixture(
+        UNDECLARED_FIXTURE, profile_names=[], resting_capture_override=True
+    )
+
+    assert session.activity_tag == "resting_hrv_check"
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
@@ -197,26 +466,43 @@ def test_the_gate_fixture_is_not_discriminated_by_sport() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_an_ordinary_run_with_7220_beats_is_never_routed(ingest) -> None:
-    """F004 @must: "An ordinary run is never treated as a resting-HRV reading".
+def test_an_ordinary_run_with_7220_beats_is_never_routed(
+    declared_config, ingest
+) -> None:
+    """F004 @must: "An ordinary run is never treated as a resting-HRV reading",
+    **including its amendment clause that ``resting_rmssd_ms`` is null**.
 
     ``dev_fields_run.fit`` carries more raw beats than any other fixture in the
-    corpus. If beat presence routed, this run would become a resting reading."""
+    corpus. If beat presence routed, this run would become a resting reading.
+
+    Uploaded with its own profile name ``'Run'`` **declared**, which is the whole
+    point of the row since T069: undeclared it would be refused twice over, and the
+    assertion would pass with every veto deleted. Declared, the demoted rules are
+    all that stand between a 52-minute run and E003's readiness trend -- and this
+    is not a contrived configuration, it is exactly the mistake F004 warns the
+    athlete against, because the ``hrv_undeclared_capture_candidate`` note hands
+    them the string ``'Run'`` to configure."""
+    declared_config("Run")
+
     with TestClient(app) as client:
         body = ingest(client, "dev_fields_run.fit")
 
     assert body["activity_tag"] is None
     assert body["hrv_source_tier"] is None
     assert body["rmssd_precomputed"] is None
+    assert body["resting_rmssd_ms"] is None
     assert body["rr_source"] is None
 
 
 @pytest.mark.parametrize("filename", NON_RESTING_FIXTURES)
 def test_no_ordinary_fixture_reaches_a_tier_1_reading(filename: str) -> None:
-    """``sample_run.fit`` and ``wrist_ppg_run.fit`` carry zero beats, so they never
+    """The same three files, driven with ``'Run'`` declared so each is refused by
+    the rule it is here to pin rather than by its profile name.
+
+    ``sample_run.fit`` and ``wrist_ppg_run.fit`` carry zero beats, so they never
     reach the predicate at all; ``dev_fields_run.fit`` reaches it and is rejected on
     duration and mean speed alike."""
-    session, _rr = _classify_fixture(filename)
+    session, _rr = _classify_fixture(filename, profile_names=["Run"])
 
     assert session.activity_tag is None
     assert session.hrv_source_tier is None
@@ -224,11 +510,31 @@ def test_no_ordinary_fixture_reaches_a_tier_1_reading(filename: str) -> None:
     assert "computed_resting_rmssd_ms" not in session.context.provenance
 
 
-def test_a_resting_profile_with_no_beats_does_not_route(synthetic, classified) -> None:
+def test_a_declared_ordinary_run_carrying_beats_is_still_vetoed() -> None:
+    """``strap_run_hrv.fit``, the strongest form of the same row: a real 6000 s /
+    19.2 km run on the ``'Run'`` profile carrying **6145** ``hrv`` messages and
+    13659 beats, at avg HR 140.
+
+    With ``'Run'`` declared it is a *declared* file with real beats, so only the
+    demoted vetoes refuse it -- the duration ceiling, the speed bound and the heart
+    rate all fire. This is the row that proves the vetoes did not lose their teeth
+    when they lost their vote: delete them and a declared marathon becomes a
+    resting-HRV reading."""
+    session, rr_intervals = _classify_fixture("strap_run_hrv.fit", profile_names=["Run"])
+
+    assert len(rr_intervals) > 6000
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert "computed_resting_rmssd_ms" not in session.context.provenance
+
+
+def test_a_resting_profile_with_no_beats_does_not_route(declared_capture) -> None:
     """Necessary condition: the file must carry ``hrv`` (#78) beat-to-beat arrays.
     A two-minute non-session with no beats is Tier 2's business, never Tier 1's."""
-    session = classified(
-        synthetic(total_timer_time=150.0, total_distance=10.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=150.0,
+        total_distance=10.0,
+        avg_heart_rate=55,
         rr_intervals=[],
     )
 
@@ -244,13 +550,14 @@ def test_a_resting_profile_with_no_beats_does_not_route(synthetic, classified) -
 @pytest.mark.parametrize("duration", [150.797, 300.0])
 def test_a_capture_within_the_protocol_window_routes(
     duration: float,
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """300 s is a citation, not an invented number: the upper bound of §2.4.5's
     stated "2-5 minute resting measurement" protocol. The boundary itself routes."""
-    session = classified(
-        synthetic(total_timer_time=duration, total_distance=100.0, avg_heart_rate=58),
+    session = declared_capture(
+        total_timer_time=duration,
+        total_distance=100.0,
+        avg_heart_rate=58,
         rr_intervals=_beats(),
     )
 
@@ -258,13 +565,14 @@ def test_a_capture_within_the_protocol_window_routes(
 
 
 def test_a_capture_longer_than_the_protocol_window_does_not_route(
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """Not widened to 600 s "for margin": any value between 150.8 and 3117 separates
     the two fixtures, and only the citable one may be chosen."""
-    session = classified(
-        synthetic(total_timer_time=300.001, total_distance=10.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=300.001,
+        total_distance=10.0,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -273,25 +581,24 @@ def test_a_capture_longer_than_the_protocol_window_does_not_route(
 
 
 def test_a_capture_with_no_duration_does_not_route_and_does_not_raise(
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """``_build_summary`` strips its ``None`` values, so a file with no
     ``total_timer_time`` has **no** ``duration_s`` key. Subscripting would be a 500
     on a perfectly valid upload."""
-    session = classified(
-        synthetic(total_distance=10.0, avg_heart_rate=55), rr_intervals=_beats()
-    )
+    session = declared_capture(total_distance=10.0, avg_heart_rate=55, rr_intervals=_beats())
 
     assert session.summary is not None and "duration_s" not in session.summary
     assert session.hrv_source_tier is None
 
 
-def test_a_zero_duration_capture_does_not_divide_by_zero(synthetic, classified) -> None:
+def test_a_zero_duration_capture_does_not_divide_by_zero(declared_capture) -> None:
     """A degenerate file can carry ``total_timer_time`` 0. The speed must be computed
     only after the duration check has established a usable divisor."""
-    session = classified(
-        synthetic(total_timer_time=0.0, total_distance=10.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=0.0,
+        total_distance=10.0,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -303,11 +610,14 @@ def test_a_zero_duration_capture_does_not_divide_by_zero(synthetic, classified) 
 # ---------------------------------------------------------------------------
 
 
-def test_gps_drift_below_walking_pace_routes(synthetic, classified) -> None:
-    """The gate fixture's own profile: 108.21 m over 150.797 s = 0.718 m/s, which is
-    drift, not travel."""
-    session = classified(
-        synthetic(total_timer_time=150.797, total_distance=108.21, avg_heart_rate=60),
+def test_gps_drift_below_walking_pace_routes(declared_capture) -> None:
+    """``strap_hrv_sample_run.fit``'s own profile, declared: 108.21 m over 150.797 s =
+    0.718 m/s, which is drift, not travel. The real file is refused for want of a
+    declaration; the synthetic here carries one, so the speed bound is what decides."""
+    session = declared_capture(
+        total_timer_time=150.797,
+        total_distance=108.21,
+        avg_heart_rate=60,
         rr_intervals=_beats(),
     )
 
@@ -321,14 +631,15 @@ def test_gps_drift_below_walking_pace_routes(synthetic, classified) -> None:
 def test_movement_above_walking_pace_does_not_route(
     distance: float,
     duration: float,
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """1.0 m/s is a **spec-introduced implementation default** (no direct citation),
     flagged as such in the module. The first row is the first step past the inclusive
     bound; the last is ``dev_fields_run.fit``'s own 3.215 m/s profile."""
-    session = classified(
-        synthetic(total_timer_time=duration, total_distance=distance, avg_heart_rate=58),
+    session = declared_capture(
+        total_timer_time=duration,
+        total_distance=distance,
+        avg_heart_rate=58,
         rr_intervals=_beats(),
     )
 
@@ -337,22 +648,24 @@ def test_movement_above_walking_pace_does_not_route(
 
 
 def test_a_present_distance_above_walking_pace_vetoes_regardless_of_heart_rate(
-    synthetic, classified
+    declared_capture,
 ) -> None:
     """A capture that genuinely moved is not rescued by a low average heart rate.
 
     Under the conjunction rule every present signal must agree, so the distance
     veto stands on its own — this is the direction that was always correct, and
     it is unchanged by the 2026-09-06 amendment."""
-    session = classified(
-        synthetic(total_timer_time=200.0, total_distance=600.0, avg_heart_rate=52),
+    session = declared_capture(
+        total_timer_time=200.0,
+        total_distance=600.0,
+        avg_heart_rate=52,
         rr_intervals=_beats(),
     )
 
     assert session.hrv_source_tier is None
 
 
-def test_a_boundary_speed_of_exactly_one_metre_per_second_routes(synthetic, classified) -> None:
+def test_a_boundary_speed_of_exactly_one_metre_per_second_routes(declared_capture) -> None:
     """The bound is inclusive: ``<= 1.0``.
 
     **Amended 2026-09-06 (sprint-003 critic pass).** This capture used to carry no
@@ -364,8 +677,10 @@ def test_a_boundary_speed_of_exactly_one_metre_per_second_routes(synthetic, clas
     supplied so that bound is still what decides the outcome; the HR-less profile it
     used to carry is now pinned deliberately, and in the opposite direction, as
     ``walking-pace-no-heart-rate`` in ``_PROFILE_CONTRACT``."""
-    session = classified(
-        synthetic(total_timer_time=200.0, total_distance=200.0, avg_heart_rate=60),
+    session = declared_capture(
+        total_timer_time=200.0,
+        total_distance=200.0,
+        avg_heart_rate=60,
         rr_intervals=_beats(),
     )
 
@@ -377,15 +692,17 @@ def test_a_boundary_speed_of_exactly_one_metre_per_second_routes(synthetic, clas
 # ---------------------------------------------------------------------------
 
 
-def test_a_gps_less_hard_effort_does_not_route(synthetic, classified) -> None:
+def test_a_gps_less_hard_effort_does_not_route(declared_capture) -> None:
     """**The case the heart-rate arm exists for**, and the one a fixture-only suite
     would miss entirely: a 240 s chest-strap-paired indoor effort with no
     ``distance_m`` and an average heart rate of 165. Without this arm the predicate
     collapses to "beats present AND duration <= 300 s", and an indoor-trainer FTP
     test, rowing-erg piece or treadmill interval rep would feed a *maximal effort*
     into the readiness ladder as rest."""
-    session = classified(
-        synthetic(total_timer_time=240.0, avg_heart_rate=165), rr_intervals=_beats()
+    session = declared_capture(
+        total_timer_time=240.0,
+        avg_heart_rate=165,
+        rr_intervals=_beats(),
     )
 
     assert session.activity_tag is None
@@ -393,12 +710,10 @@ def test_a_gps_less_hard_effort_does_not_route(synthetic, classified) -> None:
     assert session.rr_source is None
 
 
-def test_a_gps_less_resting_capture_routes(synthetic, classified) -> None:
+def test_a_gps_less_resting_capture_routes(declared_capture) -> None:
     """The allowance for missing distance is what lets an indoor waking capture
     route at all: 180 s, no ``distance_m``, average heart rate 58."""
-    session = classified(
-        synthetic(total_timer_time=180.0, avg_heart_rate=58), rr_intervals=_beats()
-    )
+    session = declared_capture(total_timer_time=180.0, avg_heart_rate=58, rr_intervals=_beats())
 
     assert session.activity_tag == "resting_hrv_check"
     assert session.hrv_source_tier == "chest_strap_raw"
@@ -407,30 +722,34 @@ def test_a_gps_less_resting_capture_routes(synthetic, classified) -> None:
 
 
 @pytest.mark.parametrize("avg_hr", [58, 100])
-def test_the_heart_rate_bound_is_inclusive(avg_hr: int, synthetic, classified) -> None:
+def test_the_heart_rate_bound_is_inclusive(avg_hr: int, declared_capture) -> None:
     """100 bpm is a spec-introduced default chosen for **separation, not precision**:
-    the gate fixture is 60 and any short hard effort is 150+, leaving generous
+    ``strap_hrv_sample_run.fit`` is 60 and any short hard effort is 150+, leaving generous
     headroom for a stressed or unwell resting morning."""
-    session = classified(
-        synthetic(total_timer_time=180.0, avg_heart_rate=avg_hr), rr_intervals=_beats()
+    session = declared_capture(
+        total_timer_time=180.0,
+        avg_heart_rate=avg_hr,
+        rr_intervals=_beats(),
     )
 
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
-def test_a_heart_rate_above_the_bound_does_not_route(synthetic, classified) -> None:
-    session = classified(
-        synthetic(total_timer_time=180.0, avg_heart_rate=101), rr_intervals=_beats()
+def test_a_heart_rate_above_the_bound_does_not_route(declared_capture) -> None:
+    session = declared_capture(
+        total_timer_time=180.0,
+        avg_heart_rate=101,
+        rr_intervals=_beats(),
     )
 
     assert session.hrv_source_tier is None
 
 
-def test_no_intensity_signal_at_all_does_not_route(synthetic, classified) -> None:
+def test_no_intensity_signal_at_all_does_not_route(declared_capture) -> None:
     """Distance absent *and* average heart rate absent leaves nothing to discriminate
     on. The conservative outcome is no reading -- never a route on beats and duration
     alone, which is the rule the whole reference document is written around."""
-    session = classified(synthetic(total_timer_time=180.0), rr_intervals=_beats())
+    session = declared_capture(total_timer_time=180.0, rr_intervals=_beats())
 
     assert session.summary is not None
     assert "distance_m" not in session.summary
@@ -445,13 +764,16 @@ def test_no_intensity_signal_at_all_does_not_route(synthetic, classified) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_tier_1_is_reached_before_the_tier_2_branch(synthetic, classified) -> None:
+def test_tier_1_is_reached_before_the_tier_2_branch(declared_capture) -> None:
     """§2.4.5 orders the hierarchy highest-fidelity-first, so a capture carrying both
     raw beats and a device ``rmssd_hrv`` resolves to Tier 1 and leaves
     ``rmssd_precomputed`` null. T045 proves the full precedence contract, including
     where the unused device value is recorded; this only pins the branch order."""
-    session = classified(
-        synthetic(sport=60, total_timer_time=180.0, avg_heart_rate=58, rmssd_hrv=42),
+    session = declared_capture(
+        sport=60,
+        total_timer_time=180.0,
+        avg_heart_rate=58,
+        rmssd_hrv=42,
         rr_intervals=_beats(),
     )
 
@@ -480,8 +802,7 @@ def test_the_health_snapshots_still_take_the_tier_2_path(
 
 
 def test_a_present_zero_distance_still_consults_the_heart_rate_arm(
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """**The R3 leak.** ``mapping._build_summary`` strips only ``None``, so an indoor
     session carrying ``total_distance = 0.0`` has a ``distance_m`` key holding ``0.0``
@@ -493,8 +814,10 @@ def test_a_present_zero_distance_still_consults_the_heart_rate_arm(
     through the one branch a fallback-shaped predicate never takes.
 
     The two signals must therefore **agree** whenever both are present."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=165),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=0.0,
+        avg_heart_rate=165,
         rr_intervals=_beats(),
     )
 
@@ -508,12 +831,14 @@ def test_a_present_zero_distance_still_consults_the_heart_rate_arm(
     )
 
 
-def test_a_present_zero_distance_resting_capture_still_routes(synthetic, classified) -> None:
+def test_a_present_zero_distance_resting_capture_still_routes(declared_capture) -> None:
     """The twin, and the reason the fix is an AND rather than a heart-rate-only rule: a
     genuine indoor morning capture also logs ``total_distance = 0.0``. It agrees with
     both arms -- 0.0 m/s and 55 bpm -- so it must still produce a Tier-1 reading."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=0.0,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -524,13 +849,14 @@ def test_a_present_zero_distance_resting_capture_still_routes(synthetic, classif
 
 
 def test_a_moving_capture_with_a_resting_heart_rate_still_does_not_route(
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """The other half of the AND, carried over unchanged from the old fallback reading:
     a low average heart rate does not rescue a capture that demonstrably moved."""
-    session = classified(
-        synthetic(total_timer_time=200.0, total_distance=600.0, avg_heart_rate=52),
+    session = declared_capture(
+        total_timer_time=200.0,
+        total_distance=600.0,
+        avg_heart_rate=52,
         rr_intervals=_beats(),
     )
 
@@ -538,13 +864,40 @@ def test_a_moving_capture_with_a_resting_heart_rate_still_does_not_route(
 
 
 # ---------------------------------------------------------------------------
-# The ratified profile contract, as one table (F004 ref doc §2, 2026-09-06)
+# The ratified contract, as one table, on TWO axes (F004 ref doc §2; T069)
 # ---------------------------------------------------------------------------
 
-# Every row of the discriminator's contract, in one place. The single-case tests
-# above still carry the argument for *why* each arm exists; this table is what
+# Every row of the veto set's contract, in one place. The single-case tests
+# above still carry the argument for *why* each rule exists; this table is what
 # the predicate as a whole is pinned to, so a future amendment has one place to
 # be argued with rather than a dozen scattered assertions to reconcile.
+#
+# **Provenance of the rows** (per
+# ``.claude/rules/learnings/contract-tables-need-an-independent-oracle.md``, which
+# asks a table to say which it is): the *veto* rows below were written alongside
+# the sprint-003 fixes they pin and reconciled afterwards against T058's
+# independently-authored ``spec/references/F004-declaration-contract.md``; the
+# *declaration* axis added at T069 is reconciled against that same document's
+# Table A. Neither is an independent oracle on its own, which is why the second
+# axis exists at all -- see below.
+#
+# **Why two axes** (T069). Removing the inference arm made every ``False`` row
+# ``False`` for a **new** reason: "undeclared", rather than the specific veto the
+# row was written to isolate. Run on one axis the table would therefore stop
+# discriminating between the veto rules entirely -- every negative would pass with
+# all three thresholds deleted, and "a check that cannot fail is not a check". So
+# each row is run twice:
+#
+#   * **declared** -- the file carries ``sport_profile_name = 'HRV Snapshot'`` and
+#     that name is configured. The expected outcome is the row's own ``routes``
+#     value, so a ``False`` row still isolates its veto and a ``True`` row still
+#     proves the veto set stays silent on a clean capture.
+#   * **undeclared** -- the identical summary on the ``'Run'`` profile, with the
+#     same configured list. The expected outcome is **always** refusal. These are
+#     the rows that pin the declaration itself: delete the declaration check and
+#     every undeclared twin of a ``True`` row goes red, while the veto rows stay
+#     green. The two axes fail in disjoint sets, which is what makes each one a
+#     check on a different rule.
 #
 # "absent" is expressed the way a real file expresses it -- by omitting the
 # ``session`` field, which ``mapping._build_summary`` then strips, leaving no
@@ -607,10 +960,10 @@ _PROFILE_CONTRACT = [
     # The zero-distance amendment drew its line at exactly ``distance_m > 0``,
     # which tests a *sentinel* rather than informativeness. Five metres over four
     # minutes is GPS jitter; it is no more evidence of stillness than ``0.0`` is.
-    # And the gate fixture's own 108.21 m over 150.797 s is the same observation
-    # at a larger magnitude -- the reference document calls it drift in so many
-    # words -- so no threshold on the distance itself can separate the two
-    # without being invented. The line is drawn on the other axis instead: a
+    # And ``strap_hrv_sample_run.fit``'s own 108.21 m over 150.797 s is the same
+    # observation at a larger magnitude -- the reference document calls it drift
+    # in so many words -- so no threshold on the distance itself can separate the
+    # two without being invented. The line is drawn on the other axis instead: a
     # present distance below walking pace is the **absence of counter-evidence,
     # never evidence**, because a stationary maximal effort -- erg, indoor
     # trainer, treadmill rep -- produces exactly the same reading. Only a heart
@@ -800,32 +1153,44 @@ _PROFILE_CONTRACT = [
 ]
 
 
+@pytest.mark.parametrize("declared", [True, False], ids=["declared", "undeclared"])
 @pytest.mark.parametrize(("session_extra", "routes"), _PROFILE_CONTRACT)
 def test_the_resting_profile_contract(
     session_extra: dict,
     routes: bool,
-    synthetic,
-    classified,
+    declared: bool,
+    declared_capture,
+    undeclared_capture,
 ) -> None:
-    """The whole discriminator, row by row, driven through the real mapping path.
+    """The whole contract, row by row and axis by axis, through the real mapping
+    path.
 
-    Row 2 -- zero distance, no heart rate -- is the 2026-09-06 amendment. Before
-    it, ``0.0 / 240 = 0.0 <= 1.0`` satisfied "at least one intensity signal is
-    present" while carrying no intensity information at all; the heart-rate arm
-    was skipped as absent; and the conjunction collapsed to a single arm that
-    **any** zero-distance capture satisfied unconditionally. It was reproduced
-    end-to-end against the real API during the sprint-003 review by patching the
-    gate fixture's ``session`` message: a 240 s capture with 156 beats and no
-    ``avg_heart_rate`` came back a full Tier-1 reading, unflagged.
+    **The declaration axis (T069).** A route requires the athlete to have said so,
+    so the expected outcome is ``routes AND declared``: nothing on the undeclared
+    half routes, however restful its summary looks. That half is the only thing in
+    this module that can fail when the declaration check is deleted, and the
+    ``True`` rows are the ones that do -- an undeclared 240 s / 0.0 m / 55 bpm
+    capture with clean beats is the exact input the pre-amendment predicate
+    accepted.
+
+    **The veto axis.** Row 2 -- zero distance, no heart rate -- is the 2026-09-06
+    amendment. Before it, ``0.0 / 240 = 0.0 <= 1.0`` satisfied "at least one
+    intensity signal is present" while carrying no intensity information at all;
+    the heart-rate arm was skipped as absent; and the conjunction collapsed to a
+    single arm that **any** zero-distance capture satisfied unconditionally. It was
+    reproduced end-to-end against the real API during the sprint-003 review by
+    patching a real capture's ``session`` message: a 240 s file with 156 beats and
+    no ``avg_heart_rate`` came back a full Tier-1 reading, unflagged.
 
     Rows 1 and 3 are the pair that constrains the fix from both sides: the same
     zero distance must not rescue a maximal effort, and must not condemn a
     genuine indoor waking capture. Only the heart-rate arm can tell those two
     apart -- which is exactly why a zero distance may not stand in for it."""
-    session = classified(synthetic(**session_extra), rr_intervals=_beats())
+    build = declared_capture if declared else undeclared_capture
+    session = build(**session_extra, rr_intervals=_beats())
     provenance = session.context.provenance if session.context else {}
 
-    if routes:
+    if routes and declared:
         assert session.activity_tag == "resting_hrv_check"
         assert session.hrv_source_tier == "chest_strap_raw"
         assert session.rr_source == "chest_strap_ecg"
@@ -856,7 +1221,7 @@ def test_the_resting_profile_contract(
 # T061 section is the exhaustive enumeration.
 
 
-def test_a_negative_distance_vetoes_rather_than_reading_as_absent(synthetic, classified) -> None:
+def test_a_negative_distance_vetoes_rather_than_reading_as_absent(declared_capture) -> None:
     """**This reverses the rule this test previously asserted, deliberately.**
 
     Until 2026-09-06 a negative ``total_distance`` was read as *absent* -- the
@@ -882,8 +1247,10 @@ def test_a_negative_distance_vetoes_rather_than_reading_as_absent(synthetic, cla
 
     F004 Decision Log, 2026-09-06: *"Reconciling the [[IDEA-009]] convention's
     treatment of a negative distance against an unparseable one"*."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=-500.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=-500.0,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -895,21 +1262,23 @@ def test_a_negative_distance_vetoes_rather_than_reading_as_absent(synthetic, cla
     assert session.hrv_source_tier is None
 
 
-def test_a_negative_distance_vetoes_even_with_no_heart_rate(synthetic, classified) -> None:
+def test_a_negative_distance_vetoes_even_with_no_heart_rate(declared_capture) -> None:
     """The same input with the corroborating heart rate removed.
 
     It is kept as an assumption check rather than a mechanism pin: with no heart
     rate the file is refused twice over, so it would stay green with the veto
     deleted. The row above is the one that isolates the mechanism."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=-500.0), rr_intervals=_beats()
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=-500.0,
+        rr_intervals=_beats(),
     )
 
     assert session.activity_tag is None
     assert session.hrv_source_tier is None
 
 
-def test_a_negative_average_heart_rate_vetoes(synthetic, classified) -> None:
+def test_a_negative_average_heart_rate_vetoes(declared_capture) -> None:
     """R2, and the finding that produced it (T058, Finding 2).
 
     Evaluated **as written**, both normative veto blocks *accept* ``-5``: the
@@ -930,8 +1299,10 @@ def test_a_negative_average_heart_rate_vetoes(synthetic, classified) -> None:
 
     The row is otherwise clean (240 s, zero distance), so it isolates the
     heart-rate veto and nothing else: under the pre-T061 reading it **routed**."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=-5),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=0.0,
+        avg_heart_rate=-5,
         rr_intervals=_beats(),
     )
 
@@ -942,7 +1313,7 @@ def test_a_negative_average_heart_rate_vetoes(synthetic, classified) -> None:
 
 
 def test_a_present_and_zero_average_heart_rate_is_not_evidence_of_rest(
-    synthetic, classified
+    declared_capture,
 ) -> None:
     """Rule 1 extended from ``distance_m`` to ``avg_heart_rate``, which is the
     residue ``IDEA-009`` left open and this task closes.
@@ -959,8 +1330,10 @@ def test_a_present_and_zero_average_heart_rate_is_not_evidence_of_rest(
     as a consequence of the stated convention rather than as a guard invented
     for an unproducible case -- that distinction is the reason it is worth
     shipping at all."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=0),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=0.0,
+        avg_heart_rate=0,
         rr_intervals=_beats(),
     )
 
@@ -971,7 +1344,7 @@ def test_a_present_and_zero_average_heart_rate_is_not_evidence_of_rest(
 
 
 def test_an_invalid_sentinel_distance_reads_as_absent_and_still_routes(
-    synthetic, classified
+    declared_capture,
 ) -> None:
     """**R1, and the trap it names.** The one row where the two candidate
     readings of the convention give *opposite* answers.
@@ -998,8 +1371,10 @@ def test_an_invalid_sentinel_distance_reads_as_absent_and_still_routes(
 
     The assertion on the key's *absence* is deliberate: asserting only the route
     would pass for the wrong reason on a file that simply had no distance."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=None, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=None,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -1008,7 +1383,7 @@ def test_an_invalid_sentinel_distance_reads_as_absent_and_still_routes(
     assert session.hrv_source_tier == "chest_strap_raw"
 
 
-def test_negative_zero_is_exactly_zero_and_therefore_absent(synthetic, classified) -> None:
+def test_negative_zero_is_exactly_zero_and_therefore_absent(declared_capture) -> None:
     """T058's Finding 11, decided explicitly rather than left to fall out.
 
     ``-0.0`` sits exactly on the boundary between rule 1's *degenerate* (zero)
@@ -1028,8 +1403,10 @@ def test_negative_zero_is_exactly_zero_and_therefore_absent(synthetic, classifie
 
     Pinned on ``distance_m``, where the two answers differ observably: absent
     lets the heart rate decide and the capture routes; a veto would refuse it."""
-    session = classified(
-        synthetic(total_timer_time=240.0, total_distance=-0.0, avg_heart_rate=55),
+    session = declared_capture(
+        total_timer_time=240.0,
+        total_distance=-0.0,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
 
@@ -1056,8 +1433,7 @@ def test_negative_zero_is_exactly_zero_and_therefore_absent(synthetic, classifie
 )
 def test_a_non_numeric_summary_value_vetoes_and_is_never_a_500(
     session_extra: dict,
-    synthetic,
-    classified,
+    declared_capture,
 ) -> None:
     """``fitdecode`` types a field by the **file's own declared base type**, not the
     global profile: ``reader.py`` (verified at lines 797-806 of the vendored copy)
@@ -1081,14 +1457,14 @@ def test_a_non_numeric_summary_value_vetoes_and_is_never_a_500(
     ``_classify_tier_2``, where an unparseable ``rmssd_hrv`` genuinely does mean
     "no usable device value" (``test_resting_hrv_tier2.py``). The presence
     discrimination lives *around* it, in ``_resting_profile_duration``."""
-    session = classified(synthetic(**session_extra), rr_intervals=_beats())
+    session = declared_capture(**session_extra, rr_intervals=_beats())
 
     assert session.activity_tag is None
     assert session.hrv_source_tier is None
 
 
 def test_a_boolean_summary_value_is_unparseable_and_therefore_vetoes(
-    synthetic, classified
+    declared_capture,
 ) -> None:
     """``bool`` is an ``int`` subclass, so ``True <= 100`` is ``True`` and a bare
     ``isinstance(value, (int, float))`` would read a flag as an average heart rate
@@ -1102,13 +1478,17 @@ def test_a_boolean_summary_value_is_unparseable_and_therefore_vetoes(
     at all. It is now refused because the bool **vetoes**. Same outcome, different
     mechanism -- and the distance row makes the difference observable, since a bool
     distance with an agreeing heart rate used to route."""
-    session = classified(
-        synthetic(total_timer_time=180.0, avg_heart_rate=True), rr_intervals=_beats()
+    session = declared_capture(
+        total_timer_time=180.0,
+        avg_heart_rate=True,
+        rr_intervals=_beats(),
     )
     assert session.hrv_source_tier is None
 
-    routed_before = classified(
-        synthetic(total_timer_time=240.0, total_distance=True, avg_heart_rate=55),
+    routed_before = declared_capture(
+        total_timer_time=240.0,
+        total_distance=True,
+        avg_heart_rate=55,
         rr_intervals=_beats(),
     )
     assert routed_before.summary is not None
@@ -1130,8 +1510,19 @@ def test_a_boolean_summary_value_is_unparseable_and_therefore_vetoes(
 # ``chest_strap_raw`` reading -- a two-hour run turned into a resting-HRV
 # datapoint whose number came from in-run beats, and simultaneously excluded
 # from training load by its own tag.
+#
+# **Leg 1 is declared** (T069). Without the declaration the file would now be
+# refused twice over -- once by this guard and once for being undeclared -- and an
+# assertion that it does not route would pass with the guard deleted, which is "a
+# check that cannot fail is not a check". Declaring it puts the guard back on its
+# own: the file carries the athlete's own profile name and is still refused.
 _MULTI_SESSION_REPRODUCTION = (
-    {"total_timer_time": 240.0, "total_distance": 150.0, "avg_heart_rate": 92},
+    {
+        "total_timer_time": 240.0,
+        "total_distance": 150.0,
+        "avg_heart_rate": 92,
+        "sport_profile_name": DECLARED_PROFILE,
+    },
     {"total_timer_time": 7200.0, "total_distance": 20000.0, "avg_heart_rate": 150},
 )
 
@@ -1147,7 +1538,9 @@ def test_the_multi_session_reproduction_is_not_routed_by_tier_1(
     "best" session: it refuses to route a file it cannot confidently classify.
     Multi-session support is a feature, not a review fix."""
     session = classified(
-        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+        multi_session(*_MULTI_SESSION_REPRODUCTION),
+        rr_intervals=_beats(64),
+        profile_names=[DECLARED_PROFILE],
     )
 
     assert session.activity_tag is None
@@ -1171,7 +1564,9 @@ def test_the_refusal_is_recorded_in_provenance_rather_than_left_silent(
     the refusal and is not otherwise recoverable from the stored session -- the
     canonical summary is leg 1's and says nothing about leg 2 existing."""
     session = classified(
-        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+        multi_session(*_MULTI_SESSION_REPRODUCTION),
+        rr_intervals=_beats(64),
+        profile_names=[DECLARED_PROFILE],
     )
 
     assert session.context.provenance["hrv_multi_session_unclassified"] == {
@@ -1188,7 +1583,9 @@ def test_the_refusal_raises_no_quality_flag(multi_session, classified) -> None:
     ``hrv_reading_unavailable``), and none of it fits a file whose identity was
     never established. No new flag is invented for it either."""
     session = classified(
-        multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=_beats(64)
+        multi_session(*_MULTI_SESSION_REPRODUCTION),
+        rr_intervals=_beats(64),
+        profile_names=[DECLARED_PROFILE],
     )
 
     assert session.quality_flags == []
@@ -1201,7 +1598,11 @@ def test_a_beatless_multi_session_file_is_not_gated_either(
     guard. ``_gate_a_beatless_resting_capture`` reports "this resting capture
     recorded no beats" -- a statement about a capture, and leg 1's profile is not
     evidence that the *file* is one."""
-    session = classified(multi_session(*_MULTI_SESSION_REPRODUCTION), rr_intervals=[])
+    session = classified(
+        multi_session(*_MULTI_SESSION_REPRODUCTION),
+        rr_intervals=[],
+        profile_names=[DECLARED_PROFILE],
+    )
 
     assert session.quality_flags == []
     assert session.activity_tag is None
@@ -1218,22 +1619,35 @@ def test_a_multi_session_file_of_two_resting_legs_is_still_refused(
     friendlier disguise. Refuse, and let a real multi-session task decide."""
     session = classified(
         multi_session(
-            {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": 58},
-            {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": 57},
+            {
+                "total_timer_time": 150.0,
+                "total_distance": 10.0,
+                "avg_heart_rate": 58,
+                "sport_profile_name": DECLARED_PROFILE,
+            },
+            {
+                "total_timer_time": 150.0,
+                "total_distance": 10.0,
+                "avg_heart_rate": 57,
+                "sport_profile_name": DECLARED_PROFILE,
+            },
         ),
         rr_intervals=_beats(64),
+        profile_names=[DECLARED_PROFILE],
     )
 
     assert session.activity_tag is None
     assert session.hrv_source_tier is None
 
 
-def test_a_single_session_file_carries_no_refusal_marker(synthetic, classified) -> None:
+def test_a_single_session_file_carries_no_refusal_marker(declared_capture) -> None:
     """The guard is scoped to the case it is about: one ``session`` message routes
     exactly as before and gains no provenance entry. Without this the marker could
     be written unconditionally and every assertion above would still pass."""
-    session = classified(
-        synthetic(total_timer_time=150.797, total_distance=108.21, avg_heart_rate=60),
+    session = declared_capture(
+        total_timer_time=150.797,
+        total_distance=108.21,
+        avg_heart_rate=60,
         rr_intervals=_beats(),
     )
 
@@ -1241,10 +1655,13 @@ def test_a_single_session_file_carries_no_refusal_marker(synthetic, classified) 
     assert "hrv_multi_session_unclassified" not in session.context.provenance
 
 
-def test_the_gate_fixture_carries_exactly_one_session_message() -> None:
-    """The guard must not be able to reach the GO/NO-GO fixture. Asserted against
-    the real decoded file rather than assumed, because "how many ``session``
-    messages does a real capture carry" is precisely a fitdecode question."""
-    messages = fit_parser.decode((FIXTURES / GATE_FIXTURE).read_bytes())
+@pytest.mark.parametrize("filename", [DECLARED_FIXTURE, UNDECLARED_FIXTURE])
+def test_the_real_captures_carry_exactly_one_session_message(filename: str) -> None:
+    """The guard must not be able to reach either real capture. Asserted against
+    the decoded files rather than assumed, because "how many ``session`` messages
+    does a real capture carry" is precisely a fitdecode question -- and it is
+    asserted for **both**, because the declared positive and the undeclared
+    negative are only a matched pair if this holds of each."""
+    messages = fit_parser.decode((FIXTURES / filename).read_bytes())
 
     assert sum(1 for m in messages if m.name == "session") == 1

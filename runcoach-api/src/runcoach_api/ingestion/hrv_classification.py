@@ -17,13 +17,17 @@ return value, so a later tier can be added without touching
 **The tiers it will route** (F004 reference document §1-§3):
 
 - **Tier 1, ``chest_strap_raw``** -- ``hrv`` (#78) messages carrying
-  beat-to-beat ``time`` arrays *plus* a resting discriminator drawn
+  beat-to-beat ``time`` arrays, *plus the athlete's explicit
+  declaration* that the file was meant as a measurement, and no veto
   from the capture's own duration/distance/heart-rate profile. Raw-RR
   presence alone must never be the rule: ``dev_fields_run.fit`` is an
   ordinary run with 7220 beats that such a rule would convert into a
-  resting reading. The discriminator was a GO-gate deliverable and was
-  ratified 2026-09-05 against ``strap_hrv_sample_run.fit`` (T041,
-  implemented in ``_classify_tier_1`` below).
+  resting reading. The duration/distance/heart-rate rules were a
+  GO-gate deliverable ratified 2026-09-05 (T041) and **demoted to
+  vetoes by the 2026-09-06 amendment**: they keep their exact
+  thresholds and citations and can no longer authorise a route. See
+  ``_classify_tier_1`` below, and ``_declared`` for the declaration
+  itself.
 - **Tier 2, ``health_snapshot``** -- ``session.rmssd_hrv`` present
   *and* ``raw_sport_value == 60``, read from the provenance
   ``mapping.py`` already records. Both signals matter: capability alone
@@ -50,10 +54,23 @@ Tier-1 branch: a capture that is too short, retained too few of its
 beats, or recorded none at all is stored with its flags but yields no
 reading -- ``hrv_source_tier`` and ``rmssd_precomputed`` both stay
 ``None``, and never a ``0``/``-1`` sentinel. The gates run *after* the
-discriminator has decided the file is a resting capture, so a
-90-second ordinary run is never flagged; the beatless row runs after
-the Tier-2 branch instead, because a Health Snapshot is a zero-beat
-resting-shaped file that Tier 2 reads perfectly well.
+Tier-1 contract has claimed the file, so a 90-second ordinary run is
+never flagged; the beatless row runs after the Tier-2 branch instead,
+because a Health Snapshot is a zero-beat resting-shaped file that
+Tier 2 reads perfectly well.
+
+**T063 and T069 replaced inference with declaration** (F004's
+2026-09-06 amendment, closing ``IDEA-010``). T063 added ``_declared``
+alongside the old predicate so every commit stayed green; T069 deleted
+the old arm, which is the change that actually closes the idea. The
+consequence is observable and is the point: **a capture the athlete
+never declared does not route, however restful it looks.** The reason
+is recorded in F004's Decision Log and is the project's own history --
+Tier 2 has routed on identity (``sport == 60``) since day one and has
+needed zero patches, while Tier 1 routed on inference and needed four
+(zero distance, tiny distance, multi-session, short easy activity).
+The negative class is now "everything not declared", and the
+population between accept and reject is empty by construction.
 """
 
 from __future__ import annotations
@@ -81,12 +98,21 @@ _ACTIVITY_TAG_RESTING_HRV_CHECK = "resting_hrv_check"
 _TIER_CHEST_STRAP_RAW = "chest_strap_raw"
 _RR_SOURCE_CHEST_STRAP = "chest_strap_ecg"
 
-# --- the Tier-1 discriminator (ratified 2026-09-05, F004 reference doc §2) ---
+# --- the Tier-1 veto set (ratified 2026-09-05, F004 reference doc §2) --------
 #
-# Fixed against the gate fixture ``strap_hrv_sample_run.fit``, measured with
-# fitdecode: 149 ``hrv`` (#78) messages / 156 beats, ``total_timer_time``
-# 150.797 s, ``total_distance`` 108.21 m (mean 0.718 m/s), ``sport`` running
-# (raw 1), ``sub_sport`` generic, ``avg_heart_rate`` 60, no ``rmssd_hrv``.
+# **Demoted 2026-09-06, unchanged in value.** These three were the ratified
+# Tier-1 *discriminator*; the declaration amendment (T063/T069) took away their
+# vote and left them their veto, so each keeps its exact threshold and citation
+# and none of them can any longer cause a reading to exist. Their thresholds
+# were fixed against the file the 2026-09-05 GO/NO-GO gate recorded,
+# ``strap_hrv_sample_run.fit``, measured with fitdecode: 149 ``hrv`` (#78)
+# messages / 156 beats, ``total_timer_time`` 150.797 s, ``total_distance``
+# 108.21 m (mean 0.718 m/s), ``sport`` running (raw 1), ``sub_sport`` generic,
+# ``avg_heart_rate`` 60, no readable ``rmssd_hrv``. That file is now the
+# corpus's *undeclared negative* -- it passes all three of these and does not
+# route -- which is what makes the declaration observable; the declared
+# positive is ``strap_hrv_capture.fit``. The measurements below still describe
+# what the thresholds were calibrated against and are kept for that reason.
 
 # CITED. The upper bound of §2.4.5's "2-5 minute resting measurement"
 # protocol -- a citation, not an invented number. Deliberately not widened
@@ -108,8 +134,10 @@ _RESTING_MAX_MEAN_SPEED_MS = 1.0
 # resting morning.
 #
 # Amended 2026-09-06 (critic pass): this used to be described as "the GPS-less
-# fallback". It is not a fallback -- it is the *only* corroborating signal the
-# discriminator has, and it is now required on every Tier-1 route. See
+# fallback". It is not a fallback -- it was the *only* corroborating signal the
+# discriminator had, and it is required on every Tier-1 route. Since T069 what it
+# corroborates is a **declaration** rather than a guess: an athlete who declared
+# the file and then recorded a 140 bpm effort on it is refused here. See
 # ``_resting_profile_duration``.
 _RESTING_MAX_AVG_HEART_RATE_BPM = 100
 
@@ -575,8 +603,16 @@ def _intensity_signal(raw: Any) -> Any:
 
 
 def _resting_profile_duration(session: Session) -> float | None:
-    """The capture's duration if its duration/intensity profile is a resting
-    one, otherwise ``None`` (F004 reference document §2).
+    """The capture's duration if **no veto fires**, otherwise ``None``
+    (F004 reference document §2).
+
+    **This is the veto set, and only the veto set** (F004's 2026-09-06
+    amendment; T069 removed the arm that let it also authorise). Answering with a
+    duration means "nothing here contradicts a resting capture" -- never "this is
+    one". What makes a file a resting capture is ``_declared``; this function can
+    only refuse. Its three thresholds keep their exact values and citations, and
+    that is deliberate: what changed is their *role*, not their content, so the
+    reasoning preserved below still constrains them.
 
     Every field is first normalised by ``_intensity_signal`` -- the stated
     ``session.summary`` reading convention -- so "present" below means
@@ -586,6 +622,11 @@ def _resting_profile_duration(session: Session) -> float | None:
         AND duration_s is present AND 0 < duration_s <= 300
         AND avg_heart_rate is present AND avg_heart_rate <= 100
         AND (distance_m present  ->  distance_m / duration_s <= 1.0)
+
+    Returning the duration rather than a bare ``bool`` is what lets the quality
+    gates re-use the same reading of ``session.summary`` instead of re-deriving it,
+    and what lets T064's undeclared-candidate note tell a clean-but-undeclared file
+    from a vetoed one without evaluating the set twice.
 
     **A heart rate is required; a distance can only veto** (amended 2026-09-06,
     sprint-003 critic pass). The 2026-09-06 zero-distance amendment drew its
@@ -609,10 +650,12 @@ def _resting_profile_duration(session: Session) -> float | None:
     vote. This is the same principle the zero-distance amendment stated, carried
     to its conclusion rather than stopped at the sentinel.
 
-    The gate fixture is unaffected -- it carries ``avg_heart_rate = 60`` -- and
-    so is the genuine indoor waking capture (``0.0`` m at 55 bpm), which never
-    depended on the distance arm for its route. What changes is that a capture
-    whose *only* evidence is a distance no longer routes.
+    Neither real capture is affected -- ``strap_hrv_sample_run.fit`` carries
+    ``avg_heart_rate = 60`` and ``strap_hrv_capture.fit`` 64 -- and nor is the
+    genuine indoor waking capture (``0.0`` m at 55 bpm), which never depended on
+    the distance arm. What changed is that a capture whose *only* evidence was a
+    distance stopped clearing the veto set; since T069 no evidence of any kind
+    clears it into a route, because clearing it is not what routes a file.
 
     Historically this was a two-armed conjunction, and that shape's own history
     is preserved below because both amendments' reasoning still constrains the
@@ -674,10 +717,8 @@ def _resting_profile_duration(session: Session) -> float | None:
     sentinel is stripped to no key at all, which is the *reachable* path to the
     same answer.
 
-    Returning the duration rather than a bare ``bool`` is what lets the
-    quality gates re-use the same reading of ``session.summary`` instead of
-    re-deriving it; ``None`` is unambiguous here because a profile that
-    matches always has a duration strictly greater than zero.
+    ``None`` is unambiguous as the refusal answer because a file that clears
+    every veto always has a duration strictly greater than zero.
 
     All three values are read through ``_intensity_signal``, which wraps
     ``_numeric``: a ``tuple`` or ``str`` from a crafted definition record is
@@ -909,43 +950,6 @@ def _declared(
     return sport_profile_name in (profile_names or ())
 
 
-def _inference_authorises_tier_1(
-    rr_intervals: list[RRInterval], duration_s: float | None
-) -> bool:
-    """The **pre-amendment** Tier-1 predicate, demoted but not yet removed.
-
-    Ratified 2026-09-05 and fixed against ``strap_hrv_sample_run.fit``::
-
-        tier1 := rr_intervals is non-empty
-             AND _resting_profile_duration(session) is not None
-
-    stated here verbatim, over the two values ``_classify_tier_1`` has already
-    computed. **T069 deletes this function and its call site**, which is the
-    change that actually closes ``IDEA-010``; T063 only adds the declaration
-    beside it, so that every commit in between is green and any red is a
-    genuine regression.
-
-    **It is honest about being currently shadowed, and that is worth stating
-    rather than hiding.** The amendment's veto set (V1..V4) and this predicate
-    are *the same rules* -- the vetoes are exactly what
-    ``_resting_profile_duration`` answers ``None`` for -- so at the call site
-    below both terms are already known true and
-
-        (declared OR inferred) AND NOT vetoed  ==  NOT vetoed
-
-    There is therefore **no input** the declaration arm routes and this arm
-    refuses, and no fixture can prove the declaration load-bearing while both
-    exist. It is proved by perturbation instead:
-    ``test_resting_hrv_declaration.py`` stubs this function out and watches a
-    declared capture still route and an undeclared one stop. Naming the arm is
-    what makes that possible; leaving it as an implicit fall-through would make
-    the declaration untestable until T069, which is precisely the "the fallback
-    becomes the branch tests do not take" failure this amendment exists to
-    reject.
-    """
-    return bool(rr_intervals) and duration_s is not None
-
-
 def _classify_tier_1(
     messages: list[fitdecode.FitDataMessage],
     session: Session,
@@ -963,11 +967,28 @@ def _classify_tier_1(
     left unused. It takes ``messages`` for that reason alone: to see the
     device value it is about to ignore, so it can record it (T045).
 
-    The predicate, as amended 2026-09-06 and implemented additively by T063::
+    The predicate, as amended 2026-09-06, landed additively by T063 and
+    completed by T069::
 
-        tier1 := rr_intervals is non-empty                    # beats
+        tier1 := rr_intervals is non-empty                        # beats
              AND _resting_profile_duration(session) is not None   # the vetoes
-             AND (_declared(...) OR _inference_authorises_tier_1(...))
+             AND _declared(...)                                   # the authoriser
+
+    **Nothing is inferred.** ``_declared`` is the only term that can say yes; the
+    other two can only say no. The demoted duration/distance/heart-rate rules keep
+    their exact thresholds and citations and have lost their vote -- see
+    ``_resting_profile_duration``, which owns them and documents why each is worth
+    keeping as a veto.
+
+    **There must never be a fall-through arm here again, and the reason is
+    arithmetic rather than taste.** F004 defines the veto set *as* the demoted
+    predicate, so ``_resting_profile_duration(session) is not None`` and "the
+    pre-amendment predicate accepts this file" are the same statement over the
+    same inputs. An ``or`` on the declaration line is therefore not a fallback at
+    all -- it reduces the whole conjunction to ``NOT vetoed`` and restores
+    ``IDEA-010`` verbatim, invisibly, with every test still green. T063 proved
+    exactly that by perturbation and filed ``IDEA-018``; T069 removed the arm and
+    the suites can now tell the two rules apart.
 
     **Two orderings are normative, and only one of them is obvious.**
 
@@ -1014,28 +1035,35 @@ def _classify_tier_1(
     already uses RR presence as the chest-strap signature *for
     activities*, which is exactly why it cannot also mean "resting".
 
-    **``sport`` and ``sub_sport`` are deliberately not gated on.** The
-    gate fixture was recorded strap-paired, lying still, *on the running
-    activity profile* -- ``sport`` is ``running`` (raw 1) on both it and
-    ``dev_fields_run.fit``, so it carries no signal at all here. That is
-    also why the fixture's name reads oddly; renaming it would touch
-    every reference, so the reason is documented instead.
+    **``sport`` and ``sub_sport`` are deliberately not gated on, and the
+    declaration is not a sport check in disguise.** ``sub_sport`` reads
+    ``generic`` on every fixture in the corpus -- it is a Garmin enum the
+    athlete cannot set -- and ``sport`` is ``running`` on both
+    ``strap_hrv_sample_run.fit`` and ``dev_fields_run.fit``, so it carries
+    no signal. The declared positive ``strap_hrv_capture.fit`` reports
+    ``sport = generic`` because it was created through "Other", which is
+    distinctive across today's corpus and therefore tempting; it is true
+    of *any* custom activity profile, so it is corroboration only and
+    never the key. The key is ``sport_profile_name``, which the athlete
+    owns -- see ``_declared``.
 
-    **Why the heart-rate arm exists.** Without it, a file with no
-    ``distance_m`` reduces the predicate to "beats present AND duration
-    <= 300 s", and since sport is not gated on, a chest-strap-paired
-    4-minute indoor-trainer FTP test, rowing-erg piece or treadmill
-    interval rep would all satisfy it -- feeding a *maximal effort* into
-    the readiness ladder as rest. The allowance for a missing distance
-    is needed so an indoor waking capture still routes; the heart-rate
-    arm is what keeps that allowance from swallowing every GPS-less hard
-    effort. It is **not** consulted only when distance is missing: a
-    present-and-zero distance is what an indoor session actually logs,
-    and treating it as a satisfied distance arm let that maximal effort
-    straight through. Since the 2026-09-06 critic pass it is not an "arm"
-    at all: the heart rate is **required** on every Tier-1 route, because
-    it is the only signal that can tell rest from a stationary maximal
-    effort, and a distance can only veto. See
+    **Why the heart-rate veto exists**, and why it survived the
+    demotion. Without it, a file with no ``distance_m`` reduced the old
+    predicate to "beats present AND duration <= 300 s", and since sport
+    is not gated on, a chest-strap-paired 4-minute indoor-trainer FTP
+    test, rowing-erg piece or treadmill interval rep all satisfied it --
+    feeding a *maximal effort* into the readiness ladder as rest. That
+    hole is closed twice over now, because such a file is also
+    undeclared; the veto is kept anyway because a **declared** file can
+    still be wrong. The athlete forgets to stop the timer on the HRV
+    profile and runs 10 km, and the vetoes are the only thing between
+    that file and E003. It is **not** consulted only when distance is
+    missing: a present-and-zero distance is what an indoor session
+    actually logs, and treating it as a satisfied distance arm let that
+    maximal effort straight through. Since the 2026-09-06 critic pass it
+    is not an "arm" at all: the heart rate is **required** on every
+    Tier-1 route, because it is the only signal that can tell rest from
+    a stationary maximal effort, and a distance can only veto. See
     ``_resting_profile_duration``.
 
     **A reading that cannot be computed is not a reading.** The tier
@@ -1062,14 +1090,12 @@ def _classify_tier_1(
         return False
 
     # 3. The declaration -- the athlete saying this file was *meant* as a
-    #    measurement. ``OR``-ed with the pre-amendment inference arm, which
-    #    T069 removes; until then this is additive and nothing that routed
-    #    before stops routing. See ``_inference_authorises_tier_1`` for why the
-    #    demoted arm is a named function rather than an implicit fall-through.
-    if not (
-        _declared(session, profile_names, resting_capture_override)
-        or _inference_authorises_tier_1(rr_intervals, duration_s)
-    ):
+    #    measurement, and since T069 the **only** thing that can authorise a
+    #    Tier-1 route. There is no fall-through arm here and there must never be
+    #    one again: the pre-amendment predicate is exactly the veto evaluation
+    #    two lines above, so an ``or`` here would make the declaration a no-op
+    #    and restore ``IDEA-010`` verbatim.
+    if not _declared(session, profile_names, resting_capture_override):
         return False
 
     # T045. The file is a Tier-1 capture, so this branch has claimed it and

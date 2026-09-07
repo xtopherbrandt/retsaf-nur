@@ -19,43 +19,44 @@ refusal paths. Nothing here asserts a provenance note exists, and nothing here
 asserts one does *not* exist, so T064 is free to add them.
 
 
-Additive, and what that costs
-=============================
+The shadowing is over (T069)
+============================
 
-T063 is the **first half** of the routing inversion: the declaration arm is
-``OR``-ed with the pre-amendment inference predicate, which T069 then removes.
-That ordering keeps every commit green, and it has one consequence worth
-stating plainly, because it decides how this module is written.
+T063 was the **first half** of the routing inversion: the declaration arm was
+``OR``-ed with the pre-amendment inference predicate. T069 deleted that arm, and
+this section records what changed for this module, because it is the reason many
+of the tests below no longer request a fixture that no longer exists.
 
-**The declaration arm is shadowed by the inference arm for as long as both
-exist.** The veto set and the pre-amendment predicate are *the same rules* --
-V1..V4 of the contract table are exactly what ``_resting_profile_duration``
-answers ``None`` for -- so
+**While both arms existed the declaration was provably shadowed.** The veto set
+and the pre-amendment predicate are *the same rules* -- V1..V4 of the contract
+table are exactly what ``_resting_profile_duration`` answers ``None`` for -- so
 
     (declared OR inferred) AND NOT vetoed  ==  NOT vetoed  ==  inferred
 
-and no input exists that the declaration arm routes and the inference arm
-refuses. The task file's suggested discriminating fixture ("declared, beats
-present, distance absent, ``avg_heart_rate`` 95") does not discriminate: the
-current predicate accepts it too. **Reported as a finding, not worked around.**
+and no input existed that the declaration arm routed and the inference arm
+refused. The T063 task file's suggested discriminating fixture ("declared, beats
+present, distance absent, ``avg_heart_rate`` 95") did not discriminate; that was
+reported as a finding (``IDEA-018``) rather than worked around, and T063 pinned
+the mechanism by **perturbation** instead -- stubbing one arm and watching the
+outcome hold.
 
-The mechanism is therefore pinned by **perturbation**, which is this project's
-established answer (T048/T049/T050 and the quarantine guard all demonstrate a
-test failing against a deliberately broken implementation), and by driving both
-arms independently:
+**Since T069 the tests discriminate on their own.** ``_inference_authorises_tier_1``
+is gone, so an undeclared capture that passes every veto simply does not route,
+and every row below that asserts a refusal can now fail for the right reason.
+The ``inference_stubbed`` fixture went with it. What is kept is the *other*
+perturbation, which is still the only way to show a **positive** is
+load-bearing rather than incidental:
 
-* stub ``_inference_authorises_tier_1`` -> a **declared** capture still routes,
-  and an **undeclared** one stops routing. That is the declaration arm doing
-  work, alone.
-* stub ``_declared`` as well -> nothing routes at all, so the assertion above
-  could have failed.
-* stub ``_declared`` only -> the capture still routes, which is the additive
-  half stated as a test rather than as a comment. T069 flips this one.
+* stub ``_declared`` -> a clean, declared capture stops routing. Delete the
+  declaration check and this is the row that says so
+  (``test_with_the_declaration_stubbed_nothing_routes``).
+* ``test_the_inference_arm_is_gone`` asserts the removal directly, at the module
+  level and behaviourally, so a well-meaning restoration of the fallback fails
+  here and is told why.
 
-Every test in this module that means to isolate the declaration arm therefore
-requests ``inference_stubbed``. The ones that assert an end-to-end outcome
-through ``POST /sessions`` do not -- there the point is the transport seam, and
-the real fixture routes on either arm.
+The real-file half of the same argument lives in ``test_resting_hrv_tier1.py``:
+``strap_hrv_capture.fit`` declared routes, ``strap_hrv_sample_run.fit``
+undeclared does not, and the two differ in nothing else.
 
 
 Reconciliation with ``spec/references/F004-declaration-contract.md`` (T058)
@@ -78,8 +79,8 @@ A2    Implemented and pinned: override + beats + clean -> T1. *Provenance half: 
 A3    **Finding 7 (OPEN).** Both routes at once. ``declared`` is an ``OR``, so it
       routes; pinned. *Which note is recorded is T064's to decide* -- this module
       asserts the route only, which is the half the pseudocode does determine.
-A4    Undeclared + beats + clean -> no route; pinned with the inference arm stubbed
-      (unstubbed it still routes, additively -- see above). *Note: T064.*
+A4    Undeclared + beats + clean -> no route. Pinned with no stub since T069; it
+      needed the inference arm stubbed to mean anything before. *Note: T064.*
 A5    **Finding 5 (OPEN).** Beatless config declaration -> Tier 2. Pinned end to end
       on ``sample_health_snapshot.fit``: this is the ordering trap, and it is the one
       row where getting it wrong routes a valid snapshot **nowhere**. *Whether a
@@ -91,7 +92,8 @@ A8    Undeclared + beatless -> Tier 2 evaluated. Pinned.
 A9    Empty config list + configured-looking file -> no route. Pinned.
 A10   **Finding 6 (OPEN), resolved by R3.** Empty list **plus** an override routes.
       The empty list is "no profile declares Tier 1", never a global kill switch.
-      Pinned, with the inference arm stubbed so the row is not vacuous.
+      Pinned; its control (A9, empty list without an override) is what stops the
+      row being vacuous now that no second arm can route either one.
 A11   ``"Health Snapshot"`` does not match ``"HRV Snapshot"`` -- exact, not substring.
 A12   ``"hrv snapshot"`` does not match -- case-sensitive.
 A13   Trailing space does not match -- not trimmed.
@@ -119,9 +121,10 @@ override route.
 **Table C / D.** C4 is the ordering trap and is pinned. C1's multi-session
 refusal precedes both tiers and is unchanged by a declaration, which is pinned
 here because "declared" is exactly the input someone would expect to bypass it.
-Findings 8, 9, 14, 15, 16 and 17 are out of T063's scope: 8 is R6/T065, 17 is
+Findings 8, 9, 14, 15, 16 and 17 were out of T063's scope: 8 is R6/T065, 17 is
 R4 and reachable only through the quality gates, and the rest concern notes
-(T064) or Tier-2 precedence.
+(T064) or Tier-2 precedence. **T069 closed Finding 9** -- see the addendum
+below.
 
 **Findings 1 and 2** (the sentinel reading, and a negative ``avg_heart_rate``)
 were resolved by R1/R2 and implemented by T061; this module inherits them and
@@ -131,6 +134,40 @@ through ``context.provenance``, never through ``has_field()``.
 **Finding 3 / R5** -- a declared file killed by a veto records a provenance note
 naming the veto. Ratified, and **not implemented here**: T064 owns the notes.
 This module pins the refusal; the note is the boundary, and it is reported.
+
+**Added by T069.** Removing the inference arm settles two more of T058's rows and
+changes how the whole of Table B must be read.
+
+* **C6 / Finding 9 -- RESOLVED, derived.** "``sport == 60`` + ``rmssd_hrv`` +
+  beats, **undeclared**" was open because §3 says such a capture "resolves to
+  Tier 1", which the declaration rule makes false. The derived answer is now
+  forced rather than chosen: Tier 1 cannot *claim* an undeclared file, so §3's
+  precedence never engages and the file routes **Tier 2** on its numeric
+  identity, with ``rmssd_precomputed`` written and no ``unused_device_rmssd_hrv``
+  entry -- nothing was unused by a computation that never happened. Pinned in
+  ``test_resting_hrv_tier_precedence.py::test_an_undeclared_both_signals_capture_falls_to_tier_2``,
+  with the argument for why it is acceptable to prefer the lower-fidelity source
+  there. The *note* half of C6 (whether an undeclared-candidate note also fires)
+  remains **T064's**.
+* **Table B is now the declared column only.** Every B row's stated outcome
+  assumes the file is declared; undeclared, every one of them is "—".
+  ``_PROFILE_CONTRACT`` is therefore run on two axes (see its own comment): the
+  declared axis is Table B as written, and the undeclared axis is uniformly a
+  refusal. Without the second axis the table would stop discriminating between
+  the veto rules entirely, since after T069 every negative is also refused for
+  being undeclared.
+* **B4, B32 and B34 stay flagged "over-determined -- not a pin"**, exactly as
+  T058 marked them, and T069 adds no new pins on them.
+  ``strap_cool_down_walk.fit`` (B32) and ``strap_run_hrv.fit`` (B34) are used
+  only where a *declaration* is supplied, which removes one of the two reasons
+  they were over-determined and is stated at each such call site.
+* **D5 / Finding 17** is untouched here. R4 ratified "beats present", so the
+  beatless row stays reachable through ``_gate_a_beatless_resting_capture``,
+  which is **not** declaration-gated today: an undeclared beatless
+  resting-shaped file still raises ``hrv_capture_no_beats``. That contradicts
+  the recognised-capture principle and is **T066's**, by that task's own
+  statement; T069 deliberately leaves it alone rather than red-flagging two
+  waves early.
 
 
 Adversarial probe table (``.claude/rules/learnings/adversarial-input-probes...``)
@@ -261,24 +298,16 @@ def _beats(count: int = 40):
 
 
 @pytest.fixture
-def inference_stubbed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove the pre-amendment inference arm for the duration of one test.
-
-    This is what T069 does permanently. Stubbing it here is the only way to
-    show the declaration arm is load-bearing while both arms are ``OR``-ed --
-    see the module docstring. It is a **perturbation**, the same discipline
-    ``test_the_disjointness_assertion_actually_bites`` and the property suites
-    use: the mechanism is proved by breaking the other one and watching the
-    outcome hold.
-    """
-    monkeypatch.setattr(
-        hrv_classification, "_inference_authorises_tier_1", lambda *a, **k: False
-    )
-
-
-@pytest.fixture
 def declaration_stubbed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The mirror perturbation: no file is ever declared."""
+    """The surviving perturbation: no file is ever declared.
+
+    T063's ``inference_stubbed`` mirror was removed with the arm it stubbed
+    (T069). This one is kept, and is now the *only* thing in the suite that can
+    show a positive row is load-bearing rather than incidental -- the same
+    discipline ``test_the_disjointness_assertion_actually_bites`` and the
+    property suites use: the mechanism is proved by breaking it and watching the
+    outcome change.
+    """
     monkeypatch.setattr(hrv_classification, "_declared", lambda *a, **k: False)
 
 
@@ -311,10 +340,12 @@ def test_the_declared_fixture_routes_as_a_tier_1_reading(declared_config, ingest
     assert [flag for flag in body["quality_flags"] if flag.startswith("hrv_")] == []
 
 
-def test_the_declaration_routes_with_the_inference_arm_stubbed(
-    inference_stubbed, synthetic, classified
-) -> None:
-    """The load-bearing assertion: declaration alone authorises the route."""
+def test_the_declaration_routes(synthetic, classified) -> None:
+    """The load-bearing assertion: declaration alone authorises the route.
+
+    Until T069 this test requested ``inference_stubbed``, because it could not
+    otherwise tell which arm had routed the capture. It needs no stub now --
+    there is only one arm."""
     session = classified(
         synthetic(**CLEAN_CAPTURE),
         rr_intervals=_beats(),
@@ -324,10 +355,17 @@ def test_the_declaration_routes_with_the_inference_arm_stubbed(
     assert _routed(session)
 
 
-def test_with_both_arms_stubbed_nothing_routes(
-    inference_stubbed, declaration_stubbed, synthetic, classified
+def test_with_the_declaration_stubbed_nothing_routes(
+    declaration_stubbed, synthetic, classified
 ) -> None:
-    """The assertion above could have failed -- here is it failing."""
+    """The assertion above could have failed -- here is it failing.
+
+    This is T069's "delete the declaration check by hand and confirm the rows go
+    red", run as a test rather than as a one-off manual step: with ``_declared``
+    forced to ``False`` the clean, configured, veto-clean capture stops routing.
+    Nothing else in the classifier is touched, so a restored fallback arm would
+    keep this green and be caught by ``test_the_inference_arm_is_gone`` instead --
+    the two rows fail in different ways on purpose."""
     session = classified(
         synthetic(**CLEAN_CAPTURE),
         rr_intervals=_beats(),
@@ -339,10 +377,12 @@ def test_with_both_arms_stubbed_nothing_routes(
     assert session.hrv_source_tier is None
 
 
-def test_an_undeclared_capture_does_not_route_once_inference_is_gone(
-    inference_stubbed, synthetic, classified
-) -> None:
-    """A4. The same clean capture, on a profile the config does not name."""
+def test_an_undeclared_capture_does_not_route(synthetic, classified) -> None:
+    """A4. The same clean capture, on a profile the config does not name.
+
+    Before T069 this row needed the inference arm stubbed to mean anything --
+    unstubbed, the capture routed. It is now the plain behaviour, which is the
+    entire point of the amendment."""
     session = classified(
         synthetic(**{**CLEAN_CAPTURE, "sport_profile_name": "Run"}),
         rr_intervals=_beats(),
@@ -352,23 +392,33 @@ def test_an_undeclared_capture_does_not_route_once_inference_is_gone(
     assert not _routed(session)
 
 
-def test_the_inference_arm_still_routes_an_undeclared_capture_today(
-    declaration_stubbed, synthetic, classified
-) -> None:
-    """The additive half, asserted rather than asserted-in-a-comment.
+def test_the_inference_arm_is_gone(synthetic, classified) -> None:
+    """T069, asserted directly. This test replaces T063's
+    ``test_the_inference_arm_still_routes_an_undeclared_capture_today``, which
+    asserted the opposite and was written to be flipped here.
 
-    T063 adds a route; it removes none. **T069 flips this test** -- when the
-    inference arm goes, this capture stops routing, and that is the whole
-    point of the split. Until then a green suite means "nothing broke", and
-    this row is what makes that claim honest.
-    """
+    Two assertions, deliberately of different kinds. The **structural** one --
+    ``_inference_authorises_tier_1`` no longer exists on the module -- catches a
+    restoration that a behavioural test could miss, because the arm is
+    *provably* shadowed the instant it is ``or``-ed back in: the veto set and the
+    pre-amendment predicate are the same rules, so ``(declared OR inferred) AND
+    NOT vetoed == NOT vetoed`` and every other row in this file would stay green.
+    The **behavioural** one is the capture that arm used to route, refused. A
+    name check alone would pass against a differently-named fallback; an outcome
+    check alone would pass against a dead function left in place. Together they
+    say the arm is gone and stayed gone."""
+    assert not hasattr(hrv_classification, "_inference_authorises_tier_1")
+
     session = classified(
         synthetic(**{**CLEAN_CAPTURE, "sport_profile_name": "Run"}),
         rr_intervals=_beats(),
         profile_names=[DECLARED_PROFILE],
     )
 
-    assert _routed(session)
+    assert not _routed(session)
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert "computed_resting_rmssd_ms" not in session.context.provenance
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +453,7 @@ _NON_MATCHING_PROFILE_NAMES = [
 
 @pytest.mark.parametrize("profile_name", _NON_MATCHING_PROFILE_NAMES)
 def test_a_name_that_is_not_exactly_the_configured_one_does_not_declare(
-    profile_name, inference_stubbed, synthetic, classified
+    profile_name, synthetic, classified
 ) -> None:
     session = classified(
         synthetic(**{**CLEAN_CAPTURE, "sport_profile_name": profile_name}),
@@ -415,7 +465,7 @@ def test_a_name_that_is_not_exactly_the_configured_one_does_not_declare(
 
 
 def test_a_file_carrying_no_profile_name_at_all_is_simply_undeclared(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """A14. Absence is not an error, and it is not a veto either."""
     values = dict(CLEAN_CAPTURE)
@@ -432,7 +482,7 @@ def test_a_file_carrying_no_profile_name_at_all_is_simply_undeclared(
 
 @pytest.mark.parametrize("profile_name", [42, b"x", (1, 2), True])
 def test_a_non_string_profile_name_is_undeclared_rather_than_a_veto(
-    profile_name, inference_stubbed, synthetic, classified
+    profile_name, synthetic, classified
 ) -> None:
     """T058 Finding 12, made observable.
 
@@ -452,7 +502,7 @@ def test_a_non_string_profile_name_is_undeclared_rather_than_a_veto(
     assert _routed(session)
 
 
-def test_the_exact_name_declares(inference_stubbed, synthetic, classified) -> None:
+def test_the_exact_name_declares(synthetic, classified) -> None:
     """The positive control for the table above: it could have failed."""
     session = classified(
         synthetic(**CLEAN_CAPTURE),
@@ -464,7 +514,7 @@ def test_the_exact_name_declares(inference_stubbed, synthetic, classified) -> No
 
 
 def test_one_configured_name_among_several_still_declares(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     session = classified(
         synthetic(**CLEAN_CAPTURE),
@@ -500,7 +550,7 @@ def test_a_blank_config_entry_is_rejected_before_it_can_match_anything(
 
 
 def test_the_override_declares_a_file_the_config_does_not_cover(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """A2."""
     session = classified(
@@ -514,7 +564,7 @@ def test_the_override_declares_a_file_the_config_does_not_cover(
 
 
 def test_an_empty_config_list_plus_an_override_still_routes(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """A10, resolved by **R3**: ``[]`` is not a global Tier-1 kill switch.
 
@@ -535,7 +585,7 @@ def test_an_empty_config_list_plus_an_override_still_routes(
 
 
 def test_an_empty_config_list_without_an_override_does_not_route(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """A9, and the control that makes the row above mean something."""
     session = classified(
@@ -546,7 +596,7 @@ def test_an_empty_config_list_without_an_override_does_not_route(
 
 
 def test_no_configured_names_at_all_behaves_like_an_empty_list(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """``profile_names=None`` -- the parameter's own degenerate form."""
     session = classified(
@@ -557,7 +607,7 @@ def test_no_configured_names_at_all_behaves_like_an_empty_list(
 
 
 def test_both_declaration_routes_at_once_still_routes(
-    inference_stubbed, synthetic, classified
+    synthetic, classified
 ) -> None:
     """A3 / T058 Finding 7. ``declared`` is an ``OR``, not an ``XOR``."""
     session = classified(
@@ -616,7 +666,7 @@ def test_a_declared_file_that_contradicts_its_declaration_is_refused(
 
 @pytest.mark.parametrize("declaration", _DECLARATION_ROUTES)
 def test_the_clean_capture_routes_on_both_declaration_routes(
-    declaration, inference_stubbed, synthetic, classified
+    declaration, synthetic, classified
 ) -> None:
     """The control for the veto grid: without a contradiction, both route."""
     session = classified(
@@ -725,7 +775,7 @@ def test_the_beats_gate_is_evaluated_before_the_declaration_in_source_order() ->
 
 
 def test_the_configured_names_reach_the_classifier_through_the_pipeline(
-    declared_config, inference_stubbed
+    declared_config,
 ) -> None:
     """``ingest_fit_bytes`` reads the config; with inference gone, the route
     it produces can only have come from the declaration."""
@@ -797,12 +847,16 @@ def test_the_form_field_coerces_every_truthy_spelling(
 
 @pytest.mark.parametrize("form_value", _FALSY_FORM_VALUES)
 def test_the_form_field_coerces_every_falsy_spelling(
-    form_value, declared_config, ingest, monkeypatch
+    form_value, declared_config, ingest
 ) -> None:
+    """The mirror of the row above, and one that only became meaningful at T069.
+
+    ``strap_hrv_sample_run.fit`` is a genuine resting capture on an unconfigured
+    profile, so with the override spelled falsy there is nothing left to declare
+    it and it must not route. While the inference arm existed this row needed that
+    arm stubbed to say anything at all; it now asserts the real behaviour of a
+    real upload."""
     declared_config()
-    monkeypatch.setattr(
-        hrv_classification, "_inference_authorises_tier_1", lambda *a, **k: False
-    )
 
     with TestClient(app) as client:
         body = ingest(client, UNDECLARED_FIXTURE, data={"resting_capture": form_value})
