@@ -84,6 +84,10 @@ def test_health_snapshot_becomes_a_tier_2_reading(
     assert body["hrv_source_tier"] == "health_snapshot"
     assert body["rmssd_precomputed"] == expected_rmssd
     assert body["rr_source"] == "health_snapshot_ppg"
+    # T065. The resolved column E003 actually reads, populated from the device
+    # value on this tier. ``rmssd_precomputed`` keeps its device-only audit
+    # meaning; this one is the field a consumer queries without knowing the tier.
+    assert body["resting_rmssd_ms"] == expected_rmssd
 
 
 @pytest.mark.parametrize("filename", sorted(SNAPSHOT_FIXTURES))
@@ -114,6 +118,10 @@ def test_the_precomputed_value_is_stored_as_the_device_gave_it(classified) -> No
 
     assert session.rmssd_precomputed == 37
     assert not isinstance(session.rmssd_precomputed, bool)
+    # T065: resolved from the same uncoerced device value, not a second reading
+    # of the message -- the two columns can never disagree on Tier 2.
+    assert session.resting_rmssd_ms == 37
+    assert not isinstance(session.resting_rmssd_ms, bool)
 
 
 def test_row_1_is_reached_via_rmssd_hrv_not_the_profile_name(synthetic, classified) -> None:
@@ -164,6 +172,7 @@ def test_precomputed_rmssd_on_a_non_snapshot_file_is_not_routed(
     session = classified(synthetic(sport, rmssd_hrv=44, total_timer_time=5400.0))
 
     assert session.rmssd_precomputed is None
+    assert session.resting_rmssd_ms is None
     assert session.hrv_source_tier is None
     assert session.rr_source is None
     assert session.activity_tag is None
@@ -262,7 +271,10 @@ def test_the_disagreement_key_does_not_collide_with_the_t045_key(synthetic, clas
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("session_extra", [{}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}])
+@pytest.mark.parametrize(
+    "session_extra",
+    [{}, {"rmssd_hrv": None}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}],
+)
 def test_a_snapshot_without_a_usable_value_yields_no_reading(
     session_extra: dict,
     synthetic,
@@ -277,9 +289,18 @@ def test_a_snapshot_without_a_usable_value_yields_no_reading(
     assert session.rmssd_precomputed is None
     assert session.hrv_source_tier is None
     assert session.rr_source is None
+    # T065. The resolved column is the one E003 reads, so a rejected value must
+    # not reach it either -- ``{"rmssd_hrv": None}`` is the corpus-real state
+    # T057 decoded (the field is *declared* on every fixture and carries the FIT
+    # invalid sentinel), and a presence test rather than a value test would
+    # resolve that sentinel straight into the column.
+    assert session.resting_rmssd_ms is None
 
 
-@pytest.mark.parametrize("session_extra", [{}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}])
+@pytest.mark.parametrize(
+    "session_extra",
+    [{}, {"rmssd_hrv": None}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}],
+)
 def test_a_snapshot_without_a_usable_value_is_still_tagged(
     session_extra: dict,
     synthetic,
@@ -292,7 +313,10 @@ def test_a_snapshot_without_a_usable_value_is_still_tagged(
     assert session.activity_tag == "health_snapshot"
 
 
-@pytest.mark.parametrize("session_extra", [{}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}])
+@pytest.mark.parametrize(
+    "session_extra",
+    [{}, {"rmssd_hrv": None}, {"rmssd_hrv": 0}, {"rmssd_hrv": -5}],
+)
 def test_a_snapshot_without_a_usable_value_raises_the_flag(
     session_extra: dict,
     synthetic,
@@ -314,6 +338,76 @@ def test_the_flag_is_not_duplicated_when_already_present(synthetic) -> None:
     hrv_classification.classify(messages, session, [])
 
     assert session.quality_flags.count("hrv_reading_unavailable") == 1
+
+
+def test_a_declared_but_sentinel_rmssd_hrv_never_populates_the_resolved_column(
+    synthetic,
+    classified,
+) -> None:
+    """T057 decoded the real corpus and found ``rmssd_hrv`` **declared on every
+    fixture**, including files with no device value: ``msg.has_field("rmssd_hrv")``
+    is ``True`` while ``get_value("rmssd_hrv")`` is ``None``.
+
+    This is the single most dangerous state for the resolved column. An
+    implementation that gated on *presence* rather than on a non-``None`` **value**
+    would write the FIT invalid sentinel into the field E003 is told it may
+    ``ln()``. Pinned as its own test rather than only as a parametrised row so the
+    reason survives a future edit of the parameter list."""
+    session = classified(synthetic(60, rmssd_hrv=None))
+
+    assert session.resting_rmssd_ms is None
+    assert session.rmssd_precomputed is None
+    assert session.hrv_source_tier is None
+    assert "hrv_reading_unavailable" in session.quality_flags
+
+
+@pytest.mark.parametrize("device_value", [0, 0.0, -0.0, -5, -0.001])
+def test_a_non_positive_device_value_never_reaches_the_resolved_column(
+    device_value,
+    synthetic,
+    classified,
+) -> None:
+    """The invariant T065 exists to establish: ``resting_rmssd_ms`` is **always
+    strictly positive when set**, on either tier. That is what lets E003 take
+    ``ln(resting_rmssd_ms)`` unguarded without first asking which tier produced it.
+
+    ``-0.0`` is here because it is a distinct float that compares equal to ``0.0``
+    and is *not* caught by an ``is 0.0`` style test; ``ln(-0.0)`` is as undefined
+    as ``ln(0.0)``."""
+    session = classified(synthetic(60, rmssd_hrv=device_value))
+
+    assert session.resting_rmssd_ms is None
+    assert "hrv_reading_unavailable" in session.quality_flags
+
+
+@pytest.mark.parametrize("device_value", [0.001, 1, 37, 51.5])
+def test_a_positive_device_value_resolves_and_stays_positive(
+    device_value,
+    synthetic,
+    classified,
+) -> None:
+    """The other half of the invariant. No plausibility band is invented -- a
+    physiologically odd but positive value still routes, exactly as row 1 has
+    always behaved -- so what is asserted is only that a set value is > 0."""
+    session = classified(synthetic(60, rmssd_hrv=device_value))
+
+    assert session.resting_rmssd_ms == device_value
+    assert session.resting_rmssd_ms > 0
+    assert session.hrv_source_tier == "health_snapshot"
+
+
+def test_the_resolved_column_survives_the_round_trip_and_is_positive(ingest) -> None:
+    """The verification step from T065's task file, driven end to end: the value
+    must come back out of SQLite through ``GET /sessions/{id}``, not merely exist
+    in the in-memory ``Session``. ``resting_rmssd_ms`` is a ``REAL`` column, so
+    ``37`` may legitimately return as ``37.0``; equality against the number is
+    asserted, never against its type."""
+    with TestClient(app) as client:
+        body = ingest(client, "sample_health_snapshot.fit")
+
+    assert body["resting_rmssd_ms"] == 37
+    assert body["resting_rmssd_ms"] > 0
+    assert body["hrv_source_tier"] == "health_snapshot"
 
 
 def test_row_3_does_not_record_a_signal_disagreement(synthetic, classified) -> None:

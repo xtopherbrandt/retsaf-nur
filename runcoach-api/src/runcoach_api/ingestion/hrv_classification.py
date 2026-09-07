@@ -4,7 +4,8 @@ The policy half of the F004 seam: it reads the decoded FIT messages and
 the reconstructed beat stream, decides whether the file is a
 resting-HRV *reading* rather than a training session, and writes the
 answer onto the ``Session`` -- ``activity_tag``, ``hrv_source_tier``,
-``rmssd_precomputed`` and the session-level ``rr_source``. It delegates
+``rmssd_precomputed``, ``resting_rmssd_ms`` and the session-level
+``rr_source``. It delegates
 the statistic itself to ``rmssd.resting_rmssd``; it does no arithmetic
 of its own, the same way ``quality_gates.py`` delegates the
 retained-beat fraction to ``rr_reconstruction.valid_fraction``.
@@ -71,6 +72,27 @@ needed zero patches, while Tier 1 routed on inference and needed four
 (zero distance, tiny distance, multi-session, short easy activity).
 The negative class is now "everything not declared", and the
 population between accept and reject is empty by construction.
+
+**T065 resolved ``resting_rmssd_ms``, the column E003 actually reads.**
+Every successful reading of either tier writes it -- the device value on
+Tier 2, the system-computed value on Tier 1 -- and every unsuccessful
+outcome leaves it ``None`` and raises a flag. There is therefore no
+successful reading for which the column is null, which is how
+``IDEA-007``'s null-shaped trap is closed *structurally* rather than by
+asking E003 to remember a ``COALESCE``. ``rmssd_precomputed`` keeps its
+device-only meaning as the Tier-2 audit record and
+``_PROVENANCE_COMPUTED_RMSSD`` is its Tier-1 twin; ``hrv_source_tier``
+says which tier produced the resolved number.
+
+The column carries one invariant, and both tiers enforce it at their own
+success point: **``resting_rmssd_ms`` is always strictly positive when
+set.** Tier 2 has always refused a non-positive device value to close the
+``ln(0)`` hazard in E003's ``ln(rMSSD)`` trend, and T065 extended the same
+gate to the Tier-1 computed value -- amending T042, which had argued the
+opposite for a value that then lived only in provenance. See
+``_classify_tier_1`` for that argument in full. The invariant is what lets
+a consumer take ``ln(resting_rmssd_ms)`` unguarded without first asking
+which tier produced it, which is the entire point of a resolved column.
 """
 
 from __future__ import annotations
@@ -1068,14 +1090,54 @@ def _classify_tier_1(
 
     **A reading that cannot be computed is not a reading.** The tier
     fields are written only once ``rmssd.resting_rmssd`` has produced a
-    value. A stream of a single beat -- a strap that paired and then
-    dropped -- has zero contributing pairs and no statistic, yet
+    **positive** value. A stream of a single beat -- a strap that paired
+    and then dropped -- has zero contributing pairs and no statistic, yet
     ``valid_fraction`` on one unflagged beat is ``1.0`` and clears the
     0.80 gate; stamping ``chest_strap_raw`` on it would assert a
     completed chest-strap reading carrying no number and no explanation.
-    ``0.0`` is *not* that case: it is a genuine measurement of zero
-    variability, which is why the test is ``is None`` and never
-    falsiness.
+
+    **A computed ``0.0`` is refused too, and that amends T042 rather than
+    forgetting it** (F004 Decision Log, 2026-09-06; T065). T042 wrote the
+    opposite here in so many words -- *"``0.0`` is not that case: it is a
+    genuine measurement of zero variability, which is why the test is
+    ``is None`` and never falsiness"* -- and that reasoning was sound while
+    the computed value lived only in provenance. It stopped being sound the
+    moment ``resting_rmssd_ms`` resolved **both** tiers into one column:
+    Tier 2 has always refused a non-positive device ``rmssd_hrv`` to close
+    the ``ln(0)`` hazard in E003's ``ln(rMSSD)`` trend, so keeping T042's
+    rule would have made ``0.0`` mean *success on Tier 1 and failure on
+    Tier 2* in the one field a consumer is told it may ``ln()`` without
+    knowing which tier produced it. That is a sibling of the null-shaped
+    trap ``IDEA-007`` closed, and a resolved column whose meaning depends
+    on the tier is not resolved. The gate is defensible on its own merits
+    as well: a true rMSSD of ``0.0`` requires literally identical
+    successive intervals, which is a degenerate beat stream -- a device
+    artefact -- and not a physiological state.
+
+    So the post-gate test is on the **value**, ``computed is None or
+    computed <= 0``, and the two branches raise the *same* flag for the
+    same finding: this capture was recognised and yielded no usable number.
+    They stay separate branches only because their explanations differ --
+    one had no contributing pair at all, the other measured a zero.
+
+    **``rmssd.resting_rmssd`` is untouched by this, and its structural
+    ``None``/``0.0`` distinction still matters.** It is the function that
+    can tell "no value is derivable" from "a value was derived and it is
+    zero"; collapsing them there would lose the ability to say which
+    happened. What T065 changed is only what *this* function does with a
+    measured zero at the boundary.
+
+    **The single success point writes ``resting_rmssd_ms``.** There are
+    three ``return True`` paths above it -- the gate failure, the
+    underivable statistic, and the computed zero -- and every one of them
+    must leave the column ``None``, because the column's contract is that
+    it is populated for exactly the successful readings. That invariant is
+    what closes ``IDEA-007`` structurally: there is no successful reading of
+    either tier for which the field E003 reads is null, so E003 cannot
+    silently build the readiness trend from wrist-PPG alone.
+    ``rmssd_precomputed`` still stays ``None`` here -- it keeps its
+    device-only meaning as the Tier-2 audit record, and
+    ``_PROVENANCE_COMPUTED_RMSSD`` is its Tier-1 twin.
     """
     # 1. Beats, first and normatively so -- see the docstring. A beatless file
     #    must fall through to Tier 2 rather than be claimed and answered here.
@@ -1145,15 +1207,37 @@ def _classify_tier_1(
         _raise_flag(session, _FLAG_READING_UNAVAILABLE)
         return True
 
-    # ``is None`` above, never falsiness: ``0.0`` is a genuine measurement of
-    # zero beat-to-beat variability and takes the success path, the same
-    # ``None``/``0.0`` distinction ``models.Session.rr_valid_fraction``
-    # documents and ``rmssd.resting_rmssd`` was built around.
+    # T065, amending T042. The non-positive gate Tier 2 has always applied to a
+    # device ``rmssd_hrv`` now applies to the computed value too, because both
+    # resolve into one column and ``0.0`` cannot mean success on one tier and
+    # failure on the other in the field E003 is told it may ``ln()``. Kept a
+    # separate branch from ``computed is None`` above deliberately: the two are
+    # different findings -- "no pair contributed" versus "a zero was measured" --
+    # that happen to share a flag, and ``rmssd.resting_rmssd`` exists to keep
+    # them distinguishable. The test is ``<= 0`` rather than falsiness, so
+    # ``-0.0`` -- which ``math.sqrt`` really can return, and for which ``ln`` is
+    # just as undefined -- is refused by the same line.
+    if computed <= 0:
+        _raise_flag(session, _FLAG_READING_UNAVAILABLE)
+        return True
+
+    # The single success point. Everything above it returns without writing
+    # ``resting_rmssd_ms``, which is the whole contract of the column: it is
+    # populated for exactly the successful readings and null for every other
+    # outcome, on both tiers.
     session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
     session.hrv_source_tier = _TIER_CHEST_STRAP_RAW
     session.rr_source = _RR_SOURCE_CHEST_STRAP
+    # The resolved column E003 reads (T055's column, given its meaning by T065),
+    # carrying the *system-computed* value on this tier. Written from the same
+    # local as the provenance record below, never recomputed, so the audit trail
+    # and the column can never disagree about what this capture measured.
+    session.resting_rmssd_ms = computed
     # ``rmssd_precomputed`` is left ``None`` on purpose -- see
-    # ``_PROVENANCE_COMPUTED_RMSSD``.
+    # ``_PROVENANCE_COMPUTED_RMSSD``. The provenance entry is Tier 1's audit
+    # record, the twin of ``rmssd_precomputed``'s Tier-2 role, and is kept rather
+    # than folded into the column: it is what proves the number came from the
+    # beats rather than from a device.
     _provenance(session)[_PROVENANCE_COMPUTED_RMSSD] = computed
     return True
 
@@ -1273,5 +1357,14 @@ def _classify_tier_2(messages: list[fitdecode.FitDataMessage], session: Session)
     # precomputed scalar "bypasses the artefact filter... there are no
     # beats to filter".
     session.rmssd_precomputed = rmssd_hrv
+    # T065. The resolved column, carrying the *device* value on this tier -- the
+    # same object, not a re-read of the message, so the audit column and the
+    # resolved one cannot disagree. It is written only here, past the
+    # ``rmssd_hrv is None or rmssd_hrv <= 0`` gate above, which is what makes the
+    # column's invariant hold: **always > 0 when set**, on either tier. That gate
+    # is also why a sentinel can never reach it -- ``_session_rmssd_hrv`` reads a
+    # *value* and answers ``None`` for the FIT invalid sentinel that T057 found
+    # declared on every fixture in the corpus, and ``None`` lands on row 3.
+    session.resting_rmssd_ms = rmssd_hrv
     session.hrv_source_tier = _TIER_HEALTH_SNAPSHOT
     session.rr_source = _RR_SOURCE_HEALTH_SNAPSHOT

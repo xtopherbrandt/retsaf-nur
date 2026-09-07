@@ -44,8 +44,10 @@ BEAT_BEARING_FIXTURE = FIXTURES / "dev_fields_run.fit"
 
 # ``resting_rmssd_ms`` joined the set with the 2026-09-06 amendment (T055).
 # It is the **resolved** field E003 reads on either tier; ``rmssd_precomputed``
-# stays the device-only audit record. T055 ships the column with no writer, so
-# it is null on every row here -- T065 populates it on both tiers.
+# stays the device-only audit record. T055 shipped the column with no writer;
+# **T065 is the writer** -- it is populated for every successful reading of
+# either tier and null for every other outcome, which is what closes IDEA-007's
+# null-shaped trap structurally rather than by convention.
 _NEW_SESSION_FIELDS = (
     "rmssd_precomputed",
     "hrv_source_tier",
@@ -198,8 +200,11 @@ def test_new_fields_survive_a_full_ingest_to_get_round_trip() -> None:
     assert body["hrv_source_tier"] == "health_snapshot"
     assert body["rmssd_precomputed"] == 37
     assert body["rr_source"] == "health_snapshot_ppg"
-    # T055 adds the column and no writer: null on every row until T065.
-    assert body["resting_rmssd_ms"] is None
+    # T055 added the column and deliberately no writer; **T065 is the writer.**
+    # This fixture is the Tier-2 positive, so the resolved column now carries the
+    # device value that ``rmssd_precomputed`` audits -- the two agree on Tier 2 by
+    # construction, because both are written from one read of the message.
+    assert body["resting_rmssd_ms"] == 37
 
 
 def test_post_201_response_does_not_leak_the_new_fields() -> None:
@@ -365,11 +370,21 @@ def test_resting_rmssd_ms_is_null_on_an_ordinary_run() -> None:
     assert detail["resting_rmssd_ms"] is None
 
 
-def test_nothing_in_the_pipeline_writes_resting_rmssd_ms_yet() -> None:
-    """T055 ships infrastructure with no behaviour: the column is null on
-    every row of every corpus fixture, including the two the classifier
-    actively routes. T065 is what fills it in; if this test starts failing,
-    a writer landed early and the no-backfill guarantee needs re-checking.
+def test_the_pipeline_writes_resting_rmssd_ms_for_a_reading_and_only_for_one() -> None:
+    """**Inverted by T065**, which is the writer T055 named when it shipped the
+    column with no behaviour and asserted null on every row.
+
+    The two fixtures are the two sides of the column's contract driven through the
+    real ``pipeline.ingest_fit_bytes``, not through ``classify()`` directly:
+
+    * ``sample_health_snapshot.fit`` is a successful Tier-2 reading, so the column
+      is populated -- and populated *positively*, which is the invariant E003
+      relies on to take ``ln(resting_rmssd_ms)`` unguarded.
+    * ``dev_fields_run.fit`` is an ordinary 52-minute run carrying 7220 beats. It
+      routes nowhere, so it must stay null. It is the guard against the failure
+      mode that would make the column worthless: a writer that fires on ingest
+      rather than on a reading would fill this row too, and E003's readiness trend
+      would then be built partly from runs.
     """
     from runcoach_api import db
 
@@ -379,13 +394,16 @@ def test_nothing_in_the_pipeline_writes_resting_rmssd_ms_yet() -> None:
     conn = db.get_connection()
     try:
         rows = conn.execute(
-            "SELECT session_id, resting_rmssd_ms FROM sessions"
+            "SELECT session_id, hrv_source_tier, resting_rmssd_ms FROM sessions"
         ).fetchall()
     finally:
         conn.close()
 
     assert len(rows) == 2
-    assert all(row["resting_rmssd_ms"] is None for row in rows), [tuple(r) for r in rows]
+    by_tier = {row["hrv_source_tier"]: row["resting_rmssd_ms"] for row in rows}
+    assert by_tier["health_snapshot"] == 37
+    assert by_tier["health_snapshot"] > 0
+    assert by_tier[None] is None
 
 
 def test_a_real_resting_rmssd_ms_round_trips_as_a_json_number_equal_to_37() -> None:

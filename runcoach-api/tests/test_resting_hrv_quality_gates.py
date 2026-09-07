@@ -13,10 +13,19 @@ Scenario Outline: A capture failing a quality gate yields no reading, but is sti
     | total_timer_time is under 120 seconds              | hrv_capture_too_short |
     | rr_valid_fraction is below 0.80                    | hrv_capture_low_quality |
     | beat stream is empty, so rr_valid_fraction is null | hrv_capture_no_beats  |
+    | computed rMSSD is zero, on a declared Tier-1 capture | hrv_reading_unavailable |
 ```
 
-(Rows 4 and 5 -- the device-scalar rows -- are Tier 2's, owned by T039 and asserted in
-``test_resting_hrv_tier2.py``.)
+(The two *device*-scalar rows -- "rmssd_hrv is zero or negative" and "rmssd_hrv is
+absent on a sport-60 file" -- are Tier 2's, owned by T039 and asserted in
+``test_resting_hrv_tier2.py``. The computed-zero row above is Tier 1's and is
+**T065's**, which added it to the outline when it extended Tier 2's non-positive
+gate to the computed value; before T065 a computed zero took the success path.)
+
+**The "Then" of every row gained ``resting_rmssd_ms is null`` at T065** -- see
+``_assert_no_reading``. That is the half of the column's contract this module owns:
+its twin, "every successful reading has a positive value", is asserted on the
+success paths here and in ``test_resting_hrv_tier1.py`` / ``_tier2.py``.
 
 **The three thresholds are cited, not invented** (F004 reference document §5):
 
@@ -67,7 +76,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from runcoach_api.ingestion import hrv_classification, mapping
+from runcoach_api.ingestion import hrv_classification, mapping, rmssd
 from runcoach_api.main import app
 from runcoach_api.models import RRInterval
 
@@ -184,9 +193,15 @@ def _assert_no_reading(session) -> None:
 
     ``rmssd_precomputed`` is asserted ``is None`` rather than falsy on purpose -- ``0``
     and ``-1`` are the sentinels this feature must never use, and both are falsy.
+
+    ``resting_rmssd_ms`` joined it at T065 and is the reason this helper is now
+    load-bearing rather than tidy: it is the column E003 actually reads, so "no
+    reading" is only true if *that* field is null. Asserting it here rather than at
+    each call site means every gate row -- present and future -- inherits the check.
     """
     assert session.hrv_source_tier is None
     assert session.rmssd_precomputed is None
+    assert session.resting_rmssd_ms is None
     assert session.rr_source is None
     provenance = session.context.provenance if session.context else {}
     assert "computed_resting_rmssd_ms" not in provenance
@@ -471,6 +486,12 @@ def test_the_gate_fixture_passes_all_three_gates(declared_config, ingest) -> Non
     assert body["hrv_source_tier"] == "chest_strap_raw"
     assert body["rr_source"] == "chest_strap_ecg"
     assert body["rmssd_precomputed"] is None
+    # T065. A successful Tier-1 reading resolves the *computed* value into the
+    # column E003 reads, while ``rmssd_precomputed`` stays null because no device
+    # supplied a number. Before T065 this was the null-shaped trap of IDEA-007:
+    # E003's natural query saw only wrist-PPG rows.
+    assert body["resting_rmssd_ms"] > 0
+    assert body["resting_rmssd_ms"] == pytest.approx(41.52, abs=0.01)
 
 
 def test_a_failing_capture_uploads_successfully_and_is_stored() -> None:
@@ -507,6 +528,8 @@ def test_a_failed_gate_never_writes_a_zero_or_negative_sentinel(resting, declare
 
         assert session.rmssd_precomputed is None
         assert session.rmssd_precomputed is not False
+        assert session.resting_rmssd_ms is None
+        assert session.resting_rmssd_ms is not False
         assert session.hrv_source_tier is None
 
 
@@ -549,26 +572,91 @@ def test_a_beat_stream_with_no_usable_pair_yields_no_reading(resting, declared_c
     _assert_no_reading(session)
 
 
-def test_a_zero_rmssd_is_a_reading_and_still_takes_the_success_path(
+def test_a_computed_zero_rmssd_is_not_a_reading_on_either_tier(
     resting,
     declared_classify,
 ) -> None:
-    """The regression this check must not cause. ``0.0`` is a genuine measurement of zero
-    beat-to-beat variability, not an absence -- the ``None``/``0.0`` distinction
-    ``models.Session.rr_valid_fraction`` documents and ``rmssd.resting_rmssd`` was built
-    around. ``is None`` is therefore the only correct test; a falsiness check would
-    silently convert a real reading into a quality flag."""
+    """F004 @must: "A computed rMSSD of zero is not a reading on either tier".
+
+    **This inverts T042's deliberate call, and the amendment is ratified rather than
+    an oversight being corrected.** T042 argued ``0.0`` is "a genuine measurement of
+    zero variability", so the test was ``is None`` and never falsiness. Tier 2 had
+    always rejected a non-positive *device* ``rmssd_hrv`` to close the ``ln(0)``
+    hazard in E003's ``ln(rMSSD)`` trend. Once T065 resolves both tiers into one
+    column those two rules cannot both hold: a ``0.0`` would mean success on one
+    tier and failure on the other in the field a consumer is told to ``ln()``
+    without knowing which tier produced it -- a sibling of the very trap IDEA-007
+    closed, wearing a different shape.
+
+    The gate wins on the merits too: a true rMSSD of ``0.0`` requires literally
+    identical successive intervals, which is a degenerate beat stream -- a device
+    artefact -- not a physiological state.
+
+    Six beats at exactly 1000.0 ms produce five successive differences of exactly
+    zero, so ``rmssd.resting_rmssd`` returns a genuine ``0.0`` rather than ``None``.
+    That structural distinction inside ``resting_rmssd`` is **unchanged** and still
+    load-bearing: the classifier needs to tell "no value derivable" from "a measured
+    zero" because the two reach the same flag from different branches, and only one
+    of them may claim there were beats."""
+    beats = [
+        RRInterval(seq=i, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(6)
+    ]
+
+    # Guards the fixture itself: if this ever answered ``None`` the test below would
+    # pass through the *other* branch and prove nothing about the new gate.
+    assert rmssd.resting_rmssd(beats) == 0.0
+
+    session = declared_classify(resting(), rr_intervals=beats)
+
+    assert FLAG_READING_UNAVAILABLE in session.quality_flags
+    _assert_no_reading(session)
+
+
+def test_a_computed_zero_leaves_the_column_null_rather_than_zero(
+    resting,
+    declared_classify,
+) -> None:
+    """The distinction the inverted test above is *for*, stated so it cannot be
+    satisfied by a sentinel. ``0.0`` is falsy, so ``assert not session.resting_rmssd_ms``
+    would pass on both the correct null and the forbidden stored zero."""
     beats = [
         RRInterval(seq=i, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False)
         for i in range(6)
     ]
     session = declared_classify(resting(), rr_intervals=beats)
 
+    assert session.resting_rmssd_ms is None
+    assert session.resting_rmssd_ms != 0.0
+    assert "computed_resting_rmssd_ms" not in session.context.provenance
+
+
+def test_a_tiny_positive_computed_rmssd_is_still_a_reading(resting, declared_classify) -> None:
+    """The negative control for the gate: the boundary is ``> 0``, not "large enough".
+
+    No plausibility band is invented on this tier either -- that would be the
+    uncitable constant F004 refuses everywhere else -- so a hair above zero routes
+    and resolves. A gate written as ``<= 0.1``, or with a float tolerance, would
+    still pass the zero test above while silently eating real readings; this pins
+    that it does not."""
+    beats = [
+        RRInterval(
+            seq=i,
+            rr_ms=1000.0 + (0.001 if i % 2 else 0.0),
+            rr_source="chest_strap_ecg",
+            is_artefact=False,
+        )
+        for i in range(6)
+    ]
+    computed = rmssd.resting_rmssd(beats)
+    assert computed is not None and 0 < computed < 0.01
+
+    session = declared_classify(resting(), rr_intervals=beats)
+
     assert FLAG_READING_UNAVAILABLE not in session.quality_flags
-    assert session.activity_tag == "resting_hrv_check"
     assert session.hrv_source_tier == "chest_strap_raw"
-    assert session.rr_source == "chest_strap_ecg"
-    assert session.context.provenance["computed_resting_rmssd_ms"] == 0.0
+    assert session.resting_rmssd_ms == computed
+    assert session.resting_rmssd_ms > 0
 
 
 def test_a_healthy_capture_does_not_raise_the_unavailable_flag(resting, declared_classify) -> None:
@@ -578,3 +666,14 @@ def test_a_healthy_capture_does_not_raise_the_unavailable_flag(resting, declared
 
     assert FLAG_READING_UNAVAILABLE not in session.quality_flags
     assert session.hrv_source_tier == "chest_strap_raw"
+    # T065. The single success point writes both: the audit record in provenance --
+    # which keeps its Tier-1 role as the twin of ``rmssd_precomputed``'s Tier-2 one,
+    # and is what proves the number came from the beats rather than from a device --
+    # and the resolved column, from the *same* value, so the two cannot drift.
+    computed = session.context.provenance["computed_resting_rmssd_ms"]
+    assert session.resting_rmssd_ms == computed
+    assert session.resting_rmssd_ms > 0
+    # ``rmssd_precomputed`` keeps its device-only meaning: Tier 1 leaves it null,
+    # which is this feature's own ratified rule and the reason a second parallel
+    # column was rejected rather than reusing this one.
+    assert session.rmssd_precomputed is None

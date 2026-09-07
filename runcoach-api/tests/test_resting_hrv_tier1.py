@@ -268,6 +268,12 @@ def test_the_declared_fixture_round_trips_as_a_tier_1_reading(declared_config, i
     assert body["activity_tag"] == "resting_hrv_check"
     assert body["hrv_source_tier"] == "chest_strap_raw"
     assert body["rr_source"] == "chest_strap_ecg"
+    # T065. "And ``resting_rmssd_ms`` carries the rMSSD computed from the
+    # artefact-filtered beats" -- asserted on the round trip rather than only in
+    # memory, because the column is the one E003 queries out of SQLite. 41.52 ms
+    # is the value F004's Decision Log records for this fixture's 165 beats.
+    assert body["resting_rmssd_ms"] == pytest.approx(41.52, abs=0.01)
+    assert body["resting_rmssd_ms"] > 0
 
 
 def test_the_declared_fixture_leaves_the_device_field_null(declared_config, ingest) -> None:
@@ -407,6 +413,11 @@ def test_the_undeclared_capture_routes_once_the_athlete_declares_it() -> None:
 
     assert session.activity_tag == "resting_hrv_check"
     assert session.hrv_source_tier == "chest_strap_raw"
+    # T065: a reading is a reading whichever declaration route produced it, so the
+    # resolved column is populated on both. Only ``_classify_tier_1``'s single
+    # success point writes it, which is what makes that true by construction
+    # rather than by two call sites agreeing.
+    assert session.resting_rmssd_ms > 0
 
 
 def test_an_empty_config_list_refuses_the_declared_fixture_end_to_end(
@@ -459,6 +470,8 @@ def test_the_undeclared_capture_routes_on_an_upload_time_override() -> None:
 
     assert session.activity_tag == "resting_hrv_check"
     assert session.hrv_source_tier == "chest_strap_raw"
+    # The override route resolves the column too -- see the config-list test above.
+    assert session.resting_rmssd_ms > 0
 
 
 # ---------------------------------------------------------------------------
@@ -719,6 +732,7 @@ def test_a_gps_less_resting_capture_routes(declared_capture) -> None:
     assert session.hrv_source_tier == "chest_strap_raw"
     assert session.rr_source == "chest_strap_ecg"
     assert session.rmssd_precomputed is None
+    assert session.resting_rmssd_ms > 0
 
 
 @pytest.mark.parametrize("avg_hr", [58, 100])
@@ -846,6 +860,7 @@ def test_a_present_zero_distance_resting_capture_still_routes(declared_capture) 
     assert session.hrv_source_tier == "chest_strap_raw"
     assert session.rr_source == "chest_strap_ecg"
     assert session.rmssd_precomputed is None
+    assert session.resting_rmssd_ms > 0
 
 
 def test_a_moving_capture_with_a_resting_heart_rate_still_does_not_route(
@@ -1196,11 +1211,17 @@ def test_the_resting_profile_contract(
         assert session.rr_source == "chest_strap_ecg"
         assert session.rmssd_precomputed is None
         assert "computed_resting_rmssd_ms" in provenance
+        # T065: the resolved column tracks the route exactly, over the whole
+        # matrix -- so a row that starts routing (or stops) can never take the
+        # column out of step with ``hrv_source_tier``.
+        assert session.resting_rmssd_ms == provenance["computed_resting_rmssd_ms"]
+        assert session.resting_rmssd_ms > 0
     else:
         assert session.activity_tag is None
         assert session.hrv_source_tier is None
         assert session.rr_source is None
         assert "computed_resting_rmssd_ms" not in provenance
+        assert session.resting_rmssd_ms is None
 
 
 # ---------------------------------------------------------------------------
