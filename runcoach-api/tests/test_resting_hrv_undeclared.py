@@ -505,8 +505,9 @@ _VETO_ROWS = [
     # The two rows that carry the severity. Every other non-finite row above is
     # a *refusal-name* change -- the file was refused before the screen too,
     # under a different veto. These two were **routed**: every comparison
-    # against a ``nan`` is ``False``, so the stillness ratio and the 100 bpm
-    # ceiling both declined, and the file became a full reading with no flag.
+    # against a ``nan`` is ``False``, so it silently defeated the one arm it
+    # appeared in while the file's other arms were innocently satisfied -- one
+    # corrupt field is enough -- and the file became a full reading with no flag.
     pytest.param(
         {"total_timer_time": 150.0, "total_distance": float("nan"), "avg_heart_rate": 60},
         "distance_unreadable",

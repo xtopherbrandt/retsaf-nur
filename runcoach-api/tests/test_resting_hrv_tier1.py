@@ -1497,10 +1497,16 @@ def test_a_non_numeric_summary_value_vetoes_and_is_never_a_500(
     the two ``total_distance`` rows **routed**, because an unreadable distance
     simply vanished and the heart rate carried the file on its own.
 
-    ``_numeric`` itself is unchanged, and deliberately: it is shared with
-    ``_classify_tier_2``, where an unparseable ``rmssd_hrv`` genuinely does mean
-    "no usable device value" (``test_resting_hrv_tier2.py``). The presence
-    discrimination lives *around* it, in ``_resting_profile_duration``."""
+    The *presence* discrimination lives **around** ``_numeric``, in
+    ``_resting_profile_duration``, because ``_classify_tier_2`` shares the helper
+    and an unparseable ``rmssd_hrv`` genuinely does mean "no usable device value"
+    there (``test_resting_hrv_tier2.py``).
+
+    This docstring used to add that ``_numeric`` "itself is unchanged, and
+    deliberately". That stopped being true in code review iteration 3, which gave
+    it a ``math.isfinite`` screen because **both** call sites wanted one -- see
+    ``_intensity_signal``'s Scope paragraph. The presence/absence split is still
+    outside ``_numeric``; only the "is this a real number" question moved in."""
     session = declared_capture(**session_extra, rr_intervals=_beats())
 
     assert session.activity_tag is None
@@ -1781,11 +1787,15 @@ def test_a_nan_intensity_field_does_not_route(field: str, declared_capture) -> N
     This is the one non-finite case that changed *routing* rather than the name
     of a refusal, and it is F004's headline failure mode reached by a new road:
     every comparison against a ``nan`` is ``False``, so before the 2026-09-07
-    screen the stillness ratio (``distance_m / duration_s <= 1.0``) and the
-    100 bpm ceiling **both declined**, every veto passed, and the file routed as
-    a full ``chest_strap_raw`` reading with `activity_tag = resting_hrv_check`
-    and an empty ``quality_flags`` -- reproduced by removing the screen and
-    driving the real mapping and classifier.
+    screen it silently defeated **the one arm it appeared in** while the file's
+    remaining arms were innocently satisfied -- a ``nan`` ``total_distance``
+    left the stillness ratio (``distance_m / duration_s <= 1.0``) declining
+    beside a genuine 58 bpm, and a ``nan`` ``avg_heart_rate`` left the 100 bpm
+    ceiling declining beside an honestly still 100 m over 240 s. One corrupt
+    field is enough. Every veto passed, and the file routed as a full
+    ``chest_strap_raw`` reading with `activity_tag = resting_hrv_check` and an
+    empty ``quality_flags`` -- reproduced by removing the screen and driving the
+    real mapping and classifier.
 
     ``avg_heart_rate`` is the sharper of the two: it is the arm that exists to
     tell a resting capture from a stationary maximal effort, so a value that

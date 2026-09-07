@@ -220,8 +220,11 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
 - **A `nan` intensity field no longer routes a file as a resting-HRV capture.** The same screen
   closed a second, sharper hole on the *veto set*. `_intensity_signal` normalises
   `total_timer_time`, `total_distance` and `avg_heart_rate` through the same helper, and every
-  comparison against a `nan` is `False` — so a `nan` `total_distance` or `avg_heart_rate` declined
-  the stillness ratio *and* the 100 bpm ceiling, passed every veto, and routed the file as a full
+  comparison against a `nan` is `False` — so a `nan` silently defeated **the one arm it appeared
+  in**, and the file's remaining arms were innocently satisfied. One corrupt field is therefore
+  enough: a `nan` `total_distance` left the stillness ratio declining while a genuine 58 bpm
+  cleared the ceiling, and a `nan` `avg_heart_rate` left the ceiling declining while a genuine
+  100 m over 240 s was honestly still. Either way every veto passed and the file routed as a full
   `chest_strap_raw` reading with `activity_tag = resting_hrv_check` and an **empty**
   `quality_flags`. That is this feature's headline failure mode — a non-capture routing — reached
   through the one arm that exists to tell rest from a stationary maximal effort. Non-finite values
