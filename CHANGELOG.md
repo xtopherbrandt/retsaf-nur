@@ -75,11 +75,27 @@ SELECT * FROM sessions
    AND resting_rmssd_ms IS NULL     -- no post-amendment writer ran on this row
 ```
 
-**E003 must exclude this window rather than inherit it.** Every row it returns predates the
-amendment: its `hrv_source_tier` is an inference-era verdict, and on Tier 1 its `activity_tag` is
-too. They are not remediable — `mapping.py` has never persisted `sport_profile_name`, so no stored
-row carries the field the declaration rule needs — so exclusion is the disposition, not repair. The
-window empties only as the athlete re-ingests the original files.
+**E003 must exclude this window from the readiness read rather than inherit it.** Every row it
+returns predates the amendment: its `hrv_source_tier` is an inference-era verdict, and on Tier 1 its
+`activity_tag` is too. They are not remediable — `mapping.py` has never persisted
+`sport_profile_name`, so no stored row carries the field the declaration rule needs — so exclusion
+is the disposition, not repair. The window empties only as the athlete re-ingests the original
+files.
+
+**Training load is the other consumer, and its disposition is the opposite one (2026-09-07).** The
+window is a verdict about *HRV provenance*, not about whether the session happened. A cool-down walk
+mis-tagged `resting_hrv_check` under the old inference rule is still a real activity, and excluding
+it everywhere would leave it permanently absent from rTSS and the PMC — a silent, unbounded loss of
+training history, and the second of the two consequences this window creates. So **rTSS must ignore
+`activity_tag` on window rows and count them as ordinary sessions**, while readiness excludes them.
+
+The accepted cost is the mirror case: a genuine two-minute resting capture inside the window is also
+counted, contributing a small spurious rTSS. That is bounded by its own duration — a 2-minute
+non-session is worth very little load — whereas the excluded walk is not bounded at all. The
+asymmetry is why the two consumers get different rules rather than one convenient rule.
+
+Outside the window this does not arise: post-amendment `activity_tag` is a *declaration*, so rTSS
+can and should trust it and skip declared captures.
 
 **Two terms, and the second one is the whole predicate.** It was confirmed in both directions
 against a constructed database rather than taken on faith, and the negative direction is the one
