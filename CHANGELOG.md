@@ -87,7 +87,12 @@ re-ingestion under the declaration rule (see `DELETE /sessions/{id}` below).
 - **`resting_rmssd_ms`** — the resolved session column E003 reads, written on **both** tiers: the
   device value on Tier 2, the system-computed value on Tier 1. `rmssd_precomputed` keeps its
   narrower meaning ("what the device supplied") and stays null on Tier 1. A computed rMSSD of zero
-  is gated to `hrv_reading_unavailable` rather than stored as a reading.
+  is gated to `hrv_reading_unavailable` rather than stored as a reading. **The guarantee is scoped
+  to rows written from this release onward:** for such a row, a non-null `hrv_source_tier` implies a
+  non-null, strictly positive `resting_rmssd_ms`. It does **not** hold across the upgrade — see
+  *No backfill* above, which leaves pre-amendment rows with a non-null tier and a null column, so a
+  consumer must guard that read or exclude the pre-amendment window rather than assume the column is
+  always populated wherever a tier is set.
 - **A provenance note for every file examined and refused**, on both sides of the declaration:
   `hrv_undeclared_capture_candidate` when the profile was not configured, and
   `hrv_declared_capture_vetoed` when a configured name was contradicted by a veto. **The note names

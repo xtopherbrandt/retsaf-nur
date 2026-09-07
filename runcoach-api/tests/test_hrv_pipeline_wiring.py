@@ -379,7 +379,9 @@ def test_the_pipeline_writes_resting_rmssd_ms_for_a_reading_and_only_for_one() -
 
     * ``sample_health_snapshot.fit`` is a successful Tier-2 reading, so the column
       is populated -- and populated *positively*, which is the invariant E003
-      relies on to take ``ln(resting_rmssd_ms)`` unguarded.
+      relies on to take ``ln(resting_rmssd_ms)`` unguarded **on a row this
+      feature wrote after the 2026-09-06 amendment** (T077; pre-amendment rows
+      are null with a non-null tier and must be guarded or excluded).
     * ``dev_fields_run.fit`` is an ordinary 52-minute run carrying 7220 beats. It
       routes nowhere, so it must stay null. It is the guard against the failure
       mode that would make the column worthless: a writer that fires on ingest

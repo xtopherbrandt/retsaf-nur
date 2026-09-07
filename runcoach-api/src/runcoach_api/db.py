@@ -91,6 +91,16 @@ _SCHEMA_DDL = """
       -- nullability and REAL affinity as that column deliberately. Added
       -- 2026-09-06; _reconcile_columns lands it on an existing database
       -- and no backfill fills it, so pre-amendment rows stay NULL.
+      -- The invariant is scoped to what this feature writes AFTER that
+      -- amendment (T077): for such a row, a non-null hrv_source_tier
+      -- implies a non-null, strictly positive resting_rmssd_ms, because
+      -- both tiers write the two fields at one success point past the
+      -- non-positive gate. It is NOT a claim about the table: an
+      -- upgraded database satisfies
+      --   hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL
+      -- for every pre-amendment Tier-1 row, which is why nothing here
+      -- is expressed as a CHECK and why a consumer must guard the read
+      -- across the amendment window rather than assume ln() is safe.
       resting_rmssd_ms REAL,
       UNIQUE (source_device, start_time)
     );

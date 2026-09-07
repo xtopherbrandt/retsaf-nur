@@ -416,7 +416,9 @@ def test_a_non_positive_device_value_never_reaches_the_resolved_column(
 ) -> None:
     """The invariant T065 exists to establish: ``resting_rmssd_ms`` is **always
     strictly positive when set**, on either tier. That is what lets E003 take
-    ``ln(resting_rmssd_ms)`` unguarded without first asking which tier produced it.
+    ``ln(resting_rmssd_ms)`` on a post-amendment row without first asking which tier
+    produced it. It says nothing about pre-amendment rows, which are null with a
+    non-null tier -- see T077 and ``test_db_schema``'s residual-state pin.
 
     ``-0.0`` is here because it is a distinct float that compares equal to ``0.0``
     and is *not* caught by an ``is 0.0`` style test; ``ln(-0.0)`` is as undefined

@@ -331,6 +331,91 @@ def test_a_pre_amendment_reading_is_not_backfilled_into_resting_rmssd_ms():
     assert detail["resting_rmssd_ms"] is None
 
 
+def test_the_residual_null_state_is_reachable_on_an_upgraded_database():
+    """T077. The Data Model's structural claim is scoped to post-amendment rows
+    **because this state exists**, and this test is the pin that keeps it named.
+
+    F004's Data Model once said, unqualified, that "there is no successful
+    reading for which this column is null", and authorised E003 to take
+    ``ln(resting_rmssd_ms)`` unguarded on that basis. On any database upgraded
+    across the 2026-09-06 amendment that is false: a pre-amendment Tier-1
+    reading carries a non-null ``hrv_source_tier`` and, because there is no
+    backfill, a null ``resting_rmssd_ms``. So the exact query the task names --
+
+        SELECT count(*) FROM sessions
+         WHERE hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL
+
+    -- returns a non-zero count, which is [[IDEA-007]]'s null-shaped trap in
+    precisely the state the contract claimed could not exist.
+
+    The hazard is worse inside the window than the general one the claim was
+    written to close: Tier-1 rows drop silently out of
+    ``WHERE resting_rmssd_ms IS NOT NULL`` while Tier-2 wrist-PPG rows survive,
+    so the series looks like continuous Tier-2 data and §2.4.5's
+    tier-change baseline reset never fires.
+
+    This asserts **reachability**, not desirability. The residual state is the
+    correct outcome of the no-backfill decision; what was wrong was the prose
+    denying it. Pinning it here means a future amendment cannot quietly
+    re-assert the unqualified invariant -- reinstating a backfill, or
+    tightening the column, would turn this red and force the Data Model
+    sentence to be reconciled in the same breath.
+    """
+    import json
+
+    context = {
+        "ingested_at": "2026-09-05T06:12:00+00:00",
+        "provenance": {
+            "raw_sport_value": 1,
+            "computed_resting_rmssd_ms": 41.52,
+        },
+    }
+
+    conn = db.get_connection()
+    try:
+        conn.executescript(_PRE_AMENDMENT_SESSIONS_DDL)
+        conn.execute(
+            """
+            INSERT INTO sessions (
+                session_id, start_time, sport, activity_tag, source_vendor,
+                source_device, rr_valid_fraction, quality_flags, summary, context,
+                rmssd_precomputed, hrv_source_tier, rr_source
+            ) VALUES (
+                'pre-amendment-residual', '2026-09-05T06:10:00+00:00', 'running',
+                'resting_hrv_check', 'garmin', 'FR945-LTE', 1.0, '[]',
+                '{"duration_s": 150.797}', ?, NULL, 'chest_strap_raw',
+                'chest_strap_ecg'
+            )
+            """,
+            (json.dumps(context),),
+        )
+        conn.commit()
+
+        db.init_schema(conn)
+
+        residual = conn.execute(
+            "SELECT count(*) AS n FROM sessions "
+            "WHERE hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL"
+        ).fetchone()["n"]
+        resolved = conn.execute(
+            "SELECT count(*) AS n FROM sessions "
+            "WHERE resting_rmssd_ms IS NOT NULL"
+        ).fetchone()["n"]
+    finally:
+        conn.close()
+
+    # The residual state the corrected Data Model now names in prose.
+    assert residual == 1, (
+        "hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL must remain "
+        "reachable on an upgraded database -- if this is 0, either a backfill "
+        "was added or the no-backfill decision changed, and F004's Data Model "
+        "claim must be re-scoped to match."
+    )
+    # ...and the row is invisible to the query E003 would naturally write,
+    # which is the specific hazard: it vanishes rather than erroring.
+    assert resolved == 0
+
+
 def test_reconciling_a_database_that_already_has_the_column_is_a_no_op():
     """Probe: the column is already there. A blind ``ALTER TABLE ADD COLUMN``
     would raise "duplicate column name"; it must not be issued at all."""

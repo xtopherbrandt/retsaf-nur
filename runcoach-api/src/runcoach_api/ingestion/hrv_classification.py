@@ -76,10 +76,23 @@ population between accept and reject is empty by construction.
 **T065 resolved ``resting_rmssd_ms``, the column E003 actually reads.**
 Every successful reading of either tier writes it -- the device value on
 Tier 2, the system-computed value on Tier 1 -- and every unsuccessful
-outcome leaves it ``None`` and raises a flag. There is therefore no
-successful reading for which the column is null, which is how
-``IDEA-007``'s null-shaped trap is closed *structurally* rather than by
-asking E003 to remember a ``COALESCE``. ``rmssd_precomputed`` keeps its
+outcome leaves it ``None`` and raises a flag. So for every row *this
+module writes*, a non-null ``hrv_source_tier`` implies a non-null,
+strictly positive ``resting_rmssd_ms``, which is how ``IDEA-007``'s
+null-shaped trap is closed *structurally* rather than by asking E003 to
+remember a ``COALESCE``.
+
+**That claim is scoped to post-amendment rows, and deliberately so**
+(T077). It is not a claim about the ``sessions`` table: rows written
+before the 2026-09-06 amendment carry a non-null ``hrv_source_tier`` and
+a null ``resting_rmssd_ms``, because the amendment added the column with
+no backfill. On an upgraded database
+``hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL`` therefore
+returns rows -- the trap survives, narrowed to that window -- and a
+consumer must guard the read or exclude the window rather than take
+``ln()`` unconditionally. See the F004 Data Model row for the boundary
+obligation, and ``test_the_residual_null_state_is_reachable_on_an_upgraded_database``
+for the pin that keeps the residual state named. ``rmssd_precomputed`` keeps its
 device-only meaning as the Tier-2 audit record and
 ``_PROVENANCE_COMPUTED_RMSSD`` is its Tier-1 twin; ``hrv_source_tier``
 says which tier produced the resolved number.
@@ -91,8 +104,9 @@ set.** Tier 2 has always refused a non-positive device value to close the
 gate to the Tier-1 computed value -- amending T042, which had argued the
 opposite for a value that then lived only in provenance. See
 ``_classify_tier_1`` for that argument in full. The invariant is what lets
-a consumer take ``ln(resting_rmssd_ms)`` unguarded without first asking
-which tier produced it, which is the entire point of a resolved column.
+a consumer take ``ln(resting_rmssd_ms)`` on a post-amendment row without
+first asking which tier produced it, which is the entire point of a
+resolved column.
 
 **T064 made the refusals observable** (F004; resolution **R5**, ratified
 2026-09-06). Declaration closed ``IDEA-010`` and made this feature's worst
@@ -1615,9 +1629,11 @@ def _classify_tier_1(
     underivable statistic, and the computed zero -- and every one of them
     must leave the column ``None``, because the column's contract is that
     it is populated for exactly the successful readings. That invariant is
-    what closes ``IDEA-007`` structurally: there is no successful reading of
-    either tier for which the field E003 reads is null, so E003 cannot
-    silently build the readiness trend from wrist-PPG alone.
+    what closes ``IDEA-007`` structurally *for what this module writes*: no
+    reading this function succeeds on leaves the field E003 reads null, so
+    E003 cannot silently build the readiness trend from wrist-PPG alone.
+    Rows written before the 2026-09-06 amendment are outside that scope and
+    are null with a non-null tier -- see the module docstring and T077.
     ``rmssd_precomputed`` still stays ``None`` here -- it keeps its
     device-only meaning as the Tier-2 audit record, and
     ``_PROVENANCE_COMPUTED_RMSSD`` is its Tier-1 twin.
