@@ -1769,3 +1769,34 @@ def test_a_non_finite_beat_does_not_reach_the_tier_1_success_point(
         f"{label} reached the success point as {session.resting_rmssd_ms!r}"
     )
     assert session.resting_rmssd_ms > 0
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["total_distance", "avg_heart_rate"],
+)
+def test_a_nan_intensity_field_does_not_route(field: str, declared_capture) -> None:
+    """A `nan` in the veto set refuses the file rather than routing it.
+
+    This is the one non-finite case that changed *routing* rather than the name
+    of a refusal, and it is F004's headline failure mode reached by a new road:
+    every comparison against a ``nan`` is ``False``, so before the 2026-09-07
+    screen the stillness ratio (``distance_m / duration_s <= 1.0``) and the
+    100 bpm ceiling **both declined**, every veto passed, and the file routed as
+    a full ``chest_strap_raw`` reading with `activity_tag = resting_hrv_check`
+    and an empty ``quality_flags`` -- reproduced by removing the screen and
+    driving the real mapping and classifier.
+
+    ``avg_heart_rate`` is the sharper of the two: it is the arm that exists to
+    tell a resting capture from a stationary maximal effort, so a value that
+    silently declines it is exactly the discriminator failure F004's negative
+    class was written to prevent.
+    """
+    fields = {"total_timer_time": 240.0, "total_distance": 100.0, "avg_heart_rate": 58}
+    fields[field] = float("nan")
+
+    session = declared_capture(rr_intervals=_beats(), **fields)
+
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+    assert session.resting_rmssd_ms is None

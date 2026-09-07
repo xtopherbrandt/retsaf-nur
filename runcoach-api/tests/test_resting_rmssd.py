@@ -33,6 +33,8 @@ from __future__ import annotations
 import math
 import random
 
+import pytest
+
 from runcoach_api.ingestion.rmssd import resting_rmssd
 from runcoach_api.models import RRInterval
 
@@ -383,17 +385,27 @@ def test_a_non_finite_beat_is_non_contributing_rather_than_poisoning_the_walk() 
     ``(1,2)`` and ``(2,3)``, and no synthetic ``(1,3)`` pair is manufactured --
     the same rule the flagged-beat cases above pin.
     """
-    clean = _beats([1000.0, 1020.0, 1000.0, 1020.0])
+    # Asymmetric on purpose. A symmetric series gives the same number under
+    # both the correct rule and the compact-then-difference rule this module
+    # has a dedicated test to refuse, so it would pin nothing.
+    #
+    #   series:   1000, 1020, <bad>, 1000, 1060
+    #   correct:  (1000,1020) and (1000,1060) contribute; the two pairs
+    #             touching the bad beat are lost   -> mean(400, 3600) = 2000
+    #   compacted: the bad beat is excised and a (1020, 1000) pair is
+    #             manufactured across the hole      -> mean(400, 400, 3600)
+    correct = math.sqrt(2000.0)
+    compacted = resting_rmssd(_beats([1000.0, 1020.0, 1000.0, 1060.0]))
 
     for bad in (float("inf"), float("-inf"), float("nan")):
-        poisoned = _beats([1000.0, 1020.0, bad, 1000.0, 1020.0])
+        poisoned = _beats([1000.0, 1020.0, bad, 1000.0, 1060.0])
         result = resting_rmssd(poisoned)
 
         assert result is not None
         assert math.isfinite(result), f"{bad!r} reached the result as {result!r}"
-        assert result > 0
-        # The surviving pairs are exactly the clean series' pairs.
-        assert result == resting_rmssd(clean)
+        assert result == pytest.approx(correct)
+        # Adjacency survives the hole: nothing is manufactured across it.
+        assert result != pytest.approx(compacted)
 
 
 def test_an_overflowing_sum_of_finite_squares_answers_none() -> None:

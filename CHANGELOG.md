@@ -217,6 +217,16 @@ as `activity_tag: resting_hrv_check`, `hrv_source_tier: chest_strap_raw`,
   inference-era row and excluded from the readiness read. Non-finite values are now rejected where
   every other unreadable value is, and land on the no-reading row with `hrv_reading_unavailable`
   like any other unusable device value.
+- **A `nan` intensity field no longer routes a file as a resting-HRV capture.** The same screen
+  closed a second, sharper hole on the *veto set*. `_intensity_signal` normalises
+  `total_timer_time`, `total_distance` and `avg_heart_rate` through the same helper, and every
+  comparison against a `nan` is `False` — so a `nan` `total_distance` or `avg_heart_rate` declined
+  the stillness ratio *and* the 100 bpm ceiling, passed every veto, and routed the file as a full
+  `chest_strap_raw` reading with `activity_tag = resting_hrv_check` and an **empty**
+  `quality_flags`. That is this feature's headline failure mode — a non-capture routing — reached
+  through the one arm that exists to tell rest from a stationary maximal effort. Non-finite values
+  now veto under the reading convention's *structurally impossible* class, alongside a negative
+  value on an unsigned field.
 - **The same hole existed on Tier 1 and is closed with it.** `_numeric` is not on that path: a
   Tier-1 value comes from `rmssd.resting_rmssd` over the beat stream, and its gate is the identical
   `<= 0` comparison, so `inf` and `nan` cleared it there too. One non-finite `rr_ms` propagates

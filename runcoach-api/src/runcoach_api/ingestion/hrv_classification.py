@@ -1062,9 +1062,14 @@ def _resting_profile(session: Session) -> _RestingProfile:
     ``_numeric``: a ``tuple`` or ``str`` from a crafted definition record is
     never compared -- comparing it is a ``TypeError`` and an unhandled 500 --
     and is answered as a **veto** rather than as an absence, so it cannot
-    quietly hand the predicate to whichever arm is left. ``_numeric`` itself is
-    untouched, because ``_classify_tier_2`` shares it and needs the older
-    meaning there.
+    quietly hand the predicate to whichever arm is left. A **non-finite** value
+    is answered the same way, and that one is not a nicety: every comparison
+    against a ``nan`` is ``False``, so before the 2026-09-07 screen a ``nan``
+    ``avg_heart_rate`` or ``total_distance`` declined *every* veto and routed a
+    file as a full reading with no flag at all. See ``_intensity_signal``'s
+    **Scope** paragraph for where the screen lives and why; this docstring used
+    to claim ``_numeric`` was untouched, which stopped being true in code review
+    iteration 3.
 
     Deliberately *not* including the beats condition. Tier-1 candidacy needs
     both -- ``_classify_tier_1`` checks the beats itself -- but the beatless
