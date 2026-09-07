@@ -144,6 +144,25 @@ _CORPUS: dict[str, DecodedFacts] = {
         max_heart_rate=71,
         rmssd_hrv=None,
     ),
+    # Wrist PPG on the declared 'HRV Snapshot' profile: the declaration is
+    # right and the hardware still cannot answer. Zero hrv messages AND no
+    # device rmssd_hrv, so neither tier can claim it -- it is recognised and
+    # flagged, never read. Recorded 2026-09-07 without a chest strap.
+    "wrist_ppg_hrv_snapshot.fit": DecodedFacts(
+        size_bytes=10_677,
+        hrv_message_count=0,
+        beat_value_count=0,
+        session_count=1,
+        sport="generic",
+        sub_sport="generic",
+        sport_profile_name="HRV Snapshot",
+        total_timer_time=153.49,
+        total_distance=32.38,
+        total_calories=3,
+        avg_heart_rate=54,
+        max_heart_rate=61,
+        rmssd_hrv=None,
+    ),
     # The mutual-exclusivity proof: 'Log HRV' was on and there are still
     # zero hrv messages.
     "strap_health_snapshot_hrv.fit": DecodedFacts(
