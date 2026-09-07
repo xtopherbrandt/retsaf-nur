@@ -9,13 +9,22 @@ drawn its line at a **sentinel** (``distance_m > 0``) rather than at
 informativeness -- 5 m over 240 s is GPS jitter and routed unflagged with no heart
 rate at all:
 
+and amended a fourth time by T061, which stated the ``session.summary`` reading
+convention once instead of deciding it per field -- so a present-but-unparseable
+or structurally impossible value is now a **veto** rather than an absence:
+
 ```
 tier1 := rr_intervals is non-empty
-     AND duration_s is not None AND 0 < duration_s <= 300
+     AND no summary field is present-but-unparseable or structurally impossible
+     AND duration_s is present AND 0 < duration_s <= 300
      AND avg_heart_rate is present AND avg_heart_rate <= 100
-     AND (distance_m is present AND distance_m > 0
-              ->  distance_m / duration_s <= 1.0)
+     AND (distance_m is present  ->  distance_m / duration_s <= 1.0)
 ```
+
+"Present" throughout means **present and informative**: a key absent from the
+summary and a key holding exactly zero are both "nothing reported" (and a FIT
+field declared with the invalid sentinel is the former, because
+``mapping._build_summary`` strips ``None``).
 
 **A heart rate is required; a distance can only veto.** No threshold on the
 distance could have closed the gap: the gate fixture is 108.21 m over 150.797 s of
@@ -58,10 +67,15 @@ corpus is a GPS-less capture, so that class is covered synthetically here -- it 
 threshold logic over already-mapped summary values, not fitdecode parsing behaviour, so
 ``.claude/rules/project-testing.md``'s real-fixture requirement does not bite.
 
-**No usable intensity signal means no route.** Distance absent, zero or negative *and*
-average heart rate absent leaves nothing to discriminate on, and the conservative outcome
-is no reading. A negative distance is impossible in an unsigned FIT field, so it can only
-be corruption and is answered exactly as an absent one is.
+**No usable intensity signal means no route.** A distance absent or zero *and* an
+average heart rate absent or zero leaves nothing to discriminate on, and the conservative
+outcome is no reading.
+
+**Corruption is refused, not ignored.** A negative value is impossible in an unsigned FIT
+field and a ``tuple``, ``str`` or ``bool`` cannot be compared at all; both mean the file
+is wrong, and since T061 both **veto** rather than reading as absent -- an absence lets
+another arm satisfy the predicate alone, which is how ``-500 m`` used to route on a
+55 bpm heart rate. See the reading-convention section below.
 
 **``rmssd_precomputed`` stays ``None`` on Tier 1.** Per §2.2.3 it is "populated only for
 the numeric wrist tiers"; the Tier-1 reading *is* the computed value, and mixing the two
@@ -622,6 +636,167 @@ _PROFILE_CONTRACT = [
         False,
         id="the-gate-fixture-profile-stripped-of-its-heart-rate",
     ),
+    # --- T061, 2026-09-06: the ``session.summary`` reading convention --------
+    #
+    # Every row below is one degenerate form of one summary field, enumerated
+    # per ``.claude/rules/learnings/adversarial-input-probes-are-a-task-deliverable.md``
+    # rather than collected as cases surfaced. The convention, ratified in
+    # ``spec/references/F004-contract-resolutions.md``:
+    #
+    #   key absent                      -> ABSENT   (rule 1)
+    #   FIT field declared, sentinel    -> ABSENT   (rule 1 via ``_build_summary``'s
+    #                                                ``None``-stripping -- R1/D-1)
+    #   present, numeric, exactly zero  -> ABSENT   (rule 2; ``-0.0`` included)
+    #   present, numeric, negative      -> VETO     (rule 3, structurally impossible)
+    #   present, non-numeric            -> VETO     (rule 3, unparseable)
+    #   present, numeric, positive      -> the value
+    #
+    # "Sentinel" is written here as an explicit ``None``, which is exactly what
+    # ``msg.get_value(name, fallback=None)`` answers for a declared-but-invalid
+    # field on the real bytes -- pinned against the corpus by
+    # ``test_fixture_corpus.py`` (``rmssd_hrv`` on every fixture, and
+    # ``total_distance`` on ``strap_health_snapshot_hrv.fit``). Reading such a
+    # field with ``has_field()`` instead would land on the opposite answer for
+    # ``distance_m``; see the sentinel rows below and R1.
+    #
+    # -- duration_s (``total_timer_time``) ---------------------------------
+    pytest.param(
+        {"total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-absent--no-key-at-all",
+    ),
+    pytest.param(
+        {"total_timer_time": None, "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-invalid-sentinel--stripped-to-absent",
+    ),
+    pytest.param(
+        {"total_timer_time": -0.0, "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-negative-zero--degenerate-not-impossible",
+    ),
+    pytest.param(
+        {"total_timer_time": -1.0, "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-negative--veto-and-also-outside-the-band",
+    ),
+    pytest.param(
+        {"total_timer_time": (150.0, 1.0), "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-tuple--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": "150", "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-string--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": True, "total_distance": 0.0, "avg_heart_rate": 55},
+        False,
+        id="duration-bool--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 120.0, "total_distance": 0.0, "avg_heart_rate": 55},
+        True,
+        id="duration-at-the-quality-gate-floor--still-a-full-reading",
+    ),
+    # -- avg_heart_rate -----------------------------------------------------
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": None},
+        False,
+        id="heart-rate-invalid-sentinel--stripped-to-absent",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 0},
+        False,
+        id="heart-rate-zero--nothing-reported-not-a-heart-rate-of-zero",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": -0.0},
+        False,
+        id="heart-rate-negative-zero--exactly-zero-so-absent",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": -5},
+        False,
+        id="heart-rate-negative--structurally-impossible-vetoes-R2",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": True},
+        False,
+        id="heart-rate-bool--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": ("55", "56")},
+        False,
+        id="heart-rate-tuple--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 1},
+        True,
+        id="heart-rate-one-bpm--no-plausibility-band-is-invented",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 100.5},
+        False,
+        id="heart-rate-just-over-the-ceiling",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": 101},
+        False,
+        id="heart-rate-one-bpm-over-the-ceiling",
+    ),
+    # -- distance_m (``total_distance``) ------------------------------------
+    #
+    # These are the rows where the convention is *observable*: an absent
+    # distance routes on the heart rate alone, a vetoing one does not. For
+    # ``duration_s`` and ``avg_heart_rate`` both readings refuse, so the
+    # divergence is invisible there and shows up only here (R1).
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": None, "avg_heart_rate": 55},
+        True,
+        id="distance-invalid-sentinel--absent-so-the-heart-rate-decides-R1",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": -0.0, "avg_heart_rate": 55},
+        True,
+        id="distance-negative-zero--exactly-zero-so-absent",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": -500.0, "avg_heart_rate": 55},
+        False,
+        id="distance-negative--structurally-impossible-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": (10.0, 2.0), "avg_heart_rate": 55},
+        False,
+        id="distance-tuple--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": "108", "avg_heart_rate": 55},
+        False,
+        id="distance-string--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": True, "avg_heart_rate": 55},
+        False,
+        id="distance-bool--present-but-unparseable-vetoes",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 5.0, "avg_heart_rate": 55},
+        True,
+        id="distance-gps-jitter-with-an-agreeing-heart-rate--routes",
+    ),
+    pytest.param(
+        {"total_timer_time": 300.0, "total_distance": 300.03, "avg_heart_rate": 60},
+        False,
+        id="distance-a-whisker-over-walking-pace",
+    ),
+    pytest.param(
+        {"total_distance": 100.0, "avg_heart_rate": 55},
+        False,
+        id="distance-present-duration-absent--no-usable-divisor",
+    ),
 ]
 
 
@@ -664,36 +839,68 @@ def test_the_resting_profile_contract(
 
 
 # ---------------------------------------------------------------------------
-# Negative distance -- impossible, therefore not a measurement
+# The ``session.summary`` reading convention (T061, closes IDEA-009)
 # ---------------------------------------------------------------------------
+#
+# One rule, stated once, applied to every field ``_resting_profile_duration``
+# reads -- rather than decided per field as each case surfaced, which is what
+# produced three instances of the same shape. Ratified in
+# ``spec/references/F004-contract-resolutions.md`` (R1, R2) and stated in
+# ``spec/references/F004-detection-and-quality-rules.md``:
+#
+#   1. absent, or present-and-exactly-zero  -> nothing was reported
+#   2. present-but-unparseable, or present-and-structurally-impossible
+#                                           -> a **veto**, never an absence
+#
+# The tests below are the per-mechanism arguments; ``_PROFILE_CONTRACT``'s
+# T061 section is the exhaustive enumeration.
 
 
-def test_a_negative_distance_is_not_an_intensity_signal(synthetic, classified) -> None:
-    """``total_distance`` is an unsigned FIT field, so a negative value can only
-    arrive from a crafted or corrupt definition record -- the same provenance as
-    the ``tuple`` and ``str`` values ``_numeric`` already answers ``None`` for.
+def test_a_negative_distance_vetoes_rather_than_reading_as_absent(synthetic, classified) -> None:
+    """**This reverses the rule this test previously asserted, deliberately.**
 
-    It is therefore treated the way every other uninterpretable value is treated:
-    as **absent**, not as evidence. Reading it literally would be strictly worse,
-    and in the same direction the zero case was wrong -- ``-500 / 240`` is
-    comfortably ``<= 1.0``, so a garbage field would satisfy the stillness test
-    outright and stand in for the heart-rate arm it must never replace.
+    Until 2026-09-06 a negative ``total_distance`` was read as *absent* -- the
+    same answer ``_numeric`` gives a ``tuple`` -- and the docstring here argued
+    for it at length: absent means the heart-rate arm decides, and at 55 bpm it
+    agreed, so the file routed. That is now spec-contradicting and the argument
+    is replaced rather than merely re-asserted, because a module carrying two
+    ratified rationales for opposite answers is the drift this file has already
+    had to fix once.
 
-    Absent means the heart-rate arm decides, and here it agrees: 55 bpm routes."""
+    The argument that replaces it is the one that was always available and was
+    applied to only half the evidence: ``total_distance`` is an **unsigned** FIT
+    field, so a negative value can only come from a crafted or corrupt
+    definition record -- the *identical* provenance ``_numeric`` reports for a
+    ``tuple``. One was ignored and the other vetoed. Evidence of corruption must
+    never be silently downgraded into the "signal missing" branch, so both are
+    now answered the same way: **veto**.
+
+    Reading it literally was never on the table and is worth restating, because
+    it is why this value cannot simply be compared: ``-500 / 240`` clears the
+    1.0 m/s bound comfortably, so a garbage field would read as a *satisfied*
+    stillness test.
+
+    F004 Decision Log, 2026-09-06: *"Reconciling the [[IDEA-009]] convention's
+    treatment of a negative distance against an unparseable one"*."""
     session = classified(
         synthetic(total_timer_time=240.0, total_distance=-500.0, avg_heart_rate=55),
         rr_intervals=_beats(),
     )
 
+    # Present in the summary -- ``_build_summary`` strips only ``None`` -- and
+    # refused *because* it is present, which is the whole distinction.
     assert session.summary is not None
-    assert session.summary["distance_m"] == -500.0  # present, and still not a signal
-    assert session.hrv_source_tier == "chest_strap_raw"
+    assert session.summary["distance_m"] == -500.0
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
 
 
-def test_a_negative_distance_alone_does_not_route(synthetic, classified) -> None:
-    """The other half of treating it as absent, and the half that matters: with no
-    heart rate to fall through to there is no usable intensity signal at all, so a
-    corrupt distance field can never route a capture on its own."""
+def test_a_negative_distance_vetoes_even_with_no_heart_rate(synthetic, classified) -> None:
+    """The same input with the corroborating heart rate removed.
+
+    It is kept as an assumption check rather than a mechanism pin: with no heart
+    rate the file is refused twice over, so it would stay green with the veto
+    deleted. The row above is the one that isolates the mechanism."""
     session = classified(
         synthetic(total_timer_time=240.0, total_distance=-500.0), rr_intervals=_beats()
     )
@@ -702,8 +909,137 @@ def test_a_negative_distance_alone_does_not_route(synthetic, classified) -> None
     assert session.hrv_source_tier is None
 
 
+def test_a_negative_average_heart_rate_vetoes(synthetic, classified) -> None:
+    """R2, and the finding that produced it (T058, Finding 2).
+
+    Evaluated **as written**, both normative veto blocks *accept* ``-5``: the
+    feature file's is ``avg_heart_rate absent or > 100`` and the reference
+    document's is ``present AND <= 100``, and a ``-5`` is present, is not
+    ``> 100``, and is ``<= 100``. The enumerated Scenario Outline lists a
+    negative ``total_distance`` and three non-numeric fields, and a negative
+    ``avg_heart_rate`` is not among them -- so an implementer working from the
+    scenario list alone lets it straight through into a resting reading, and
+    nothing in the spec makes that visible.
+
+    It is refused here because ``avg_heart_rate`` is a **uint8** FIT field, so a
+    negative value has exactly the provenance the negative distance has, and the
+    convention exists precisely to stop that question being answered per field.
+    The general disjunct in the feature file's ``vetoed`` block -- *"or any
+    intensity signal is present but unparseable or structurally impossible"* --
+    reaches it by reference; this is that reference made concrete.
+
+    The row is otherwise clean (240 s, zero distance), so it isolates the
+    heart-rate veto and nothing else: under the pre-T061 reading it **routed**."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=-5),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert session.summary["avg_heart_rate"] == -5
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+
+
+def test_a_present_and_zero_average_heart_rate_is_not_evidence_of_rest(
+    synthetic, classified
+) -> None:
+    """Rule 1 extended from ``distance_m`` to ``avg_heart_rate``, which is the
+    residue ``IDEA-009`` left open and this task closes.
+
+    A zero is a device writing that it had nothing to report, never a
+    measurement of a heart rate of zero -- and a heart rate is *required* on
+    every Tier-1 route, so "nothing reported" means no route. Under the previous
+    reading ``0`` was a number, ``0 > 100`` was ``False``, and a capture with no
+    heart-rate information at all routed as a full unflagged reading.
+
+    Knowingly near-unreachable on Garmin hardware: an absent heart rate encodes
+    as the uint8 invalid sentinel, not as ``0`` (which is why the sibling row
+    ``heart-rate-invalid-sentinel`` exists and is the *reachable* one). It ships
+    as a consequence of the stated convention rather than as a guard invented
+    for an unproducible case -- that distinction is the reason it is worth
+    shipping at all."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=0.0, avg_heart_rate=0),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert session.summary["avg_heart_rate"] == 0  # present, and still not a signal
+    assert session.activity_tag is None
+    assert session.hrv_source_tier is None
+
+
+def test_an_invalid_sentinel_distance_reads_as_absent_and_still_routes(
+    synthetic, classified
+) -> None:
+    """**R1, and the trap it names.** The one row where the two candidate
+    readings of the convention give *opposite* answers.
+
+    A FIT session field is commonly **declared while carrying an invalid
+    sentinel**: ``msg.has_field(name)`` is ``True`` and
+    ``msg.get_value(name, fallback=None)`` is ``None``. T057 established this
+    against the real corpus -- it holds for ``rmssd_hrv`` on *every* fixture
+    including the Tier-1 positive, and for ``total_distance`` on
+    ``strap_health_snapshot_hrv.fit``.
+
+    The convention is scoped to ``session.summary``, whose key set is produced
+    by ``mapping._build_summary``, which **strips ``None``**. A sentinel field
+    therefore produces **no key at all**, and the state is ABSENT (rule 1) -- it
+    never reaches the veto clause. An implementer who reaches for
+    ``has_field()`` instead lands on "a value that exists and cannot be read",
+    i.e. a veto, and gets the opposite behaviour on a real, common corpus state.
+
+    For ``duration_s`` and ``avg_heart_rate`` both readings refuse the file, so
+    the divergence is invisible. **For ``distance_m`` they disagree
+    materially**, and this is that row: absent means the heart rate decides, and
+    at 55 bpm it agrees, so the capture **routes**. Under the ``has_field()``
+    reading it would be refused.
+
+    The assertion on the key's *absence* is deliberate: asserting only the route
+    would pass for the wrong reason on a file that simply had no distance."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=None, avg_heart_rate=55),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert "distance_m" not in session.summary  # stripped, not a key holding None
+    assert session.hrv_source_tier == "chest_strap_raw"
+
+
+def test_negative_zero_is_exactly_zero_and_therefore_absent(synthetic, classified) -> None:
+    """T058's Finding 11, decided explicitly rather than left to fall out.
+
+    ``-0.0`` sits exactly on the boundary between rule 1's *degenerate* (zero)
+    and rule 2's *structurally impossible* (negative). It is read as **zero, and
+    therefore absent**, for two reasons that agree:
+
+    * IEEE-754, which the FIT float encodings are, defines ``-0.0 == 0.0`` as
+      true and ``-0.0 < 0`` as false. Rule 1's test is "**exactly** zero" and
+      ``-0.0`` satisfies it under the only comparison the language offers.
+      Rule 2's test is "negative", and ``-0.0`` is not negative: the sign bit is
+      not a magnitude.
+    * The provenance argument that makes a negative value a veto does not reach
+      it. A negative *magnitude* on an unsigned field can only come from a
+      crafted or corrupt definition record; a signed zero cannot -- it is what
+      arithmetic on a scaled zero produces, and it carries exactly as much
+      information as ``0.0``, which is none.
+
+    Pinned on ``distance_m``, where the two answers differ observably: absent
+    lets the heart rate decide and the capture routes; a veto would refuse it."""
+    session = classified(
+        synthetic(total_timer_time=240.0, total_distance=-0.0, avg_heart_rate=55),
+        rr_intervals=_beats(),
+    )
+
+    assert session.summary is not None
+    assert session.summary["distance_m"] == 0.0  # present, signed, and still nothing reported
+    assert session.hrv_source_tier == "chest_strap_raw"
+
+
 # ---------------------------------------------------------------------------
-# Non-numeric summary values -- a crafted definition record must not be a 500
+# Non-numeric summary values -- a veto, and never a 500
 # ---------------------------------------------------------------------------
 
 
@@ -712,43 +1048,72 @@ def test_a_negative_distance_alone_does_not_route(synthetic, classified) -> None
     [
         {"total_timer_time": (150.0, 1.0), "total_distance": 10.0, "avg_heart_rate": 60},
         {"total_timer_time": "150", "total_distance": 10.0, "avg_heart_rate": 60},
-        {"total_timer_time": 150.0, "total_distance": (10.0, 2.0)},
-        {"total_timer_time": 150.0, "avg_heart_rate": ("60", "61")},
-        {"total_timer_time": 150.0, "avg_heart_rate": "60"},
+        {"total_timer_time": 150.0, "total_distance": (10.0, 2.0), "avg_heart_rate": 60},
+        {"total_timer_time": 150.0, "total_distance": "10", "avg_heart_rate": 60},
+        {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": ("60", "61")},
+        {"total_timer_time": 150.0, "total_distance": 10.0, "avg_heart_rate": "60"},
     ],
 )
-def test_a_non_numeric_summary_value_is_treated_as_absent_not_a_500(
+def test_a_non_numeric_summary_value_vetoes_and_is_never_a_500(
     session_extra: dict,
     synthetic,
     classified,
 ) -> None:
     """``fitdecode`` types a field by the **file's own declared base type**, not the
     global profile: ``reader.py`` (verified at lines 797-806 of the vendored copy)
-    returns ``tuple(base_type.parse(v) for v in raw_value)`` whenever the declared size
-    holds more than one element, so a crafted or corrupt definition record can make any
-    of these three a ``tuple`` -- or a ``str``, from a string base type. Comparing one
-    raises ``TypeError``, which ``main.py`` does not catch: a **500 on a malformed
-    upload** rather than a stored session. ``rr_reconstruction._hrv_candidates`` already
-    guards the identical hazard with ``isinstance``; this is the same convention.
+    returns ``tuple(base_type.parse(v) for v in raw_value)`` whenever the declared
+    size holds more than one element, so a crafted or corrupt definition record can
+    make any of these three a ``tuple`` -- or a ``str``, from a string base type.
+    Comparing one raises ``TypeError``, which ``main.py`` does not catch: a **500 on
+    a malformed upload** rather than a stored session.
+    ``rr_reconstruction._hrv_candidates`` already guards the identical hazard with
+    ``isinstance``; this is the same convention.
 
-    A non-numeric value is treated as **absent**, so each row above loses an arm and no
-    reading is derived."""
+    **What changed in T061 is the meaning, not the outcome.** Such a value used to
+    be treated as *absent*, which meant the file lost an arm and was refused for
+    want of a signal. It is now a **veto**: refused because the value is there and
+    cannot be read. Every row above is therefore given an otherwise-clean profile
+    with an agreeing 60 bpm heart rate and a 10 m distance -- under the old reading
+    the two ``total_distance`` rows **routed**, because an unreadable distance
+    simply vanished and the heart rate carried the file on its own.
+
+    ``_numeric`` itself is unchanged, and deliberately: it is shared with
+    ``_classify_tier_2``, where an unparseable ``rmssd_hrv`` genuinely does mean
+    "no usable device value" (``test_resting_hrv_tier2.py``). The presence
+    discrimination lives *around* it, in ``_resting_profile_duration``."""
     session = classified(synthetic(**session_extra), rr_intervals=_beats())
 
     assert session.activity_tag is None
     assert session.hrv_source_tier is None
 
 
-def test_a_boolean_heart_rate_is_not_a_numeric_intensity_signal(synthetic, classified) -> None:
+def test_a_boolean_summary_value_is_unparseable_and_therefore_vetoes(
+    synthetic, classified
+) -> None:
     """``bool`` is an ``int`` subclass, so ``True <= 100`` is ``True`` and a bare
-    ``isinstance(value, (int, float))`` would accept it as an average heart rate of
-    1 bpm. It is not a measurement, so it is treated as absent -- which leaves this
-    GPS-less file with no intensity signal at all."""
+    ``isinstance(value, (int, float))`` would read a flag as an average heart rate
+    of 1 bpm. ``_numeric`` answers ``None`` for it, and **that answer is now read as
+    "present but unparseable", not as "absent"** -- a ``True`` in a numeric field is
+    evidence something is wrong with the file in exactly the way a ``tuple`` is.
+
+    The assertion below did not change when the rule did, and the docstring is why
+    this test exists in its own right: before T061 the file was refused because a
+    bool heart rate *vanished*, leaving a GPS-less capture with no intensity signal
+    at all. It is now refused because the bool **vetoes**. Same outcome, different
+    mechanism -- and the distance row makes the difference observable, since a bool
+    distance with an agreeing heart rate used to route."""
     session = classified(
         synthetic(total_timer_time=180.0, avg_heart_rate=True), rr_intervals=_beats()
     )
-
     assert session.hrv_source_tier is None
+
+    routed_before = classified(
+        synthetic(total_timer_time=240.0, total_distance=True, avg_heart_rate=55),
+        rr_intervals=_beats(),
+    )
+    assert routed_before.summary is not None
+    assert routed_before.summary["distance_m"] is True
+    assert routed_before.hrv_source_tier is None
 
 
 # ---------------------------------------------------------------------------

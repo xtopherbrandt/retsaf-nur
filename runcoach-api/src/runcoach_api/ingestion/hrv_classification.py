@@ -421,14 +421,139 @@ def classify(
     return None
 
 
+# The three sentinels the reading convention needs.
+#
+# ``_MISSING`` distinguishes "the summary has no such key" from "the summary
+# holds a falsy value": a bare ``summary.get(key)`` cannot, because ``0`` and a
+# missing key both answer falsy, and telling those two apart is the whole
+# subject of the convention on ``_intensity_signal``.
+#
+# ``_ABSENT`` and ``_VETO`` are the two answers that are not a value. They are
+# distinct objects rather than ``None`` for the same reason: ``None`` is one of
+# the states being told apart, not a way to report them.
+_MISSING = object()
+_ABSENT = object()
+_VETO = object()
+
+
+def _intensity_signal(raw: Any) -> Any:
+    """One summary field, normalised by F004's stated ``session.summary``
+    reading convention (feature file Data Model; reference document
+    "Reading ``session.summary``"; resolutions R1 and R2)::
+
+        _MISSING -- i.e. no such key      ->  _ABSENT   (rule 1)
+        present, non-numeric              ->  _VETO     (rule 2, unparseable)
+        present, numeric, exactly zero    ->  _ABSENT   (rule 1, degenerate)
+        present, numeric, negative        ->  _VETO     (rule 2, impossible)
+        present, numeric, positive        ->  the value
+
+    **Stated once and applied to all three fields**, which is the entire point:
+    this is the third instance of one shape -- a present-but-uninformative value
+    read as an absence -- and answering it per field as each residue surfaced is
+    what guaranteed the third. ``IDEA-009``.
+
+    **Rule 1, absence.** ``mapping._build_summary`` strips its ``None`` values,
+    so a field the device did not write has **no key at all** -- and, crucially,
+    so does a field the device *declared* while writing the FIT **invalid
+    sentinel**, because ``get_value(name, fallback=None)`` answers ``None`` for
+    it. T057 measured that state across the whole corpus: it holds for
+    ``rmssd_hrv`` on every fixture including the Tier-1 positive, and for
+    ``total_distance`` on ``strap_health_snapshot_hrv.fit``. The convention is
+    therefore scoped to the **dict**, whose key set that stripping defines: the
+    caller reads ``summary.get("<name>", _MISSING)`` and never
+    ``msg.has_field("<name>")``.
+
+    **It takes the already-read value rather than the dict and a key**, so that
+    every lookup key in this module stays a string *literal*. The quarantine
+    boundary guard (``test_hrv_quarantine_boundary``) walks this file's AST and
+    refuses any lookup whose key it cannot resolve statically -- a
+    ``summary.get(key, ...)`` over a parameter would make the whole
+    ``HRV_INPUT_FIELDS`` reconciliation blind, which is a strictly worse
+    outcome than three call sites naming their own fields.
+
+    That scoping is load-bearing rather than stylistic (resolution **R1**). A
+    ``has_field()`` reading turns the sentinel into "a value that exists and
+    cannot be read", i.e. rule 2's veto, and the two readings then disagree
+    **materially** for ``distance_m``: absent lets the heart rate decide and the
+    capture routes, while a veto refuses it. For ``duration_s`` and
+    ``avg_heart_rate`` both readings refuse, so the divergence is invisible --
+    which is precisely why it would survive a green suite.
+
+    **Rule 1, degeneracy.** A zero is a device writing that it had nothing to
+    report, never a measurement of zero. Ratified first for ``distance_m`` (a
+    present-and-zero distance was standing in for the heart-rate arm on every
+    indoor capture) and extended here to ``avg_heart_rate`` as a consequence of
+    stating the rule, rather than as a guard invented for a case no Garmin
+    device produces -- an absent heart rate encodes as the uint8 invalid
+    sentinel, not as ``0``.
+
+    ``-0.0`` is **exactly zero**, so it is an absence and not a veto (T058
+    Finding 11, decided rather than left to fall out). IEEE-754 -- which the FIT
+    float encodings are -- makes ``-0.0 == 0`` true and ``-0.0 < 0`` false, so
+    the language's own comparisons already answer it; and the provenance
+    argument that makes a negative value impossible does not reach a signed
+    zero, which is what arithmetic on a scaled zero produces and carries exactly
+    as much information as ``0.0``: none. The zero test is written first, above
+    the sign test, so that this is visible in the code and not an accident of
+    operator semantics.
+
+    **Rule 2, the veto.** A value that exists and cannot be read -- or that
+    reads cleanly but could not have been written by a working device -- is
+    evidence something is wrong with the file. It must never be silently
+    downgraded into the "signal missing" branch, because another arm can then
+    satisfy the predicate alone. Two forms, and they are the same finding:
+
+    * **Unparseable.** ``fitdecode`` types a field by the file's own declared
+      base type, so a crafted or corrupt definition record hands this module a
+      ``tuple`` or a ``str`` where a scalar was expected. ``bool`` is in this
+      class too, and deliberately: it is an ``int`` subclass, so ``True <= 100``
+      is legal and an unguarded numeric check would read a flag as a heart rate
+      of 1 bpm.
+    * **Structurally impossible.** All three of ``total_distance``,
+      ``total_timer_time`` and ``avg_heart_rate`` are **unsigned** FIT fields,
+      so a negative value can only come from a crafted or corrupt definition
+      record -- the *identical* provenance ``_numeric`` reports for a ``tuple``.
+      The convention's first draft ignored one and vetoed the other; treating
+      them differently is the per-value inconsistency it exists to end. This
+      **changed ratified behaviour** for ``total_distance`` (F004 Decision Log,
+      2026-09-06) and settles ``avg_heart_rate``, which both normative veto
+      blocks accept as written (resolution **R2**, T058 Finding 2).
+
+    Reading a negative distance *literally* was never the alternative and is
+    worth restating, because it is why the value cannot simply be compared:
+    ``-500 / 240`` clears the 1.0 m/s bound comfortably, so a garbage field
+    would read as a **satisfied** stillness test.
+
+    **Scope.** ``_resting_profile_duration`` only. ``_numeric`` itself is
+    unchanged and shared with ``_classify_tier_2``, where an unparseable
+    ``rmssd_hrv`` genuinely does mean "no usable device value" -- the presence
+    discrimination lives *around* ``_numeric``, never inside it.
+    """
+    if raw is _MISSING:
+        return _ABSENT
+
+    value = _numeric(raw)
+    if value is None:
+        return _VETO
+    if value == 0:
+        return _ABSENT
+    if value < 0:
+        return _VETO
+    return value
+
+
 def _resting_profile_duration(session: Session) -> float | None:
     """The capture's duration if its duration/intensity profile is a resting
-    one, otherwise ``None`` (F004 reference document §2)::
+    one, otherwise ``None`` (F004 reference document §2).
 
-        duration_s is not None AND 0 < duration_s <= 300
+    Every field is first normalised by ``_intensity_signal`` -- the stated
+    ``session.summary`` reading convention -- so "present" below means
+    *present and informative*, and a veto has already refused the file::
+
+        NOT (duration_s or distance_m or avg_heart_rate is a rule-2 veto)
+        AND duration_s is present AND 0 < duration_s <= 300
         AND avg_heart_rate is present AND avg_heart_rate <= 100
-        AND (distance_m present AND distance_m > 0
-                 ->  distance_m / duration_s <= 1.0)
+        AND (distance_m present  ->  distance_m / duration_s <= 1.0)
 
     **A heart rate is required; a distance can only veto** (amended 2026-09-06,
     sprint-003 critic pass). The 2026-09-06 zero-distance amendment drew its
@@ -492,33 +617,43 @@ def _resting_profile_duration(session: Session) -> float | None:
     reading. Zero is therefore **not a signal**; it falls through to requiring
     a heart rate, exactly as an absent distance does.
 
-    A **negative** ``distance_m`` is answered the same way, and deliberately.
-    ``total_distance`` is an unsigned FIT field, so a negative value can only
-    come from a crafted or corrupt definition record -- the same provenance as
-    the ``tuple`` and ``str`` values ``_numeric`` already reports as absent --
-    and reading it literally would repeat the zero mistake in a worse form:
-    ``-500 / 240`` clears the speed bound comfortably, so a garbage field
-    would stand in for the heart-rate arm it must never replace. Anything not
-    strictly greater than zero is not a measurement of movement.
+    A **negative** ``distance_m`` was answered the same way until 2026-09-06 --
+    read as an absence -- and **that is no longer true.** It is now a rule-2
+    veto, and so is a negative ``avg_heart_rate`` or ``total_timer_time``: all
+    three are unsigned FIT fields, so a negative value can only come from a
+    crafted or corrupt definition record, which is the *identical* provenance
+    ``_numeric`` reports for a ``tuple``. Answering one as absent and the other
+    as a veto was a per-value inconsistency inside a convention written to end
+    exactly that. See ``_intensity_signal``, and the F004 Decision Log entry
+    *"Reconciling the [[IDEA-009]] convention's treatment of a negative distance
+    against an unparseable one"*.
 
-    Since the critic-pass amendment above, *no* distance can stand in for the
-    heart rate, so the stakes on that paragraph are lower than they were -- but
-    it is still what stops ``-500 / 240`` from being computed and read as a
-    satisfied speed bound, and both remain true of the code below.
+    What has not changed is why the value cannot simply be compared: reading it
+    literally would repeat the zero mistake in a worse form, since ``-500 / 240``
+    clears the speed bound comfortably and a garbage field would read as a
+    *satisfied* stillness test.
 
-    The mirror case -- a present-and-zero ``avg_heart_rate`` -- is knowingly
-    left alone (``IDEA-009``). It is near-unreachable, because Garmin encodes
-    an absent heart rate as the invalid sentinel rather than as 0, so it has
-    neither a fixture nor a reproduction to constrain a change to it.
+    The mirror case -- a present-and-zero ``avg_heart_rate`` -- was knowingly
+    left alone as ``IDEA-009`` and is **now closed**, as a consequence of
+    stating the convention rather than as a guard invented for it: a zero is
+    "nothing reported", and a heart rate is required, so the file does not
+    route. It stays near-unreachable on Garmin hardware, which encodes an absent
+    heart rate as the uint8 invalid sentinel rather than as ``0`` -- and that
+    sentinel is stripped to no key at all, which is the *reachable* path to the
+    same answer.
 
     Returning the duration rather than a bare ``bool`` is what lets the
     quality gates re-use the same reading of ``session.summary`` instead of
     re-deriving it; ``None`` is unambiguous here because a profile that
     matches always has a duration strictly greater than zero.
 
-    All three values are read through ``_numeric``: a ``tuple`` or ``str``
-    from a crafted definition record is treated as absent rather than
-    compared, because comparing it is a ``TypeError`` and an unhandled 500.
+    All three values are read through ``_intensity_signal``, which wraps
+    ``_numeric``: a ``tuple`` or ``str`` from a crafted definition record is
+    never compared -- comparing it is a ``TypeError`` and an unhandled 500 --
+    and is answered as a **veto** rather than as an absence, so it cannot
+    quietly hand the predicate to whichever arm is left. ``_numeric`` itself is
+    untouched, because ``_classify_tier_2`` shares it and needs the older
+    meaning there.
 
     Deliberately *not* including the beats condition. Tier-1 candidacy needs
     both -- ``_classify_tier_1`` checks the beats itself -- but the beatless
@@ -526,37 +661,53 @@ def _resting_profile_duration(session: Session) -> float | None:
     about, and that case has to stay recognisable after the Tier-2 branch has
     had its turn.
 
-    ``session.summary`` is read with ``.get()`` throughout, never subscripted:
-    ``mapping._build_summary`` strips its ``None`` values, so a file with no
-    distance has **no** ``"distance_m"`` key at all -- not a key holding
-    ``None``. Subscripting would turn every indoor capture into a 500 on a
-    perfectly valid upload.
+    ``session.summary`` is read with ``.get()`` throughout, never subscripted
+    and never via ``msg.has_field()``: ``mapping._build_summary`` strips its
+    ``None`` values, so a file with no distance -- **or one that declared the
+    field and wrote the FIT invalid sentinel** -- has no ``"distance_m"`` key at
+    all, not a key holding ``None``. Subscripting would turn every indoor
+    capture into a 500 on a perfectly valid upload, and ``has_field()`` would
+    silently invert the sentinel's answer (resolution R1). The ``_MISSING``
+    default is what lets ``.get()`` tell that state from a legitimate ``0``.
     """
     summary = session.summary or {}
-    duration_s = _numeric(summary.get("duration_s"))
-    distance_m = _numeric(summary.get("distance_m"))
-    avg_heart_rate = _numeric(summary.get("avg_heart_rate"))
+    duration_s = _intensity_signal(summary.get("duration_s", _MISSING))
+    distance_m = _intensity_signal(summary.get("distance_m", _MISSING))
+    avg_heart_rate = _intensity_signal(summary.get("avg_heart_rate", _MISSING))
+
+    # Rule 2, evaluated first and over all three fields at once. A veto is a
+    # statement about the *file*, not about one signal, so it is answered
+    # before any signal is weighed -- and it must not be reachable only on the
+    # branch some other arm happens to take.
+    if _VETO in (duration_s, distance_m, avg_heart_rate):
+        return None
 
     # The divisor is established here, before any speed is computed: a
     # degenerate file can carry ``total_timer_time`` 0, and a duration that
-    # fails this check can never reach the division below.
-    if duration_s is None or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
+    # fails this check can never reach the division below. ``_ABSENT`` covers
+    # both the missing key and that degenerate zero, which the ``0 <`` bound
+    # would refuse anyway -- the two readings agree here, and only here.
+    if duration_s is _ABSENT or not 0 < duration_s <= _RESTING_MAX_DURATION_S:
         return None
 
     # The heart rate is *required*, because it is the only signal that can
     # corroborate rest. A distance can only veto. Absent it there is nothing to
-    # discriminate on, and the conservative outcome is no reading.
-    if avg_heart_rate is None:
+    # discriminate on, and the conservative outcome is no reading. A
+    # present-and-zero heart rate is absent by rule 1: a zero is a device
+    # reporting nothing, never a measured heart rate of zero.
+    if avg_heart_rate is _ABSENT:
         return None
     if avg_heart_rate > _RESTING_MAX_AVG_HEART_RATE_BPM:
         return None
 
-    # The distance's veto, and only its veto. Computed only for a positive
-    # distance: ``0.0`` is what a device with nothing to report writes and a
-    # negative value can only be corruption, so neither yields a mean speed to
-    # veto with. The check is against the *speed*, not the distance, and it is
-    # computed after the duration check above has established a usable divisor.
-    if distance_m is not None and distance_m > 0:
+    # The distance's veto, and only its veto. Every distance reaching this line
+    # is strictly positive -- ``_intensity_signal`` has already answered
+    # ``_ABSENT`` for zero and ``_VETO`` for anything impossible -- so the
+    # ``> 0`` guard the old body carried is now part of the normalisation
+    # rather than a second, separately-maintained copy of it. The check is
+    # against the *speed*, not the distance, and it runs only after the
+    # duration check above has established a usable divisor.
+    if distance_m is not _ABSENT:
         if distance_m / duration_s > _RESTING_MAX_MEAN_SPEED_MS:
             return None
 
@@ -850,6 +1001,16 @@ def _classify_tier_2(messages: list[fitdecode.FitDataMessage], session: Session)
     crafted definition record would raise ``TypeError`` on that
     comparison -- an unhandled 500 on a malformed upload. A non-numeric
     value is treated as absent, which puts the file on row 3.
+
+    **That is deliberately not the Tier-1 reading convention, and must not be
+    "fixed" to match it.** ``_intensity_signal`` answers an unparseable value
+    with a veto because a Tier-1 signal that cannot be read is evidence the
+    *file* is wrong and another arm would otherwise satisfy the predicate
+    alone. Here there is no other arm: an unreadable ``rmssd_hrv`` genuinely
+    means "no usable device value", which is exactly row 3. F004 pins the
+    distinction as a scenario of its own -- *"The Tier-2 coercion keeps its own
+    meaning"* -- and the convention states its own scope as
+    ``_resting_profile_duration`` only.
     """
     rmssd_hrv = _numeric(_session_rmssd_hrv(messages))
     raw_sport_value = _provenance(session).get("raw_sport_value")
