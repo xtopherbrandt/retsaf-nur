@@ -1184,8 +1184,11 @@ def _gate_a_beatless_resting_capture(
     Snapshot fixtures are zero-beat, ~120 s, low-heart-rate files -- the same
     profile -- and they are perfectly good Tier-2 readings. Flagging them as
     failed captures, or running before ``_classify_tier_2`` and pre-empting
-    them, would destroy a working reading; ``activity_tag`` being set is the
-    signal that Tier 2 recognised the file.
+    them, would destroy a working reading; ``activity_tag`` being set on entry is
+    the signal that Tier 2 recognised the file. Since T075 that guard also absorbs
+    a re-``classify()`` of an already-tagged session, which is the only other way
+    it can be set on entry: ``_classify_tier_1`` tags only on paths that return
+    ``True``, and ``classify`` returns before this function on every one of them.
 
     **Declaration-gated (T066; T058 Finding 17 / row D5), and this is the whole
     subject of that task.** A ``hrv_capture_*`` flag asserts a finding *about a
@@ -1220,9 +1223,32 @@ def _gate_a_beatless_resting_capture(
     declaration is not a recognised capture either, and T064 has already written
     it a note naming the veto.
 
-    No ``activity_tag`` is written here. The file yielded nothing and was
-    claimed by no tier, so tagging it ``resting_hrv_check`` would assert a
-    classification the gates have just declined to make.
+    **``activity_tag`` is written here, and R6 (ratified 2026-09-06, shipped by
+    T075) is what reversed that.** This docstring used to say the opposite -- *"the
+    file yielded nothing and was claimed by no tier, so tagging it would assert a
+    classification the gates have just declined to make"* -- and that was defensible
+    while the gate fired on any beatless resting-*shaped* file. T066 ended that: the
+    flag below is now reachable only for a file the athlete **declared** and that
+    survived every veto, on the stated ground that *"a flag asserts a finding about
+    a recognised capture"*. So by the time ``_apply_quality_gates`` runs here the
+    file has been recognised -- and R6 says a recognised capture that yielded no
+    number is still a resting capture, not a workout. Leaving the tag null would
+    book a declared, veto-clean capture whose strap never paired as **training
+    load**, which is the precise defect R6 was ratified to close.
+
+    "Claimed by no tier" remains true and is why ``hrv_source_tier`` and
+    ``resting_rmssd_ms`` stay null: the tag says *what the file is*, the tier says
+    *a reading was produced*, and a recognised-but-flagged capture is exactly the
+    row where those two answers differ.
+
+    **This is a second write of the same rule, not a second rule**, and the rule is
+    stated once: *the tag is written at the point recognition is decided, before the
+    gates run.* ``_classify_tier_1`` and ``_classify_tier_2`` each do the same at
+    their own recognition point. It cannot be folded into ``_classify_tier_1``'s
+    write, because the file reaching this function is one that tier **declined at
+    its beats gate** and therefore never reached that line -- which is also why the
+    write may not move down beside the flag: the ordering, not the branch, is the
+    rule.
     """
     if rr_intervals or session.activity_tag is not None:
         return
@@ -1234,6 +1260,9 @@ def _gate_a_beatless_resting_capture(
     if duration_s is None:
         return
 
+    # R6's recognition point on this path: declared, veto-clean, and about to be
+    # told what its capture recorded. Both refusals above leave the tag null.
+    session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
     _apply_quality_gates(session, duration_s, rr_intervals)
 
 
@@ -1654,6 +1683,33 @@ def _classify_tier_1(
         _record_undeclared_candidate(session, None)
         return False
 
+    # **R6, ratified 2026-09-06 (T075). The recognition point, and the only place
+    # this tier writes the tag.** Everything above has already refused; from here
+    # the file *is* a declared resting capture, whether or not a number comes out
+    # of it. R6: "a recognised capture that yielded no number is still a
+    # recognised capture, not a workout", so E003 excludes it from rTSS.
+    #
+    # Written **before** the gates rather than at the success point below, which is
+    # where it used to live, and the difference is not tidiness: with it below the
+    # gates a flagged 100-second declared HRV capture carried a null tag and was
+    # counted into training load -- a silent data-correctness defect in the
+    # athlete's own history, invisible until the numbers were already wrong. This
+    # is the same shape T064 gives the override note two lines down, and the same
+    # ordering ``_classify_tier_2`` has always used for ``health_snapshot``.
+    #
+    # One write, not one per flagged branch. There are four ``return True`` paths
+    # below -- the gate failure, the underivable statistic, the computed zero and
+    # the success -- and putting the rule on each of them is exactly the per-value
+    # inconsistency this module's conventions exist to end: some of §5's outline
+    # rows would then be on one rule and the rest on another.
+    #
+    # It is emphatically **not** hoisted any further. Above this line sit the three
+    # refusals -- beatless, vetoed, undeclared -- and a refused file must stay
+    # untagged: R5's provenance note records it, and tagging it would assert a
+    # recognition the system explicitly declined to make. That is the same note/flag
+    # boundary T064 and T066 rest on, stated here on the tag axis.
+    session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
+
     # T064. The override was accepted and this branch is about to claim the
     # file, which is what ``honoured`` asserts -- not that a reading came out.
     # Written here rather than at the success point below so that a capture
@@ -1729,7 +1785,11 @@ def _classify_tier_1(
     # ``resting_rmssd_ms``, which is the whole contract of the column: it is
     # populated for exactly the successful readings and null for every other
     # outcome, on both tiers.
-    session.activity_tag = _ACTIVITY_TAG_RESTING_HRV_CHECK
+    #
+    # ``activity_tag`` is **not** written here any more (T075): it was hoisted to
+    # the recognition point above, so success and every flagged outcome are tagged
+    # by the same line. The tier fields stay here, because *those* are the claim a
+    # failed capture must not make.
     session.hrv_source_tier = _TIER_CHEST_STRAP_RAW
     session.rr_source = _RR_SOURCE_CHEST_STRAP
     # The resolved column E003 reads (T055's column, given its meaning by T065),

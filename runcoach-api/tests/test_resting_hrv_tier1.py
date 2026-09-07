@@ -543,7 +543,16 @@ def test_a_declared_ordinary_run_carrying_beats_is_still_vetoed() -> None:
 
 def test_a_resting_profile_with_no_beats_does_not_route(declared_capture) -> None:
     """Necessary condition: the file must carry ``hrv`` (#78) beat-to-beat arrays.
-    A two-minute non-session with no beats is Tier 2's business, never Tier 1's."""
+    A two-minute non-session with no beats is Tier 2's business, never Tier 1's.
+
+    **``hrv_source_tier`` is what "does not route" means here, and since T075 it is
+    the only field that can say so.** The file is declared and veto-clean, so once
+    Tier 2 also declines it reaches ``_gate_a_beatless_resting_capture``, which
+    recognises it and raises ``hrv_capture_no_beats`` -- and R6 tags a recognised
+    capture whether or not a number came out of it. So the tag is now present and
+    the *route* is still absent, which is exactly the shape of a
+    recognised-but-flagged capture. ``test_resting_hrv_quality_gates.py`` owns that
+    row; this one keeps its own subject, the beats precondition."""
     session = declared_capture(
         total_timer_time=150.0,
         total_distance=10.0,
@@ -552,7 +561,10 @@ def test_a_resting_profile_with_no_beats_does_not_route(declared_capture) -> Non
     )
 
     assert session.hrv_source_tier is None
-    assert session.activity_tag is None
+    assert session.rr_source is None
+    assert session.resting_rmssd_ms is None
+    assert session.activity_tag == "resting_hrv_check"
+    assert "hrv_capture_no_beats" in session.quality_flags
 
 
 # ---------------------------------------------------------------------------

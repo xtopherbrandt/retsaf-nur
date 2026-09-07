@@ -253,7 +253,16 @@ def test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless(
     asserts a finding about a *recognised* capture. Before T066 this row passed
     undeclared, which meant it would have stayed green against an implementation that
     flagged every beatless file in the corpus. Its undeclared control is the row
-    below."""
+    below.
+
+    **T075/R6 completes that thought on the tag axis.** T066 established that the
+    flag below asserts a finding about a *recognised* capture; R6 then says a
+    recognised capture that yielded no number is still a resting capture, so this
+    file is tagged ``resting_hrv_check``. The tag is the one that matters to E003 --
+    it must **not** be ``health_snapshot``, because Tier 2 declined the file, and it
+    must not be null, because a declared veto-clean capture whose strap recorded
+    nothing is not training load. The undeclared control below stays null, which is
+    what keeps the two states apart."""
     session = classified(
         synthetic(
             11,
@@ -269,7 +278,7 @@ def test_a_resting_shaped_row_2_file_with_no_beats_is_still_flagged_beatless(
     assert "hrv_reading_unavailable" not in session.quality_flags
     assert session.hrv_source_tier is None
     assert session.rmssd_precomputed is None
-    assert session.activity_tag is None
+    assert session.activity_tag == "resting_hrv_check"
 
 
 def test_an_undeclared_resting_shaped_row_2_file_is_not_flagged_beatless(

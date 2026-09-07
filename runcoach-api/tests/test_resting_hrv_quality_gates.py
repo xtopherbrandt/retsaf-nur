@@ -452,10 +452,19 @@ def test_no_beats_is_not_raised_when_beats_survived(resting, declared_classify) 
 
 def test_a_beatless_capture_does_not_reach_a_tier_1_reading(resting, declared_classify) -> None:
     """Belt and braces on the Tier-1 necessary condition: flagging the beatless case
-    must not have turned it into a route."""
+    must not have turned it into a route.
+
+    **The evidence of "no route" changed at T075, and the subject did not.** This
+    row used to read ``activity_tag is None``, which conflated two different
+    questions -- *was a reading produced?* and *what is this file?* -- and R6
+    separates them: a declared, veto-clean capture whose strap recorded nothing is
+    a recognised capture that yielded no number, so it is tagged and still has no
+    tier. ``_assert_no_reading`` carries the whole of the original claim
+    (``hrv_source_tier``, ``rr_source``, both value columns, the provenance entry),
+    so nothing this test was pinning is lost."""
     session = declared_classify(resting(), rr_intervals=[])
 
-    assert session.activity_tag is None
+    assert session.activity_tag == TAG_RESTING_CAPTURE
     _assert_no_reading(session)
 
 
@@ -595,7 +604,13 @@ def test_a_beatless_hrv_carrier_claims_tier_1_and_does_not_fall_to_tier_2(
     # Consequence 2 -- Tier 1 claimed the file, so Tier 2 never ran.
     assert session.hrv_source_tier is None
     assert session.rmssd_precomputed is None
-    assert session.activity_tag is None
+    # T075/R6. This assertion used to read ``is None``, where it was doing double
+    # duty as "Tier 2 never ran" -- Tier 2 would have written ``health_snapshot``.
+    # The tag now says which tier claimed the file rather than only that none did,
+    # so it is a *stronger* statement of the same consequence: Tier 1 recognised
+    # this capture and answered it with a flag, and the Tier-2 scalar sitting in
+    # the same file went unread.
+    assert session.activity_tag == TAG_RESTING_CAPTURE
     _assert_no_reading(session)
 
 
@@ -845,15 +860,21 @@ def test_a_single_beat_capture_yields_no_reading(resting, declared_classify) -> 
 
     Every gate above passes -- ``valid_fraction`` on one unflagged beat is ``1.0``, which
     clears 0.80, and 150 s clears 120 s -- so nothing else stops it. Without this check
-    the session is stamped ``resting_hrv_check`` / ``chest_strap_raw`` /
-    ``chest_strap_ecg``: a completed chest-strap reading carrying no number and no
+    the session is stamped ``chest_strap_raw`` / ``chest_strap_ecg`` and carries a
+    ``resting_rmssd_ms``: a completed chest-strap reading with no number and no
     explanation, which E003 would read as a tier that produced a value it cannot find.
-    "No derivable statistic" is a gate failure like any other -- flagged, not stamped."""
+    "No derivable statistic" is a gate failure like any other -- flagged, not stamped.
+
+    **The tag is not part of that stamp, and T075 is where the two came apart.**
+    ``resting_hrv_check`` says *what the file is*; the tier and the value say *a
+    reading was produced*. R6 ratified that a recognised capture yielding no number
+    keeps the first and not the second -- otherwise this 150-second declared capture
+    is counted into training load, which is the defect R6 names."""
     session = declared_classify(resting(), rr_intervals=_beats(count=1))
 
     assert session.rr_valid_fraction is None
     assert FLAG_READING_UNAVAILABLE in session.quality_flags
-    assert session.activity_tag is None
+    assert session.activity_tag == TAG_RESTING_CAPTURE
     _assert_no_reading(session)
 
 
@@ -978,3 +999,307 @@ def test_a_healthy_capture_does_not_raise_the_unavailable_flag(resting, declared
     # which is this feature's own ratified rule and the reason a second parallel
     # column was rejected rather than reusing this one.
     assert session.rmssd_precomputed is None
+
+
+# ---------------------------------------------------------------------------
+# R6 -- a recognised capture that yielded no number is still a recognised
+# capture, not a workout (T075)
+# ---------------------------------------------------------------------------
+#
+# ``spec/references/F004-contract-resolutions.md`` **R6 [RATIFIED 2026-09-06]**:
+# *"``activity_tag`` is set to the resting-capture tag on a recognised-but-flagged
+# capture, so E003 excludes it from rTSS."* R6 states its own consequence: with the
+# tag null, a flagged 100 s declared HRV capture is **counted into training load** --
+# a silent data-correctness defect in the athlete's own history, invisible until the
+# numbers are already wrong. Tier 2 has always complied (``_classify_tier_2`` tags
+# before its non-positive gate); Tier 1 complied on none of its flagged outcomes
+# until T075, which is what ``IDEA-021`` measured and filed.
+#
+# **The invariant these two tables pin, and the reason they are written as a pair:**
+#
+#     recognised => tagged     refused => untagged
+#
+# and, cutting across both, **no flagged row ever carries a value**. "Recognised" is
+# the athlete's declaration surviving every veto -- exactly the point at which a
+# ``hrv_capture_*`` flag becomes a legitimate statement about the file, which is the
+# same boundary T064's provenance notes and T066's declaration gate already rest on.
+# A refusal is recorded by R5's note, never by a tag, and the two concepts stay
+# distinct.
+#
+# **Both declaration routes are driven on every row.** The override is the branch
+# tests do not take -- which is precisely how the zero-distance bug survived six
+# waves -- and R6 draws no distinction between the routes, so a fix that tagged only
+# the configured half would be the per-value inconsistency this feature's own
+# conventions exist to end.
+
+TAG_RESTING_CAPTURE = "resting_hrv_check"
+
+
+def _zero_variability_beats() -> list[RRInterval]:
+    """Six beats at exactly 1000.0 ms -- five successive differences of exactly
+    zero, so ``rmssd.resting_rmssd`` answers a genuine ``0.0`` rather than
+    ``None`` and T065's computed-zero branch is the one taken."""
+    return [
+        RRInterval(seq=i, rr_ms=1000.0, rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(6)
+    ]
+
+
+# The five Tier-1 flagged outcomes, as ``IDEA-021`` enumerated them: the three §5
+# gate rows, T065's computed zero, and the beatless gate that lives outside
+# ``_classify_tier_1`` and is reached only when Tier 2 also declines.
+_FLAGGED_OUTCOMES = [
+    pytest.param(
+        {"total_timer_time": 100.0},
+        _beats,
+        1.0,
+        FLAG_TOO_SHORT,
+        id="under-120s--the-100s-capture-R6-names",
+    ),
+    pytest.param(
+        {},
+        _beats,
+        0.5,
+        FLAG_LOW_QUALITY,
+        id="valid-fraction-0.5--below-the-0.80-floor",
+    ),
+    pytest.param(
+        {},
+        lambda: _beats(count=1),
+        None,
+        FLAG_READING_UNAVAILABLE,
+        id="single-beat--no-derivable-statistic",
+    ),
+    pytest.param(
+        {},
+        _zero_variability_beats,
+        None,
+        FLAG_READING_UNAVAILABLE,
+        id="computed-rmssd-exactly-zero--T065",
+    ),
+    pytest.param(
+        {},
+        list,
+        None,
+        FLAG_NO_BEATS,
+        id="beatless--the-gate-outside-_classify_tier_1",
+    ),
+]
+
+
+@pytest.mark.parametrize("route", ["config", "override"])
+@pytest.mark.parametrize(("session_extra", "beats", "fraction", "flag"), _FLAGGED_OUTCOMES)
+def test_every_flagged_tier_1_outcome_is_tagged_as_a_resting_capture(
+    session_extra: dict,
+    beats,
+    fraction: float | None,
+    flag: str,
+    route: str,
+    resting,
+    classified,
+) -> None:
+    """R6, over every flagged outcome and both declaration routes.
+
+    Each row is a file the athlete declared and that survived every veto -- so it
+    **was** recognised -- and that then failed to yield a number. R6 says such a
+    file is still a resting capture, and E003 must exclude it from rTSS rather than
+    booking a 100-second HRV capture as training load.
+
+    The override half builds the identical file on the ``'Run'`` profile with no
+    configured name, so the only thing declaring it is the per-upload override.
+    """
+    if route == "config":
+        messages = resting(**session_extra)
+        declaration = {"profile_names": [DECLARED_PROFILE]}
+    else:
+        messages = resting(sport_profile_name="Run", **session_extra)
+        declaration = {"resting_capture_override": True}
+
+    session = classified(
+        messages, rr_intervals=beats(), valid_fraction=fraction, **declaration
+    )
+
+    assert flag in session.quality_flags
+    assert session.activity_tag == TAG_RESTING_CAPTURE
+    # The pairing R6 and T065 make together, and the shape a recognised-but-flagged
+    # capture is *supposed* to have: tagged, and carrying no number. Asserted on the
+    # same row rather than in a separate test, because a fix that tagged the file by
+    # also writing it a value would satisfy either assertion alone.
+    _assert_no_reading(session)
+
+
+# Every refusal path, and the control half of the invariant. A refused file was
+# never recognised, so it must stay untagged -- R5's provenance note is what records
+# it. Each row names the single rule that refuses it wherever one can be isolated.
+_REFUSED_INPUTS = [
+    pytest.param(
+        {"total_timer_time": 150.0, "avg_heart_rate": 60, "sport_profile_name": "Run"},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="undeclared--a-clean-capture-on-an-unconfigured-profile",
+    ),
+    pytest.param(
+        {"total_timer_time": 150.0, "avg_heart_rate": 60, "sport_profile_name": "Run"},
+        {"profile_names": [DECLARED_PROFILE]},
+        list,
+        id="undeclared-and-beatless--T066s-gate",
+    ),
+    pytest.param(
+        {"total_timer_time": 300.001, "avg_heart_rate": 55},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-duration-over-the-300s-ceiling",
+    ),
+    pytest.param(
+        {"avg_heart_rate": 55},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-no-duration-key-at-all",
+    ),
+    pytest.param(
+        {"total_timer_time": 0.0, "avg_heart_rate": 55},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-zero-duration--no-usable-divisor",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "avg_heart_rate": 165},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-heart-rate-above-the-100bpm-ceiling",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0, "avg_heart_rate": -5},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-negative-heart-rate--R2",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": 0.0},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-no-intensity-signal-at-all",
+    ),
+    pytest.param(
+        {"total_timer_time": 200.0, "total_distance": 600.0, "avg_heart_rate": 52},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-above-walking-pace",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": -500.0, "avg_heart_rate": 55},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-negative-distance--structurally-impossible",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "total_distance": (10.0, 2.0), "avg_heart_rate": 55},
+        {"profile_names": [DECLARED_PROFILE]},
+        _beats,
+        id="veto-unparseable-distance--a-crafted-definition-record",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "avg_heart_rate": 165},
+        {"profile_names": [DECLARED_PROFILE]},
+        list,
+        id="veto-then-beatless--refused-before-the-beatless-gate-flags",
+    ),
+    pytest.param(
+        {"total_timer_time": 240.0, "avg_heart_rate": 165, "sport_profile_name": "Run"},
+        {"resting_capture_override": True},
+        _beats,
+        id="veto-beats-the-override--intent-cannot-rescue-the-data",
+    ),
+]
+
+
+@pytest.mark.parametrize(("session_extra", "declaration", "beats"), _REFUSED_INPUTS)
+def test_a_refused_file_is_never_tagged_as_a_resting_capture(
+    session_extra: dict,
+    declaration: dict,
+    beats,
+    synthetic,
+    classified,
+) -> None:
+    """The other half of R6's invariant, and the reason the flagged table above
+    means something: refusal and recognition are different states, and only one of
+    them tags.
+
+    Without these rows an implementation that tagged unconditionally -- at the top
+    of ``classify``, say -- would satisfy every assertion in the flagged table while
+    marking a 52-minute run as a resting capture and removing it from training load,
+    which is the *original* F004 false positive wearing R6's clothes.
+    """
+    fields = {"sport_profile_name": DECLARED_PROFILE}
+    fields.update(session_extra)
+
+    session = classified(synthetic(**fields), rr_intervals=beats(), **declaration)
+
+    assert session.activity_tag is None
+    _assert_no_reading(session)
+
+
+def test_a_multi_session_file_is_refused_before_either_tier_and_stays_untagged(
+    multi_session, classified
+) -> None:
+    """The refusal that precedes both tiers, held to the same rule.
+
+    A multi-session file's summary and beat stream describe different spans, so it
+    is refused rather than classified -- and a refusal is not a recognised capture,
+    whatever leg 1's profile name says. Driven declared, so the multi-session guard
+    is the only thing that can be refusing it.
+    """
+    session = classified(
+        multi_session(
+            {
+                "total_timer_time": 240.0,
+                "total_distance": 150.0,
+                "avg_heart_rate": 92,
+                "sport_profile_name": DECLARED_PROFILE,
+            },
+            {"total_timer_time": 7200.0, "total_distance": 20000.0, "avg_heart_rate": 150},
+        ),
+        rr_intervals=_beats(64),
+        profile_names=[DECLARED_PROFILE],
+    )
+
+    assert session.activity_tag is None
+    assert session.quality_flags == []
+    _assert_no_reading(session)
+
+
+def test_the_successful_reading_keeps_the_same_tag_from_the_same_write(
+    resting, declared_classify
+) -> None:
+    """The hoist must not cost the success path its tag.
+
+    T075 moved the one existing write up to the recognition point rather than adding
+    a second one, so success and every flagged outcome inside ``_classify_tier_1``
+    are now tagged by the *same* line. This is the row that would go red if the
+    hoist had dropped it.
+    """
+    session = declared_classify(resting(), rr_intervals=_beats(), valid_fraction=1.0)
+
+    assert session.activity_tag == TAG_RESTING_CAPTURE
+    assert session.hrv_source_tier == "chest_strap_raw"
+    assert session.resting_rmssd_ms > 0
+
+
+def test_the_tag_is_written_once_at_the_recognition_point_not_per_branch(
+    resting, declared_classify, monkeypatch
+) -> None:
+    """The mechanism, proved by breaking it -- the perturbation discipline T063,
+    T069 and the property suites already use here.
+
+    With ``_apply_quality_gates`` forced to report a failure, a capture that would
+    otherwise read cleanly is answered by a flag; it is still tagged, because the
+    tag was written *before* the gates ran and not by any branch below them. An
+    implementation that tagged per flagged branch, or only at the success point,
+    fails this row.
+    """
+    monkeypatch.setattr(hrv_classification, "_apply_quality_gates", lambda *a, **k: True)
+
+    session = declared_classify(resting(), rr_intervals=_beats(), valid_fraction=1.0)
+
+    assert session.activity_tag == TAG_RESTING_CAPTURE
+    _assert_no_reading(session)
