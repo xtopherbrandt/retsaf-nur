@@ -1,0 +1,1389 @@
+openapi: 3.1.0
+
+# =============================================================================
+# Run Coaching System — UI <-> Engine API (TARGET CONTRACT)
+# UI spec Section 4 artifact  ·  first cut 2026-09-06
+#
+# This is the TARGET contract, authored top-down from the engine spec
+# (spec/01-09). It is reconciled against the backend's AS-BUILT contract,
+# which FastAPI emits at /openapi.json. The diff between the two is the
+# shared backlog. Neither the UI nor the backend owns this document — the
+# engine spec owns the objects; this is their serialization.
+#
+# Conventions (custom extensions):
+#   x-readiness:  implemented | stubbed | planned   (state in the backend today)
+#   x-owner-spec: the engine section that OWNS the object (field-level truth)
+#   x-story:      the UI user story/stories the operation serves
+#
+# As of 2026-09-06 only GET /health and the two /sessions endpoints are
+# implemented in retsaf-nur; everything else is `planned` and is developed
+# against a mock generated from this file until the backend catches up.
+#
+# OPEN backend alignments this contract assumes (see ui-development-plan.md):
+#   1. GET /sessions/{id} gets a typed SessionDetail response_model
+#      (today it returns an untyped dict).
+#   2. Auth + athlete scoping exist in the contract from day one
+#      (backend is single-athlete/no-auth now; athlete_id is already modelled).
+#   3. Uniform Error envelope + `?since=` cursor pagination.
+#   4. Resource naming: `sessions` (raw uploads/activities, as-built) vs.
+#      `workouts` (engine-planned sessions). This draft uses BOTH deliberately:
+#      /sessions = ingested activity records; /workouts = planned prescriptions.
+# =============================================================================
+
+info:
+  title: Run Coaching System — UI↔Engine API
+  version: 0.1.0-draft
+  description: >
+    Target contract for the athlete-facing web + mobile UI. Read/write surface
+    over the deterministic coaching engine. The engine is the single source of
+    truth for every training decision; this API only exposes the engine's
+    objects and accepts the structured inputs it already consumes. See UI spec
+    `spec/ui-00-outline.md` §4 and the engine spec `spec/01`–`spec/09`.
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local backend (retsaf-nur runcoach-api default)
+  - url: https://api.example.invalid
+    description: Placeholder for a hosted deployment (TBD)
+
+tags:
+  - name: System
+    description: "Liveness/version. x-readiness: implemented."
+  - name: Auth & Athlete
+    description: "Session, profile, onboarding. x-readiness: planned (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 §4.4."
+  - name: Connections & Sync
+    description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10."
+  - name: Goal
+    description: "Goal contract + pace target + system-proposed goal changes. x-readiness: planned. Owner: spec/01, spec/08 §8.5.2."
+  - name: Plan & Calendar
+    description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
+  - name: Sessions
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail)."
+  - name: Workouts
+    description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
+  - name: Subjective
+    description: "Session-RPE, wellness, pain reports. x-readiness: planned. Owner: research/03, routed per spec/08 §8.4."
+  - name: State & Metrics
+    description: "Physiological state model + derived metrics, with confidence. x-readiness: planned. Owner: spec/03, spec/04."
+  - name: Decisions & Changes
+    description: "Decision log (explainability) + apply-and-notify change feed. x-readiness: planned. Owner: spec/09, spec/06 §6.8."
+  - name: Coach
+    description: "Conversational I/O layer (explain + translate). x-readiness: planned. Owner: spec/08."
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ---------------------------------------------------------------- System
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Liveness and version
+      security: []
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F001"
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  # ------------------------------------------------------- Auth & Athlete
+  /me:
+    get:
+      tags: [Auth & Athlete]
+      operationId: getMe
+      summary: The authenticated athlete's profile
+      x-readiness: planned
+      x-owner-spec: "spec/01 (athlete input); spec/04 §4.4 (starting state)"
+      x-story: [authenticate, create-athlete]
+      responses:
+        "200":
+          description: Athlete profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Athlete" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Auth & Athlete]
+      operationId: updateMe
+      summary: Update mutable profile fields
+      x-readiness: planned
+      x-owner-spec: "spec/01"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AthleteProfileUpdate" }
+      responses:
+        "200":
+          description: Updated athlete
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Athlete" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /athletes:
+    post:
+      tags: [Auth & Athlete]
+      operationId: createAthlete
+      summary: Create an athlete via the onboarding questionnaire (feeds cold-start)
+      description: >
+        Account creation fused with the onboarding questionnaire. The payload is
+        the data front-end for the cold-start estimator; it must collect exactly
+        the fields spec/04 §4.4 consumes, plus consent to import historical Garmin
+        data for the initial fit.
+      security: []
+      x-readiness: planned
+      x-owner-spec: "spec/04 §4.4 (cold-start fields); spec/01"
+      x-story: [create-athlete, onboarding-starting-state]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingInput" }
+      responses:
+        "201":
+          description: Athlete created; cold-start estimate initiated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Athlete" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  # --------------------------------------------------- Connections & Sync
+  /connections/garmin:
+    get:
+      tags: [Connections & Sync]
+      operationId: getGarminConnection
+      summary: Garmin connection status
+      x-readiness: planned
+      x-owner-spec: "spec/02; research/07 §4.3"
+      x-story: [connect-garmin]
+      responses:
+        "200":
+          description: Connection state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GarminConnection" }
+    post:
+      tags: [Connections & Sync]
+      operationId: initiateGarminConnect
+      summary: Begin the Garmin OAuth authorization handoff
+      description: Returns the provider authorize URL the client redirects to. Token exchange is server-side.
+      x-readiness: planned
+      x-owner-spec: "research/07 §4.3, §10 (Garmin Connect Developer OAuth)"
+      x-story: [connect-garmin]
+      responses:
+        "200":
+          description: Authorize URL to redirect the athlete to
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorize_url]
+                properties:
+                  authorize_url: { type: string, format: uri }
+    delete:
+      tags: [Connections & Sync]
+      operationId: disconnectGarmin
+      summary: Revoke the Garmin connection
+      x-readiness: planned
+      x-story: [connect-garmin]
+      responses:
+        "204": { description: Disconnected }
+
+  /sync/status:
+    get:
+      tags: [Connections & Sync]
+      operationId: getSyncStatus
+      summary: Last-synced (completed data) and last-pushed (plan) state
+      x-readiness: planned
+      x-owner-spec: "spec/02; research/07 §4.7, §4.8"
+      x-story: [sync-completed-from-garmin, sync-plan-to-garmin]
+      responses:
+        "200":
+          description: Sync status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncStatus" }
+
+  /sync/completed:
+    post:
+      tags: [Connections & Sync]
+      operationId: forceSyncCompleted
+      summary: Force a reconcile of completed-activity data from Garmin
+      description: >
+        The engine receives Garmin completed data via push callbacks
+        (research/07 §10), so this reconciles against already-pushed data and
+        surfaces gaps; the manual-upload fallback is POST /sessions.
+      x-readiness: planned
+      x-owner-spec: "spec/02; research/07 §4.7, §10"
+      x-story: [sync-completed-from-garmin]
+      responses:
+        "202":
+          description: Reconcile accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncStatus" }
+
+  /sync/plan:
+    post:
+      tags: [Connections & Sync]
+      operationId: pushPlanToDevice
+      summary: Push the current plan's upcoming workouts to the Garmin device
+      description: >
+        Uses the Garmin Training API workout create/schedule capability
+        (research/07 §10). Normally automatic on plan change (apply-and-notify);
+        this is the manual "push now" control.
+      x-readiness: planned
+      x-owner-spec: "research/07 §4.8, §10"
+      x-story: [sync-plan-to-garmin]
+      responses:
+        "202":
+          description: Push accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncStatus" }
+
+  # ------------------------------------------------------------------ Goal
+  /goal:
+    get:
+      tags: [Goal]
+      operationId: getGoal
+      summary: The current goal contract
+      x-readiness: planned
+      x-owner-spec: "spec/01 (goal-race + pace target)"
+      x-story: [initialize-race-goal, view-state]
+      responses:
+        "200":
+          description: Goal contract
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoalContract" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Goal]
+      operationId: setGoal
+      summary: Set or confirm the goal contract (an athlete-owned gate)
+      description: >
+        The goal is one of the two athlete-owned gates (research/00 §1.9). Setting
+        it is an explicit athlete confirmation and triggers (re-)periodization;
+        the plan itself is then applied without any further gate.
+      x-readiness: planned
+      x-owner-spec: "spec/01; spec/08 §8.5.2; research/00 §1.9"
+      x-story: [initialize-race-goal, discuss-race-goal]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoalContractInput" }
+      responses:
+        "200":
+          description: Goal set; re-periodization triggered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoalContract" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /goal/preview:
+    post:
+      tags: [Goal]
+      operationId: previewGoal
+      summary: Compute the pace/effort target for a proposed goal, without committing
+      description: The wizard's preview step — the engine's translation of a proposed race into a pace/effort target, with confidence.
+      x-readiness: planned
+      x-owner-spec: "spec/01 (race→pace/effort target)"
+      x-story: [initialize-race-goal]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoalContractInput" }
+      responses:
+        "200":
+          description: Pace/effort target preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaceTarget" }
+
+  /goal/proposals:
+    get:
+      tags: [Goal]
+      operationId: listGoalProposals
+      summary: System-proposed goal changes awaiting the athlete's decision
+      description: >
+        The engine may propose a revised goal when the projection drifts or an
+        injury makes the goal infeasible, in the fixed order revised-pace →
+        later-date (never a distance change). Presented for the athlete to decide.
+      x-readiness: planned
+      x-owner-spec: "spec/08 §8.5.2; research/00 §1.9"
+      x-story: [respond-to-goal-change-proposal]
+      responses:
+        "200":
+          description: Open proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GoalProposal" }
+
+  /goal/proposals/{proposalId}:accept:
+    post:
+      tags: [Goal]
+      operationId: acceptGoalProposal
+      summary: Accept a system-proposed goal change
+      x-readiness: planned
+      x-owner-spec: "spec/08 §8.5.2"
+      x-story: [respond-to-goal-change-proposal]
+      parameters:
+        - $ref: "#/components/parameters/ProposalId"
+      responses:
+        "200":
+          description: Proposal accepted; new goal contract in force
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoalContract" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # -------------------------------------------------------- Plan & Calendar
+  /calendar:
+    get:
+      tags: [Plan & Calendar]
+      operationId: getCalendar
+      summary: Planned + completed days over a range, with compliance
+      description: The single planned+completed calendar (Garmin-overlay + TrainingPeaks-compliance pattern). Changed days carry a decision reference for the "why" affordance.
+      x-readiness: planned
+      x-owner-spec: "spec/05 (plan), spec/06 (adaptation), spec/09 (why)"
+      x-story: [view-calendar]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Calendar days
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CalendarDay" }
+
+  /plan/load:
+    get:
+      tags: [Plan & Calendar]
+      operationId: getLoadSeries
+      summary: Owned load/fitness-fatigue-form series (load-at-a-glance)
+      x-readiness: planned
+      x-owner-spec: "spec/03 §3.5 (CTL/ATL/TSB, multi-channel load)"
+      x-story: [view-calendar, view-state]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Load series
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoadSeries" }
+
+  /constraints:
+    post:
+      tags: [Plan & Calendar]
+      operationId: submitConstraint
+      summary: Submit an availability/scheduling constraint (the modify interaction)
+      description: >
+        The athlete cannot edit the plan directly. A modify request is a
+        constraint the weekly loop re-solves within its guardrails; the response
+        reports what moved and why (apply-and-notify). This is the write behind
+        the re-semanticized drag/travel/add-race affordances (§8).
+      x-readiness: planned
+      x-owner-spec: "spec/08 §8.4.2 (constraints model); spec/06 §6.2.2, §6.5, §6.8"
+      x-story: [modify-upcoming-workouts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Constraint" }
+      responses:
+        "200":
+          description: Re-solved; what changed and why
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeSet" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  # --------------------------------------------------------------- Sessions
+  /sessions:
+    post:
+      tags: [Sessions]
+      operationId: ingestSession
+      summary: Ingest a Garmin FIT file into the canonical record (manual-upload path)
+      x-readiness: implemented
+      x-owner-spec: "spec/02; runcoach-api F003"
+      x-story: [sync-completed-from-garmin]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: "A .fit file, ≤ 50 MB." }
+                resting_capture:
+                  type: boolean
+                  default: false
+                  description: >
+                    F004 upload-time Tier-1 declaration — the athlete asserting this
+                    file was a resting-HRV capture (config-based profile names cannot
+                    reclassify an already-recorded file). Optional; a real bool
+                    (true/1/on/yes and negatives coerced), anything else → 422.
+      responses:
+        "201":
+          description: Ingested (or re-derived deterministically)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResponse" }
+        "400":
+          description: Not a FIT file / parse failure / a required canonical field could not be determined
+          content: { text/plain: { schema: { type: string } } }
+        "409":
+          description: Duplicate — already ingested (body names the existing session id)
+          content: { text/plain: { schema: { type: string } } }
+        "413":
+          description: Upload exceeds the size/record/beat limit
+          content: { text/plain: { schema: { type: string } } }
+      # NOTE (as-built): errors are FastAPI-default {detail: "..."} / plain text,
+      # not the Error envelope below. Alignment #3 migrates these to Error.
+
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      summary: List ingested sessions (summaries), newest first
+      x-readiness: planned
+      x-owner-spec: "spec/02"
+      x-story: [view-calendar, view-workout]
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of session summaries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/SessionSummary" }
+
+  /sessions/{sessionId}:
+    get:
+      tags: [Sessions]
+      operationId: getSession
+      summary: Full canonical session (header + records + rr_intervals + context)
+      description: >
+        Raw-over-derived: returns the vendor-neutral canonical streams. The
+        quarantined vendor sidecar (VO2max, Training Status, …) is deliberately
+        excluded (spec/02 §2.3.6). As-built this returns an untyped dict;
+        alignment #1 types it as SessionDetail (shape below is exact to the
+        repo's models.py / db.py).
+      x-readiness: implemented
+      x-owner-spec: "spec/02 (canonical schema)"
+      x-story: [view-workout]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Canonical session detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Sessions]
+      operationId: deleteSession
+      summary: Delete a session and every row that hangs off it
+      description: >
+        The recovery path out of F004's upgrade window: a capture ingested before
+        the athlete declared its profile carries no reading and a re-upload hits
+        the UNIQUE (source_device, start_time) 409. Deleting frees the slot so
+        "configure, delete, upload again" works. (A destructive control — the UI
+        gates it behind explicit confirmation.)
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F004 (2026-09-06)"
+      x-story: [sync-completed-from-garmin]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # --------------------------------------------------------------- Workouts
+  /workouts/{workoutId}:
+    get:
+      tags: [Workouts]
+      operationId: getWorkout
+      summary: A planned/structured workout (prescription) and its completion, if any
+      description: >
+        The planned workout: structured steps, relative-anchored targets, the
+        determinant(s) it targets, and the "why this session" rationale. When a
+        completed activity is linked, the compliance/execution overlay is included.
+      x-readiness: planned
+      x-owner-spec: "spec/05 (workout representation, relative-anchored paces, determinant targeting)"
+      x-story: [view-workout]
+      parameters:
+        - $ref: "#/components/parameters/WorkoutId"
+      responses:
+        "200":
+          description: Planned workout (+ optional completion)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlannedWorkout" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # -------------------------------------------------------------- Subjective
+  /workouts/{workoutId}/feedback:
+    post:
+      tags: [Subjective]
+      operationId: postSessionFeedback
+      summary: Post-session subjective feedback (session-RPE + comment)
+      x-readiness: planned
+      x-owner-spec: "research/03 (session-RPE); routed per spec/08 §8.4"
+      x-story: [subjective-feedback]
+      parameters:
+        - $ref: "#/components/parameters/WorkoutId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionFeedback" }
+      responses:
+        "200":
+          description: Captured; loop-closure summary of any resulting plan change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeSet" }
+
+  /wellness:
+    post:
+      tags: [Subjective]
+      operationId: postWellness
+      summary: Five-item wellness check-in
+      x-readiness: planned
+      x-owner-spec: "research/03 §3.3 (five-item wellness); spec/06 §6.2.4 (readiness fusion)"
+      x-story: [subjective-feedback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WellnessReport" }
+      responses:
+        "200":
+          description: Captured; loop-closure summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeSet" }
+
+  /pain:
+    post:
+      tags: [Subjective]
+      operationId: postPain
+      summary: Pain traffic-light report
+      x-readiness: planned
+      x-owner-spec: "research/03 §3.5 (pain traffic-light); spec/06 §6.4 (injury-risk verdict)"
+      x-story: [subjective-feedback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PainReport" }
+      responses:
+        "200":
+          description: Captured; may return a safety/escalation instruction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeSet" }
+
+  # ---------------------------------------------------------- State & Metrics
+  /state:
+    get:
+      tags: [State & Metrics]
+      operationId: getState
+      summary: Physiological state model + gap-to-goal, each with confidence
+      x-readiness: planned
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal)"
+      x-story: [view-state]
+      responses:
+        "200":
+          description: Current state estimate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StateModel" }
+
+  /metrics/hrv:
+    get:
+      tags: [State & Metrics]
+      operationId: getHrvTrend
+      summary: HRV trend (ln rMSSD vs SWC band)
+      x-readiness: planned
+      x-owner-spec: "spec/03 §3.7"
+      x-story: [view-state]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: HRV trend series
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HrvTrend" }
+
+  # -------------------------------------------------------- Decisions & Changes
+  /changes:
+    get:
+      tags: [Decisions & Changes]
+      operationId: getChanges
+      summary: Apply-and-notify change feed (poll-first; upgradeable to SSE later)
+      description: The "what changed since you last looked" feed. Poll with the cursor; the client model is written so a later SSE/WebSocket transport needs no schema change.
+      x-readiness: planned
+      x-owner-spec: "spec/06 §6.8 (apply-and-notify); spec/09"
+      x-story: [review-changes]
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of change-feed items
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/ChangeFeedItem" }
+
+  /decisions/{decisionId}:
+    get:
+      tags: [Decisions & Changes]
+      operationId: getDecision
+      summary: A single decision-log record (the "why" behind a change)
+      description: Every applied adaptation logged with its inputs and the rule that fired; the explanation surface reads this. Presents numbers the engine already computed — never new ones.
+      x-readiness: planned
+      x-owner-spec: "spec/09 (decision-log schema)"
+      x-story: [explain-any-change]
+      parameters:
+        - $ref: "#/components/parameters/DecisionId"
+      responses:
+        "200":
+          description: Decision record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DecisionRecord" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------- Coach
+  /coach/messages:
+    get:
+      tags: [Coach]
+      operationId: getCoachMessages
+      summary: Conversation history
+      x-readiness: planned
+      x-owner-spec: "spec/08"
+      x-story: [discuss-race-goal, explain-any-change]
+      parameters:
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Page of messages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/CoachMessage" }
+    post:
+      tags: [Coach]
+      operationId: sendCoachMessage
+      summary: Send free-text to the coach (explain + translate I/O layer)
+      description: >
+        The LLM explains applied decisions (reading the decision log/state) and
+        translates free-text into the engine's structured inputs (constraint,
+        injury/soreness, subjective, plan-change request). It never generates,
+        personalizes, or decides the plan (FTO — research/06 §11). A goal-change
+        request routes to the goal-contract hand-off (the one gate). Streamed.
+      x-readiness: planned
+      x-owner-spec: "spec/08 §8.4 (structured-input contract); spec/09 (records read)"
+      x-story: [discuss-race-goal, modify-upcoming-workouts, subjective-feedback, explain-any-change]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 8000 }
+      responses:
+        "200":
+          description: Assistant reply (may reference decisions and/or a resulting ChangeSet)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoachMessage" }
+            text/event-stream:
+              schema: { type: string, description: "Server-sent chunks of the reply." }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Planned. Backend is single-athlete/no-auth today; alignment #2 adds this."
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Deterministic id = truncated SHA-256 over (source_device, start_time).
+    WorkoutId:
+      name: workoutId
+      in: path
+      required: true
+      schema: { type: string }
+    DecisionId:
+      name: decisionId
+      in: path
+      required: true
+      schema: { type: string }
+    ProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema: { type: string }
+    Since:
+      name: since
+      in: query
+      required: false
+      schema: { type: string }
+      description: Opaque cursor from a prior page's next_cursor.
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  responses:
+    Unauthorized:
+      description: Missing/invalid credentials
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Conflict:
+      description: Conflict (e.g. duplicate)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ValidationError:
+      description: Request failed validation
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  schemas:
+
+    # ---- Common ---------------------------------------------------------
+    Error:
+      type: object
+      description: Uniform error envelope (alignment #3). As-built endpoints currently return FastAPI {detail}.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: not_found }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+
+    Page:
+      type: object
+      description: Cursor pagination envelope.
+      required: [items]
+      properties:
+        items: { type: array, items: {} }
+        next_cursor:
+          type: string
+          nullable: true
+          description: Pass as `since` to fetch the next page; null when exhausted.
+
+    ConfidenceValue:
+      type: object
+      description: >
+        The anti-false-precision primitive. A point estimate with an optional
+        interval and a confidence label; `provisional` flags cold-start / low-data
+        estimates the UI must present as provisional (spec/04 §4.6, spec/09).
+      required: [value]
+      properties:
+        value: { type: number }
+        unit: { type: string, nullable: true }
+        interval:
+          type: object
+          nullable: true
+          properties:
+            low: { type: number }
+            high: { type: number }
+        confidence:
+          type: string
+          enum: [low, medium, high]
+        provisional: { type: boolean, default: false }
+
+    Trend:
+      type: object
+      properties:
+        direction: { type: string, enum: [improving, stable, declining, unknown] }
+        rate: { type: number, nullable: true, description: "Units per week; sign matches direction." }
+
+    # ---- System ---------------------------------------------------------
+    HealthResponse:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string }
+
+    # ---- Sessions (canonical raw — EXACT to repo models.py / db.py) ------
+    IngestResponse:
+      type: object
+      required: [session_id, quality_flags]
+      properties:
+        session_id: { type: string }
+        quality_flags:
+          type: array
+          items: { type: string }
+          description: Data-quality flags raised at ingest (never hidden). See spec/02 §2.4.
+
+    SessionDetail:
+      type: object
+      description: Canonical session as GET /sessions/{id} returns it (quarantine sidecar excluded).
+      required: [session_id, start_time, sport, source_vendor, records, rr_intervals]
+      properties:
+        session_id: { type: string }
+        athlete_id: { type: string, nullable: true }
+        start_time: { type: string, description: "ISO-8601." }
+        sport: { type: string }
+        activity_tag: { type: string, nullable: true }
+        source_vendor: { type: string }
+        source_device: { type: string, nullable: true }
+        recording_interval:
+          type: string
+          nullable: true
+          description: Descriptor, not a period — "1hz" / "smart" / "irregular" (spec/02 §2.2.3).
+        hr_source: { type: string, nullable: true }
+        rr_valid_fraction:
+          type: number
+          nullable: true
+          description: Surviving-beat fraction; null when no RR stream (distinct from 0.0).
+        rmssd_precomputed: { type: number, nullable: true, description: "Device-ONLY audit record of resting rMSSD (ms) — the device value on Tier 2, null on Tier 1. Not the engine's read; see resting_rmssd_ms." }
+        resting_rmssd_ms:
+          type: number
+          nullable: true
+          description: >
+            RESOLVED resting rMSSD (ms) the engine (E003) reads on either tier —
+            device value on Tier 2, system-computed from beats on Tier 1 (added
+            2026-09-06). Amendment-window caveat: a non-null hrv_source_tier does
+            NOT imply a non-null value — pre-amendment Tier-1 rows carry a tier but
+            a null reading, so consumers must guard the read (never assume ln() is
+            safe) and the UI surfaces such rows as provisional/absent.
+        hrv_source_tier:
+          type: string
+          nullable: true
+          enum: [chest_strap_raw, health_snapshot, health_api_overnight]
+        rr_source: { type: string, nullable: true, description: "Session-level RR-stream source (spec/02 §2.2.3)." }
+        quality_flags: { type: array, items: { type: string } }
+        summary: { type: object, nullable: true, additionalProperties: true }
+        context: { $ref: "#/components/schemas/SessionContext" }
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/Record" }
+        rr_intervals:
+          type: array
+          items: { $ref: "#/components/schemas/RRInterval" }
+
+    Record:
+      type: object
+      description: One per-sample canonical record (raw streams).
+      required: [t]
+      properties:
+        t: { type: number, description: "Seconds from session start." }
+        lat: { type: number, nullable: true }
+        lon: { type: number, nullable: true }
+        distance: { type: number, nullable: true }
+        speed: { type: number, nullable: true }
+        heart_rate: { type: number, nullable: true }
+        cadence: { type: number, nullable: true }
+        altitude: { type: number, nullable: true }
+        power: { type: number, nullable: true }
+        power_model: { type: string, nullable: true }
+        vertical_oscillation: { type: number, nullable: true }
+        ground_contact_time: { type: number, nullable: true }
+        gct_balance: { type: number, nullable: true }
+        step_length: { type: number, nullable: true }
+        temperature: { type: number, nullable: true, description: "Device thermistor, not environmental truth." }
+        gps_degraded: { type: boolean, nullable: true }
+        sample_quality: { type: array, items: { type: string } }
+
+    RRInterval:
+      type: object
+      properties:
+        seq: { type: integer, nullable: true }
+        rr_ms: { type: number, nullable: true }
+        rr_source: { type: string, nullable: true, description: "Per-beat tier (spec/02 §2.2.3)." }
+        rr_carrier: { type: string, nullable: true }
+        is_artefact: { type: boolean, nullable: true }
+
+    SessionContext:
+      type: object
+      nullable: true
+      description: Environmental + provenance metadata (spec/02 §2.2.4). env_* require an external weather source, null on the FIT-upload route.
+      properties:
+        ingested_at: { type: string, nullable: true }
+        provenance: { type: object, additionalProperties: true }
+        env_temperature_c: { type: number, nullable: true }
+        env_humidity_pct: { type: number, nullable: true }
+        env_wind_ms: { type: number, nullable: true }
+        env_wind_dir: { type: string, nullable: true }
+        subjective: { type: object, nullable: true, additionalProperties: true }
+
+    SessionSummary:
+      type: object
+      description: List-view projection of a session (planned shape).
+      properties:
+        session_id: { type: string }
+        start_time: { type: string }
+        sport: { type: string }
+        activity_tag: { type: string, nullable: true }
+        distance_m: { type: number, nullable: true }
+        duration_s: { type: number, nullable: true }
+        avg_pace_s_per_km: { type: number, nullable: true }
+        quality_flags: { type: array, items: { type: string } }
+        workout_id: { type: string, nullable: true, description: "Linked planned workout, if this activity executed one." }
+
+    # ---- Athlete / onboarding (planned — field-level per spec/04 §4.4) ---
+    Athlete:
+      type: object
+      description: "Planned. Field-level fidelity pending a full read of spec/01 + spec/04 §4.4."
+      properties:
+        id: { type: string }
+        display_name: { type: string, nullable: true }
+        sex: { type: string, nullable: true, enum: [female, male, unspecified] }
+        birth_date: { type: string, format: date, nullable: true }
+        units: { $ref: "#/components/schemas/UnitPrefs" }
+        created_at: { type: string }
+
+    AthleteProfileUpdate:
+      type: object
+      properties:
+        display_name: { type: string }
+        units: { $ref: "#/components/schemas/UnitPrefs" }
+
+    UnitPrefs:
+      type: object
+      properties:
+        distance: { type: string, enum: [km, mi], default: km }
+        pace: { type: string, enum: [min_per_km, min_per_mi], default: min_per_km }
+        temperature: { type: string, enum: [c, f], default: c }
+
+    OnboardingInput:
+      type: object
+      description: "Cold-start questionnaire (planned). Fields must match spec/04 §4.4 exactly at drafting."
+      required: [consent_import_history]
+      properties:
+        sex: { type: string, enum: [female, male, unspecified] }
+        birth_date: { type: string, format: date }
+        height_cm: { type: number, nullable: true }
+        weight_kg: { type: number, nullable: true }
+        resting_hr_bpm: { type: number, nullable: true }
+        self_rated_activity: { type: integer, nullable: true, description: "Non-exercise activity index for the cold-start VO2max seed (spec/04 §4.4)." }
+        recent_weekly_km: { type: number, nullable: true }
+        runs_per_week: { type: integer, nullable: true }
+        consent_import_history: { type: boolean, description: "Consent to import historical Garmin data for the initial fit." }
+
+    # ---- Goal (planned) -------------------------------------------------
+    GoalContract:
+      type: object
+      description: "Planned. Owner spec/01."
+      properties:
+        id: { type: string }
+        race: { $ref: "#/components/schemas/GoalRace" }
+        target: { $ref: "#/components/schemas/PaceTarget" }
+        status: { type: string, enum: [active, superseded, completed] }
+        created_at: { type: string }
+
+    GoalContractInput:
+      type: object
+      required: [race]
+      properties:
+        race: { $ref: "#/components/schemas/GoalRace" }
+        target_time_s: { type: number, nullable: true, description: "Athlete's goal finish time; omit to let the engine propose one." }
+
+    GoalRace:
+      type: object
+      required: [distance_m, date]
+      properties:
+        name: { type: string, nullable: true }
+        date: { type: string, format: date }
+        distance_m: { type: number }
+        course_elevation:
+          type: object
+          nullable: true
+          description: Course elevation profile (spec/01). Series or reference; exact encoding TBD at drafting.
+          properties:
+            points:
+              type: array
+              items:
+                type: object
+                properties:
+                  distance_m: { type: number }
+                  altitude_m: { type: number }
+        environment:
+          type: object
+          nullable: true
+          properties:
+            temperature_c: { type: number, nullable: true }
+            humidity_pct: { type: number, nullable: true }
+            wind_ms: { type: number, nullable: true }
+
+    PaceTarget:
+      type: object
+      description: The engine's translation of the goal into a pace/effort target, with confidence.
+      properties:
+        avg_pace_s_per_km: { $ref: "#/components/schemas/ConfidenceValue" }
+        projected_time_s: { $ref: "#/components/schemas/ConfidenceValue" }
+        effort_note: { type: string, nullable: true }
+        gap_to_goal: { $ref: "#/components/schemas/GapToGoal" }
+
+    GapToGoal:
+      type: object
+      description: Determinant-decomposed distance between current projection and goal (spec/04 §4.7).
+      properties:
+        summary: { type: string, nullable: true }
+        components:
+          type: array
+          items:
+            type: object
+            properties:
+              determinant: { type: string }
+              contribution: { type: number, description: "Signed contribution to the pace gap." }
+
+    GoalProposal:
+      type: object
+      properties:
+        id: { type: string }
+        reason: { type: string, description: "Why the engine proposes a change (drift / injury-infeasible)." }
+        ordered_options:
+          type: array
+          description: Fixed order — revised pace first, later date second; never a distance change.
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [revised_pace, later_date] }
+              target: { $ref: "#/components/schemas/PaceTarget" }
+              new_date: { type: string, format: date, nullable: true }
+
+    # ---- Plan / calendar (planned) --------------------------------------
+    CalendarDay:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        planned:
+          type: array
+          items: { $ref: "#/components/schemas/WorkoutRef" }
+        completed:
+          type: array
+          items: { $ref: "#/components/schemas/SessionSummary" }
+        compliance: { $ref: "#/components/schemas/Compliance" }
+        changed:
+          type: boolean
+          description: True if the engine changed this day since the athlete last looked.
+        decision_id:
+          type: string
+          nullable: true
+          description: The "why" affordance target — the decision that changed this day.
+
+    WorkoutRef:
+      type: object
+      properties:
+        workout_id: { type: string }
+        title: { type: string }
+        type: { type: string, description: "Workout typology label (spec/05)." }
+        primary_determinant: { type: string, nullable: true }
+
+    Compliance:
+      type: object
+      nullable: true
+      description: Planned-vs-completed (the execution-score pattern). Thresholds based on owned metrics, not TSS alone.
+      properties:
+        execution_score: { type: number, nullable: true, description: "0–1." }
+        band: { type: string, enum: [green, amber, red], nullable: true }
+
+    LoadSeries:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              ctl: { type: number, nullable: true }
+              atl: { type: number, nullable: true }
+              tsb: { type: number, nullable: true }
+              channels:
+                type: object
+                nullable: true
+                additionalProperties: { type: number }
+                description: Multi-channel load (e.g. aerobic vs mechanical), spec/03 §3 / doc06 §9.
+
+    Constraint:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [unavailable_days, time_budget, travel, recurring_rule, add_race, move_session]
+        window:
+          type: object
+          nullable: true
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        payload:
+          type: object
+          additionalProperties: true
+          description: Kind-specific detail (e.g. move_session → {workout_id, to_date}); firmed at §8 drafting.
+
+    ChangeSet:
+      type: object
+      description: What the engine changed in response to an input, and why (apply-and-notify + loop closure).
+      properties:
+        moved:
+          type: array
+          items:
+            type: object
+            properties:
+              workout_id: { type: string }
+              from_date: { type: string, format: date, nullable: true }
+              to_date: { type: string, format: date, nullable: true }
+              change: { type: string, enum: [moved, added, removed, rescaled, softened] }
+        rationale: { type: string }
+        decision_ids: { type: array, items: { type: string } }
+        safety_instruction:
+          $ref: "#/components/schemas/SafetyInstruction"
+
+    SafetyInstruction:
+      type: object
+      nullable: true
+      description: A stop/return-to-run/seek-assessment instruction, surfaced plainly, never softened (spec/08 §8.5).
+      properties:
+        severity: { type: string, enum: [caution, stop, seek_assessment] }
+        message: { type: string }
+
+    # ---- Workouts (planned) ---------------------------------------------
+    PlannedWorkout:
+      type: object
+      description: "Planned. Owner spec/05 (workout representation)."
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        title: { type: string }
+        type: { type: string }
+        determinant_targets:
+          type: array
+          items: { type: string }
+          description: Which physiological determinant(s) this session targets (spec/05 / spec/01 determinants).
+        rationale: { type: string, description: "The 'why this session' text, grounded in the engine's intent." }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/WorkoutStep" }
+        completion:
+          allOf:
+            - $ref: "#/components/schemas/Compliance"
+          nullable: true
+
+    WorkoutStep:
+      type: object
+      properties:
+        order: { type: integer }
+        kind: { type: string, enum: [warmup, work, recovery, cooldown, repeat] }
+        repeat_count: { type: integer, nullable: true }
+        duration_s: { type: number, nullable: true }
+        distance_m: { type: number, nullable: true }
+        target:
+          type: object
+          nullable: true
+          description: Relative-anchored target — stored relative to the current state estimate so zones update automatically (spec/05).
+          properties:
+            metric: { type: string, enum: [pace, hr, power, effort] }
+            anchor: { type: string, description: "e.g. threshold_pace, critical_speed." }
+            low: { type: number, nullable: true }
+            high: { type: number, nullable: true }
+
+    # ---- Subjective (planned) -------------------------------------------
+    SessionFeedback:
+      type: object
+      required: [rpe]
+      properties:
+        rpe: { type: integer, minimum: 1, maximum: 10, description: "Session-RPE (research/03)." }
+        comment: { type: string, nullable: true }
+
+    WellnessReport:
+      type: object
+      description: Five-item wellness (research/03 §3.3), each 1–5.
+      required: [fatigue, sleep, soreness, stress, mood]
+      properties:
+        fatigue: { type: integer, minimum: 1, maximum: 5 }
+        sleep: { type: integer, minimum: 1, maximum: 5 }
+        soreness: { type: integer, minimum: 1, maximum: 5 }
+        stress: { type: integer, minimum: 1, maximum: 5 }
+        mood: { type: integer, minimum: 1, maximum: 5 }
+        sleep_duration_h: { type: number, nullable: true }
+        illness_flag: { type: boolean, nullable: true }
+
+    PainReport:
+      type: object
+      description: Pain traffic-light (research/03 §3.5).
+      required: [location, intensity]
+      properties:
+        location: { type: string, description: "Body location; implies tissue type for the verdict." }
+        intensity: { type: integer, minimum: 0, maximum: 10 }
+        overnight_settle: { type: boolean, nullable: true }
+        weekly_trend: { type: string, enum: [improving, stable, worsening], nullable: true }
+
+    # ---- State & metrics (planned) --------------------------------------
+    StateModel:
+      type: object
+      description: "Owned determinant profile with confidence + gap-to-goal (spec/04)."
+      properties:
+        as_of: { type: string }
+        determinants:
+          type: array
+          items: { $ref: "#/components/schemas/Determinant" }
+        readiness:
+          type: object
+          nullable: true
+          properties:
+            verdict: { type: string, enum: [ready, caution, back_off], nullable: true }
+            confidence: { type: string, enum: [low, medium, high], nullable: true }
+        gap_to_goal: { $ref: "#/components/schemas/GapToGoal" }
+
+    Determinant:
+      type: object
+      properties:
+        name:
+          type: string
+          enum: [critical_speed, d_prime, vvo2max, functional_threshold_pace, running_economy, durability, riegel_exponent]
+        estimate: { $ref: "#/components/schemas/ConfidenceValue" }
+        trend: { $ref: "#/components/schemas/Trend" }
+
+    HrvTrend:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              ln_rmssd: { type: number, nullable: true }
+              baseline: { type: number, nullable: true }
+              swc_low: { type: number, nullable: true }
+              swc_high: { type: number, nullable: true }
+
+    # ---- Decisions & changes (planned) ----------------------------------
+    DecisionRecord:
+      type: object
+      description: "Owner spec/09. Every applied adaptation, its inputs, and the rule that fired."
+      properties:
+        id: { type: string }
+        timestamp: { type: string }
+        timescale: { type: string, enum: [long_term, weekly, recent_workout, daily_readiness, intra_workout] }
+        trigger: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              value: {}
+        rule_fired: { type: string, description: "The arbitration rung / rule id (spec/06 §6.5)." }
+        action: { type: string }
+        affected:
+          type: object
+          properties:
+            dates: { type: array, items: { type: string, format: date } }
+            workout_ids: { type: array, items: { type: string } }
+        explanation: { type: string, description: "Plain-language rendering; numbers are the engine's, not invented." }
+
+    ChangeFeedItem:
+      type: object
+      properties:
+        id: { type: string }
+        timestamp: { type: string }
+        kind: { type: string, enum: [plan_change, goal_proposal, safety, data_quality, sync] }
+        summary: { type: string }
+        decision_id: { type: string, nullable: true }
+        seen: { type: boolean, default: false }
+
+    # ---- Connections & sync (planned) -----------------------------------
+    GarminConnection:
+      type: object
+      properties:
+        connected: { type: boolean }
+        scopes: { type: array, items: { type: string } }
+        connected_at: { type: string, nullable: true }
+
+    SyncStatus:
+      type: object
+      properties:
+        completed_last_synced_at: { type: string, nullable: true }
+        plan_last_pushed_at: { type: string, nullable: true }
+        pending: { type: boolean, default: false }
+        last_error: { type: string, nullable: true }
+
+    # ---- Coach (planned) ------------------------------------------------
+    CoachMessage:
+      type: object
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [athlete, coach] }
+        text: { type: string }
+        created_at: { type: string }
+        parsed_input:
+          type: object
+          nullable: true
+          description: When an athlete message translated into a structured input, its recognized kind (spec/08 §8.4).
+          properties:
+            kind: { type: string, enum: [constraint, injury, subjective, plan_change_request, goal_change, explanation_request] }
+        references:
+          type: array
+          items: { type: string }
+          description: Decision-record ids this reply is grounded in.
+        change_set:
+          allOf: [ { $ref: "#/components/schemas/ChangeSet" } ]
+          nullable: true
