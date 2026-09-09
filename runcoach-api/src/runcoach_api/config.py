@@ -15,7 +15,9 @@ which is responsible for turning a raised exception into an operator
 from __future__ import annotations
 
 import tomllib
+import zoneinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, field_validator
 from pydantic_settings import (
@@ -39,6 +41,48 @@ class ConfigCorruptError(Exception):
     ``pydantic.ValidationError``, raised directly by ``load_config``
     for e.g. an invalid port value).
     """
+
+
+def validate_zone(name: str) -> ZoneInfo:
+    """Resolve an IANA zone name to a ``ZoneInfo`` or raise ``ValueError``.
+
+    The shared validator for ``athlete_timezone`` (F005): the config field
+    (T088) and ``init_cmd``'s flag (T089) both call this so the zone is
+    checked once, at load, and never at request time. It takes a string and
+    returns a ``ZoneInfo``; it does not read settings (the pure-module
+    precedent is ``pipeline.py``'s handover of ``profile_names``).
+
+    Two failures look the same to the stdlib and must not to the operator.
+    ``zoneinfo.ZoneInfoNotFoundError`` -- a ``KeyError`` subclass -- is raised
+    identically for "not a real zone" and "no time-zone database installed"
+    (``zoneinfo/_common.py::load_tzdata``). Python's stdlib bundles no tzdb and
+    Windows ships none, so a validator that only caught that exception would
+    call ``Pacific/Auckland`` invalid on a tzdb-less host, and F005's
+    "an invalid timezone fails at load" would be satisfied by a check that is
+    wrong in exactly the case it exists for. ``available_timezones()`` is empty
+    only when neither the ``tzdata`` package nor a system tzdb exists
+    (``zoneinfo/_tzpath.py``), so that is the discriminator: an installation
+    fault, reported in different words from a bad zone.
+
+    Both paths raise ``ValueError`` rather than letting the ``KeyError``
+    escape: inside a pydantic ``@field_validator`` a ``ValueError`` surfaces as
+    ``type='value_error'`` naming the field, whereas a ``KeyError`` becomes an
+    internal error with no field attached.
+    """
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except zoneinfo.ZoneInfoNotFoundError as exc:
+        if not zoneinfo.available_timezones():
+            raise ValueError(
+                f"cannot resolve time zone {name!r}: no time-zone database is "
+                "installed in this environment, so no zone can be checked. "
+                "The `tzdata` package is a declared dependency of runcoach-api; "
+                "run `uv sync --all-packages` to install it."
+            ) from exc
+        raise ValueError(
+            f"{name!r} is not a recognised IANA time zone; use the zone's IANA "
+            'name as in the tz database (e.g. "Pacific/Auckland").'
+        ) from exc
 
 
 class AppConfig(BaseSettings):

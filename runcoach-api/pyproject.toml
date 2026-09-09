@@ -10,6 +10,11 @@ dependencies = [
     "tomli-w>=1.0",
     "fitdecode>=0.10",
     "python-multipart>=0.0.9",
+    # T078 (F005): the IANA time-zone database. Python's stdlib `zoneinfo` has
+    # no bundled tzdb and reads the system one, which Windows does not ship --
+    # without this, `zoneinfo.available_timezones()` is empty and every
+    # `athlete_timezone` is unresolvable.
+    "tzdata>=2024.1",
 ]
 
 [project.scripts]
