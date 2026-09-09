@@ -39,9 +39,16 @@ class _FakeConfig:
 
 
 def _make_validation_error() -> ValidationError:
-    """Build a real pydantic ValidationError with a 'port' field error."""
+    """Build a real pydantic ValidationError with a 'port' field error.
+
+    Deliberately incomplete in exactly one *other* way -- it never supplies
+    ``resting_hrv_profile_names`` -- so the error also carries that field's
+    ``missing`` (the shape table below explains why that pairing is the point).
+    ``athlete_timezone`` (required since T088) *is* supplied, so the
+    incompleteness stays singular and ``errors()[0]`` stays ``port``.
+    """
     try:
-        AppConfig(host="localhost", port=99999, data_dir=Path("/tmp"))
+        AppConfig(host="localhost", port=99999, data_dir=Path("/tmp"), athlete_timezone="UTC")
     except ValidationError as exc:
         return exc
     raise AssertionError("expected AppConfig(...) to raise ValidationError")
@@ -214,6 +221,16 @@ def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
 #   blank entry in the list  -> [0] type='value_error'     loc=('resting_hrv_profile_names',)
 #   a bare string, not list  -> [0] type='list_type'       loc=('resting_hrv_profile_names',)
 #   unknown key in api.toml  -> [0] type='extra_forbidden' loc=('nope',)
+#   pre-F005 file (no zone)  -> [0] type='missing'         loc=('resting_hrv_profile_names',)
+#                               [1] type='missing'         loc=('athlete_timezone',)
+#
+# The last row was added with T088 (F005), which made `athlete_timezone` required
+# and declared it *after* `resting_hrv_profile_names` so a file missing both keeps
+# receiving this remediation first (`test_config.py::
+# test_port_precedes_the_remediation_bearing_fields` pins that order). Every
+# construction in this module now supplies `athlete_timezone="UTC"` so each
+# helper is incomplete in exactly the one way its docstring names, and the rows
+# above stay the shapes the tests actually see.
 #
 # The second row is why the remediation is gated on `errors()[0]` rather than on
 # "any error mentions the field": `_make_validation_error` above raises *both* a
@@ -231,10 +248,18 @@ _REMEDIATION_MARKERS = (
 
 
 def _make_missing_field_error() -> ValidationError:
-    """A real ValidationError whose *only* error is the missing new field."""
+    """A real ValidationError whose *only* error is the missing new field.
+
+    "Only" is enforced, not described: after F005 made ``athlete_timezone``
+    required (T088), leaving it out here would bundle a second ``missing``
+    error and the tests below would be reading ``errors()[0]`` of a shape
+    they were never written for. Perturbation: drop the zone and the length
+    assertion goes red.
+    """
     try:
-        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"))
+        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"), athlete_timezone="UTC")
     except ValidationError as exc:
+        assert len(exc.errors()) == 1, exc.errors()
         return exc
     raise AssertionError("expected AppConfig(...) to raise ValidationError")
 
@@ -297,11 +322,16 @@ def test_serve_missing_field_message_comes_from_a_real_pre_amendment_toml(
     note beside it for why importing it here would reach `conftest`'s stub.
     """
     monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
     api_toml = tmp_path / "api.toml"
+    # `athlete_timezone` is written: this file is missing *only* the field
+    # whose remediation is under test, so the message is driven by that gap
+    # and not by the field-declaration order (T081 removes that dependence).
     api_toml.write_text(
         'host = "127.0.0.1"\n'
         "port = 8000\n"
-        f'data_dir = "{(tmp_path / "data").as_posix()}"\n',
+        f'data_dir = "{(tmp_path / "data").as_posix()}"\n'
+        'athlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
 
@@ -357,12 +387,14 @@ def test_serve_blank_profile_name_renders_the_validators_own_message(
             port=8000,
             data_dir=Path("/tmp"),
             resting_hrv_profile_names=["  "],
+            athlete_timezone="UTC",
         )
     except ValidationError as exc:
         error = exc
     else:
         raise AssertionError("expected a blank profile name to be rejected")
 
+    assert len(error.errors()) == 1, error.errors()
     assert error.errors()[0]["type"] == "value_error"
 
     _serve_expecting_exit(monkeypatch, _raising(error))
@@ -388,12 +420,14 @@ def test_serve_wrong_type_for_profile_names_renders_generically(monkeypatch, cap
             port=8000,
             data_dir=Path("/tmp"),
             resting_hrv_profile_names="HRV Snapshot",
+            athlete_timezone="UTC",
         )
     except ValidationError as exc:
         error = exc
     else:
         raise AssertionError("expected a bare string to be rejected")
 
+    assert len(error.errors()) == 1, error.errors()
     assert error.errors()[0]["type"] == "list_type"
 
     _serve_expecting_exit(monkeypatch, _raising(error))

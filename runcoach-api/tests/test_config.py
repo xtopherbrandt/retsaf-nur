@@ -48,7 +48,7 @@ def test_load_config_invalid_port_raises_validation_error(tmp_path):
     bad_port_path = tmp_path / "api.toml"
     bad_port_path.write_text(
         'host = "127.0.0.1"\nport = "abc"\ndata_dir = "/tmp/data"\n'
-        "resting_hrv_profile_names = []\n",
+        'resting_hrv_profile_names = []\nathlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
 
@@ -64,7 +64,7 @@ def test_load_config_valid_returns_app_config(tmp_path):
     data_dir = tmp_path / "data"
     good_path.write_text(
         f'host = "127.0.0.1"\nport = 8000\ndata_dir = "{data_dir.as_posix()}"\n'
-        'resting_hrv_profile_names = ["HRV Snapshot"]\n',
+        'resting_hrv_profile_names = ["HRV Snapshot"]\nathlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
 
@@ -90,27 +90,42 @@ def test_load_config_valid_returns_app_config(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _toml(tmp_path, body: str):
+def _toml(tmp_path, body: str, *, athlete_timezone: str | None = "UTC"):
+    """Write an ``api.toml`` that is complete except for what ``body`` adds.
+
+    ``athlete_timezone`` is written by default (a fixed zone, never the
+    developer's) so the profile-names tests below stay about profile names.
+    A test that is *about* the zone passes its own value, or ``None`` to
+    leave the key out and exercise the missing-field path.
+    """
     path = tmp_path / "api.toml"
     data_dir = tmp_path / "data"
+    zone_line = "" if athlete_timezone is None else f'athlete_timezone = "{athlete_timezone}"\n'
     path.write_text(
         f'host = "127.0.0.1"\nport = 8000\n'
-        f'data_dir = "{data_dir.as_posix()}"\n{body}',
+        f'data_dir = "{data_dir.as_posix()}"\n{zone_line}{body}',
         encoding="utf-8",
     )
     return path
 
 
-def test_app_config_requires_resting_hrv_profile_names():
-    """The field is required: constructing without it is a ValidationError."""
+def test_app_config_requires_resting_hrv_profile_names(monkeypatch):
+    """The field is required: constructing without it is a ValidationError.
+
+    The construction is incomplete in exactly this one field -- every other
+    required field, ``athlete_timezone`` included, is supplied -- and the
+    error is asserted to be the *only* one, so a second ``missing`` (the shape
+    a pre-F005 construction now produces) cannot hide behind an ``any()``.
+    The env var is cleared first because it, too, would satisfy the field.
+    """
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
     with pytest.raises(pydantic.ValidationError) as exc_info:
-        AppConfig(host="127.0.0.1", port=8000, data_dir=Path("/tmp/data"))
+        AppConfig(host="127.0.0.1", port=8000, data_dir=Path("/tmp/data"), athlete_timezone="UTC")
 
     errors = exc_info.value.errors()
-    assert any(
-        error["loc"] == ("resting_hrv_profile_names",) and error["type"] == "missing"
-        for error in errors
-    ), errors
+    assert len(errors) == 1, errors
+    assert errors[0]["loc"] == ("resting_hrv_profile_names",), errors
+    assert errors[0]["type"] == "missing", errors
 
 
 def test_load_config_without_resting_hrv_profile_names_is_rejected(tmp_path):
@@ -271,7 +286,7 @@ def test_athlete_timezone_is_required_and_has_no_default(monkeypatch):
 def test_load_config_without_athlete_timezone_is_rejected(tmp_path, monkeypatch):
     """A pre-F005 ``api.toml`` fails to load rather than assuming a zone."""
     monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
-    path = _toml(tmp_path, "resting_hrv_profile_names = []\n")
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone=None)
 
     with pytest.raises(pydantic.ValidationError) as exc_info:
         load_config(path=path)
@@ -284,10 +299,7 @@ def test_load_config_without_athlete_timezone_is_rejected(tmp_path, monkeypatch)
 
 def test_load_config_valid_athlete_timezone_is_accepted(tmp_path, monkeypatch):
     monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
-    path = _toml(
-        tmp_path,
-        'resting_hrv_profile_names = []\nathlete_timezone = "Pacific/Auckland"\n',
-    )
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone="Pacific/Auckland")
 
     config = load_config(path=path)
 
@@ -303,10 +315,7 @@ def test_load_config_invalid_athlete_timezone_is_rejected_at_load(tmp_path, monk
     an internal error with no field attached.
     """
     monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
-    path = _toml(
-        tmp_path,
-        'resting_hrv_profile_names = []\nathlete_timezone = "Mars/Phobos"\n',
-    )
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone="Mars/Phobos")
 
     with pytest.raises(pydantic.ValidationError) as exc_info:
         load_config(path=path)
@@ -324,11 +333,37 @@ def test_athlete_timezone_env_overrides_the_file(tmp_path, monkeypatch):
     """``RUNCOACH_ATHLETE_TIMEZONE`` wins over the TOML value, like every
     other field; the F005 demo probe relies on exactly this."""
     monkeypatch.setenv(_ATHLETE_TIMEZONE_ENV, "Asia/Kolkata")
-    path = _toml(
-        tmp_path,
-        'resting_hrv_profile_names = []\nathlete_timezone = "Pacific/Auckland"\n',
-    )
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone="Pacific/Auckland")
 
     config = load_config(path=path)
 
     assert config.athlete_timezone == "Asia/Kolkata"
+
+
+def test_no_ambient_timezone_leaks_into_missing_field_tests(tmp_path, monkeypatch):
+    """The ``delenv`` lines in the missing-field tests are load-bearing.
+
+    Reproduces a developer who has ``RUNCOACH_ATHLETE_TIMEZONE`` exported and
+    shows both halves of the hazard: the leak is real (env fills the field the
+    file lacks, so the "missing" premise silently evaporates), and the guard
+    the missing-field tests use restores the failure. A test that only showed
+    the second half would pass on a machine with nothing exported and prove
+    nothing about the guard.
+    """
+    monkeypatch.setenv(_ATHLETE_TIMEZONE_ENV, "Asia/Kolkata")
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone=None)
+
+    # Premise: without the guard the file loads, because env overrides the file.
+    leaked = load_config(path=path)
+    assert leaked.athlete_timezone == "Asia/Kolkata"
+
+    # The guard, exactly as the missing-field tests apply it.
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV)
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    assert any(
+        error["loc"] == ("athlete_timezone",) and error["type"] == "missing"
+        for error in exc_info.value.errors()
+    ), exc_info.value.errors()
