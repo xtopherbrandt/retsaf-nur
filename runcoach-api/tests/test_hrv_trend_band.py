@@ -344,14 +344,20 @@ def test_d_minus_7_is_the_last_baseline_day_and_d_minus_6_the_first_window_day()
     ``[D-6, D]``. A reading on ``D-7`` is counted in ``baseline_n`` and not in
     ``readings_in_window``; ``D-6`` the other way; ``D-67`` in neither."""
     rows = [row(D - timedelta(days=67), 40.0, session_id="before"), row(D - timedelta(days=66), 40.0, session_id="first")]
+    # Two fillers so no silence exceeds GAP_RESET_DAYS (21) local days: since
+    # T092 a 59-day gap between "first" and "last-baseline" would (correctly)
+    # reset the baseline on D-7 and leave baseline_n == 1.
+    rows += [row(D - timedelta(days=46), 40.0, session_id="filler-46"), row(D - timedelta(days=26), 40.0, session_id="filler-26")]
     rows += [row(D - timedelta(days=7), 40.0, session_id="last-baseline")]
     rows += [row(D - timedelta(days=6), 40.0, session_id="first-window"), row(D, 40.0, session_id="last-window")]
 
-    result = judge(build_series(rows, AUCKLAND, D))
+    series = build_series(rows, AUCKLAND, D)
+    result = judge(series)
 
-    assert result.baseline_n == 2
+    assert series.reset_on is None  # the fixture is gap-free, so the boundary is T083's, unclipped
+    assert result.baseline_n == 4  # "first", "filler-46", "filler-26", "last-baseline"
     assert result.readings_in_window == 2
-    assert result.baseline_n + result.readings_in_window == 4  # "before" is in neither
+    assert result.baseline_n + result.readings_in_window == 6  # "before" is in neither
 
 
 # ---------------------------------------------------------------------------
