@@ -4,7 +4,33 @@ from pathlib import Path
 
 import tomli_w
 
+from runcoach_api.config import validate_zone
+
 CONFIG_PATH = Path.home() / ".runcoach" / "api.toml"
+
+
+def _iana_zone(name: str) -> str:
+    """argparse ``type`` for ``--athlete-timezone``: accept only what ``serve`` accepts.
+
+    Delegates to T078's ``validate_zone`` -- the same check ``AppConfig`` runs
+    on load -- so ``init`` and ``serve`` cannot drift into two notions of a
+    valid zone. Running it as the argument's ``type`` puts the refusal inside
+    ``parse_args``, i.e. before the overwrite decision and before anything is
+    written: ``init`` must never produce a config ``serve`` then rejects, since
+    a written-then-refused file is exactly the fresh-install loop ``init``
+    exists to close.
+
+    ``ArgumentTypeError`` rather than the ``ValueError`` ``validate_zone``
+    raises: argparse renders a ``ValueError`` as the bare ``invalid _iana_zone
+    value``, discarding the message, whereas ``ArgumentTypeError``'s text is
+    shown verbatim under the flag's name -- and that text is what tells a
+    tzdb-less host apart from a mistyped zone.
+    """
+    try:
+        validate_zone(name)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    return name
 
 
 def main(argv: list[str]) -> None:
@@ -47,6 +73,24 @@ def main(argv: list[str]) -> None:
             "declare that no profile does (Health Snapshot still routes)."
         ),
     )
+    # Required, no default -- `AppConfig` has none (F001's ratified rule), and
+    # `init` mirrors that by asking for every field it writes. A default "UTC"
+    # here would be the silently-absorbed default one layer earlier: it would
+    # bucket a 06:00 capture at UTC+13 onto the previous local day with no
+    # error, which is the failure the rule exists to prevent (F005).
+    parser.add_argument(
+        "--athlete-timezone",
+        required=True,
+        type=_iana_zone,
+        dest="athlete_timezone",
+        metavar="ZONE",
+        help=(
+            "IANA name of the zone the athlete's days are counted in, e.g. "
+            '"Pacific/Auckland". The resting-HRV trend buckets captures into '
+            "local days of this zone. No default; an unknown zone is refused "
+            "before anything is written."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if CONFIG_PATH.exists() and not args.force:
@@ -64,6 +108,7 @@ def main(argv: list[str]) -> None:
                 "port": args.port,
                 "data_dir": args.data_dir,
                 "resting_hrv_profile_names": args.resting_hrv_profile,
+                "athlete_timezone": args.athlete_timezone,
             }
         ),
         encoding="utf-8",

@@ -119,10 +119,10 @@ def build_parser() -> argparse.ArgumentParser:
     ``serve`` is additive: a bare ``runcoach-api`` still means ``serve``, so
     existing scripts and habits keep working. The ``init`` subparser
     deliberately declares no flags of its own -- ``init_cmd.main`` owns
-    ``--host/--port/--data-dir/--resting-hrv-profile/--force``, and restating
-    them here would let the two parsers drift apart. The help *string* still
-    names them, because it is the only place ``runcoach-api --help`` can
-    advertise what ``init`` accepts.
+    ``--host/--port/--data-dir/--resting-hrv-profile/--athlete-timezone/--force``,
+    and restating them here would let the two parsers drift apart. The help
+    *string* still names them, because it is the only place
+    ``runcoach-api --help`` can advertise what ``init`` accepts.
     """
     parser = argparse.ArgumentParser(
         prog="runcoach-api",
@@ -137,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
         # `runcoach-api --help`. Spaces give it legal break points.
         help=(
             "write the API config file "
-            "(--host, --port, --data-dir, --resting-hrv-profile, --force)"
+            "(--host, --port, --data-dir, --resting-hrv-profile, --athlete-timezone, --force)"
         ),
         add_help=False,
     )
