@@ -33,6 +33,7 @@ the task text and the construction reference alone, and are stated as such
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -575,6 +576,90 @@ def test_previous_window_readings_are_post_exclusion_too() -> None:
     assert len(junk) == 20
     assert result.tier == STRAP
     assert result.reset_reason is None
+
+
+def test_unusable_previous_window_values_sustain_no_tier() -> None:
+    """Sixteen snapshot rows in ``[D-126, D-67]`` whose values ``ln`` cannot
+    take -- ``0.0``, ``-5.0``, ``inf`` and ``nan`` -- pass the same value
+    screen the exclusion chain applies inside ``[D-66, D]``: none is a
+    previous-window reading, so an established strap baseline now is the
+    athlete's first, not a tier change, and the silence before it is bounded
+    by no earlier reading, so it is not a gap either.
+
+    Perturbation (wave-3 mutation M9): screening the previous window on
+    ``is not None`` alone lets the sixteen sustain a snapshot tier there and
+    bound a 35-day gap; the existing suite stays green because its junk mix
+    never carries fourteen unusable values, and this test goes red.
+    """
+    values = [0.0, -5.0, math.inf, math.nan]
+    junk = [
+        row(local(day, 6), SNAPSHOT, values[i % 4], f"junk-{day}")
+        for i, day in enumerate(span(ago(126), ago(96), 2))
+    ]
+    current = readings(STRAP, span(ago(60), ago(7), 2), 40.0, "strap")
+
+    result = build(junk + current)
+
+    assert len(junk) == 16
+    assert result.tier == STRAP
+    assert result.reset_on is None
+    assert result.reset_reason is None
+
+
+def test_readings_before_the_previous_window_sustain_no_tier() -> None:
+    """Twenty snapshot readings on ``[D-146, D-127]`` -- every one a day
+    before the previous window opens -- and an established strap baseline
+    now. The previous window is the closed interval ``[D-126, D-67]``, and
+    a reading before it is read by nothing: neither as the tier that held
+    the previous era nor as the reading a leading gap is measured from. So
+    this is a first established baseline, not a change from a snapshot era,
+    and the 66 empty days before the strap readings are not a gap.
+
+    Perturbation (wave-3 mutation M12): dropping the previous window's lower
+    bound lets the twenty sustain a snapshot tier there and bound the
+    silence; the existing suite stays green because its one pre-window row
+    is a single reading, and this test goes red.
+    """
+    older = readings(SNAPSHOT, span(ago(146), ago(127)), 40.0, "older")
+    current = readings(STRAP, span(ago(60), ago(7), 2), 40.0, "strap")
+
+    result = build(older + current)
+
+    assert len(older) == 20
+    assert result.tier == STRAP
+    assert result.reset_on is None
+    assert result.reset_reason is None
+    assert {excluded_reasons(result)[r["session_id"]] for r in older} == {"outside_windows"}
+
+
+def test_two_gaps_inside_the_window_reset_on_the_later_resumption() -> None:
+    """Readings at D-66 and D-65, a 22-day silence, one reading at D-42, a
+    second 22-day silence, then daily readings from D-19. The scan runs
+    **backwards** from the target, so the reset lands on the resumption
+    after the *later* gap (D-19): that is where the current era began, and
+    the D-42 reading is a stranded era of its own that contributes to
+    nothing. A forward scan would land on D-42 and let the baseline span
+    the second gap -- the very break the rule exists to cut.
+
+    Perturbation (wave-3 mutation M5): scanning the reading days forwards
+    leaves the existing suite green -- no other fixture holds two gaps --
+    and turns this test red on ``reset_on``.
+    """
+    rows = (
+        readings(STRAP, [ago(66), ago(65)], 60.0, "first")
+        + readings(STRAP, [ago(42)], 50.0, "middle")
+        + readings(STRAP, span(ago(19), D), 40.0, "current")
+    )
+
+    result = build(rows)
+
+    assert result.reset_on == ago(19)
+    assert result.reset_reason == "coverage_gap"
+    assert result.baseline_window == (ago(19), ago(7))
+    assert [r.date for r in result.baseline] == span(ago(19), ago(7))
+    reasons = excluded_reasons(result)
+    assert reasons[f"middle-{ago(42)}"] == "before_reset: coverage_gap"
+    assert {reasons[f"first-{day}"] for day in (ago(66), ago(65))} == {"before_reset: coverage_gap"}
 
 
 def test_the_reset_constants_are_the_construction_references() -> None:

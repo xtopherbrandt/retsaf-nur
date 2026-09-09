@@ -1,8 +1,13 @@
-"""The resting-HRV trend (F005, spec §3.7): series construction.
+"""The resting-HRV trend (F005, spec §3.7): the series, the band and verdict, and the resets.
 
 This module turns stored ``sessions`` rows into **a clean one-reading-per-
-local-day series for one source tier** -- the substrate the SWC band and the
-verdict (T084) and the reset rules (T092) are computed over. It ends there.
+local-day series for one source tier** (``build_series``, T083), judges the
+target date against the SWC band built over that series (``judge``, T084),
+and re-establishes the baseline after a coverage gap or a sustained tier
+change (``coverage_gap_reset`` / ``tier_change_reset``, T092). The three
+sections follow in that order. The window constants and every exclusion and
+reset reason are declared together at the top, because ``build_series``
+reads them all; the band's own constants sit with the band.
 
 **Pure, by design.** ``build_series`` takes rows, a ``ZoneInfo`` and a target
 date and returns a dataclass; it imports neither ``config`` nor ``db`` nor
@@ -73,6 +78,11 @@ WINDOW_DAYS = 7
 #: The baseline tier is the highest-fidelity tier carrying at least this many
 #: readings in the baseline window. T084 also reads it as "established".
 MIN_BASELINE_READINGS = 14
+#: A silence of **more than** this many consecutive local days with no entry
+#: in the post-exclusion series re-establishes the baseline (T092;
+#: construction reference "Constants": survives a taper, a holiday or a
+#: two-week illness; catches an era break). 21 does not reset; 22 does.
+GAP_RESET_DAYS = 21
 
 #: The tier enum (``models.Session.hrv_source_tier``), highest fidelity first.
 #: The order is the authority's (``research/00`` §3.3 and its register row:
@@ -93,6 +103,16 @@ REASON_UNKNOWN_TIER = "unknown_tier"
 REASON_UNUSABLE_VALUE = "unusable_value"
 REASON_OFF_BASELINE_TIER = "off_baseline_tier"
 REASON_SAME_DAY_LATER_CAPTURE = "same_day_later_capture"
+#: A reading inside ``[D-66, D]`` that predates a reset (T092): it
+#: contributed to neither the baseline nor the window, and ``research/00``
+#: §1.6 wants it listed rather than silently dropped. Parameterised with the
+#: reset reason: ``before_reset: coverage_gap``.
+REASON_BEFORE_RESET = "before_reset"
+
+#: The two reset reasons (``HrvSeries.reset_reason``, T092). There is no
+#: timezone-change reset (decision log, 2026-09-09).
+REASON_COVERAGE_GAP = "coverage_gap"
+REASON_TIER_CHANGE = "tier_change"
 
 
 @dataclass(frozen=True)
@@ -160,6 +180,14 @@ def judged_window(target_date: date) -> tuple[date, date]:
     return target_date - timedelta(days=WINDOW_DAYS - 1), target_date
 
 
+def previous_window(target_date: date) -> tuple[date, date]:
+    """The closed local-date interval ``[D-126, D-67]``: the 60-day baseline
+    window immediately before ``baseline_window(target_date)``. The
+    sustained-tier-change rule (T092) resolves the tier here and compares."""
+    last = target_date - timedelta(days=WINDOW_DAYS + BASELINE_DAYS)
+    return last - timedelta(days=BASELINE_DAYS - 1), last
+
+
 def is_pre_amendment_window(row: Mapping[str, Any]) -> bool:
     """The in-Python companion of ``db.PRE_AMENDMENT_WINDOW_PREDICATE``:
     ``hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL``.
@@ -202,6 +230,20 @@ def _is_usable_value(value: Any) -> bool:
     ``inf`` and ``nan`` both clear a ``<= 0`` test (IDEA-034), so the
     finiteness check is explicit."""
     return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+
+
+def _is_reading(row: Mapping[str, Any]) -> bool:
+    """``build_series``'s exclusion chain as one predicate, for a row whose
+    listed reason is ``outside_windows`` but whose reading the previous
+    window (T092) still needs. Equivalent to the chain: a pre-amendment row
+    has a null value, which ``_is_usable_value`` rejects; a null or unknown
+    tier is not in the fidelity order."""
+    return row["hrv_source_tier"] in _FIDELITY_RANK and _is_usable_value(row["resting_rmssd_ms"])
+
+
+def _tier_counts(readings: Iterable[Reading]) -> Counter[str]:
+    """Readings per tier -- the input ``resolve_baseline_tier`` takes."""
+    return Counter(r.tier for r in readings)
 
 
 def resolve_baseline_tier(counts: Mapping[str, int]) -> str | None:
@@ -292,9 +334,9 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         baseline = (reset_on, baseline[1])
         readings, excluded = _exclude_before_reset(readings, excluded, reset_on, REASON_COVERAGE_GAP)
 
-    tier = resolve_baseline_tier(Counter(r.tier for r in _within(readings, baseline)))
+    tier = resolve_baseline_tier(_tier_counts(_within(readings, baseline)))
     if tier is None:
-        tier = resolve_baseline_tier(Counter(r.tier for r in _within(readings, judged)))
+        tier = resolve_baseline_tier(_tier_counts(_within(readings, judged)))
 
     series_by_day: dict[date, Reading] = {}
     for reading in readings:
@@ -333,10 +375,10 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
 
 
 # ---------------------------------------------------------------------------
-# T084: the SWC band, the thin-data guards and the verdict
+# The SWC band, the thin-data guards and the verdict (T084)
 #
-# Everything below reads an ``HrvSeries`` and nothing else, so it composes
-# with T092's reset clipping of ``baseline`` without knowing about it.
+# Everything in this section reads an ``HrvSeries`` and nothing else, so it
+# composes with T092's reset clipping of ``baseline`` without knowing about it.
 # ---------------------------------------------------------------------------
 
 #: The register's shipped smallest-worthwhile-change width: the band is the
@@ -501,42 +543,14 @@ def judge(series: HrvSeries) -> HrvVerdict:
 
 
 # ---------------------------------------------------------------------------
-# T092 -- baseline re-establishment: the coverage gap and the sustained tier
-# change. Appended as a block; ``build_series`` calls into it at two points.
+# Baseline re-establishment: the coverage gap and the sustained tier change
+# (T092)
+#
+# ``build_series`` calls into this section at two points: the gap rule before
+# the tier is resolved (it clips the baseline window the tier is resolved on),
+# the tier-change rule after the series is built. Both read readings, never
+# stored rows, so a gap spanned only by excluded rows still counts as a gap.
 # ---------------------------------------------------------------------------
-
-#: A silence of **more than** this many consecutive local days with no entry
-#: in the post-exclusion series re-establishes the baseline (construction
-#: reference "Constants": survives a taper, a holiday or a two-week illness;
-#: catches an era break). 21 does not reset; 22 does.
-GAP_RESET_DAYS = 21
-
-#: The two reset reasons (``HrvSeries.reset_reason``). There is no
-#: timezone-change reset (decision log, 2026-09-09).
-REASON_COVERAGE_GAP = "coverage_gap"
-REASON_TIER_CHANGE = "tier_change"
-#: The exclusion reason for a reading inside ``[D-66, D]`` that predates a
-#: reset: it contributed to neither the baseline nor the window, and
-#: ``research/00`` §1.6 wants it listed rather than silently dropped.
-#: Parameterised with the reset reason: ``before_reset: coverage_gap``.
-REASON_BEFORE_RESET = "before_reset"
-
-
-def previous_window(target_date: date) -> tuple[date, date]:
-    """The closed local-date interval ``[D-126, D-67]``: the 60-day baseline
-    window immediately before ``baseline_window(target_date)``. The
-    sustained-tier-change rule resolves the tier here and compares."""
-    last = target_date - timedelta(days=WINDOW_DAYS + BASELINE_DAYS)
-    return last - timedelta(days=BASELINE_DAYS - 1), last
-
-
-def _is_reading(row: Mapping[str, Any]) -> bool:
-    """``build_series``'s exclusion chain as one predicate, for a row whose
-    listed reason is ``outside_windows`` but whose reading the previous
-    window still needs. Equivalent to the chain: a pre-amendment row has a
-    null value, which ``_is_usable_value`` rejects; a null or unknown tier is
-    not in the fidelity order."""
-    return row["hrv_source_tier"] in _FIDELITY_RANK and _is_usable_value(row["resting_rmssd_ms"])
 
 
 def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[Reading]) -> date | None:
@@ -590,7 +604,11 @@ def _exclude_before_reset(
     exclusions, named ``before_reset: <reason>``, so ``readings`` and
     ``excluded`` stay disjoint and exhaustive over the rows in ``[D-66, D]``."""
     kept = [r for r in readings if r.date >= reset_on]
-    dropped = [Exclusion(r.date, r.session_id, f"{REASON_BEFORE_RESET}: {reason}") for r in readings if r.date < reset_on]
+    dropped = [
+        Exclusion(r.date, r.session_id, f"{REASON_BEFORE_RESET}: {reason}")
+        for r in readings
+        if r.date < reset_on
+    ]
     return kept, excluded + dropped
 
 
@@ -626,7 +644,7 @@ def tier_change_reset(
     """
     if tier is None:
         return None
-    previous_counts = Counter(r.tier for r in previous_readings)
+    previous_counts = _tier_counts(previous_readings)
     previous_tier = resolve_baseline_tier(previous_counts)
     if previous_tier is None or previous_counts[previous_tier] < MIN_BASELINE_READINGS:
         return None
