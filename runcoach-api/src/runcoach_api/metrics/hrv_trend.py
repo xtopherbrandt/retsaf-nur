@@ -140,6 +140,13 @@ class HrvSeries:
     baseline: tuple[Reading, ...]
     window: tuple[Reading, ...]
     excluded: tuple[Exclusion, ...]
+    #: T092. The local day the current baseline era began, when a reset was
+    #: detected, and why: ``REASON_COVERAGE_GAP`` or ``REASON_TIER_CHANGE``.
+    #: ``baseline_window`` is then clipped to ``[reset_on, D-7]``. Both
+    #: ``None`` when nothing reset. Defaulted so a series can be built
+    #: without naming them.
+    reset_on: date | None = None
+    reset_reason: str | None = None
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -235,12 +242,24 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     empty baseline, so the verdict for such a day is T084's ``unavailable``
     whichever tier is chosen; the fallback only decides which reading the
     contract's ``points[].ln_rmssd`` shows.
+
+    **Resets (T092)** are detected between the exclusion step and the tier
+    step, because a coverage gap clips the baseline window *before* the
+    tier is resolved on it -- the fresh baseline is begun from the
+    resumption on whatever tier sustains it there. The sustained-tier-change
+    rule runs after the series is built and compares the resolved tier with
+    the one that sustained the previous window ``[D-126, D-67]``, so
+    ``rows`` must span ``[D-126, D]`` for it to be able to fire; a narrower
+    read leaves the previous window empty, which reads as "thin" and never
+    as a change. See ``coverage_gap_reset`` and ``tier_change_reset``.
     """
     baseline = baseline_window(target_date)
     judged = judged_window(target_date)
     baseline_first = baseline[0]
+    previous = previous_window(target_date)
 
     readings: list[Reading] = []
+    previous_readings: list[Reading] = []
     excluded: list[Exclusion] = []
     for row in rows:
         session_id = row["session_id"]
@@ -250,6 +269,8 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
 
         if not baseline_first <= day <= target_date:
             excluded.append(Exclusion(day, session_id, REASON_OUTSIDE_WINDOWS))
+            if previous[0] <= day <= previous[1] and _is_reading(row):
+                previous_readings.append(Reading(day, session_id, tier, float(value), instant))
         elif is_pre_amendment_window(row):
             excluded.append(Exclusion(day, session_id, REASON_PRE_AMENDMENT_WINDOW))
         elif tier is None:
@@ -264,6 +285,12 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     # Deterministic before anything is chosen by position: by instant, then
     # by id for two devices sharing an instant.
     readings.sort(key=lambda r: (r.start_time, r.session_id))
+
+    reset_on = coverage_gap_reset(readings, previous_readings)
+    reset_reason = REASON_COVERAGE_GAP if reset_on is not None else None
+    if reset_on is not None:
+        baseline = (reset_on, baseline[1])
+        readings, excluded = _exclude_before_reset(readings, excluded, reset_on, REASON_COVERAGE_GAP)
 
     tier = resolve_baseline_tier(Counter(r.tier for r in _within(readings, baseline)))
     if tier is None:
@@ -283,6 +310,12 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     series = tuple(series_by_day[day] for day in sorted(series_by_day))
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
+    if reset_on is None:
+        reset_on = tier_change_reset(previous_readings, tier, _within(readings, baseline))
+        if reset_on is not None:
+            reset_reason = REASON_TIER_CHANGE
+            baseline = (reset_on, baseline[1])
+
     return HrvSeries(
         target_date=target_date,
         timezone=zone.key,
@@ -294,6 +327,8 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         baseline=_within(series, baseline),
         window=_within(series, judged),
         excluded=tuple(excluded),
+        reset_on=reset_on,
+        reset_reason=reset_reason,
     )
 
 
@@ -463,3 +498,141 @@ def judge(series: HrvSeries) -> HrvVerdict:
         established=established,
         readings_in_window=readings_in_window,
     )
+
+
+# ---------------------------------------------------------------------------
+# T092 -- baseline re-establishment: the coverage gap and the sustained tier
+# change. Appended as a block; ``build_series`` calls into it at two points.
+# ---------------------------------------------------------------------------
+
+#: A silence of **more than** this many consecutive local days with no entry
+#: in the post-exclusion series re-establishes the baseline (construction
+#: reference "Constants": survives a taper, a holiday or a two-week illness;
+#: catches an era break). 21 does not reset; 22 does.
+GAP_RESET_DAYS = 21
+
+#: The two reset reasons (``HrvSeries.reset_reason``). There is no
+#: timezone-change reset (decision log, 2026-09-09).
+REASON_COVERAGE_GAP = "coverage_gap"
+REASON_TIER_CHANGE = "tier_change"
+#: The exclusion reason for a reading inside ``[D-66, D]`` that predates a
+#: reset: it contributed to neither the baseline nor the window, and
+#: ``research/00`` §1.6 wants it listed rather than silently dropped.
+#: Parameterised with the reset reason: ``before_reset: coverage_gap``.
+REASON_BEFORE_RESET = "before_reset"
+
+
+def previous_window(target_date: date) -> tuple[date, date]:
+    """The closed local-date interval ``[D-126, D-67]``: the 60-day baseline
+    window immediately before ``baseline_window(target_date)``. The
+    sustained-tier-change rule resolves the tier here and compares."""
+    last = target_date - timedelta(days=WINDOW_DAYS + BASELINE_DAYS)
+    return last - timedelta(days=BASELINE_DAYS - 1), last
+
+
+def _is_reading(row: Mapping[str, Any]) -> bool:
+    """``build_series``'s exclusion chain as one predicate, for a row whose
+    listed reason is ``outside_windows`` but whose reading the previous
+    window still needs. Equivalent to the chain: a pre-amendment row has a
+    null value, which ``_is_usable_value`` rejects; a null or unknown tier is
+    not in the fidelity order."""
+    return row["hrv_source_tier"] in _FIDELITY_RANK and _is_usable_value(row["resting_rmssd_ms"])
+
+
+def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[Reading]) -> date | None:
+    """The local day the baseline is re-established on after a coverage gap,
+    or ``None``.
+
+    Scans the distinct local days of ``readings`` (the post-exclusion series
+    of **every** tier, inside ``[D-66, D]``) backwards from the latest and
+    returns the first day that follows a silence of more than
+    ``GAP_RESET_DAYS`` local days -- the resumption. Measured on ``date``
+    arithmetic, never on UTC deltas: a silence straddling a DST change is
+    still the same number of local days.
+
+    A gap is bounded by a reading on both sides. Two consequences the spec
+    text does not state and this function decides:
+
+    * **An open gap** (the last reading is more than 21 days old and nothing
+      has resumed) is not yet a reset: the reset lands on the first reading
+      *after* a gap, and there is none. The judged week is empty, so the
+      verdict is ``unavailable`` regardless.
+    * **The leading stretch** of ``[D-66, D]`` before the first reading is a
+      gap only when measured from the last reading before the window --
+      ``previous_readings``, the post-exclusion readings of ``[D-126,
+      D-67]`` -- and that silence exceeds 21 days. With no known earlier
+      reading it is the start of history, not a break between two eras:
+      nothing precedes it that could contribute across it, and reporting a
+      new athlete's first capture as a ``coverage_gap`` would name an event
+      that did not happen.
+    """
+    days = sorted({r.date for r in readings})
+    if not days:
+        return None
+    for i in range(len(days) - 1, 0, -1):
+        if _silence_between(days[i - 1], days[i]) > GAP_RESET_DAYS:
+            return days[i]
+    last_before = max((r.date for r in previous_readings), default=None)
+    if last_before is not None and _silence_between(last_before, days[0]) > GAP_RESET_DAYS:
+        return days[0]
+    return None
+
+
+def _silence_between(earlier: date, later: date) -> int:
+    """The number of whole local days strictly between two reading days."""
+    return (later - earlier).days - 1
+
+
+def _exclude_before_reset(
+    readings: list[Reading], excluded: list[Exclusion], reset_on: date, reason: str
+) -> tuple[list[Reading], list[Exclusion]]:
+    """Move every reading dated before ``reset_on`` from the series into the
+    exclusions, named ``before_reset: <reason>``, so ``readings`` and
+    ``excluded`` stay disjoint and exhaustive over the rows in ``[D-66, D]``."""
+    kept = [r for r in readings if r.date >= reset_on]
+    dropped = [Exclusion(r.date, r.session_id, f"{REASON_BEFORE_RESET}: {reason}") for r in readings if r.date < reset_on]
+    return kept, excluded + dropped
+
+
+def tier_change_reset(
+    previous_readings: Iterable[Reading], tier: str | None, baseline_readings: Iterable[Reading]
+) -> date | None:
+    """The local day a fresh baseline begins on after a sustained tier
+    change, or ``None``.
+
+    T083's tier rule is resolved twice -- on the previous window
+    (``previous_readings``, ``[D-126, D-67]``) and on the current baseline
+    window (``baseline_readings``, all tiers, already clipped by any
+    coverage gap) -- and a change is asserted only when the two tiers
+    differ **and both windows sustain their tier** with at least
+    ``MIN_BASELINE_READINGS``. The reset lands on the first reading of the
+    new tier inside the baseline window.
+
+    **A tier resolution that differs only because the previous window is
+    thin is not a change.** Five snapshot readings in ``[D-126, D-67]``
+    resolve that window to the snapshot by "most readings", but nothing
+    sustained a baseline there; a strap baseline now is the athlete's first
+    established one, not a change from anything. Symmetrically a thin
+    current window is not yet a change: F005 fires the reset "when
+    chest_strap_raw readings become dense enough to sustain a baseline",
+    and until then the previous tier still holds the baseline (its readings
+    are in the window, the new tier's are off-tier) so no suppression can
+    be read off the new tier's values. A single off-tier capture therefore
+    never resets (§3.7.3: corroboration, "never merged into the same band").
+
+    A coverage gap takes precedence: ``build_series`` only asks this rule
+    when no gap reset was found, because the gap's resumption day is where
+    the fresh baseline begins and the tier was already resolved on that era.
+    """
+    if tier is None:
+        return None
+    previous_counts = Counter(r.tier for r in previous_readings)
+    previous_tier = resolve_baseline_tier(previous_counts)
+    if previous_tier is None or previous_counts[previous_tier] < MIN_BASELINE_READINGS:
+        return None
+    if previous_tier == tier:
+        return None
+    on_tier = [r for r in baseline_readings if r.tier == tier]
+    if len(on_tier) < MIN_BASELINE_READINGS:
+        return None
+    return min(r.date for r in on_tier)

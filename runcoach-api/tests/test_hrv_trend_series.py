@@ -319,6 +319,10 @@ def test_the_windows_are_closed_disjoint_local_date_intervals() -> None:
     rows = [
         row(local(D - timedelta(days=67), 6), STRAP, 40.0, "before-baseline"),
         row(local(D - timedelta(days=66), 6), STRAP, 40.0, "baseline-first"),
+        # Two fillers so no silence exceeds 21 local days: since T092 a 58-day
+        # gap between the boundary readings would (correctly) reset the baseline.
+        row(local(D - timedelta(days=46), 6), STRAP, 40.0, "filler-46"),
+        row(local(D - timedelta(days=26), 6), STRAP, 40.0, "filler-26"),
         row(local(D - timedelta(days=7), 6), STRAP, 40.0, "baseline-last"),
         row(local(D - timedelta(days=6), 6), STRAP, 40.0, "window-first"),
         row(local(D, 6), STRAP, 40.0, "window-last"),
@@ -329,7 +333,7 @@ def test_the_windows_are_closed_disjoint_local_date_intervals() -> None:
 
     assert result.baseline_window == (date(2026, 7, 4), date(2026, 9, 1))
     assert result.judged_window == (date(2026, 9, 2), date(2026, 9, 8))
-    assert [r.session_id for r in result.baseline] == ["baseline-first", "baseline-last"]
+    assert [r.session_id for r in result.baseline] == ["baseline-first", "filler-46", "filler-26", "baseline-last"]
     assert [r.session_id for r in result.window] == ["window-first", "window-last"]
     assert excluded_reasons(result) == {
         "before-baseline": "outside_windows",
