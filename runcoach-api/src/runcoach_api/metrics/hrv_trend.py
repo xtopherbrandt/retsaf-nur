@@ -183,6 +183,12 @@ def local_day(session_id: str, start_time: str, zone: ZoneInfo) -> tuple[date, d
     return instant.astimezone(zone).date(), instant
 
 
+def _within(readings: Iterable[Reading], window: tuple[date, date]) -> tuple[Reading, ...]:
+    """The readings whose local day falls inside the closed interval ``window``."""
+    first, last = window
+    return tuple(r for r in readings if first <= r.date <= last)
+
+
 def _is_usable_value(value: Any) -> bool:
     """``ln`` is defined on exactly the strictly positive finite reals.
     ``inf`` and ``nan`` both clear a ``<= 0`` test (IDEA-034), so the
@@ -229,8 +235,9 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     whichever tier is chosen; the fallback only decides which reading the
     contract's ``points[].ln_rmssd`` shows.
     """
-    baseline_first, baseline_last = baseline_window(target_date)
-    window_first, window_last = judged_window(target_date)
+    baseline = baseline_window(target_date)
+    judged = judged_window(target_date)
+    baseline_first = baseline[0]
 
     readings: list[Reading] = []
     excluded: list[Exclusion] = []
@@ -257,11 +264,9 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     # by id for two devices sharing an instant.
     readings.sort(key=lambda r: (r.start_time, r.session_id))
 
-    baseline_counts = Counter(r.tier for r in readings if baseline_first <= r.date <= baseline_last)
-    tier = resolve_baseline_tier(baseline_counts)
+    tier = resolve_baseline_tier(Counter(r.tier for r in _within(readings, baseline)))
     if tier is None:
-        window_counts = Counter(r.tier for r in readings if window_first <= r.date <= window_last)
-        tier = resolve_baseline_tier(window_counts)
+        tier = resolve_baseline_tier(Counter(r.tier for r in _within(readings, judged)))
 
     series_by_day: dict[date, Reading] = {}
     for reading in readings:
@@ -280,12 +285,12 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     return HrvSeries(
         target_date=target_date,
         timezone=zone.key,
-        baseline_window=(baseline_first, baseline_last),
-        judged_window=(window_first, window_last),
+        baseline_window=baseline,
+        judged_window=judged,
         tier=tier,
         readings=tuple(readings),
         series=series,
-        baseline=tuple(r for r in series if baseline_first <= r.date <= baseline_last),
-        window=tuple(r for r in series if window_first <= r.date <= window_last),
+        baseline=_within(series, baseline),
+        window=_within(series, judged),
         excluded=tuple(excluded),
     )
