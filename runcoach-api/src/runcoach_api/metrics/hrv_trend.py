@@ -55,6 +55,7 @@ exist in this series.
 from __future__ import annotations
 
 import math
+import statistics
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -293,4 +294,172 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         baseline=_within(series, baseline),
         window=_within(series, judged),
         excluded=tuple(excluded),
+    )
+
+
+# ---------------------------------------------------------------------------
+# T084: the SWC band, the thin-data guards and the verdict
+#
+# Everything below reads an ``HrvSeries`` and nothing else, so it composes
+# with T092's reset clipping of ``baseline`` without knowing about it.
+# ---------------------------------------------------------------------------
+
+#: The register's shipped smallest-worthwhile-change width: the band is the
+#: baseline mean +/- ``SWC_FACTOR * SD(ln rMSSD)`` (``research/00`` register
+#: row, as clarified by F005's amendment).
+SWC_FACTOR = 0.5
+#: The smallest half-width the band may have. A metronomic athlete would
+#: otherwise get a razor-thin band and be punished for consistency. **0.01,
+#: not 0.05**: an ordinary athlete's ``0.5 * SD(ln)`` is about 0.05, so a
+#: floor there would *be* the band for everyone and the computed half-width
+#: would never be exercised -- a discriminator with no reachable negative
+#: case. At 0.01 the floor fires only for a genuinely degenerate series
+#: (daily readings within about +/-2%), and both branches are testable.
+BAND_FLOOR = 0.01
+#: §3.7.4's trends-not-single-readings rule, made testable: fewer readings
+#: than this in the judged week is ``hrv_unavailable``, whatever they say.
+MIN_WINDOW_READINGS = 3
+
+VERDICT_NORMAL = "hrv_normal"
+VERDICT_SUPPRESSED = "hrv_suppressed"
+VERDICT_UNAVAILABLE = "hrv_unavailable"
+
+
+@dataclass(frozen=True)
+class Band:
+    """The SWC band in log space: ``mean +/- half_width`` over the baseline.
+
+    ``mean`` is the contract's ``points[].baseline``; ``lo``/``hi`` are its
+    ``swc_low``/``swc_high``. ``floored`` says whether ``half_width`` is the
+    computed ``SWC_FACTOR * SD`` or ``BAND_FLOOR`` -- the response carries it
+    so a reader can see which branch fired.
+    """
+
+    mean: float
+    half_width: float
+    lo: float
+    hi: float
+    floored: bool
+
+
+@dataclass(frozen=True)
+class HrvVerdict:
+    """The verdict for one target date, with everything that produced it.
+
+    ``ln_rmssd_7d_mean`` is the mean of the judged window's readings, or
+    ``None`` when the window is empty; it is reported whenever there is one
+    so the verdict is reproducible by hand (``research/00`` §1.6), even when
+    ``readings_in_window`` is below the minimum and the verdict is
+    unavailable. ``below_by`` is ``band.lo - mean`` when suppressed, else
+    ``None``. ``band`` is ``None`` when the baseline holds fewer than two
+    readings. ``established`` is ``baseline_n >= MIN_BASELINE_READINGS``.
+    """
+
+    verdict: str
+    ln_rmssd_7d_mean: float | None
+    below_by: float | None
+    band: Band | None
+    baseline_n: int
+    established: bool
+    readings_in_window: int
+
+
+def ln_rmssd(reading: Reading) -> float:
+    """``ln`` of the reading, **unguarded on purpose**. ``build_series``
+    guarantees every ``Reading`` carries a strictly positive finite value
+    (``_is_usable_value``); a second, silent guard here would mask a T083
+    regression, so a non-positive value reaching this function raises
+    (``math.log`` -> ``ValueError``) and the defect surfaces."""
+    return math.log(reading.rmssd_ms)
+
+
+def build_band(ln_values: Iterable[float]) -> Band | None:
+    """The SWC band over a baseline of ln-rMSSD values, or ``None`` when
+    there are fewer than two of them.
+
+    ``half_width = max(SWC_FACTOR * SD(ln), BAND_FLOOR)``, with **sample SD**
+    (``statistics.stdev``, ``n - 1``; F005 decision log, 2026-09-09): the
+    baseline is a sample of the athlete's dispersion, not the population of
+    it. The dispersion is of the *log* series, not a coefficient of
+    variation of it -- ``CV = SD / mean`` is a ratio to the origin, and a
+    log scale's origin is arbitrary, so ``CV(ln)`` flips sign when the same
+    readings are expressed in seconds instead of milliseconds and the band
+    inverts; ``SD(ln)`` is unit-invariant and numerically indistinguishable
+    from the literature's ``0.5 * CV`` of the raw series.
+
+    ``stdev`` raises ``StatisticsError`` below two readings, which *is* the
+    "no band under two readings" rule surfacing structurally; it is caught
+    here, at the one place the band is built, and nothing else guards it.
+    Never ``pstdev``: it returns ``0.0`` for a single reading and would
+    manufacture a floored band from nothing.
+
+    **The seed script (T086) must state its expected band with the same
+    estimator** -- sample SD -- or the demo probe compares two different
+    bands.
+    """
+    values = list(ln_values)
+    try:
+        dispersion = statistics.stdev(values)
+    except statistics.StatisticsError:
+        return None
+    computed = SWC_FACTOR * dispersion
+    floored = computed < BAND_FLOOR
+    half_width = BAND_FLOOR if floored else computed
+    mean = statistics.fmean(values)
+    return Band(mean=mean, half_width=half_width, lo=mean - half_width, hi=mean + half_width, floored=floored)
+
+
+def judge(series: HrvSeries) -> HrvVerdict:
+    """The verdict for ``series.target_date`` from its two disjoint slices.
+
+    The band is built over ``series.baseline`` (``[D-66, D-7]``) and the
+    week's mean over ``series.window`` (``[D-6, D]``); because the slices do
+    not overlap, a suppressed week cannot lower its own band and self-clear
+    (§3.7.4: a single good morning does not clear an accumulated
+    suppression). In order:
+
+    - no band (fewer than two baseline readings) -> ``hrv_unavailable``;
+    - fewer than ``MIN_WINDOW_READINGS`` in the week -> ``hrv_unavailable``
+      (two bad mornings are not a trend, however bad);
+    - the mean strictly below ``band.lo`` on an **established** baseline
+      (``>= MIN_BASELINE_READINGS``) -> ``hrv_suppressed``, with ``below_by``;
+    - the mean inside **or above** the band -> ``hrv_normal``;
+    - the mean below the band on a baseline that is *not* established ->
+      ``hrv_unavailable``. §3.7.3 says the suppression is *withheld* until
+      the baseline is adequately established; it does not say the week reads
+      normal. ``hrv_normal`` would tell Section 6 that readiness is intact on
+      the strength of the very reading that says otherwise -- up-regulating
+      on weak evidence, which ``research/00`` §1.7 forbids -- so the honest
+      verdict is that there is none, and the response carries ``baseline_n``
+      and ``established`` to say why.
+
+    The band itself is asserted whenever it can be built, established or
+    not, and whether or not the week has readings: it is a property of the
+    baseline, and the contract's ``points[]`` draws it on days with no
+    reading (T091).
+    """
+    band = build_band(ln_rmssd(reading) for reading in series.baseline)
+    baseline_n = len(series.baseline)
+    established = baseline_n >= MIN_BASELINE_READINGS
+    readings_in_window = len(series.window)
+    window_mean = statistics.fmean(ln_rmssd(r) for r in series.window) if readings_in_window else None
+
+    verdict = VERDICT_UNAVAILABLE
+    below_by = None
+    if band is not None and window_mean is not None and readings_in_window >= MIN_WINDOW_READINGS:
+        if window_mean < band.lo:
+            if established:
+                verdict = VERDICT_SUPPRESSED
+                below_by = band.lo - window_mean
+        else:
+            verdict = VERDICT_NORMAL
+
+    return HrvVerdict(
+        verdict=verdict,
+        ln_rmssd_7d_mean=window_mean,
+        below_by=below_by,
+        band=band,
+        baseline_n=baseline_n,
+        established=established,
+        readings_in_window=readings_in_window,
     )
