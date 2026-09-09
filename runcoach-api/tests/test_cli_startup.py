@@ -225,20 +225,22 @@ def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
 #                               [1] type='missing'         loc=('athlete_timezone',)
 #
 # The last row was added with T088 (F005), which made `athlete_timezone` required
-# and declared it *after* `resting_hrv_profile_names` so a file missing both keeps
-# receiving this remediation first (`test_config.py::
-# test_port_precedes_the_remediation_bearing_fields` pins that order). Every
-# construction in this module now supplies `athlete_timezone="UTC"` so each
-# helper is incomplete in exactly the one way its docstring names, and the rows
-# above stay the shapes the tests actually see.
+# and declared it *after* `resting_hrv_profile_names`; since T081 a file missing
+# both receives *both* remediations, in whichever order pydantic lists them (the
+# T081 block at the end of this module pins that). Every construction in this
+# module supplies `athlete_timezone="UTC"` so each helper is incomplete in
+# exactly the one way its docstring names, and the rows above stay the shapes
+# the tests actually see.
 #
-# The second row is why the remediation is gated on `errors()[0]` rather than on
-# "any error mentions the field": `_make_validation_error` above raises *both* a
-# port error and the missing-field error, because the amendment made the field
-# required and that helper never supplies it. An "any" rule would therefore
-# attach upgrade instructions to a failure that has nothing to do with the new
-# field -- and since the pre-existing test asserts only `"port" in captured.err`,
-# it would have shipped green and silent.
+# The second row is why the remediation *mode* is gated on `errors()[0]` rather
+# than on "any error mentions the field": `_make_validation_error` above raises
+# *both* a port error and the missing-field error, because the amendment made
+# the field required and that helper never supplies it. An "any" rule would
+# therefore attach upgrade instructions to a failure that has nothing to do with
+# the new field -- and since the pre-existing test asserts only `"port" in
+# captured.err`, it would have shipped green and silent. `port` precedes both
+# remediation-bearing fields in `AppConfig` for exactly this reason
+# (`test_config.py::test_port_precedes_the_remediation_bearing_fields`).
 # ---------------------------------------------------------------------------
 
 _REMEDIATION_MARKERS = (
@@ -459,3 +461,195 @@ def test_cli_startup_init_help_documents_the_athlete_timezone_flag():
     """
     help_text = cli.build_parser().format_help()
     assert "--athlete-timezone" in help_text
+
+
+# ---------------------------------------------------------------------------
+# T081 -- order-independent remediation dispatch.
+#
+# F005 (T088) made `athlete_timezone` a second required field with remediation
+# text of its own. With two such fields there is no declaration order that is
+# right for every broken `api.toml`: a file missing both must be told about
+# both, and a file missing only the zone must get the zone's one-line fix rather
+# than the bare "Field required". The tests below drive `serve()` with real
+# `ValidationError`s (constructed, or built through `from_exception_data` where
+# the order of `errors()` is the thing under test) and pin that the rendered
+# message depends on *which* errors are present, never on their position --
+# while the terse fallback for an ordinary error (`port`) stays exactly as the
+# T060 tests above pin it.
+# ---------------------------------------------------------------------------
+
+_TIMEZONE_REMEDIATION_MARKERS = (
+    'athlete_timezone = "',
+    "RUNCOACH_ATHLETE_TIMEZONE",
+)
+
+
+def _make_missing_both_fields_error() -> ValidationError:
+    """A real ValidationError carrying exactly the two `missing` errors.
+
+    The shape is asserted, not assumed: `port` is valid here so nothing
+    precedes the two remediation-bearing fields, and the order is the
+    declaration order (`resting_hrv_profile_names` first).
+    """
+    try:
+        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"))
+    except ValidationError as exc:
+        assert [(e["type"], e["loc"]) for e in exc.errors()] == [
+            ("missing", ("resting_hrv_profile_names",)),
+            ("missing", ("athlete_timezone",)),
+        ], exc.errors()
+        return exc
+    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+
+
+def _assert_both_remediations(err: str) -> None:
+    for marker in _REMEDIATION_MARKERS + _TIMEZONE_REMEDIATION_MARKERS:
+        assert marker in err, marker
+    # Both blocks replace pydantic's message rather than decorating it.
+    assert "Field required" not in err
+    assert "Traceback" not in err
+
+
+def test_remediation_dispatch_names_both_missing_fields(monkeypatch, capsys):
+    """A pre-F005 `api.toml` -- missing both fields -- is told about both."""
+    _serve_expecting_exit(monkeypatch, _raising(_make_missing_both_fields_error()))
+
+    _assert_both_remediations(capsys.readouterr().err)
+
+
+def test_remediation_dispatch_ignores_declaration_order(monkeypatch, capsys):
+    """The same two errors in the opposite order render the same two blocks.
+
+    `ValidationError.from_exception_data` (pydantic-core 2.46.5,
+    `_pydantic_core.pyi:666`) builds a real error whose `errors()` order is
+    the list order given, which is the only way to present `athlete_timezone`
+    first without reordering `AppConfig`'s fields.
+    """
+    reversed_error = ValidationError.from_exception_data(
+        "AppConfig",
+        [
+            {"type": "missing", "loc": ("athlete_timezone",), "input": {}},
+            {"type": "missing", "loc": ("resting_hrv_profile_names",), "input": {}},
+        ],
+    )
+    assert [e["loc"] for e in reversed_error.errors()] == [
+        ("athlete_timezone",),
+        ("resting_hrv_profile_names",),
+    ]
+
+    _serve_expecting_exit(monkeypatch, _raising(reversed_error))
+
+    _assert_both_remediations(capsys.readouterr().err)
+
+
+def test_remediation_dispatch_missing_timezone_alone_shows_the_one_line_fix(
+    monkeypatch, capsys, tmp_path
+):
+    """F005 @must: "a missing timezone is a startup error ... the message shows
+    the one-line fix". Driven through the real `load_config` on a real file
+    that lacks *only* `athlete_timezone`, with the env override cleared so an
+    exported zone cannot make the file load and delete the premise.
+    """
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
+    api_toml = tmp_path / "api.toml"
+    api_toml.write_text(
+        'host = "127.0.0.1"\n'
+        "port = 8000\n"
+        f'data_dir = "{(tmp_path / "data").as_posix()}"\n'
+        "resting_hrv_profile_names = []\n",
+        encoding="utf-8",
+    )
+
+    _serve_expecting_exit(monkeypatch, lambda: real_load_config(api_toml))
+
+    err = capsys.readouterr().err
+    assert "athlete_timezone" in err
+    for marker in _TIMEZONE_REMEDIATION_MARKERS:
+        assert marker in err, marker
+    # A zone the athlete can paste, in the tz database's own naming.
+    assert "Pacific/Auckland" in err
+    assert "no default" in err.lower()
+    assert "restart" in err.lower()
+    assert "Field required" not in err
+    # The profile-names field is present, so its remediation must not appear.
+    for marker in _REMEDIATION_MARKERS:
+        assert marker not in err, marker
+    assert "Traceback" not in err
+
+
+def test_remediation_dispatch_port_error_still_wins_over_both_missing_fields(
+    monkeypatch, capsys
+):
+    """The terse fallback is unchanged: a `port` complaint carries no
+    remediation even when both remediation-bearing fields are missing too.
+
+    This is the T060 gotcha (`:347`) with the second field added -- the
+    population beside that test's assertion.
+    """
+    try:
+        AppConfig(host="localhost", port=99999, data_dir=Path("/tmp"))
+    except ValidationError as exc:
+        error = exc
+    else:
+        raise AssertionError("expected AppConfig(...) to raise ValidationError")
+    assert [e["loc"] for e in error.errors()] == [
+        ("port",),
+        ("resting_hrv_profile_names",),
+        ("athlete_timezone",),
+    ], error.errors()
+
+    _serve_expecting_exit(monkeypatch, _raising(error))
+
+    err = capsys.readouterr().err
+    assert "port" in err
+    for marker in _REMEDIATION_MARKERS + _TIMEZONE_REMEDIATION_MARKERS:
+        assert marker not in err, marker
+    assert "Traceback" not in err
+
+
+def test_remediation_dispatch_bad_zone_renders_the_validators_own_message(
+    monkeypatch, capsys
+):
+    """`athlete_timezone = "Mars/Phobos"` is `type='value_error'`, not `'missing'`.
+
+    The dispatch is keyed on the error type as well as the field: the zone is
+    present and wrong, `validate_zone`'s message already says so, and the
+    missing-field text would be the wrong advice.
+    """
+    try:
+        AppConfig(
+            host="localhost",
+            port=8000,
+            data_dir=Path("/tmp"),
+            resting_hrv_profile_names=[],
+            athlete_timezone="Mars/Phobos",
+        )
+    except ValidationError as exc:
+        error = exc
+    else:
+        raise AssertionError("expected an unknown zone to be rejected")
+    assert len(error.errors()) == 1, error.errors()
+    assert error.errors()[0]["type"] == "value_error"
+
+    _serve_expecting_exit(monkeypatch, _raising(error))
+
+    err = capsys.readouterr().err
+    assert "athlete_timezone" in err
+    assert "not a recognised IANA time zone" in err
+    for marker in _TIMEZONE_REMEDIATION_MARKERS:
+        assert marker not in err, marker
+    assert "Traceback" not in err
+
+
+def test_remediation_dispatch_profile_names_help_names_the_flag_init_now_requires(
+    monkeypatch, capsys
+):
+    """The profile-names block points at `runcoach-api init`; since T089 that
+    command exits 2 without `--athlete-timezone`, so the advice must name it.
+    """
+    _serve_expecting_exit(monkeypatch, _raising(_make_missing_field_error()))
+
+    err = capsys.readouterr().err
+    assert "runcoach-api init" in err
+    assert "--athlete-timezone" in err

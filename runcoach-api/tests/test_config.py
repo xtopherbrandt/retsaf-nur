@@ -225,16 +225,20 @@ def test_load_config_wrong_element_type_is_rejected(tmp_path):
 
 def test_port_precedes_the_remediation_bearing_fields():
     """Field-definition order is load-bearing: pydantic v2 orders errors by
-    it, and ``cli.serve()`` renders only ``errors()[0]``.
+    it, and ``cli._render_validation_error`` chooses its mode from
+    ``errors()[0]`` -- remediation blocks when the reported error has help
+    text, the terse form for that one error otherwise.
 
     Rewritten by T088 from "``resting_hrv_profile_names`` is declared last"
     into the invariant that assertion actually protected: ``test_cli_startup``
     builds a real error from an out-of-range ``port`` and asserts "port"
     reaches stderr, so ``port`` must precede every field whose missing-value
-    remediation the CLI renders. The second half pins F005's "declared last"
-    note: a pre-amendment ``api.toml`` -- missing both ``resting_hrv_profile_names``
-    and ``athlete_timezone`` -- must keep receiving the profile-names remediation
-    first (``test_cli_startup.py:259``) until T081 removes the order-dependence.
+    remediation the CLI renders. The second half pins the relative order of
+    the two remediation-bearing fields as declared; since T081 rendered every
+    remediation-bearing error, that order no longer decides which fix a
+    pre-amendment ``api.toml`` sees (``test_cli_startup``'s
+    ``remediation_dispatch`` tests pin both orders), so the assertion is a
+    record of the declaration, not a behaviour the CLI depends on.
     """
     order = list(AppConfig.model_fields)
     remediation_bearing = ("resting_hrv_profile_names", "athlete_timezone")

@@ -96,14 +96,18 @@ class AppConfig(BaseSettings):
     host: str
     port: int = Field(ge=1, le=65535)
     data_dir: Path
-    # The two remediation-bearing fields are declared AFTER `port`, and in
-    # this order, deliberately. Pydantic v2 orders `ValidationError.errors()`
-    # by field-definition order, and `cli.serve()` renders only `errors()[0]`;
-    # `test_cli_startup` builds a real error from an out-of-range `port` and
-    # asserts "port" reaches stderr, and a pre-amendment `api.toml` -- missing
-    # both fields below -- must keep receiving the profile-names remediation
-    # first. Moving either field above `port`, or swapping the two, would
-    # silently reorder that message (T081 removes the order-dependence).
+    # The two remediation-bearing fields are declared AFTER `port`,
+    # deliberately. Pydantic v2 orders `ValidationError.errors()` by
+    # field-definition order, and `cli._render_validation_error` picks its
+    # mode from `errors()[0]`: a reported error *with* remediation text
+    # renders the remediation for every error that has it (so the order of
+    # the two fields below no longer matters -- T081), but a reported error
+    # *without* it is rendered alone, in the terse form, so a port complaint
+    # never carries upgrade instructions. `test_cli_startup` builds a real
+    # error from an out-of-range `port` and asserts "port" reaches stderr;
+    # moving either field above `port` would silently turn that terse message
+    # into a remediation block (`test_config.py::
+    # test_port_precedes_the_remediation_bearing_fields` pins the order).
     #
     # The athlete's Tier-1 resting-HRV declaration: a FIT file routes Tier 1
     # only when its `sport_profile_name` appears here (exact, case-sensitive)
