@@ -8,6 +8,7 @@ four canonical-schema tables idempotently.
 from __future__ import annotations
 
 from runcoach_api import db
+from runcoach_api.models import RRInterval
 
 
 def test_get_connection_creates_data_dir_and_db_file(isolated_data_dir):
@@ -507,6 +508,19 @@ def test_a_t017_era_database_also_gains_resting_rmssd_ms():
 # confirmed empirically that a third is not needed -- see the test below.
 WINDOW_PREDICATE = db.PRE_AMENDMENT_WINDOW_PREDICATE
 
+
+def _varied_rr(n: int = 6) -> list[RRInterval]:
+    """A chest-strap beat stream whose successive differences are non-zero, so
+    Tier 1's strict pairwise rMSSD is strictly positive. Shared by the T076 pin
+    and the T080 range read: both need a persisted row that carries a reading."""
+    values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
+    return [
+        RRInterval(
+            seq=i, rr_ms=values[i % len(values)], rr_source="chest_strap_ecg", is_artefact=False
+        )
+        for i in range(n)
+    ]
+
 # Every way a **post-amendment** row can be a resting-HRV capture the system
 # recognised and yet carry no reading. This is the negative class of the
 # published predicate: each row must NOT be selected by it.
@@ -612,8 +626,6 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
     import json
     from datetime import UTC, datetime, timedelta
 
-    from runcoach_api.models import RRInterval
-
     declared_profile = "HRV Snapshot"
     snapshot_sport = 60
     base = datetime(2026, 3, 1, tzinfo=UTC)
@@ -623,19 +635,6 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
         ``rr_ms`` ``None``, a stream from which no pair can contribute)."""
         return [
             RRInterval(seq=i, rr_ms=rr_ms, rr_source="chest_strap_ecg", is_artefact=False)
-            for i in range(n)
-        ]
-
-    def varied(n=6):
-        """A beat stream yielding a strictly positive rMSSD."""
-        values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
-        return [
-            RRInterval(
-                seq=i,
-                rr_ms=values[i % len(values)],
-                rr_source="chest_strap_ecg",
-                is_artefact=False,
-            )
             for i in range(n)
         ]
 
@@ -671,8 +670,8 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
 
     # Built in the same order as ``_POST_AMENDMENT_NON_READINGS``.
     non_readings = [
-        classified(resting(1, total_timer_time=100.0), varied(), 1.0, declared),
-        classified(resting(2), varied(), 0.5, declared),
+        classified(resting(1, total_timer_time=100.0), _varied_rr(), 1.0, declared),
+        classified(resting(2), _varied_rr(), 0.5, declared),
         classified(resting(3), [], None, declared),
         classified(resting(4) + [_HrvMsg()], [], None, declared),
         classified(resting(5), flat(1000.0, 6), 1.0, declared),
@@ -692,15 +691,15 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
         classified(snapshot(9, rmssd_hrv=0)),
         classified(snapshot(10, rmssd_hrv=-5)),
         classified(snapshot(11, rmssd_hrv=("crafted",))),
-        classified(resting(12, sport_profile_name="Run"), varied(), 1.0, declared),
-        classified(resting(13, total_timer_time=6000.0), varied(), 1.0, declared),
-        classified(resting(14, avg_heart_rate=140), varied(), 1.0, declared),
+        classified(resting(12, sport_profile_name="Run"), _varied_rr(), 1.0, declared),
+        classified(resting(13, total_timer_time=6000.0), _varied_rr(), 1.0, declared),
+        classified(resting(14, avg_heart_rate=140), _varied_rr(), 1.0, declared),
     ]
 
     # The two post-amendment **successes**, which satisfy the scoped invariant
     # and must equally not be selected -- for the opposite reason.
     successes = [
-        classified(resting(20), varied(), 1.0, declared),
+        classified(resting(20), _varied_rr(), 1.0, declared),
         classified(snapshot(21, rmssd_hrv=37)),
     ]
 
@@ -844,18 +843,9 @@ def test_read_hrv_rows_returns_only_rows_in_the_utc_range(synthetic, classified)
     """
     from datetime import UTC, datetime, timedelta
 
-    from runcoach_api.models import RRInterval
-
     declared_profile = "HRV Snapshot"
     start = datetime(2026, 2, 10, 12, 0, tzinfo=UTC)
     end = start + timedelta(days=3)
-
-    def varied():
-        values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
-        return [
-            RRInterval(seq=i, rr_ms=v, rr_source="chest_strap_ecg", is_artefact=False)
-            for i, v in enumerate(values)
-        ]
 
     def reading(at):
         return classified(
@@ -865,7 +855,7 @@ def test_read_hrv_rows_returns_only_rows_in_the_utc_range(synthetic, classified)
                 sport_profile_name=declared_profile,
                 start_time=at,
             ),
-            varied(),
+            _varied_rr(),
             1.0,
             [declared_profile],
         )
