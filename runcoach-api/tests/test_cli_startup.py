@@ -448,3 +448,14 @@ def test_cli_startup_init_help_documents_the_resting_hrv_profile_flag():
     """
     help_text = cli.build_parser().format_help()
     assert "--resting-hrv-profile" in help_text
+
+
+def test_cli_startup_init_help_documents_the_athlete_timezone_flag():
+    """`build_parser()`'s `init` entry lists the subcommand's own flags.
+
+    T089 adds the required `--athlete-timezone` flag to `init_cmd`; `cli.py`
+    owns the help line that advertises it, and the T090 migration note points
+    the athlete at `init --athlete-timezone` through exactly this text.
+    """
+    help_text = cli.build_parser().format_help()
+    assert "--athlete-timezone" in help_text
