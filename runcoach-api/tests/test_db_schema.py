@@ -499,10 +499,13 @@ def test_a_t017_era_database_also_gains_resting_rmssd_ms():
 # ---------------------------------------------------------------------------
 
 # The predicate F004's Data Model and the CHANGELOG's "No backfill" paragraph
-# publish for E003, spelled here exactly as it is published so the prose and the
-# pin cannot drift apart. Two terms, and T076 confirmed empirically that a third
-# is not needed -- see the test below.
-WINDOW_PREDICATE = "hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL"
+# publish for E003. Since T080 its one code home is
+# ``db.PRE_AMENDMENT_WINDOW_PREDICATE``; the pin test below exercises that
+# constant rather than a restated copy, and
+# ``test_predicate_constant_matches_the_pinned_sql`` holds the published
+# spelling so the constant and the prose cannot drift. Two terms, and T076
+# confirmed empirically that a third is not needed -- see the test below.
+WINDOW_PREDICATE = db.PRE_AMENDMENT_WINDOW_PREDICATE
 
 # Every way a **post-amendment** row can be a resting-HRV capture the system
 # recognised and yet carry no reading. This is the negative class of the
@@ -802,3 +805,113 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
         row = stored[session.session_id]
         assert row["hrv_source_tier"] is not None
         assert row["resting_rmssd_ms"] > 0
+
+
+# ---------------------------------------------------------------------------
+# T080 -- the predicate has a code home, and the trend's range read.
+# ---------------------------------------------------------------------------
+
+
+def test_predicate_constant_matches_the_pinned_sql():
+    """The published window predicate lives in ``db.py`` as a constant, spelled
+    exactly as F004's Data Model and the CHANGELOG publish it. The literal is
+    restated here on purpose: this test is the guard that nobody re-inlines or
+    re-words the SQL in either place (IDEA-031 / IDEA-033 name that drift), and
+    the pin test above imports the constant rather than a copy."""
+    assert (
+        db.PRE_AMENDMENT_WINDOW_PREDICATE
+        == "hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL"
+    )
+    # The T076 pin exercises the published constant, not a restatement.
+    assert WINDOW_PREDICATE is db.PRE_AMENDMENT_WINDOW_PREDICATE
+    # It is a bare predicate, usable after WHERE without further dressing.
+    assert not db.PRE_AMENDMENT_WINDOW_PREDICATE.lstrip().upper().startswith("WHERE")
+
+
+def test_read_hrv_rows_returns_only_rows_in_the_utc_range(synthetic, classified):
+    """``db.read_hrv_rows(conn, start_iso, end_iso)`` selects the four columns
+    the trend needs over a **UTC** range that is inclusive at both bounds.
+
+    Bounds are built with ``datetime.isoformat()`` on aware UTC values, the
+    same form ``mapping.py`` stores (``+00:00``, never ``Z``), so the
+    comparison is against the stored spelling and not a hand-built suffix.
+
+    Rows are persisted through the real ``mapping`` -> ``classify`` ->
+    ``db.persist`` chain. The range read does **not** filter on tier: an
+    in-range row with no reading comes back too (tier and reading ``None``),
+    because the trend lists such rows as excluded with a reason rather than
+    never seeing them (T083).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from runcoach_api.models import RRInterval
+
+    declared_profile = "HRV Snapshot"
+    start = datetime(2026, 2, 10, 12, 0, tzinfo=UTC)
+    end = start + timedelta(days=3)
+
+    def varied():
+        values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
+        return [
+            RRInterval(seq=i, rr_ms=v, rr_source="chest_strap_ecg", is_artefact=False)
+            for i, v in enumerate(values)
+        ]
+
+    def reading(at):
+        return classified(
+            synthetic(
+                total_timer_time=150.0,
+                avg_heart_rate=60,
+                sport_profile_name=declared_profile,
+                start_time=at,
+            ),
+            varied(),
+            1.0,
+            [declared_profile],
+        )
+
+    before = reading(start - timedelta(seconds=1))
+    at_start = reading(start)
+    inside = reading(start + timedelta(days=1, hours=6))
+    at_end = reading(end)
+    after = reading(end + timedelta(seconds=1))
+    # An ordinary run inside the range: recognised as nothing, stored anyway.
+    plain_run = classified(synthetic(start_time=start + timedelta(days=2)))
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        for session in (after, before, at_end, plain_run, inside, at_start):
+            db.persist(conn, session, [], [], {})
+        rows = db.read_hrv_rows(conn, start.isoformat(), end.isoformat())
+    finally:
+        conn.close()
+
+    by_id = {row["session_id"]: row for row in rows}
+    assert set(by_id) == {
+        at_start.session_id,
+        inside.session_id,
+        at_end.session_id,
+        plain_run.session_id,
+    }, "inclusive at both bounds; a row exactly at end_iso is returned"
+    assert before.session_id not in by_id
+    assert after.session_id not in by_id
+
+    for row in rows:
+        assert set(row.keys()) == {
+            "session_id",
+            "start_time",
+            "resting_rmssd_ms",
+            "hrv_source_tier",
+        }
+
+    assert by_id[at_end.session_id]["start_time"] == end.isoformat()
+    assert by_id[at_end.session_id]["start_time"].endswith("+00:00")
+    for session in (at_start, inside, at_end):
+        assert by_id[session.session_id]["hrv_source_tier"] == "chest_strap_raw"
+        assert by_id[session.session_id]["resting_rmssd_ms"] > 0
+    assert by_id[plain_run.session_id]["hrv_source_tier"] is None
+    assert by_id[plain_run.session_id]["resting_rmssd_ms"] is None
+
+    # Rows come back in start_time order so the consumer never re-sorts.
+    assert [r["start_time"] for r in rows] == sorted(r["start_time"] for r in rows)

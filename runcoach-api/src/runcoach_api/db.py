@@ -123,6 +123,18 @@ _SCHEMA_DDL = """
     );
 """
 
+# The amendment-window predicate F004 publishes for E003, as SQL usable
+# directly after ``WHERE``. This is its one code home: F004's Data Model,
+# the CHANGELOG's "No backfill" paragraph and the schema comment above all
+# describe the same window, and the T076 pin
+# (``tests/test_db_schema.py``) establishes in both directions that it
+# selects every pre-amendment reading row of either tier and nothing
+# written after the 2026-09-06 amendment. F005 excludes what this matches
+# from the readiness trend -- ``ln()`` is never evaluated on such a row --
+# and cites this constant rather than restating the SQL (IDEA-031,
+# IDEA-033: one predicate, one spelling).
+PRE_AMENDMENT_WINDOW_PREDICATE = "hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL"
+
 
 def _expected_schema() -> dict[str, dict[str, str]]:
     """``{table: {column: decl_type}}`` as ``_SCHEMA_DDL`` defines it,
@@ -540,3 +552,50 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "records": records,
         "rr_intervals": rr_intervals,
     }
+
+
+def read_hrv_rows(conn: sqlite3.Connection, start_iso: str, end_iso: str) -> list[sqlite3.Row]:
+    """Read every session's resting-HRV columns over a UTC ``start_time`` range.
+
+    The read behind F005's trend. Returns the four columns the trend consumes
+    -- ``session_id``, ``start_time``, ``resting_rmssd_ms``, ``hrv_source_tier``
+    -- as ``sqlite3.Row`` objects (``get_connection`` sets the row factory), so
+    the consumer reads them **by key**, never by index. Rows are ordered by
+    ``start_time`` ascending.
+
+    **The range is UTC and inclusive at both bounds.** ``sessions.start_time``
+    is stored as ``datetime.isoformat()`` on an aware UTC value
+    (``mapping.py``), i.e. ``2026-01-01T00:00:00+00:00`` -- so callers build
+    ``start_iso`` / ``end_iso`` with ``isoformat()`` on aware UTC datetimes and
+    the comparison is a like-for-like string comparison against the stored
+    spelling. Never hand a ``Z``-suffixed bound in: it does not compare
+    correctly against ``+00:00``.
+
+    **Bucketing into local days happens in Python, not here.** SQLite's
+    ``date()``/``datetime()`` know fixed offsets and ``localtime`` but not
+    IANA zones with DST, so the caller pads the range by at least +/-26 hours
+    (UTC+14 through UTC-12) and buckets each row with ``astimezone(zone)``
+    afterwards. This function deliberately does no day arithmetic.
+
+    **No tier filter.** A row inside the range with no reading (``hrv_source_tier``
+    and ``resting_rmssd_ms`` both null) or inside the pre-amendment window
+    (``PRE_AMENDMENT_WINDOW_PREDICATE``) is returned too: the trend lists such
+    rows as *excluded with a reason* rather than never seeing them, because
+    ``research/00`` §1.6 requires a verdict to be reproducible from what it
+    reports. Selection is the consumer's decision.
+
+    No index serves this scan -- the only composite index is
+    ``UNIQUE (source_device, start_time)``, whose leading column is not
+    ``start_time`` -- which is irrelevant at single-athlete scale and noted so
+    nobody adds a speculative one.
+    """
+    cur = conn.execute(
+        """
+        SELECT session_id, start_time, resting_rmssd_ms, hrv_source_tier
+        FROM sessions
+        WHERE start_time >= ? AND start_time <= ?
+        ORDER BY start_time
+        """,
+        (start_iso, end_iso),
+    )
+    return cur.fetchall()
