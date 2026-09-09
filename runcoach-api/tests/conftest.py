@@ -50,8 +50,17 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # profile means a resting capture, so Tier 1 routes nothing here. A suite
     # that needs a declaration opts in by building its own `AppConfig` with
     # the profile names it wants.
+    #
+    # `athlete_timezone="UTC"` is a fixed zone, not the developer's: tests must
+    # not depend on where the machine lives. A suite that needs a particular
+    # zone (F005's bucketing tests) builds its own `AppConfig`, as
+    # `declared_config` does for the profile names.
     fake_config = AppConfig(
-        host="127.0.0.1", port=8000, data_dir=data_dir, resting_hrv_profile_names=[]
+        host="127.0.0.1",
+        port=8000,
+        data_dir=data_dir,
+        resting_hrv_profile_names=[],
+        athlete_timezone="UTC",
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: fake_config)
     db_module._load_config_cached.cache_clear()
@@ -84,6 +93,7 @@ def declared_config(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch):
             port=8000,
             data_dir=isolated_data_dir,
             resting_hrv_profile_names=list(profile_names),
+            athlete_timezone="UTC",
         )
         monkeypatch.setattr(
             db_module.config_module, "load_config", lambda *a, **k: declared

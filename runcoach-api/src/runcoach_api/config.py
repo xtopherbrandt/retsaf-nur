@@ -1,7 +1,7 @@
 """Application configuration loading for the Run Coaching API.
 
-Reads ``host``, ``port``, ``data_dir`` and ``resting_hrv_profile_names``
-from a local TOML config
+Reads ``host``, ``port``, ``data_dir``, ``resting_hrv_profile_names`` and
+``athlete_timezone`` from a local TOML config
 file (``~/.runcoach/api.toml`` by default), with ``RUNCOACH_``-prefixed
 environment variables taking priority over the file's values.
 
@@ -96,11 +96,14 @@ class AppConfig(BaseSettings):
     host: str
     port: int = Field(ge=1, le=65535)
     data_dir: Path
-    # Declared LAST deliberately. Pydantic v2 orders `ValidationError.errors()`
+    # The two remediation-bearing fields are declared AFTER `port`, and in
+    # this order, deliberately. Pydantic v2 orders `ValidationError.errors()`
     # by field-definition order, and `cli.serve()` renders only `errors()[0]`;
     # `test_cli_startup` builds a real error from an out-of-range `port` and
-    # asserts "port" reaches stderr. Moving this field above `port` would
-    # silently reorder that message.
+    # asserts "port" reaches stderr, and a pre-amendment `api.toml` -- missing
+    # both fields below -- must keep receiving the profile-names remediation
+    # first. Moving either field above `port`, or swapping the two, would
+    # silently reorder that message (T081 removes the order-dependence).
     #
     # The athlete's Tier-1 resting-HRV declaration: a FIT file routes Tier 1
     # only when its `sport_profile_name` appears here (exact, case-sensitive)
@@ -114,7 +117,33 @@ class AppConfig(BaseSettings):
     # prevent, and what `AppConfig`'s no-defaults rule already forbids.
     resting_hrv_profile_names: list[str]
 
+    # The IANA zone the resting-HRV trend (F005) buckets local days in: the
+    # 7-day window, the 21-day coverage gap and same-morning grouping are all
+    # measured in the athlete's local calendar, and rows are stored `+00:00`.
+    #
+    # NO DEFAULT. A silent "UTC" would bucket a 06:00 capture at UTC+13 onto
+    # the previous day and shift which readings fall in the window, with no
+    # error -- exactly the failure the no-defaults rule exists to prevent. The
+    # zone is validated here, at load, so an unresolvable zone is a startup
+    # failure rather than a per-request 500. Stored as the name, not the
+    # `ZoneInfo`: the route resolves it (`validate_zone` again, cheaply --
+    # `ZoneInfo` caches by key) and hands the object down, so the metrics
+    # module stays pure and the config stays a plain, serialisable record.
+    athlete_timezone: str
+
     model_config = SettingsConfigDict(env_prefix="RUNCOACH_", extra="forbid")
+
+    @field_validator("athlete_timezone")
+    @classmethod
+    def _reject_unresolvable_zone(cls, name: str) -> str:
+        """Delegate to ``validate_zone`` so the check lives in one place.
+
+        A bad zone surfaces as ``type='value_error'`` on this field, never as
+        the bare ``KeyError`` ``zoneinfo`` raises; see ``validate_zone`` for
+        why the tzdb-less host is reported in different words.
+        """
+        validate_zone(name)
+        return name
 
     @field_validator("resting_hrv_profile_names")
     @classmethod

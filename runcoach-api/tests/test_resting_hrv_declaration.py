@@ -547,13 +547,24 @@ def test_a_blank_config_entry_is_rejected_before_it_can_match_anything(
     match every file whose profile name is empty or absent.
     """
     for blank in ("", "   ", "\t"):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as exc_info:
             AppConfig(
                 host="127.0.0.1",
                 port=8000,
                 data_dir=isolated_data_dir,
                 resting_hrv_profile_names=[blank],
+                athlete_timezone="UTC",
             )
+
+        # Tightened by T088: once `athlete_timezone` is required, a bare
+        # `pytest.raises(ValidationError)` would be satisfied by *that* field
+        # being missing and the blank-name validator would lose its pin
+        # silently. Assert the error is the validator's own.
+        assert any(
+            error["type"] == "value_error"
+            and error["loc"] == ("resting_hrv_profile_names",)
+            for error in exc_info.value.errors()
+        ), exc_info.value.errors()
 
 
 # ---------------------------------------------------------------------------

@@ -208,7 +208,127 @@ def test_load_config_wrong_element_type_is_rejected(tmp_path):
     _assert_field_value_error(exc_info)
 
 
-def test_resting_hrv_profile_names_is_declared_last():
+def test_port_precedes_the_remediation_bearing_fields():
     """Field-definition order is load-bearing: pydantic v2 orders errors by
-    it, and ``test_cli_startup`` asserts the ``port`` error renders first."""
-    assert list(AppConfig.model_fields)[-1] == "resting_hrv_profile_names"
+    it, and ``cli.serve()`` renders only ``errors()[0]``.
+
+    Rewritten by T088 from "``resting_hrv_profile_names`` is declared last"
+    into the invariant that assertion actually protected: ``test_cli_startup``
+    builds a real error from an out-of-range ``port`` and asserts "port"
+    reaches stderr, so ``port`` must precede every field whose missing-value
+    remediation the CLI renders. The second half pins F005's "declared last"
+    note: a pre-amendment ``api.toml`` -- missing both ``resting_hrv_profile_names``
+    and ``athlete_timezone`` -- must keep receiving the profile-names remediation
+    first (``test_cli_startup.py:259``) until T081 removes the order-dependence.
+    """
+    order = list(AppConfig.model_fields)
+    remediation_bearing = ("resting_hrv_profile_names", "athlete_timezone")
+
+    for name in remediation_bearing:
+        assert order.index("port") < order.index(name), order
+    assert order[-1] == "athlete_timezone", order
+
+
+# ---------------------------------------------------------------------------
+# athlete_timezone -- required, no default (F005, T088)
+#
+# The IANA zone every local-day bucket in the resting-HRV trend is computed
+# in. F001's ratified no-defaults rule applies with unusual force here: a
+# silent ``"UTC"`` would bucket a 06:00 capture at UTC+13 onto the previous
+# day and shift which readings fall in the 7-day window, with no error. The
+# zone is validated at config load (``validate_zone``, T078), never per
+# request, so an unresolvable zone is a startup failure rather than a 500.
+#
+# Every test that asserts the field is *missing* clears
+# ``RUNCOACH_ATHLETE_TIMEZONE`` first: env overrides the file, so a developer
+# with the variable exported would otherwise pass vacuously
+# (``test_cli_startup.py``'s ``delenv`` precedent).
+# ---------------------------------------------------------------------------
+
+_ATHLETE_TIMEZONE_ENV = "RUNCOACH_ATHLETE_TIMEZONE"
+
+
+def test_athlete_timezone_is_required_and_has_no_default(monkeypatch):
+    """Constructing without ``athlete_timezone`` is a ``missing`` error."""
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        AppConfig(
+            host="127.0.0.1",
+            port=8000,
+            data_dir=Path("/tmp/data"),
+            resting_hrv_profile_names=[],
+        )
+
+    errors = exc_info.value.errors()
+    assert any(
+        error["loc"] == ("athlete_timezone",) and error["type"] == "missing"
+        for error in errors
+    ), errors
+    assert AppConfig.model_fields["athlete_timezone"].is_required()
+
+
+def test_load_config_without_athlete_timezone_is_rejected(tmp_path, monkeypatch):
+    """A pre-F005 ``api.toml`` fails to load rather than assuming a zone."""
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n")
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    assert any(
+        error["loc"] == ("athlete_timezone",) and error["type"] == "missing"
+        for error in exc_info.value.errors()
+    ), exc_info.value.errors()
+
+
+def test_load_config_valid_athlete_timezone_is_accepted(tmp_path, monkeypatch):
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
+    path = _toml(
+        tmp_path,
+        'resting_hrv_profile_names = []\nathlete_timezone = "Pacific/Auckland"\n',
+    )
+
+    config = load_config(path=path)
+
+    assert config.athlete_timezone == "Pacific/Auckland"
+
+
+def test_load_config_invalid_athlete_timezone_is_rejected_at_load(tmp_path, monkeypatch):
+    """An unrecognised zone is a ``value_error`` naming the field, at load.
+
+    Rejected *as a bad value* -- ``type == "value_error"`` -- so the test
+    cannot be satisfied by ``extra="forbid"`` with the field deleted, nor by
+    a validator that lets ``ZoneInfoNotFoundError`` (a ``KeyError``) escape as
+    an internal error with no field attached.
+    """
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
+    path = _toml(
+        tmp_path,
+        'resting_hrv_profile_names = []\nathlete_timezone = "Mars/Phobos"\n',
+    )
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    errors = exc_info.value.errors()
+    assert any(
+        error["loc"] == ("athlete_timezone",) and error["type"] == "value_error"
+        for error in errors
+    ), errors
+    assert "Mars/Phobos" in str(exc_info.value)
+    assert "IANA" in str(exc_info.value)
+
+
+def test_athlete_timezone_env_overrides_the_file(tmp_path, monkeypatch):
+    """``RUNCOACH_ATHLETE_TIMEZONE`` wins over the TOML value, like every
+    other field; the F005 demo probe relies on exactly this."""
+    monkeypatch.setenv(_ATHLETE_TIMEZONE_ENV, "Asia/Kolkata")
+    path = _toml(
+        tmp_path,
+        'resting_hrv_profile_names = []\nathlete_timezone = "Pacific/Auckland"\n',
+    )
+
+    config = load_config(path=path)
+
+    assert config.athlete_timezone == "Asia/Kolkata"
