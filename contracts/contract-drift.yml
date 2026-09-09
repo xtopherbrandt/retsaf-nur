@@ -1,0 +1,33 @@
+name: contract-drift
+
+# Fails when the backend's live surface drifts away from the endpoints the
+# target contract (contracts/openapi.yaml) marks x-readiness: implemented.
+# See contracts/check_drift.py for exactly what is (and isn't) checked.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "runcoach-api/**"
+      - ".github/workflows/contract-drift.yml"
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Contract drift check
+        # --package runcoach-api puts the FastAPI app on the path so the check
+        # can generate the as-built schema in-process (no server/config needed).
+        # --with pyyaml supplies the one extra dep the check itself needs.
+        # (Alternatively add pyyaml to runcoach-api's dev dependency group and
+        # drop `--with pyyaml`.)
+        run: uv run --package runcoach-api --with pyyaml python contracts/check_drift.py

@@ -15,9 +15,11 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-09-06 only GET /health and the two /sessions endpoints are
-# implemented in retsaf-nur; everything else is `planned` and is developed
-# against a mock generated from this file until the backend catches up.
+# As of 2026-09-08 the implemented endpoints in retsaf-nur are GET /health and
+# /sessions (POST ingest, GET detail, DELETE); everything else is `planned` and
+# is developed against a mock generated from this file until the backend catches
+# up. POST /sessions carries the F004 `resting_capture` flag; SessionDetail
+# carries the resolved, nullable `resting_rmssd_ms` (see its schema + x-invariant).
 #
 # OPEN backend alignments this contract assumes (see ui-development-plan.md):
 #   1. GET /sessions/{id} gets a typed SessionDetail response_model
@@ -332,7 +334,7 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/GoalProposal" }
 
-  /goal/proposals/{proposalId}:accept:
+  /goal/proposals/{proposal_id}:accept:
     post:
       tags: [Goal]
       operationId: acceptGoalProposal
@@ -484,7 +486,7 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/SessionSummary" }
 
-  /sessions/{sessionId}:
+  /sessions/{session_id}:
     get:
       tags: [Sessions]
       operationId: getSession
@@ -527,7 +529,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # --------------------------------------------------------------- Workouts
-  /workouts/{workoutId}:
+  /workouts/{workout_id}:
     get:
       tags: [Workouts]
       operationId: getWorkout
@@ -550,7 +552,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # -------------------------------------------------------------- Subjective
-  /workouts/{workoutId}/feedback:
+  /workouts/{workout_id}/feedback:
     post:
       tags: [Subjective]
       operationId: postSessionFeedback
@@ -673,7 +675,7 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/ChangeFeedItem" }
 
-  /decisions/{decisionId}:
+  /decisions/{decision_id}:
     get:
       tags: [Decisions & Changes]
       operationId: getDecision
@@ -759,23 +761,23 @@ components:
 
   parameters:
     SessionId:
-      name: sessionId
+      name: session_id
       in: path
       required: true
       schema: { type: string }
       description: Deterministic id = truncated SHA-256 over (source_device, start_time).
     WorkoutId:
-      name: workoutId
+      name: workout_id
       in: path
       required: true
       schema: { type: string }
     DecisionId:
-      name: decisionId
+      name: decision_id
       in: path
       required: true
       schema: { type: string }
     ProposalId:
-      name: proposalId
+      name: proposal_id
       in: path
       required: true
       schema: { type: string }
@@ -903,17 +905,31 @@ components:
         resting_rmssd_ms:
           type: number
           nullable: true
+          exclusiveMinimum: 0
+          x-invariant: >
+            Scoped, not table-wide. Post-amendment rows (written 2026-09-06+):
+            hrv_source_tier != null  ⇒  resting_rmssd_ms != null AND > 0 (both
+            tiers write tier and reading together past the non-positive gate).
+            Pre-amendment Tier-1 rows may have hrv_source_tier != null WITH
+            resting_rmssd_ms == null (the amendment resolved the rule, not the
+            rows; no backfill). So a non-null tier does NOT imply a non-null
+            reading across the window.
           description: >
             RESOLVED resting rMSSD (ms) the engine (E003) reads on either tier —
             device value on Tier 2, system-computed from beats on Tier 1 (added
-            2026-09-06). Amendment-window caveat: a non-null hrv_source_tier does
-            NOT imply a non-null value — pre-amendment Tier-1 rows carry a tier but
-            a null reading, so consumers must guard the read (never assume ln() is
-            safe) and the UI surfaces such rows as provisional/absent.
+            2026-09-06). Nullable, and when present strictly positive
+            (exclusiveMinimum 0). Per x-invariant, a non-null hrv_source_tier does
+            NOT guarantee a non-null value across the amendment window, so
+            consumers guard the read (never assume ln() is safe) and the UI
+            surfaces a null reading as provisional/absent, never as zero. This is
+            the engine's read; rmssd_precomputed is only the device-value audit.
         hrv_source_tier:
           type: string
           nullable: true
           enum: [chest_strap_raw, health_snapshot, health_api_overnight]
+          description: >
+            Which tier produced the reading. Non-null does not by itself imply a
+            non-null resting_rmssd_ms — see that field's x-invariant.
         rr_source: { type: string, nullable: true, description: "Session-level RR-stream source (spec/02 §2.2.3)." }
         quality_flags: { type: array, items: { type: string } }
         summary: { type: object, nullable: true, additionalProperties: true }

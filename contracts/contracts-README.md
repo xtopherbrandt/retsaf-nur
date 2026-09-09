@@ -45,10 +45,19 @@ backend catches up.
   UI codes to the contract, never to whatever the backend happens to serve today.
 - **Mock server:** run a mock from `openapi.yaml` to develop against `planned`
   endpoints before they exist.
-- **Conformance / drift check (recommended CI):** start `runcoach-api`, fetch
-  `/openapi.json`, and assert that every path marked `x-readiness: implemented`
-  here matches its as-built shape. Any drift fails the check rather than rotting
-  silently. (Non-`implemented` paths are exempt — they aren't built yet.)
+- **Conformance / drift check (recommended CI):** `check_drift.py` generates the
+  as-built schema in-process and asserts that every path marked
+  `x-readiness: implemented` here still matches its as-built shape (operation
+  exists, keeps its method + success status, same required request fields). Any
+  drift fails the check rather than rotting silently; non-`implemented` paths are
+  exempt (not built yet), and response-typing gaps are printed as advisory notes,
+  not failures. Run it:
+
+  ```sh
+  uv run --package runcoach-api --with pyyaml python contracts/check_drift.py
+  ```
+
+  Wired in `.github/workflows/contract-drift.yml`.
 
 ## Editing rules
 
