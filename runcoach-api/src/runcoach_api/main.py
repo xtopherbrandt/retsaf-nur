@@ -300,7 +300,7 @@ def _withhold_future(
     (F005: "no suppression is asserted about a day that has not happened").
 
     The clock is the route's, not the module's: ``hrv_trend.judge`` knows
-    only the rows, and for any ``to`` within six days of the last capture
+    only the rows, and for any ``to`` up to four days after the last capture
     the judged window ``[to-6, to]`` still holds three or more readings on an
     intact baseline, so left alone it says ``hrv_suppressed`` about a day
     that has not happened (sprint-005 review, M1 -- the only future-date

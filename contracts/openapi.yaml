@@ -1382,8 +1382,11 @@ components:
           description: >
             hrv_suppressed only when the 7-day mean is strictly below band.lo on
             an established baseline; hrv_unavailable when no band, too few
-            readings this week, or a below-band week on an unestablished
-            baseline (§3.7.3: suppression is withheld, not read as normal).
+            readings this week, a below-band week on an unestablished
+            baseline (§3.7.3: suppression is withheld, not read as normal), or
+            when `date` is after the athlete's local today in `timezone` --
+            whatever the window holds, no verdict is asserted about a day that
+            has not happened, and the other fields are still reported as computed.
         ln_rmssd_7d_mean:
           type: number
           nullable: true

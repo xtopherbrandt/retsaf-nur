@@ -170,7 +170,16 @@ class HrvTrendResponse(BaseModel):
             "longer than 366 days is a 422."
         )
     )
-    verdict: Literal["hrv_normal", "hrv_suppressed", "hrv_unavailable"]
+    verdict: Literal["hrv_normal", "hrv_suppressed", "hrv_unavailable"] = Field(
+        description=(
+            "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established "
+            "baseline; hrv_unavailable when no band, too few readings this week, a below-band week on "
+            "an unestablished baseline (suppression is withheld, not read as normal), or when `date` is "
+            "after the athlete's local today in `timezone` -- whatever the window holds, no verdict is "
+            "asserted about a day that has not happened, and the other fields are still reported as "
+            "computed."
+        )
+    )
     ln_rmssd_7d_mean: float | None = Field(
         description=(
             "Mean of ln rMSSD over the readings in `window`. Null only when the window is empty; it is "
@@ -192,7 +201,12 @@ class HrvTrendResponse(BaseModel):
     window: tuple[datetime.date, datetime.date] = Field(
         description="The closed local-date interval [date-6, date] the mean is taken over."
     )
-    readings_in_window: int = Field(description="Number of readings in `window`; below min_window_readings is unavailable.")
+    readings_in_window: int = Field(
+        description=(
+            "Number of readings in `window`; below min_window_readings is unavailable. Reported as "
+            "computed even for a future `date`, whose verdict is unavailable regardless."
+        )
+    )
     included: list[IncludedReading] = Field(
         description="The readings that fed ln_rmssd_7d_mean, only; the baseline is summarised by `baseline`."
     )
