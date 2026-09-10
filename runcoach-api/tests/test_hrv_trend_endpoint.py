@@ -342,6 +342,36 @@ def test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200(configur
     assert before.json()["baseline"]["n"] == 0
 
 
+def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, seeder, monkeypatch) -> None:
+    """The clock is frozen so the athlete's local today is ``D``. Daily
+    captures through ``D`` -- an established baseline and a suppressed final
+    week -- and ``to`` one, two and four days ahead: each judged window still
+    holds at least three readings and the baseline is intact, so the pure
+    computation would say ``hrv_suppressed`` about a day that has not
+    happened. F005: a future date asserts no verdict. The ``D + 400`` row
+    above cannot see this -- every reading is ``outside_windows`` there and
+    the verdict is unavailable for an unrelated reason (review M1: the tests
+    exercised the branch beside the bug). Red: ``hrv_suppressed``."""
+    configure("UTC")
+    monkeypatch.setattr(main_module, "_utcnow", lambda: datetime(D.year, D.month, D.day, 12, 0, tzinfo=UTC))
+    seeder.snapshots(BASELINE_20, baseline_values(20))
+    seeder.snapshots(days(D - timedelta(days=6), D), repeat(25.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        today = get(client, to=D.isoformat()).json()
+        ahead = {k: get(client, to=(D + timedelta(days=k)).isoformat()).json() for k in (1, 2, 4)}
+
+    assert today["verdict"] == "hrv_suppressed" and today["below_by"] > 0
+    for k, body in ahead.items():
+        assert body["date"] == (D + timedelta(days=k)).isoformat()
+        # The window is full and the baseline established: the guard is the
+        # clock, not thin data.
+        assert body["readings_in_window"] >= 3 and body["baseline"]["established"] is True
+        assert body["verdict"] == "hrv_unavailable", (k, body["verdict"])
+        assert body["below_by"] is None
+
+
 def test_the_zone_is_read_from_config_per_request(configure, seeder) -> None:
     """F005's rewritten scenario 18: a capture at 2026-09-07T17:00Z is the
     7th in UTC and the 8th in Auckland. Changing ``athlete_timezone`` between

@@ -333,6 +333,25 @@ def test_load_config_invalid_athlete_timezone_is_rejected_at_load(tmp_path, monk
     assert "IANA" in str(exc_info.value)
 
 
+def test_load_config_non_canonical_athlete_timezone_is_rejected_at_load(tmp_path, monkeypatch):
+    """``"utc"`` resolves on a case-insensitive filesystem and not on Linux
+    (sprint-005 review, M3); the field accepts only the tz database's own
+    keys, so a config validated on one host loads on every host."""
+    monkeypatch.delenv(_ATHLETE_TIMEZONE_ENV, raising=False)
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", athlete_timezone="utc")
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    errors = exc_info.value.errors()
+    assert any(
+        error["loc"] == ("athlete_timezone",) and error["type"] == "value_error"
+        for error in errors
+    ), errors
+    assert "'utc'" in str(exc_info.value)
+    assert "not a recognised IANA time zone" in str(exc_info.value)
+
+
 def test_athlete_timezone_env_overrides_the_file(tmp_path, monkeypatch):
     """``RUNCOACH_ATHLETE_TIMEZONE`` wins over the TOML value, like every
     other field; the F005 demo probe relies on exactly this."""

@@ -1,5 +1,6 @@
 import datetime
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -292,25 +293,54 @@ def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
+def _withhold_future(
+    verdict: hrv_trend.HrvVerdict, day: datetime.date, today: datetime.date
+) -> hrv_trend.HrvVerdict:
+    """A day strictly after the athlete's local ``today`` asserts no verdict
+    (F005: "no suppression is asserted about a day that has not happened").
+
+    The clock is the route's, not the module's: ``hrv_trend.judge`` knows
+    only the rows, and for any ``to`` within six days of the last capture
+    the judged window ``[to-6, to]`` still holds three or more readings on an
+    intact baseline, so left alone it says ``hrv_suppressed`` about a day
+    that has not happened (sprint-005 review, M1 -- the only future-date
+    test used ``D + 400``, where every row is ``outside_windows`` and the
+    verdict is unavailable for an unrelated reason). The verdict and
+    ``below_by`` are withheld; everything that *produced* them -- the band,
+    the baseline, ``readings_in_window``, the week's mean -- is left as
+    computed, because the band is a property of the baseline ``[d-66, d-7]``
+    (which lies wholly in the past) and the contract's ``points[]`` draws it
+    on days with no reading (T091), and because the response must still be
+    reproducible by hand (``research/00`` §1.6)."""
+    if day <= today:
+        return verdict
+    return replace(verdict, verdict=hrv_trend.VERDICT_UNAVAILABLE, below_by=None)
+
+
 def _judge_days(
     rows: list[dict],
     zone: ZoneInfo,
     from_: datetime.date,
     to: datetime.date,
+    today: datetime.date,
 ) -> list[tuple[hrv_trend.HrvSeries, hrv_trend.HrvVerdict]]:
     """Every local day in ``[from, to]``, in order, judged against its own
     baseline ``[d-66, d-7]`` by the pure computation over the one set of
     ``rows`` -- ~30 evaluations of a function of ``target_date`` for a month's
-    chart, done plainly (no caching, no incremental trick). The last pair is
-    ``to``'s, and it is the one the verdict blocks are rendered from, so the
-    last point and ``band`` are the same objects rather than two computations.
+    chart, done plainly (no caching, no incremental trick) -- and then held
+    against ``today``, the athlete's local date resolved once per request:
+    a day after it carries no verdict (``_withhold_future``). The last pair
+    is ``to``'s, and it is the one the verdict blocks are rendered from, so
+    the last point and ``band`` are the same objects rather than two
+    computations.
 
     Raises ``OverflowError`` where a day's windows reach past the calendar's
     origin; the route names that as the parameters' problem."""
     judged = []
     for offset in range((to - from_).days + 1):
-        series = hrv_trend.build_series(rows, zone, from_ + datetime.timedelta(days=offset))
-        judged.append((series, hrv_trend.judge(series)))
+        day = from_ + datetime.timedelta(days=offset)
+        series = hrv_trend.build_series(rows, zone, day)
+        judged.append((series, _withhold_future(hrv_trend.judge(series), day, today)))
     return judged
 
 
@@ -410,7 +440,11 @@ def get_hrv_trend(
     There is essentially no other error path. An empty database, a day the
     athlete has not reached and a day before any capture are all
     ``hrv_unavailable`` with a 200 -- the absence of a verdict is itself the
-    answer, not a missing resource.
+    answer, not a missing resource. The athlete's local today is resolved
+    **once per request** and every judged day is held against it
+    (``_withhold_future``): the pure module is clock-free, so this is where
+    "a future date asserts no verdict" is enforced, for ``to`` and for every
+    ``points[]`` day alike.
 
     The zone is read from the config **per request** and handed down, so the
     pure module never imports ``config`` and a changed ``athlete_timezone``
@@ -420,8 +454,9 @@ def get_hrv_trend(
     injection seam for the DB here and this feature does not add one.
     """
     zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    today = _today_in(zone)
     if to is None:
-        to = _today_in(zone)
+        to = today
     if from_ is None:
         from_ = to
     if from_ > to:
@@ -446,7 +481,7 @@ def get_hrv_trend(
 
     # The contract's series, and ``to``'s verdict from the same last pair.
     try:
-        judged = _judge_days(rows, zone, from_, to)
+        judged = _judge_days(rows, zone, from_, to, today)
     except OverflowError as exc:
         # The windows are ``date`` arithmetic back to ``d - 126``; a day
         # inside the calendar's first 126 days has no such history to look

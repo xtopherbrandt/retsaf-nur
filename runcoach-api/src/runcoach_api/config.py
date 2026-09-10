@@ -68,9 +68,24 @@ def validate_zone(name: str) -> ZoneInfo:
     escape: inside a pydantic ``@field_validator`` a ``ValueError`` surfaces as
     ``type='value_error'`` naming the field, whereas a ``KeyError`` becomes an
     internal error with no field attached.
+
+    **A resolved zone is not yet a valid one.** ``ZoneInfo(name)`` is a file
+    lookup under the tzdb root, so what it accepts is what the host's
+    filesystem accepts: on NTFS ``'Pacific/Auckland '`` (trailing space) and
+    ``'utc'`` both resolve -- and both fail on Linux -- so an ``api.toml``
+    validated on one host would refuse to load on another, and the response's
+    ``timezone`` field would echo the padded key. ``''`` and a path-like key
+    (``'../Etc/UTC'``) raise ``zoneinfo``'s own ``ValueError`` instead, in
+    words that name neither the field nor the fix. The canonical key set is
+    ``available_timezones()`` -- the tz database's own names, legacy keys such
+    as ``EST`` and ``Etc/GMT+5`` included -- and a ``name`` outside it is
+    refused with the "not a recognised" wording whatever the filesystem said
+    (sprint-005 review, M3; the probe table is in T078's task file). Nothing
+    is stripped or case-folded on the athlete's behalf: the value carries
+    intent and is not guessed at.
     """
     try:
-        return zoneinfo.ZoneInfo(name)
+        zone = zoneinfo.ZoneInfo(name)
     except zoneinfo.ZoneInfoNotFoundError as exc:
         if not zoneinfo.available_timezones():
             raise ValueError(
@@ -79,10 +94,23 @@ def validate_zone(name: str) -> ZoneInfo:
                 "The `tzdata` package is a declared dependency of runcoach-api; "
                 "run `uv sync --all-packages` to install it."
             ) from exc
-        raise ValueError(
-            f"{name!r} is not a recognised IANA time zone; use the zone's IANA "
-            'name as in the tz database (e.g. "Pacific/Auckland").'
-        ) from exc
+        raise _not_a_recognised_zone(name) from exc
+    except ValueError as exc:
+        # ``''`` and path-like keys: ``zoneinfo`` refuses them before any
+        # lookup, in its own words. Re-raised in the validator's, so the
+        # operator message names the field and the fix.
+        raise _not_a_recognised_zone(name) from exc
+    if name not in zoneinfo.available_timezones():
+        raise _not_a_recognised_zone(name)
+    return zone
+
+
+def _not_a_recognised_zone(name: str) -> ValueError:
+    """The one wording for "this is not a zone", whichever way it failed."""
+    return ValueError(
+        f"{name!r} is not a recognised IANA time zone; use the zone's IANA "
+        'name as in the tz database (e.g. "Pacific/Auckland").'
+    )
 
 
 class AppConfig(BaseSettings):
@@ -130,9 +158,11 @@ class AppConfig(BaseSettings):
     # error -- exactly the failure the no-defaults rule exists to prevent. The
     # zone is validated here, at load, so an unresolvable zone is a startup
     # failure rather than a per-request 500. Stored as the name, not the
-    # `ZoneInfo`: the route resolves it (`validate_zone` again, cheaply --
-    # `ZoneInfo` caches by key) and hands the object down, so the metrics
-    # module stays pure and the config stays a plain, serialisable record.
+    # `ZoneInfo`: the route (`main.get_hrv_trend`) constructs `ZoneInfo(name)`
+    # from the already-validated name -- no second validation; `ZoneInfo`
+    # caches by key, so the construction is cheap -- and hands the object
+    # down, so the metrics module stays pure and the config stays a plain,
+    # serialisable record.
     athlete_timezone: str
 
     model_config = SettingsConfigDict(env_prefix="RUNCOACH_", extra="forbid")

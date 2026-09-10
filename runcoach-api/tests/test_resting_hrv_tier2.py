@@ -583,7 +583,7 @@ def test_a_non_finite_device_value_is_treated_as_absent(
     CHANGELOG): ``resting_rmssd_ms`` is **always > 0 when set**.
 
     * ``inf`` poisons E003's 7-day rolling ``ln(rMSSD)`` trend and its
-      +/-0.5*CV SWC band with no error raised -- ``ln(inf)`` is ``inf``.
+      +/-0.5*SD(ln rMSSD) SWC band with no error raised -- ``ln(inf)`` is ``inf``.
     * ``nan`` is worse in a different direction: SQLite stores a Python ``NaN``
       as ``NULL``, manufacturing a row with a non-null ``hrv_source_tier`` and a
       null ``resting_rmssd_ms`` -- exactly the shape T076's amendment-window

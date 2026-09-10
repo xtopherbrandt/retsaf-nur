@@ -85,3 +85,38 @@ def test_a_missing_tzdb_is_reported_differently_from_a_bad_zone(
     assert "tzdata" in str(missing_tzdb.value)
     assert "not a recognised" not in str(missing_tzdb.value)
     assert "not a recognised" in str(bad_zone.value)
+
+
+# ---------------------------------------------------------------------------
+# the canonical-key rows (sprint-005 review, M3): what the host's filesystem
+# accepts is not what the tz database names
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["Pacific/Auckland ", "utc", "", "../Etc/UTC"],
+    ids=["trailing-space", "lower-case", "empty", "path-like"],
+)
+def test_a_non_canonical_key_is_rejected_with_the_validators_wording(name: str) -> None:
+    """`ZoneInfo(name)` is a file lookup under the tzdb root, so on NTFS a
+    trailing space is stripped and the lookup is case-insensitive -- both keys
+    resolve here and fail on Linux -- while `''` and a path-like key raise
+    `zoneinfo`'s own `ValueError`, bypassing both of the validator's messages.
+    Every one must fail with the validator's wording, on every host."""
+    with pytest.raises(ValueError) as excinfo:
+        validate_zone(name)
+
+    assert not isinstance(excinfo.value, KeyError)
+    assert "not a recognised IANA time zone" in str(excinfo.value)
+    assert repr(name) in str(excinfo.value)
+
+
+@pytest.mark.parametrize("name", ["EST", "Etc/GMT+5"])
+def test_a_legacy_but_canonical_key_is_accepted(name: str) -> None:
+    """The canonical set is `available_timezones()`, which names the legacy
+    keys too; the check must not be stricter than the tz database."""
+    zone = validate_zone(name)
+
+    assert isinstance(zone, ZoneInfo)
+    assert zone.key == name

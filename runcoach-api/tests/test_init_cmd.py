@@ -348,6 +348,32 @@ def test_init_rejects_an_unknown_zone_before_writing(isolated_config_path, capsy
     assert "IANA" in err
 
 
+def test_init_rejects_a_padded_zone_before_writing(isolated_config_path, capsys):
+    """`"Pacific/Auckland "` resolves on NTFS (the trailing space is stripped
+    by the filesystem) and not on Linux, so an `api.toml` written here would
+    fail to load there (sprint-005 review, M3). `init` refuses it with the
+    validator's wording and writes nothing."""
+    with pytest.raises(SystemExit) as exc_info:
+        init_cmd.main(
+            [
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8123",
+                "--data-dir",
+                "/tmp/x",
+                "--athlete-timezone",
+                "Pacific/Auckland ",
+            ]
+        )
+
+    assert exc_info.value.code != 0
+    assert not isolated_config_path.exists()
+    err = capsys.readouterr().err
+    assert "--athlete-timezone" in err
+    assert "not a recognised IANA time zone" in err
+
+
 def test_init_with_force_and_an_unknown_zone_leaves_the_existing_config_untouched(
     isolated_config_path, capsys
 ):

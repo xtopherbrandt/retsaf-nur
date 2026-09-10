@@ -292,6 +292,39 @@ def test_the_rows_are_read_once_for_the_whole_range(configure, seed, monkeypatch
     assert datetime.fromisoformat(end_iso) >= last + timedelta(days=1, hours=26)
 
 
+def test_a_range_ending_after_today_carries_no_verdict_past_today(configure, seed, monkeypatch) -> None:
+    """The clock is frozen so today is ``D``. A 75-day series through ``D``
+    whose last week is suppressed, read over ``[D-2, D+2]``: the response's
+    ``date`` is ``to``, and its verdict is ``hrv_unavailable`` with
+    ``below_by`` null even though ``to``'s window holds five readings (F005:
+    no suppression is asserted about a day that has not happened). The two
+    future points carry no reading; they may still carry a band, which is a
+    property of the baseline ``[d-66, d-7]`` and lies entirely in the past.
+    Red: ``hrv_suppressed``."""
+    configure("UTC")
+    monkeypatch.setattr(main_module, "_utcnow", lambda: datetime(D.year, D.month, D.day, 12, 0, tzinfo=UTC))
+    readings = drifting_series(D - timedelta(days=74), D)
+    for day in WEEK:
+        readings[day] = 25.0
+    seed(readings)
+    span = [D + timedelta(days=k) for k in range(-2, 3)]
+
+    with TestClient(app) as client:
+        response = get(client, **{"from": span[0].isoformat(), "to": span[-1].isoformat()})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["date"] == span[-1].isoformat()
+    assert [p["date"] for p in body["points"]] == [d.isoformat() for d in span]
+    assert body["readings_in_window"] == 5
+    assert body["verdict"] == "hrv_unavailable"
+    assert body["below_by"] is None
+    assert [p["ln_rmssd"] is None for p in body["points"]] == [False, False, False, True, True]
+    for point, day in zip(body["points"][3:], span[3:], strict=True):
+        band = band_for(day, readings)
+        assert point["swc_low"] == pytest.approx(band.lo) and point["swc_high"] == pytest.approx(band.hi)
+
+
 # ---------------------------------------------------------------------------
 # the range cap
 # ---------------------------------------------------------------------------

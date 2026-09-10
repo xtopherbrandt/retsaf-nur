@@ -232,13 +232,31 @@ def _is_usable_value(value: Any) -> bool:
     return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
 
 
-def _is_reading(row: Mapping[str, Any]) -> bool:
-    """``build_series``'s exclusion chain as one predicate, for a row whose
-    listed reason is ``outside_windows`` but whose reading the previous
-    window (T092) still needs. Equivalent to the chain: a pre-amendment row
-    has a null value, which ``_is_usable_value`` rejects; a null or unknown
-    tier is not in the fidelity order."""
-    return row["hrv_source_tier"] in _FIDELITY_RANK and _is_usable_value(row["resting_rmssd_ms"])
+def _exclusion_reason(row: Mapping[str, Any]) -> str | None:
+    """The exclusion chain for one stored row: the reason it is not a
+    reading, or ``None`` when it is one. The screens run in the normative
+    order (module docstring, step 1) and each row gets exactly the first that
+    fires, so a verdict is reproducible from the listed reasons.
+
+    The one implementation for both populations ``build_series`` screens:
+    the rows inside ``[D-66, D]``, which are listed with this reason, and the
+    rows of the previous window ``[D-126, D-67]``, which are listed as
+    ``outside_windows`` but whose *readings* the tier-change and gap rules
+    (T092) still need. A second predicate for the latter would be a second
+    copy of this chain, and the next screen added here would then split the
+    two populations the tier-change rule compares (sprint-005 review, S1).
+    """
+    tier = row["hrv_source_tier"]
+    value = row["resting_rmssd_ms"]
+    if is_pre_amendment_window(row):
+        return REASON_PRE_AMENDMENT_WINDOW
+    if tier is None:
+        return REASON_NULL_TIER
+    if tier not in _FIDELITY_RANK:
+        return f"{REASON_UNKNOWN_TIER}: {tier}"
+    if not _is_usable_value(value):
+        return f"{REASON_UNUSABLE_VALUE}: {value!r}"
+    return None
 
 
 def _tier_counts(readings: Iterable[Reading]) -> Counter[str]:
@@ -309,18 +327,14 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         tier = row["hrv_source_tier"]
         value = row["resting_rmssd_ms"]
 
+        reason = _exclusion_reason(row)
+
         if not baseline_first <= day <= target_date:
             excluded.append(Exclusion(day, session_id, REASON_OUTSIDE_WINDOWS))
-            if previous[0] <= day <= previous[1] and _is_reading(row):
+            if previous[0] <= day <= previous[1] and reason is None:
                 previous_readings.append(Reading(day, session_id, tier, float(value), instant))
-        elif is_pre_amendment_window(row):
-            excluded.append(Exclusion(day, session_id, REASON_PRE_AMENDMENT_WINDOW))
-        elif tier is None:
-            excluded.append(Exclusion(day, session_id, REASON_NULL_TIER))
-        elif tier not in _FIDELITY_RANK:
-            excluded.append(Exclusion(day, session_id, f"{REASON_UNKNOWN_TIER}: {tier}"))
-        elif not _is_usable_value(value):
-            excluded.append(Exclusion(day, session_id, f"{REASON_UNUSABLE_VALUE}: {value!r}"))
+        elif reason is not None:
+            excluded.append(Exclusion(day, session_id, reason))
         else:
             readings.append(Reading(day, session_id, tier, float(value), instant))
 

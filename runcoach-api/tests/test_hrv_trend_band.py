@@ -591,14 +591,17 @@ def expected_row(baseline_n: int, window_n: int, position: str) -> tuple[str, bo
 CONTRACT_TABLE = [
     (baseline_n, window_n, position, expected_row(baseline_n, window_n, position))
     for baseline_n in (0, 1, 2, 13, 14, 41)
-    for window_n in (0, 2, 3, 7)
+    for window_n in (0, 1, 2, 3, 7)
     for position in (BELOW, INSIDE, ABOVE)
 ]
 
 
 def test_the_contract_table_is_exhaustive_over_its_axes() -> None:
-    assert len(CONTRACT_TABLE) == 6 * 4 * 3
-    assert len({(b, w, p) for b, w, p, _ in CONTRACT_TABLE}) == 72
+    assert len(CONTRACT_TABLE) == 6 * 5 * 3
+    assert len({(b, w, p) for b, w, p, _ in CONTRACT_TABLE}) == 90
+    # The single-bad-morning row is on the axis (construction reference,
+    # "Degenerate inputs": 0, 1, 2, 3 in window; review S3).
+    assert {w for _, w, _, _ in CONTRACT_TABLE} == {0, 1, 2, 3, 7}
     # And the table is not degenerate: every verdict appears, both established
     # states appear, and below_by appears in both states.
     assert {r[3][0] for r in CONTRACT_TABLE} == {NORMAL, SUPPRESSED, UNAVAILABLE}
