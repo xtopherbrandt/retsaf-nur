@@ -28,7 +28,7 @@
 
 ## Section 3 — Derived-Metric Formulas
 
-**Defines, each formula stated in full.** Per-session load (rTSS primary on valid GAP stream, reconciled against HR-TRIMP and sRPE, >25% divergence → mean-fallback, graceful degradation). Fitness/fatigue/form (CTL 42-day, ATL 7-day EWMA, TSB = CTL − ATL). HRV trend (7-day rolling ln rMSSD vs ±0.5·CV smallest-worthwhile-change band). Grade-adjusted pace (Minetti cost-of-gradient curve) as the universal downstream pace representation. Durability (EF/decoupling drift over back third of long runs; within-athlete trend; flagged emerging). ACWR as advisory context/spike flag only (wide ~0.8–1.5 band, never a hard gate).
+**Defines, each formula stated in full.** Per-session load (rTSS primary on valid GAP stream, reconciled against HR-TRIMP and sRPE, >25% divergence → mean-fallback, graceful degradation). Fitness/fatigue/form (CTL 42-day, ATL 7-day EWMA, TSB = CTL − ATL). HRV trend (7-day rolling ln rMSSD vs ±0.5·SD(ln rMSSD) smallest-worthwhile-change band — the sample SD of the athlete's own ln rMSSD baseline; the register's "±0.5·CV" as clarified 2026-09-09, `research_00` §5.4). Grade-adjusted pace (Minetti cost-of-gradient curve) as the universal downstream pace representation. Durability (EF/decoupling drift over back third of long runs; within-athlete trend; flagged emerging). ACWR as advisory context/spike flag only (wide ~0.8–1.5 band, never a hard gate).
 
 **Cites.** `research_04` §4 and `research_05` §2 (load models, PMC, HRV, processing pipeline); `research_00` Part 3 register rows (per-session load, fitness/fatigue constants, HRV gate, ACWR, durability) and findings 5; `research_01` §5.4 (Minetti).
 

@@ -14,7 +14,7 @@ Use these terms consistently — do not substitute synonyms or invent new ones:
 - **rTSS** — per-session load, primary metric on a valid GAP stream.
 - **GAP** — grade-adjusted pace (Minetti cost-of-gradient curve). The universal downstream pace representation.
 - **CTL / ATL / TSB** — Chronic Training Load (42-day EWMA), Acute Training Load (7-day EWMA), Training Stress Balance = CTL − ATL. Together: the PMC (Performance Management Chart).
-- **HRV trend** — 7-day rolling ln(rMSSD) vs a ±0.5·CV smallest-worthwhile-change (SWC) band. Never a single-reading gate.
+- **HRV trend** — 7-day rolling ln(rMSSD) vs a ±0.5·SD(ln rMSSD) smallest-worthwhile-change (SWC) band, SD being the *sample* standard deviation of the athlete's own ln rMSSD baseline. Never a single-reading gate. (The register's earlier "±0.5·CV" was clarified to this on 2026-09-09 — `research_00` §5.4; `CV(ln rMSSD)` is not unit-invariant and is not the band. If you find `CV` in a document and `SD` in the code, the document is the stale one.)
 - **ACWR** — Acute:Chronic Workload Ratio, advisory context/spike flag only (~0.8–1.5 band). Never a hard gate.
 - **Durability** — EF (efficiency factor)/decoupling drift over the back third of long runs, tracked as a within-athlete trend, flagged "emerging" not asserted.
 - **Determinant profile** — CS/D′, vVO2max, functional threshold pace, EF economy proxy, durability, individual endurance exponent (Riegel *b*) — each carries a trend and a confidence, never a bare point value.
