@@ -35,8 +35,8 @@ Three ways to upgrade an existing install:
 
    An unrecognised name is refused at startup with a message that says so and shows the expected
    form. A file that also predates sprint-004 — missing `resting_hrv_profile_names` *and*
-   `athlete_timezone` — is reported one field at a time, profile names first; add both lines in
-   the same edit rather than restarting twice.
+   `athlete_timezone` — is told about both fields in one startup message; add both lines in the
+   same edit.
 
 2. **Or set the environment variable**, which overrides the file. Unlike sprint-004's list-valued
    field, `athlete_timezone` is a plain string, so the value is written bare — no JSON, no
