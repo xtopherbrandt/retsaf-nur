@@ -1,5 +1,84 @@
 # Changelog
 
+## 2026-09-09 — Sprint 005: Resting-HRV Trend
+
+F005: the resting-HRV trend verdict on the contract's `GET /metrics/hrv`, computed from F004's
+captures and bucketed into the athlete's **local** days. Bucketing into local days is what makes
+this sprint a breaking config change — the server now has to know which days are the athlete's —
+and the migration note below is the whole of the upgrade path. The feature's own entry follows at
+release; this section is written at the point the break lands (T088/T089/T090) so an athlete who
+pulls mid-sprint has the instruction beside the refusal.
+
+### Migration required
+
+**`athlete_timezone` is now a required config field with no default of any kind** — the second
+breaking config change, after sprint-004's `resting_hrv_profile_names`, and for the same reason.
+`AppConfig` sets `extra="forbid"` and validates on load, so **an `api.toml` written before today
+fails startup**: `runcoach-api serve` refuses to start and names the field, and a server booted
+directly through uvicorn fails at application startup with pydantic's own
+`athlete_timezone — Field required`.
+
+Why there is no default: the trend's 7-day window, its 60-day baseline, the 21-day coverage gap and
+same-morning grouping are all measured in the athlete's local calendar, while readings are stored
+`+00:00`. A silent `"UTC"` would bucket a 06:00 capture at UTC+13 onto the *previous* day and shift
+which readings fall inside the window, with no error anywhere — exactly the failure the
+no-defaults rule (F001, ratified) exists to prevent. The zone is validated at load, so an
+unresolvable name is a startup failure rather than a per-request 500.
+
+Three ways to upgrade an existing install:
+
+1. **Add one line to `api.toml`.** The value is the zone's IANA name, as in the tz database:
+
+   ```toml
+   athlete_timezone = "Pacific/Auckland"
+   ```
+
+   An unrecognised name is refused at startup with a message that says so and shows the expected
+   form. A file that also predates sprint-004 — missing `resting_hrv_profile_names` *and*
+   `athlete_timezone` — is reported one field at a time, profile names first; add both lines in
+   the same edit rather than restarting twice.
+
+2. **Or set the environment variable**, which overrides the file. Unlike sprint-004's list-valued
+   field, `athlete_timezone` is a plain string, so the value is written bare — no JSON, no
+   brackets, no quotes:
+
+   ```
+   RUNCOACH_ATHLETE_TIMEZONE=Pacific/Auckland
+   ```
+
+   Because nothing is JSON-parsed here, IDEA-016's raw `pydantic_settings.SettingsError` traceback
+   for an unparseable env value does not arise for this field; a bad value reaches the same
+   validator as the file and gets the same message.
+
+3. **Or re-run `runcoach-api init`**, which now takes a required `--athlete-timezone ZONE` flag and
+   writes the key. `init` refuses an unknown zone *before* writing anything, so it can never
+   produce a file `serve` then rejects. As before, this is the fresh-install path rather than an
+   upgrade path: `init` refuses to overwrite an existing config without `--force`, and `--force`
+   rewrites `host`, `port`, `data_dir` and `resting_hrv_profile_names` too. For an existing
+   install, edit the file.
+
+**A zone can only be checked against a time-zone database.** Python bundles none and Windows ships
+none, so `runcoach-api` now declares `tzdata` as a dependency; run `uv sync --all-packages` after
+pulling. On a host with no database at all, *every* zone is refused, and the message says that
+rather than calling your zone invalid.
+
+**Editing `api.toml` requires a server restart**, as in sprint-004: `db._load_config_cached` is
+`@lru_cache(maxsize=1)`, so the config is read once per process.
+
+**The feature demo probes for F001, F003 and F004 now export `RUNCOACH_ATHLETE_TIMEZONE=UTC`**
+beside F004's existing profile-names export. They boot a server against the athlete's real
+`api.toml`, which lacks the field until this note is followed; none of the three asserts anything
+date-bucketed, so the export is hermeticity, not correctness.
+
+### Changed
+
+- **The HRV SWC band is `0.5 · SD(ln rMSSD)` (sample SD), not `0.5 · CV`.** The domain spec
+  (§3.7.3 and every restatement of it, `research/00`'s register row included, as a stated
+  clarification) is amended in this sprint. The `±0.5·CV` wording in the sprint-004 *Fixed in
+  review* entry below is superseded by that amendment and is left as written — it describes the
+  poisoning defect as it was understood at the time, and the row it protects is the same either
+  way.
+
 ## 2026-09-07 — Sprint 004: Resting-HRV Capture, cycle 2 (declaration amendment)
 
 F004's **Amendment 2026-09-06**. Tier 1 stops inferring that a recording was *meant* as a
