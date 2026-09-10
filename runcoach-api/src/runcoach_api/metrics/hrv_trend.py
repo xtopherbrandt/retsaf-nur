@@ -348,7 +348,10 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         baseline = (reset_on, baseline[1])
         readings, excluded = _exclude_before_reset(readings, excluded, reset_on, REASON_COVERAGE_GAP)
 
-    tier = resolve_baseline_tier(_tier_counts(_within(readings, baseline)))
+    # The population both the tier rule and the tier-change rule read: every
+    # tier, inside the (possibly clipped) baseline window.
+    baseline_readings = _within(readings, baseline)
+    tier = resolve_baseline_tier(_tier_counts(baseline_readings))
     if tier is None:
         tier = resolve_baseline_tier(_tier_counts(_within(readings, judged)))
 
@@ -367,7 +370,7 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
     if reset_on is None:
-        reset_on = tier_change_reset(previous_readings, tier, _within(readings, baseline))
+        reset_on = tier_change_reset(previous_readings, tier, baseline_readings)
         if reset_on is not None:
             reset_reason = REASON_TIER_CHANGE
             baseline = (reset_on, baseline[1])
