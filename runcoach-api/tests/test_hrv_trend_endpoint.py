@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
+from itertools import repeat
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -106,6 +108,11 @@ class Seeder:
         assert session.hrv_source_tier == SNAPSHOT and session.resting_rmssd_ms == rmssd
         return self._keep(session)
 
+    def snapshots(self, dates: Iterable[date], values: Iterable[float]) -> list[Session]:
+        """One snapshot per local day at 06:00 UTC, pairing ``dates`` with
+        ``values`` as ``zip`` does -- ``repeat(v)`` seeds a flat series."""
+        return [self.snapshot(at(day), value) for day, value in zip(dates, values)]
+
     def strap(self, when: datetime) -> Session:
         """A declared chest-strap capture whose reading is computed from beats (Tier 1)."""
         messages = self._synthetic(
@@ -114,6 +121,10 @@ class Seeder:
         session = self._classified(messages, _strap_beats(), 1.0, [PROFILE])
         assert session.hrv_source_tier == STRAP and session.resting_rmssd_ms > 0
         return self._keep(session)
+
+    def straps(self, dates: Iterable[date]) -> list[Session]:
+        """One declared chest-strap capture per local day at 06:00 UTC."""
+        return [self.strap(at(day)) for day in dates]
 
     def run(self, when: datetime) -> Session:
         """An ordinary run: no tier, no reading."""
@@ -162,6 +173,11 @@ def days(first: date, last: date) -> list[date]:
     return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
+# The baseline most tests seed: the last 20 days of the baseline window,
+# [D-26, D-7], enough to establish it (MIN_BASELINE_READINGS is 14).
+BASELINE_20 = days(D - timedelta(days=26), D - timedelta(days=7))
+
+
 def baseline_values(n: int) -> list[float]:
     """An ordinary athlete's dispersion: alternating 38/44 ms around 41,
     wide enough that the floor does not fire (T084)."""
@@ -195,11 +211,9 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     Red: the route does not exist (404)."""
     configure("UTC")
     values = baseline_values(20)
-    for day, value in zip(days(D - timedelta(days=26), D - timedelta(days=7)), values):
-        seeder.snapshot(at(day), value)
+    seeder.snapshots(BASELINE_20, values)
     week = [40.0, 41.0, 42.0, 43.0]
-    for day, value in zip(days(D - timedelta(days=6), D - timedelta(days=3)), week):
-        seeder.snapshot(at(day), value)
+    seeder.snapshots(days(D - timedelta(days=6), D - timedelta(days=3)), week)
     later = seeder.snapshot(at(D - timedelta(days=3), hh=9), 30.0)
     strap = seeder.strap(at(D - timedelta(days=2)))
     run = seeder.run(at(D - timedelta(days=1)))
@@ -312,8 +326,7 @@ def test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200(configur
         assert empty.json()["baseline"]["established"] is False
         assert empty.json()["included"] == [] and empty.json()["excluded"] == []
 
-    for day, value in zip(days(D - timedelta(days=26), D), baseline_values(27)):
-        seeder.snapshot(at(day), value)
+    seeder.snapshots(days(D - timedelta(days=26), D), baseline_values(27))
     seeder.persist()
 
     with TestClient(app) as client:
@@ -360,11 +373,9 @@ def test_the_zone_is_read_from_config_per_request(configure, seeder) -> None:
 def test_below_by_is_lo_minus_mean_when_suppressed_and_null_otherwise(configure, seeder) -> None:
     configure("UTC")
     values = baseline_values(20)
-    for day, value in zip(days(D - timedelta(days=26), D - timedelta(days=7)), values):
-        seeder.snapshot(at(day), value)
+    seeder.snapshots(BASELINE_20, values)
     suppressed_week = [25.0, 26.0, 24.0]
-    for day, value in zip(days(D - timedelta(days=6), D - timedelta(days=4)), suppressed_week):
-        seeder.snapshot(at(day), value)
+    seeder.snapshots(days(D - timedelta(days=6), D - timedelta(days=4)), suppressed_week)
     seeder.persist()
 
     with TestClient(app) as client:
@@ -385,11 +396,8 @@ def test_included_covers_the_window_only_and_excluded_spans_the_baseline_too(con
     ``excluded[]`` lists every non-contributing row across ``[to-66, to]``,
     including an off-tier strap capture deep inside the baseline."""
     configure("UTC")
-    baseline_days = days(D - timedelta(days=26), D - timedelta(days=7))
-    for day, value in zip(baseline_days, baseline_values(20)):
-        seeder.snapshot(at(day), value)
-    for day in days(D - timedelta(days=6), D - timedelta(days=3)):
-        seeder.snapshot(at(day), 41.0)
+    seeder.snapshots(BASELINE_20, baseline_values(20))
+    seeder.snapshots(days(D - timedelta(days=6), D - timedelta(days=3)), repeat(41.0))
     # 07:00, not 06:00: every synthetic file shares one source_device, so a
     # strap capture at the snapshot's instant would be the same session.
     deep = seeder.strap(at(D - timedelta(days=20), hh=7))
@@ -442,12 +450,9 @@ def test_a_sustained_tier_change_is_reachable_through_the_endpoint(configure, se
     ``to - 66d`` read the previous window is empty, reads as thin, and the
     reset silently never fires; with ``to - 126d`` it is ``tier_change``."""
     configure("UTC")
-    for day in days(D - timedelta(days=126), D - timedelta(days=67)):
-        seeder.snapshot(at(day), 40.0)
-    for day in days(D - timedelta(days=66), D - timedelta(days=7)):
-        seeder.strap(at(day))
-    for day in days(D - timedelta(days=6), D - timedelta(days=4)):
-        seeder.strap(at(day))
+    seeder.snapshots(days(D - timedelta(days=126), D - timedelta(days=67)), repeat(40.0))
+    seeder.straps(days(D - timedelta(days=66), D - timedelta(days=7)))
+    seeder.straps(days(D - timedelta(days=6), D - timedelta(days=4)))
     seeder.persist()
 
     with TestClient(app) as client:
@@ -477,10 +482,8 @@ def test_an_empty_baseline_window_after_a_late_reset_is_rendered_inverted(config
     ``before_reset: coverage_gap``."""
     configure("UTC")
     era = days(D - timedelta(days=66), D - timedelta(days=30))
-    for day in era:
-        seeder.snapshot(at(day), 40.0)
-    for day in days(D - timedelta(days=2), D):
-        seeder.snapshot(at(day), 40.0)
+    seeder.snapshots(era, repeat(40.0))
+    seeder.snapshots(days(D - timedelta(days=2), D), repeat(40.0))
     seeder.persist()
 
     with TestClient(app) as client:

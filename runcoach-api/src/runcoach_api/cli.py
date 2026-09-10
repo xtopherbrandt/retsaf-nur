@@ -9,6 +9,17 @@ from pydantic import ValidationError
 from runcoach_api.config import ConfigCorruptError, ConfigNotFoundError, load_config
 from runcoach_api.main import app
 
+# The paragraph every remediation block ends on: what to do once api.toml is
+# edited, and the fresh-install path. Stated once because the `init` line has
+# to name every flag the command requires (T089 added `--athlete-timezone`),
+# and two copies of it would drift the next time a flag is added.
+_RESTART_AND_INIT_FOOTER = """\
+  Restart the server after editing api.toml; the config is read once at startup.
+  For a fresh install, `runcoach-api init` writes every field it asks for:
+
+      runcoach-api init --host HOST --port PORT --data-dir DIR \\
+          --resting-hrv-profile NAME --athlete-timezone ZONE"""
+
 # F004's 2026-09-06 amendment made `resting_hrv_profile_names` a required field
 # with no default, which is a *breaking* config change: every `api.toml` written
 # before it now fails startup. This message is the whole upgrade path -- it is
@@ -44,11 +55,7 @@ Error: config field 'resting_hrv_profile_names' is missing, and it has no defaul
       RUNCOACH_RESTING_HRV_PROFILE_NAMES='["HRV Snapshot"]'
       RUNCOACH_RESTING_HRV_PROFILE_NAMES='[]'
 
-  Restart the server after editing api.toml; the config is read once at startup.
-  For a fresh install, `runcoach-api init` writes every field it asks for:
-
-      runcoach-api init --host HOST --port PORT --data-dir DIR \\
-          --resting-hrv-profile NAME --athlete-timezone ZONE"""
+""" + _RESTART_AND_INIT_FOOTER
 
 # F005 (T088, 2026-09-09) made `athlete_timezone` the second required field
 # with no default -- the same breaking shape as the block above, for the same
@@ -78,11 +85,7 @@ Error: config field 'athlete_timezone' is missing, and it has no default.
   An unrecognised zone is refused at startup, not per request. There is no
   default because a wrong zone moves captures across day boundaries silently.
 
-  Restart the server after editing api.toml; the config is read once at startup.
-  For a fresh install, `runcoach-api init` writes every field it asks for:
-
-      runcoach-api init --host HOST --port PORT --data-dir DIR \\
-          --resting-hrv-profile NAME --athlete-timezone ZONE"""
+""" + _RESTART_AND_INIT_FOOTER
 
 # The dispatch table: `(type, loc)` -> remediation text. Keyed on the error
 # *type* as well as the field because `'missing'` is the only shape either block

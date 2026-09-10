@@ -249,6 +249,22 @@ def _today_in(zone: ZoneInfo) -> datetime.date:
     return _utcnow().astimezone(zone).date()
 
 
+def _midnight_utc(day: datetime.date) -> datetime.datetime:
+    """The aware UTC midnight that opens ``day``: the anchor both read bounds
+    are padded from."""
+    return datetime.datetime.combine(day, datetime.time.min, tzinfo=datetime.UTC)
+
+
+def _shifted(instant: datetime.datetime, delta: datetime.timedelta) -> datetime.datetime:
+    """``instant + delta``, clamped to the calendar's edge it would cross."""
+    try:
+        return instant + delta
+    except OverflowError:
+        if delta < datetime.timedelta(0):
+            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
+        return datetime.datetime.max.replace(tzinfo=datetime.UTC)
+
+
 def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
     """The inclusive UTC ``start_time`` bounds handed to ``db.read_hrv_rows``:
     ``[from - 126d - 26h, (to + 1d) + 26h]``, spelled ``+00:00`` exactly as
@@ -263,22 +279,11 @@ def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
     request is ``hrv_unavailable``, not a 500 (the adversarial table's
     far-future row found the overflow).
     """
-    start = datetime.datetime(from_.year, from_.month, from_.day, tzinfo=datetime.UTC)
-    end = datetime.datetime(to.year, to.month, to.day, tzinfo=datetime.UTC)
-    return (
-        _shifted(start, -(datetime.timedelta(days=_HRV_READ_BACK_DAYS) + _HRV_READ_PADDING)).isoformat(),
-        _shifted(end, datetime.timedelta(days=1) + _HRV_READ_PADDING).isoformat(),
-    )
-
-
-def _shifted(instant: datetime.datetime, delta: datetime.timedelta) -> datetime.datetime:
-    """``instant + delta``, clamped to the calendar's edge it would cross."""
-    try:
-        return instant + delta
-    except OverflowError:
-        if delta < datetime.timedelta(0):
-            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
-        return datetime.datetime.max.replace(tzinfo=datetime.UTC)
+    back = datetime.timedelta(days=_HRV_READ_BACK_DAYS) + _HRV_READ_PADDING
+    forward = datetime.timedelta(days=1) + _HRV_READ_PADDING
+    start = _shifted(_midnight_utc(from_), -back)
+    end = _shifted(_midnight_utc(to), forward)
+    return start.isoformat(), end.isoformat()
 
 
 def _trend_response(

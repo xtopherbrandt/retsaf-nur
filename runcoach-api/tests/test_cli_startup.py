@@ -38,6 +38,20 @@ class _FakeConfig:
     port: int
 
 
+def _validation_error(**overrides) -> ValidationError:
+    """The real ``ValidationError`` ``AppConfig`` raises for a valid ``host`` /
+    ``port`` / ``data_dir`` plus ``overrides``, so each caller states only the
+    one way its config is broken. A config that loads is a failed premise,
+    not a passing test, hence the ``AssertionError``.
+    """
+    fields = {"host": "localhost", "port": 8000, "data_dir": Path("/tmp"), **overrides}
+    try:
+        AppConfig(**fields)
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+
+
 def _make_validation_error() -> ValidationError:
     """Build a real pydantic ValidationError with a 'port' field error.
 
@@ -47,11 +61,7 @@ def _make_validation_error() -> ValidationError:
     ``athlete_timezone`` (required since T088) *is* supplied, so the
     incompleteness stays singular and ``errors()[0]`` stays ``port``.
     """
-    try:
-        AppConfig(host="localhost", port=99999, data_dir=Path("/tmp"), athlete_timezone="UTC")
-    except ValidationError as exc:
-        return exc
-    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+    return _validation_error(port=99999, athlete_timezone="UTC")
 
 
 def test_serve_starts_uvicorn_with_configured_host_port(monkeypatch, capsys):
@@ -258,12 +268,9 @@ def _make_missing_field_error() -> ValidationError:
     they were never written for. Perturbation: drop the zone and the length
     assertion goes red.
     """
-    try:
-        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"), athlete_timezone="UTC")
-    except ValidationError as exc:
-        assert len(exc.errors()) == 1, exc.errors()
-        return exc
-    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+    error = _validation_error(athlete_timezone="UTC")
+    assert len(error.errors()) == 1, error.errors()
+    return error
 
 
 def _serve_expecting_exit(monkeypatch, loader) -> None:
@@ -491,15 +498,12 @@ def _make_missing_both_fields_error() -> ValidationError:
     precedes the two remediation-bearing fields, and the order is the
     declaration order (`resting_hrv_profile_names` first).
     """
-    try:
-        AppConfig(host="localhost", port=8000, data_dir=Path("/tmp"))
-    except ValidationError as exc:
-        assert [(e["type"], e["loc"]) for e in exc.errors()] == [
-            ("missing", ("resting_hrv_profile_names",)),
-            ("missing", ("athlete_timezone",)),
-        ], exc.errors()
-        return exc
-    raise AssertionError("expected AppConfig(...) to raise ValidationError")
+    error = _validation_error()
+    assert [(e["type"], e["loc"]) for e in error.errors()] == [
+        ("missing", ("resting_hrv_profile_names",)),
+        ("missing", ("athlete_timezone",)),
+    ], error.errors()
+    return error
 
 
 def _assert_both_remediations(err: str) -> None:
@@ -587,12 +591,7 @@ def test_remediation_dispatch_port_error_still_wins_over_both_missing_fields(
     This is the T060 gotcha (`:347`) with the second field added -- the
     population beside that test's assertion.
     """
-    try:
-        AppConfig(host="localhost", port=99999, data_dir=Path("/tmp"))
-    except ValidationError as exc:
-        error = exc
-    else:
-        raise AssertionError("expected AppConfig(...) to raise ValidationError")
+    error = _validation_error(port=99999)
     assert [e["loc"] for e in error.errors()] == [
         ("port",),
         ("resting_hrv_profile_names",),
@@ -617,18 +616,7 @@ def test_remediation_dispatch_bad_zone_renders_the_validators_own_message(
     present and wrong, `validate_zone`'s message already says so, and the
     missing-field text would be the wrong advice.
     """
-    try:
-        AppConfig(
-            host="localhost",
-            port=8000,
-            data_dir=Path("/tmp"),
-            resting_hrv_profile_names=[],
-            athlete_timezone="Mars/Phobos",
-        )
-    except ValidationError as exc:
-        error = exc
-    else:
-        raise AssertionError("expected an unknown zone to be rejected")
+    error = _validation_error(resting_hrv_profile_names=[], athlete_timezone="Mars/Phobos")
     assert len(error.errors()) == 1, error.errors()
     assert error.errors()[0]["type"] == "value_error"
 
