@@ -40,7 +40,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-
 from runcoach_api import db as db_module
 from runcoach_api.config import AppConfig
 from runcoach_api.ingestion import hrv_classification, mapping
@@ -281,6 +280,18 @@ def _ingest(client, filename: str, data=None) -> dict:
     return detail.json()
 
 
+def _persist_sessions(conn, sessions, beats_by_id: dict[str, list[RRInterval]] | None = None) -> None:
+    """Write already-classified sessions to the store through ``db.persist``
+    -- the one seam every resting-HRV seeder shares (the T085/T091 test
+    seeders and ``_seed_hrv_series`` below) -- with no records, no quarantine
+    sidecar, and the RR beats ``beats_by_id`` holds for a session's id (none
+    otherwise). ``init_schema`` first, as ``pipeline.ingest_fit_bytes`` does."""
+    beats_by_id = beats_by_id or {}
+    db_module.init_schema(conn)
+    for session in sessions:
+        db_module.persist(conn, session, [], beats_by_id.get(session.session_id, []), {})
+
+
 @pytest.fixture
 def fake_msg() -> type[_FakeMsg]:
     """The ``fitdecode.FitDataMessage`` stand-in class itself."""
@@ -316,6 +327,21 @@ def ingest():
 def post_fit():
     """``post_fit(client, filename, data=None)`` -> raw POST response."""
     return _post_fit
+
+
+@pytest.fixture
+def persist_sessions():
+    """``persist_sessions(sessions, beats_by_id=None)`` -- ``_persist_sessions``
+    on a connection to the isolated store, opened and closed here."""
+
+    def _persist(sessions, beats_by_id=None) -> None:
+        conn = db_module.get_connection()
+        try:
+            _persist_sessions(conn, sessions, beats_by_id)
+        finally:
+            conn.close()
+
+    return _persist
 
 
 # ---------------------------------------------------------------------------
@@ -510,9 +536,7 @@ def _seed_hrv_series(
         sessions.append(session)
         beats_by_id[session.session_id] = beats
 
-    db_module.init_schema(conn)
-    for session in sessions:
-        db_module.persist(conn, session, [], beats_by_id[session.session_id], {})
+    _persist_sessions(conn, sessions, beats_by_id)
 
     rows = [
         {

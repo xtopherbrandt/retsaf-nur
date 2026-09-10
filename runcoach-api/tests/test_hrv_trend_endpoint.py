@@ -97,9 +97,10 @@ def _strap_beats() -> list[RRInterval]:
 class Seeder:
     """Builds sessions through the real classifier and persists them."""
 
-    def __init__(self, synthetic, classified) -> None:
+    def __init__(self, synthetic, classified, persist_sessions) -> None:
         self._synthetic = synthetic
         self._classified = classified
+        self._persist_sessions = persist_sessions
         self.sessions: list[Session] = []
 
     def snapshot(self, when: datetime, rmssd: float) -> Session:
@@ -154,19 +155,19 @@ class Seeder:
         return session
 
     def persist(self) -> None:
-        conn = db_module.get_connection()
-        try:
-            db_module.init_schema(conn)
-            for session in self.sessions:
-                beats = _strap_beats() if session.hrv_source_tier == STRAP and session.resting_rmssd_ms else []
-                db_module.persist(conn, session, [], beats, {})
-        finally:
-            conn.close()
+        """Write every kept session to the isolated store; a strap capture
+        that resolved a reading carries its beats, nothing else does."""
+        beats_by_id = {
+            s.session_id: _strap_beats()
+            for s in self.sessions
+            if s.hrv_source_tier == STRAP and s.resting_rmssd_ms
+        }
+        self._persist_sessions(self.sessions, beats_by_id)
 
 
 @pytest.fixture
-def seeder(synthetic, classified) -> Seeder:
-    return Seeder(synthetic, classified)
+def seeder(synthetic, classified, persist_sessions) -> Seeder:
+    return Seeder(synthetic, classified, persist_sessions)
 
 
 def days(first: date, last: date) -> list[date]:

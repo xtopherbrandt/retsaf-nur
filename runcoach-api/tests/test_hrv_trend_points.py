@@ -27,6 +27,7 @@ never read back from the endpoint.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -76,7 +77,7 @@ def configure(isolated_data_dir, monkeypatch):
 
 
 @pytest.fixture
-def seed(synthetic, classified):
+def seed(synthetic, classified, persist_sessions):
     """``seed({day: rmssd_ms, ...})`` -- one Health Snapshot capture per local
     day at 06:00 UTC carrying exactly that rMSSD, through the real classifier
     and ``db.persist``."""
@@ -88,13 +89,7 @@ def seed(synthetic, classified):
             session = classified(synthetic(60, rmssd_hrv=value, start_time=when))
             assert session.hrv_source_tier == SNAPSHOT and session.resting_rmssd_ms == value
             sessions.append(session)
-        conn = db_module.get_connection()
-        try:
-            db_module.init_schema(conn)
-            for session in sessions:
-                db_module.persist(conn, session, [], [], {})
-        finally:
-            conn.close()
+        persist_sessions(sessions)
         return sessions
 
     return _seed
@@ -166,6 +161,39 @@ def test_the_last_points_band_equals_the_verdicts_band(configure, seed) -> None:
     assert last["swc_low"] == body["band"]["lo"]
     assert last["swc_high"] == body["band"]["hi"]
     assert last["baseline"] == body["band"]["mean"]
+
+
+def test_every_point_carries_the_band_its_own_judge_call_asserted(configure, seed, monkeypatch) -> None:
+    """The equality above must hold because a point is rendered from the
+    ``judge`` result for its day -- the same object ``band`` is rendered from
+    on ``to`` -- and not because a second computation over the baseline
+    happens to agree with it today (wave-5 mutation: a ``_point`` that called
+    ``build_band`` itself passed every value test in this file). ``judge`` is
+    wrapped to assert a band no recomputation would produce; every point,
+    and ``band``, must carry that one."""
+    readings = drifting_series(D - timedelta(days=74), D)
+    real_judge = hrv_trend.judge
+
+    def shifted_judge(series: hrv_trend.HrvSeries) -> hrv_trend.HrvVerdict:
+        verdict = real_judge(series)
+        band = verdict.band
+        assert band is not None
+        return replace(verdict, band=replace(band, mean=band.mean + 1.0, lo=band.lo + 1.0, hi=band.hi + 1.0))
+
+    monkeypatch.setattr(main_module.hrv_trend, "judge", shifted_judge)
+    body = get_points(configure, seed, readings, WEEK[0], D)
+
+    for point, day in zip(body["points"], WEEK, strict=True):
+        computed = band_for(day, readings)
+        assert point["baseline"] == pytest.approx(computed.mean + 1.0)
+        assert point["swc_low"] == pytest.approx(computed.lo + 1.0)
+        assert point["swc_high"] == pytest.approx(computed.hi + 1.0)
+    last = body["points"][-1]
+    assert (last["baseline"], last["swc_low"], last["swc_high"]) == (
+        body["band"]["mean"],
+        body["band"]["lo"],
+        body["band"]["hi"],
+    )
 
 
 def test_a_day_with_no_reading_carries_a_null_ln_rmssd_but_still_its_band(configure, seed) -> None:

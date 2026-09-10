@@ -292,6 +292,28 @@ def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
+def _judge_days(
+    rows: list[dict],
+    zone: ZoneInfo,
+    from_: datetime.date,
+    to: datetime.date,
+) -> list[tuple[hrv_trend.HrvSeries, hrv_trend.HrvVerdict]]:
+    """Every local day in ``[from, to]``, in order, judged against its own
+    baseline ``[d-66, d-7]`` by the pure computation over the one set of
+    ``rows`` -- ~30 evaluations of a function of ``target_date`` for a month's
+    chart, done plainly (no caching, no incremental trick). The last pair is
+    ``to``'s, and it is the one the verdict blocks are rendered from, so the
+    last point and ``band`` are the same objects rather than two computations.
+
+    Raises ``OverflowError`` where a day's windows reach past the calendar's
+    origin; the route names that as the parameters' problem."""
+    judged = []
+    for offset in range((to - from_).days + 1):
+        series = hrv_trend.build_series(rows, zone, from_ + datetime.timedelta(days=offset))
+        judged.append((series, hrv_trend.judge(series)))
+    return judged
+
+
 def _point(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> HrvPoint:
     """One day of the contract's ``points[]``: the reading the day's own
     series holds for it (null when none) and the band the day's own baseline
@@ -422,17 +444,9 @@ def get_hrv_trend(
     finally:
         conn.close()
 
-    # The contract's series: every local day in ``[from, to]`` judged against
-    # its own baseline ``[d-66, d-7]`` by the same pure computation, over the
-    # one set of rows -- ~30 evaluations of a function of ``target_date`` for
-    # a month's chart, done plainly (no caching, no incremental trick). The
-    # last day is ``to``, and its verdict is the response's.
-    points: list[HrvPoint] = []
+    # The contract's series, and ``to``'s verdict from the same last pair.
     try:
-        for offset in range((to - from_).days + 1):
-            series = hrv_trend.build_series(rows, zone, from_ + datetime.timedelta(days=offset))
-            verdict = hrv_trend.judge(series)
-            points.append(_point(series, verdict))
+        judged = _judge_days(rows, zone, from_, to)
     except OverflowError as exc:
         # The windows are ``date`` arithmetic back to ``d - 126``; a day
         # inside the calendar's first 126 days has no such history to look
@@ -442,4 +456,6 @@ def get_hrv_trend(
             f"'from' ({from_.isoformat()}) to 'to' ({to.isoformat()}) is too close to the calendar's "
             f"origin to have a {_HRV_READ_BACK_DAYS}-day history window",
         ) from exc
+    points = [_point(series, verdict) for series, verdict in judged]
+    series, verdict = judged[-1]
     return _trend_response(from_, points, series, verdict)
