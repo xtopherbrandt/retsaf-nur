@@ -32,14 +32,19 @@ none of them is autouse.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import math
+import statistics
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from runcoach_api import db as db_module
 from runcoach_api.config import AppConfig
 from runcoach_api.ingestion import hrv_classification, mapping
+from runcoach_api.models import RRInterval, Session
 
 
 @pytest.fixture(autouse=True)
@@ -311,3 +316,227 @@ def ingest():
 def post_fit():
     """``post_fit(client, filename, data=None)`` -> raw POST response."""
     return _post_fit
+
+
+# ---------------------------------------------------------------------------
+# The resting-HRV series seed (T086)
+#
+# F005's demo probe needs a 60-day baseline, which no fixture corpus carries,
+# so ``tests/support/seed_hrv_series.py`` writes one through the real
+# ``mapping.to_canonical -> hrv_classification.classify -> db.persist`` path
+# and states the band that series must produce. The generator lives *here*,
+# as the plain function ``_seed_hrv_series``, for the same ``importlib``
+# reason as the helpers above: no test module can import the script, and a
+# ``@pytest.fixture`` cannot be called directly (pytest >= 8 raises). The
+# ``seed_hrv_series`` fixture wraps it for tests; the script loads this file
+# with ``importlib.util.spec_from_file_location`` and calls the same
+# function. One implementation, two entry points, so they cannot drift.
+#
+# The expected band is computed below from the generator's **intended**
+# values with ``statistics.stdev`` (sample SD, the estimator the F005
+# decision log fixed on 2026-09-09) and never imported from
+# ``metrics.hrv_trend`` -- an expectation authored by the thing it checks is
+# not a check (``contract-tables-need-an-independent-oracle.md``). The
+# generator does verify, per capture, that the classifier resolved exactly
+# the value it intended, so the independence is of the *formula*, not of the
+# data path.
+# ---------------------------------------------------------------------------
+
+SEED_TIER_STRAP = "chest_strap_raw"
+SEED_TIER_SNAPSHOT = "health_snapshot"
+SEED_TIERS = (SEED_TIER_STRAP, SEED_TIER_SNAPSHOT)
+
+# An ordinary athlete's day-to-day dispersion: alternating 38/44 ms around
+# 41 ms gives 0.5 * SD(ln) ~ 0.037, well clear of T084's 0.01 floor, so the
+# computed half-width -- not the floor -- is what the probe compares.
+SEED_NORMAL_RMSSD_MS = (38.0, 44.0)
+# A suppressed morning: ln 25 ~ 3.22 against a band floor near ln 38.5; five
+# of them in the seven-day window put the mean well below ``band.lo`` even
+# when the demo probe's real upload displaces the seeded capture on ``end``.
+SEED_SUPPRESSED_RMSSD_MS = 25.0
+# Captures are placed at this local wall-clock hour: a morning reading, and
+# later than the demo probe's fixture (05:48 Auckland on 2026-09-07), so on
+# ``end`` the real upload is the day's reading and the seed the
+# ``same_day_later_capture``.
+SEED_LOCAL_HOUR = 6
+# Tier-1 beats: a two-value alternating series ``a, b, a, b, ...`` has the
+# exact closed form ``rMSSD = |a - b|`` under ``rmssd.resting_rmssd``'s plain
+# pairwise RMS, so the target value is hit exactly rather than approximately.
+SEED_BASE_RR_MS = 900.0
+SEED_BEATS = 160
+# The Tier-1 capture's shape: inside the resting duration gate (120..300 s),
+# a resting heart rate, no distance.
+SEED_CAPTURE_DURATION_S = 150.0
+SEED_CAPTURE_AVG_HR = 60
+
+# Local-day arithmetic of the baseline the band is stated over -- restated
+# here from the construction reference (``[D-66, D-7]``), deliberately not
+# read from ``hrv_trend`` (see the section comment).
+_SEED_BASELINE_FIRST_OFFSET = 66
+_SEED_BASELINE_LAST_OFFSET = 7
+_SEED_SWC_FACTOR = 0.5
+_SEED_BAND_FLOOR = 0.01
+
+
+@dataclass
+class SeedResult:
+    """What one seed run produced: the persisted sessions, the four-column
+    rows the trend reads (as ``build_series`` takes them), and the band the
+    generator claims for them."""
+
+    sessions: list[Session]
+    rows: list[dict]
+    expected: dict
+
+
+def _seed_rmssd_values(days: int, suppress_last: int) -> list[float]:
+    """The intended resolved rMSSD for each of ``days`` local days, oldest
+    first: the alternating normal pair, then ``suppress_last`` suppressed
+    mornings."""
+    if days < 0 or suppress_last < 0 or suppress_last > days:
+        raise ValueError(f"need 0 <= suppress_last <= days, got days={days} suppress_last={suppress_last}")
+    first_suppressed = days - suppress_last
+    return [
+        SEED_SUPPRESSED_RMSSD_MS if i >= first_suppressed else SEED_NORMAL_RMSSD_MS[i % 2] for i in range(days)
+    ]
+
+
+def _seed_beats(target_rmssd_ms: float) -> list[RRInterval]:
+    """An alternating chest-strap beat series whose rMSSD is exactly ``target_rmssd_ms``."""
+    values = (SEED_BASE_RR_MS, SEED_BASE_RR_MS + target_rmssd_ms)
+    return [
+        RRInterval(seq=i, rr_ms=values[i % 2], rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(SEED_BEATS)
+    ]
+
+
+def _seed_expected(end: date, days: int, suppress_last: int, tier: str, zone: ZoneInfo, values) -> dict:
+    """The band the series must produce, from the intended values alone."""
+    first_day = end - timedelta(days=days - 1) if days else end
+    baseline_window = (
+        end - timedelta(days=_SEED_BASELINE_FIRST_OFFSET),
+        end - timedelta(days=_SEED_BASELINE_LAST_OFFSET),
+    )
+    by_day = {first_day + timedelta(days=i): value for i, value in enumerate(values)}
+    baseline = [math.log(by_day[day]) for day in sorted(by_day) if baseline_window[0] <= day <= baseline_window[1]]
+    expected = {
+        "tier": tier,
+        "timezone": zone.key,
+        "end": end.isoformat(),
+        "days": days,
+        "suppress_last": suppress_last,
+        "first_day": first_day.isoformat() if days else None,
+        "normal_rmssd_ms": list(SEED_NORMAL_RMSSD_MS),
+        "suppressed_rmssd_ms": SEED_SUPPRESSED_RMSSD_MS,
+        "baseline_window": [d.isoformat() for d in baseline_window],
+        "n": len(baseline),
+        "band_mean": None,
+        "half_width": None,
+        "band_lo": None,
+        "band_hi": None,
+        "floored": None,
+    }
+    if len(baseline) >= 2:
+        mean = statistics.fmean(baseline)
+        computed = _SEED_SWC_FACTOR * statistics.stdev(baseline)
+        floored = computed < _SEED_BAND_FLOOR
+        half_width = _SEED_BAND_FLOOR if floored else computed
+        expected.update(
+            band_mean=mean,
+            half_width=half_width,
+            band_lo=mean - half_width,
+            band_hi=mean + half_width,
+            floored=floored,
+        )
+    return expected
+
+
+def _seed_hrv_series(
+    conn,
+    *,
+    end: date,
+    days: int,
+    suppress_last: int,
+    tier: str,
+    zone: ZoneInfo,
+    profile_names=(),
+) -> SeedResult:
+    """Seed one resting-HRV capture per local day for the ``days`` days ending
+    on local ``end`` (in ``zone``), the last ``suppress_last`` of them
+    suppressed, through the real ingestion path, and state the expected band.
+
+    ``tier`` is ``"chest_strap_raw"`` (a declared Tier-1 capture: the first
+    of ``profile_names`` on the session, a synthetic beat series engineered
+    to the target rMSSD) or ``"health_snapshot"`` (Tier 2: ``sport`` 60 and a
+    device ``rmssd_hrv``). Each capture is placed at ``SEED_LOCAL_HOUR`` local
+    time and stored as the UTC instant, which is what makes ``end`` a local
+    date: Auckland's morning of ``end`` is the UTC day before.
+
+    Raises rather than seeding a series whose readings differ from the ones
+    the expected band was computed over: a Tier-1 capture that did not
+    resolve to its target, or a Tier-1 request with no profile to declare.
+    """
+    if tier not in SEED_TIERS:
+        raise ValueError(f"tier must be one of {SEED_TIERS}, got {tier!r}")
+    profile_names = list(profile_names)
+    if tier == SEED_TIER_STRAP and not profile_names:
+        raise ValueError("a chest_strap_raw seed needs at least one declared resting-HRV profile name")
+
+    values = _seed_rmssd_values(days, suppress_last)
+    first_day = end - timedelta(days=days - 1) if days else end
+
+    sessions: list[Session] = []
+    beats_by_id: dict[str, list[RRInterval]] = {}
+    for i, value in enumerate(values):
+        day = first_day + timedelta(days=i)
+        when = datetime(day.year, day.month, day.day, SEED_LOCAL_HOUR, tzinfo=zone).astimezone(UTC)
+        if tier == SEED_TIER_STRAP:
+            messages = _synthetic(
+                total_timer_time=SEED_CAPTURE_DURATION_S,
+                avg_heart_rate=SEED_CAPTURE_AVG_HR,
+                sport_profile_name=profile_names[0],
+                start_time=when,
+            )
+            beats = _seed_beats(value)
+            session = _classified(messages, beats, 1.0, profile_names)
+        else:
+            beats = []
+            session = _classified(_synthetic(SNAPSHOT_SPORT, rmssd_hrv=value, start_time=when))
+        if session.hrv_source_tier != tier or session.resting_rmssd_ms != value:
+            raise RuntimeError(
+                f"the classifier resolved {session.hrv_source_tier!r}/{session.resting_rmssd_ms!r} on {day}, "
+                f"not the intended {tier!r}/{value!r}; the stated band would not describe the store"
+            )
+        sessions.append(session)
+        beats_by_id[session.session_id] = beats
+
+    db_module.init_schema(conn)
+    for session in sessions:
+        db_module.persist(conn, session, [], beats_by_id[session.session_id], {})
+
+    rows = [
+        {
+            "session_id": s.session_id,
+            "start_time": s.start_time,
+            "resting_rmssd_ms": s.resting_rmssd_ms,
+            "hrv_source_tier": s.hrv_source_tier,
+        }
+        for s in sessions
+    ]
+    expected = _seed_expected(end, days, suppress_last, tier, zone, values)
+    return SeedResult(sessions=sessions, rows=rows, expected=expected)
+
+
+@pytest.fixture
+def seed_hrv_series():
+    """``seed_hrv_series(end=, days=, suppress_last=, tier=, zone=, profile_names=())``
+    -> ``SeedResult``, written to the isolated store."""
+
+    def _seed(**kwargs) -> SeedResult:
+        conn = db_module.get_connection()
+        try:
+            return _seed_hrv_series(conn, **kwargs)
+        finally:
+            conn.close()
+
+    return _seed
