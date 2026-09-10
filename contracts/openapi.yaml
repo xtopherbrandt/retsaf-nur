@@ -15,11 +15,13 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-09-08 the implemented endpoints in retsaf-nur are GET /health and
-# /sessions (POST ingest, GET detail, DELETE); everything else is `planned` and
-# is developed against a mock generated from this file until the backend catches
-# up. POST /sessions carries the F004 `resting_capture` flag; SessionDetail
-# carries the resolved, nullable `resting_rmssd_ms` (see its schema + x-invariant).
+# As of 2026-09-09 the implemented endpoints in retsaf-nur are GET /health,
+# /sessions (POST ingest, GET detail, DELETE) and GET /metrics/hrv (F005: the
+# per-day series plus the verdict blocks, `from`/`to` optional); everything else
+# is `planned` and is developed against a mock generated from this file until
+# the backend catches up. POST /sessions carries the F004 `resting_capture`
+# flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
+# schema + x-invariant).
 #
 # OPEN backend alignments this contract assumes (see ui-development-plan.md):
 #   1. GET /sessions/{id} gets a typed SessionDetail response_model
@@ -635,18 +637,40 @@ paths:
       tags: [State & Metrics]
       operationId: getHrvTrend
       summary: HRV trend (ln rMSSD vs SWC band)
-      x-readiness: planned
-      x-owner-spec: "spec/03 §3.7"
+      x-readiness: implemented
+      x-owner-spec: "spec/03 §3.7; runcoach-api F005 (2026-09-09)"
       x-story: [view-state]
+      description: >
+        One point per athlete-local day in [from, to], each judged against its
+        own 60-day baseline [d-66, d-7], plus the verdict blocks for `to` — the
+        mean, the band, the baseline, every reading that fed the mean and every
+        stored row that fed nothing, with its reason — so the verdict can be
+        recomputed by hand (research/00 §1.6). Both parameters are optional as
+        built (F005/T091, 2026-09-09): `to` defaults to the athlete's local
+        today in the configured zone and `from` to `to`, so a bare call yields
+        one point. Unauthenticated today like every as-built route.
       parameters:
-        - { name: from, in: query, required: true, schema: { type: string, format: date } }
-        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - name: from
+          in: query
+          required: false
+          description: "Athlete-local date (YYYY-MM-DD). Defaults to `to`. After `to` → 422."
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          description: >
+            Athlete-local date (YYYY-MM-DD). Defaults to the athlete's local
+            today. `to − from` greater than 366 days → 422.
+          schema: { type: string, format: date }
       responses:
         "200":
-          description: HRV trend series
+          description: HRV trend series and the verdict for `to`
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HrvTrend" }
+        "422":
+          description: "`from` after `to`, a range longer than 366 days, or a malformed date (FastAPI-default {detail})"
+          content: { application/json: { schema: { type: object } } }
 
   # -------------------------------------------------------- Decisions & Changes
   /changes:
@@ -1319,17 +1343,124 @@ components:
 
     HrvTrend:
       type: object
+      description: >
+        Owner spec/03 §3.7; as-built runcoach-api F005 (2026-09-09). `points[]` is
+        the chart's series (unchanged); everything else is the verdict for `to`
+        and every input that produced it, added additively so the response is
+        reproducible by hand (research/00 §1.6). Field-level truth is the
+        as-built `HrvTrendResponse` in /openapi.json.
       properties:
         points:
           type: array
+          description: >
+            One entry per athlete-local day in [from, to], in date order. Each
+            day is judged against its OWN baseline [d-66, d-7]; the band is a
+            property of that baseline, so a day with no reading still carries
+            it, and an unestablished-but-computable baseline (2 ≤ n < 14) still
+            carries it while the day's verdict is withheld. The last entry
+            describes `to` and its band equals `band`.
           items:
             type: object
             properties:
               date: { type: string, format: date }
-              ln_rmssd: { type: number, nullable: true }
-              baseline: { type: number, nullable: true }
-              swc_low: { type: number, nullable: true }
-              swc_high: { type: number, nullable: true }
+              ln_rmssd:
+                type: number
+                nullable: true
+                description: ln of that day's reading on the baseline tier; null when the post-exclusion series has none that day.
+              baseline:
+                type: number
+                nullable: true
+                description: Mean of ln rMSSD over [d-66, d-7]; null together with swc_low/swc_high only when that baseline holds fewer than two readings.
+              swc_low: { type: number, nullable: true, description: "That day's band.lo; null iff baseline is null." }
+              swc_high: { type: number, nullable: true, description: "That day's band.hi; null iff baseline is null." }
+        date: { type: string, format: date, description: "The local day the verdict is about (`to`)." }
+        from: { type: string, format: date, description: "The start of the requested range; defaults to `to`." }
+        timezone: { type: string, description: "The IANA zone every row was bucketed into local days with." }
+        verdict:
+          type: string
+          enum: [hrv_normal, hrv_suppressed, hrv_unavailable]
+          description: >
+            hrv_suppressed only when the 7-day mean is strictly below band.lo on
+            an established baseline; hrv_unavailable when no band, too few
+            readings this week, or a below-band week on an unestablished
+            baseline (§3.7.3: suppression is withheld, not read as normal).
+        ln_rmssd_7d_mean:
+          type: number
+          nullable: true
+          description: Mean of ln rMSSD over the readings in `window`; null only when the window is empty.
+        below_by:
+          type: number
+          nullable: true
+          description: band.lo − ln_rmssd_7d_mean when the verdict is hrv_suppressed; null otherwise.
+        band:
+          type: object
+          nullable: true
+          description: The SWC band in log space over the baseline, mean ± half_width. Null only when the baseline holds fewer than two readings.
+          properties:
+            mean: { type: number }
+            half_width: { type: number, description: "max(swc_factor × sample SD of ln rMSSD over the baseline, band_floor)." }
+            lo: { type: number }
+            hi: { type: number }
+            floored: { type: boolean, description: "True when the computed half-width fell below band_floor." }
+        baseline:
+          type: object
+          properties:
+            window:
+              type: array
+              items: { type: string, format: date }
+              minItems: 2
+              maxItems: 2
+              description: >
+                Closed local-date interval [max(date-66, reset_on), date-7]. Empty
+                after a reset landing inside the judged week, rendered as the
+                formula yields it (first after last) with n 0 — clients must not
+                assume window[0] ≤ window[1].
+            n: { type: integer, description: "Baseline readings, one per local day on `tier`." }
+            tier: { type: string, nullable: true, description: "The source tier the baseline and window are built on." }
+            established: { type: boolean, description: "n ≥ min_baseline_readings. Below it, hrv_suppressed is never emitted." }
+            reset_on: { type: string, format: date, nullable: true }
+            reset_reason: { type: string, enum: [coverage_gap, tier_change], nullable: true }
+        window:
+          type: array
+          items: { type: string, format: date }
+          minItems: 2
+          maxItems: 2
+          description: The closed local-date interval [date-6, date] the mean is taken over.
+        readings_in_window: { type: integer }
+        included:
+          type: array
+          description: The readings that fed ln_rmssd_7d_mean, only; the baseline is summarised by `baseline`.
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              session_id: { type: string }
+              tier: { type: string }
+              rmssd_ms: { type: number }
+        excluded:
+          type: array
+          description: Every stored row inside [date-66, date] that fed neither the baseline nor the window, with its reason.
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              session_id: { type: string }
+              reason:
+                type: string
+                description: >
+                  One of pre_amendment_window, null_tier, unknown_tier: <tier>,
+                  unusable_value: <value>, off_baseline_tier: <tier>,
+                  same_day_later_capture, before_reset: <coverage_gap|tier_change>.
+        thresholds:
+          type: object
+          description: The heuristic constants the verdict was computed with (spec/03 §3.7).
+          properties:
+            baseline_days: { type: integer }
+            min_baseline_readings: { type: integer }
+            min_window_readings: { type: integer }
+            gap_reset_days: { type: integer }
+            band_floor: { type: number }
+            swc_factor: { type: number }
 
     # ---- Decisions & changes (planned) ----------------------------------
     DecisionRecord:

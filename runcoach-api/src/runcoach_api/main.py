@@ -22,6 +22,7 @@ from runcoach_api.schemas import (
     Baseline,
     ExcludedReading,
     HealthResponse,
+    HrvPoint,
     HrvTrendResponse,
     IncludedReading,
     IngestResponse,
@@ -233,6 +234,11 @@ _HRV_READ_PADDING = datetime.timedelta(hours=26)
 #: through the endpoint (IDEA-045). The extra rows come back from
 #: ``build_series`` as ``outside_windows`` and are trimmed from ``excluded[]``.
 _HRV_READ_BACK_DAYS = 2 * hrv_trend.BASELINE_DAYS + hrv_trend.WINDOW_DAYS - 1
+#: The longest ``[from, to]`` the per-day series will be built over (T091):
+#: ``to - from`` greater than this is a 422. Nothing else bounds the loop, and
+#: a year plus a day is every chart the UI draws; 367 evaluations of a pure
+#: function over a single athlete's rows is still cheap, but unbounded is not.
+_HRV_MAX_RANGE_DAYS = 366
 
 
 def _utcnow() -> datetime.datetime:
@@ -286,8 +292,28 @@ def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
+def _point(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> HrvPoint:
+    """One day of the contract's ``points[]``: the reading the day's own
+    series holds for it (null when none) and the band the day's own baseline
+    asserts (all three null together when it cannot build one). The band
+    comes from ``judge`` -- the same call that decides ``to``'s verdict -- so
+    the last point and ``band`` are the same floats, not two computations."""
+    reading = next((r for r in series.series if r.date == series.target_date), None)
+    band = verdict.band
+    return HrvPoint(
+        date=series.target_date,
+        ln_rmssd=None if reading is None else hrv_trend.ln_rmssd(reading),
+        baseline=None if band is None else band.mean,
+        swc_low=None if band is None else band.lo,
+        swc_high=None if band is None else band.hi,
+    )
+
+
 def _trend_response(
-    from_: datetime.date, series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict
+    from_: datetime.date,
+    points: list[HrvPoint],
+    series: hrv_trend.HrvSeries,
+    verdict: hrv_trend.HrvVerdict,
 ) -> HrvTrendResponse:
     """Render the pure module's result on the contract's shape.
 
@@ -304,6 +330,7 @@ def _trend_response(
         date=series.target_date,
         from_=from_,
         timezone=series.timezone,
+        points=points,
         verdict=verdict.verdict,
         ln_rmssd_7d_mean=verdict.ln_rmssd_7d_mean,
         below_by=verdict.below_by,
@@ -340,16 +367,18 @@ def _trend_response(
     )
 
 
-@app.get("/metrics/hrv", response_model=HrvTrendResponse)
+@app.get("/metrics/hrv", response_model=HrvTrendResponse, operation_id="getHrvTrend")
 def get_hrv_trend(
     from_: datetime.date | None = Query(None, alias="from"),  # noqa: B008 -- FastAPI's parameter idiom
     to: datetime.date | None = Query(None),  # noqa: B008
 ) -> HrvTrendResponse:
-    """The resting-HRV trend verdict for local day ``to`` (F005, spec §3.7),
-    on the UI<->engine contract's path (``operationId: getHrvTrend``).
+    """The resting-HRV trend verdict for local day ``to`` (F005, spec §3.7)
+    and the contract's per-day ``points[]`` over ``[from, to]``, on the
+    UI<->engine contract's path (``operationId: getHrvTrend``).
 
     ``to`` defaults to the athlete's local today in the configured zone and
-    ``from`` to ``to``; ``from`` after ``to`` is a 422 naming both. Both are
+    ``from`` to ``to``; ``from`` after ``to`` is a 422 naming both, and so is
+    a range longer than ``_HRV_MAX_RANGE_DAYS`` (T091's cap). Both are
     coerced by pydantic from ``YYYY-MM-DD`` -- never hand-parsed, for the
     reason ``create_session`` gives about ``resting_capture``: an input that
     carries the athlete's intent must never be guessed at, and a malformed
@@ -379,6 +408,12 @@ def get_hrv_trend(
             f"'from' ({from_.isoformat()}) is after 'to' ({to.isoformat()}); "
             "'from' must be on or before 'to'",
         )
+    if (to - from_).days > _HRV_MAX_RANGE_DAYS:
+        raise HTTPException(
+            422,
+            f"'from' ({from_.isoformat()}) to 'to' ({to.isoformat()}) spans {(to - from_).days} days; "
+            f"the range may be at most {_HRV_MAX_RANGE_DAYS} days",
+        )
 
     start_iso, end_iso = hrv_read_range(from_, to)
     conn = db.get_connection()
@@ -387,15 +422,24 @@ def get_hrv_trend(
     finally:
         conn.close()
 
+    # The contract's series: every local day in ``[from, to]`` judged against
+    # its own baseline ``[d-66, d-7]`` by the same pure computation, over the
+    # one set of rows -- ~30 evaluations of a function of ``target_date`` for
+    # a month's chart, done plainly (no caching, no incremental trick). The
+    # last day is ``to``, and its verdict is the response's.
+    points: list[HrvPoint] = []
     try:
-        series = hrv_trend.build_series(rows, zone, to)
+        for offset in range((to - from_).days + 1):
+            series = hrv_trend.build_series(rows, zone, from_ + datetime.timedelta(days=offset))
+            verdict = hrv_trend.judge(series)
+            points.append(_point(series, verdict))
     except OverflowError as exc:
-        # The windows are ``date`` arithmetic back to ``to - 126``; a ``to``
+        # The windows are ``date`` arithmetic back to ``d - 126``; a day
         # inside the calendar's first 126 days has no such history to look
-        # into. Named as the parameter's problem, not served as a 500.
+        # into. Named as the parameters' problem, not served as a 500.
         raise HTTPException(
             422,
-            f"'to' ({to.isoformat()}) is too close to the calendar's origin to have a "
-            f"{_HRV_READ_BACK_DAYS}-day history window",
+            f"'from' ({from_.isoformat()}) to 'to' ({to.isoformat()}) is too close to the calendar's "
+            f"origin to have a {_HRV_READ_BACK_DAYS}-day history window",
         ) from exc
-    return _trend_response(from_, series, hrv_trend.judge(series))
+    return _trend_response(from_, points, series, verdict)

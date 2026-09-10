@@ -124,6 +124,37 @@ class Thresholds(BaseModel):
     swc_factor: float
 
 
+class HrvPoint(BaseModel):
+    """One local day of the chart's series (the UI contract's ``HrvTrend.points[]``),
+    judged against **its own** baseline ``[date-66, date-7]`` -- not against `to`'s.
+
+    The band is a property of the baseline (IDEA-044), so its three fields
+    are null *together*, and only when that day's baseline holds fewer than
+    two readings. A baseline that is computable but not established
+    (2 <= n < 14) still carries its band here even though the verdict for
+    that day is withheld: the chart may draw it; the verdict may not suppress
+    on it. ``ln_rmssd`` is independent of the band: null whenever the
+    post-exclusion series has no reading that day, with or without a band.
+    """
+
+    date: datetime.date = Field(description="The athlete's local day, in `timezone`.")
+    ln_rmssd: float | None = Field(
+        description=(
+            "ln of that day's reading on the baseline tier; null when the post-exclusion series has no "
+            "reading that local day (the day may still carry a band)."
+        )
+    )
+    baseline: float | None = Field(
+        description=(
+            "Mean of ln rMSSD over that day's own baseline [date-66, date-7]. Null together with swc_low "
+            "and swc_high only when that baseline holds fewer than two readings; an unestablished but "
+            "computable baseline (2 <= n < min_baseline_readings) still carries all three."
+        )
+    )
+    swc_low: float | None = Field(description="That day's band.lo; null iff `baseline` is null.")
+    swc_high: float | None = Field(description="That day's band.hi; null iff `baseline` is null.")
+
+
 class HrvTrendResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -132,6 +163,13 @@ class HrvTrendResponse(BaseModel):
         alias="from", description="The start of the requested range; defaults to `to`."
     )
     timezone: str = Field(description="The IANA zone every row was bucketed into local days with.")
+    points: list[HrvPoint] = Field(
+        description=(
+            "One entry per local day in [from, date], in date order, each judged against its own baseline. "
+            "The last entry describes `date` and its band equals `band`. At most 367 entries: a range "
+            "longer than 366 days is a 422."
+        )
+    )
     verdict: Literal["hrv_normal", "hrv_suppressed", "hrv_unavailable"]
     ln_rmssd_7d_mean: float | None = Field(
         description=(

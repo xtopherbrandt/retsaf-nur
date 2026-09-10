@@ -29,6 +29,10 @@ dev = [
     # dependency, not workspace-root -- the root group carries only
     # `pytest` as workspace-level tooling.
     "hypothesis>=6.100",
+    # T091 (F005): the in-suite contract pin (tests/test_hrv_trend_points.py)
+    # and contracts/check_drift.py read contracts/openapi.yaml. Declared
+    # here so neither relies on the transitive uvicorn[standard] install.
+    "pyyaml>=6.0",
 ]
 
 [build-system]

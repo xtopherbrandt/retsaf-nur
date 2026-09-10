@@ -234,6 +234,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="Print each checked operation.")
     args = parser.parse_args(argv)
 
+    # The report uses "—", "·", "✗" and "✔". A Windows console defaults stdout to
+    # cp1252, which cannot encode the check mark: the verdict line itself then
+    # raises UnicodeEncodeError and the script exits 1 *after* finding no drift
+    # (T091, 2026-09-09). Never let the rendering decide the exit code.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
     if not args.target.exists():
         print(f"error: target contract not found at {args.target}", file=sys.stderr)
         return 2

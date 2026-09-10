@@ -35,9 +35,9 @@ Every operation carries three vendor extensions:
 | `x-owner-spec` | The engine spec section (or feature) that **owns** the underlying object; go there for field-level truth. |
 | `x-story` | The UI user story/stories the operation serves. |
 
-`implemented` today: `GET /health` and `/sessions` (`POST`, `GET /{id}`,
-`DELETE /{id}`). Everything else is `planned` and is served by a mock until the
-backend catches up.
+`implemented` today: `GET /health`, `/sessions` (`POST`, `GET /{id}`,
+`DELETE /{id}`) and `GET /metrics/hrv` (F005, 2026-09-09). Everything else is
+`planned` and is served by a mock until the backend catches up.
 
 ## How to use it
 

@@ -3,7 +3,7 @@
 The route wires T083's ``build_series``, T084's ``judge`` and T092's resets
 behind the UI<->engine contract's path (``contracts/openapi.yaml``,
 ``operationId: getHrvTrend``). It serves the **verdict** for ``to``; the
-contract's per-day ``points[]`` is T091's and is deliberately absent here.
+contract's per-day ``points[]`` is T091's (``test_hrv_trend_points.py``).
 
 Everything is driven through ``TestClient`` against the autouse isolated
 database. Readings are seeded through the **real** ``mapping -> classify ->
@@ -267,7 +267,7 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     }
     assert all(entry["reason"] for entry in body["excluded"])
     assert all(entry["date"] for entry in body["excluded"])
-    assert "points" not in body, "the per-day series is T091's; its Red step must stay real"
+    # The per-day ``points[]`` beside these blocks is T091's (test_hrv_trend_points.py).
 
 
 # ---------------------------------------------------------------------------
@@ -570,11 +570,10 @@ def test_a_malformed_date_is_pydantics_422_not_a_hand_parse(configure, value: st
         ("2026-09-27", "2026-09-27", AUCKLAND),  # Auckland's spring-forward day
         ("2026-04-05", "2026-04-05", AUCKLAND),  # Auckland's fall-back day
         ("2026-09-08", "2026-09-08", "UTC"),  # both parameters equal
-        ("1900-01-01", "2026-09-08", "UTC"),  # from before any history
-        ("0001-01-01", "2026-09-08", "UTC"),  # from at the calendar's origin: the read bound clamps
-        ("2026-09-08", "9999-12-31", "UTC"),  # to at the calendar's end: the padded read bound clamps
-        ("2025-09-07", "2026-09-08", "UTC"),  # a 366-day range
-        ("2025-09-06", "2026-09-08", "UTC"),  # 367 days: parses here; the cap is T091's
+        ("2025-09-08", "2026-09-08", "UTC"),  # from before any history (a year back; T091 caps at 366 days)
+        ("0001-05-07", "0001-05-07", "UTC"),  # to - 126 is the calendar's origin: the read bound clamps
+        ("9999-12-31", "9999-12-31", "UTC"),  # to at the calendar's end: the padded read bound clamps
+        ("2025-09-07", "2026-09-08", "UTC"),  # a 366-day range; 367 is T091's 422 (test_hrv_trend_points.py)
     ],
 )
 def test_well_formed_ranges_parse_and_answer_200(configure, from_: str, to: str, zone: str) -> None:
