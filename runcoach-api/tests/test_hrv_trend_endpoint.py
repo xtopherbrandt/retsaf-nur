@@ -1,0 +1,597 @@
+"""T085: ``GET /metrics/hrv`` -- the verdict for ``to``, with everything that produced it.
+
+The route wires T083's ``build_series``, T084's ``judge`` and T092's resets
+behind the UI<->engine contract's path (``contracts/openapi.yaml``,
+``operationId: getHrvTrend``). It serves the **verdict** for ``to``; the
+contract's per-day ``points[]`` is T091's and is deliberately absent here.
+
+Everything is driven through ``TestClient`` against the autouse isolated
+database. Readings are seeded through the **real** ``mapping -> classify ->
+db.persist`` chain (``synthetic`` / ``classified`` from ``conftest.py``): a
+Health Snapshot capture carries the exact ``rmssd_hrv`` the test chooses, so
+the band the test computes by hand is independent of the endpoint; a
+chest-strap capture goes through the beat-series classifier so the resolved
+column seam is exercised end to end. The one row shape the classifier can no
+longer produce -- a pre-amendment-window row (tier set, value null) -- is
+persisted as a hand-built ``Session`` through ``db.persist``, never raw SQL.
+
+The two things the wave-2/3 builders filed against this task are pinned here:
+IDEA-045 (the route must read from ``to - 126d`` or the tier-change reset is
+unreachable through the endpoint) and IDEA-046 (how an empty, inverted
+``baseline.window`` is rendered). The ``from``/``to`` adversarial table at the
+bottom is the parser's deliverable
+(``adversarial-input-probes-are-a-task-deliverable.md``).
+"""
+
+from __future__ import annotations
+
+import math
+import statistics
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
+from fastapi.testclient import TestClient
+from runcoach_api import db as db_module
+from runcoach_api import main as main_module
+from runcoach_api.config import AppConfig
+from runcoach_api.ingestion.mapping import derive_session_id
+from runcoach_api.main import app
+from runcoach_api.metrics import hrv_trend
+from runcoach_api.models import RRInterval, Session
+
+STRAP = "chest_strap_raw"
+SNAPSHOT = "health_snapshot"
+PROFILE = "HRV Snapshot"
+AUCKLAND = "Pacific/Auckland"
+
+# The target date F005's canonical response example uses: baseline
+# [2026-07-04, 2026-09-01], judged week [2026-09-02, 2026-09-08].
+D = date(2026, 9, 8)
+
+
+# ---------------------------------------------------------------------------
+# configuration and seeding helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def configure(isolated_data_dir, monkeypatch):
+    """``configure(zone)`` -- re-install the isolated ``AppConfig`` with a
+    different ``athlete_timezone`` and clear ``db._load_config_cached``, the
+    ``declared_config`` pattern. Both halves are required: without the clear
+    the route keeps reading the cached UTC config and the fixture is a
+    silent no-op. The profile declaration is always present so the strap
+    classifier route can fire."""
+
+    def _configure(zone: str) -> AppConfig:
+        config = AppConfig(
+            host="127.0.0.1",
+            port=8000,
+            data_dir=isolated_data_dir,
+            resting_hrv_profile_names=[PROFILE],
+            athlete_timezone=zone,
+        )
+        monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+        db_module._load_config_cached.cache_clear()
+        return config
+
+    return _configure
+
+
+def at(day: date, hh: int = 6, mm: int = 0, zone: str = "UTC") -> datetime:
+    """The aware UTC instant of local wall time ``hh:mm`` on ``day`` in ``zone``."""
+    return datetime(day.year, day.month, day.day, hh, mm, tzinfo=ZoneInfo(zone)).astimezone(UTC)
+
+
+def _strap_beats() -> list[RRInterval]:
+    values = [800.0, 900.0, 850.0, 950.0, 870.0, 920.0]
+    return [
+        RRInterval(seq=i, rr_ms=values[i % len(values)], rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(len(values))
+    ]
+
+
+class Seeder:
+    """Builds sessions through the real classifier and persists them."""
+
+    def __init__(self, synthetic, classified) -> None:
+        self._synthetic = synthetic
+        self._classified = classified
+        self.sessions: list[Session] = []
+
+    def snapshot(self, when: datetime, rmssd: float) -> Session:
+        """A Health Snapshot capture carrying exactly ``rmssd`` (Tier 2)."""
+        session = self._classified(self._synthetic(60, rmssd_hrv=rmssd, start_time=when))
+        assert session.hrv_source_tier == SNAPSHOT and session.resting_rmssd_ms == rmssd
+        return self._keep(session)
+
+    def strap(self, when: datetime) -> Session:
+        """A declared chest-strap capture whose reading is computed from beats (Tier 1)."""
+        messages = self._synthetic(
+            total_timer_time=150.0, avg_heart_rate=60, sport_profile_name=PROFILE, start_time=when
+        )
+        session = self._classified(messages, _strap_beats(), 1.0, [PROFILE])
+        assert session.hrv_source_tier == STRAP and session.resting_rmssd_ms > 0
+        return self._keep(session)
+
+    def run(self, when: datetime) -> Session:
+        """An ordinary run: no tier, no reading."""
+        session = self._classified(self._synthetic(start_time=when))
+        assert session.hrv_source_tier is None and session.resting_rmssd_ms is None
+        return self._keep(session)
+
+    def pre_amendment(self, when: datetime) -> Session:
+        """A row from F004's pre-amendment window: tier set, reading never
+        backfilled. The classifier cannot produce it any more, so it is a
+        hand-built ``Session`` -- still persisted through ``db.persist``."""
+        iso = when.isoformat()
+        device = "garmin:legacy"
+        session = Session(
+            session_id=derive_session_id(device, iso),
+            sport="running",
+            source_vendor="garmin",
+            start_time=iso,
+            source_device=device,
+            hrv_source_tier=STRAP,
+            resting_rmssd_ms=None,
+        )
+        return self._keep(session)
+
+    def _keep(self, session: Session) -> Session:
+        self.sessions.append(session)
+        return session
+
+    def persist(self) -> None:
+        conn = db_module.get_connection()
+        try:
+            db_module.init_schema(conn)
+            for session in self.sessions:
+                beats = _strap_beats() if session.hrv_source_tier == STRAP and session.resting_rmssd_ms else []
+                db_module.persist(conn, session, [], beats, {})
+        finally:
+            conn.close()
+
+
+@pytest.fixture
+def seeder(synthetic, classified) -> Seeder:
+    return Seeder(synthetic, classified)
+
+
+def days(first: date, last: date) -> list[date]:
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
+def baseline_values(n: int) -> list[float]:
+    """An ordinary athlete's dispersion: alternating 38/44 ms around 41,
+    wide enough that the floor does not fire (T084)."""
+    return [38.0 + 6.0 * (i % 2) for i in range(n)]
+
+
+def expected_band(values: list[float]) -> tuple[float, float, float]:
+    """Computed here, independently of the module, with the estimator the
+    decision log fixed: sample SD of the log series."""
+    logs = [math.log(v) for v in values]
+    mean = statistics.fmean(logs)
+    half = max(0.5 * statistics.stdev(logs), 0.01)
+    return mean, mean - half, mean + half
+
+
+def get(client: TestClient, **params):
+    return client.get("/metrics/hrv", params={k: v for k, v in params.items() if v is not None})
+
+
+# ---------------------------------------------------------------------------
+# the first failing test: every input that produced the verdict is reported
+# ---------------------------------------------------------------------------
+
+
+def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, seeder) -> None:
+    """A 20-reading snapshot baseline, a snapshot week with one duplicate
+    capture, one real strap capture (off the baseline tier), one ordinary run
+    (no tier) and one pre-amendment row -- persisted through the real path.
+    The response must carry the verdict and everything needed to recompute
+    it by hand (``research/00`` §1.6), and every exclusion names a reason.
+    Red: the route does not exist (404)."""
+    configure("UTC")
+    values = baseline_values(20)
+    for day, value in zip(days(D - timedelta(days=26), D - timedelta(days=7)), values):
+        seeder.snapshot(at(day), value)
+    week = [40.0, 41.0, 42.0, 43.0]
+    for day, value in zip(days(D - timedelta(days=6), D - timedelta(days=3)), week):
+        seeder.snapshot(at(day), value)
+    later = seeder.snapshot(at(D - timedelta(days=3), hh=9), 30.0)
+    strap = seeder.strap(at(D - timedelta(days=2)))
+    run = seeder.run(at(D - timedelta(days=1)))
+    legacy = seeder.pre_amendment(at(D))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        response = get(client, to=D.isoformat())
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    mean, lo, hi = expected_band(values)
+    assert body["date"] == "2026-09-08"
+    assert body["from"] == "2026-09-08"
+    assert body["timezone"] == "UTC"
+    assert body["verdict"] == "hrv_normal"
+    assert body["ln_rmssd_7d_mean"] == pytest.approx(statistics.fmean(math.log(v) for v in week))
+    assert body["below_by"] is None
+    assert body["band"]["lo"] == pytest.approx(lo)
+    assert body["band"]["hi"] == pytest.approx(hi)
+    assert body["band"]["mean"] == pytest.approx(mean)
+    assert body["band"]["half_width"] == pytest.approx((hi - lo) / 2)
+    assert body["band"]["floored"] is False
+    assert body["baseline"] == {
+        "window": ["2026-07-04", "2026-09-01"],
+        "n": 20,
+        "tier": SNAPSHOT,
+        "established": True,
+        "reset_on": None,
+        "reset_reason": None,
+    }
+    assert body["window"] == ["2026-09-02", "2026-09-08"]
+    assert body["readings_in_window"] == 4
+    assert [r["rmssd_ms"] for r in body["included"]] == week
+    assert all(r["tier"] == SNAPSHOT for r in body["included"])
+    assert body["thresholds"] == {
+        "baseline_days": 60,
+        "min_baseline_readings": 14,
+        "min_window_readings": 3,
+        "gap_reset_days": 21,
+        "band_floor": 0.01,
+        "swc_factor": 0.5,
+    }
+    reasons = {entry["session_id"]: entry["reason"] for entry in body["excluded"]}
+    assert reasons == {
+        later.session_id: "same_day_later_capture",
+        strap.session_id: f"off_baseline_tier: {STRAP}",
+        run.session_id: "null_tier",
+        legacy.session_id: "pre_amendment_window",
+    }
+    assert all(entry["reason"] for entry in body["excluded"])
+    assert all(entry["date"] for entry in body["excluded"])
+    assert "points" not in body, "the per-day series is T091's; its Red step must stay real"
+
+
+# ---------------------------------------------------------------------------
+# the parameters and their defaults
+# ---------------------------------------------------------------------------
+
+
+def test_to_defaults_to_the_athletes_local_today_and_from_to_to(configure, monkeypatch) -> None:
+    """The clock is frozen at 2026-09-08T13:00Z -- still the 8th in UTC, but
+    01:00 on the 9th in Auckland. ``to`` must be the Auckland date."""
+    configure(AUCKLAND)
+    monkeypatch.setattr(main_module, "_utcnow", lambda: datetime(2026, 9, 8, 13, 0, tzinfo=UTC))
+
+    with TestClient(app) as client:
+        response = get(client)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["date"] == "2026-09-09"
+    assert body["from"] == "2026-09-09"
+    assert body["timezone"] == AUCKLAND
+    assert body["window"] == ["2026-09-03", "2026-09-09"]
+
+
+def test_from_after_to_is_a_422_naming_both_parameters(configure) -> None:
+    configure("UTC")
+    with TestClient(app) as client:
+        response = get(client, **{"from": "2026-09-09", "to": "2026-09-08"})
+
+    assert response.status_code == 422
+    detail = str(response.json()["detail"])
+    assert "from" in detail and "to" in detail
+    assert "2026-09-09" in detail and "2026-09-08" in detail
+
+
+def test_from_defaults_to_to_and_an_explicit_from_is_echoed(configure) -> None:
+    configure("UTC")
+    with TestClient(app) as client:
+        explicit = get(client, **{"from": "2026-09-02", "to": D.isoformat()}).json()
+        defaulted = get(client, to=D.isoformat()).json()
+
+    assert explicit["from"] == "2026-09-02" and explicit["date"] == "2026-09-08"
+    assert defaulted["from"] == "2026-09-08" and defaulted["date"] == "2026-09-08"
+
+
+def test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200(configure, seeder) -> None:
+    """There is essentially no error path: a day the athlete has not reached,
+    a day before any capture, and an empty database are all
+    ``hrv_unavailable`` with a 200, never a 404."""
+    configure("UTC")
+    with TestClient(app) as client:
+        empty = get(client, to=D.isoformat())
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["verdict"] == "hrv_unavailable"
+        assert empty.json()["band"] is None
+        assert empty.json()["baseline"]["established"] is False
+        assert empty.json()["included"] == [] and empty.json()["excluded"] == []
+
+    for day, value in zip(days(D - timedelta(days=26), D), baseline_values(27)):
+        seeder.snapshot(at(day), value)
+    seeder.persist()
+
+    with TestClient(app) as client:
+        future = get(client, to=(D + timedelta(days=400)).isoformat())
+        before = get(client, to=(D - timedelta(days=100)).isoformat())
+
+    assert future.status_code == 200 and before.status_code == 200
+    assert future.json()["verdict"] == "hrv_unavailable"
+    assert future.json()["readings_in_window"] == 0
+    assert before.json()["verdict"] == "hrv_unavailable"
+    assert before.json()["baseline"]["established"] is False
+    assert before.json()["baseline"]["n"] == 0
+
+
+def test_the_zone_is_read_from_config_per_request(configure, seeder) -> None:
+    """F005's rewritten scenario 18: a capture at 2026-09-07T17:00Z is the
+    7th in UTC and the 8th in Auckland. Changing ``athlete_timezone`` between
+    two requests moves the reading's local day and the reported zone, and
+    asserts nothing about the change -- no reset object, no verdict."""
+    configure("UTC")
+    seeder.snapshot(datetime(2026, 9, 7, 17, 0, tzinfo=UTC), 40.0)
+    seeder.persist()
+
+    with TestClient(app) as client:
+        in_utc = get(client, to=D.isoformat()).json()
+        configure(AUCKLAND)
+        in_auckland = get(client, to=D.isoformat()).json()
+
+    assert in_utc["timezone"] == "UTC"
+    assert [r["date"] for r in in_utc["included"]] == ["2026-09-07"]
+    assert in_auckland["timezone"] == AUCKLAND
+    assert [r["date"] for r in in_auckland["included"]] == ["2026-09-08"]
+    for body in (in_utc, in_auckland):
+        assert body["baseline"]["reset_on"] is None
+        assert body["baseline"]["reset_reason"] is None
+        assert body["verdict"] == "hrv_unavailable"
+
+
+# ---------------------------------------------------------------------------
+# the verdict blocks
+# ---------------------------------------------------------------------------
+
+
+def test_below_by_is_lo_minus_mean_when_suppressed_and_null_otherwise(configure, seeder) -> None:
+    configure("UTC")
+    values = baseline_values(20)
+    for day, value in zip(days(D - timedelta(days=26), D - timedelta(days=7)), values):
+        seeder.snapshot(at(day), value)
+    suppressed_week = [25.0, 26.0, 24.0]
+    for day, value in zip(days(D - timedelta(days=6), D - timedelta(days=4)), suppressed_week):
+        seeder.snapshot(at(day), value)
+    seeder.persist()
+
+    with TestClient(app) as client:
+        response = get(client, to=D.isoformat())
+
+    body = response.json()
+    _, lo, _ = expected_band(values)
+    week_mean = statistics.fmean(math.log(v) for v in suppressed_week)
+    assert body["verdict"] == "hrv_suppressed"
+    assert body["below_by"] == pytest.approx(lo - week_mean)
+    assert body["below_by"] > 0
+    assert body["below_by"] == pytest.approx(body["band"]["lo"] - body["ln_rmssd_7d_mean"])
+
+
+def test_included_covers_the_window_only_and_excluded_spans_the_baseline_too(configure, seeder) -> None:
+    """``included[]`` is the readings that fed the 7-day mean and nothing
+    else -- the baseline is summarised by ``baseline.n`` -- while
+    ``excluded[]`` lists every non-contributing row across ``[to-66, to]``,
+    including an off-tier strap capture deep inside the baseline."""
+    configure("UTC")
+    baseline_days = days(D - timedelta(days=26), D - timedelta(days=7))
+    for day, value in zip(baseline_days, baseline_values(20)):
+        seeder.snapshot(at(day), value)
+    for day in days(D - timedelta(days=6), D - timedelta(days=3)):
+        seeder.snapshot(at(day), 41.0)
+    # 07:00, not 06:00: every synthetic file shares one source_device, so a
+    # strap capture at the snapshot's instant would be the same session.
+    deep = seeder.strap(at(D - timedelta(days=20), hh=7))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    assert body["baseline"]["n"] == 20
+    assert len(body["included"]) == 4
+    assert all(date.fromisoformat(r["date"]) >= D - timedelta(days=6) for r in body["included"])
+    assert body["excluded"] == [
+        {"date": "2026-08-19", "session_id": deep.session_id, "reason": f"off_baseline_tier: {STRAP}"}
+    ]
+
+
+# ---------------------------------------------------------------------------
+# IDEA-045: the read window reaches the previous baseline window
+# ---------------------------------------------------------------------------
+
+
+def test_the_route_reads_rows_from_126_days_before_to(configure, monkeypatch) -> None:
+    """The lower bound handed to ``db.read_hrv_rows`` must cover local day
+    ``to - 126`` in any zone (UTC+14 starts it 14h before midnight UTC), so
+    it is ``to - 126d - 26h`` or earlier; the upper bound must cover local
+    day ``to`` in UTC-12, i.e. ``(to + 1) + 26h`` or later."""
+    configure("UTC")
+    seen: list[tuple[str, str]] = []
+    real = db_module.read_hrv_rows
+
+    def spy(conn, start_iso, end_iso):
+        seen.append((start_iso, end_iso))
+        return real(conn, start_iso, end_iso)
+
+    monkeypatch.setattr(main_module.db, "read_hrv_rows", spy)
+
+    with TestClient(app) as client:
+        assert get(client, to=D.isoformat()).status_code == 200
+
+    (start_iso, end_iso) = seen[0]
+    midnight = datetime(D.year, D.month, D.day, tzinfo=UTC)
+    assert datetime.fromisoformat(start_iso) <= midnight - timedelta(days=126, hours=26)
+    assert datetime.fromisoformat(end_iso) >= midnight + timedelta(days=1, hours=26)
+    assert start_iso.endswith("+00:00") and end_iso.endswith("+00:00"), "never a Z suffix"
+
+
+def test_a_sustained_tier_change_is_reachable_through_the_endpoint(configure, seeder) -> None:
+    """IDEA-045's scenario end to end: an established snapshot era in
+    ``[D-126, D-67]`` followed by a strap era in ``[D-66, D-7]``. With a
+    ``to - 66d`` read the previous window is empty, reads as thin, and the
+    reset silently never fires; with ``to - 126d`` it is ``tier_change``."""
+    configure("UTC")
+    for day in days(D - timedelta(days=126), D - timedelta(days=67)):
+        seeder.snapshot(at(day), 40.0)
+    for day in days(D - timedelta(days=66), D - timedelta(days=7)):
+        seeder.strap(at(day))
+    for day in days(D - timedelta(days=6), D - timedelta(days=4)):
+        seeder.strap(at(day))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    assert body["baseline"]["tier"] == STRAP
+    assert body["baseline"]["reset_reason"] == "tier_change"
+    assert body["baseline"]["reset_on"] == (D - timedelta(days=66)).isoformat()
+    assert body["baseline"]["window"] == [(D - timedelta(days=66)).isoformat(), "2026-09-01"]
+    assert body["baseline"]["established"] is True
+    # The rows before D-66 fed the rule but are not "inside [to-66, to]", so
+    # the documented excluded[] span does not list them.
+    assert body["excluded"] == []
+
+
+# ---------------------------------------------------------------------------
+# IDEA-046: an empty baseline after a late reset
+# ---------------------------------------------------------------------------
+
+
+def test_an_empty_baseline_window_after_a_late_reset_is_rendered_inverted(configure, seeder) -> None:
+    """A gap ending inside the judged week: the clip ``[reset_on, D-7]`` is
+    an empty interval. It is rendered exactly as the formula yields it --
+    first after last -- with ``n`` 0, so a reader can verify the clip from
+    ``reset_on`` and ``date``; the schema says so. The verdict is
+    ``hrv_unavailable`` and the pre-gap readings are listed as
+    ``before_reset: coverage_gap``."""
+    configure("UTC")
+    era = days(D - timedelta(days=66), D - timedelta(days=30))
+    for day in era:
+        seeder.snapshot(at(day), 40.0)
+    for day in days(D - timedelta(days=2), D):
+        seeder.snapshot(at(day), 40.0)
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    resumed = (D - timedelta(days=2)).isoformat()
+    assert body["baseline"]["reset_reason"] == "coverage_gap"
+    assert body["baseline"]["reset_on"] == resumed
+    assert body["baseline"]["window"] == [resumed, "2026-09-01"]
+    assert body["baseline"]["window"][0] > body["baseline"]["window"][1]
+    assert body["baseline"]["n"] == 0
+    assert body["band"] is None
+    assert body["verdict"] == "hrv_unavailable"
+    assert body["readings_in_window"] == 3
+    assert {e["reason"] for e in body["excluded"]} == {"before_reset: coverage_gap"}
+    assert len(body["excluded"]) == len(era)
+
+
+# ---------------------------------------------------------------------------
+# the schema is the documentation
+# ---------------------------------------------------------------------------
+
+
+def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
+    """IDEA-041 / IDEA-046: the reasons T083 and T092 emit beyond the task's
+    original five are in the schema description, read from the module's
+    constants so the two cannot drift. The verdict is a closed enum."""
+    spec = app.openapi()
+    schemas = spec["components"]["schemas"]
+    reason = schemas["ExcludedReading"]["properties"]["reason"]["description"]
+    for constant in (
+        hrv_trend.REASON_PRE_AMENDMENT_WINDOW,
+        hrv_trend.REASON_NULL_TIER,
+        hrv_trend.REASON_UNKNOWN_TIER,
+        hrv_trend.REASON_UNUSABLE_VALUE,
+        hrv_trend.REASON_OFF_BASELINE_TIER,
+        hrv_trend.REASON_SAME_DAY_LATER_CAPTURE,
+        hrv_trend.REASON_OUTSIDE_WINDOWS,
+        hrv_trend.REASON_BEFORE_RESET,
+    ):
+        assert constant in reason, constant
+    assert set(schemas["HrvTrendResponse"]["properties"]["verdict"]["enum"]) == {
+        "hrv_normal",
+        "hrv_suppressed",
+        "hrv_unavailable",
+    }
+    window = schemas["Baseline"]["properties"]["window"]["description"]
+    assert "empty" in window and "n" in window, "IDEA-046's rendering decision is documented"
+
+
+def test_the_query_parameters_are_from_and_to_and_both_optional() -> None:
+    """``from`` is a Python keyword, so the parameter is aliased; the alias
+    is what ``/openapi.json`` -- and T091's contract pin -- must show."""
+    params = {p["name"]: p for p in app.openapi()["paths"]["/metrics/hrv"]["get"]["parameters"]}
+    assert set(params) == {"from", "to"}
+    assert all(p["in"] == "query" and not p.get("required", False) for p in params.values())
+
+
+# ---------------------------------------------------------------------------
+# the from/to adversarial table (the parser's deliverable)
+#
+# Authored from the task's list before the route was written. Each row is what
+# was sent and what came back; the reasons are in the task file's table.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "yesterday", "2026-13-01", "2026-09-0", "2026/09/08", "2026-02-29", "20260908", "2026-09-08T06:00"],
+)
+def test_a_malformed_date_is_pydantics_422_not_a_hand_parse(configure, value: str) -> None:
+    configure("UTC")
+    with TestClient(app) as client:
+        response = get(client, to=value)
+
+    assert response.status_code == 422, response.text
+    assert any(err["loc"] == ["query", "to"] for err in response.json()["detail"])
+
+
+@pytest.mark.parametrize(
+    ("from_", "to", "zone"),
+    [
+        ("2028-02-29", "2028-02-29", "UTC"),  # a real leap day
+        ("2026-09-27", "2026-09-27", AUCKLAND),  # Auckland's spring-forward day
+        ("2026-04-05", "2026-04-05", AUCKLAND),  # Auckland's fall-back day
+        ("2026-09-08", "2026-09-08", "UTC"),  # both parameters equal
+        ("1900-01-01", "2026-09-08", "UTC"),  # from before any history
+        ("0001-01-01", "2026-09-08", "UTC"),  # from at the calendar's origin: the read bound clamps
+        ("2026-09-08", "9999-12-31", "UTC"),  # to at the calendar's end: the padded read bound clamps
+        ("2025-09-07", "2026-09-08", "UTC"),  # a 366-day range
+        ("2025-09-06", "2026-09-08", "UTC"),  # 367 days: parses here; the cap is T091's
+    ],
+)
+def test_well_formed_ranges_parse_and_answer_200(configure, from_: str, to: str, zone: str) -> None:
+    configure(zone)
+    with TestClient(app) as client:
+        response = get(client, **{"from": from_, "to": to})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["from"] == from_ and body["date"] == to
+    assert body["verdict"] == "hrv_unavailable"
+
+
+def test_a_to_inside_the_calendars_first_126_days_is_a_422_not_a_500(configure) -> None:
+    """The far-future row above clamps because only the *read bound* overflows;
+    a ``to`` within 126 days of ``date.min`` overflows the module's own window
+    arithmetic, which is the parameter's problem and is named as such."""
+    configure("UTC")
+    with TestClient(app) as client:
+        response = get(client, to="0001-01-31")
+
+    assert response.status_code == 422, response.text
+    assert "to" in str(response.json()["detail"]) and "0001-01-31" in str(response.json()["detail"])

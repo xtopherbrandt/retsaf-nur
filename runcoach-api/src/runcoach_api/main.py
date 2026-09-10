@@ -1,6 +1,8 @@
+import datetime
 from contextlib import asynccontextmanager
+from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -14,7 +16,17 @@ from runcoach_api.ingestion.exceptions import (
     TooManyRecordsError,
 )
 from runcoach_api.ingestion.pipeline import ingest_fit_bytes
-from runcoach_api.schemas import HealthResponse, IngestResponse
+from runcoach_api.metrics import hrv_trend
+from runcoach_api.schemas import (
+    Band,
+    Baseline,
+    ExcludedReading,
+    HealthResponse,
+    HrvTrendResponse,
+    IncludedReading,
+    IngestResponse,
+    Thresholds,
+)
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
@@ -202,3 +214,183 @@ def delete_session(session_id: str) -> Response:
     # carry no body at all, and returning None through the default JSON
     # response class would emit a four-byte ``null``.
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# GET /metrics/hrv (F005, T085)
+# ---------------------------------------------------------------------------
+
+#: How far past a local day's midnight-UTC anchor the row read is padded, so
+#: the whole local day is covered in any zone (UTC+14 through UTC-12) before
+#: ``hrv_trend`` buckets each row with ``astimezone(zone)``. ``read_hrv_rows``
+#: deliberately does no day arithmetic; the padding is the caller's.
+_HRV_READ_PADDING = datetime.timedelta(hours=26)
+#: The route reads back to ``from - 126`` local days, not ``from - 66``: the
+#: sustained-tier-change rule (T092) resolves the tier over the *previous*
+#: baseline window ``[D-126, D-67]`` and compares, and a read that stops at
+#: ``D-66`` leaves that window empty -- which reads as "thin", never as a
+#: change, so ``reset_reason: tier_change`` would be silently unreachable
+#: through the endpoint (IDEA-045). The extra rows come back from
+#: ``build_series`` as ``outside_windows`` and are trimmed from ``excluded[]``.
+_HRV_READ_BACK_DAYS = 2 * hrv_trend.BASELINE_DAYS + hrv_trend.WINDOW_DAYS - 1
+
+
+def _utcnow() -> datetime.datetime:
+    """The clock seam: the current aware UTC instant. Patched by the tests
+    that freeze time; nothing else reads the clock."""
+    return datetime.datetime.now(datetime.UTC)
+
+
+def _today_in(zone: ZoneInfo) -> datetime.date:
+    """The athlete's local today -- the default ``to``. Resolved from the
+    configured zone, not the machine's: at 13:00Z it is already tomorrow in
+    Auckland, and a verdict about the wrong day is the defect
+    ``athlete_timezone`` exists to prevent."""
+    return _utcnow().astimezone(zone).date()
+
+
+def hrv_read_range(from_: datetime.date, to: datetime.date) -> tuple[str, str]:
+    """The inclusive UTC ``start_time`` bounds handed to ``db.read_hrv_rows``:
+    ``[from - 126d - 26h, (to + 1d) + 26h]``, spelled ``+00:00`` exactly as
+    the rows are stored (never ``Z``: it does not compare against ``+00:00``).
+
+    ``from`` anchors the lower bound so T091's per-day loop over ``[from,
+    to]`` reads once; for this task's single verdict ``from == to`` by
+    default and the bound is ``to - 126d - 26h``.
+
+    Both bounds are clamped to the calendar: ``to=9999-12-31`` is a valid
+    date whose padded end does not exist, and a far-future or far-past
+    request is ``hrv_unavailable``, not a 500 (the adversarial table's
+    far-future row found the overflow).
+    """
+    start = datetime.datetime(from_.year, from_.month, from_.day, tzinfo=datetime.UTC)
+    end = datetime.datetime(to.year, to.month, to.day, tzinfo=datetime.UTC)
+    return (
+        _shifted(start, -(datetime.timedelta(days=_HRV_READ_BACK_DAYS) + _HRV_READ_PADDING)).isoformat(),
+        _shifted(end, datetime.timedelta(days=1) + _HRV_READ_PADDING).isoformat(),
+    )
+
+
+def _shifted(instant: datetime.datetime, delta: datetime.timedelta) -> datetime.datetime:
+    """``instant + delta``, clamped to the calendar's edge it would cross."""
+    try:
+        return instant + delta
+    except OverflowError:
+        if delta < datetime.timedelta(0):
+            return datetime.datetime.min.replace(tzinfo=datetime.UTC)
+        return datetime.datetime.max.replace(tzinfo=datetime.UTC)
+
+
+def _trend_response(
+    from_: datetime.date, series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict
+) -> HrvTrendResponse:
+    """Render the pure module's result on the contract's shape.
+
+    ``excluded[]`` is documented as every non-contributing row inside
+    ``[to-66, to]``; the module lists the rows the padded read brought in
+    from before ``to-66`` (and any clock-skewed row after ``to``) as
+    ``outside_windows``, and they are trimmed here so the list is exactly
+    the population it claims to be. The *unclipped* window is the span, so a
+    reset does not shrink it.
+    """
+    span_first = hrv_trend.baseline_window(series.target_date)[0]
+    band = verdict.band
+    return HrvTrendResponse(
+        date=series.target_date,
+        from_=from_,
+        timezone=series.timezone,
+        verdict=verdict.verdict,
+        ln_rmssd_7d_mean=verdict.ln_rmssd_7d_mean,
+        below_by=verdict.below_by,
+        band=None
+        if band is None
+        else Band(mean=band.mean, half_width=band.half_width, lo=band.lo, hi=band.hi, floored=band.floored),
+        baseline=Baseline(
+            window=series.baseline_window,
+            n=verdict.baseline_n,
+            tier=series.tier,
+            established=verdict.established,
+            reset_on=series.reset_on,
+            reset_reason=series.reset_reason,
+        ),
+        window=series.judged_window,
+        readings_in_window=verdict.readings_in_window,
+        included=[
+            IncludedReading(date=r.date, session_id=r.session_id, tier=r.tier, rmssd_ms=r.rmssd_ms)
+            for r in series.window
+        ],
+        excluded=[
+            ExcludedReading(date=e.date, session_id=e.session_id, reason=e.reason)
+            for e in series.excluded
+            if span_first <= e.date <= series.target_date
+        ],
+        thresholds=Thresholds(
+            baseline_days=hrv_trend.BASELINE_DAYS,
+            min_baseline_readings=hrv_trend.MIN_BASELINE_READINGS,
+            min_window_readings=hrv_trend.MIN_WINDOW_READINGS,
+            gap_reset_days=hrv_trend.GAP_RESET_DAYS,
+            band_floor=hrv_trend.BAND_FLOOR,
+            swc_factor=hrv_trend.SWC_FACTOR,
+        ),
+    )
+
+
+@app.get("/metrics/hrv", response_model=HrvTrendResponse)
+def get_hrv_trend(
+    from_: datetime.date | None = Query(None, alias="from"),  # noqa: B008 -- FastAPI's parameter idiom
+    to: datetime.date | None = Query(None),  # noqa: B008
+) -> HrvTrendResponse:
+    """The resting-HRV trend verdict for local day ``to`` (F005, spec §3.7),
+    on the UI<->engine contract's path (``operationId: getHrvTrend``).
+
+    ``to`` defaults to the athlete's local today in the configured zone and
+    ``from`` to ``to``; ``from`` after ``to`` is a 422 naming both. Both are
+    coerced by pydantic from ``YYYY-MM-DD`` -- never hand-parsed, for the
+    reason ``create_session`` gives about ``resting_capture``: an input that
+    carries the athlete's intent must never be guessed at, and a malformed
+    date is a free 422. ``from`` is a Python keyword, hence the alias, which
+    is what ``/openapi.json`` serialises.
+
+    There is essentially no other error path. An empty database, a day the
+    athlete has not reached and a day before any capture are all
+    ``hrv_unavailable`` with a 200 -- the absence of a verdict is itself the
+    answer, not a missing resource.
+
+    The zone is read from the config **per request** and handed down, so the
+    pure module never imports ``config`` and a changed ``athlete_timezone``
+    simply re-buckets the history on the next request; nothing is stored to
+    detect the change and nothing is asserted about it. The connection is
+    opened and closed inline like the other routes -- there is no dependency
+    injection seam for the DB here and this feature does not add one.
+    """
+    zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    if to is None:
+        to = _today_in(zone)
+    if from_ is None:
+        from_ = to
+    if from_ > to:
+        raise HTTPException(
+            422,
+            f"'from' ({from_.isoformat()}) is after 'to' ({to.isoformat()}); "
+            "'from' must be on or before 'to'",
+        )
+
+    start_iso, end_iso = hrv_read_range(from_, to)
+    conn = db.get_connection()
+    try:
+        rows = db.read_hrv_rows(conn, start_iso, end_iso)
+    finally:
+        conn.close()
+
+    try:
+        series = hrv_trend.build_series(rows, zone, to)
+    except OverflowError as exc:
+        # The windows are ``date`` arithmetic back to ``to - 126``; a ``to``
+        # inside the calendar's first 126 days has no such history to look
+        # into. Named as the parameter's problem, not served as a 500.
+        raise HTTPException(
+            422,
+            f"'to' ({to.isoformat()}) is too close to the calendar's origin to have a "
+            f"{_HRV_READ_BACK_DAYS}-day history window",
+        ) from exc
+    return _trend_response(from_, series, hrv_trend.judge(series))
