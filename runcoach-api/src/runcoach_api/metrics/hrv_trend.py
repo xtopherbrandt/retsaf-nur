@@ -299,8 +299,12 @@ def sustained_tier(counts: Mapping[str, int]) -> str | None:
 
     Rule 1 of the tier rule on its own. ``resolve_baseline_tier`` narrows
     this to the tiers that also cover the judged week; ``tier_change_reset``
-    reads it unnarrowed on both windows, because a change of baseline is a
-    change of the tier that *sustains* it, not of the tier a week chose.
+    reads it unnarrowed on the previous window ``[D-126, D-67]`` only
+    (rule 4(b)) -- the current window is tested by the resolved tier's own
+    count there (rule 4(a)) -- because a change of baseline is a change
+    from the tier that *sustained* the previous window, not from the tier
+    a week chose (sprint-005 review cycle 3, M2: an earlier wording said
+    "on both windows", the mechanism T094 retracted).
     """
     for tier in TIER_FIDELITY:
         if counts.get(tier, 0) >= MIN_BASELINE_READINGS:
@@ -410,9 +414,12 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     resolved baseline tier sustains the window, differs from the tier that
     sustained the previous window ``[D-126, D-67]`` (``sustained_tier``,
     rule 1 alone), and its era does not interleave with the previous
-    tier's inside the window (``tier_change_reset``, T094); ``reset_on`` is
-    the era's first reading over both windows, and the reported baseline
-    window is clipped to ``[max(D-66, reset_on), D-7]``. ``rows`` must span
+    tier's over both windows -- no reading of the new tier falls between
+    the old tier's first and last (``tier_change_reset``, T094; judged over
+    both windows since sprint-005 review cycle 3); ``reset_on`` is the
+    era's first reading over both windows after the old tier's last, and
+    the reported baseline window is clipped to ``[max(D-66, reset_on),
+    D-7]``. ``rows`` must span
     ``[D-126, D]`` for the rule to be able to fire, since a narrower read
     leaves the previous window empty, which reads as "thin" and never as a
     change. See ``coverage_gap_reset`` and ``tier_change_reset``.
@@ -754,14 +761,25 @@ def tier_change_reset(
     (b) it differs from the tier the previous window ``[D-126, D-67]``
         sustains (``sustained_tier`` on ``previous_readings``: highest
         fidelity with at least ``MIN_BASELINE_READINGS``, rule 1 alone);
-    (c) the two eras **do not interleave**: every reading of the previous
-        tier inside the current baseline window predates the resolved
-        tier's first reading there -- the old era ended before the new one
-        began. Compared on the captures' instants, as the same-day collapse
-        orders them, so two devices worn on the switch morning are ordered
-        by which was worn first; a previous-tier capture at the very
-        instant of the resolved tier's first does not predate it (the test
-        is ``>=``), so the tie is interleaved and reports nothing.
+    (c) the two eras **do not interleave**, judged over both windows
+        ``[D-126, D-7]`` together (``previous_readings`` and
+        ``baseline_readings``; sprint-005 review cycle 3, M1 -- T094
+        judged it on the current window alone): with ``A`` the previous
+        tier and ``B`` the resolved tier, no ``B`` reading falls between
+        ``A``'s first and last reading there -- ``A_first < B <= A_last``
+        for none of them -- so the old era ended before the new one
+        began. Compared on the captures' instants, as the same-day
+        collapse orders them, so two devices worn on the switch morning
+        are ordered by which was worn first; a previous-tier capture at
+        the very instant of the resolved tier's first is ``<= A_last``,
+        so the tie is interleaved and reports nothing. Judged on the
+        current window alone, (c) was vacuously true for a trial that had
+        aged wholly into the previous window -- the old tier had no reading
+        in the current window to fail it -- and, once the previous window
+        sustained the trial's tier by fidelity, a phantom ``tier_change``
+        was reported for an athlete who never switched (the review's series
+        B); over both windows the snapshot's daily readings run through
+        the trial and it is interleaved.
 
     The reset lands on the era's **true first day**: the resolved tier's
     earliest reading, over ``previous_readings`` and ``baseline_readings``
@@ -771,12 +789,20 @@ def tier_change_reset(
     (a 40-day strap trial between two snapshot eras) is not mistaken for
     this one. It can therefore precede the clipped window's first day;
     ``build_series`` reports ``[max(D-66, reset_on), D-7]``. The reset
-    stops being reported as soon as the previous window ``[D-126, D-67]``
-    holds at least ``MIN_BASELINE_READINGS`` of the new tier -- an era
-    start at or before ``D-80`` for a daily device -- because the new tier
-    then sustains both windows and (b) fails; so there is never a reset
-    whose first day is unknown, and (c) guarantees a reading after the
-    previous tier's last exists.
+    stops being reported when the previous window ``[D-126, D-67]`` is no
+    longer sustained by the old tier, so that (b) fails -- ``sustained_tier``
+    is the highest-fidelity tier with ``MIN_BASELINE_READINGS`` there, so
+    the boundary is direction-dependent (review cycle 3, S1): for a
+    forward switch (snapshot to strap) it is the day the strap reaches 14
+    there, ``S+80`` for a daily device; for the reverse one (strap to
+    snapshot) the old strap keeps that window by fidelity until it drops
+    below 14 there, ``T+114``, a month after the snapshot reached 14
+    (``T+81``). Either way the old tier holds at least 14 readings in the
+    previous window while (b) holds, so there is never a reset whose first
+    day is unknown, and (c) guarantees a reading after the previous tier's
+    last exists: every ``B`` reading in the current window is after
+    ``A_first`` (a previous-window instant), hence after ``A_last`` once
+    not interleaved.
 
     What each clause refuses to call a change. (a): a thin new tier is not
     yet "dense enough to sustain a baseline" (F005), and a single off-tier
@@ -791,11 +817,16 @@ def tier_change_reset(
     all snapshot -- the sustained tier changed -- but the snapshot readings
     run daily through the strap's, so no era ended and no reset is
     reported (before T094 it fired on every strap week and vanished on the
-    next); a stale trial in the window is interleaved the same way. The
-    reverse transition -- an owning strap abandoned for a daily snapshot
-    at ``T`` -- has the strap's readings all before ``T+1``, so it resets
-    on the day the snapshot first owns the baseline (``T+21``) with
+    next); a stale trial, in either window, is interleaved the same way.
+    The reverse transition -- an owning strap abandoned for a daily
+    snapshot at ``T`` -- has the strap's readings all before ``T+1``, so it
+    resets on the day the snapshot first owns the baseline (``T+21``) with
     ``reset_on = T+1``, not a month later when the strap drops below 14.
+    (c)'s own error direction, named in F005's Negative Class: a single
+    stray old-tier capture *after* a genuine switch is the old era's last
+    reading, so the new era's first days sit inside ``(A_first, A_last]``
+    and the switch's reset is never reported -- a single off-tier capture
+    is corroboration, and it also hides the change it followed.
 
     A coverage gap takes precedence: ``build_series`` only asks this rule
     when no gap reset was found, because the gap's resumption day is where
@@ -810,9 +841,10 @@ def tier_change_reset(
     previous_tier = sustained_tier(_tier_counts(previous_readings))
     if previous_tier is None or previous_tier == tier:
         return None
-    era_start = min(r.start_time for r in _of_tier(baseline_readings, tier))
-    if any(r.start_time >= era_start for r in _of_tier(baseline_readings, previous_tier)):
-        return None
     both = (*previous_readings, *baseline_readings)
-    old_era_end = max(r.start_time for r in _of_tier(both, previous_tier))
-    return min(r.date for r in _of_tier(both, tier) if r.start_time > old_era_end)
+    old_era = [r.start_time for r in _of_tier(both, previous_tier)]
+    old_era_start, old_era_end = min(old_era), max(old_era)
+    new_era = _of_tier(both, tier)
+    if any(old_era_start < r.start_time <= old_era_end for r in new_era):
+        return None
+    return min(r.date for r in new_era if r.start_time > old_era_end)

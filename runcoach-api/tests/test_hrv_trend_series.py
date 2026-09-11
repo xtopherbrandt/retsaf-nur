@@ -811,9 +811,11 @@ def test_the_tier_flips_on_the_day_the_strap_count_in_the_sliding_week_crosses_3
 # "stale candidacy" in F005's Negative Class). Rule 3 is now the candidate
 # whose latest baseline-window reading is most recent (ties by count, then
 # fidelity; no candidate at all still falls to the densest tier), and rule 4
-# fires only when every reading of the previous tier inside the current
-# window predates the resolved tier's first. Each test went red against
-# cf48c3a (T094's Delivered note records the run).
+# fires only when the eras do not interleave -- over both windows together,
+# no reading of the resolved tier falls between the previous tier's first
+# and last (sprint-005 review cycle 3; T094 judged the current window
+# alone). Each test went red against cf48c3a (T094's Delivered note
+# records the run).
 # ---------------------------------------------------------------------------
 
 
@@ -930,6 +932,36 @@ def test_an_empty_week_on_a_mixed_baseline_keeps_the_tier_the_athlete_used_last_
     verdict = hrv_trend.judge(empty)
     assert verdict.verdict == "hrv_unavailable" and verdict.readings_in_window == 0
     assert len(empty.baseline) == 27
+
+
+def test_rule_3_reads_the_day_each_candidate_was_read_last_not_first_or_most() -> None:
+    """Rule 3's direction, reached through ``build_series`` (sprint-005
+    review cycle 3, M4: with ``_last_read`` returning each tier's
+    *earliest* day, none of the 72 pure tests went red; the only term-order
+    pin drives ``resolve_baseline_tier`` with an explicit dict). A strap on
+    every fourth day ``D-64``..``D-8`` (15 readings) and a daily snapshot
+    ``D-50``..``D-10`` (41), nothing in ``[D-6, D]``: both are candidates
+    and neither covers the week. Read last -> the strap (``D-8`` after
+    ``D-10``); read first (``D-64`` before ``D-50``) or densest (15
+    against 41) -> the snapshot. The week is empty, so the verdict is
+    ``hrv_unavailable`` on the strap's 15. No reset: the previous window
+    ``[D-126, D-67]`` holds nothing, so no tier sustained it and rule 4(b)
+    has nothing to differ from -- the strap baseline is the athlete's
+    first established one, not a change. Perturbation (``_last_read``
+    returning the earliest day per tier): ``health_snapshot`` -- red."""
+    strap_days = days_between(D - timedelta(days=64), D - timedelta(days=8))[::4]
+    snapshot_days = days_between(D - timedelta(days=50), D - timedelta(days=10))
+    rows = readings(STRAP, strap_days, 79.0) + readings(SNAPSHOT, snapshot_days, hh=7)
+
+    result = build(rows)
+
+    assert (len(strap_days), len(snapshot_days)) == (15, 41)
+    assert (strap_days[-1], snapshot_days[-1]) == (D - timedelta(days=8), D - timedelta(days=10))
+    assert result.tier == STRAP
+    assert len(result.baseline) == 15
+    assert result.window == ()
+    assert hrv_trend.judge(result).verdict == "hrv_unavailable"
+    assert result.reset_reason is None and result.reset_on is None
 
 
 # ---------------------------------------------------------------------------
