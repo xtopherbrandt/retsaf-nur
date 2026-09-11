@@ -547,6 +547,26 @@ def test_an_equal_count_below_14_resolves_to_the_higher_fidelity_tier() -> None:
     assert result.tier == STRAP
 
 
+def test_among_candidates_read_last_on_the_same_day_the_tie_falls_to_count_then_fidelity() -> None:
+    """Rule 3's tie order among candidates (T094: recency, then count in the
+    window, then fidelity), pinned on ``resolve_baseline_tier`` directly
+    with an explicit ``last_read`` so the term order itself is under test.
+    Two candidates, neither covering the week, both read last on the same
+    day: the denser one wins even though it is the lower-fidelity tier, and
+    an equal count falls to fidelity. Recency outranks both: the candidate
+    read later wins on fewer readings. Perturbation: swapping the count and
+    fidelity terms (``(last_read, -fidelity, count)``) or dropping the count
+    term hands the first case to the strap and turns this red."""
+    same_day = {STRAP: D - timedelta(days=10), SNAPSHOT: D - timedelta(days=10)}
+    no_week = {STRAP: 1, SNAPSHOT: 2}
+
+    assert hrv_trend.resolve_baseline_tier({STRAP: 14, SNAPSHOT: 20}, no_week, same_day) == SNAPSHOT
+    assert hrv_trend.resolve_baseline_tier({STRAP: 20, SNAPSHOT: 20}, no_week, same_day) == STRAP
+
+    later_snapshot = {STRAP: D - timedelta(days=10), SNAPSHOT: D - timedelta(days=9)}
+    assert hrv_trend.resolve_baseline_tier({STRAP: 40, SNAPSHOT: 14}, no_week, later_snapshot) == SNAPSHOT
+
+
 def test_health_api_overnight_ranks_between_the_strap_and_the_snapshot() -> None:
     """``health_api_overnight`` is in the enum but never written by the
     classifier; the ordering still ranks it. The order follows the authority

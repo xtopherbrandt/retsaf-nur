@@ -176,7 +176,8 @@ class HrvSeries:
     excluded: tuple[Exclusion, ...]
     #: T092. The local day the current baseline era began, when a reset was
     #: detected, and why: ``REASON_COVERAGE_GAP`` or ``REASON_TIER_CHANGE``.
-    #: ``baseline_window`` is then clipped to ``[reset_on, D-7]``. Both
+    #: ``baseline_window`` is then clipped to ``[max(D-66, reset_on), D-7]``
+    #: -- a tier-change era's first day may precede the window (T094). Both
     #: ``None`` when nothing reset. Defaulted so a series can be built
     #: without naming them.
     reset_on: date | None = None
@@ -758,7 +759,9 @@ def tier_change_reset(
         tier's first reading there -- the old era ended before the new one
         began. Compared on the captures' instants, as the same-day collapse
         orders them, so two devices worn on the switch morning are ordered
-        by which was worn first.
+        by which was worn first; a previous-tier capture at the very
+        instant of the resolved tier's first does not predate it (the test
+        is ``>=``), so the tie is interleaved and reports nothing.
 
     The reset lands on the era's **true first day**: the resolved tier's
     earliest reading, over ``previous_readings`` and ``baseline_readings``
@@ -767,10 +770,13 @@ def tier_change_reset(
     (T094, G8), and an older era of the same tier in the previous window
     (a 40-day strap trial between two snapshot eras) is not mistaken for
     this one. It can therefore precede the clipped window's first day;
-    ``build_series`` reports ``[max(D-66, reset_on), D-7]``. An era that
-    began before ``D-126`` fills both windows and fails (b), so there is
-    never a reset whose first day is unknown; and (c) guarantees a reading
-    after the previous tier's last exists.
+    ``build_series`` reports ``[max(D-66, reset_on), D-7]``. The reset
+    stops being reported as soon as the previous window ``[D-126, D-67]``
+    holds at least ``MIN_BASELINE_READINGS`` of the new tier -- an era
+    start at or before ``D-80`` for a daily device -- because the new tier
+    then sustains both windows and (b) fails; so there is never a reset
+    whose first day is unknown, and (c) guarantees a reading after the
+    previous tier's last exists.
 
     What each clause refuses to call a change. (a): a thin new tier is not
     yet "dense enough to sustain a baseline" (F005), and a single off-tier

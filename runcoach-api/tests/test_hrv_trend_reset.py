@@ -549,6 +549,27 @@ def test_a_genuine_switch_still_resets_on_the_first_day_of_the_new_tier() -> Non
     assert len(result.window) == 7
 
 
+def test_a_previous_tier_capture_at_the_very_instant_of_the_new_tiers_first_is_interleaved() -> None:
+    """Clause (c)'s boundary (T094 re-dispatch). The genuine switch above
+    plus one more snapshot capture on D-20: at 05:59, a minute before the
+    strap's first capture, the snapshot era still ended before the strap's
+    began and the reset is reported on D-20; at 06:00 exactly -- the same
+    instant -- the old tier does not predate the new one, the eras are
+    interleaved and nothing is reported. The comparison is ``>=`` on the
+    captures' instants, and the tie goes to "no reset". Perturbation
+    (``>``): the same-instant case reports a ``tier_change`` on D-20."""
+    snapshot_era = readings(SNAPSHOT, span(ago(126), ago(21)), 60.0, "snap")
+    strap_era = readings(STRAP, span(ago(20), D), 25.0, "strap")
+
+    before = build(snapshot_era + strap_era + [row(local(ago(20), 5, 59), SNAPSHOT, 60.0, "snap-last")])
+    assert before.tier == STRAP
+    assert (before.reset_reason, before.reset_on) == ("tier_change", ago(20))
+
+    same_instant = build(snapshot_era + strap_era + [row(local(ago(20), 6), SNAPSHOT, 60.0, "snap-tied")])
+    assert same_instant.tier == STRAP
+    assert same_instant.reset_reason is None and same_instant.reset_on is None
+
+
 def test_the_documented_tier_oscillation_is_not_a_reset_in_either_direction() -> None:
     """A daily snapshot plus a strap on three days of one week and two of
     the next, back through the previous window. The strap sustains both
