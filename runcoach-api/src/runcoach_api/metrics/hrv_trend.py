@@ -419,10 +419,10 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     both windows since sprint-005 review cycle 3); ``reset_on`` is the
     era's first reading over both windows after the old tier's last, and
     the reported baseline window is clipped to ``[max(D-66, reset_on),
-    D-7]``. ``rows`` must span
-    ``[D-126, D]`` for the rule to be able to fire, since a narrower read
-    leaves the previous window empty, which reads as "thin" and never as a
-    change. See ``coverage_gap_reset`` and ``tier_change_reset``.
+    D-7]``. ``rows`` must span ``[D-126, D]`` for the rule to be able to
+    fire, since a narrower read leaves the previous window empty, which
+    reads as "thin" and never as a change. See ``coverage_gap_reset`` and
+    ``tier_change_reset``.
     """
     baseline = baseline_window(target_date)
     judged = judged_window(target_date)

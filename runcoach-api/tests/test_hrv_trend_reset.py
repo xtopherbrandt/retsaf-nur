@@ -98,6 +98,12 @@ def ago(n: int, target: date = D) -> date:
     return target - timedelta(days=n)
 
 
+def in_previous_window(days: list[date], target: date) -> int:
+    """How many of ``days`` fall inside ``previous_window(target)``."""
+    first, last = hrv_trend.previous_window(target)
+    return sum(1 for day in days if first <= day <= last)
+
+
 def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.HrvSeries:
     return hrv_trend.build_series(rows, zone, target)
 
@@ -635,7 +641,8 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
     the previous window holds 14 of the new tier"): withdrawn from
     ``T+81`` -- red on ``T+81``..``T+113``."""
     T = ago(60)
-    rows = readings(STRAP, span(ago(190), T), 40.0, "strap")
+    strap_days = span(ago(190), T)
+    rows = readings(STRAP, strap_days, 40.0, "strap")
     rows += readings(SNAPSHOT, span(T + timedelta(days=1), T + timedelta(days=120)), 40.0, "snap")
 
     for k in range(1, 115):
@@ -652,11 +659,8 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
             assert result.tier == SNAPSHOT, k
             assert result.reset_reason is None and result.reset_on is None, k
 
-    def strap_in_previous_window(k: int) -> int:
-        first, last = hrv_trend.previous_window(T + timedelta(days=k))
-        return sum(1 for day in span(ago(190), T) if first <= day <= last)
-
-    assert strap_in_previous_window(113) == 14 and strap_in_previous_window(114) == 13
+    assert in_previous_window(strap_days, T + timedelta(days=113)) == 14
+    assert in_previous_window(strap_days, T + timedelta(days=114)) == 13
     assert (T + timedelta(days=81) - timedelta(days=67)) - (T + timedelta(days=1)) == timedelta(days=13), (
         "the snapshot holds 14 in the previous window from T+81, a month before the reset clears"
     )
@@ -739,12 +743,15 @@ def test_reset_on_is_the_first_reading_after_the_previous_tier_s_last_not_an_old
 # ---------------------------------------------------------------------------
 
 
+FINISHED_TRIAL = span(date(2026, 4, 1), date(2026, 4, 21))
+
+
 def snapshot_with_a_finished_strap_trial() -> list[dict]:
     """The review's series B: a daily snapshot from 2025-11-01 through
     2026-10-31 at 06:00, and a 21-day strap trial 2026-04-01 .. 04-21
-    captured an hour after each snapshot."""
+    (``FINISHED_TRIAL``) captured an hour after each snapshot."""
     rows = readings(SNAPSHOT, span(date(2025, 11, 1), date(2026, 10, 31)), 40.0, "snap")
-    rows += [row(local(day, 7), STRAP, 55.0, f"strap-{day}") for day in span(date(2026, 4, 1), date(2026, 4, 21))]
+    rows += [row(local(day, 7), STRAP, 55.0, f"strap-{day}") for day in FINISHED_TRIAL]
     return rows
 
 
@@ -761,13 +768,11 @@ def test_a_trial_that_has_aged_into_the_previous_window_is_not_a_tier_change() -
     inside the walk. Red against the current-window clause (c):
     ``tier_change on 2026-04-22`` on 06-27, 07-10, 08-05 and 08-12."""
     rows = snapshot_with_a_finished_strap_trial()
-    walk = [date(2026, 6, 26), date(2026, 6, 27), date(2026, 7, 10), date(2026, 8, 5), date(2026, 8, 12), date(2026, 8, 13)]
+    walk = [
+        date(2026, 6, 26), date(2026, 6, 27), date(2026, 7, 10), date(2026, 8, 5), date(2026, 8, 12), date(2026, 8, 13)
+    ]
 
-    def strap_in_previous_window(target: date) -> int:
-        first, last = hrv_trend.previous_window(target)
-        return sum(1 for day in span(date(2026, 4, 1), date(2026, 4, 21)) if first <= day <= last)
-
-    assert [strap_in_previous_window(t) for t in walk] == [20, 21, 21, 21, 14, 13]
+    assert [in_previous_window(FINISHED_TRIAL, t) for t in walk] == [20, 21, 21, 21, 14, 13]
 
     for target in walk:
         result = build(rows, target=target)

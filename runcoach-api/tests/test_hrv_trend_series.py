@@ -733,14 +733,15 @@ def test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline() -> 
     assert verdict.established is True
 
 
-def oscillating_strap(target: date = D) -> list[dict]:
-    """A daily snapshot from ``target-126``, plus a strap on three days of
-    one week and two of the next, alternating, back to ``target-126``.
-    Week ``k`` is ``[target-7k-6, target-7k]``; even weeks hold three strap
-    days, odd weeks two -- so the week judged at ``target`` has three and
-    the week judged at ``target-7`` has two."""
-    rows = readings(SNAPSHOT, days_between(target - timedelta(days=126), target), hh=7)
-    for k in range(18):
+def oscillating_strap(target: date = D, weeks: int = 18, snapshot_days: int = 126) -> list[dict]:
+    """A daily snapshot from ``target-snapshot_days``, plus a strap on three
+    days of one week and two of the next, alternating, for ``weeks`` weeks
+    -- by default back to ``target-126``. Week ``k`` is
+    ``[target-7k-6, target-7k]``; even weeks hold three strap days, odd
+    weeks two -- so the week judged at ``target`` has three and the week
+    judged at ``target-7`` has two."""
+    rows = readings(SNAPSHOT, days_between(target - timedelta(days=snapshot_days), target), hh=7)
+    for k in range(weeks):
         week_first = target - timedelta(days=7 * k + 6)
         offsets = (0, 2, 4) if k % 2 == 0 else (0, 2)
         rows += readings(STRAP, [week_first + timedelta(days=o) for o in offsets], 79.0)
@@ -824,12 +825,7 @@ def young_oscillating_strap(weeks: int = 9, target: date = D) -> list[dict]:
     daily snapshot from ``target-199``: the previous window ``[D-126,
     D-67]`` is all snapshot on every walked day, which is the branch the
     18-week fixture sits beside."""
-    rows = readings(SNAPSHOT, days_between(target - timedelta(days=199), target), hh=7)
-    for k in range(weeks):
-        week_first = target - timedelta(days=7 * k + 6)
-        offsets = (0, 2, 4) if k % 2 == 0 else (0, 2)
-        rows += readings(STRAP, [week_first + timedelta(days=o) for o in offsets], 79.0)
-    return rows
+    return oscillating_strap(target, weeks, snapshot_days=199)
 
 
 def test_a_young_oscillation_habit_alternates_the_tier_and_never_resets() -> None:
@@ -842,7 +838,11 @@ def test_a_young_oscillation_habit_alternates_the_tier_and_never_resets() -> Non
     ended before the other began. Perturbation (compare the sustained
     tiers alone, cf48c3a): ``tier_change`` on every strap day."""
     rows = young_oscillating_strap()
-    strap_days = [hrv_trend.local_day(r["session_id"], r["start_time"], AUCKLAND)[0] for r in rows if r["hrv_source_tier"] == STRAP]
+    strap_days = [
+        hrv_trend.local_day(r["session_id"], r["start_time"], AUCKLAND)[0]
+        for r in rows
+        if r["hrv_source_tier"] == STRAP
+    ]
     assert min(strap_days) > D - timedelta(days=67), "the previous window must hold no strap reading"
 
     targets = days_between(D - timedelta(days=14), D)
