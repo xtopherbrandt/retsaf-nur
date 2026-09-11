@@ -31,12 +31,16 @@ dicts and no database. Rows are read **by key** (``session_id``,
    ``MIN_BASELINE_READINGS`` readings in the baseline window (the
    *candidates*), the highest-fidelity one that **also covers the judged
    week** with at least ``MIN_WINDOW_READINGS`` readings; when no candidate
-   covers the week, the tier with the **most** readings in the baseline
-   window, ties to fidelity -- not the highest tier present, so one borrowed
-   chest-strap capture cannot demote a 45-reading Health Snapshot baseline
-   to ``n=1`` (§3.7.3: "never merged into the same band"), and a two-week
-   strap trial abandoned two months ago cannot blank the snapshot's verdict
-   (T093; F005 "Negative Class").
+   covers the week, the candidate **the athlete used last** -- the one
+   whose latest reading in the baseline window is most recent, ties by
+   count then fidelity (T094); when there is no candidate at all, the tier
+   with the **most** readings in the baseline window, ties to fidelity --
+   not the highest tier present, so one borrowed chest-strap capture cannot
+   demote a 45-reading Health Snapshot baseline to ``n=1`` (§3.7.3: "never
+   merged into the same band"), a two-week strap trial abandoned two months
+   ago cannot blank the snapshot's verdict (T093; F005 "Negative Class"),
+   and a thin week cannot hand a switched athlete's baseline back to the
+   device they abandoned (T094).
 3. **Filter** to that tier.
 4. **Collapse** to one reading per local day: the earliest capture of the
    day, within the tier.
@@ -82,8 +86,11 @@ BASELINE_DAYS = 60
 WINDOW_DAYS = 7
 #: A tier needs at least this many readings in the baseline window to be a
 #: *candidate* for the baseline (``resolve_baseline_tier``: the candidate
-#: must also cover the judged week, else the densest tier takes it). T084
-#: also reads it as "established".
+#: must also cover the judged week, else the candidate read last takes it;
+#: with no candidate, the densest tier). Candidacy has no recency of its
+#: own -- a stale trial is a candidate until it ages out (F005 "stale
+#: candidacy"). ``tier_change_reset`` reads it as "sustains", and T084 as
+#: "established".
 MIN_BASELINE_READINGS = 14
 #: A silence of **more than** this many consecutive local days with no entry
 #: in the post-exclusion series re-establishes the baseline (T092;
@@ -271,6 +278,15 @@ def _tier_counts(readings: Iterable[Reading]) -> Counter[str]:
     return Counter(r.tier for r in readings)
 
 
+def _last_read(readings: Iterable[Reading]) -> dict[str, date]:
+    """The latest local day each tier was read on -- rule 3's recency."""
+    last: dict[str, date] = {}
+    for r in readings:
+        if r.tier not in last or r.date > last[r.tier]:
+            last[r.tier] = r.date
+    return last
+
+
 def sustained_tier(counts: Mapping[str, int]) -> str | None:
     """The highest-fidelity tier with at least ``MIN_BASELINE_READINGS`` in
     ``counts``, or ``None`` when no tier sustains a baseline there.
@@ -295,9 +311,15 @@ def _densest_tier(counts: Mapping[str, int]) -> str | None:
     return max(present, key=lambda tier: (counts[tier], -_FIDELITY_RANK[tier]))
 
 
-def resolve_baseline_tier(baseline_counts: Mapping[str, int], week_counts: Mapping[str, int]) -> str | None:
+def resolve_baseline_tier(
+    baseline_counts: Mapping[str, int],
+    week_counts: Mapping[str, int],
+    last_read: Mapping[str, date] | None = None,
+) -> str | None:
     """The baseline tier from per-tier reading counts over the baseline
-    window and over the judged week (T093; decision log 2026-09-10).
+    window and over the judged week, and the day each tier was last read
+    in the baseline window (T093, decision log 2026-09-10; rule 3 amended
+    by T094, decision log 2026-09-11).
 
     1. The *candidates* are the tiers with at least ``MIN_BASELINE_READINGS``
        in ``baseline_counts``.
@@ -305,9 +327,13 @@ def resolve_baseline_tier(baseline_counts: Mapping[str, int], week_counts: Mappi
        ``week_counts``, the baseline tier is the highest-fidelity such
        candidate.
     3. Otherwise -- no candidate covers the week: the athlete is ill, on
-       holiday, or the only week-covering tier is thin -- the tier with the
-       most readings in ``baseline_counts``, ties to the higher fidelity; so
-       a week with no readings of any tier keeps the tier stable and reads
+       holiday, or the only week-covering tier is thin -- **the candidate
+       the athlete used last**: the one whose latest reading in the
+       baseline window (``last_read``) is most recent, ties by count in the
+       window, then by fidelity. When there is no candidate at all, the
+       tier with the most readings in ``baseline_counts``, ties to the
+       higher fidelity (``_densest_tier``). Either way a week with no
+       readings of any tier keeps the tier stable and reads
        ``hrv_unavailable`` with no reset. ``None`` when the baseline window
        holds no readings at all.
 
@@ -316,19 +342,38 @@ def resolve_baseline_tier(baseline_counts: Mapping[str, int], week_counts: Mappi
     never sustaining a week -- a strap trial abandoned two months ago, or a
     strap worn two days a week, would otherwise own the baseline and blank
     every verdict on it as ``hrv_unavailable`` while the daily snapshot's
-    readings sit off-tier. "Most readings", not "highest present", for the
-    fallback: an athlete with 45 Health Snapshot readings who borrows a
-    chest strap once keeps the established snapshot baseline, and the strap
-    capture is corroboration (§3.7.3). The accepted cost, named in F005's
-    Negative Class: a strap worn two or three days a week takes and loses
-    the baseline whenever its count in the sliding judged week crosses 3.
-    The unit is captures, as before (IDEA-047).
+    readings sit off-tier. Why recency and not density among candidates
+    (T094): "densest" handed a switched athlete's first thin week back to
+    the device they abandoned three weeks earlier (and withdrew the reset
+    with it), and asserted a reset on an empty week that both neighbouring
+    weeks withdrew; the candidate read last is the tier the athlete is
+    actually on, which is what "keeps the tier stable" always meant. "Most
+    readings", not "highest present", when nothing is a candidate: an
+    athlete with 45 Health Snapshot readings who borrows a chest strap once
+    keeps the established snapshot baseline, and the strap capture is
+    corroboration (§3.7.3). The accepted costs, named in F005's Negative
+    Class: a strap worn two or three days a week takes and loses the
+    baseline whenever its count in the sliding judged week crosses 3, and
+    candidacy has no recency of its own, so an abandoned trial still in
+    the window plus three strap days this week is judged on the trial's
+    band ("stale candidacy"). The unit is captures, as before (IDEA-047).
+
+    ``last_read`` may be omitted only where there is no baseline window to
+    be recent in -- ``build_series``'s empty-baseline fallback, which
+    applies the rule to the judged week standing in for both; candidates
+    there tie on recency and fall to count, then fidelity.
     """
-    for tier in TIER_FIDELITY:
-        sustains = baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS
-        if sustains and week_counts.get(tier, 0) >= MIN_WINDOW_READINGS:
+    candidates = [tier for tier in TIER_FIDELITY if baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS]
+    for tier in candidates:
+        if week_counts.get(tier, 0) >= MIN_WINDOW_READINGS:
             return tier
-    return _densest_tier(baseline_counts)
+    if not candidates:
+        return _densest_tier(baseline_counts)
+    last_read = last_read or {}
+    return max(
+        candidates,
+        key=lambda tier: (last_read.get(tier, date.min), baseline_counts[tier], -_FIDELITY_RANK[tier]),
+    )
 
 
 def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date: date) -> HrvSeries:
@@ -355,14 +400,16 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     step, because a coverage gap clips the baseline window *before* the
     tier is resolved on it -- the fresh baseline is begun from the
     resumption on whatever tier sustains it there. The sustained-tier-change
-    rule runs after the series is built and compares the tier the baseline
-    window *sustains* (``sustained_tier``, rule 1 alone) with the one that
-    sustained the previous window ``[D-126, D-67]``, and fires only when
-    that tier is also the resolved baseline tier (``tier_change_reset``);
-    ``rows`` must span ``[D-126, D]`` for it to be able to fire, since a
-    narrower read leaves the previous window empty, which reads as "thin"
-    and never as a change. See ``coverage_gap_reset`` and
-    ``tier_change_reset``.
+    rule runs after the series is built and asserts a change only when the
+    resolved baseline tier sustains the window, differs from the tier that
+    sustained the previous window ``[D-126, D-67]`` (``sustained_tier``,
+    rule 1 alone), and its era does not interleave with the previous
+    tier's inside the window (``tier_change_reset``, T094); ``reset_on`` is
+    the era's first reading over both windows, and the reported baseline
+    window is clipped to ``[max(D-66, reset_on), D-7]``. ``rows`` must span
+    ``[D-126, D]`` for the rule to be able to fire, since a narrower read
+    leaves the previous window empty, which reads as "thin" and never as a
+    change. See ``coverage_gap_reset`` and ``tier_change_reset``.
     """
     baseline = baseline_window(target_date)
     judged = judged_window(target_date)
@@ -404,7 +451,7 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     # tier rule's week-coverage test, every tier inside the judged week.
     baseline_readings = _within(readings, baseline)
     week_counts = _tier_counts(_within(readings, judged))
-    tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts)
+    tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts, _last_read(baseline_readings))
     if tier is None:
         tier = resolve_baseline_tier(week_counts, week_counts)
 
@@ -426,7 +473,10 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
         reset_on = tier_change_reset(previous_readings, tier, baseline_readings)
         if reset_on is not None:
             reset_reason = REASON_TIER_CHANGE
-            baseline = (reset_on, baseline[1])
+            # The era may have begun before D-66 (T094: ``reset_on`` is its
+            # true first day, not the first inside the window); the window
+            # reported is the schema's ``[max(D-66, reset_on), D-7]``.
+            baseline = (max(reset_on, baseline[0]), baseline[1])
 
     return HrvSeries(
         target_date=target_date,
@@ -688,41 +738,53 @@ def tier_change_reset(
     """The local day a fresh baseline begins on after a sustained tier
     change, or ``None``.
 
-    The tier each window *sustains* (``sustained_tier``: highest fidelity
-    with at least ``MIN_BASELINE_READINGS``, the tier rule's rule 1 alone)
-    is resolved twice -- on the previous window (``previous_readings``,
-    ``[D-126, D-67]``) and on the current baseline window
-    (``baseline_readings``, all tiers, already clipped by any coverage gap)
-    -- and a change is asserted only when the two differ **and the current
-    sustained tier is the resolved baseline tier** ``tier``. The reset lands
-    on the first reading of the new tier inside the baseline window.
+    ``tier_change`` is asserted when, and only when (rule 4, T094; decision
+    log 2026-09-11):
 
-    **A week-driven tier is not a change** (T093, rule 4). ``tier`` may
-    differ from what the baseline window sustains in two ways, and neither
-    is a change of baseline: a fallback the empty week forced (an
-    established strap era, a mixed baseline now, nothing captured this week
-    -- the densest tier takes the empty week, the strap still sustains the
-    window, nothing resets), and a sustained tier the week rejected (a
-    strap trial abandoned two months ago sustains the window by count while
-    the snapshot judges every week -- a reset would clip the snapshot's
-    baseline at a strap day and name an event the athlete never made). So
-    the comparison is previous-sustained against current-sustained, never
-    against the week-adjusted tier, and it fires only when the tier that
-    now sustains the window is also the resolved baseline tier -- by
-    covering the week, or as the densest fallback on an empty week (T092's
-    table pins a reset with an empty week).
+    (a) the resolved baseline tier ``tier`` **sustains** the current
+        baseline window -- at least ``MIN_BASELINE_READINGS`` in
+        ``baseline_readings`` (all tiers, already clipped by any coverage
+        gap), rule 1's candidacy;
+    (b) it differs from the tier the previous window ``[D-126, D-67]``
+        sustains (``sustained_tier`` on ``previous_readings``: highest
+        fidelity with at least ``MIN_BASELINE_READINGS``, rule 1 alone);
+    (c) the two eras **do not interleave**: every reading of the previous
+        tier inside the current baseline window predates the resolved
+        tier's first reading there -- the old era ended before the new one
+        began. Compared on the captures' instants, as the same-day collapse
+        orders them, so two devices worn on the switch morning are ordered
+        by which was worn first.
 
-    **A tier resolution that differs only because the previous window is
-    thin is not a change.** Five snapshot readings in ``[D-126, D-67]``
-    resolve that window to the snapshot by "most readings", but nothing
-    sustained a baseline there; a strap baseline now is the athlete's first
-    established one, not a change from anything. Symmetrically a thin
-    current window is not yet a change: F005 fires the reset "when
-    chest_strap_raw readings become dense enough to sustain a baseline",
-    and until then the previous tier still holds the baseline (its readings
-    are in the window, the new tier's are off-tier) so no suppression can
-    be read off the new tier's values. A single off-tier capture therefore
-    never resets (§3.7.3: corroboration, "never merged into the same band").
+    The reset lands on the era's **true first day**: the resolved tier's
+    earliest reading, over ``previous_readings`` and ``baseline_readings``
+    together, that follows the previous tier's last reading there -- so it
+    does not slide one day per day once the era start ages past ``D-66``
+    (T094, G8), and an older era of the same tier in the previous window
+    (a 40-day strap trial between two snapshot eras) is not mistaken for
+    this one. It can therefore precede the clipped window's first day;
+    ``build_series`` reports ``[max(D-66, reset_on), D-7]``. An era that
+    began before ``D-126`` fills both windows and fails (b), so there is
+    never a reset whose first day is unknown; and (c) guarantees a reading
+    after the previous tier's last exists.
+
+    What each clause refuses to call a change. (a): a thin new tier is not
+    yet "dense enough to sustain a baseline" (F005), and a single off-tier
+    capture is corroboration (§3.7.3); a tier the judged week chose while
+    another sustains the window is not a change of baseline either. (b):
+    a resolution that differs only because the previous window is thin
+    (five snapshot readings there, a strap baseline now) is the athlete's
+    first established baseline, not a change from anything; and a tier
+    that sustains both windows is unchanged, however the week was judged.
+    (c), the clause T094 added: a 2/3-day strap habit begun nine weeks ago
+    sustains the current window by count while the previous window is
+    all snapshot -- the sustained tier changed -- but the snapshot readings
+    run daily through the strap's, so no era ended and no reset is
+    reported (before T094 it fired on every strap week and vanished on the
+    next); a stale trial in the window is interleaved the same way. The
+    reverse transition -- an owning strap abandoned for a daily snapshot
+    at ``T`` -- has the strap's readings all before ``T+1``, so it resets
+    on the day the snapshot first owns the baseline (``T+21``) with
+    ``reset_on = T+1``, not a month later when the strap drops below 14.
 
     A coverage gap takes precedence: ``build_series`` only asks this rule
     when no gap reset was found, because the gap's resumption day is where
@@ -731,10 +793,15 @@ def tier_change_reset(
     if tier is None:
         return None
     baseline_readings = tuple(baseline_readings)
-    sustained_now = sustained_tier(_tier_counts(baseline_readings))
-    if sustained_now is None or sustained_now != tier:
+    previous_readings = tuple(previous_readings)
+    if _tier_counts(baseline_readings).get(tier, 0) < MIN_BASELINE_READINGS:
         return None
     previous_tier = sustained_tier(_tier_counts(previous_readings))
-    if previous_tier is None or previous_tier == sustained_now:
+    if previous_tier is None or previous_tier == tier:
         return None
-    return min(r.date for r in baseline_readings if r.tier == sustained_now)
+    era_start = min(r.start_time for r in baseline_readings if r.tier == tier)
+    if any(r.start_time >= era_start for r in baseline_readings if r.tier == previous_tier):
+        return None
+    both = (*previous_readings, *baseline_readings)
+    old_era_end = max(r.start_time for r in both if r.tier == previous_tier)
+    return min(r.date for r in both if r.tier == tier and r.start_time > old_era_end)

@@ -666,9 +666,10 @@ def test_a_two_day_a_week_strap_is_corroboration_not_the_baseline() -> None:
 
 def test_a_week_with_no_readings_of_any_tier_keeps_the_tier_stable() -> None:
     """Illness week: an established strap baseline and nothing captured in
-    ``[D-6, D]``. No candidate covers the week, so the tier with the most
-    baseline readings -- the strap -- keeps the baseline; the verdict is
-    ``hrv_unavailable`` with ``readings_in_window`` 0 and no reset."""
+    ``[D-6, D]``. No candidate covers the week, so the only candidate --
+    the strap, the tier the athlete was read on last (T094; the densest
+    under T093) -- keeps the baseline; the verdict is ``hrv_unavailable``
+    with ``readings_in_window`` 0 and no reset."""
     result = build(readings(STRAP, baseline_days(60)))
 
     assert result.tier == STRAP
@@ -686,8 +687,9 @@ def test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline() -> 
     (sprint-005 review, S1): 60 strap readings in the baseline and none in
     the week; a snapshot device with five readings in the baseline -- below
     ``MIN_BASELINE_READINGS``, so not a candidate -- that covers all seven
-    days of the week. No *candidate* covers the week, so the tier with the
-    most baseline readings, the strap, keeps the baseline; the week is
+    days of the week. No *candidate* covers the week, so the only
+    candidate, the strap, keeps the baseline (recency and density agree
+    here); the week is
     ``hrv_unavailable`` with ``readings_in_window`` 0, nothing resets, and
     every snapshot reading is ``off_baseline_tier``. Perturbation: letting
     any week-covering tier win without candidacy hands the baseline to the
@@ -771,6 +773,143 @@ def test_the_tier_flips_on_the_day_the_strap_count_in_the_sliding_week_crosses_3
     flips = [later for before, later in pairwise(observed) if before.tier != later.tier]
     assert [r.target_date for r in flips] == [D - timedelta(days=9), D - timedelta(days=2)]
     assert [len(r.window) for r in flips] == [7, 3]
+
+
+# ---------------------------------------------------------------------------
+# T094: the fallback is recency, a reset needs non-interleaved eras, and a
+# candidate can be stale
+#
+# Sprint-005 review cycle 2 (critic stage 4.6; F005 verdict G1/G2/G6/G7)
+# found four populations between the poles T093's rule named, all inside
+# the region no pinned row discriminated: rule 3's "densest tier" fallback
+# hands a switched athlete's thin week back to the abandoned device (G1) and
+# asserts a reset on an empty week both neighbours withdraw (G2); rule 4's
+# "sustained tier changed and owns the baseline" fires a phantom reset on
+# alternate weeks of a young 2/3-day strap habit (G6); and rule 2's
+# candidacy has no recency, so a stale trial plus three strap days re-owns
+# the baseline on a two-month-old band (G7 -- the accepted, named cost:
+# "stale candidacy" in F005's Negative Class). Rule 3 is now the candidate
+# whose latest baseline-window reading is most recent (ties by count, then
+# fidelity; no candidate at all still falls to the densest tier), and rule 4
+# fires only when every reading of the previous tier inside the current
+# window predates the resolved tier's first. Each test went red against
+# cf48c3a (T094's Delivered note records the run).
+# ---------------------------------------------------------------------------
+
+
+def young_oscillating_strap(weeks: int = 9, target: date = D) -> list[dict]:
+    """``oscillating_strap`` begun ``weeks`` weeks ago instead of 18, over a
+    daily snapshot from ``target-199``: the previous window ``[D-126,
+    D-67]`` is all snapshot on every walked day, which is the branch the
+    18-week fixture sits beside."""
+    rows = readings(SNAPSHOT, days_between(target - timedelta(days=199), target), hh=7)
+    for k in range(weeks):
+        week_first = target - timedelta(days=7 * k + 6)
+        offsets = (0, 2, 4) if k % 2 == 0 else (0, 2)
+        rows += readings(STRAP, [week_first + timedelta(days=o) for o in offsets], 79.0)
+    return rows
+
+
+def test_a_young_oscillation_habit_alternates_the_tier_and_never_resets() -> None:
+    """G6. The habit is nine weeks old, so the strap sustains the current
+    window (15..20 readings on the walk) but not the previous one, which
+    is snapshot-only: the sustained tier *did* change. The tier still
+    alternates on the days the strap count in the sliding week crosses 3,
+    exactly as the 18-week walk pins, and no day is a reset -- the snapshot
+    readings inside the window interleave with the strap's, so no era
+    ended before the other began. Perturbation (compare the sustained
+    tiers alone, cf48c3a): ``tier_change`` on every strap day."""
+    rows = young_oscillating_strap()
+    strap_days = [hrv_trend.local_day(r["session_id"], r["start_time"], AUCKLAND)[0] for r in rows if r["hrv_source_tier"] == STRAP]
+    assert min(strap_days) > D - timedelta(days=67), "the previous window must hold no strap reading"
+
+    targets = days_between(D - timedelta(days=14), D)
+    observed = [build(rows, target=target) for target in targets]
+
+    assert [r.tier for r in observed] == [STRAP] * 5 + [SNAPSHOT] * 7 + [STRAP] * 3
+    assert all(len(r.baseline) >= hrv_trend.MIN_BASELINE_READINGS for r in observed if r.tier == STRAP)
+    assert all(r.reset_reason is None and r.reset_on is None for r in observed), [
+        (r.target_date, r.reset_reason) for r in observed if r.reset_reason
+    ]
+
+
+def test_stale_candidacy_a_july_trial_plus_three_strap_days_owns_the_week_on_the_july_band() -> None:
+    """G7, pinned as the named cost (F005 Negative Class, "stale candidacy";
+    the candidacy question is an IDEA, not this task). The abandoned July
+    trial is still a candidate on 2026-09-06 and 09-07 (its 14 readings sit
+    inside ``[D-66, D-7]``), and three strap days this week cover the week,
+    so rule 2 hands the strap the baseline and the week is judged against
+    a band whose every reading is from July. No reset: the snapshot
+    readings interleave with the trial. On 09-08 the first trial day ages
+    out, the strap holds 13, and the snapshot takes the baseline back."""
+    this_week = [D - timedelta(days=6), D - timedelta(days=4), D - timedelta(days=2)]
+    rows = trial_then_abandon() + readings(STRAP, this_week, 79.0)
+
+    for target in (date(2026, 9, 6), date(2026, 9, 7)):
+        result = build(rows, target=target)
+        assert result.tier == STRAP, target
+        assert len(result.baseline) == 14, target
+        assert max(r.date for r in result.baseline) == date(2026, 7, 16), target
+        assert len(result.window) == 3, target
+        assert result.reset_reason is None and result.reset_on is None, target
+        verdict = hrv_trend.judge(result)
+        assert verdict.established is True and verdict.verdict == "hrv_normal", target
+
+    back = build(rows, target=date(2026, 9, 8))
+    assert back.tier == SNAPSHOT
+    assert back.reset_reason is None and back.reset_on is None
+
+
+def test_the_fallback_keeps_the_device_the_athlete_used_last_through_a_thin_week() -> None:
+    """G1 (F005 "The fallback keeps the device the athlete used last"). A
+    daily snapshot to D-26, a daily strap D-25..D-8, nothing since. Both
+    tiers are candidates; from D-3 no candidate covers the week (two strap
+    readings, then one, then none). The strap, read last at D-8, keeps the
+    baseline on every day D-5..D with the same ``tier_change`` on D-25,
+    and the thin days read ``hrv_unavailable``. Perturbation (densest
+    fallback, cf48c3a): D-3 reverts to the snapshot on 44 readings,
+    withdraws the reset, and reports ``readings_in_window`` 0."""
+    rows = readings(SNAPSHOT, days_between(D - timedelta(days=126), D - timedelta(days=26)), hh=7)
+    rows += readings(STRAP, days_between(D - timedelta(days=25), D - timedelta(days=8)), 79.0)
+
+    for target in days_between(D - timedelta(days=5), D):
+        result = build(rows, target=target)
+        assert result.tier == STRAP, target
+        assert result.reset_reason == "tier_change", target
+        assert result.reset_on == D - timedelta(days=25), target
+        assert result.baseline_window == (D - timedelta(days=25), target - timedelta(days=7)), target
+
+    thin = [hrv_trend.judge(build(rows, target=D - timedelta(days=n))) for n in (3, 2, 1, 0)]
+    assert [v.readings_in_window for v in thin] == [2, 1, 0, 0]
+    assert {v.verdict for v in thin} == {"hrv_unavailable"}
+    assert all(v.established for v in thin)
+
+
+def test_an_empty_week_on_a_mixed_baseline_keeps_the_tier_the_athlete_used_last_and_does_not_reset() -> None:
+    """G2. A snapshot era through the previous window, a strap era
+    D-66..D-34 (short enough never to sustain the previous window on the
+    three targets -- that flip is rule 4(b)'s, pinned in the reset suite),
+    the snapshot again D-33..D-7, and nothing in ``[D-6, D]``. At D both
+    tiers are candidates (33 strap, 27 snapshot) and neither covers the
+    empty week; the snapshot was read last, so it keeps the baseline it
+    already held at D-7 and will hold at D+7, with no reset and
+    ``hrv_unavailable``. Perturbation (densest fallback, cf48c3a): the
+    empty week alone flips to the strap and asserts a ``tier_change`` both
+    neighbours withdraw."""
+    rows = readings(SNAPSHOT, days_between(D - timedelta(days=126), D - timedelta(days=67)), hh=7)
+    rows += readings(STRAP, days_between(D - timedelta(days=66), D - timedelta(days=34)), 79.0)
+    rows += readings(SNAPSHOT, days_between(D - timedelta(days=33), D - timedelta(days=7)), hh=7)
+
+    before, empty, after = (build(rows, target=D + timedelta(days=n)) for n in (-7, 0, 7))
+
+    strap_in_window = [r for r in empty.readings if r.tier == STRAP and r.date <= D - timedelta(days=7)]
+    assert len(strap_in_window) == 33, "the strap still sustains the window"
+    assert (before.tier, empty.tier, after.tier) == (SNAPSHOT, SNAPSHOT, SNAPSHOT)
+    assert all(r.reset_reason is None and r.reset_on is None for r in (before, empty, after))
+    assert empty.window == ()
+    verdict = hrv_trend.judge(empty)
+    assert verdict.verdict == "hrv_unavailable" and verdict.readings_in_window == 0
+    assert len(empty.baseline) == 27
 
 
 # ---------------------------------------------------------------------------

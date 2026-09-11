@@ -559,6 +559,68 @@ def test_a_trial_then_abandoned_strap_does_not_blank_the_verdict_through_the_end
 
 
 # ---------------------------------------------------------------------------
+# T094: the reverse transition and a non-sliding reset_on, end to end
+# ---------------------------------------------------------------------------
+
+
+def test_the_reverse_transition_reports_its_reset_the_day_the_snapshot_owns_the_baseline(configure, seeder) -> None:
+    """G3 through ``db.persist`` and ``GET /metrics/hrv``: a daily strap
+    from ``to-126`` to ``T = D-60``, a daily snapshot from ``T+1``. At
+    ``T+20`` the strap still holds the baseline with nothing to judge; at
+    ``T+21`` the snapshot owns it with ``tier_change`` on ``T+1``, and at
+    ``T+60`` the same ``reset_on`` is still reported. Under cf48c3a the
+    reset arrived at ``T+54``."""
+    configure("UTC")
+    T = D - timedelta(days=60)
+    seeder.straps(days(D - timedelta(days=126), T))
+    seeder.snapshots(days(T + timedelta(days=1), D), repeat(40.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        before = get(client, to=(T + timedelta(days=20)).isoformat()).json()
+        first = get(client, to=(T + timedelta(days=21)).isoformat()).json()
+        later = get(client, to=D.isoformat()).json()
+
+    assert before["baseline"]["tier"] == STRAP
+    assert before["baseline"]["reset_reason"] is None and before["baseline"]["reset_on"] is None
+    assert before["verdict"] == "hrv_unavailable" and before["readings_in_window"] == 0
+
+    era_start = (T + timedelta(days=1)).isoformat()
+    for body in (first, later):
+        assert body["baseline"]["tier"] == SNAPSHOT
+        assert body["baseline"]["reset_reason"] == "tier_change"
+        assert body["baseline"]["reset_on"] == era_start
+        assert body["baseline"]["established"] is True
+    assert first["baseline"]["window"] == [era_start, (T + timedelta(days=14)).isoformat()]
+    assert first["baseline"]["n"] == 14
+    assert later["baseline"]["window"] == [era_start, (D - timedelta(days=7)).isoformat()]
+
+
+def test_reset_on_does_not_slide_once_the_era_start_ages_past_the_window(configure, seeder) -> None:
+    """G8 through the endpoint: a snapshot era to D-81 and a daily strap
+    from D-80. At ``to = D-13`` and ``to = D-1`` the era start is older
+    than ``to-66``; ``reset_on`` is D-80 on both, and ``window[0]`` is the
+    clip ``max(to-66, reset_on)`` -- so ``reset_on`` may precede
+    ``window[0]``. Under cf48c3a the two answers were D-79 and D-67."""
+    configure("UTC")
+    switch = D - timedelta(days=80)
+    seeder.snapshots(days(D - timedelta(days=126), D - timedelta(days=81)), repeat(40.0))
+    seeder.straps(days(switch, D))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        early = get(client, to=(D - timedelta(days=13)).isoformat()).json()
+        late = get(client, to=(D - timedelta(days=1)).isoformat()).json()
+
+    for body, to in ((early, D - timedelta(days=13)), (late, D - timedelta(days=1))):
+        assert body["baseline"]["tier"] == STRAP, to
+        assert body["baseline"]["reset_reason"] == "tier_change", to
+        assert body["baseline"]["reset_on"] == switch.isoformat(), to
+        assert body["baseline"]["window"] == [(to - timedelta(days=66)).isoformat(), (to - timedelta(days=7)).isoformat()], to
+        assert body["baseline"]["reset_on"] < body["baseline"]["window"][0], to
+
+
+# ---------------------------------------------------------------------------
 # IDEA-046: an empty baseline after a late reset
 # ---------------------------------------------------------------------------
 

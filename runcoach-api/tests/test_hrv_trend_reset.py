@@ -3,10 +3,10 @@
 The two reset triggers that survive the decision log: a **coverage gap** (more
 than ``GAP_RESET_DAYS`` = 21 consecutive local days with no entry in the
 post-exclusion series, the reset landing on the first reading after it) and
-a **sustained tier change** (the tier that sustains the baseline over
-``[D-66, D-7]`` differs from the tier that sustained it over the previous
-60-day window ``[D-126, D-67]``, and that tier also owns the baseline -- it
-is the resolved tier, T093). There is no timezone-change reset.
+a **sustained tier change** (the resolved baseline tier sustains
+``[D-66, D-7]``, differs from the tier that sustained the previous 60-day
+window ``[D-126, D-67]``, and the two eras do not interleave inside the
+window -- T093, restated by T094). There is no timezone-change reset.
 
 Pure unit tests over hand-built row dicts, like T083's. Nothing here computes
 a band or a verdict (T084): "suppression is withheld" is asserted as *the
@@ -467,12 +467,13 @@ def test_the_tier_change_rule_over_both_windows(entry) -> None:
 # T093: a week-driven tier is not a tier change
 #
 # The tier rule now asks that the baseline tier also cover the judged week
-# (F005 "Negative Class"; decision log 2026-09-10). The reset rule compares
-# the previous window's tier with the tier the current baseline window
-# *sustains* (>= 14, highest fidelity), never with a tier the judged week
-# chose or a fallback the empty week forced -- and a change is reported only
-# when the sustained tier both changed and owns the baseline. Each test
-# went red against the earlier comparison (T093's Delivered note).
+# (F005 "Negative Class"; decision log 2026-09-10). A tier the judged week
+# chose while another sustains the window, or a fallback the empty week
+# forced, is not a change of baseline. Each test went red against the
+# earlier comparison (T093's Delivered note); the rule they pin is stated
+# in T094's section below (the resolved tier sustains the window, differs
+# from the previous window's sustained tier, and the eras do not
+# interleave), under which every row here keeps its outcome.
 # ---------------------------------------------------------------------------
 
 
@@ -511,10 +512,12 @@ def test_a_trial_then_abandoned_strap_never_reports_a_tier_change() -> None:
 
 def test_a_week_driven_fallback_is_not_a_tier_change() -> None:
     """An established strap era in ``[D-126, D-67]``; a mixed baseline now
-    (20 strap, 30 snapshot); nothing captured in ``[D-6, D]``. No candidate
-    covers the week, so the densest tier -- the snapshot -- takes the
-    baseline for this empty week. The tier the window *sustains* is still
-    the strap, the same as before, so nothing changed and nothing resets."""
+    (20 strap to D-28, 30 snapshot to D-8); nothing captured in ``[D-6, D]``.
+    No candidate covers the week, so the candidate read last -- the
+    snapshot, at D-8 -- takes the baseline for this empty week (T094; under
+    T093 it was the densest, the same tier here). The strap sustains the
+    previous window and the snapshot's era interleaves with the strap's
+    inside this one, so nothing resets."""
     previous = readings(STRAP, span(ago(126), ago(67)), 40.0, "prev")
     strap_now = readings(STRAP, span(ago(66), ago(28), 2), 40.0, "strap")  # 20
     snapshot_now = readings(SNAPSHOT, span(ago(66), ago(8), 2), 40.0, "snap")  # 30
@@ -565,6 +568,112 @@ def test_the_documented_tier_oscillation_is_not_a_reset_in_either_direction() ->
     assert (on_strap.tier, on_snapshot.tier) == (STRAP, SNAPSHOT)
     assert on_strap.reset_on is None and on_strap.reset_reason is None
     assert on_snapshot.reset_on is None and on_snapshot.reset_reason is None
+
+
+# ---------------------------------------------------------------------------
+# T094: a reset needs non-interleaved eras, and reset_on is the era's true
+# first day
+#
+# Rule 4 restated (sprint-005 review cycle 2; F005 verdict G3/G6/G8):
+# ``tier_change`` is asserted when, and only when, the resolved baseline
+# tier is a candidate (>= 14 in the clipped window), differs from the tier
+# the previous window sustains, and every reading of the previous tier
+# inside the current window predates the resolved tier's first reading
+# there -- the old era ended before the new one began. ``reset_on`` is the
+# resolved tier's first reading over both windows, so it no longer slides
+# one day per day once the era start ages past D-66. Each test went red
+# against cf48c3a (T094's Delivered note records the run).
+# ---------------------------------------------------------------------------
+
+
+def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline() -> None:
+    """G3 (§3.7.3 "abandons the chest strap"). An owning strap daily to
+    ``T``, a daily snapshot from ``T+1``, nothing else. Through ``T+20`` the
+    strap is the only candidate and keeps the baseline (no strap reading
+    in the week: ``hrv_unavailable``, never a reset -- the previous window
+    sustains the strap too). On ``T+21`` the snapshot holds 14 in the
+    window and covers the week; the strap's readings in the window all
+    predate ``T+1``, so the reset fires that day with ``reset_on = T+1``
+    and stays reported, unchanged, on every later day of the walk.
+    Perturbation (``sustained_now == tier``, cf48c3a): the reset appears
+    only at ``T+54``, when the strap drops below 14 in the window."""
+    T = ago(60)
+    rows = readings(STRAP, span(ago(190), T), 40.0, "strap") + readings(SNAPSHOT, span(T + timedelta(days=1), D), 40.0, "snap")
+
+    for k in range(1, 61):
+        result = build(rows, target=T + timedelta(days=k))
+        if k < 21:
+            assert result.tier == STRAP, k
+            assert result.reset_reason is None and result.reset_on is None, k
+        else:
+            assert result.tier == SNAPSHOT, k
+            assert result.reset_reason == "tier_change", k
+            assert result.reset_on == T + timedelta(days=1), k
+
+    first = build(rows, target=T + timedelta(days=21))
+    assert first.baseline_window == (T + timedelta(days=1), T + timedelta(days=14))
+    assert len(first.baseline) == hrv_trend.MIN_BASELINE_READINGS
+    assert hrv_trend.judge(build(rows, target=T + timedelta(days=20))).verdict == "hrv_unavailable"
+
+
+def test_reset_on_is_the_eras_true_first_day_and_does_not_slide_past_d_minus_66() -> None:
+    """G8. A snapshot era to D-81 and a daily strap from D-80. From D-13 the
+    era start is older than the window (``D'-66 > D-80``); ``reset_on`` is
+    D-80 on every such day all the same, computed over the previous window
+    too, and ``baseline.window[0]`` stays the clip ``max(D'-66, D-80)``.
+    The row's "at D" is refined here: on D the previous window
+    ``[D-126, D-67]`` holds the strap's first 14 readings, so the strap
+    sustains both windows, rule 4(b) fails and nothing is reported -- the
+    reset is reported for as long as the previous window still belongs to
+    the snapshot, and on every one of those days it names D-80.
+    Perturbation (earliest reading inside the window, cf48c3a): D-79 at
+    D-13, D-67 at D-1."""
+    switch = ago(80)
+    rows = readings(SNAPSHOT, span(ago(126), ago(81)), 40.0, "snap") + readings(STRAP, span(switch, D), 25.0, "strap")
+
+    for target in (ago(14), ago(13), ago(10), ago(7), ago(1)):
+        result = build(rows, target=target)
+        assert result.tier == STRAP, target
+        assert result.reset_reason == "tier_change", target
+        assert result.reset_on == switch, target
+        assert result.baseline_window == (max(switch, ago(66, target)), ago(7, target)), target
+        assert result.baseline == _within_strap(result, result.baseline_window), target
+
+    at_d = build(rows, target=D)
+    assert at_d.tier == STRAP
+    assert at_d.reset_reason is None and at_d.reset_on is None
+    assert at_d.baseline_window == (ago(66), ago(7))
+
+
+def test_reset_on_is_the_first_reading_after_the_previous_tier_s_last_not_an_older_era_of_the_same_tier() -> None:
+    """A snapshot era to D-74, a 40-day strap era D-73..D-34, the snapshot
+    again from D-33; target D+7, so the previous window ``[D-119, D-60]``
+    holds 46 snapshot readings *and* the strap's first 14 and sustains the
+    strap (rule 1: highest fidelity with 14). The snapshot owns the current
+    window (27, read last, the strap era wholly before it): a genuine
+    reverse transition, reported. Its first day is D-33 -- the first
+    snapshot reading after the strap's last -- not 2026-05-12, the first
+    snapshot reading in either window, which belongs to the era the strap
+    replaced. Red against cf48c3a (no reset: the strap still "sustained"
+    the window by fidelity) and against the literal "first reading over
+    both windows" (D-119)."""
+    target = D + timedelta(days=7)
+    rows = readings(SNAPSHOT, span(ago(126), ago(74)), 40.0, "snap-old")
+    rows += readings(STRAP, span(ago(73), ago(34)), 25.0, "strap")
+    rows += readings(SNAPSHOT, span(ago(33), ago(7)), 40.0, "snap-new")
+
+    result = build(rows, target=target)
+
+    assert result.tier == SNAPSHOT
+    assert result.reset_reason == "tier_change"
+    assert result.reset_on == ago(33)
+    assert result.baseline_window == (ago(33), target - timedelta(days=7))
+    assert len(result.baseline) == 27
+
+
+def _within_strap(result: hrv_trend.HrvSeries, window: tuple[date, date]) -> tuple[hrv_trend.Reading, ...]:
+    first, last = window
+    return tuple(r for r in result.series if first <= r.date <= last)
 
 
 # ---------------------------------------------------------------------------
