@@ -80,8 +80,10 @@ from zoneinfo import ZoneInfo
 BASELINE_DAYS = 60
 #: The judged window, in local days.
 WINDOW_DAYS = 7
-#: The baseline tier is the highest-fidelity tier carrying at least this many
-#: readings in the baseline window. T084 also reads it as "established".
+#: A tier needs at least this many readings in the baseline window to be a
+#: *candidate* for the baseline (``resolve_baseline_tier``: the candidate
+#: must also cover the judged week, else the densest tier takes it). T084
+#: also reads it as "established".
 MIN_BASELINE_READINGS = 14
 #: A silence of **more than** this many consecutive local days with no entry
 #: in the post-exclusion series re-establishes the baseline (T092;
@@ -318,9 +320,9 @@ def resolve_baseline_tier(baseline_counts: Mapping[str, int], week_counts: Mappi
     fallback: an athlete with 45 Health Snapshot readings who borrows a
     chest strap once keeps the established snapshot baseline, and the strap
     capture is corroboration (§3.7.3). The accepted cost, named in F005's
-    Negative Class: a strap worn two or three days a week can own the
-    baseline one week and not the next. The unit is captures, as before
-    (IDEA-047).
+    Negative Class: a strap worn two or three days a week takes and loses
+    the baseline whenever its count in the sliding judged week crosses 3.
+    The unit is captures, as before (IDEA-047).
     """
     for tier in TIER_FIDELITY:
         sustains = baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS
@@ -353,11 +355,14 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     step, because a coverage gap clips the baseline window *before* the
     tier is resolved on it -- the fresh baseline is begun from the
     resumption on whatever tier sustains it there. The sustained-tier-change
-    rule runs after the series is built and compares the resolved tier with
-    the one that sustained the previous window ``[D-126, D-67]``, so
-    ``rows`` must span ``[D-126, D]`` for it to be able to fire; a narrower
-    read leaves the previous window empty, which reads as "thin" and never
-    as a change. See ``coverage_gap_reset`` and ``tier_change_reset``.
+    rule runs after the series is built and compares the tier the baseline
+    window *sustains* (``sustained_tier``, rule 1 alone) with the one that
+    sustained the previous window ``[D-126, D-67]``, and fires only when
+    that tier is also the resolved baseline tier (``tier_change_reset``);
+    ``rows`` must span ``[D-126, D]`` for it to be able to fire, since a
+    narrower read leaves the previous window empty, which reads as "thin"
+    and never as a change. See ``coverage_gap_reset`` and
+    ``tier_change_reset``.
     """
     baseline = baseline_window(target_date)
     judged = judged_window(target_date)
@@ -703,7 +708,9 @@ def tier_change_reset(
     baseline at a strap day and name an event the athlete never made). So
     the comparison is previous-sustained against current-sustained, never
     against the week-adjusted tier, and it fires only when the tier that
-    now sustains the window also owns it.
+    now sustains the window is also the resolved baseline tier -- by
+    covering the week, or as the densest fallback on an empty week (T092's
+    table pins a reset with an empty week).
 
     **A tier resolution that differs only because the previous window is
     thin is not a change.** Five snapshot readings in ``[D-126, D-67]``

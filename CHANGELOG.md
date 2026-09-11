@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- F005/T093: the baseline tier must also cover the judged week -- a tier with >= 14 readings in `[D-66, D-7]` owns the baseline only if it also holds >= 3 in `[D-6, D]`, else the tier with the most baseline readings does; a two-week chest-strap trial abandoned two months ago no longer blanks the daily snapshot's verdict for 47 days or reports a phantom `tier_change`, and a week-driven tier is never a reset (accepted cost, named in F005's Negative Class: a strap worn two-to-three days a week can alternate the tier on the week boundary).
+- F005/T093: the baseline tier must also cover the judged week -- a tier with >= 14 readings in `[D-66, D-7]` owns the baseline only if it also holds >= 3 in `[D-6, D]`, else the tier with the most baseline readings does; a two-week chest-strap trial abandoned two months ago no longer blanks the daily snapshot's verdict for 47 days or reports a phantom `tier_change`, and a week-driven tier is never a reset (accepted cost, named in F005's Negative Class: a strap worn two-to-three days a week alternates the tier whenever the strap count in the sliding judged week crosses 3).
 
 ## 2026-09-09 — Sprint 005: Resting-HRV Trend
 

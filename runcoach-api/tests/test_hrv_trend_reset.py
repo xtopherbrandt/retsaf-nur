@@ -5,7 +5,8 @@ than ``GAP_RESET_DAYS`` = 21 consecutive local days with no entry in the
 post-exclusion series, the reset landing on the first reading after it) and
 a **sustained tier change** (the tier that sustains the baseline over
 ``[D-66, D-7]`` differs from the tier that sustained it over the previous
-60-day window ``[D-126, D-67]``). There is no timezone-change reset.
+60-day window ``[D-126, D-67]``, and that tier also owns the baseline -- it
+is the resolved tier, T093). There is no timezone-change reset.
 
 Pure unit tests over hand-built row dicts, like T083's. Nothing here computes
 a band or a verdict (T084): "suppression is withheld" is asserted as *the
@@ -240,6 +241,40 @@ def test_the_fresh_baseline_resolves_its_tier_on_the_resumption_era_only() -> No
     assert result.tier == STRAP
     assert [r.date for r in result.baseline] == span(resume_on, ago(7))
     assert len(result.baseline) == 9 < hrv_trend.MIN_BASELINE_READINGS
+
+
+def test_week_coverage_is_judged_on_the_gap_clipped_window_and_the_gap_is_the_only_reset() -> None:
+    """Week coverage on a gap-clipped baseline window (sprint-005 review,
+    S2). A snapshot era, a 22-day silence, then both devices resumed daily
+    from ``D-22``: the strap through ``D-7`` (16 readings) and the snapshot
+    through ``D`` (16 in the clipped window, 7 in the week). Over the
+    clipped ``[D-22, D-7]`` both tiers are candidates and the strap is the
+    tier the window *sustains* (highest fidelity with >= 14), but it holds
+    nothing in the week, so rule 2 hands the baseline to the snapshot -- the
+    candidate that covers it. The one reset is the gap, landing on the
+    resumption; the strap the week rejected is no ``tier_change``, and every
+    strap reading is off-tier. Perturbation: resolving the tier on baseline
+    counts alone gives the strap with an empty week and turns this red."""
+    resume_on = ago(22)
+    before = readings(SNAPSHOT, span(ago(126), resume_on - timedelta(days=23)), 60.0, "snap-before")
+    strap = readings(STRAP, span(resume_on, ago(7)), 40.0, "strap")
+    after = readings(SNAPSHOT, span(resume_on, D), 40.0, "snap-after")
+
+    result = build(before + strap + after)
+
+    assert len(strap) == 16 and len(after) == 23
+    assert result.reset_on == resume_on
+    assert result.reset_reason == "coverage_gap"
+    assert result.baseline_window == (resume_on, ago(7))
+    assert result.tier == SNAPSHOT
+    assert [r.date for r in result.baseline] == span(resume_on, ago(7))
+    assert all(r.tier == SNAPSHOT for r in result.baseline)
+    assert len(result.window) == 7
+    reasons = excluded_reasons(result)
+    assert {reasons[r["session_id"]] for r in strap} == {"off_baseline_tier: chest_strap_raw"}
+    assert {reasons[r["session_id"]] for r in before if r["session_id"] >= f"snap-before-{ago(66)}"} == {
+        "before_reset: coverage_gap"
+    }
 
 
 def test_a_gap_reset_takes_precedence_over_a_tier_change() -> None:

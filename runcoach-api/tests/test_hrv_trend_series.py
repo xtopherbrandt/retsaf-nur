@@ -29,6 +29,7 @@ import ast
 import math
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -488,6 +489,31 @@ def test_the_highest_tier_with_at_least_14_baseline_readings_wins() -> None:
     assert len(result.window) == 3
 
 
+def test_thirteen_strap_readings_are_not_a_candidate_even_when_the_strap_covers_the_week() -> None:
+    """The 13 side of the boundary the test above pins at 14 (sprint-005
+    review, S3). Thirteen strap readings in the baseline and three in the
+    week, beside 45 snapshot readings that also cover the week: the strap
+    is not a candidate (rule 1), so rule 2 never consults its week coverage
+    and hands the baseline to the snapshot -- the only candidate that
+    covers the week. Perturbation: a candidacy bound of 13, or a rule 2
+    that lets any week-covering tier win without candidacy, turns this
+    red on ``tier``."""
+    week = days_between(D - timedelta(days=6), D)
+    result = build(
+        readings(STRAP, baseline_days(13))
+        + readings(STRAP, week[-3:])
+        + readings(SNAPSHOT, baseline_days(45), hh=7)
+        + readings(SNAPSHOT, week, hh=7)
+    )
+
+    assert result.tier == SNAPSHOT
+    assert len(result.baseline) == 45
+    assert len(result.window) == 7
+    strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if STRAP in sid}
+    assert len(strap_reasons) == 16
+    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+
+
 def test_an_occasional_higher_tier_capture_does_not_demote_an_established_baseline() -> None:
     """45 snapshots and one borrowed strap: the baseline stays on
     ``health_snapshot`` (n=45), and the strap reading is corroboration, listed
@@ -654,6 +680,36 @@ def test_a_week_with_no_readings_of_any_tier_keeps_the_tier_stable() -> None:
     assert verdict.established is True
 
 
+def test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline() -> None:
+    """Rule 3's third trigger, "the only week-covering tier is thin"
+    (sprint-005 review, S1): 60 strap readings in the baseline and none in
+    the week; a snapshot device with five readings in the baseline -- below
+    ``MIN_BASELINE_READINGS``, so not a candidate -- that covers all seven
+    days of the week. No *candidate* covers the week, so the tier with the
+    most baseline readings, the strap, keeps the baseline; the week is
+    ``hrv_unavailable`` with ``readings_in_window`` 0, nothing resets, and
+    every snapshot reading is ``off_baseline_tier``. Perturbation: letting
+    any week-covering tier win without candidacy hands the baseline to the
+    snapshot on five readings and turns this red."""
+    week = days_between(D - timedelta(days=6), D)
+    thin_snapshot_days = baseline_days(60)[::12]  # five of the sixty baseline days
+    result = build(
+        readings(STRAP, baseline_days(60)) + readings(SNAPSHOT, thin_snapshot_days + week, 38.0, hh=7)
+    )
+
+    assert result.tier == STRAP
+    assert len(result.baseline) == 60
+    assert result.window == ()
+    assert result.reset_reason is None
+    snapshot_reasons = {sid: why for sid, why in excluded_reasons(result).items() if SNAPSHOT in sid}
+    assert len(snapshot_reasons) == 12
+    assert set(snapshot_reasons.values()) == {"off_baseline_tier: health_snapshot"}
+    verdict = hrv_trend.judge(result)
+    assert verdict.verdict == "hrv_unavailable"
+    assert verdict.readings_in_window == 0
+    assert verdict.established is True
+
+
 def oscillating_strap(target: date = D) -> list[dict]:
     """A daily snapshot from ``target-126``, plus a strap on three days of
     one week and two of the next, alternating, back to ``target-126``.
@@ -670,10 +726,14 @@ def oscillating_strap(target: date = D) -> list[dict]:
 
 def test_the_documented_cost_a_two_to_three_day_strap_alternates_the_tier_on_the_week_boundary() -> None:
     """Pinned as the accepted cost (decision log 2026-09-10; F005 "Negative
-    Class"): the strap sustains a baseline in both windows, so the week that
-    holds three strap readings is judged on the strap and the week that
-    holds two on the snapshot. Neither is a reset (the reset half is in
-    ``test_hrv_trend_reset.py``)."""
+    Class"): the strap sustains a baseline in both windows, so a judged
+    week that holds three strap readings is judged on the strap and one
+    that holds two on the snapshot. Sampled here at ``D`` and ``D-7``; the
+    name's "week boundary" is where those two samples sit, not where the
+    flip lands -- the judged week slides daily, so the tier flips whenever
+    the strap count in the sliding week crosses 3, and the test below walks
+    the days and pins the flip day. Neither sample is a reset (the reset
+    half is in ``test_hrv_trend_reset.py``)."""
     rows = oscillating_strap()
 
     three_strap_days = build(rows, target=D)
@@ -685,6 +745,30 @@ def test_the_documented_cost_a_two_to_three_day_strap_alternates_the_tier_on_the
     assert two_strap_days.tier == SNAPSHOT
     assert len(two_strap_days.window) == 7
     assert three_strap_days.reset_reason is None and two_strap_days.reset_reason is None
+
+
+def test_the_tier_flips_on_the_day_the_strap_count_in_the_sliding_week_crosses_3() -> None:
+    """The oscillation walked day by day (sprint-005 review, S4). The judged
+    week ``[D-6, D]`` slides one day at a time, so the flip lands on the day
+    the strap count inside it crosses 3, not on a week boundary. Fixture
+    strap days around the walk: D-20, D-18, D-16 (three), D-13, D-11 (two),
+    D-6, D-4, D-2 (three). Through D-10 the window still holds three
+    (D-16, D-13, D-11); on D-9 the D-16 reading leaves and the count is two
+    until D-3; on D-2 the third strap reading of this week enters and the
+    strap takes the baseline -- five days before the boundary the ``D`` /
+    ``D-7`` samples above suggest. No day resets. Perturbation: ignoring the
+    week keeps the strap on every day."""
+    rows = oscillating_strap()
+    targets = [D - timedelta(days=13 - i) for i in range(14)]  # D-13 .. D
+    expected = [STRAP] * 4 + [SNAPSHOT] * 7 + [STRAP] * 3
+
+    observed = [build(rows, target=target) for target in targets]
+
+    assert [r.tier for r in observed] == expected
+    assert all(r.reset_reason is None and r.reset_on is None for r in observed)
+    flips = [later for before, later in pairwise(observed) if before.tier != later.tier]
+    assert [r.target_date for r in flips] == [D - timedelta(days=9), D - timedelta(days=2)]
+    assert [len(r.window) for r in flips] == [7, 3]
 
 
 # ---------------------------------------------------------------------------
