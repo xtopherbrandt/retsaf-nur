@@ -278,6 +278,11 @@ def _tier_counts(readings: Iterable[Reading]) -> Counter[str]:
     return Counter(r.tier for r in readings)
 
 
+def _of_tier(readings: Iterable[Reading], tier: str) -> tuple[Reading, ...]:
+    """The readings captured on ``tier`` -- one era's readings, in a window."""
+    return tuple(r for r in readings if r.tier == tier)
+
+
 def _last_read(readings: Iterable[Reading]) -> dict[str, date]:
     """The latest local day each tier was read on -- rule 3's recency."""
     last: dict[str, date] = {}
@@ -794,14 +799,14 @@ def tier_change_reset(
         return None
     baseline_readings = tuple(baseline_readings)
     previous_readings = tuple(previous_readings)
-    if _tier_counts(baseline_readings).get(tier, 0) < MIN_BASELINE_READINGS:
+    if len(_of_tier(baseline_readings, tier)) < MIN_BASELINE_READINGS:
         return None
     previous_tier = sustained_tier(_tier_counts(previous_readings))
     if previous_tier is None or previous_tier == tier:
         return None
-    era_start = min(r.start_time for r in baseline_readings if r.tier == tier)
-    if any(r.start_time >= era_start for r in baseline_readings if r.tier == previous_tier):
+    era_start = min(r.start_time for r in _of_tier(baseline_readings, tier))
+    if any(r.start_time >= era_start for r in _of_tier(baseline_readings, previous_tier)):
         return None
     both = (*previous_readings, *baseline_readings)
-    old_era_end = max(r.start_time for r in both if r.tier == previous_tier)
-    return min(r.date for r in both if r.tier == tier and r.start_time > old_era_end)
+    old_era_end = max(r.start_time for r in _of_tier(both, previous_tier))
+    return min(r.date for r in _of_tier(both, tier) if r.start_time > old_era_end)
