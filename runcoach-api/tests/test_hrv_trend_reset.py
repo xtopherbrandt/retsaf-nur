@@ -429,6 +429,110 @@ def test_the_tier_change_rule_over_both_windows(entry) -> None:
 
 
 # ---------------------------------------------------------------------------
+# T093: a week-driven tier is not a tier change
+#
+# The tier rule now asks that the baseline tier also cover the judged week
+# (F005 "Negative Class"; decision log 2026-09-10). The reset rule compares
+# the previous window's tier with the tier the current baseline window
+# *sustains* (>= 14, highest fidelity), never with a tier the judged week
+# chose or a fallback the empty week forced -- and a change is reported only
+# when the sustained tier both changed and owns the baseline. Each test
+# went red against the earlier comparison (T093's Delivered note).
+# ---------------------------------------------------------------------------
+
+
+def trial_then_abandon() -> list[dict]:
+    """The critic's series (``CRITIC-F005.md``), as in the series suite: a
+    daily snapshot for 200 days ending ``D``, suppressed at 25 ms on
+    2026-08-20 .. 2026-09-02; a strap daily 2026-07-03 .. 2026-07-16."""
+    snapshot_days = span(ago(199), D)
+    suppressed = span(date(2026, 8, 20), date(2026, 9, 2))
+    rows = [
+        row(local(day, 7), SNAPSHOT, 25.0 if day in suppressed else 38.0 + 6.0 * (i % 2), f"snap-{day}")
+        for i, day in enumerate(snapshot_days)
+    ]
+    rows += readings(STRAP, span(date(2026, 7, 3), date(2026, 7, 16)), 79.0, "strap")
+    return rows
+
+
+def test_a_trial_then_abandoned_strap_never_reports_a_tier_change() -> None:
+    """For every target from 2026-07-23 to 2026-09-07 the strap sustains a
+    baseline by count (14 in ``[D-66, D-7]``) while the previous window is
+    all snapshot -- the sustained tier *did* change -- yet the strap holds
+    no reading in any judged week and never owns the baseline. A reset here
+    would clip a snapshot baseline at a strap day and name an event the
+    athlete never made; none is reported, on any day, and the strap rows
+    are listed as off-tier."""
+    rows = trial_then_abandon()
+
+    for target in span(date(2026, 7, 23), D):
+        result = build(rows, target=target)
+        assert result.tier == SNAPSHOT, target
+        assert result.reset_on is None and result.reset_reason is None, target
+        assert result.baseline_window == (ago(66, target), ago(7, target)), target
+        strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if sid.startswith("strap-")}
+        assert set(strap_reasons.values()) <= {"off_baseline_tier: chest_strap_raw", "outside_windows"}, target
+
+
+def test_a_week_driven_fallback_is_not_a_tier_change() -> None:
+    """An established strap era in ``[D-126, D-67]``; a mixed baseline now
+    (20 strap, 30 snapshot); nothing captured in ``[D-6, D]``. No candidate
+    covers the week, so the densest tier -- the snapshot -- takes the
+    baseline for this empty week. The tier the window *sustains* is still
+    the strap, the same as before, so nothing changed and nothing resets."""
+    previous = readings(STRAP, span(ago(126), ago(67)), 40.0, "prev")
+    strap_now = readings(STRAP, span(ago(66), ago(28), 2), 40.0, "strap")  # 20
+    snapshot_now = readings(SNAPSHOT, span(ago(66), ago(8), 2), 40.0, "snap")  # 30
+
+    result = build(previous + strap_now + snapshot_now)
+
+    assert len(strap_now) == 20 and len(snapshot_now) == 30
+    assert result.tier == SNAPSHOT
+    assert result.window == ()
+    assert result.reset_on is None and result.reset_reason is None
+    assert result.baseline_window == (ago(66), ago(7))
+
+
+def test_a_genuine_switch_still_resets_on_the_first_day_of_the_new_tier() -> None:
+    """The T092 scenario, unchanged: a daily snapshot to ``D-21`` and a daily
+    strap from ``D-20`` -- 14 strap readings in the baseline and 7 in the
+    week. The strap sustains the baseline *and* covers the week, so the
+    change is reported as today, on the first strap day."""
+    snapshot_era = readings(SNAPSHOT, span(ago(126), ago(21)), 60.0, "snap")
+    strap_era = readings(STRAP, span(ago(20), D), 25.0, "strap")
+
+    result = build(snapshot_era + strap_era)
+
+    assert result.tier == STRAP
+    assert result.reset_reason == "tier_change"
+    assert result.reset_on == ago(20)
+    assert result.baseline_window == (ago(20), ago(7))
+    assert len(result.baseline) == 14
+    assert len(result.window) == 7
+
+
+def test_the_documented_tier_oscillation_is_not_a_reset_in_either_direction() -> None:
+    """A daily snapshot plus a strap on three days of one week and two of
+    the next, back through the previous window. The strap sustains both
+    windows, so neither the week judged on the strap (three readings) nor
+    the week judged on the snapshot (two) is a change of the sustained
+    tier: no reset either way. The tier alternation itself is pinned in
+    the series suite as the documented cost."""
+    rows = readings(SNAPSHOT, span(ago(126), D), 40.0, "snap")
+    for k in range(18):
+        week_first = ago(7 * k + 6)
+        offsets = (0, 2, 4) if k % 2 == 0 else (0, 2)
+        rows += readings(STRAP, [week_first + timedelta(days=o) for o in offsets], 79.0, f"strap-w{k}")
+
+    on_strap = build(rows, target=D)
+    on_snapshot = build(rows, target=ago(7))
+
+    assert (on_strap.tier, on_snapshot.tier) == (STRAP, SNAPSHOT)
+    assert on_strap.reset_on is None and on_strap.reset_reason is None
+    assert on_snapshot.reset_on is None and on_snapshot.reset_reason is None
+
+
+# ---------------------------------------------------------------------------
 # adversarial rows
 # ---------------------------------------------------------------------------
 

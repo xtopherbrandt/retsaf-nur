@@ -29,7 +29,7 @@ import math
 import statistics
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
-from itertools import repeat
+from itertools import pairwise, repeat
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -497,6 +497,65 @@ def test_a_sustained_tier_change_is_reachable_through_the_endpoint(configure, se
     # The rows before D-66 fed the rule but are not "inside [to-66, to]", so
     # the documented excluded[] span does not list them.
     assert body["excluded"] == []
+
+
+# ---------------------------------------------------------------------------
+# T093: a trial-then-abandoned strap, end to end
+# ---------------------------------------------------------------------------
+
+
+def test_a_trial_then_abandoned_strap_does_not_blank_the_verdict_through_the_endpoint(configure, seeder) -> None:
+    """The critic's series (``CRITIC-F005.md``) through ``db.persist`` and
+    ``GET /metrics/hrv``: a daily Health Snapshot for 200 days ending
+    ``D`` (Pacific/Auckland), genuinely suppressed at 25 ms on 2026-08-20 ..
+    2026-09-02, and a chest strap used daily 2026-07-03 .. 2026-07-16 and
+    never again. The strap sustains a baseline by count for every ``to``
+    from 2026-07-23 to 2026-09-07 but covers no judged week, so the
+    snapshot owns the verdict throughout: the suppression is reported on
+    2026-09-02, no ``tier_change`` is reported on any day, and ``points[]``
+    carries one continuous snapshot band across the range -- every day's
+    band equal to the one computed here from the snapshot values alone."""
+    configure(AUCKLAND)
+    snapshot_days = days(D - timedelta(days=199), D)
+    suppressed = days(date(2026, 8, 20), date(2026, 9, 2))
+    values = {day: 25.0 if day in suppressed else 38.0 + 6.0 * (i % 2) for i, day in enumerate(snapshot_days)}
+    for day in snapshot_days:
+        seeder.snapshot(at(day, 7, zone=AUCKLAND), values[day])
+    for day in days(date(2026, 7, 3), date(2026, 7, 16)):
+        seeder.strap(at(day, 6, zone=AUCKLAND))  # a different instant from the day's snapshot
+    seeder.persist()
+
+    first, last = date(2026, 7, 23), D
+    with TestClient(app) as client:
+        on_suppressed_day = get(client, to="2026-09-02").json()
+        response = get(client, **{"from": first.isoformat(), "to": last.isoformat()})
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert on_suppressed_day["verdict"] == "hrv_suppressed"
+    assert on_suppressed_day["below_by"] > 0
+    assert on_suppressed_day["baseline"]["tier"] == SNAPSHOT
+    assert on_suppressed_day["baseline"]["established"] is True
+    assert on_suppressed_day["baseline"]["reset_reason"] is None
+    assert on_suppressed_day["readings_in_window"] == 7
+    strap_rows = [e for e in on_suppressed_day["excluded"] if e["reason"].startswith("off_baseline_tier")]
+    assert len(strap_rows) == 14
+    assert {e["reason"] for e in strap_rows} == {"off_baseline_tier: chest_strap_raw"}
+
+    assert body["baseline"]["tier"] == SNAPSHOT
+    assert body["baseline"]["reset_reason"] is None
+    points = body["points"]
+    assert [p["date"] for p in points] == [d.isoformat() for d in days(first, last)]
+    for point in points:
+        day = date.fromisoformat(point["date"])
+        lo, hi = hrv_trend.baseline_window(day)
+        _, expected_lo, expected_hi = expected_band([v for d, v in sorted(values.items()) if lo <= d <= hi])
+        assert point["swc_low"] == pytest.approx(expected_lo, abs=1e-6), point
+        assert point["swc_high"] == pytest.approx(expected_hi, abs=1e-6), point
+    # Continuity: one snapshot band, drifting day by day as the baseline
+    # slides, never stepping onto the strap's (ln 79 vs ln 41, about 0.66).
+    steps = [abs(b["swc_low"] - a["swc_low"]) for a, b in pairwise(points)]
+    assert max(steps) < 0.05, max(steps)
 
 
 # ---------------------------------------------------------------------------

@@ -473,10 +473,19 @@ def test_any_positive_finite_value_is_a_reading(value: float) -> None:
 
 
 def test_the_highest_tier_with_at_least_14_baseline_readings_wins() -> None:
-    result = build(readings(STRAP, baseline_days(14)) + readings(SNAPSHOT, baseline_days(45), hh=7))
+    """Fourteen strap readings sustain a baseline against 45 snapshot ones
+    -- provided the strap also covers the judged week (T093, 2026-09-10:
+    this fixture originally gave the strap no week at all, which is the
+    trial-then-abandon shape the amended rule refuses; it gained three
+    strap readings in ``[D-6, D]``, recorded as an existing-line edit)."""
+    week = [D - timedelta(days=i) for i in range(3)]
+    result = build(
+        readings(STRAP, baseline_days(14)) + readings(STRAP, week) + readings(SNAPSHOT, baseline_days(45), hh=7)
+    )
 
     assert result.tier == STRAP
     assert len(result.baseline) == 14
+    assert len(result.window) == 3
 
 
 def test_an_occasional_higher_tier_capture_does_not_demote_an_established_baseline() -> None:
@@ -552,6 +561,130 @@ def test_with_no_baseline_readings_the_tier_falls_back_to_the_judged_week() -> N
     assert result.tier == SNAPSHOT
     assert result.baseline == ()
     assert len(result.window) == 5
+
+
+# ---------------------------------------------------------------------------
+# T093: the baseline tier must also cover the judged week
+#
+# The population between F005's two poles -- "an occasional chest-strap
+# capture" (corroboration) and "a sustained switch" (tier change) -- that no
+# scenario, task or probe row named (sprint-005 review, critic stage 4.6;
+# F005 "Negative Class"). MIN_BASELINE_READINGS is 14 in 60 days, 1.6 a week;
+# MIN_WINDOW_READINGS is 3 a week; so a tier can sustain a baseline by count
+# while never sustaining a judged week. Each test here went red against the
+# baseline-only rule (T093's Delivered note records the run).
+# ---------------------------------------------------------------------------
+
+
+def days_between(first: date, last: date) -> list[date]:
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
+def trial_then_abandon() -> list[dict]:
+    """The critic's series (``CRITIC-F005.md``): a daily Health Snapshot for
+    200 days ending ``D``, 38/44 ms alternating, genuinely suppressed at 25 ms
+    on 2026-08-20 .. 2026-09-02; a chest strap used daily 2026-07-03 ..
+    2026-07-16 and never again."""
+    snapshot_days = days_between(D - timedelta(days=199), D)
+    suppressed = days_between(date(2026, 8, 20), date(2026, 9, 2))
+    rows = [
+        row(local(day, 7), SNAPSHOT, 25.0 if day in suppressed else 38.0 + 6.0 * (i % 2))
+        for i, day in enumerate(snapshot_days)
+    ]
+    rows += readings(STRAP, days_between(date(2026, 7, 3), date(2026, 7, 16)), 79.0)
+    return rows
+
+
+def test_a_higher_tier_that_does_not_cover_the_judged_week_does_not_own_the_baseline() -> None:
+    """The strap trial holds 14 readings in ``[D-66, D-7]`` for every target
+    from 2026-07-23 to 2026-09-07 and none in ``[D-6, D]``; the snapshot
+    covers every week. The snapshot owns the baseline on every one of those
+    days, the real two-week suppression is reported, and nothing resets."""
+    rows = trial_then_abandon()
+
+    for target in days_between(date(2026, 7, 23), D):
+        result = build(rows, target=target)
+        assert result.tier == SNAPSHOT, target
+        assert result.reset_reason is None and result.reset_on is None, target
+        assert len(result.window) == 7, target
+
+    verdict = hrv_trend.judge(build(rows, target=date(2026, 9, 2)))
+    assert verdict.verdict == "hrv_suppressed"
+    assert verdict.below_by is not None and verdict.below_by > 0
+    assert verdict.established is True
+
+
+def test_a_two_day_a_week_strap_is_corroboration_not_the_baseline() -> None:
+    """A daily-snapshot athlete who keeps a strap on Tuesdays and Saturdays:
+    the strap sustains a baseline by count (>= 14 in 60 days) but holds only
+    two readings in any week, so it can never judge one. The snapshot owns
+    the baseline and every strap reading is ``off_baseline_tier``."""
+    every_day = baseline_days(60) + days_between(D - timedelta(days=6), D)
+    strap_days = [day for day in every_day if day.weekday() in (1, 5)]  # Tue, Sat
+    in_baseline = [day for day in strap_days if day <= D - timedelta(days=7)]
+    in_week = [day for day in strap_days if day > D - timedelta(days=7)]
+    assert len(in_baseline) >= hrv_trend.MIN_BASELINE_READINGS
+    assert len(in_week) == 2
+
+    result = build(readings(SNAPSHOT, every_day, hh=7) + readings(STRAP, strap_days, 79.0))
+
+    assert result.tier == SNAPSHOT
+    assert len(result.baseline) == 60
+    assert len(result.window) == 7
+    strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if STRAP in sid}
+    assert len(strap_reasons) == len(strap_days)
+    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+    assert hrv_trend.judge(result).verdict == "hrv_normal"
+
+
+def test_a_week_with_no_readings_of_any_tier_keeps_the_tier_stable() -> None:
+    """Illness week: an established strap baseline and nothing captured in
+    ``[D-6, D]``. No candidate covers the week, so the tier with the most
+    baseline readings -- the strap -- keeps the baseline; the verdict is
+    ``hrv_unavailable`` with ``readings_in_window`` 0 and no reset."""
+    result = build(readings(STRAP, baseline_days(60)))
+
+    assert result.tier == STRAP
+    assert len(result.baseline) == 60
+    assert result.window == ()
+    assert result.reset_reason is None
+    verdict = hrv_trend.judge(result)
+    assert verdict.verdict == "hrv_unavailable"
+    assert verdict.readings_in_window == 0
+    assert verdict.established is True
+
+
+def oscillating_strap(target: date = D) -> list[dict]:
+    """A daily snapshot from ``target-126``, plus a strap on three days of
+    one week and two of the next, alternating, back to ``target-126``.
+    Week ``k`` is ``[target-7k-6, target-7k]``; even weeks hold three strap
+    days, odd weeks two -- so the week judged at ``target`` has three and
+    the week judged at ``target-7`` has two."""
+    rows = readings(SNAPSHOT, days_between(target - timedelta(days=126), target), hh=7)
+    for k in range(18):
+        week_first = target - timedelta(days=7 * k + 6)
+        offsets = (0, 2, 4) if k % 2 == 0 else (0, 2)
+        rows += readings(STRAP, [week_first + timedelta(days=o) for o in offsets], 79.0)
+    return rows
+
+
+def test_the_documented_cost_a_two_to_three_day_strap_alternates_the_tier_on_the_week_boundary() -> None:
+    """Pinned as the accepted cost (decision log 2026-09-10; F005 "Negative
+    Class"): the strap sustains a baseline in both windows, so the week that
+    holds three strap readings is judged on the strap and the week that
+    holds two on the snapshot. Neither is a reset (the reset half is in
+    ``test_hrv_trend_reset.py``)."""
+    rows = oscillating_strap()
+
+    three_strap_days = build(rows, target=D)
+    two_strap_days = build(rows, target=D - timedelta(days=7))
+
+    assert three_strap_days.tier == STRAP
+    assert len(three_strap_days.window) == 3
+    assert len(three_strap_days.baseline) >= hrv_trend.MIN_BASELINE_READINGS
+    assert two_strap_days.tier == SNAPSHOT
+    assert len(two_strap_days.window) == 7
+    assert three_strap_days.reset_reason is None and two_strap_days.reset_reason is None
 
 
 # ---------------------------------------------------------------------------
