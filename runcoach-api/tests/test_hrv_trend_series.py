@@ -82,6 +82,11 @@ def baseline_days(n: int, target: date = D) -> list[date]:
     return [end - timedelta(days=i) for i in range(n)][::-1]
 
 
+def days_between(first: date, last: date) -> list[date]:
+    """Every local day of the closed interval ``[first, last]``."""
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
 def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.HrvSeries:
     return hrv_trend.build_series(rows, zone, target)
 
@@ -479,7 +484,7 @@ def test_the_highest_tier_with_at_least_14_baseline_readings_wins() -> None:
     this fixture originally gave the strap no week at all, which is the
     trial-then-abandon shape the amended rule refuses; it gained three
     strap readings in ``[D-6, D]``, recorded as an existing-line edit)."""
-    week = [D - timedelta(days=i) for i in range(3)]
+    week = days_between(D - timedelta(days=2), D)
     result = build(
         readings(STRAP, baseline_days(14)) + readings(STRAP, week) + readings(SNAPSHOT, baseline_days(45), hh=7)
     )
@@ -600,10 +605,6 @@ def test_with_no_baseline_readings_the_tier_falls_back_to_the_judged_week() -> N
 # while never sustaining a judged week. Each test here went red against the
 # baseline-only rule (T093's Delivered note records the run).
 # ---------------------------------------------------------------------------
-
-
-def days_between(first: date, last: date) -> list[date]:
-    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
 def trial_then_abandon() -> list[dict]:
@@ -755,11 +756,12 @@ def test_the_tier_flips_on_the_day_the_strap_count_in_the_sliding_week_crosses_3
     D-6, D-4, D-2 (three). Through D-10 the window still holds three
     (D-16, D-13, D-11); on D-9 the D-16 reading leaves and the count is two
     until D-3; on D-2 the third strap reading of this week enters and the
-    strap takes the baseline -- five days before the boundary the ``D`` /
-    ``D-7`` samples above suggest. No day resets. Perturbation: ignoring the
-    week keeps the strap on every day."""
+    strap takes the baseline -- four days after the fixture's week boundary
+    ``D-6``, not on it as the ``D`` / ``D-7`` samples above might suggest.
+    No day resets. Perturbation: ignoring the week keeps the strap on every
+    day."""
     rows = oscillating_strap()
-    targets = [D - timedelta(days=13 - i) for i in range(14)]  # D-13 .. D
+    targets = days_between(D - timedelta(days=13), D)
     expected = [STRAP] * 4 + [SNAPSHOT] * 7 + [STRAP] * 3
 
     observed = [build(rows, target=target) for target in targets]
