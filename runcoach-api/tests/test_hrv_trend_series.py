@@ -888,9 +888,15 @@ def test_the_fallback_keeps_the_device_the_athlete_used_last_through_a_thin_week
     tiers are candidates; from D-3 no candidate covers the week (two strap
     readings, then one, then none). The strap, read last at D-8, keeps the
     baseline on every day D-5..D with the same ``tier_change`` on D-25,
-    and the thin days read ``hrv_unavailable``. Perturbation (densest
-    fallback, cf48c3a): D-3 reverts to the snapshot on 44 readings,
-    withdraws the reset, and reports ``readings_in_window`` 0."""
+    and the thin days read ``hrv_unavailable``. This empty week keeps a
+    reset *in force* while the one in the mixed-baseline test below
+    reports none, and nothing about either week separates them: rule 4
+    reads the two windows alone, and here the strap era that followed a
+    cleanly-ended snapshot era satisfies (a), (b) and (c) whether or not
+    the week has readings -- an empty week begins no reset and ends none
+    (T095, review cycle 3 G11). Perturbation (densest fallback, cf48c3a):
+    D-3 reverts to the snapshot on 44 readings, withdraws the reset, and
+    reports ``readings_in_window`` 0."""
     rows = readings(SNAPSHOT, days_between(D - timedelta(days=126), D - timedelta(days=26)), hh=7)
     rows += readings(STRAP, days_between(D - timedelta(days=25), D - timedelta(days=8)), 79.0)
 
@@ -915,7 +921,11 @@ def test_an_empty_week_on_a_mixed_baseline_keeps_the_tier_the_athlete_used_last_
     tiers are candidates (33 strap, 27 snapshot) and neither covers the
     empty week; the snapshot was read last, so it keeps the baseline it
     already held at D-7 and will hold at D+7, with no reset and
-    ``hrv_unavailable``. Perturbation (densest fallback, cf48c3a): the
+    ``hrv_unavailable``. No reset here, against the reset the thin-week
+    test above keeps through *its* empty week, because the snapshot
+    sustained the previous window too and rule 4(b) fails -- the week
+    decides neither; an empty week begins no reset and ends none (T095,
+    review cycle 3 G11). Perturbation (densest fallback, cf48c3a): the
     empty week alone flips to the strap and asserts a ``tier_change`` both
     neighbours withdraw."""
     rows = readings(SNAPSHOT, days_between(D - timedelta(days=126), D - timedelta(days=67)), hh=7)
@@ -961,6 +971,140 @@ def test_rule_3_reads_the_day_each_candidate_was_read_last_not_first_or_most() -
     assert len(result.baseline) == 15
     assert result.window == ()
     assert hrv_trend.judge(result).verdict == "hrv_unavailable"
+    assert result.reset_reason is None and result.reset_on is None
+
+
+# ---------------------------------------------------------------------------
+# T095: the count unit is distinct local days, everywhere
+#
+# Sprint-005 review cycle 3 (spec review AC 14/15 PARTIAL; critic B1; F005
+# verdict G10) found that rules 1-3 counted *captures* while ``judge``
+# counted the collapsed one-per-day series, so T093's week-coverage gate
+# was defeatable by one re-taken morning and 14 captures on 7 days made a
+# tier a candidate whose baseline the same response reported as not
+# established. Every fixture before this section is one capture per day
+# per tier, which is why the unit was pinned by nothing: mutating
+# ``_tier_counts`` to count days left all 337 probe tests green. The two
+# pins below discriminate the unit in both directions (decision log
+# 2026-09-12, "days everywhere"); each went red at 0891061 (T095's
+# Delivered note records the run and the reverse perturbation).
+# ---------------------------------------------------------------------------
+
+
+def suppressed_snapshot(target: date = D) -> list[dict]:
+    """A daily snapshot at 07:00 for 200 days ending ``target``, genuinely
+    suppressed at 25 ms in the judged week ``[target-6, target]`` and
+    alternating 38 / 44 ms before it."""
+    every_day = days_between(target - timedelta(days=199), target)
+    suppressed = days_between(target - timedelta(days=6), target)
+    return [
+        row(local(day, 7), SNAPSHOT, 25.0 if day in suppressed else 38.0 + 6.0 * (i % 2), f"snap-{day}")
+        for i, day in enumerate(every_day)
+    ]
+
+
+def test_a_re_taken_strap_morning_does_not_hand_the_week_to_the_strap() -> None:
+    """G10, the re-taken morning (verdict table rows 1-2). The suppressed
+    daily snapshot beside a Tue/Sat strap habit: 18 strap captures on 18
+    days in ``[D-66, D-7]`` and 2 strap days in the judged week. With one
+    capture per strap morning the snapshot owns the week (the strap does
+    not cover it) and the suppression is reported. Re-take **one** of the
+    two judged-week mornings -- a second strap capture at 06:12 on the
+    Saturday -- and at 0891061 the strap's *capture* count in the week
+    reached 3: the tier flipped to the strap, ``hrv_unavailable`` with
+    ``established: true`` on 18 readings, and the 60-reading snapshot was
+    listed off-tier -- cell 1 of F005's cost table, presented as prevented.
+    Rules 1-3 now count distinct local days, so both series read
+    ``hrv_suppressed`` on the snapshot identically and the re-take changes
+    nothing but its own ``excluded[]`` entry (``off_baseline_tier``: the
+    re-take is a strap capture on a snapshot baseline; it would be
+    ``same_day_later_capture`` only on the strap baseline it no longer
+    earns). Perturbation (``_tier_counts`` back to captures): the re-taken
+    series flips to the strap -- red."""
+    snapshot = suppressed_snapshot()
+    strap_days = [day for day in days_between(D - timedelta(days=66), D) if day.weekday() in (1, 5)]
+    in_week = [day for day in strap_days if day > D - timedelta(days=7)]
+    assert len(strap_days) - len(in_week) == 18 and len(in_week) == 2
+    strap = readings(STRAP, strap_days, 79.0)
+    re_take = row(local(in_week[0], 6, 12), STRAP, 80.0, "strap-re-take")
+
+    once = build(snapshot + strap)
+    re_taken = build(snapshot + strap + [re_take])
+
+    for result in (once, re_taken):
+        assert result.tier == SNAPSHOT
+        assert result.reset_reason is None and result.reset_on is None
+        verdict = hrv_trend.judge(result)
+        assert (verdict.verdict, verdict.established, verdict.baseline_n, verdict.readings_in_window) == (
+            "hrv_suppressed",
+            True,
+            60,
+            7,
+        )
+    assert hrv_trend.judge(once) == hrv_trend.judge(re_taken)
+    assert [r.session_id for r in once.series] == [r.session_id for r in re_taken.series]
+    assert set(excluded_reasons(re_taken)) - set(excluded_reasons(once)) == {"strap-re-take"}
+    assert excluded_reasons(re_taken)["strap-re-take"] == "off_baseline_tier: chest_strap_raw"
+
+
+def test_fourteen_strap_captures_on_seven_days_are_not_a_candidate() -> None:
+    """G10, the sibling reach (verdict table row 3). The suppressed daily
+    snapshot plus two strap captures on each of ``D-20``..``D-14`` -- 14
+    captures on 7 days -- and three strap days in the judged week. At
+    0891061 the 14 captures made the strap a candidate, the three week
+    days covered the week, and the response reported ``chest_strap_raw``,
+    ``n`` 7, ``established: false`` and ``hrv_normal`` -- a verdict in the
+    up-regulating direction ``research/00`` §1.7 tolerates least, on a
+    baseline the same response said was not established, while the
+    snapshot's real suppression went unreported. Seven distinct days are
+    not 14: the strap is not a candidate, the snapshot keeps the baseline
+    and the suppression is emitted. Perturbation (captures): the strap
+    takes it -- red."""
+    snapshot = suppressed_snapshot()
+    doubled_days = days_between(D - timedelta(days=20), D - timedelta(days=14))
+    doubled = readings(STRAP, doubled_days, 79.0) + [
+        row(local(day, 6, 12), STRAP, 80.0, f"strap-again-{day}") for day in doubled_days
+    ]
+    this_week = readings(STRAP, [D - timedelta(days=6), D - timedelta(days=4), D - timedelta(days=2)], 79.0)
+    assert len(doubled) == 14 and len(doubled_days) == 7
+
+    result = build(snapshot + doubled + this_week)
+
+    assert result.tier == SNAPSHOT
+    assert result.reset_reason is None and result.reset_on is None
+    verdict = hrv_trend.judge(result)
+    assert (verdict.verdict, verdict.established, verdict.baseline_n, verdict.readings_in_window) == (
+        "hrv_suppressed",
+        True,
+        60,
+        7,
+    )
+    strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if "strap" in sid}
+    assert len(strap_reasons) == 17
+    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+
+
+def test_rule_3_recency_is_keyed_on_the_local_day_not_the_instant() -> None:
+    """The granularity of rule 3's recency (review cycle 3, G16: M4 pinned
+    the direction, not the unit). Two candidates both read last on
+    ``D-8``, the strap at 07:00 and the snapshot at 06:00, neither covering
+    the empty week; 15 strap days against 43 snapshot days. Read last on
+    the *same local day*, the tie falls to count -- the snapshot -- as the
+    construction reference's rule 3 says. Keyed on the instant, the strap's
+    07:00 outranks the snapshot's 06:00 and the strap wins on 15 readings.
+    Perturbation (``_last_read`` keeping ``start_time``): ``chest_strap_raw``
+    -- red."""
+    strap_days = days_between(D - timedelta(days=64), D - timedelta(days=8))[::4]
+    snapshot_days = days_between(D - timedelta(days=50), D - timedelta(days=8))
+    rows = readings(STRAP, strap_days, 79.0, hh=7) + readings(SNAPSHOT, snapshot_days, hh=6)
+
+    result = build(rows)
+
+    assert (len(strap_days), len(snapshot_days)) == (15, 43)
+    assert strap_days[-1] == snapshot_days[-1] == D - timedelta(days=8)
+    assert result.tier == SNAPSHOT
+    assert len(result.baseline) == 43
+    assert result.window == ()
     assert result.reset_reason is None and result.reset_on is None
 
 

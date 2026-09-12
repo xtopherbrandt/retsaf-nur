@@ -783,40 +783,6 @@ def test_a_trial_that_has_aged_into_the_previous_window_is_not_a_tier_change() -
         assert len(result.baseline) == 60, target
 
 
-def test_a_stray_old_tier_capture_after_a_genuine_switch_hides_the_switch() -> None:
-    """M3(a), the named cost of judging interleaving over both windows. A
-    daily snapshot to ``D-30``, a daily strap from ``D-29``, and one stray
-    snapshot capture on ``D-25`` at 07:00 (the phone auto-captured once
-    after the switch). The stray is the old era's last reading, so the
-    strap's first four days fall inside ``(A_first, A_last]``: interleaved,
-    for as long as the stray is in either window -- and by the time it
-    leaves the previous window (``D+102``) the strap has sustained that
-    window since ``D+51`` and 4(b) has already failed. So the switch's
-    reset is **never reported**: ``established: true`` on the strap with a
-    null ``reset_reason`` on every day of the walk. The control without
-    the stray reports ``tier_change`` on ``D-29`` at ``D`` and ``D+42``.
-    Before this rule (clause (c) on the current window only) the same
-    series reported nothing until the stray had aged into the previous
-    window, then a ``tier_change`` naming ``D-24`` -- the first strap
-    reading after the stray -- on ``D+42``..``D+50``, and withdrew it; red
-    there. Who notices is in F005's Negative Class."""
-    snapshot_era = readings(SNAPSHOT, span(ago(126), ago(30)), 60.0, "snap")
-    strap_era = readings(STRAP, span(ago(29), D + timedelta(days=70)), 25.0, "strap")
-    stray = [row(local(ago(25), 7), SNAPSHOT, 60.0, "snap-stray")]
-    walk = [D, D + timedelta(days=42), D + timedelta(days=52), D + timedelta(days=60)]
-
-    for target in walk:
-        result = build(snapshot_era + strap_era + stray, target=target)
-        assert result.tier == STRAP, target
-        assert result.reset_reason is None, (target, result.reset_reason, result.reset_on)
-        assert result.reset_on is None, target
-        assert hrv_trend.judge(result).established is True, target
-
-    for target in walk[:2]:
-        control = build(snapshot_era + strap_era, target=target)
-        assert (control.tier, control.reset_reason, control.reset_on) == (STRAP, "tier_change", ago(29)), target
-
-
 def test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a_week_again() -> None:
     """M3(b), reproduced as the patterns scanner described it. A daily
     snapshot to ``D-26``, an 18-day strap trial ``D-25``..``D-8``, nothing
@@ -846,6 +812,216 @@ def test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a
     for target in span(ago(5), D + timedelta(days=2)):
         assert reported[target] == (STRAP, "tier_change", ago(25)), target
     assert reported[D + timedelta(days=3)] == (SNAPSHOT, None, None)
+
+
+# ---------------------------------------------------------------------------
+# T095: clause (c) tolerates isolated captures by density
+#
+# Sprint-005 review cycle 3 (F005 verdict G9, G12; IDEA-065) found that an
+# exact clause (c) let one capture of either tier, on either side of a
+# genuine switch, silence the switch's reset: a stray of the new tier
+# inside the old era (G9, the modal "tried the strap the week before
+# buying one"), a stale trial of the new tier (G12: 28 days of silence,
+# then the reset 48 days late), and the stray old-tier capture after the
+# switch that cycle 3 had named as an accepted cost (IDEA-065). Decision
+# log 2026-09-12, "density tolerance": readings on the wrong side of the
+# era boundary are corroboration unless, together, they would themselves
+# be a candidate (14 distinct local days) or cover a judged week (3 within
+# one 7-day span) -- ``hrv_trend._isolated`` is the one statement of it.
+# The same-instant switch-day tie stays interleaved, ``reset_on`` stays
+# the new tier's first reading after the old era's last, and a habit dense
+# enough to be a candidate still interleaves (G6, the tolerance's own error
+# direction). Each walk went red at 0891061 (T095's Delivered note records
+# the run and the decision table).
+# ---------------------------------------------------------------------------
+
+
+def genuine_switch(switch: date, until: date, snapshot_from: date = D - timedelta(days=190)) -> list[dict]:
+    """A daily snapshot at 06:00 from ``snapshot_from`` to ``switch`` and a
+    daily strap at 06:00 from the day after to ``until``: the control
+    series every T095 walk perturbs by one capture or one trial."""
+    rows = readings(SNAPSHOT, span(snapshot_from, switch), 60.0, "snap")
+    rows += readings(STRAP, span(switch + timedelta(days=1), until), 25.0, "strap")
+    return rows
+
+
+def reported(rows: list[dict], targets: list[date]) -> list[tuple[str | None, str | None, date | None]]:
+    """``(tier, reset_reason, reset_on)`` on each target, for a walk."""
+    out = []
+    for target in targets:
+        result = build(rows, target=target)
+        out.append((result.tier, result.reset_reason, result.reset_on))
+    return out
+
+
+def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset() -> None:
+    """G9. A daily snapshot to ``SW``, a daily strap from ``SW+1``, and
+    **one** strap capture at ``SW-11`` -- the athlete tried the strap the
+    week before buying one. At 0891061 the stray fell inside the snapshot
+    era's span, so (c) read the eras as interleaved and the switch's
+    reset was reported on no day at all; the stray also supplied the 14th
+    baseline capture, so the tier flipped a day early with nothing to
+    explain the band step. Under the tolerance the stray is one isolated
+    day: the old era still ends at ``SW`` and the new one begins at
+    ``SW+1``, so ``tier_change on SW+1`` is reported from the day the strap
+    first owns the baseline -- ``SW+20`` with the stray (it is a distinct
+    day, and candidacy has no recency: IDEA-064, untouched here), ``SW+21``
+    without -- and on every later day of the era. On ``SW+20`` the reset
+    also clips the stray out of the reported era, so the response says
+    what is true of it: ``baseline.n`` 13 and ``established: false`` --
+    the band steps a day early, the reset explains the step, and no
+    suppression can be asserted on it. Red at 0891061 on all three walked
+    days."""
+    switch = ago(60)
+    control = genuine_switch(switch, switch + timedelta(days=70))
+    stray = [row(local(switch - timedelta(days=11), 6, 30), STRAP, 25.0, "strap-stray")]
+    walk = [switch + timedelta(days=20), switch + timedelta(days=21), switch + timedelta(days=60)]
+
+    assert reported(control, walk) == [
+        (SNAPSHOT, None, None),
+        (STRAP, "tier_change", switch + timedelta(days=1)),
+        (STRAP, "tier_change", switch + timedelta(days=1)),
+    ]
+    assert reported(control + stray, walk) == [(STRAP, "tier_change", switch + timedelta(days=1))] * 3
+    early = build(control + stray, target=walk[0])
+    assert early.baseline_window == (switch + timedelta(days=1), walk[0] - timedelta(days=7))
+    assert hrv_trend.judge(early).established is False and len(early.baseline) == 13
+
+
+def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset() -> None:
+    """G12. A daily snapshot to ``S``, a daily strap from ``S+1``, and a
+    14-day strap trial ``S-90``..``S-77`` captured an hour after the
+    snapshot. The control reports ``tier_change on S+1`` from ``S+21`` to
+    ``S+80`` and clears on ``S+81``, when the strap sustains the previous
+    window. At 0891061 the trial's readings sat inside the snapshot era's
+    span, so (c) suppressed the reset until the trial's last day had left
+    both windows (``S+50``): 29 days of silence, then a reset naming a day
+    49 days earlier. Under the tolerance the trial's readings inside the
+    windows are corroboration once they are fewer than 14 distinct days --
+    from ``S+37``, when its first day ages out of ``[D-126, D-67]`` -- and
+    the reset is reported from then on, unchanged. Through ``S+36`` the
+    trial still holds 14 days there and rule 1 hands the previous window
+    to the strap by fidelity, so clause (b) reads no change: that is a
+    stale candidate in the previous window (IDEA-064's shape, untouched
+    by this decision), not an interleaving, and it is pinned here as the
+    tolerance's boundary rather than hidden. Red at 0891061 on ``S+37``,
+    ``S+48`` and ``S+49``."""
+    switch = date(2026, 5, 1)
+    control = genuine_switch(switch, switch + timedelta(days=90), snapshot_from=switch - timedelta(days=200))
+    trial_days = span(switch - timedelta(days=90), switch - timedelta(days=77))
+    trial = [row(local(day, 7), STRAP, 25.0, f"strap-trial-{day}") for day in trial_days]
+    offsets = [21, 36, 37, 48, 49, 50, 80, 81]
+    walk = [switch + timedelta(days=k) for k in offsets]
+    reset = (STRAP, "tier_change", switch + timedelta(days=1))
+
+    assert len(trial_days) == 14
+    assert [in_previous_window(trial_days, t) for t in walk] == [14, 14, 13, 2, 1, 0, 0, 0]
+    assert reported(control, walk) == [reset] * 7 + [(STRAP, None, None)]
+    assert reported(control + trial, walk) == [(STRAP, None, None)] * 2 + [reset] * 5 + [(STRAP, None, None)]
+
+
+def test_a_stray_old_tier_capture_after_a_genuine_switch_does_not_hide_the_switch() -> None:
+    """IDEA-065, closed. A daily snapshot to ``D-30``, a daily strap from
+    ``D-29``, and one stray snapshot capture on ``D-25`` at 07:00 (the
+    phone auto-captured once after the switch). Review cycle 3 named the
+    outcome an accepted cost: the stray was the old era's last reading, so
+    the strap's first four days sat inside the old era and the switch's
+    reset was never reported -- ``established: true`` on a baseline that
+    plainly began at ``D-29`` with ``reset_reason`` null on every day.
+    Under the tolerance the stray is one isolated day after the boundary:
+    the old era ends at ``D-30``, ``reset_on`` is ``D-29``, and the walk
+    reports exactly what the control does -- ``tier_change on D-29`` at
+    ``D`` and ``D+42``, cleared at ``D+52`` and ``D+60`` when the strap
+    sustains the previous window and (b) fails. Red at 0891061 on ``D``
+    and ``D+42``."""
+    switch = ago(30)
+    control = genuine_switch(switch, D + timedelta(days=70), snapshot_from=ago(126))
+    stray = [row(local(ago(25), 7), SNAPSHOT, 60.0, "snap-stray")]
+    walk = [D, D + timedelta(days=42), D + timedelta(days=52), D + timedelta(days=60)]
+    expected = [(STRAP, "tier_change", ago(29))] * 2 + [(STRAP, None, None)] * 2
+
+    assert reported(control, walk) == expected
+    assert reported(control + stray, walk) == expected
+    assert all(hrv_trend.judge(build(control + stray, target=t)).established for t in walk)
+
+
+def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_are_an_era() -> None:
+    """The tolerance's candidacy threshold, from both sides. The genuine
+    switch at ``D-30`` plus a strap trial captured an hour after the
+    snapshot, wholly inside the old era and straddling ``D-67`` so that
+    the strap never sustains the previous window and clause (b) holds
+    either way: 13 trial days are corroboration and the reset is reported
+    on ``D-29``; 14 would themselves be a candidate -- the strap was in
+    use -- so the eras interleave and nothing is reported. Perturbation
+    (a count tolerance of one or two captures): the 13-day case is
+    interleaved -- red; (no tolerance, 0891061): the same."""
+    switch = ago(30)
+    control = genuine_switch(switch, D, snapshot_from=ago(126))
+
+    def with_trial(days: int) -> list[dict]:
+        trial_days = span(ago(72), ago(72) + timedelta(days=days - 1))
+        assert in_previous_window(trial_days, D) < hrv_trend.MIN_BASELINE_READINGS
+        return control + [row(local(day, 7), STRAP, 25.0, f"strap-trial-{day}") for day in trial_days]
+
+    thirteen = build(with_trial(13))
+    fourteen = build(with_trial(14))
+
+    assert (thirteen.tier, thirteen.reset_reason, thirteen.reset_on) == (STRAP, "tier_change", ago(29))
+    assert (fourteen.tier, fourteen.reset_reason, fourteen.reset_on) == (STRAP, None, None)
+
+
+def test_old_tier_readings_that_cover_the_judged_week_are_use_and_the_week_slides_past_them() -> None:
+    """The tolerance's week threshold, judged on ``[D-6, D]`` as rule 2
+    judges week coverage. The genuine switch at ``D-30`` plus snapshot
+    captures after it at 07:00 on days of the judged week: two are
+    corroboration and ``tier_change on D-29`` stands; three cover the
+    week -- the old device was in use this week -- so the eras interleave
+    and nothing is reported. The week is the sliding one, so the clause
+    carries rule 2's own edge, pinned here and named in F005's Negative
+    Class as the tolerance's cost: the same three captures, seen from
+    ``D+7`` when they have moved into the baseline window and no longer
+    cover a week, are three isolated days again and the reset returns.
+    Three captures a week *every* week is the young-oscillation habit,
+    which the candidacy half keeps interleaved (G6). Red at 0891061 on the
+    two-day case and on ``D+7``: an exact (c) reads every stray as the old
+    era's last reading."""
+    switch = ago(30)
+    control = genuine_switch(switch, D + timedelta(days=7), snapshot_from=ago(126))
+    two_this_week = [row(local(ago(n), 7), SNAPSHOT, 60.0, f"snap-again-{n}") for n in (2, 0)]
+    three_this_week = two_this_week + [row(local(ago(1), 7), SNAPSHOT, 60.0, "snap-again-1")]
+    walk = [D, D + timedelta(days=7)]
+
+    assert reported(control + two_this_week, walk) == [(STRAP, "tier_change", ago(29))] * 2
+    assert reported(control + three_this_week, walk) == [(STRAP, None, None), (STRAP, "tier_change", ago(29))]
+
+
+def test_the_old_eras_first_day_bounds_the_new_tiers_strays_not_its_first_instant() -> None:
+    """Clause (c)'s ``A_first`` boundary (review cycle 3, G16: ``a_first
+    <=`` survived because no fixture had a new-tier reading near that
+    instant; the boundary is now the old era's first local day, the unit
+    every count is taken in). The older-era series -- a snapshot era to
+    ``D-74``, a strap era ``D-73``..``D-34``, the snapshot again from
+    ``D-33``, target ``D+7`` -- with 13 snapshot captures inside the strap
+    era at 07:00 and one more: on ``D-74``, the day before the strap era,
+    it belongs to the era the strap replaced, the strays number 13 and are
+    tolerated -- ``tier_change on D-33``; on ``D-73`` at 05:00, an hour
+    *before* the strap's first capture, it is a day the snapshot was in
+    use inside the strap era, the strays number 14 and the eras interleave.
+    Perturbation (the strap's first instant as the bound): the 05:00
+    capture is not a stray and the second series reports a reset -- red;
+    (``>`` on the day): the same."""
+    target = D + timedelta(days=7)
+    rows = readings(SNAPSHOT, span(ago(126), ago(75)), 40.0, "snap-old")
+    rows += readings(STRAP, span(ago(73), ago(34)), 25.0, "strap")
+    rows += [row(local(day, 7), SNAPSHOT, 40.0, f"snap-inside-{day}") for day in span(ago(72), ago(60))]
+    rows += readings(SNAPSHOT, span(ago(33), ago(7)), 40.0, "snap-new")
+    day_before = build(rows + [row(local(ago(74), 6), SNAPSHOT, 40.0, "snap-day-before")], target=target)
+    same_day = build(rows + [row(local(ago(73), 5), SNAPSHOT, 40.0, "snap-same-day")], target=target)
+
+    assert len(span(ago(72), ago(60))) == 13
+    assert (day_before.tier, day_before.reset_reason, day_before.reset_on) == (SNAPSHOT, "tier_change", ago(33))
+    assert day_before.baseline_window == (ago(33), target - timedelta(days=7))
+    assert (same_day.tier, same_day.reset_reason, same_day.reset_on) == (SNAPSHOT, None, None)
 
 
 # ---------------------------------------------------------------------------

@@ -27,14 +27,18 @@ dicts and no database. Rows are read **by key** (``session_id``,
    rows (every ordinary session, and every capture F004's quality gates
    failed), a tier string the enum does not name, and a value ``ln`` cannot
    take.
-2. **Resolve the baseline tier**: among the tiers with at least
-   ``MIN_BASELINE_READINGS`` readings in the baseline window (the
-   *candidates*), the highest-fidelity one that **also covers the judged
-   week** with at least ``MIN_WINDOW_READINGS`` readings; when no candidate
-   covers the week, the candidate **the athlete used last** -- the one
-   whose latest reading in the baseline window is most recent, ties by
-   count then fidelity (T094); when there is no candidate at all, the tier
-   with the **most** readings in the baseline window, ties to fidelity --
+2. **Resolve the baseline tier**: among the tiers read on at least
+   ``MIN_BASELINE_READINGS`` **distinct local days** in the baseline window
+   (the *candidates*), the highest-fidelity one that **also covers the
+   judged week** with at least ``MIN_WINDOW_READINGS`` distinct local days;
+   when no candidate covers the week, the candidate **the athlete used
+   last** -- the one whose latest reading in the baseline window is most
+   recent, ties by count then fidelity (T094); when there is no candidate
+   at all, the tier read on the **most** days in the baseline window, ties
+   to fidelity. Every count in rules 1-3 is in distinct local days, the
+   unit ``judge`` reports as ``baseline_n`` and ``readings_in_window``
+   (T095; before it rules 1-3 counted captures, so one re-taken morning
+   handed a week to a tier that could not judge it) --
    not the highest tier present, so one borrowed chest-strap capture cannot
    demote a 45-reading Health Snapshot baseline to ``n=1`` (§3.7.3: "never
    merged into the same band"), a two-week strap trial abandoned two months
@@ -70,6 +74,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -84,13 +89,16 @@ from zoneinfo import ZoneInfo
 BASELINE_DAYS = 60
 #: The judged window, in local days.
 WINDOW_DAYS = 7
-#: A tier needs at least this many readings in the baseline window to be a
-#: *candidate* for the baseline (``resolve_baseline_tier``: the candidate
-#: must also cover the judged week, else the candidate read last takes it;
-#: with no candidate, the densest tier). Candidacy has no recency of its
-#: own -- a stale trial is a candidate until it ages out (F005 "stale
-#: candidacy"). ``tier_change_reset`` reads it as "sustains", and T084 as
-#: "established".
+#: A tier needs readings on at least this many **distinct local days** in
+#: the baseline window to be a *candidate* for the baseline
+#: (``resolve_baseline_tier``: the candidate must also cover the judged
+#: week, else the candidate read last takes it; with no candidate, the
+#: densest tier). Days, not captures (T095): ``judge``'s ``established``
+#: counts the collapsed one-per-day series, and the same number must mean
+#: the same thing wherever the response echoes it. Candidacy has no
+#: recency of its own -- a stale trial is a candidate until it ages out
+#: (F005 "stale candidacy"). ``tier_change_reset`` reads it as "sustains"
+#: and as the tolerance's candidacy threshold, and T084 as "established".
 MIN_BASELINE_READINGS = 14
 #: A silence of **more than** this many consecutive local days with no entry
 #: in the post-exclusion series re-establishes the baseline (T092;
@@ -275,8 +283,12 @@ def _exclusion_reason(row: Mapping[str, Any]) -> str | None:
 
 
 def _tier_counts(readings: Iterable[Reading]) -> Counter[str]:
-    """Readings per tier -- the input ``resolve_baseline_tier`` takes."""
-    return Counter(r.tier for r in readings)
+    """Distinct local days per tier -- the input ``resolve_baseline_tier``
+    and ``sustained_tier`` take. **Days, not captures** (T095; decision log
+    2026-09-12): two captures on one morning are one day, exactly as the
+    same-day collapse and ``judge`` count them, so a re-taken morning can
+    neither cover a week nor make a tier a candidate."""
+    return Counter(tier for tier, _ in {(r.tier, r.date) for r in readings})
 
 
 def _of_tier(readings: Iterable[Reading], tier: str) -> tuple[Reading, ...]:
@@ -341,11 +353,14 @@ def resolve_baseline_tier(
        the athlete used last**: the one whose latest reading in the
        baseline window (``last_read``) is most recent, ties by count in the
        window, then by fidelity. When there is no candidate at all, the
-       tier with the most readings in ``baseline_counts``, ties to the
-       higher fidelity (``_densest_tier``). Either way a week with no
-       readings of any tier keeps the tier stable and reads
-       ``hrv_unavailable`` with no reset. ``None`` when the baseline window
-       holds no readings at all.
+       tier with the most days in ``baseline_counts``, ties to the higher
+       fidelity (``_densest_tier``). Either way a week with no readings of
+       any tier reads ``hrv_unavailable`` and **begins no reset** -- rule
+       4 reads nothing inside the judged week that an empty week could
+       change -- while a reset already in force persists through it
+       unchanged (T095, review cycle 3 G11: "keeps the tier stable with no
+       reset" was true only of beginning one). ``None`` when the baseline
+       window holds no readings at all.
 
     Why the week is consulted: 14 readings in 60 days is 1.6 a week, and a
     judged week needs 3, so a tier can sustain a baseline by count while
@@ -366,7 +381,9 @@ def resolve_baseline_tier(
     baseline whenever its count in the sliding judged week crosses 3, and
     candidacy has no recency of its own, so an abandoned trial still in
     the window plus three strap days this week is judged on the trial's
-    band ("stale candidacy"). The unit is captures, as before (IDEA-047).
+    band ("stale candidacy"). Every count is in distinct local days
+    (T095; IDEA-047 closed) -- ``_tier_counts`` is the one place the unit
+    is taken.
 
     ``last_read`` may be omitted only where there is no baseline window to
     be recent in -- ``build_series``'s empty-baseline fallback, which
@@ -414,10 +431,13 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     resolved baseline tier sustains the window, differs from the tier that
     sustained the previous window ``[D-126, D-67]`` (``sustained_tier``,
     rule 1 alone), and its era does not interleave with the previous
-    tier's over both windows -- no reading of the new tier falls between
-    the old tier's first and last (``tier_change_reset``, T094; judged over
-    both windows since sprint-005 review cycle 3); ``reset_on`` is the
-    era's first reading over both windows after the old tier's last, and
+    tier's over both windows and the judged week -- the readings on the
+    wrong side of the era boundary, of either tier, are isolated
+    (``_isolated``: fewer than 14 distinct days, fewer than 3 in the
+    judged week; T095's density tolerance) rather than an era
+    (``tier_change_reset``,
+    T094; judged over both windows since sprint-005 review cycle 3);
+    ``reset_on`` is the era's first reading after the old era's last, and
     the reported baseline window is clipped to ``[max(D-66, reset_on),
     D-7]``. ``rows`` must span ``[D-126, D]`` for the rule to be able to
     fire, since a narrower read leaves the previous window empty, which
@@ -483,7 +503,7 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
     if reset_on is None:
-        reset_on = tier_change_reset(previous_readings, tier, baseline_readings)
+        reset_on = tier_change_reset(previous_readings, tier, baseline_readings, _within(readings, judged), judged)
         if reset_on is not None:
             reset_reason = REASON_TIER_CHANGE
             # The era may have begun before D-66 (T094: ``reset_on`` is its
@@ -745,64 +765,145 @@ def _exclude_before_reset(
     return kept, excluded + dropped
 
 
+def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
+    """Rule 4(c)'s **density tolerance** (T095; decision log 2026-09-12),
+    stated here and nowhere else: a set of readings is *isolated* --
+    corroboration, not an era -- when it would neither be a candidate nor
+    cover the judged week: fewer than ``MIN_BASELINE_READINGS`` distinct
+    local days in all, **and** fewer than ``MIN_WINDOW_READINGS`` distinct
+    local days inside ``judged`` (``[D-6, D]``). Either density means the
+    tier was in use, which is what "the era continued" means -- the same
+    two thresholds under which rule 1 makes a tier a candidate and rule 2
+    lets it take the week. The week half is judged on the sliding week,
+    as rule 2 is, so it carries rule 2's own edge: three old-tier captures
+    in one week after a switch are use on the days they sit in ``[D-6,
+    D]`` and corroboration once the week has slid past them (F005
+    Negative Class, the tolerance's cost).
+    """
+    days = {r.date for r in readings}
+    first, last = judged
+    return len(days) < MIN_BASELINE_READINGS and sum(first <= day <= last for day in days) < MIN_WINDOW_READINGS
+
+
+def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]) -> date | None:
+    """Clause (c) with the tolerance: the first local day of ``new``'s era
+    when the two eras do not interleave, else ``None``.
+
+    A *boundary* is an old-tier reading ``A_end`` and the first new-tier
+    reading after it, ``B_start``, with no old-tier reading in between. The
+    readings on the wrong side of it -- every old-tier reading after
+    ``B_start``, and every new-tier reading from the old era's **first
+    local day** up to ``A_end`` -- are the *strays*, and the boundary is an
+    era boundary when, **together**, they are ``_isolated``. Together, not
+    each side on its own: a finished trial split down the middle leaves
+    fewer than 14 on either side and 20 in all, and it is one interleaved
+    era. From the old era's first *day*, not its first instant: the day
+    is the unit every count is taken in (T095), and a new-tier capture
+    earlier that same morning is a day the new tier was in use inside the
+    old era -- read by the instant, a daily device's reading on the
+    morning a trial began fell outside the span, and on the one day the
+    trial held exactly 14 in the previous window the 13 inside were
+    "isolated" and a phantom reset was asserted (M1's series, 2026-08-12).
+    New-tier readings before that day belong to the era the old tier
+    replaced and are neither strays nor a start (``reset_on`` is the first
+    reading *after* the old era). Two readings at the very same instant
+    are simultaneous, not strays: a new-tier capture at the instant of
+    ``A_end`` means the old tier did not predate the new one (the
+    switch-day tie, interleaved, unchanged from review cycle 3), and an
+    old-tier capture at the instant of ``B_start`` is judged at its own
+    turn as ``A_end``, where the same tie refuses it. Of several era
+    boundaries the one with the fewest stray days is the era boundary --
+    the switch that explains the most readings -- ties to the later one,
+    the younger baseline being the cautious reading (``research/00``
+    §1.7). ``reset_on`` is ``B_start``'s local day.
+    """
+    old = sorted(old, key=lambda r: r.start_time)
+    new = sorted(new, key=lambda r: r.start_time)
+    new_instants = [r.start_time for r in new]
+    from_old_first_day = bisect_left([r.date for r in new], old[0].date)
+    boundaries: list[tuple[int, datetime, date]] = []
+    for i, a_end in enumerate(old):
+        j = bisect_right(new_instants, a_end.start_time)  # the first new-tier reading after A_end
+        if j == len(new):
+            continue
+        if i + 1 < len(old) and old[i + 1].start_time <= new_instants[j]:
+            continue  # the old tier read again before the new era's first: judged at that reading instead
+        if j > from_old_first_day and new_instants[j - 1] == a_end.start_time:
+            continue  # simultaneous: the old tier does not predate the new one
+        strays = (*old[i + 1 :], *new[from_old_first_day:j])
+        if _isolated(strays, judged):
+            boundaries.append((len({r.date for r in strays}), a_end.start_time, new[j].date))
+    if not boundaries:
+        return None
+    _, _, first_day = max(boundaries, key=lambda boundary: (-boundary[0], boundary[1]))
+    return first_day
+
+
 def tier_change_reset(
-    previous_readings: Iterable[Reading], tier: str | None, baseline_readings: Iterable[Reading]
+    previous_readings: Iterable[Reading],
+    tier: str | None,
+    baseline_readings: Iterable[Reading],
+    week_readings: Iterable[Reading],
+    judged: tuple[date, date],
 ) -> date | None:
     """The local day a fresh baseline begins on after a sustained tier
     change, or ``None``.
 
     ``tier_change`` is asserted when, and only when (rule 4, T094; decision
-    log 2026-09-11):
+    log 2026-09-11, tolerance 2026-09-12):
 
     (a) the resolved baseline tier ``tier`` **sustains** the current
-        baseline window -- at least ``MIN_BASELINE_READINGS`` in
-        ``baseline_readings`` (all tiers, already clipped by any coverage
-        gap), rule 1's candidacy;
+        baseline window -- read on at least ``MIN_BASELINE_READINGS``
+        distinct local days in ``baseline_readings`` (all tiers, already
+        clipped by any coverage gap), rule 1's candidacy;
     (b) it differs from the tier the previous window ``[D-126, D-67]``
         sustains (``sustained_tier`` on ``previous_readings``: highest
-        fidelity with at least ``MIN_BASELINE_READINGS``, rule 1 alone);
-    (c) the two eras **do not interleave**, judged over both windows
-        ``[D-126, D-7]`` together (``previous_readings`` and
-        ``baseline_readings``; sprint-005 review cycle 3, M1 -- T094
-        judged it on the current window alone): with ``A`` the previous
-        tier and ``B`` the resolved tier, no ``B`` reading falls between
-        ``A``'s first and last reading there -- ``A_first < B <= A_last``
-        for none of them -- so the old era ended before the new one
-        began. Compared on the captures' instants, as the same-day
-        collapse orders them, so two devices worn on the switch morning
-        are ordered by which was worn first; a previous-tier capture at
-        the very instant of the resolved tier's first is ``<= A_last``,
-        so the tie is interleaved and reports nothing. Judged on the
-        current window alone, (c) was vacuously true for a trial that had
-        aged wholly into the previous window -- the old tier had no reading
-        in the current window to fail it -- and, once the previous window
-        sustained the trial's tier by fidelity, a phantom ``tier_change``
-        was reported for an athlete who never switched (the review's series
-        B); over both windows the snapshot's daily readings run through
-        the trial and it is interleaved.
+        fidelity with at least ``MIN_BASELINE_READINGS`` days, rule 1
+        alone);
+    (c) the two eras **do not interleave**, judged over both windows and
+        the judged week together (``previous_readings``,
+        ``baseline_readings`` and ``week_readings``, the last so that the
+        tolerance's week half has readings to count; sprint-005 review
+        cycle 3, M1 -- T094 judged it on the current window alone): with
+        ``A`` the previous tier and ``B`` the resolved tier, there is an
+        era boundary -- ``A``'s last era reading and ``B``'s first after it
+        -- such that the readings on its wrong side, of either tier
+        together, are **isolated** (``_isolated``: fewer than
+        ``MIN_BASELINE_READINGS`` distinct days in all and fewer than
+        ``MIN_WINDOW_READINGS`` inside the judged week), so the old
+        era ended before the new one began and what lies across the
+        boundary is corroboration, not use (``_era_boundary``). Compared
+        on the captures' instants, as the same-day collapse orders them,
+        so two devices worn on the switch morning are ordered by which was
+        worn first; a previous-tier capture at the very instant of the
+        resolved tier's first is simultaneous, not a stray, so the tie is
+        interleaved and reports nothing. Judged on the current window
+        alone, (c) was vacuously true for a trial that had aged wholly
+        into the previous window and a phantom ``tier_change`` was
+        reported for an athlete who never switched (the review's series
+        B); judged exactly, one capture of either tier on either side of
+        a genuine switch made the eras interleave and silenced the reset
+        for the whole era (review cycle 3, G9, G12, IDEA-065).
 
     The reset lands on the era's **true first day**: the resolved tier's
-    earliest reading, over ``previous_readings`` and ``baseline_readings``
-    together, that follows the previous tier's last reading there -- so it
-    does not slide one day per day once the era start ages past ``D-66``
-    (T094, G8), and an older era of the same tier in the previous window
-    (a 40-day strap trial between two snapshot eras) is not mistaken for
-    this one. It can therefore precede the clipped window's first day;
-    ``build_series`` reports ``[max(D-66, reset_on), D-7]``. The reset
-    stops being reported when the previous window ``[D-126, D-67]`` is no
-    longer sustained by the old tier, so that (b) fails -- ``sustained_tier``
-    is the highest-fidelity tier with ``MIN_BASELINE_READINGS`` there, so
+    first reading after the era boundary -- so it does not slide one day
+    per day once the era start ages past ``D-66`` (T094, G8), and an older
+    era of the same tier in the previous window (a 40-day strap trial
+    between two snapshot eras) is not mistaken for this one. It can
+    therefore precede the clipped window's first day; ``build_series``
+    reports ``[max(D-66, reset_on), D-7]``. The reset stops being reported
+    when the previous window ``[D-126, D-67]`` is no longer sustained by
+    the old tier, so that (b) fails -- ``sustained_tier`` is the
+    highest-fidelity tier with ``MIN_BASELINE_READINGS`` days there, so
     the boundary is direction-dependent (review cycle 3, S1): for a
     forward switch (snapshot to strap) it is the day the strap reaches 14
     there, ``S+80`` for a daily device; for the reverse one (strap to
     snapshot) the old strap keeps that window by fidelity until it drops
     below 14 there, ``T+114``, a month after the snapshot reached 14
-    (``T+81``). Either way the old tier holds at least 14 readings in the
+    (``T+81``). Either way the old tier holds at least 14 days in the
     previous window while (b) holds, so there is never a reset whose first
-    day is unknown, and (c) guarantees a reading after the previous tier's
-    last exists: every ``B`` reading in the current window is after
-    ``A_first`` (a previous-window instant), hence after ``A_last`` once
-    not interleaved.
+    day is unknown, and an era boundary always has a ``B`` reading after
+    it by construction.
 
     What each clause refuses to call a change. (a): a thin new tier is not
     yet "dense enough to sustain a baseline" (F005), and a single off-tier
@@ -810,23 +911,28 @@ def tier_change_reset(
     another sustains the window is not a change of baseline either. (b):
     a resolution that differs only because the previous window is thin
     (five snapshot readings there, a strap baseline now) is the athlete's
-    first established baseline, not a change from anything; and a tier
-    that sustains both windows is unchanged, however the week was judged.
-    (c), the clause T094 added: a 2/3-day strap habit begun nine weeks ago
-    sustains the current window by count while the previous window is
-    all snapshot -- the sustained tier changed -- but the snapshot readings
-    run daily through the strap's, so no era ended and no reset is
-    reported (before T094 it fired on every strap week and vanished on the
-    next); a stale trial, in either window, is interleaved the same way.
-    The reverse transition -- an owning strap abandoned for a daily
-    snapshot at ``T`` -- has the strap's readings all before ``T+1``, so it
-    resets on the day the snapshot first owns the baseline (``T+21``) with
-    ``reset_on = T+1``, not a month later when the strap drops below 14.
-    (c)'s own error direction, named in F005's Negative Class: a single
-    stray old-tier capture *after* a genuine switch is the old era's last
-    reading, so the new era's first days sit inside ``(A_first, A_last]``
-    and the switch's reset is never reported -- a single off-tier capture
-    is corroboration, and it also hides the change it followed.
+    first established baseline, not a change from anything; a tier that
+    sustains both windows is unchanged, however the week was judged; and
+    a stale trial of the *new* tier that still holds 14 days in the
+    previous window sustains it by fidelity, so the switch's reset waits
+    until that trial ages below 14 there (T095, G12: 16 days for a 14-day
+    trial 90 days before the switch, rather than the 28 the exact clause
+    (c) then added) -- a stale candidate, IDEA-064's shape, not an
+    interleaving. (c), the clause T094 added: a 2/3-day strap habit begun
+    nine weeks ago sustains the current window by count while the
+    previous window is all snapshot -- the sustained tier changed -- but
+    the snapshot readings run daily through the strap's, so no era ended
+    and no reset is reported (before T094 it fired on every strap week
+    and vanished on the next); a stale trial, in either window, is
+    interleaved the same way. The reverse transition -- an owning strap
+    abandoned for a daily snapshot at ``T`` -- has the strap's readings
+    all before ``T+1``, so it resets on the day the snapshot first owns
+    the baseline (``T+21``) with ``reset_on = T+1``, not a month later
+    when the strap drops below 14. The tolerance's own error direction,
+    named in F005's Negative Class: a habit of the other tier dense enough
+    to be a candidate, or to cover a week, inside the era is use, so the
+    eras interleave and no reset is reported -- G6's intended behaviour,
+    and the accepted cost of tolerating the isolated capture.
 
     A coverage gap takes precedence: ``build_series`` only asks this rule
     when no gap reset was found, because the gap's resumption day is where
@@ -836,15 +942,10 @@ def tier_change_reset(
         return None
     baseline_readings = tuple(baseline_readings)
     previous_readings = tuple(previous_readings)
-    if len(_of_tier(baseline_readings, tier)) < MIN_BASELINE_READINGS:
+    if _tier_counts(baseline_readings).get(tier, 0) < MIN_BASELINE_READINGS:
         return None
     previous_tier = sustained_tier(_tier_counts(previous_readings))
     if previous_tier is None or previous_tier == tier:
         return None
-    both = (*previous_readings, *baseline_readings)
-    old_era = [r.start_time for r in _of_tier(both, previous_tier)]
-    old_era_start, old_era_end = min(old_era), max(old_era)
-    new_era = _of_tier(both, tier)
-    if any(old_era_start < r.start_time <= old_era_end for r in new_era):
-        return None
-    return min(r.date for r in new_era if r.start_time > old_era_end)
+    everything = (*previous_readings, *baseline_readings, *week_readings)
+    return _era_boundary(_of_tier(everything, previous_tier), _of_tier(everything, tier), judged)

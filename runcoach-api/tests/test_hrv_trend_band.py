@@ -227,6 +227,22 @@ def test_a_just_sub_floor_dispersion_is_floored_and_a_just_super_floor_one_is_no
     assert computed.band.half_width > 0.01
 
 
+def test_a_dispersion_exactly_at_the_floor_is_not_floored() -> None:
+    """The exact-floor boundary (review cycle 3, G16: ``computed <=
+    BAND_FLOOR`` survived). ``half_width = max(computed, BAND_FLOOR)``: at
+    equality the two branches give the same width, and ``floored`` -- the
+    response's account of which branch fired -- must say the computed
+    value was used, since it was not below the floor. The ln values
+    ``-0.02, 0, 0.02`` have a sample SD of exactly ``0.02`` in floating
+    point (the variance is an exact square), so ``0.5 * SD`` is exactly
+    ``0.01``. Perturbation (``<=``): ``floored`` is ``True`` -- red."""
+    band = hrv_trend.build_band([-0.02, 0.0, 0.02])
+
+    assert band is not None
+    assert band.half_width == hrv_trend.BAND_FLOOR == 0.01
+    assert band.floored is False
+
+
 def test_the_floor_does_not_fire_for_an_ordinary_athlete() -> None:
     """The construction reference's realistic athlete (rMSSD ~45 ms, day-to-day
     SD ~9 ms): ``0.5 * SD(ln)`` is about 0.05, five times the floor, so the
