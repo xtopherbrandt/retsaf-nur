@@ -248,6 +248,12 @@ def _within(readings: Iterable[Reading], window: tuple[date, date]) -> tuple[Rea
     return tuple(r for r in readings if first <= r.date <= last)
 
 
+def _days(readings: Iterable[Reading]) -> set[date]:
+    """The distinct local days ``readings`` fall on -- the unit every count is
+    taken in (T095)."""
+    return {r.date for r in readings}
+
+
 def _is_usable_value(value: Any) -> bool:
     """``ln`` is defined on exactly the strictly positive finite reals.
     ``inf`` and ``nan`` both clear a ``<= 0`` test (IDEA-034), so the
@@ -483,7 +489,8 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     # tier, inside the (possibly clipped) baseline window -- and, for the
     # tier rule's week-coverage test, every tier inside the judged week.
     baseline_readings = _within(readings, baseline)
-    week_counts = _tier_counts(_within(readings, judged))
+    week_readings = _within(readings, judged)
+    week_counts = _tier_counts(week_readings)
     tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts, _last_read(baseline_readings))
     if tier is None:
         tier = resolve_baseline_tier(week_counts, week_counts)
@@ -503,7 +510,7 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
     if reset_on is None:
-        reset_on = tier_change_reset(previous_readings, tier, baseline_readings, _within(readings, judged), judged)
+        reset_on = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
         if reset_on is not None:
             reset_reason = REASON_TIER_CHANGE
             # The era may have begun before D-66 (T094: ``reset_on`` is its
@@ -733,7 +740,7 @@ def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[
       new athlete's first capture as a ``coverage_gap`` would name an event
       that did not happen.
     """
-    days = sorted({r.date for r in readings})
+    days = sorted(_days(readings))
     if not days:
         return None
     for i in range(len(days) - 1, 0, -1):
@@ -780,9 +787,11 @@ def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
     D]`` and corroboration once the week has slid past them (F005
     Negative Class, the tolerance's cost).
     """
-    days = {r.date for r in readings}
-    first, last = judged
-    return len(days) < MIN_BASELINE_READINGS and sum(first <= day <= last for day in days) < MIN_WINDOW_READINGS
+    readings = tuple(readings)
+    return (
+        len(_days(readings)) < MIN_BASELINE_READINGS
+        and len(_days(_within(readings, judged))) < MIN_WINDOW_READINGS
+    )
 
 
 def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]) -> date | None:
@@ -832,7 +841,7 @@ def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[
             continue  # simultaneous: the old tier does not predate the new one
         strays = (*old[i + 1 :], *new[from_old_first_day:j])
         if _isolated(strays, judged):
-            boundaries.append((len({r.date for r in strays}), a_end.start_time, new[j].date))
+            boundaries.append((len(_days(strays)), a_end.start_time, new[j].date))
     if not boundaries:
         return None
     _, _, first_day = max(boundaries, key=lambda boundary: (-boundary[0], boundary[1]))
