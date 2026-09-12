@@ -486,6 +486,7 @@ def _seed_hrv_series(
     tier: str,
     zone: ZoneInfo,
     profile_names=(),
+    local_hour: int = SEED_LOCAL_HOUR,
 ) -> SeedResult:
     """Seed one resting-HRV capture per local day for the ``days`` days ending
     on local ``end`` (in ``zone``), the last ``suppress_last`` of them
@@ -494,9 +495,13 @@ def _seed_hrv_series(
     ``tier`` is ``"chest_strap_raw"`` (a declared Tier-1 capture: the first
     of ``profile_names`` on the session, a synthetic beat series engineered
     to the target rMSSD) or ``"health_snapshot"`` (Tier 2: ``sport`` 60 and a
-    device ``rmssd_hrv``). Each capture is placed at ``SEED_LOCAL_HOUR`` local
-    time and stored as the UTC instant, which is what makes ``end`` a local
-    date: Auckland's morning of ``end`` is the UTC day before.
+    device ``rmssd_hrv``). Each capture is placed at ``local_hour`` local
+    time (``SEED_LOCAL_HOUR`` by default) and stored as the UTC instant,
+    which is what makes ``end`` a local date: Auckland's morning of ``end``
+    is the UTC day before. A second era of the other tier on the same
+    mornings needs its own hour (T096): ``session_id`` is derived from
+    ``(source_device, start_time)`` and the synthetic device is one string,
+    so two tiers at one instant are one row.
 
     Raises rather than seeding a series whose readings differ from the ones
     the expected band was computed over: a Tier-1 capture that did not
@@ -515,7 +520,7 @@ def _seed_hrv_series(
     beats_by_id: dict[str, list[RRInterval]] = {}
     for i, value in enumerate(values):
         day = first_day + timedelta(days=i)
-        when = datetime(day.year, day.month, day.day, SEED_LOCAL_HOUR, tzinfo=zone).astimezone(UTC)
+        when = datetime(day.year, day.month, day.day, local_hour, tzinfo=zone).astimezone(UTC)
         if tier == SEED_TIER_STRAP:
             messages = _synthetic(
                 total_timer_time=SEED_CAPTURE_DURATION_S,

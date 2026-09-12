@@ -409,7 +409,12 @@ def resolve_baseline_tier(
     )
 
 
-def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date: date) -> HrvSeries:
+def build_series(
+    rows: Iterable[Mapping[str, Any]],
+    zone: ZoneInfo,
+    target_date: date,
+    earliest_start_time: str | None = None,
+) -> HrvSeries:
     """Exclude, resolve the tier, filter, collapse -- in that order.
 
     ``rows`` are ``sessions`` rows (or dicts) carrying ``session_id``,
@@ -418,6 +423,18 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     a padded UTC range once and T091 calls this per local day -- and the ones
     outside are excluded as ``outside_windows`` rather than pre-filtered, so
     the response can still list them.
+
+    ``earliest_start_time`` is the stored ``start_time`` of the **earliest
+    reading the store holds** (``db.earliest_hrv_reading``), or ``None``
+    when the caller knows of none (T096, review cycle 3 G13). The route
+    reads rows back to ``D-126`` only and does not widen that read; this
+    one instant is what lets ``coverage_gap_reset`` tell a layoff longer
+    than the read -- a reading precedes the window, none was among the
+    rows -- from a new athlete, for whom no reading precedes the window at
+    all. It is bucketed into ``zone`` like every row, and a naive value is
+    refused for the same reason a naive row is. Omitting it reads as "no
+    earlier reading is known", which is correct for a caller whose rows
+    are the whole history and wrong for one whose rows are a window of it.
 
     **Tier fallback when the baseline window is empty.** The tier rule is
     stated over the baseline window (and the judged week it must cover);
@@ -456,7 +473,10 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     previous = previous_window(target_date)
 
     readings: list[Reading] = []
-    previous_readings: list[Reading] = []
+    # Every reading before the baseline window: the previous window's, which
+    # the tier-change rule reads, and any older one the caller's rows reach,
+    # which only the gap rule reads (as the latest reading before the window).
+    earlier_readings: list[Reading] = []
     excluded: list[Exclusion] = []
     for row in rows:
         session_id = row["session_id"]
@@ -468,8 +488,8 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
 
         if not baseline_first <= day <= target_date:
             excluded.append(Exclusion(day, session_id, REASON_OUTSIDE_WINDOWS))
-            if previous[0] <= day <= previous[1] and reason is None:
-                previous_readings.append(Reading(day, session_id, tier, float(value), instant))
+            if day < baseline_first and reason is None:
+                earlier_readings.append(Reading(day, session_id, tier, float(value), instant))
         elif reason is not None:
             excluded.append(Exclusion(day, session_id, reason))
         else:
@@ -478,8 +498,12 @@ def build_series(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, target_date:
     # Deterministic before anything is chosen by position: by instant, then
     # by id for two devices sharing an instant.
     readings.sort(key=lambda r: (r.start_time, r.session_id))
+    previous_readings = _within(earlier_readings, previous)
+    earliest_day = None
+    if earliest_start_time is not None:
+        earliest_day, _ = local_day("<earliest_start_time>", earliest_start_time, zone)
 
-    reset_on = coverage_gap_reset(readings, previous_readings)
+    reset_on = coverage_gap_reset(readings, earlier_readings, earliest_day)
     reset_reason = REASON_COVERAGE_GAP if reset_on is not None else None
     if reset_on is not None:
         baseline = (reset_on, baseline[1])
@@ -713,7 +737,11 @@ def judge(series: HrvSeries) -> HrvVerdict:
 # ---------------------------------------------------------------------------
 
 
-def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[Reading]) -> date | None:
+def coverage_gap_reset(
+    readings: Iterable[Reading],
+    earlier_readings: Iterable[Reading],
+    earliest_day: date | None = None,
+) -> date | None:
     """The local day the baseline is re-established on after a coverage gap,
     or ``None``.
 
@@ -724,7 +752,7 @@ def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[
     arithmetic, never on UTC deltas: a silence straddling a DST change is
     still the same number of local days.
 
-    A gap is bounded by a reading on both sides. Two consequences the spec
+    A gap is bounded by a reading on both sides. Three consequences the spec
     text does not state and this function decides:
 
     * **An open gap** (the last reading is more than 21 days old and nothing
@@ -732,13 +760,40 @@ def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[
       *after* a gap, and there is none. The judged week is empty, so the
       verdict is ``unavailable`` regardless.
     * **The leading stretch** of ``[D-66, D]`` before the first reading is a
-      gap only when measured from the last reading before the window --
-      ``previous_readings``, the post-exclusion readings of ``[D-126,
-      D-67]`` -- and that silence exceeds 21 days. With no known earlier
-      reading it is the start of history, not a break between two eras:
+      gap when the silence from the **latest reading known to precede the
+      window** exceeds 21 days. That reading is the latest of
+      ``earlier_readings`` -- the post-exclusion readings of every tier
+      before ``D-66`` among the rows: the previous window's and any older
+      -- or, when no reading before the window was among the rows at all
+      but the store's earliest reading (``earliest_day``, T096) precedes
+      it, that instant: the latest pre-window reading then lies before
+      every row read, so the silence is at least the whole read-back.
+      Measuring from the earliest reading is safe in both directions: it
+      says "no gap" only when every earlier reading is within 21 days,
+      which is right, and "gap" only when the true silence is at least the
+      read-back, which is right for a caller whose rows span ``[D-126, D]``
+      (``build_series``'s stated contract). With **no known earlier
+      reading** it is the start of history, not a break between two eras:
       nothing precedes it that could contribute across it, and reporting a
       new athlete's first capture as a ``coverage_gap`` would name an event
-      that did not happen.
+      that did not happen. Until T096 this branch read the previous window
+      alone, so "no earlier reading was *read*" was mistaken for "no
+      earlier reading *exists*" and a layoff longer than about two months
+      could not report the gap (review cycle 3, G13).
+    * **The report has a lifetime** (review cycle 3, G14): a ``coverage_gap``
+      is reported only while the resumption lies inside ``[D-66, D]`` --
+      for 67 days from the resumption -- because the scan runs over that
+      window and the leading-stretch test measures to its first reading.
+      Once the resumption has aged past ``D-66`` the same era carries no gap
+      reset, and if the resumption was also a device switch the era is
+      reported as ``tier_change`` on the same ``reset_on`` from that day
+      until rule 4(b) fails (``tier_change_reset``), then as nothing -- one
+      era, one ``reset_on``, three reports and no event between them, the
+      accepted cost named in F005's Negative Class. It follows that a
+      ``coverage_gap``'s ``reset_on`` never precedes ``baseline_window[0]``
+      (the clip's first day *is* the resumption while it is reported),
+      whereas a ``tier_change``'s can (the era's true first day against a
+      window clipped at ``D-66``).
     """
     days = sorted(_days(readings))
     if not days:
@@ -746,7 +801,10 @@ def coverage_gap_reset(readings: Iterable[Reading], previous_readings: Iterable[
     for i in range(len(days) - 1, 0, -1):
         if _silence_between(days[i - 1], days[i]) > GAP_RESET_DAYS:
             return days[i]
-    last_before = max((r.date for r in previous_readings), default=None)
+    known_before = {r.date for r in earlier_readings}
+    if earliest_day is not None and earliest_day < days[0]:
+        known_before.add(earliest_day)
+    last_before = max(known_before, default=None)
     if last_before is not None and _silence_between(last_before, days[0]) > GAP_RESET_DAYS:
         return days[0]
     return None

@@ -78,13 +78,24 @@ class Baseline(BaseModel):
         description="n >= min_baseline_readings. Below it, hrv_suppressed is never emitted."
     )
     reset_on: datetime.date | None = Field(
-        description="Local day the current baseline era began, when a reset was detected; else null."
+        description=(
+            "Local day the current baseline era began, when a reset was detected; else null. For "
+            "`tier_change` it is the era's true first day and may precede window[0] (the window is clipped "
+            "at date-66; the era is not, and reset_on does not slide as it ages). For `coverage_gap` it is "
+            "the resumption day and never precedes window[0]: the gap is reported only while the resumption "
+            "lies inside [date-66, date], and window[0] is the resumption itself for as long as it is."
+        )
     )
     reset_reason: Literal["coverage_gap", "tier_change"] | None = Field(
         description=(
             "Why the baseline was re-established: more than gap_reset_days consecutive local days with no "
-            "entry in the post-exclusion series, or a sustained source-tier change. Null when nothing reset. "
-            "A timezone change is never a reset."
+            "entry in the post-exclusion series (`coverage_gap`), or a sustained source-tier change "
+            "(`tier_change`). Null when nothing reset. A timezone change is never a reset. Each report has "
+            "a lifetime: `coverage_gap` is reported from the resumption until the resumption leaves "
+            "[date-66, date] -- 67 days; `tier_change` until the previous window [date-126, date-67] is no "
+            "longer sustained by the old tier. A resumption that was also a device switch is therefore "
+            "reported as `coverage_gap` first, then as `tier_change` on the same reset_on, then as null -- "
+            "one era, three reports, no event between them (F005 Negative Class)."
         )
     )
 

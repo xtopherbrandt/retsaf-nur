@@ -234,6 +234,9 @@ _HRV_READ_PADDING = datetime.timedelta(hours=26)
 #: change, so ``reset_reason: tier_change`` would be silently unreachable
 #: through the endpoint (IDEA-045). The extra rows come back from
 #: ``build_series`` as ``outside_windows`` and are trimmed from ``excluded[]``.
+#: It is not widened further for the coverage-gap rule: a layoff longer than
+#: this is told from a new athlete by ``db.earliest_hrv_reading``, one scalar
+#: read beside the rows (T096, review cycle 3 G13).
 _HRV_READ_BACK_DAYS = 2 * hrv_trend.BASELINE_DAYS + hrv_trend.WINDOW_DAYS - 1
 #: The longest ``[from, to]`` the per-day series will be built over (T091):
 #: ``to - from`` greater than this is a 422. Nothing else bounds the loop, and
@@ -323,6 +326,7 @@ def _judge_days(
     from_: datetime.date,
     to: datetime.date,
     today: datetime.date,
+    earliest_start_time: str | None = None,
 ) -> list[tuple[hrv_trend.HrvSeries, hrv_trend.HrvVerdict]]:
     """Every local day in ``[from, to]``, in order, judged against its own
     baseline ``[d-66, d-7]`` by the pure computation over the one set of
@@ -332,14 +336,16 @@ def _judge_days(
     a day after it carries no verdict (``_withhold_future``). The last pair
     is ``to``'s, and it is the one the verdict blocks are rendered from, so
     the last point and ``band`` are the same objects rather than two
-    computations.
+    computations. ``earliest_start_time`` is the store's earliest reading
+    (``db.earliest_hrv_reading``), handed to every day alike: it is a
+    property of the store, not of the day.
 
     Raises ``OverflowError`` where a day's windows reach past the calendar's
     origin; the route names that as the parameters' problem."""
     judged = []
     for offset in range((to - from_).days + 1):
         day = from_ + datetime.timedelta(days=offset)
-        series = hrv_trend.build_series(rows, zone, day)
+        series = hrv_trend.build_series(rows, zone, day, earliest_start_time)
         judged.append((series, _withhold_future(hrv_trend.judge(series), day, today)))
     return judged
 
@@ -476,12 +482,17 @@ def get_hrv_trend(
     conn = db.get_connection()
     try:
         rows = db.read_hrv_rows(conn, start_iso, end_iso)
+        # One scalar beside the row read, not a wider read (T096, G13): the
+        # store's earliest reading tells a layoff longer than the 126 days
+        # read (a reading precedes the window, none was read) from a new
+        # athlete (none precedes it). The row read's bounds are unchanged.
+        earliest = db.earliest_hrv_reading(conn, hrv_trend.TIER_FIDELITY)
     finally:
         conn.close()
 
     # The contract's series, and ``to``'s verdict from the same last pair.
     try:
-        judged = _judge_days(rows, zone, from_, to, today)
+        judged = _judge_days(rows, zone, from_, to, today, earliest)
     except OverflowError as exc:
         # The windows are ``date`` arithmetic back to ``d - 126``; a day
         # inside the calendar's first 126 days has no such history to look

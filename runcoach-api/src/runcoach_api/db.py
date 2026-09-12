@@ -24,6 +24,7 @@ import dataclasses
 import functools
 import json
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 from runcoach_api import config as config_module
@@ -599,3 +600,42 @@ def read_hrv_rows(conn: sqlite3.Connection, start_iso: str, end_iso: str) -> lis
         (start_iso, end_iso),
     )
     return cur.fetchall()
+
+
+def earliest_hrv_reading(conn: sqlite3.Connection, tiers: Sequence[str]) -> str | None:
+    """The stored ``start_time`` of the earliest *reading* in the store, or
+    ``None`` when there is none -- the one scalar F005's trend reads beside
+    ``read_hrv_rows`` (T096, review cycle 3 G13).
+
+    Why it exists: the coverage-gap rule must tell "no earlier reading
+    exists" (a new athlete's first capture -- not a gap) from "no earlier
+    reading was *read*" (a layoff longer than the 126 days the route reads
+    back -- a gap), and the rows alone cannot, since the latest pre-layoff
+    reading lies before the first row. This answers the question without
+    widening the row read: the earliest reading precedes the rows' span
+    exactly when a layoff does. ``MIN`` over the ISO ``+00:00`` spelling is
+    chronological for the same reason ``read_hrv_rows``'s range compare is.
+
+    **A reading, not a stored row**, screened here as
+    ``hrv_trend._exclusion_reason`` screens rows in Python: a tier the enum
+    names (``tiers``, the consumer's ``TIER_FIDELITY``, passed in so this
+    module does not import the metric), and a value ``ln`` can take -- a
+    null value is the pre-amendment window (``PRE_AMENDMENT_WINDOW_PREDICATE``)
+    or an ordinary session, ``> 0`` refuses zero and negatives, and
+    ``< 1e999`` refuses ``+inf`` (the literal is beyond REAL's range and
+    SQLite reads it as infinity; there is no ``isfinite`` in SQL). ``nan``
+    never reaches the comparison: SQLite stores it as ``NULL``. Counting a
+    stored row here would report a new athlete's first capture as the end
+    of a layoff.
+    """
+    placeholders = ", ".join("?" for _ in tiers)
+    cur = conn.execute(
+        f"""
+        SELECT MIN(start_time)
+        FROM sessions
+        WHERE hrv_source_tier IN ({placeholders})
+          AND resting_rmssd_ms > 0 AND resting_rmssd_ms < 1e999
+        """,
+        tuple(tiers),
+    )
+    return cur.fetchone()[0]

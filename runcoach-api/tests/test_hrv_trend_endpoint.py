@@ -569,6 +569,58 @@ def test_a_new_athletes_first_capture_is_not_a_coverage_gap_through_the_endpoint
     assert body["baseline"]["tier"] == SNAPSHOT
 
 
+def test_the_stores_earliest_reading_screens_rows_the_way_the_exclusion_chain_does(
+    configure, persist_sessions
+) -> None:
+    """``db.earliest_hrv_reading`` is the one scalar G13 adds beside
+    ``read_hrv_rows``: the earliest ``start_time`` of a *reading*, screened
+    in SQL the way ``hrv_trend._exclusion_reason`` screens rows in Python.
+    A null tier (an ordinary run), a pre-amendment row (a tier, no value), a
+    tier the enum does not name, and a value ``ln`` cannot take -- ``0``, a
+    negative, ``+inf`` (SQLite stores ``nan`` as ``NULL``, so it is the
+    pre-amendment shape) -- are stored rows, not readings, and none of them
+    is the store's earliest reading; a very large finite value is one. With
+    no reading at all the scalar is ``None``. Perturbation: dropping any one
+    screen makes that junk row the earliest reading, and a new athlete's
+    first capture 40 days later reads as the end of a layoff."""
+    configure("UTC")
+
+    def stored(day: date, tier: str | None, value: float | None, device: str) -> Session:
+        iso = at(day).isoformat()
+        return Session(
+            session_id=derive_session_id(device, iso),
+            sport="running",
+            source_vendor="garmin",
+            start_time=iso,
+            source_device=device,
+            hrv_source_tier=tier,
+            resting_rmssd_ms=value,
+        )
+
+    junk = [
+        stored(D - timedelta(days=300), None, None, "run"),
+        stored(D - timedelta(days=290), STRAP, None, "pre-amendment"),
+        stored(D - timedelta(days=280), "wrist_ppg", 40.0, "unknown-tier"),
+        stored(D - timedelta(days=270), SNAPSHOT, 0.0, "zero"),
+        stored(D - timedelta(days=260), SNAPSHOT, -5.0, "negative"),
+        stored(D - timedelta(days=250), STRAP, math.inf, "inf"),
+        stored(D - timedelta(days=240), STRAP, math.nan, "nan"),
+    ]
+    huge = stored(D - timedelta(days=200), SNAPSHOT, 1e300, "huge")
+    first = stored(D - timedelta(days=40), SNAPSHOT, 40.0, "first")
+
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        assert db_module.earliest_hrv_reading(conn, hrv_trend.TIER_FIDELITY) is None
+        persist_sessions(junk + [first])
+        assert db_module.earliest_hrv_reading(conn, hrv_trend.TIER_FIDELITY) == first.start_time
+        persist_sessions([huge])
+        assert db_module.earliest_hrv_reading(conn, hrv_trend.TIER_FIDELITY) == huge.start_time
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # T093: a trial-then-abandoned strap, end to end
 # ---------------------------------------------------------------------------

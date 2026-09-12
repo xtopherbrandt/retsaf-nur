@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from datetime import date
@@ -219,3 +220,59 @@ def test_the_script_prints_the_resolved_data_dir_before_writing(tmp_path: Path, 
     assert printed == _probe_args(seed_hrv_series).expected
     assert printed["tier"] == STRAP and printed["n"] == 60
     assert printed["band_lo"] < printed["band_mean"] < printed["band_hi"]
+
+
+def test_the_script_seeds_several_eras_and_states_each_ones_band(tmp_path: Path, seed_hrv_series) -> None:
+    """T096: the demo probe needs a two-tier history -- a snapshot era with a
+    strap trial inside it, a genuine switch, one stray -- so the script takes
+    ``--era TIER:END:DAYS[:SUPPRESS_LAST[:LOCAL_HOUR]]`` repeatedly and writes
+    each era through the same generator. ``--print-expected`` then prints
+    ``{"eras": [...]}``, one expectation per era in the order given, each the
+    band the generator states for that era at its own ``END`` -- computed
+    from the intended values, never read back from the store (IDEA-057). The
+    local hour keeps two tiers captured on one morning from colliding on
+    ``session_id`` (derived from ``(source_device, start_time)``, and the
+    synthetic device is one string); the trial here sits inside the snapshot
+    era at 07:00 and both survive in the store."""
+    home = tmp_path / "home"
+    requested = tmp_path / "script-data"
+    _write_api_toml(home, tmp_path / "decoy")
+    env = {"PATH": str(Path(sys.executable).parent), "HOME": str(home), "USERPROFILE": str(home)}
+    if "SYSTEMROOT" in os.environ:
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    eras = [
+        (SNAPSHOT, date(2026, 3, 22), 81, 7, 6),
+        (STRAP, date(2026, 3, 1), 14, 0, 7),
+    ]
+
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), "--data-dir", str(requested), "--print-expected"]
+        + [
+            arg
+            for tier, end, days, suppress, hour in eras
+            for arg in ("--era", f"{tier}:{end.isoformat()}:{days}:{suppress}:{hour}")
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    printed = json.loads(completed.stdout)
+    assert list(printed) == ["eras"] and len(printed["eras"]) == 2
+    for era, (tier, end, days, suppress, hour) in zip(printed["eras"], eras):
+        expected = seed_hrv_series(
+            end=end, days=days, suppress_last=suppress, tier=tier, zone=AUCKLAND,
+            profile_names=[PROFILE], local_hour=hour,
+        ).expected
+        assert era == expected
+        assert era["tier"] == tier and era["end"] == end.isoformat()
+    assert printed["eras"][0]["n"] == 60 and printed["eras"][0]["first_day"] == "2026-01-01"
+    assert printed["eras"][1]["first_day"] == "2026-02-16"
+    with sqlite3.connect(requested / db_module.DB_FILENAME) as conn:
+        rows = conn.execute(
+            "SELECT hrv_source_tier, COUNT(*) FROM sessions GROUP BY hrv_source_tier ORDER BY 1"
+        ).fetchall()
+    assert rows == [(STRAP, 14), (SNAPSHOT, 81)]
