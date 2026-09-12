@@ -11,7 +11,7 @@ a snapshot era with a strap trial inside it, a genuine switch, one stray):
         --data-dir "$RUNCOACH_DATA_DIR" --print-expected \\
         --era health_snapshot:2026-03-22:81:7 --era chest_strap_raw:2026-03-01:14:0:7 \\
         --era health_snapshot:2026-06-30:100 --era chest_strap_raw:2026-09-07:69:5 \\
-        --era health_snapshot:2026-08-10:1 > expected.json
+        --era health_snapshot:2026-08-10:1:0:7 > expected.json
 
 The series is written through the **real** ``mapping.to_canonical ->
 hrv_classification.classify -> db.persist`` path -- never raw SQL -- by the
