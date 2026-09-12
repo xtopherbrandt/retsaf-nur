@@ -1029,6 +1029,54 @@ def test_the_old_eras_first_day_bounds_the_new_tiers_strays_not_its_first_instan
 # ---------------------------------------------------------------------------
 
 
+def test_one_resumption_era_is_reported_coverage_gap_then_tier_change_then_nothing() -> None:
+    """G14 (review cycle 3, critic B5), pinned so the three phases cannot
+    drift silently. A daily snapshot to 2026-04-01, thirty silent local
+    days, then a daily strap from ``R`` = 2026-05-02. One era, one
+    ``reset_on``, three stories and no event between them:
+
+    * ``R`` .. ``R+66`` -- ``coverage_gap on R``: the resumption day is
+      inside ``[D-66, D]`` and the silence before it is measured from the
+      previous window's last reading;
+    * ``R+67`` .. ``R+79`` -- ``tier_change on R``: ``R`` has left the
+      window, so the gap rule sees no silence, and rule 4 reads the same
+      era as a switch -- the strap sustains the window, the previous window
+      ``[D-126, D-67]`` is still sustained by the snapshot, and no reading
+      lies across the boundary;
+    * ``R+80`` on -- nothing: the strap now holds 14 days in the previous
+      window, so rule 4(b) fails (rule 5's forward stop, ``S+80``).
+
+    The two reports' ``reset_on`` differs in one thing the schema states:
+    ``coverage_gap``'s can never precede ``window[0]`` (the resumption is
+    the clip's first day while it is reported at all), ``tier_change``'s
+    can (the era's true first day, ``R``, against a window clipped at
+    ``D-66``). The re-attribution is an accepted cost, named in F005's
+    Negative Class; the baseline is established from ``R+20`` on, so
+    nothing downstream is misled. T095's tolerance does not move the
+    ``R+67`` hand-off: the boundary has no strays on either side.
+    """
+    R = date(2026, 5, 2)
+    rows = readings(SNAPSHOT, span(date(2026, 1, 1), date(2026, 4, 1)), 60.0, "snap")
+    rows += readings(STRAP, span(R, R + timedelta(days=90)), 25.0, "strap")
+
+    def at(offset: int) -> hrv_trend.HrvSeries:
+        return build(rows, target=R + timedelta(days=offset))
+
+    for offset in (0, 14, 66):
+        result = at(offset)
+        assert (result.reset_reason, result.reset_on) == ("coverage_gap", R), offset
+        assert result.reset_on >= result.baseline_window[0], offset
+    for offset in (67, 79):
+        result = at(offset)
+        assert (result.reset_reason, result.reset_on) == ("tier_change", R), offset
+        assert result.reset_on < result.baseline_window[0], offset
+    for offset in (80, 90):
+        result = at(offset)
+        assert (result.reset_reason, result.reset_on) == (None, None), offset
+    assert {at(offset).tier for offset in (0, 14, 66, 67, 79, 80, 90)} == {STRAP}
+    assert all(r.date >= R for r in at(67).baseline) and len(at(67).baseline) == 60
+
+
 def test_the_gap_is_counted_in_local_days_across_29_february() -> None:
     """A 22-day silence that contains 2028-02-29 resets; the same silence
     shortened by one day to 21 does not. Windows and gaps are ``date``
@@ -1204,28 +1252,137 @@ def test_unusable_previous_window_values_sustain_no_tier() -> None:
 
 def test_readings_before_the_previous_window_sustain_no_tier() -> None:
     """Twenty snapshot readings on ``[D-146, D-127]`` -- every one a day
-    before the previous window opens -- and an established strap baseline
-    now. The previous window is the closed interval ``[D-126, D-67]``, and
-    a reading before it is read by nothing: neither as the tier that held
-    the previous era nor as the reading a leading gap is measured from. So
-    this is a first established baseline, not a change from a snapshot era,
-    and the 66 empty days before the strap readings are not a gap.
+    before the previous window opens -- five thin snapshot readings inside
+    the previous window at ``[D-80, D-76]``, and an established strap
+    baseline now. The previous window is the closed interval ``[D-126,
+    D-67]``, and a reading before it is not read as the tier that held the
+    previous era: the twenty do not make the snapshot the previous
+    window's sustained tier, so this is a first established baseline, not
+    a change from a snapshot era. (Until T096 this test also pinned "the
+    empty days before the strap readings are not a gap" with nothing at
+    all in the previous window -- which was review cycle 3's G13, the
+    long layoff read as the start of history; the five readings here keep
+    the leading silence at 15 days so the tier half is what this test
+    isolates, and the layoff is the walk below.)
 
     Perturbation (wave-3 mutation M12): dropping the previous window's lower
-    bound lets the twenty sustain a snapshot tier there and bound the
-    silence; the existing suite stays green because its one pre-window row
-    is a single reading, and this test goes red.
+    bound lets the twenty sustain a snapshot tier there and a
+    ``tier_change`` is asserted; the existing suite stays green because its
+    one pre-window row is a single reading, and this test goes red.
     """
     older = readings(SNAPSHOT, span(ago(146), ago(127)), 40.0, "older")
+    thin = readings(SNAPSHOT, span(ago(80), ago(76)), 40.0, "thin")
     current = readings(STRAP, span(ago(60), ago(7), 2), 40.0, "strap")
 
-    result = build(older + current)
+    result = build(older + thin + current)
 
     assert len(older) == 20
     assert result.tier == STRAP
     assert result.reset_on is None
     assert result.reset_reason is None
     assert {excluded_reasons(result)[r["session_id"]] for r in older} == {"outside_windows"}
+
+
+def test_a_layoff_longer_than_the_read_window_still_reports_the_coverage_gap() -> None:
+    """G13 (review cycle 3; AC 19 "A coverage gap re-establishes the
+    baseline even with no tier change", implemented as written by T096).
+    The same 34-reading snapshot era, ending at ``D-100``, ``D-127`` or
+    ``D-160``, then silence, then a daily resumption on the same tier from
+    ``D-40``: 60, 87 and 120 days from the last pre-gap reading to the
+    resumption, every one a layoff longer than ``GAP_RESET_DAYS``, and the
+    baseline is re-established at the resumption on all three.
+
+    At ``726b6db`` only the first row reported it. The leading stretch of
+    ``[D-66, D]`` was bounded by the previous window's readings alone, so
+    an era that ended before ``D-126`` read as the start of history and the
+    discriminator was not the silence's length but whether the last
+    pre-gap reading happened to fall inside ``[D-126, D-67]``. Now the
+    **earliest known reading** -- among the rows, or handed in from the
+    store as ``earliest_start_time`` -- tells a layoff (a reading precedes
+    the window) from a new athlete (none does). Red first on the 87- and
+    120-day rows.
+    """
+    resume_on = ago(40)
+    resumed = readings(SNAPSHOT, span(resume_on, D), 40.0, "after")
+
+    for era_end in (ago(100), ago(127), ago(160)):
+        era = readings(SNAPSHOT, span(era_end - timedelta(days=33), era_end), 60.0, "before")
+        assert len(era) == 34
+
+        result = build(era + resumed)
+
+        layoff = (resume_on - era_end).days
+        assert layoff in (60, 87, 120)
+        assert result.reset_reason == "coverage_gap", layoff
+        assert result.reset_on == resume_on, layoff
+        assert result.baseline_window == (resume_on, ago(7)), layoff
+        assert result.tier == SNAPSHOT, layoff
+        assert all(r.date >= resume_on for r in result.baseline), layoff
+        assert {excluded_reasons(result)[r["session_id"]] for r in era} == {"outside_windows"}, layoff
+
+
+def test_a_genuinely_new_athlete_keeps_reporting_no_reset() -> None:
+    """The other side of G13's discriminator. The first reading ever is at
+    ``D-40``; before it the store holds only rows that are **not** readings
+    -- ordinary runs (null tier), pre-amendment rows (a tier, no value),
+    unusable values (``0.0``, ``-5.0``, ``inf``, ``nan``) and an unknown
+    tier -- going back 300 days. None of them is a reading a layoff could
+    be measured from, so the 26 empty days at the start of ``[D-66, D]``
+    are the start of history and nothing resets; and the same holds when no
+    earlier row of any kind is known (``earliest_start_time`` ``None``) and
+    when the earliest reading known to the store *is* the first row.
+
+    Perturbation: counting any earlier stored row as a reading reports a
+    ``coverage_gap`` on ``D-40`` for this athlete.
+    """
+    unusable = [0.0, -5.0, math.inf, math.nan]
+    junk = []
+    for i, day in enumerate(span(ago(300), ago(130), 5)):
+        kind = i % 4
+        if kind == 0:
+            junk.append(row(local(day, 6), None, None, f"run-{day}"))
+        elif kind == 1:
+            junk.append(row(local(day, 6), SNAPSHOT, None, f"amendment-{day}"))
+        elif kind == 2:
+            junk.append(row(local(day, 6), STRAP, unusable[(i // 4) % 4], f"unusable-{day}"))
+        else:
+            junk.append(row(local(day, 6), "wrist_ppg", 40.0, f"unknown-{day}"))
+    first_ever = readings(STRAP, span(ago(40), D), 40.0, "first")
+
+    with_junk = build(junk + first_ever)
+    nothing_known = hrv_trend.build_series(first_ever, AUCKLAND, D, earliest_start_time=None)
+    first_row_is_earliest = hrv_trend.build_series(first_ever, AUCKLAND, D, earliest_start_time=local(ago(40), 6))
+
+    assert len(junk) == 35
+    for result in (with_junk, nothing_known, first_row_is_earliest):
+        assert result.reset_on is None
+        assert result.reset_reason is None
+        assert result.baseline_window == (ago(66), ago(7))
+        assert result.tier == STRAP
+
+
+def test_the_earliest_known_reading_may_come_from_the_store_rather_than_the_rows() -> None:
+    """The route reads rows back to ``D-126`` only and does not widen that
+    read; it hands ``build_series`` the store's earliest reading instant
+    (``db.earliest_hrv_reading``) instead. With the same 41 rows -- a daily
+    resumption from ``D-40`` -- an earliest reading in March 2025 makes the
+    resumption a layoff's end (``coverage_gap`` on ``D-40``), and no
+    earliest reading makes it the start of history. The instant is
+    bucketed into the zone like every row, and a naive one is refused for
+    the same reason a naive row is.
+    """
+    rows = readings(STRAP, span(ago(40), D), 40.0, "after")
+
+    layoff = hrv_trend.build_series(rows, AUCKLAND, D, earliest_start_time=local(date(2025, 3, 1), 6))
+    new_athlete = hrv_trend.build_series(rows, AUCKLAND, D)
+
+    assert layoff.reset_reason == "coverage_gap"
+    assert layoff.reset_on == ago(40)
+    assert layoff.baseline_window == (ago(40), ago(7))
+    assert new_athlete.reset_reason is None and new_athlete.reset_on is None
+    assert [r.session_id for r in layoff.series] == [r.session_id for r in new_athlete.series]
+    with pytest.raises(ValueError, match="naive"):
+        hrv_trend.build_series(rows, AUCKLAND, D, earliest_start_time="2025-03-01T06:00:00")
 
 
 def test_two_gaps_inside_the_window_reset_on_the_later_resumption() -> None:

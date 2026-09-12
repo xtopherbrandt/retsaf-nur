@@ -500,6 +500,76 @@ def test_a_sustained_tier_change_is_reachable_through_the_endpoint(configure, se
 
 
 # ---------------------------------------------------------------------------
+# G13 (T096): a layoff longer than the read window, end to end
+# ---------------------------------------------------------------------------
+
+
+def test_a_layoff_longer_than_the_read_window_reports_the_coverage_gap_through_the_endpoint(
+    configure, seeder, monkeypatch
+) -> None:
+    """The route's own read bound is exercised, not just ``build_series``:
+    a 34-reading snapshot era ending ``D-127`` -- one day before the rows
+    the route reads (``to - 126d - 26h``) -- then silence, then a daily
+    snapshot from ``D-40``. The row read is **not** widened (the spy pins
+    its lower bound exactly where IDEA-045 put it); the store's earliest
+    reading is a scalar beside it, and it is what tells this 87-day layoff
+    from a new athlete. ``coverage_gap`` on ``D-40``, the baseline clipped
+    there with its 34 readings, and nothing before ``D-66`` listed. At
+    ``726b6db`` the response reported no reset at all."""
+    configure("UTC")
+    resume_on = D - timedelta(days=40)
+    seeder.snapshots(days(D - timedelta(days=160), D - timedelta(days=127)), repeat(60.0))
+    seeder.snapshots(days(resume_on, D), repeat(40.0))
+    seeder.persist()
+    seen: list[tuple[str, str]] = []
+    real = db_module.read_hrv_rows
+
+    def spy(conn, start_iso, end_iso):
+        seen.append((start_iso, end_iso))
+        return real(conn, start_iso, end_iso)
+
+    monkeypatch.setattr(main_module.db, "read_hrv_rows", spy)
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    (start_iso, _end_iso) = seen[0]
+    midnight = datetime(D.year, D.month, D.day, tzinfo=UTC)
+    assert datetime.fromisoformat(start_iso) == midnight - timedelta(days=126, hours=26), "the row read is not widened"
+    assert body["baseline"]["reset_reason"] == "coverage_gap"
+    assert body["baseline"]["reset_on"] == resume_on.isoformat()
+    assert body["baseline"]["window"] == [resume_on.isoformat(), (D - timedelta(days=7)).isoformat()]
+    assert body["baseline"]["n"] == 34
+    assert body["baseline"]["established"] is True
+    assert body["baseline"]["tier"] == SNAPSHOT
+    assert body["excluded"] == []
+
+
+def test_a_new_athletes_first_capture_is_not_a_coverage_gap_through_the_endpoint(configure, seeder) -> None:
+    """The discriminator's other side through the real path: ordinary runs
+    and pre-amendment rows for a year before the first capture at ``D-40``
+    are stored rows, not readings, so the store's earliest *reading* is
+    the first capture itself and nothing resets. Perturbation: a scalar
+    that counts any stored row reports ``coverage_gap`` on ``D-40`` here."""
+    configure("UTC")
+    resume_on = D - timedelta(days=40)
+    for day in days(D - timedelta(days=400), D - timedelta(days=127))[::7]:
+        seeder.run(at(day, 18))
+        seeder.pre_amendment(at(day, 6))
+    seeder.snapshots(days(resume_on, D), repeat(40.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    assert body["baseline"]["reset_reason"] is None
+    assert body["baseline"]["reset_on"] is None
+    assert body["baseline"]["window"] == [(D - timedelta(days=66)).isoformat(), (D - timedelta(days=7)).isoformat()]
+    assert body["baseline"]["n"] == 34
+    assert body["baseline"]["tier"] == SNAPSHOT
+
+
+# ---------------------------------------------------------------------------
 # T093: a trial-then-abandoned strap, end to end
 # ---------------------------------------------------------------------------
 
