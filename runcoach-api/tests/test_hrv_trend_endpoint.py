@@ -508,34 +508,53 @@ def test_a_layoff_longer_than_the_read_window_reports_the_coverage_gap_through_t
     configure, seeder, monkeypatch
 ) -> None:
     """The route's own read bound is exercised, not just ``build_series``:
-    a 34-reading snapshot era ending ``D-127`` -- one day before the rows
-    the route reads (``to - 126d - 26h``) -- then silence, then a daily
-    snapshot from ``D-40``. The row read is **not** widened (the spy pins
-    its lower bound exactly where IDEA-045 put it); the store's earliest
-    reading is a scalar beside it, and it is what tells this 87-day layoff
-    from a new athlete. ``coverage_gap`` on ``D-40``, the baseline clipped
-    there with its 34 readings, and nothing before ``D-66`` listed. At
-    ``726b6db`` the response reported no reset at all."""
+    a 34-reading snapshot era ``[D-161, D-128]`` whose last capture (06:00
+    UTC) precedes the lower bound of the rows the route reads (``to - 126d
+    - 26h``, i.e. ``D-127`` 22:00 UTC) -- then silence, then a daily
+    snapshot from ``D-40``. The row read is **not** widened (the first spy
+    pins its lower bound exactly where IDEA-045 put it, and the rows it
+    returns are the 41 from ``D-40``, none of the era); the store's
+    earliest reading is a scalar beside it (the second spy sees the route
+    ask for it and receive the ``D-161`` instant), and it is what tells
+    this 88-day layoff from a new athlete. ``coverage_gap`` on ``D-40``,
+    the baseline clipped there with its 34 readings, and nothing before
+    ``D-66`` listed. At ``726b6db`` the response reported no reset at all;
+    a route that reads the rows but drops the scalar reports none here
+    either (the 2026-09-12 mutant this pin was rebuilt to kill)."""
     configure("UTC")
     resume_on = D - timedelta(days=40)
-    seeder.snapshots(days(D - timedelta(days=160), D - timedelta(days=127)), repeat(60.0))
+    first_ever = D - timedelta(days=161)
+    seeder.snapshots(days(first_ever, D - timedelta(days=128)), repeat(60.0))
     seeder.snapshots(days(resume_on, D), repeat(40.0))
     seeder.persist()
-    seen: list[tuple[str, str]] = []
-    real = db_module.read_hrv_rows
+    seen: list[tuple[str, str, int]] = []
+    earliest_seen: list[str | None] = []
+    real_rows = db_module.read_hrv_rows
+    real_earliest = db_module.earliest_hrv_reading
 
-    def spy(conn, start_iso, end_iso):
-        seen.append((start_iso, end_iso))
-        return real(conn, start_iso, end_iso)
+    def spy_rows(conn, start_iso, end_iso):
+        rows = real_rows(conn, start_iso, end_iso)
+        seen.append((start_iso, end_iso, len(rows)))
+        return rows
 
-    monkeypatch.setattr(main_module.db, "read_hrv_rows", spy)
+    def spy_earliest(conn, tiers):
+        found = real_earliest(conn, tiers)
+        earliest_seen.append(found)
+        return found
+
+    monkeypatch.setattr(main_module.db, "read_hrv_rows", spy_rows)
+    monkeypatch.setattr(main_module.db, "earliest_hrv_reading", spy_earliest)
 
     with TestClient(app) as client:
         body = get(client, to=D.isoformat()).json()
 
-    (start_iso, _end_iso) = seen[0]
+    (start_iso, _end_iso, n_rows) = seen[0]
     midnight = datetime(D.year, D.month, D.day, tzinfo=UTC)
     assert datetime.fromisoformat(start_iso) == midnight - timedelta(days=126, hours=26), "the row read is not widened"
+    assert datetime.fromisoformat(start_iso) > at(D - timedelta(days=128)), "the era's last capture is outside the rows"
+    assert n_rows == 41, "only the resumed era is read"
+    assert earliest_seen == [seeder.sessions[0].start_time], "the route asked the store for its earliest reading"
+    assert datetime.fromisoformat(earliest_seen[0]) == at(first_ever)
     assert body["baseline"]["reset_reason"] == "coverage_gap"
     assert body["baseline"]["reset_on"] == resume_on.isoformat()
     assert body["baseline"]["window"] == [resume_on.isoformat(), (D - timedelta(days=7)).isoformat()]
