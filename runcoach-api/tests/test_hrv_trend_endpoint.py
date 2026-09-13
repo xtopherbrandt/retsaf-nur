@@ -25,6 +25,7 @@ bottom is the parser's deliverable
 
 from __future__ import annotations
 
+import json
 import math
 import statistics
 from collections.abc import Iterable
@@ -825,6 +826,125 @@ def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
     }
     window = schemas["Baseline"]["properties"]["window"]["description"]
     assert "empty" in window and "n" in window, "IDEA-046's rendering decision is documented"
+
+
+def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
+    """One stored row as ``db.hrv_rows`` hands it to ``build_series``, in the
+    UTC zone the rendering pins below configure."""
+    return {
+        "session_id": session_id,
+        "start_time": at(day, hh).isoformat(),
+        "resting_rmssd_ms": value,
+        "hrv_source_tier": tier,
+    }
+
+
+def _rendered(rows: list[dict], to: date = D) -> dict:
+    """``rows`` through the whole read path the route uses -- ``build_series``,
+    ``judge``, ``_trend_response`` -- as the JSON body a client receives. The
+    seam that matters here is ``_trend_response``'s trim: a reason the module
+    emits is only *published* if it survives into this dict."""
+    series = hrv_trend.build_series(rows, ZoneInfo("UTC"), to)
+    response = main_module._trend_response(to - timedelta(days=126), [], series, hrv_trend.judge(series))
+    return json.loads(response.model_dump_json(by_alias=True))
+
+
+#: Every value ``contracts/openapi.yaml``'s ``excluded[].reason`` prose
+#: publishes as receivable, transcribed from that prose rather than read from
+#: the module, so the two are independent oracles. The parameterised members
+#: are spelled with the arguments the series below produce.
+PUBLISHED_REASONS = {
+    "pre_amendment_window",
+    "null_tier",
+    "unknown_tier: wrist_ppg_guess",
+    "unusable_value: 0.0",
+    f"off_baseline_tier: {SNAPSHOT}",
+    "same_day_later_capture",
+    "before_reset: tier_change",
+    "before_reset: coverage_gap",
+}
+
+
+def test_every_published_exclusion_reason_is_observed_in_a_rendered_response() -> None:
+    """T101's sweep, as an assertion. The test above checks each reason is
+    *named* in the schema; this one checks each is *emittable* -- that some
+    real series renders a body carrying it. A published value no code path
+    can emit is a claim no gate catches (``check_drift.py`` compares
+    endpoints, not enum prose), and ``before_reset: tier_change`` was exactly
+    that until T098 made the era clip unconditional (review cycle 4, G-C4-3).
+
+    Two series, because the two resets cannot co-occur -- the coverage gap
+    takes precedence and the era clip runs only when it did not fire:
+
+    * a snapshot era with a ten-day strap trial inside it and a genuine
+      switch to a daily strap, plus one row for each screen of the exclusion
+      chain -- seven of the eight;
+    * a snapshot era, a 27-day silence and a resumption -- the eighth.
+
+    Their union is asserted **equal** to the published set, so the diff is
+    pinned both ways: a published member no series can produce fails here,
+    and a reason the module learns to emit without the contract learning it
+    fails here too. ``outside_windows`` is the one module constant that is
+    deliberately not in the set -- ``_trend_response`` trims it -- and the
+    last assertion is that it never reaches a body.
+    """
+    era = _rendered(
+        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), D - timedelta(days=40))]
+        + [_row(day, 7, STRAP, 25.0, f"trial-{day}") for day in days(D - timedelta(days=60), D - timedelta(days=51))]
+        + [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(D - timedelta(days=39), D)]
+        + [
+            _row(D - timedelta(days=20), 9, None, 40.0, "no-tier"),
+            _row(D - timedelta(days=19), 9, "wrist_ppg_guess", 40.0, "odd-tier"),
+            _row(D - timedelta(days=18), 9, STRAP, 0.0, "bad-value"),
+            _row(D - timedelta(days=17), 9, STRAP, None, "pre-amendment"),
+            _row(D - timedelta(days=10), 9, STRAP, 41.0, "later-same-day"),
+        ]
+    )
+    gap = _rendered(
+        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=66), D - timedelta(days=30))]
+        + [_row(day, 6, SNAPSHOT, 40.0, f"back-{day}") for day in days(D - timedelta(days=2), D)]
+    )
+
+    assert era["baseline"]["reset_reason"] == "tier_change"
+    assert gap["baseline"]["reset_reason"] == "coverage_gap"
+    observed = {entry["reason"] for entry in era["excluded"]} | {entry["reason"] for entry in gap["excluded"]}
+    assert observed == PUBLISHED_REASONS
+    assert hrv_trend.REASON_OUTSIDE_WINDOWS not in observed
+
+
+def test_the_tier_change_clip_is_listed_in_a_rendered_body_whether_or_not_it_is_reported() -> None:
+    """G-C4-3's own pin, at the rendering seam. ``test_hrv_trend_reset.py``'s
+    ``test_the_clipped_readings_are_listed_before_reset_tier_change`` pins the
+    listing and the disjoint-and-exhaustive invariant on ``HrvSeries``; this
+    pins that it survives ``_trend_response``'s trim into the body a client
+    reads, on **both** sides of D4a's split -- a reported ``tier_change`` and
+    a withdrawn one, where the clip happens all the same.
+
+    One stray snapshot capture inside the judged week is what withdraws the
+    report (rule 4(c)'s week half); the ten clipped trial rows are listed
+    either way, and ``included`` never holds one."""
+    def rows(strays: tuple[int, ...]) -> list[dict]:
+        out = [
+            _row(day, 6, SNAPSHOT, 40.0, f"snap-{day}")
+            for day in days(D - timedelta(days=126), D - timedelta(days=40))
+        ]
+        out += [_row(day, 7, STRAP, 25.0, f"trial-{day}") for day in days(D - timedelta(days=60), D - timedelta(days=51))]
+        out += [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(D - timedelta(days=39), D)]
+        out += [_row(D - timedelta(days=n), 8, SNAPSHOT, 40.0, f"stray-{n}") for n in strays]
+        return out
+
+    trial_ids = {f"trial-{day}" for day in days(D - timedelta(days=60), D - timedelta(days=51))}
+    reported = _rendered(rows((30, 29)))
+    withdrawn = _rendered(rows((4, 3, 2)))
+
+    assert reported["baseline"]["reset_reason"] == "tier_change"
+    assert withdrawn["baseline"]["reset_reason"] is None
+    for body, name in ((reported, "reported"), (withdrawn, "withdrawn")):
+        listed = {
+            entry["session_id"] for entry in body["excluded"] if entry["reason"] == "before_reset: tier_change"
+        }
+        assert listed == trial_ids, name
+        assert trial_ids.isdisjoint({entry["session_id"] for entry in body["included"]}), name
 
 
 def test_the_query_parameters_are_from_and_to_and_both_optional() -> None:
