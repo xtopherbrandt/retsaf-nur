@@ -1444,8 +1444,10 @@ def test_a_fourteenth_stray_day_outside_the_judged_week_moves_the_band_and_the_v
     rule, which is why D5 sends it back to a decision-table pass."""
     base = date(2026, 9, 7)
     era_first_day = ago(39, base)
-    (thirteen,) = reported(trial_then_switch(base, (10, 12, 14)), [base])
-    (fourteen,) = reported(trial_then_switch(base, (10, 12, 14, 16)), [base])
+    thirteen_rows = trial_then_switch(base, (10, 12, 14))
+    fourteen_rows = trial_then_switch(base, (10, 12, 14, 16))
+    (thirteen,) = reported(thirteen_rows, [base])
+    (fourteen,) = reported(fourteen_rows, [base])
 
     assert thirteen.report == (STRAP, "tier_change", era_first_day)
     assert fourteen.report == (STRAP, None, None)
@@ -1462,8 +1464,8 @@ def test_a_fourteenth_stray_day_outside_the_judged_week_moves_the_band_and_the_v
     assert fourteen.verdict == hrv_trend.VERDICT_NORMAL
 
     # The same week, the same mean, judged on two different bands.
-    thirteen_mean = hrv_trend.judge(build(trial_then_switch(base, (10, 12, 14)), target=base)).ln_rmssd_7d_mean
-    fourteen_mean = hrv_trend.judge(build(trial_then_switch(base, (10, 12, 14, 16)), target=base)).ln_rmssd_7d_mean
+    thirteen_mean = hrv_trend.judge(build(thirteen_rows, target=base)).ln_rmssd_7d_mean
+    fourteen_mean = hrv_trend.judge(build(fourteen_rows, target=base)).ln_rmssd_7d_mean
     assert thirteen_mean == fourteen_mean == pytest.approx(3.4965, abs=5e-5)
     assert fourteen.band_lo < thirteen_mean < thirteen.band_lo
 
