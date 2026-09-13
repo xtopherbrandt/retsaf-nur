@@ -842,8 +842,12 @@ def test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a
 # two places (T104, review cycle 5 G-C5-6): the candidacy half, fewer than
 # 14 stray days, is restated at ``_era_boundary``'s own gate and decides
 # whether a boundary -- and hence the baseline clip -- exists at all;
-# ``_isolated`` decides only whether such a boundary is *reported*. Both
-# sites count with ``_days`` against ``MIN_BASELINE_READINGS``, so no
+# ``_isolated`` decides whether an admitted boundary is *reported*, and --
+# as the first ordering term in ``_era_boundary``'s selection key -- which
+# of several admitted boundaries is taken, hence where the clip lands
+# (T104 iteration 2; pinned by
+# ``test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of``).
+# Both sites count with ``_days`` against ``MIN_BASELINE_READINGS``, so no
 # threshold has drifted; the pins below read the reported half unless they
 # say otherwise.
 # The same-instant switch-day tie stays interleaved, ``reset_on`` stays
@@ -1044,8 +1048,16 @@ def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset()
     below show the same list ``[14, 29, 30, 41, 42, 43, 60, 60]`` on the
     clipped control walk and the un-clipped trial walk, so the era's ``n``
     and the un-clipped ``n`` are the same number on every walked day.
-    ``baseline_window`` is the sole discriminator here, which is why the
-    window assertion is the one that must not be weakened. From ``S+37``
+    Among the four fields beside ``report`` -- window, ``n``, ``band_lo``
+    and verdict -- ``baseline_window`` is the sole discriminator here,
+    which is why the window assertion is the one that must not be
+    weakened. ``report`` discriminates too, on those same first two rows
+    (control ``[reset] * 7 + [(STRAP, None, None)]``, trial
+    ``[(STRAP, None, None)] * 2 + [reset] * 5 + [(STRAP, None, None)]``),
+    so the counterfactual named above -- clause (b) letting the stale
+    trial through -- is caught by the report assertion independently of
+    the window one (T104 iteration 2, narrowing a "sole discriminator"
+    claim that was false across all five fields). From ``S+37``
     the clip binds until ``t-66`` reaches the era's
     first day at ``S+67`` (``t-66 == S+1``) and passes it from ``S+68``;
     the walk's next stop is ``S+80``, where it first observes that, which

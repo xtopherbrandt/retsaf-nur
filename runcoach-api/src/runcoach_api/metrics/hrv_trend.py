@@ -891,15 +891,23 @@ def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
     to claim the predicate was stated in this one place, which T098's
     split had already made false). The **candidacy half** alone -- fewer than
     ``MIN_BASELINE_READINGS`` stray days -- decides whether an era
-    boundary *exists*, and hence whether ``build_series`` clips the
+    boundary *exists* at all, and hence whether ``build_series`` clips the
     baseline. It is stated in ``_era_boundary``, at the gate that admits a
     boundary, because the same count also orders the candidates there. The
-    **week half** decides only whether an admitted boundary is *reported*.
-    The conjunction returned here is therefore the reporting question
-    asked of a boundary whose candidacy half already holds. Both sites
-    count with ``_days`` and compare against ``MIN_BASELINE_READINGS``, so
-    no threshold has drifted -- but the comparison is written twice:
-    change one and read the other.
+    **week half** decides whether an admitted boundary is *reported*,
+    **and -- as the first ordering term in ``_era_boundary``'s selection
+    key -- which of several admitted boundaries is taken, hence where the
+    clip lands**. (Corrected again by T104, iteration 2: this paragraph
+    said the week half decided the report *only*, which contradicted
+    ``_era_boundary``'s own docstring in this same file and is denied by
+    ``test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of``,
+    where the week-clear boundary wins over one with fewer stray days and
+    ``first_day`` moves with it.) The conjunction returned here is
+    therefore asked of a boundary whose candidacy half already holds: its
+    answer orders the candidates, and the winner's becomes
+    ``EraBoundary.reported``. Both sites count with ``_days`` and compare
+    against ``MIN_BASELINE_READINGS``, so no threshold has drifted -- but
+    the comparison is written twice: change one and read the other.
 
     The week half is judged on the sliding week, as rule 2 is, so it
     carries rule 2's own edge: three old-tier captures in one week after a
