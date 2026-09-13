@@ -877,19 +877,35 @@ def _exclude_before_reset(
 
 
 def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
-    """Rule 4(c)'s **density tolerance** (T095; decision log 2026-09-12),
-    stated here and nowhere else: a set of readings is *isolated* --
-    corroboration, not an era -- when it would neither be a candidate nor
-    cover the judged week: fewer than ``MIN_BASELINE_READINGS`` distinct
-    local days in all, **and** fewer than ``MIN_WINDOW_READINGS`` distinct
-    local days inside ``judged`` (``[D-6, D]``). Either density means the
-    tier was in use, which is what "the era continued" means -- the same
-    two thresholds under which rule 1 makes a tier a candidate and rule 2
-    lets it take the week. The week half is judged on the sliding week,
-    as rule 2 is, so it carries rule 2's own edge: three old-tier captures
-    in one week after a switch are use on the days they sit in ``[D-6,
-    D]`` and corroboration once the week has slid past them (F005
-    Negative Class, the tolerance's cost).
+    """Rule 4(c)'s **density tolerance** (T095; decision log 2026-09-12):
+    a set of readings is *isolated* -- corroboration, not an era -- when
+    it would neither be a candidate nor cover the judged week: fewer than
+    ``MIN_BASELINE_READINGS`` distinct local days in all, **and** fewer
+    than ``MIN_WINDOW_READINGS`` distinct local days inside ``judged``
+    (``[D-6, D]``). Either density means the tier was in use, which is
+    what "the era continued" means -- the same two thresholds under which
+    rule 1 makes a tier a candidate and rule 2 lets it take the week.
+
+    **Two halves, two consequences, two statements** (T098's D4a;
+    corrected here by T104, review cycle 5 G-C5-6 -- this docstring used
+    to claim the predicate was stated in this one place, which T098's
+    split had already made false). The **candidacy half** alone -- fewer than
+    ``MIN_BASELINE_READINGS`` stray days -- decides whether an era
+    boundary *exists*, and hence whether ``build_series`` clips the
+    baseline. It is stated in ``_era_boundary``, at the gate that admits a
+    boundary, because the same count also orders the candidates there. The
+    **week half** decides only whether an admitted boundary is *reported*.
+    The conjunction returned here is therefore the reporting question
+    asked of a boundary whose candidacy half already holds. Both sites
+    count with ``_days`` and compare against ``MIN_BASELINE_READINGS``, so
+    no threshold has drifted -- but the comparison is written twice:
+    change one and read the other.
+
+    The week half is judged on the sliding week, as rule 2 is, so it
+    carries rule 2's own edge: three old-tier captures in one week after a
+    switch are use on the days they sit in ``[D-6, D]`` and corroboration
+    once the week has slid past them (F005 Negative Class, the
+    tolerance's cost).
     """
     readings = tuple(readings)
     return (
@@ -922,6 +938,13 @@ class EraBoundary:
     first_day: date
     #: Rule 4(c)'s week half on this boundary's strays: ``reset_on`` /
     #: ``reset_reason`` are reported only when it holds.
+    #:
+    #: **It is assigned the full conjunction**, ``_isolated``, not the week
+    #: half on its own. The two coincide only because ``_era_boundary``'s
+    #: own gate has already required the candidacy half of the very same
+    #: strays, so the conjunction can only turn on the week half there.
+    #: Loosen or widen that gate and this field silently stops meaning
+    #: what it is documented to mean (T104, review cycle 5 G-C5-6).
     reported: bool
 
 
@@ -936,8 +959,11 @@ def _era_boundary(
     reading after it, ``B_start``, with no old-tier reading in between. The
     readings on the wrong side of it -- every old-tier reading after
     ``B_start``, and every new-tier reading from the old era's **first
-    local day** up to ``A_end`` -- are the *strays*. **One rule decides
-    both consequences** (D4a, decision log 2026-09-13):
+    local day** up to ``A_end`` -- are the *strays*. **One predicate with
+    two halves decides two consequences** (D4a, decision log 2026-09-13),
+    and since T098 the two halves are stated in two places: the candidacy
+    half at the gate below, the conjunction in ``_isolated`` (T104, review
+    cycle 5 G-C5-6):
 
     * a boundary is an **era boundary** when its strays, together, are
       fewer than ``MIN_BASELINE_READINGS`` distinct local days -- never
@@ -995,6 +1021,9 @@ def _era_boundary(
             continue  # simultaneous: the old tier does not predate the new one
         strays = (*old[i + 1 :], *new[from_old_first_day:j])
         stray_days = len(_days(strays))
+        # The candidacy half of rule 4(c), restated here because the count
+        # also orders the candidates below; ``_isolated`` holds the
+        # conjunction and answers only the reporting half once this holds.
         if stray_days < MIN_BASELINE_READINGS:
             boundaries.append((_isolated(strays, judged), stray_days, a_end.start_time, new[j].date))
     if not boundaries:

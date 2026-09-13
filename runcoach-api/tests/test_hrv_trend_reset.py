@@ -837,7 +837,15 @@ def test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a
 # log 2026-09-12, "density tolerance": readings on the wrong side of the
 # era boundary are corroboration unless, together, they would themselves
 # be a candidate (14 distinct local days) or cover a judged week (3 within
-# one 7-day span) -- ``hrv_trend._isolated`` is the one statement of it.
+# one 7-day span) -- ``hrv_trend._isolated`` states that conjunction.
+# Since T098 the predicate has two halves with two consequences, stated in
+# two places (T104, review cycle 5 G-C5-6): the candidacy half, fewer than
+# 14 stray days, is restated at ``_era_boundary``'s own gate and decides
+# whether a boundary -- and hence the baseline clip -- exists at all;
+# ``_isolated`` decides only whether such a boundary is *reported*. Both
+# sites count with ``_days`` against ``MIN_BASELINE_READINGS``, so no
+# threshold has drifted; the pins below read the reported half unless they
+# say otherwise.
 # The same-instant switch-day tie stays interleaved, ``reset_on`` stays
 # the new tier's first reading after the old era's last, and a habit dense
 # enough to be a candidate still interleaves (G6, the tolerance's own error
@@ -1018,16 +1026,27 @@ def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset()
     tolerance's boundary rather than hidden. Red at 0891061 on ``S+37``,
     ``S+48`` and ``S+49``.
 
-    **What the tolerance controls here** (T099). The stale candidacy is a
-    clause-(b) refusal, so on ``S+21`` and ``S+36`` ``_era_boundary`` is
-    never reached at all and the window is the **un-clipped**
-    ``[t-66, t-7]`` -- it opens in March, three weeks before the strap era
-    began, and the band is built over every strap day there, the trial's
-    included. That is the shape of the accepted cost, and it is asserted
-    rather than described. *If the rule were wrong* -- if clause (b) let
+    **What the tolerance controls here** (T099; corrected by T104, review
+    cycle 5 G-C5-7). The stale candidacy is a clause-(b) refusal, so on
+    ``S+21`` and ``S+36`` ``_era_boundary`` is never reached at all and
+    the window is the **un-clipped** ``[t-66, t-7]``. With ``S`` =
+    2026-05-01 that window opens on ``S+21`` at 2026-03-17 -- 45 days
+    before the switch, 46 before the era's first day -- and it still holds
+    **only era readings**: the resolved tier is the strap, so the band is
+    the 14 strap days 2026-05-02..05-15 and nothing else. The trial
+    (2026-01-31..02-13) ends 32 days before that window opens and cannot
+    enter ``[t-66, t-7]`` for *any* walked target; it lives only in the
+    **previous** window, which is exactly the clause-(b) stale-candidacy
+    case this test names. *If the rule were wrong* -- if clause (b) let
     the stale trial through, or if the clip followed the report -- the
-    first two rows would read ``(S+1, t-7)`` with the era's own ``n``
-    instead. From ``S+37`` the clip binds until ``t-66`` reaches the era's
+    first two rows would read the clipped ``(S+1, t-7)``, that is
+    ``(2026-05-02, t-7)``, with ``baseline_n`` **unchanged**: the assertions
+    below show the same list ``[14, 29, 30, 41, 42, 43, 60, 60]`` on the
+    clipped control walk and the un-clipped trial walk, so the era's ``n``
+    and the un-clipped ``n`` are the same number on every walked day.
+    ``baseline_window`` is the sole discriminator here, which is why the
+    window assertion is the one that must not be weakened. From ``S+37``
+    the clip binds until ``t-66`` reaches the era's
     first day at ``S+67`` (``t-66 == S+1``) and passes it from ``S+68``;
     the walk's next stop is ``S+80``, where it first observes that, which
     is why ``window[0]`` stops being the era's first day there and the
