@@ -953,6 +953,63 @@ def test_the_tier_change_clip_is_listed_in_a_rendered_body_whether_or_not_it_is_
         assert trial_ids.isdisjoint({entry["session_id"] for entry in body["included"]}), name
 
 
+@pytest.mark.parametrize(
+    ("era_age", "window_first", "n"),
+    [
+        pytest.param(60, D - timedelta(days=60), 54, id="era-younger-than-the-window-clip-binds"),
+        pytest.param(66, D - timedelta(days=66), 60, id="era-first-day-is-date-66-clip-is-a-no-op"),
+        pytest.param(70, D - timedelta(days=66), 60, id="era-older-than-the-window-clip-is-a-no-op"),
+    ],
+)
+def test_a_reported_tier_change_sits_beside_the_unclipped_window_once_the_era_is_older_than_it(
+    era_age: int, window_first: date, n: int
+) -> None:
+    """T103 (review cycle 5, G-C5-5). Until T103 ``contracts/openapi.yaml``
+    and ``schemas.Baseline.reset_reason`` published that "a reported
+    ``tier_change`` never sits beside an unclipped ``window``". The clip is
+    ``[max(date-66, R), date-7]`` (``build_series``, D4a), so once the era's
+    first day ``R`` is ``date-66`` or older the ``max`` yields ``date-66``
+    and the reported window is byte-identical to ``baseline_window(date)``
+    -- while ``tier_change`` is still reported, because the report stops
+    only when the previous window ``[date-126, date-67]`` is no longer
+    sustained by the old tier. Reproduced on ``test_hrv_trend_reset.py``'s
+    ``S+80`` row before this pin was written: ``reset_reason
+    tier_change``, ``reset_on 2026-05-02``, ``baseline_window (2026-05-15,
+    2026-07-13)``, ``baseline_window(2026-07-20) (2026-05-15,
+    2026-07-13)``, equal.
+
+    The contract's claim is about the **response**, so this pins the
+    pairing through ``_trend_response``: a daily snapshot era, then a daily
+    strap from ``D-era_age``. On ``D`` the strap sustains ``[D-66, D-7]``,
+    the snapshot still sustains the previous window (the strap holds at
+    most 4 days there), no capture lies across the boundary, and the
+    switch is reported on every row. *Under the withdrawn clause* the
+    second and third rows could not both hold: with ``tier_change``
+    reported, ``window`` would have to differ from ``baseline_window(D)``,
+    so the ``window`` assertion on those two rows is what goes red --
+    ``reset_on`` names the era's first day beneath ``window[0]`` all the
+    same, and the body lists no ``before_reset: tier_change`` row, because
+    the clip that removed nothing inside ``[D-66, D]`` has nothing to
+    list. The first row is the edge from the other side: a younger era is
+    clipped at its own first day, so the pin discriminates the two states
+    rather than describing one."""
+    era_first_day = D - timedelta(days=era_age)
+    body = _rendered(
+        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), era_first_day - timedelta(days=1))]
+        + [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(era_first_day, D)]
+    )
+    unclipped = [d.isoformat() for d in hrv_trend.baseline_window(D)]
+
+    assert body["baseline"]["reset_reason"] == "tier_change"
+    assert body["baseline"]["reset_on"] == era_first_day.isoformat()
+    assert body["baseline"]["window"] == [window_first.isoformat(), (D - timedelta(days=7)).isoformat()]
+    assert (body["baseline"]["window"] == unclipped) is (era_age >= 66)
+    assert body["baseline"]["reset_on"] <= body["baseline"]["window"][0]
+    assert body["baseline"]["n"] == n and body["baseline"]["established"] is True
+    assert body["baseline"]["tier"] == STRAP
+    assert not [entry for entry in body["excluded"] if entry["reason"].startswith("before_reset")]
+
+
 def test_the_query_parameters_are_from_and_to_and_both_optional() -> None:
     """``from`` is a Python keyword, so the parameter is aliased; the alias
     is what ``/openapi.json`` -- and T091's contract pin -- must show."""

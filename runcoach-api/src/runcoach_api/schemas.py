@@ -105,8 +105,12 @@ class Baseline(BaseModel):
             "reported as `coverage_gap` first, then as `tier_change` on the same reset_on, then as null -- "
             "one era, three reports, no event between them (F005 Negative Class). The reason is the "
             "**report** only: the baseline clip is decided by the era boundary alone, so a null here can "
-            "sit beside a clipped `window` and a reported `tier_change` never sits beside an unclipped "
-            "one (F005 decision log D4, 2026-09-13)."
+            "sit beside a clipped `window`; a reported `tier_change` is always clipped, though once the "
+            "era's first day is date-66 or older the clip `max(date-66, R)` is a no-op and `window` is "
+            "indistinguishable from the un-clipped [date-66, date-7] -- the last stretch of every "
+            "report's lifetime, from the day date-66 reaches R until the previous window "
+            "[date-126, date-67] is no longer sustained by the old tier (F005 decision log D4, "
+            "2026-09-13; T103)."
         )
     )
 
