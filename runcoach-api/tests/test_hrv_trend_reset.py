@@ -1019,9 +1019,11 @@ def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset()
     rather than described. *If the rule were wrong* -- if clause (b) let
     the stale trial through, or if the clip followed the report -- the
     first two rows would read ``(S+1, t-7)`` with the era's own ``n``
-    instead. From ``S+37`` the clip binds until ``t-66`` overtakes it on
-    ``S+80``, which is why ``window[0]`` stops being the era's first day
-    there and the last two rows are the plain sliding window. The band's
+    instead. From ``S+37`` the clip binds until ``t-66`` reaches the era's
+    first day at ``S+67`` (``t-66 == S+1``) and passes it from ``S+68``;
+    the walk's next stop is ``S+80``, where it first observes that, which
+    is why ``window[0]`` stops being the era's first day there and the
+    last two rows are the plain sliding window. The band's
     level never moves: every reading in every one of these windows is a
     25 ms strap reading, so ``band_lo`` is the tripwire that says the clip
     never let a *snapshot* reading in."""
@@ -1044,8 +1046,9 @@ def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset()
         [(STRAP, None, None)] * 2 + [reset] * 5 + [(STRAP, None, None)]
     )
 
-    # The control: clipped at the era's first day until ``t-66`` passes it
-    # on ``S+80``, then the plain sliding window.
+    # The control: clipped at the era's first day until ``t-66`` reaches it
+    # at ``S+67`` and passes it from ``S+68``; the walk first observes the
+    # plain sliding window at its next stop, ``S+80``.
     clipped = [(max(era_first_day, t - timedelta(days=66)), t - timedelta(days=7)) for t in walk]
     assert [judged.baseline_window for judged in control_walk] == clipped
     assert [judged.baseline_n for judged in control_walk] == [14, 29, 30, 41, 42, 43, 60, 60]
@@ -1450,6 +1453,129 @@ def test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of() -> None:
     assert hrv_trend._era_boundary(old, new, hrv_trend.judged_window(D)) == hrv_trend.EraBoundary(
         first_day=date(2026, 9, 6), reported=True
     )
+
+
+def stray_day_tie(last_snapshot: date, first_era_value: float = 25.0, target: date = D) -> list[dict]:
+    """The series that makes two era boundaries **tie on stray days**: a
+    daily snapshot at 06:00 up to ``E`` (``last_snapshot``), a daily strap
+    at 07:00 from ``E+1`` to ``target``, and two isolated snapshot strays
+    on ``E+2`` and ``E+4``. The strap reading on ``E+1`` carries
+    ``first_era_value`` so that a boundary one day too early is visible in
+    the band as well as in the window.
+
+    Three boundaries, hand-derived from the definition (an old-tier
+    ``A_end``, the first new-tier reading after it, no old-tier reading in
+    between; the strays are every old-tier reading after ``B_start`` and
+    every new-tier reading from the old era's first local day up to
+    ``A_end``):
+
+    * ``A_end`` = ``E`` 06:00 -> ``B_start`` = ``E+1``; strays ``{E+2,
+      E+4}`` -- 2 days;
+    * ``A_end`` = ``E+2`` 06:00 -> ``B_start`` = ``E+2`` 07:00; strays
+      ``{E+4}`` and the strap on ``E+1`` -- 2 days;
+    * ``A_end`` = ``E+4`` 06:00 -> ``B_start`` = ``E+4`` 07:00; strays the
+      strap on ``E+1``, ``E+2``, ``E+3`` -- 3 days.
+
+    The first two tie at two stray days, and both are ``_isolated`` (2 < 14
+    in all, 0 < 3 inside ``[D-6, D]``), so the selection's week half ties
+    too and **only the tie-break separates them**: ``E+2`` if ties go to
+    the later boundary, ``E+1`` if they go to the earlier."""
+    first_era_day = last_snapshot + timedelta(days=1)
+    rows = readings(SNAPSHOT, span(ago(126, target), last_snapshot), 60.0, "snap")
+    rows += [
+        row(
+            local(day, 7),
+            STRAP,
+            first_era_value if day == first_era_day else 25.0,
+            f"strap-{day}",
+        )
+        for day in span(first_era_day, target)
+    ]
+    rows += [
+        row(local(last_snapshot + timedelta(days=k), 6), SNAPSHOT, 60.0, f"stray-{k}") for k in (2, 4)
+    ]
+    return rows
+
+
+def test_the_era_boundary_tie_on_stray_days_goes_to_the_later_boundary() -> None:
+    """The tie-break `_era_boundary` publishes and nothing could break
+    until now (review cycle 4, G-C4-2): of several era boundaries the one
+    whose strays the judged week is clear of is taken first, then the one
+    with the fewest stray days -- the switch that explains the most
+    readings -- **ties to the later one, the younger baseline being the
+    cautious reading** (``research/00`` §1.7).
+
+    The cycle-4 critic's series, target ``D``: a daily snapshot to
+    ``E`` = ``D-70`` = 2026-06-30, a daily strap from ``E+1`` = 07-01, and
+    isolated snapshot strays on 07-02 and 07-04. Two boundaries tie at two
+    stray days -- ``B_start`` 07-01 and ``B_start`` 07-02 -- and, as the
+    first two assertions state, they tie on the week half as well, both
+    sets of strays being ``_isolated``. So the third ordering term is the
+    only thing that answers, and the answer is the later boundary,
+    ``first_day = 2026-07-02``.
+
+    *Inverted* -- ties to the earlier ``A_end``, which is also what a plain
+    ``max`` on ``(-stray_days,)`` returns, since ``max`` keeps the first
+    maximal element -- this assertion would read
+    ``EraBoundary(first_day=date(2026, 7, 1), reported=True)``: the era
+    would be dated to the day the old device was still reading daily, and
+    the athlete's band would be built over a reading from the era that
+    ended.
+    """
+
+    def reading(day: date, hh: int, tier: str) -> hrv_trend.Reading:
+        start_time = local(day, hh)
+        return hrv_trend.Reading(day, f"{tier}-{day}-{hh}", tier, 40.0, datetime.fromisoformat(start_time))
+
+    last_snapshot = ago(70)
+    strays = [last_snapshot + timedelta(days=k) for k in (2, 4)]
+    old = [reading(day, 6, SNAPSHOT) for day in span(ago(126), last_snapshot) + strays]
+    new = [reading(day, 7, STRAP) for day in span(last_snapshot + timedelta(days=1), D)]
+    judged = hrv_trend.judged_window(D)
+
+    # The two tying boundaries' strays: the later boundary's are the second
+    # snapshot stray and the strap reading that now sits inside the old era.
+    earlier_strays = tuple(r for r in old if r.date in strays)
+    later_strays = (old[-1], new[0])
+    assert len(hrv_trend._days(earlier_strays)) == len(hrv_trend._days(later_strays)) == 2
+    assert hrv_trend._isolated(earlier_strays, judged) and hrv_trend._isolated(later_strays, judged)
+
+    assert hrv_trend._era_boundary(old, new, judged) == hrv_trend.EraBoundary(
+        first_day=date(2026, 7, 2), reported=True
+    )
+
+
+def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
+    """The same tie one month later, where the clip binds, so the
+    tie-break is asserted on its consequence and not only on the reported
+    day (T099's lesson): ``E`` = ``D-40`` = 2026-07-30, the strap era from
+    07-31, snapshot strays on 08-01 and 08-03, and the era's first strap
+    reading carrying 50 ms where every later one carries 25.
+
+    Ties to the later boundary -- the younger baseline being the cautious
+    reading (``research/00`` §1.7) -- so the era begins on ``E+2`` =
+    08-01, ``baseline`` is clipped to ``[08-01, D-7]``, and the 50 ms
+    reading of 07-31 is *before* the reset: 32 readings, all 25 ms, a flat
+    band.
+
+    **What the tie-break controls here.** *Inverted* -- ties to the
+    earlier boundary -- every line below moves together:
+    ``tier_change on 2026-07-31``, ``baseline_window`` ``(07-31, D-7)``,
+    ``baseline_n`` 33 and ``band_lo`` 3.1796 rather than
+    ``ln(25) - 0.01``, because the day whose era is in dispute is drawn
+    into the band. That is the §1.7 asymmetry in one series: the earlier
+    boundary can only *add* a reading whose era is unknown to the baseline
+    the athlete is judged against, and a baseline pulled down by a foreign
+    era reads a suppressed week as normal."""
+    era_first_day = ago(40) + timedelta(days=2)
+
+    (judged,) = reported(stray_day_tie(ago(40), first_era_value=50.0), [D])
+
+    assert judged.report == (STRAP, "tier_change", era_first_day)
+    assert judged.baseline_window == (era_first_day, ago(7))
+    assert judged.baseline_n == 32
+    assert judged.band_lo == pytest.approx(flat_band_lo(25.0))
+    assert judged.verdict == hrv_trend.VERDICT_NORMAL
 
 
 # ---------------------------------------------------------------------------
