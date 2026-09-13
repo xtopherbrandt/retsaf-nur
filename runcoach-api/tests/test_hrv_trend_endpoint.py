@@ -849,6 +849,16 @@ def _rendered(rows: list[dict], to: date = D) -> dict:
     return json.loads(response.model_dump_json(by_alias=True))
 
 
+def _era_with_trial_rows() -> list[dict]:
+    """The shared fixture of the two rendering pins below: a snapshot era, a
+    ten-day strap trial inside it, and a genuine switch to a daily strap at
+    ``D-39``. ``trial-*`` are the rows the era clip drops."""
+    return (
+        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), D - timedelta(days=40))]
+        + [_row(day, 7, STRAP, 25.0, f"trial-{day}") for day in days(D - timedelta(days=60), D - timedelta(days=51))]
+        + [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(D - timedelta(days=39), D)]
+    )
+
 #: Every value ``contracts/openapi.yaml``'s ``excluded[].reason`` prose
 #: publishes as receivable, transcribed from that prose rather than read from
 #: the module, so the two are independent oracles. The parameterised members
@@ -889,9 +899,7 @@ def test_every_published_exclusion_reason_is_observed_in_a_rendered_response() -
     last assertion is that it never reaches a body.
     """
     era = _rendered(
-        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), D - timedelta(days=40))]
-        + [_row(day, 7, STRAP, 25.0, f"trial-{day}") for day in days(D - timedelta(days=60), D - timedelta(days=51))]
-        + [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(D - timedelta(days=39), D)]
+        _era_with_trial_rows()
         + [
             _row(D - timedelta(days=20), 9, None, 40.0, "no-tier"),
             _row(D - timedelta(days=19), 9, "wrist_ppg_guess", 40.0, "odd-tier"),
@@ -920,18 +928,16 @@ def test_the_tier_change_clip_is_listed_in_a_rendered_body_whether_or_not_it_is_
     reads, on **both** sides of D4a's split -- a reported ``tier_change`` and
     a withdrawn one, where the clip happens all the same.
 
-    One stray snapshot capture inside the judged week is what withdraws the
-    report (rule 4(c)'s week half); the ten clipped trial rows are listed
-    either way, and ``included`` never holds one."""
+    Three stray snapshot captures inside the judged week are what withdraws
+    the report -- rule 4(c)'s week half calls the old tier corroboration
+    until it covers ``MIN_WINDOW_READINGS`` distinct days of ``[D-6, D]``;
+    the two strays of the reported case sit a month back and clear it. The
+    ten clipped trial rows are listed either way, and ``included`` never
+    holds one."""
     def rows(strays: tuple[int, ...]) -> list[dict]:
-        out = [
-            _row(day, 6, SNAPSHOT, 40.0, f"snap-{day}")
-            for day in days(D - timedelta(days=126), D - timedelta(days=40))
+        return _era_with_trial_rows() + [
+            _row(D - timedelta(days=n), 8, SNAPSHOT, 40.0, f"stray-{n}") for n in strays
         ]
-        out += [_row(day, 7, STRAP, 25.0, f"trial-{day}") for day in days(D - timedelta(days=60), D - timedelta(days=51))]
-        out += [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(D - timedelta(days=39), D)]
-        out += [_row(D - timedelta(days=n), 8, SNAPSHOT, 40.0, f"stray-{n}") for n in strays]
-        return out
 
     trial_ids = {f"trial-{day}" for day in days(D - timedelta(days=60), D - timedelta(days=51))}
     reported = _rendered(rows((30, 29)))
