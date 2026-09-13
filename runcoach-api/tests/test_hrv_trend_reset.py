@@ -1399,6 +1399,75 @@ def test_a_third_old_tier_capture_in_the_judged_week_moves_the_report_and_nothin
     assert (three.reset_reason, three.reset_on) == (None, None)
 
 
+def test_a_fourteenth_stray_day_outside_the_judged_week_moves_the_band_and_the_verdict() -> None:
+    """G-C5-1 (review cycle 5; decision log D5, T102): the **candidacy**
+    half of the tolerance is a cliff, and it is on the band. This is a
+    characterisation pin of an accepted, priced cost -- no behaviour
+    changed under D5 -- and it exists so that the price F005's Negative
+    Class and AC 17 state is a number the suite can check.
+
+    The same ``trial_then_switch`` series as the pair above, but the extra
+    snapshot captures sit **outside** the judged week (``base-10``,
+    ``base-12``, ``base-14``, then ``base-16``), so the week half holds on
+    both sides and only the candidacy count moves: the 10-day strap trial
+    inside the snapshot era plus 3 old-tier captures after the switch is
+    13 stray days, plus a fourth is 14. Both directions are pooled into
+    one count (``strays = (*old[i+1:], *new[...:j])``), so the 14th day is
+    supplied by an **old**-tier capture -- one that says nothing about
+    whether the strap's trial was an era, and contributes nothing to the
+    week mean -- and it is what certifies the trial as one.
+
+    On 13 a boundary exists: the baseline is clipped at the switch,
+    ``tier_change on 07-30``, window ``(07-30, 08-31)``, ``n`` 33,
+    ``band.lo`` 3.6789, ``hrv_suppressed``. On 14 ``_era_boundary`` returns
+    ``None`` -- **no boundary and therefore no clip at all**, not an
+    unreported one -- so the trial's ten 25 ms readings enter the band:
+    null, window ``(07-03, 08-31)``, ``n`` 43, ``band.lo`` 3.4791,
+    ``hrv_normal``. The 7-day mean is 3.4965 on both, which is what makes
+    the flip indefensible on the data; and ``n`` 43 / ``lo`` 3.4791 /
+    ``hrv_normal`` are verbatim the ccf44ef numbers the pair above forbids
+    through the *week* half. Reproduced at HEAD (537d055) for this pin;
+    the numbers match the reviewer's table in T102 exactly.
+
+    *If the rule were what the pre-T102 Negative Class row said* -- "the
+    band and the verdict no longer move with the report", the candidacy
+    half off the band as the week half is -- the 14 row would read the
+    13 row's ``(07-30, 08-31)`` / 33 / 3.6789 / ``hrv_suppressed`` with
+    only ``reset_reason`` differing, and the four 14-side assertions
+    below go red. Under D5's rejected option (a) -- counting only the new
+    tier's strays for candidacy (perturbed here: ``strays =
+    tuple(new[from_old_first_day:j])``) -- the pin goes red at its *first*
+    line instead: with the old tier's captures uncounted, the boundary at
+    the trial's own start (``A_end`` 07-08, ``B_start`` 07-09, zero
+    strays) beats the switch on fewest strays on **both** sides, and
+    ``reset_on`` reads 2026-07-09. (a) is not a local fix but a different
+    rule, which is why D5 sends it back to a decision-table pass."""
+    base = date(2026, 9, 7)
+    era_first_day = ago(39, base)
+    (thirteen,) = reported(trial_then_switch(base, (10, 12, 14)), [base])
+    (fourteen,) = reported(trial_then_switch(base, (10, 12, 14, 16)), [base])
+
+    assert thirteen.report == (STRAP, "tier_change", era_first_day)
+    assert fourteen.report == (STRAP, None, None)
+
+    assert thirteen.baseline_window == (era_first_day, ago(7, base))
+    assert thirteen.baseline_n == 33
+    assert thirteen.band_lo == pytest.approx(3.6789, abs=5e-5)
+    assert thirteen.verdict == hrv_trend.VERDICT_SUPPRESSED
+
+    # The cliff: no boundary, no clip, the seven-week-old trial in the band.
+    assert fourteen.baseline_window == hrv_trend.baseline_window(base)
+    assert fourteen.baseline_n == 43
+    assert fourteen.band_lo == pytest.approx(3.4791, abs=5e-5)
+    assert fourteen.verdict == hrv_trend.VERDICT_NORMAL
+
+    # The same week, the same mean, judged on two different bands.
+    thirteen_mean = hrv_trend.judge(build(trial_then_switch(base, (10, 12, 14)), target=base)).ln_rmssd_7d_mean
+    fourteen_mean = hrv_trend.judge(build(trial_then_switch(base, (10, 12, 14, 16)), target=base)).ln_rmssd_7d_mean
+    assert thirteen_mean == fourteen_mean == pytest.approx(3.4965, abs=5e-5)
+    assert fourteen.band_lo < thirteen_mean < thirteen.band_lo
+
+
 @pytest.mark.parametrize("strays", [(4, 3), (4, 3, 2)])
 def test_the_clipped_readings_are_listed_before_reset_tier_change(strays: tuple[int, ...]) -> None:
     """G-C4-3. The readings the clip removes are neither in ``baseline``
