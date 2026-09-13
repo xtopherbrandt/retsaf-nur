@@ -39,6 +39,7 @@ from __future__ import annotations
 import math
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -846,12 +847,69 @@ def genuine_switch(switch: date, until: date, snapshot_from: date = D - timedelt
     return rows
 
 
-def reported(rows: list[dict], targets: list[date]) -> list[tuple[str | None, str | None, date | None]]:
-    """``(tier, reset_reason, reset_on)`` on each target, for a walk."""
+class Judged(NamedTuple):
+    """One target date's whole answer: what rule 4 **reports** and what the
+    tolerance actually **controls**.
+
+    T099 (review cycle 4, G-C4-4). Until T099 this helper returned the
+    report alone -- ``(tier, reset_reason, reset_on)`` -- and all six
+    density-tolerance pins consumed it, so the rule was pinned on its
+    reporting projection while the thing it decides, whether
+    ``build_series`` clips ``baseline`` and hence which readings enter the
+    band, was unasserted on every one of them. That is exactly why cycle 4's
+    five mutants died and the sixth lived: all five were aimed at the
+    asserted projection. The record is widened rather than duplicated so a
+    later pin cannot reach for the narrow one by accident.
+
+    ``report`` keeps the old triple, so every expectation written before
+    T099 stands verbatim; the four fields beside it are what T098's D4a made
+    independent of it -- the clip happens whenever an era boundary exists,
+    and only ``reset_reason`` / ``reset_on`` wait on the judged week.
+    """
+
+    tier: str | None
+    reset_reason: str | None
+    reset_on: date | None
+    baseline_window: tuple[date, date]
+    baseline_n: int
+    band_lo: float | None
+    verdict: str
+
+    @property
+    def report(self) -> tuple[str | None, str | None, date | None]:
+        """The pre-T099 triple: what the athlete is *told*."""
+        return (self.tier, self.reset_reason, self.reset_on)
+
+
+def flat_band_lo(value: float) -> float:
+    """``band.lo`` for a baseline every one of whose readings carries
+    ``value``: the sample SD is 0, so the half-width is ``BAND_FLOOR`` and
+    the band is ``ln(value) +/- 0.01``. The tolerance walks below hold one
+    value per tier on purpose -- a value that moved with the reading count
+    would make a band assertion unreadable -- so the band's *level* is the
+    resolved tier's, and its interest is which window it was built over."""
+    return math.log(value) - hrv_trend.BAND_FLOOR
+
+
+def reported(rows: list[dict], targets: list[date]) -> list[Judged]:
+    """The full ``Judged`` record on each target, for a walk: the report,
+    and the ``baseline_window``, ``baseline.n``, ``band.lo`` and verdict the
+    density tolerance controls through the clip."""
     out = []
     for target in targets:
         result = build(rows, target=target)
-        out.append((result.tier, result.reset_reason, result.reset_on))
+        verdict = hrv_trend.judge(result)
+        out.append(
+            Judged(
+                tier=result.tier,
+                reset_reason=result.reset_reason,
+                reset_on=result.reset_on,
+                baseline_window=result.baseline_window,
+                baseline_n=verdict.baseline_n,
+                band_lo=None if verdict.band is None else verdict.band.lo,
+                verdict=verdict.verdict,
+            )
+        )
     return out
 
 
@@ -872,18 +930,62 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     what is true of it: ``baseline.n`` 13 and ``established: false`` --
     the band steps a day early, the reset explains the step, and no
     suppression can be asserted on it. Red at 0891061 on all three walked
-    days."""
+    days.
+
+    **What the tolerance controls here** (T099). The stray moves the clip,
+    so on ``SW+20`` the whole answer changes, not only the report: the
+    window opens at the era's first day instead of at ``t-66``, the band is
+    built over 13 strap readings instead of 47 snapshot ones, and its level
+    steps from ``ln(60)`` to ``ln(25)``. *If the rule were wrong* -- if the
+    single stray day made the eras interleave, as it did at 0891061 -- the
+    control column would be the assertion on both series: window
+    ``(t-66, t-7)`` on ``SW+20``, ``band_lo`` at the snapshot's ``ln(60)``
+    level and ``hrv_unavailable``, because the snapshot era's last reading
+    is ``SW`` and the judged week would hold none of it. The three walked
+    days are the band's step, its cause and its persistence."""
     switch = ago(60)
     control = genuine_switch(switch, switch + timedelta(days=70))
     stray = [row(local(switch - timedelta(days=11), 6, 30), STRAP, 25.0, "strap-stray")]
     walk = [switch + timedelta(days=20), switch + timedelta(days=21), switch + timedelta(days=60)]
+    era_first_day = switch + timedelta(days=1)
 
-    assert reported(control, walk) == [
+    control_walk = reported(control, walk)
+    stray_walk = reported(control + stray, walk)
+
+    assert [judged.report for judged in control_walk] == [
         (SNAPSHOT, None, None),
-        (STRAP, "tier_change", switch + timedelta(days=1)),
-        (STRAP, "tier_change", switch + timedelta(days=1)),
+        (STRAP, "tier_change", era_first_day),
+        (STRAP, "tier_change", era_first_day),
     ]
-    assert reported(control + stray, walk) == [(STRAP, "tier_change", switch + timedelta(days=1))] * 3
+    assert [judged.report for judged in stray_walk] == [(STRAP, "tier_change", era_first_day)] * 3
+
+    # The control: no boundary on SW+20 (the snapshot still owns the
+    # baseline, so clause (b) is never asked), the clip from SW+21 on.
+    assert [judged.baseline_window for judged in control_walk] == [
+        (walk[0] - timedelta(days=66), walk[0] - timedelta(days=7)),
+        (era_first_day, walk[1] - timedelta(days=7)),
+        (era_first_day, walk[2] - timedelta(days=7)),
+    ]
+    assert [judged.baseline_n for judged in control_walk] == [47, 14, 53]
+    assert [judged.band_lo for judged in control_walk] == pytest.approx(
+        [flat_band_lo(60.0), flat_band_lo(25.0), flat_band_lo(25.0)]
+    )
+    assert [judged.verdict for judged in control_walk] == [
+        hrv_trend.VERDICT_UNAVAILABLE,
+        hrv_trend.VERDICT_NORMAL,
+        hrv_trend.VERDICT_NORMAL,
+    ]
+
+    # With the stray: the clip is the era's first day on all three days,
+    # and SW+20's baseline is the reported era alone -- 13 readings, one
+    # short of established, which is the whole point of reporting it.
+    assert [judged.baseline_window for judged in stray_walk] == [
+        (era_first_day, target - timedelta(days=7)) for target in walk
+    ]
+    assert [judged.baseline_n for judged in stray_walk] == [13, 14, 53]
+    assert [judged.band_lo for judged in stray_walk] == pytest.approx([flat_band_lo(25.0)] * 3)
+    assert [judged.verdict for judged in stray_walk] == [hrv_trend.VERDICT_NORMAL] * 3
+
     early = build(control + stray, target=walk[0])
     assert early.baseline_window == (switch + timedelta(days=1), walk[0] - timedelta(days=7))
     assert hrv_trend.judge(early).established is False and len(early.baseline) == 13
@@ -906,19 +1008,60 @@ def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset()
     stale candidate in the previous window (IDEA-064's shape, untouched
     by this decision), not an interleaving, and it is pinned here as the
     tolerance's boundary rather than hidden. Red at 0891061 on ``S+37``,
-    ``S+48`` and ``S+49``."""
+    ``S+48`` and ``S+49``.
+
+    **What the tolerance controls here** (T099). The stale candidacy is a
+    clause-(b) refusal, so on ``S+21`` and ``S+36`` ``_era_boundary`` is
+    never reached at all and the window is the **un-clipped**
+    ``[t-66, t-7]`` -- it opens in March, three weeks before the strap era
+    began, and the band is built over every strap day there, the trial's
+    included. That is the shape of the accepted cost, and it is asserted
+    rather than described. *If the rule were wrong* -- if clause (b) let
+    the stale trial through, or if the clip followed the report -- the
+    first two rows would read ``(S+1, t-7)`` with the era's own ``n``
+    instead. From ``S+37`` the clip binds until ``t-66`` overtakes it on
+    ``S+80``, which is why ``window[0]`` stops being the era's first day
+    there and the last two rows are the plain sliding window. The band's
+    level never moves: every reading in every one of these windows is a
+    25 ms strap reading, so ``band_lo`` is the tripwire that says the clip
+    never let a *snapshot* reading in."""
     switch = date(2026, 5, 1)
     control = genuine_switch(switch, switch + timedelta(days=90), snapshot_from=switch - timedelta(days=200))
     trial_days = span(switch - timedelta(days=90), switch - timedelta(days=77))
     trial = [row(local(day, 7), STRAP, 25.0, f"strap-trial-{day}") for day in trial_days]
     offsets = [21, 36, 37, 48, 49, 50, 80, 81]
     walk = [switch + timedelta(days=k) for k in offsets]
-    reset = (STRAP, "tier_change", switch + timedelta(days=1))
+    era_first_day = switch + timedelta(days=1)
+    reset = (STRAP, "tier_change", era_first_day)
+
+    control_walk = reported(control, walk)
+    trial_walk = reported(control + trial, walk)
 
     assert len(trial_days) == 14
     assert [in_previous_window(trial_days, t) for t in walk] == [14, 14, 13, 2, 1, 0, 0, 0]
-    assert reported(control, walk) == [reset] * 7 + [(STRAP, None, None)]
-    assert reported(control + trial, walk) == [(STRAP, None, None)] * 2 + [reset] * 5 + [(STRAP, None, None)]
+    assert [judged.report for judged in control_walk] == [reset] * 7 + [(STRAP, None, None)]
+    assert [judged.report for judged in trial_walk] == (
+        [(STRAP, None, None)] * 2 + [reset] * 5 + [(STRAP, None, None)]
+    )
+
+    # The control: clipped at the era's first day until ``t-66`` passes it
+    # on ``S+80``, then the plain sliding window.
+    clipped = [(max(era_first_day, t - timedelta(days=66)), t - timedelta(days=7)) for t in walk]
+    assert [judged.baseline_window for judged in control_walk] == clipped
+    assert [judged.baseline_n for judged in control_walk] == [14, 29, 30, 41, 42, 43, 60, 60]
+
+    # With the trial: on S+21 and S+36 clause (b) refuses before clause (c)
+    # is asked, so there is no boundary and no clip -- the window is the
+    # un-clipped one and the band spans the trial as well as the era.
+    assert [judged.baseline_window for judged in trial_walk] == [
+        (walk[0] - timedelta(days=66), walk[0] - timedelta(days=7)),
+        (walk[1] - timedelta(days=66), walk[1] - timedelta(days=7)),
+    ] + clipped[2:]
+    assert [judged.baseline_n for judged in trial_walk] == [14, 29, 30, 41, 42, 43, 60, 60]
+
+    for judged_walk in (control_walk, trial_walk):
+        assert [judged.band_lo for judged in judged_walk] == pytest.approx([flat_band_lo(25.0)] * 8)
+        assert [judged.verdict for judged in judged_walk] == [hrv_trend.VERDICT_NORMAL] * 8
 
 
 def test_a_stray_old_tier_capture_after_a_genuine_switch_does_not_hide_the_switch() -> None:
@@ -934,15 +1077,46 @@ def test_a_stray_old_tier_capture_after_a_genuine_switch_does_not_hide_the_switc
     reports exactly what the control does -- ``tier_change on D-29`` at
     ``D`` and ``D+42``, cleared at ``D+52`` and ``D+60`` when the strap
     sustains the previous window and (b) fails. Red at 0891061 on ``D``
-    and ``D+42``."""
+    and ``D+42``.
+
+    **What the tolerance controls here** (T099). The stray is on the *old*
+    tier, so it is excluded from the series as ``off_baseline_tier`` either
+    way and cannot reach the band by contributing a reading; the only route
+    it has to the band is the clip, and this pin closes it: the window,
+    ``n``, band and verdict are identical on the two series, day for day,
+    and the stray changes nothing at all. *If the rule were wrong* -- if
+    the stray made the eras interleave, as at 0891061 -- the stray column
+    would read ``(t-66, t-7)`` with ``n`` 33 on ``D`` instead of the era's
+    ``(D-29, D-7)`` and 23, and the band would be built partly over the
+    snapshot era the athlete has left. The band's level is ``ln(25)``
+    throughout because the resolved tier is the strap on every walked day;
+    asserting it is what would catch a clip that re-admitted 60 ms
+    snapshot readings without moving ``window[0]``."""
     switch = ago(30)
     control = genuine_switch(switch, D + timedelta(days=70), snapshot_from=ago(126))
     stray = [row(local(ago(25), 7), SNAPSHOT, 60.0, "snap-stray")]
     walk = [D, D + timedelta(days=42), D + timedelta(days=52), D + timedelta(days=60)]
-    expected = [(STRAP, "tier_change", ago(29))] * 2 + [(STRAP, None, None)] * 2
+    era_first_day = ago(29)
+    expected = [(STRAP, "tier_change", era_first_day)] * 2 + [(STRAP, None, None)] * 2
 
-    assert reported(control, walk) == expected
-    assert reported(control + stray, walk) == expected
+    control_walk = reported(control, walk)
+    stray_walk = reported(control + stray, walk)
+
+    assert [judged.report for judged in control_walk] == expected
+    assert [judged.report for judged in stray_walk] == expected
+
+    # Clipped while the reset is reported, the plain sliding window once
+    # (b) fails -- and identical on both series, which is the claim.
+    windows = [(max(era_first_day, t - timedelta(days=66)), t - timedelta(days=7)) for t in walk[:2]]
+    windows += [(t - timedelta(days=66), t - timedelta(days=7)) for t in walk[2:]]
+    assert [judged.baseline_window for judged in control_walk] == windows
+    assert [judged.baseline_window for judged in stray_walk] == windows
+    assert [judged.baseline_n for judged in control_walk] == [23, 60, 60, 60]
+    assert [judged.baseline_n for judged in stray_walk] == [23, 60, 60, 60]
+    for judged_walk in (control_walk, stray_walk):
+        assert [judged.band_lo for judged in judged_walk] == pytest.approx([flat_band_lo(25.0)] * 4)
+        assert [judged.verdict for judged in judged_walk] == [hrv_trend.VERDICT_NORMAL] * 4
+
     assert all(hrv_trend.judge(build(control + stray, target=t)).established for t in walk)
 
 
@@ -955,7 +1129,32 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
     on ``D-29``; 14 would themselves be a candidate -- the strap was in
     use -- so the eras interleave and nothing is reported. Perturbation
     (a count tolerance of one or two captures): the 13-day case is
-    interleaved -- red; (no tolerance, 0891061): the same."""
+    interleaved -- red; (no tolerance, 0891061): the same.
+
+    **What the tolerance controls here** (T099, and the wave-10 survivor
+    this pin was widened to kill). This is the **candidacy** half, which
+    T098 made the half that decides the *clip*; the week half decides only
+    the report. The two sides therefore differ in far more than the
+    report, and until T099 nothing said so: on 13 the boundary exists, the
+    baseline is clipped to the era and ``n`` is 23; on 14 the eras
+    interleave, **no boundary exists at all**, and the window must be the
+    un-clipped ``baseline_window(D)`` with ``n`` counting the whole of it
+    -- the 8 trial days inside ``[D-66, D-7]`` as well as the era's 23.
+
+    *If the rule were wrong* -- specifically, if the candidacy gate were
+    ``stray_days <= MIN_BASELINE_READINGS``, the mutant that survived all
+    358 tests at ``4d2f156`` -- the 14 row would still report
+    ``(STRAP, None, None)``, because ``_isolated`` keeps its own ``< 14``
+    and nothing is reported either way; its window would read
+    ``(D-29, D-7)`` and its ``n`` 23. The 14-side window and ``n`` below
+    are that mutant's death certificate, and they are the only assertions
+    in the suite that can sign it.
+
+    The band cannot separate the two sides here -- every reading in either
+    window is a 25 ms strap reading, so ``band_lo`` is ``ln(25) - 0.01``
+    on both -- and it is asserted anyway: a clip that admitted the
+    *snapshot* era would move it, and an assertion that cannot change
+    under the rule is still a tripwire under a wrong one."""
     switch = ago(30)
     control = genuine_switch(switch, D, snapshot_from=ago(126))
 
@@ -964,11 +1163,21 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
         assert in_previous_window(trial_days, D) < hrv_trend.MIN_BASELINE_READINGS
         return control + [row(local(day, 7), STRAP, 25.0, f"strap-trial-{day}") for day in trial_days]
 
-    thirteen = build(with_trial(13))
-    fourteen = build(with_trial(14))
+    (thirteen,) = reported(with_trial(13), [D])
+    (fourteen,) = reported(with_trial(14), [D])
 
-    assert (thirteen.tier, thirteen.reset_reason, thirteen.reset_on) == (STRAP, "tier_change", ago(29))
-    assert (fourteen.tier, fourteen.reset_reason, fourteen.reset_on) == (STRAP, None, None)
+    assert thirteen.report == (STRAP, "tier_change", ago(29))
+    assert fourteen.report == (STRAP, None, None)
+
+    assert thirteen.baseline_window == (ago(29), ago(7))
+    assert thirteen.baseline_n == 23
+    # The survivor's death certificate: un-clipped window, whole-window n.
+    assert fourteen.baseline_window == hrv_trend.baseline_window(D)
+    assert fourteen.baseline_n == 31
+
+    assert thirteen.band_lo == pytest.approx(flat_band_lo(25.0))
+    assert fourteen.band_lo == pytest.approx(flat_band_lo(25.0))
+    assert thirteen.verdict == fourteen.verdict == hrv_trend.VERDICT_NORMAL
 
 
 def test_old_tier_readings_that_cover_the_judged_week_are_use_and_the_week_slides_past_them() -> None:
@@ -985,15 +1194,48 @@ def test_old_tier_readings_that_cover_the_judged_week_are_use_and_the_week_slide
     Three captures a week *every* week is the young-oscillation habit,
     which the candidacy half keeps interleaved (G6). Red at 0891061 on the
     two-day case and on ``D+7``: an exact (c) reads every stray as the old
-    era's last reading."""
+    era's last reading.
+
+    **What the tolerance controls here** (T099). This is the **week** half,
+    which T098 confined to the report -- so the interesting assertion is
+    the one that says the withdrawal stops there. On ``D`` the two series
+    differ in ``reset_reason`` and ``reset_on`` and **in nothing else**:
+    the same clipped window ``(D-29, D-7)``, the same ``n`` 23, the same
+    band and the same verdict. That is G-C4-1 stated at this population.
+
+    *If the rule were wrong* -- if the clip still followed the report, as
+    it did through ``ccf44ef`` -- the three-capture row on ``D`` would read
+    the un-clipped ``baseline_window(D)`` with a larger ``n``, and its band
+    would be the snapshot era's rather than the strap era's. The stray
+    captures are on the old tier, so they never enter the band as
+    readings; the only way a third one can reach it is by un-clipping,
+    which is exactly what these assertions forbid."""
     switch = ago(30)
     control = genuine_switch(switch, D + timedelta(days=7), snapshot_from=ago(126))
     two_this_week = [row(local(ago(n), 7), SNAPSHOT, 60.0, f"snap-again-{n}") for n in (2, 0)]
     three_this_week = two_this_week + [row(local(ago(1), 7), SNAPSHOT, 60.0, "snap-again-1")]
     walk = [D, D + timedelta(days=7)]
+    era_first_day = ago(29)
 
-    assert reported(control + two_this_week, walk) == [(STRAP, "tier_change", ago(29))] * 2
-    assert reported(control + three_this_week, walk) == [(STRAP, None, None), (STRAP, "tier_change", ago(29))]
+    two_walk = reported(control + two_this_week, walk)
+    three_walk = reported(control + three_this_week, walk)
+
+    assert [judged.report for judged in two_walk] == [(STRAP, "tier_change", era_first_day)] * 2
+    assert [judged.report for judged in three_walk] == [
+        (STRAP, None, None),
+        (STRAP, "tier_change", era_first_day),
+    ]
+
+    # The report is the only difference: the clip is the era's first day on
+    # every row of both walks, reported or withdrawn.
+    windows = [(era_first_day, t - timedelta(days=7)) for t in walk]
+    assert [judged.baseline_window for judged in two_walk] == windows
+    assert [judged.baseline_window for judged in three_walk] == windows
+    assert [judged.baseline_n for judged in two_walk] == [23, 30]
+    assert [judged.baseline_n for judged in three_walk] == [23, 30]
+    for judged_walk in (two_walk, three_walk):
+        assert [judged.band_lo for judged in judged_walk] == pytest.approx([flat_band_lo(25.0)] * 2)
+        assert [judged.verdict for judged in judged_walk] == [hrv_trend.VERDICT_NORMAL] * 2
 
 
 def test_the_old_eras_first_day_bounds_the_new_tiers_strays_not_its_first_instant() -> None:
@@ -1010,19 +1252,50 @@ def test_the_old_eras_first_day_bounds_the_new_tiers_strays_not_its_first_instan
     use inside the strap era, the strays number 14 and the eras interleave.
     Perturbation (the strap's first instant as the bound): the 05:00
     capture is not a stray and the second series reports a reset -- red;
-    (``>`` on the day): the same."""
+    (``>`` on the day): the same.
+
+    **What the tolerance controls here** (T099). The 05:00 capture moves
+    the strays from 13 to 14, which is the **candidacy** half again, so it
+    decides the clip and not only the report: the ``D-73`` series must have
+    the un-clipped ``baseline_window(D+7)``, opening on ``D-59``, because
+    no era boundary exists for it at all.
+
+    *If the rule were wrong* -- under the candidacy ``<=`` mutant, or if
+    the bound were the strap's first *instant* rather than the old era's
+    first day -- the same-day row would keep its ``(SNAPSHOT, None, None)``
+    report (the ``<=`` mutant) or gain one (the instant bound) while its
+    window slid to ``(D-33, D)``; the window assertion is what separates
+    the two failures from the rule.
+
+    ``n`` and the band are the same on both sides -- 27 snapshot readings
+    at 40 ms, the new era's, because the 13 captures inside the strap era
+    all sit before ``D-59`` and so fall outside the un-clipped window too
+    -- and both are asserted anyway. This is the one tolerance population
+    whose band genuinely cannot move with the rule: the clip's only effect
+    here is on ``window[0]``, and the assertion that ``n`` and ``band_lo``
+    stay put is the statement that the clip removed **nothing**, which is
+    the reason the two sides' verdicts agree. Both are
+    ``hrv_unavailable``: the snapshot era ends at ``D-7`` and the judged
+    week ``[D+1, D+7]`` holds no reading of any tier."""
     target = D + timedelta(days=7)
     rows = readings(SNAPSHOT, span(ago(126), ago(75)), 40.0, "snap-old")
     rows += readings(STRAP, span(ago(73), ago(34)), 25.0, "strap")
     rows += [row(local(day, 7), SNAPSHOT, 40.0, f"snap-inside-{day}") for day in span(ago(72), ago(60))]
     rows += readings(SNAPSHOT, span(ago(33), ago(7)), 40.0, "snap-new")
-    day_before = build(rows + [row(local(ago(74), 6), SNAPSHOT, 40.0, "snap-day-before")], target=target)
-    same_day = build(rows + [row(local(ago(73), 5), SNAPSHOT, 40.0, "snap-same-day")], target=target)
+    (day_before,) = reported(rows + [row(local(ago(74), 6), SNAPSHOT, 40.0, "snap-day-before")], [target])
+    (same_day,) = reported(rows + [row(local(ago(73), 5), SNAPSHOT, 40.0, "snap-same-day")], [target])
 
     assert len(span(ago(72), ago(60))) == 13
-    assert (day_before.tier, day_before.reset_reason, day_before.reset_on) == (SNAPSHOT, "tier_change", ago(33))
+    assert day_before.report == (SNAPSHOT, "tier_change", ago(33))
     assert day_before.baseline_window == (ago(33), target - timedelta(days=7))
-    assert (same_day.tier, same_day.reset_reason, same_day.reset_on) == (SNAPSHOT, None, None)
+    assert same_day.report == (SNAPSHOT, None, None)
+    # 13 strays: a boundary, and the clip. 14: no boundary, so the window
+    # is the un-clipped one -- the half of the rule nothing read before.
+    assert same_day.baseline_window == hrv_trend.baseline_window(target)
+    assert day_before.baseline_n == same_day.baseline_n == 27
+    assert day_before.band_lo == pytest.approx(flat_band_lo(40.0))
+    assert same_day.band_lo == pytest.approx(flat_band_lo(40.0))
+    assert day_before.verdict == same_day.verdict == hrv_trend.VERDICT_UNAVAILABLE
 
 
 # ---------------------------------------------------------------------------
