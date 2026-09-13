@@ -480,7 +480,8 @@ def build_series(
     ``[D-6, D]``). Coupled, as they were until T098, the week half -- judged
     on the **sliding** judged week -- reached the band, and one capture of
     the other tier, contributing nothing to the week mean, un-clipped a
-    finished device era back into it (review cycle 4, G-C4-1). ``rows`` must span ``[D-126, D]`` for the rule to be able to
+    finished device era back into it (review cycle 4, G-C4-1). ``rows``
+    must span ``[D-126, D]`` for the rule to be able to
     fire, since a narrower read leaves the previous window empty, which
     reads as "thin" and never as a change. See ``coverage_gap_reset`` and
     ``tier_change_reset``.
@@ -549,7 +550,6 @@ def build_series(
             series_by_day[reading.date] = reading
 
     series = tuple(series_by_day[day] for day in sorted(series_by_day))
-    excluded.sort(key=lambda e: (e.date, e.session_id))
 
     if reset_on is None:
         boundary = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
@@ -557,8 +557,9 @@ def build_series(
             # D4a (T098): the clip is unconditional. The era may have begun
             # before D-66 (T094: ``first_day`` is its true first day, not
             # the first inside the window); the window reported is the
-            # schema's ``[max(D-66, reset_on), D-7]``. The readings the clip
-            # removes leave the series for ``excluded`` as
+            # schema's ``[max(D-66, boundary.first_day), D-7]``, whether or
+            # not ``reset_on`` is reported. The readings the clip removes
+            # leave the series for ``excluded`` as
             # ``before_reset: tier_change``, so they are in exactly one list
             # (``research/00`` §1.6) and the contract's published enum
             # member is reachable.
@@ -567,10 +568,15 @@ def build_series(
                 list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
             )
             series = tuple(kept)
-            excluded.sort(key=lambda e: (e.date, e.session_id))
             if boundary.reported:
                 reset_on = boundary.first_day
                 reset_reason = REASON_TIER_CHANGE
+
+    # Once, after both reset branches have had their say: each moves
+    # readings into ``excluded`` out of order (``_exclude_before_reset``
+    # appends what it drops), and nothing between here and there reads the
+    # order.
+    excluded.sort(key=lambda e: (e.date, e.session_id))
 
     return HrvSeries(
         target_date=target_date,
@@ -919,7 +925,9 @@ class EraBoundary:
     reported: bool
 
 
-def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]) -> EraBoundary | None:
+def _era_boundary(
+    old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]
+) -> EraBoundary | None:
     """Clause (c) with the tolerance: where ``new``'s era begins, and
     whether the boundary is one rule 4 reports -- or ``None`` when the two
     eras interleave and no era of ``new`` began at all.
