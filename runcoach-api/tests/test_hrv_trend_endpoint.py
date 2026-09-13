@@ -994,8 +994,9 @@ def test_a_reported_tier_change_sits_beside_the_unclipped_window_once_the_era_is
     clipped at its own first day, so the pin discriminates the two states
     rather than describing one."""
     era_first_day = D - timedelta(days=era_age)
+    day_before_era = era_first_day - timedelta(days=1)
     body = _rendered(
-        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), era_first_day - timedelta(days=1))]
+        [_row(day, 6, SNAPSHOT, 40.0, f"snap-{day}") for day in days(D - timedelta(days=126), day_before_era)]
         + [_row(day, 7, STRAP, 40.0, f"strap-{day}") for day in days(era_first_day, D)]
     )
     unclipped = [d.isoformat() for d in hrv_trend.baseline_window(D)]
