@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -1022,6 +1023,160 @@ def test_the_old_eras_first_day_bounds_the_new_tiers_strays_not_its_first_instan
     assert (day_before.tier, day_before.reset_reason, day_before.reset_on) == (SNAPSHOT, "tier_change", ago(33))
     assert day_before.baseline_window == (ago(33), target - timedelta(days=7))
     assert (same_day.tier, same_day.reset_reason, same_day.reset_on) == (SNAPSHOT, None, None)
+
+
+# ---------------------------------------------------------------------------
+# T098 (D4a, 2026-09-13): the clip is not the report
+#
+# The era boundary and the baseline clip are a property of the athlete's
+# capture history; whether rule 4 *reports* a ``tier_change`` is a separate
+# question about what the athlete is told. Until T098 the two were one
+# branch, so the tolerance's week half -- judged on the **sliding** week --
+# reached ``baseline`` and could flip an athlete-facing verdict with no new
+# data (review cycle 4, G-C4-1). These three pins are that axis; all three
+# are red at ccf44ef.
+# ---------------------------------------------------------------------------
+
+
+def trial_then_switch(base: date, strays: tuple[int, ...]) -> list[dict]:
+    """G-C4-1's series: a daily ``health_snapshot`` at 06:00 from
+    ``base-126`` to ``base-40``; a **10-day** ``chest_strap_raw`` trial at
+    07:00 over ``[base-60, base-51]`` whose readings are deeply suppressed
+    (25 ms), inside the 13-day tolerance T095 grants; a genuine switch to a
+    daily strap from ``base-39``, ordinary to ``base-7`` and suppressed
+    (33 ms) through the judged week; and one snapshot capture at 08:00 on
+    each of ``strays`` days before ``base``."""
+    rows = readings(SNAPSHOT, span(ago(126, base), ago(40, base)), 40.0, "snap")
+    rows += [row(local(day, 7), STRAP, 25.0, f"trial-{day}") for day in span(ago(60, base), ago(51, base))]
+    rows += [row(local(day, 7), STRAP, 40.0, f"strap-{day}") for day in span(ago(39, base), ago(7, base))]
+    rows += [
+        row(local(day, 7), STRAP, 33.0, f"strap-{day}")
+        for day in span(ago(6, base), base + timedelta(days=4))
+    ]
+    rows += [row(local(ago(n, base), 8), SNAPSHOT, 40.0, f"snap-stray-{n}") for n in strays]
+    return rows
+
+
+def test_the_band_does_not_step_when_the_judged_week_slides_past_the_old_tiers_captures() -> None:
+    """G-C4-1's day-by-day walk, with the three snapshot captures fixed on
+    ``base-4``, ``base-3``, ``base-2`` and **no new data at all**. At
+    ccf44ef the third capture covered the judged week, the eras read as
+    interleaved, the reset was withdrawn and ``baseline`` was un-clipped
+    from ``[base-39, D-7]`` back to ``[D-66, D-7]``, dragging the
+    seven-week-old trial back into the band: ``hrv_normal`` on ``base``,
+    ``base+1`` and ``base+2`` (``lo`` 3.4791, ``n`` 43) and
+    ``hrv_suppressed`` from ``base+3`` (``lo`` 3.6459, ``n`` 36) once the
+    week had slid past the captures -- the under-calling direction
+    ``research/00`` §1.7 tolerates least and ``judge``'s own docstring
+    names as forbidden.
+
+    Under D4a the clip is unconditional: the baseline begins on the era's
+    true first day on every one of the five days, ``n`` grows by exactly
+    one a day as the window slides, the band drifts by less than 0.02 a
+    day with no step, and the verdict is the era-correct
+    ``hrv_suppressed`` throughout. Perturbation: restore the conditional
+    clip (clip only when the reset is reported) and this goes red."""
+    base = date(2026, 9, 7)
+    rows = trial_then_switch(base, (4, 3, 2))
+    walk = [base + timedelta(days=k) for k in range(5)]
+    era_first_day = ago(39, base)
+
+    results = [build(rows, target=target) for target in walk]
+    verdicts = [hrv_trend.judge(result) for result in results]
+
+    assert [result.baseline_window[0] for result in results] == [era_first_day] * 5
+    assert [verdict.baseline_n for verdict in verdicts] == [33, 34, 35, 36, 37]
+    assert [verdict.verdict for verdict in verdicts] == [hrv_trend.VERDICT_SUPPRESSED] * 5
+    los = [verdict.band.lo for verdict in verdicts]
+    assert max(abs(b - a) for a, b in pairwise(los)) < 0.02
+
+
+def test_a_third_old_tier_capture_in_the_judged_week_moves_the_report_and_nothing_else() -> None:
+    """G-C4-1's pair, at one target date: the same series with **two**
+    snapshot captures in the judged week and with **three**. The third is a
+    capture on a tier that is not the baseline tier -- it contributes
+    nothing to the week mean -- and under D4a it decides only what the
+    athlete is *told*: the band, ``baseline.n``, the reported window and
+    the verdict are identical on both sides, and ``reset_reason`` /
+    ``reset_on`` are the one difference. At ccf44ef the pair read
+    ``tier_change`` / ``n`` 33 / ``lo`` 3.6789 / ``hrv_suppressed`` against
+    ``null`` / ``n`` 43 / ``lo`` 3.4791 / ``hrv_normal``."""
+    base = date(2026, 9, 7)
+    two = build(trial_then_switch(base, (4, 3)), target=base)
+    three = build(trial_then_switch(base, (4, 3, 2)), target=base)
+    era_first_day = ago(39, base)
+
+    assert two.baseline_window == three.baseline_window == (era_first_day, base - timedelta(days=7))
+    two_verdict, three_verdict = hrv_trend.judge(two), hrv_trend.judge(three)
+    assert two_verdict.baseline_n == three_verdict.baseline_n == 33
+    assert math.isclose(two_verdict.band.lo, three_verdict.band.lo, rel_tol=0, abs_tol=1e-12)
+    assert two_verdict.verdict == three_verdict.verdict == hrv_trend.VERDICT_SUPPRESSED
+    assert (two.reset_reason, two.reset_on) == ("tier_change", era_first_day)
+    assert (three.reset_reason, three.reset_on) == (None, None)
+
+
+@pytest.mark.parametrize("strays", [(4, 3), (4, 3, 2)])
+def test_the_clipped_readings_are_listed_before_reset_tier_change(strays: tuple[int, ...]) -> None:
+    """G-C4-3. The readings the clip removes are neither in ``baseline``
+    nor nowhere: they are listed ``before_reset: tier_change``, which is
+    what ``contracts/openapi.yaml`` publishes as a value clients may
+    receive and what ``_exclude_before_reset``'s disjoint-and-exhaustive
+    invariant requires. Exhaustiveness is asserted over ``[D-66, D]``:
+    every stored row there is in the series or in ``excluded``, exactly
+    once. Parameterised over both sides of the pair above, because the
+    listing is a property of the clip and not of the report -- at ccf44ef
+    the ten trial readings were in neither list on either side."""
+    base = date(2026, 9, 7)
+    rows = trial_then_switch(base, strays)
+    result = build(rows, target=base)
+    trial_ids = {r["session_id"] for r in rows if r["session_id"].startswith("trial-")}
+
+    assert {entry.session_id for entry in result.excluded if entry.reason == "before_reset: tier_change"} == trial_ids
+    assert trial_ids.isdisjoint({r.session_id for r in result.series})
+
+    in_windows = {
+        r["session_id"]
+        for r in rows
+        if ago(66, base) <= datetime.fromisoformat(r["start_time"]).astimezone(AUCKLAND).date() <= base
+    }
+    listed = [r.session_id for r in result.series] + [entry.session_id for entry in result.excluded]
+    assert sorted(session_id for session_id in listed if session_id in in_windows) == sorted(in_windows)
+    assert len(listed) == len(set(listed))
+
+
+def test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of() -> None:
+    """The one place T098's selection can differ from a plain "fewest stray
+    days": two candidate boundaries, one with **fewer** strays that the
+    judged week is not clear of and one with **more** that it is. The rule
+    orders on the week half first, and that is not decoration -- it is what
+    makes T098 change no reported reset: at ccf44ef only the week-clear
+    boundary was a candidate at all, so it was returned, and it still is.
+    Dropping the term (``key=(-stray_days, a_end)``) returns the 07-01
+    boundary with ``reported`` false and **withdraws a reset rule 4 reports
+    today** -- red here, green over all five F005 suites, which is why it is
+    pinned directly on ``_era_boundary`` rather than through a series:
+    a boundary that the judged week is clear of needs a ``B_start`` after
+    the week's old-tier captures, which puts 14+ stray days of the new tier
+    behind it in every series ``build_series`` can be handed.
+
+    ``A`` (snapshot) reads once on 07-01 and again on 09-03/04/05, inside
+    the judged week; ``B`` (strap) reads on 07-01 (an hour later) through
+    07-04 and again on 09-06. The 07-01 boundary's strays are the three
+    week captures (3 days, 3 in the week); the 09-05 boundary's are the
+    four early strap days (4 days, none in the week).
+    """
+    def reading(day: date, hh: int, tier: str) -> hrv_trend.Reading:
+        start_time = local(day, hh)
+        return hrv_trend.Reading(day, f"{tier}-{day}-{hh}", tier, 40.0, datetime.fromisoformat(start_time))
+
+    old = [reading(date(2026, 7, 1), 6, SNAPSHOT)]
+    old += [reading(day, 6, SNAPSHOT) for day in span(date(2026, 9, 3), date(2026, 9, 5))]
+    new = [reading(day, 7, STRAP) for day in span(date(2026, 7, 1), date(2026, 7, 4))]
+    new += [reading(date(2026, 9, 6), 7, STRAP)]
+
+    assert hrv_trend._era_boundary(old, new, hrv_trend.judged_window(D)) == hrv_trend.EraBoundary(
+        first_day=date(2026, 9, 6), reported=True
+    )
 
 
 # ---------------------------------------------------------------------------

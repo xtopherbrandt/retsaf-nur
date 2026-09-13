@@ -125,10 +125,16 @@ REASON_UNKNOWN_TIER = "unknown_tier"
 REASON_UNUSABLE_VALUE = "unusable_value"
 REASON_OFF_BASELINE_TIER = "off_baseline_tier"
 REASON_SAME_DAY_LATER_CAPTURE = "same_day_later_capture"
-#: A reading inside ``[D-66, D]`` that predates a reset (T092): it
-#: contributed to neither the baseline nor the window, and ``research/00``
-#: §1.6 wants it listed rather than silently dropped. Parameterised with the
-#: reset reason: ``before_reset: coverage_gap``.
+#: A reading inside ``[D-66, D]`` that predates the day the current
+#: baseline era began (T092): it contributed to neither the baseline nor
+#: the window, and ``research/00`` §1.6 wants it listed rather than
+#: silently dropped. Parameterised with the reason the era began:
+#: ``before_reset: coverage_gap`` for a resumption after a silence, and
+#: ``before_reset: tier_change`` for the readings of the resolved tier that
+#: predate its era boundary -- **whether or not the ``tier_change`` is
+#: reported**, because the clip is a property of the capture history and
+#: the report is a statement about what the athlete is told (D4a,
+#: decision log 2026-09-13; T098, which made this member reachable).
 REASON_BEFORE_RESET = "before_reset"
 
 #: The two reset reasons (``HrvSeries.reset_reason``, T092). There is no
@@ -182,12 +188,17 @@ class HrvSeries:
     baseline: tuple[Reading, ...]
     window: tuple[Reading, ...]
     excluded: tuple[Exclusion, ...]
-    #: T092. The local day the current baseline era began, when a reset was
-    #: detected, and why: ``REASON_COVERAGE_GAP`` or ``REASON_TIER_CHANGE``.
-    #: ``baseline_window`` is then clipped to ``[max(D-66, reset_on), D-7]``
-    #: -- a tier-change era's first day may precede the window (T094). Both
-    #: ``None`` when nothing reset. Defaulted so a series can be built
-    #: without naming them.
+    #: T092. The local day the current baseline era began, when a reset is
+    #: **reported**, and why: ``REASON_COVERAGE_GAP`` or
+    #: ``REASON_TIER_CHANGE``. Both ``None`` when nothing is reported.
+    #: Defaulted so a series can be built without naming them.
+    #: ``baseline_window`` is **not** a function of these: it is clipped to
+    #: ``[max(D-66, <the era's first day>), D-7]`` whenever an era boundary
+    #: exists, whether or not rule 4 reports it (D4a, decision log
+    #: 2026-09-13; T098) -- a tier-change era's first day may precede the
+    #: window (T094). So a ``null`` ``reset_reason`` on a clipped window is
+    #: a reachable state, and it is the athlete being told nothing about a
+    #: baseline that is nonetheless era-correct.
     reset_on: date | None = None
     reset_reason: str | None = None
 
@@ -450,19 +461,26 @@ def build_series(
     step, because a coverage gap clips the baseline window *before* the
     tier is resolved on it -- the fresh baseline is begun from the
     resumption on whatever tier sustains it there. The sustained-tier-change
-    rule runs after the series is built and asserts a change only when the
-    resolved baseline tier sustains the window, differs from the tier that
-    sustained the previous window ``[D-126, D-67]`` (``sustained_tier``,
-    rule 1 alone), and its era does not interleave with the previous
-    tier's over both windows and the judged week -- the readings on the
-    wrong side of the era boundary, of either tier, are isolated
-    (``_isolated``: fewer than 14 distinct days, fewer than 3 in the
-    judged week; T095's density tolerance) rather than an era
-    (``tier_change_reset``,
-    T094; judged over both windows since sprint-005 review cycle 3);
-    ``reset_on`` is the era's first reading after the old era's last, and
-    the reported baseline window is clipped to ``[max(D-66, reset_on),
-    D-7]``. ``rows`` must span ``[D-126, D]`` for the rule to be able to
+    rule runs after the series is built: it finds the era boundary between
+    the tier that sustained the previous window ``[D-126, D-67]``
+    (``sustained_tier``, rule 1 alone) and the resolved tier, when the
+    latter sustains the current window and the readings on the wrong side
+    of that boundary are never dense enough to be a baseline of their own
+    (``tier_change_reset`` / ``_era_boundary``, T094; judged over both
+    windows since sprint-005 review cycle 3, with T095's density
+    tolerance).
+
+    **The clip and the report are two consequences of that boundary, not
+    one** (D4a, decision log 2026-09-13; T098). The baseline window is
+    clipped to ``[max(D-66, <the era's first day>), D-7]``, and the
+    readings the clip removes leave the series for ``excluded`` as
+    ``before_reset: tier_change``, **whenever a boundary exists**;
+    ``reset_on`` / ``reset_reason`` are reported only when rule 4(c)'s week
+    half also holds (``_isolated``: fewer than 3 stray days inside
+    ``[D-6, D]``). Coupled, as they were until T098, the week half -- judged
+    on the **sliding** judged week -- reached the band, and one capture of
+    the other tier, contributing nothing to the week mean, un-clipped a
+    finished device era back into it (review cycle 4, G-C4-1). ``rows`` must span ``[D-126, D]`` for the rule to be able to
     fire, since a narrower read leaves the previous window empty, which
     reads as "thin" and never as a change. See ``coverage_gap_reset`` and
     ``tier_change_reset``.
@@ -534,13 +552,25 @@ def build_series(
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
     if reset_on is None:
-        reset_on = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
-        if reset_on is not None:
-            reset_reason = REASON_TIER_CHANGE
-            # The era may have begun before D-66 (T094: ``reset_on`` is its
-            # true first day, not the first inside the window); the window
-            # reported is the schema's ``[max(D-66, reset_on), D-7]``.
-            baseline = (max(reset_on, baseline[0]), baseline[1])
+        boundary = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
+        if boundary is not None:
+            # D4a (T098): the clip is unconditional. The era may have begun
+            # before D-66 (T094: ``first_day`` is its true first day, not
+            # the first inside the window); the window reported is the
+            # schema's ``[max(D-66, reset_on), D-7]``. The readings the clip
+            # removes leave the series for ``excluded`` as
+            # ``before_reset: tier_change``, so they are in exactly one list
+            # (``research/00`` §1.6) and the contract's published enum
+            # member is reachable.
+            baseline = (max(boundary.first_day, baseline[0]), baseline[1])
+            kept, excluded = _exclude_before_reset(
+                list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
+            )
+            series = tuple(kept)
+            excluded.sort(key=lambda e: (e.date, e.session_id))
+            if boundary.reported:
+                reset_on = boundary.first_day
+                reset_reason = REASON_TIER_CHANGE
 
     return HrvSeries(
         target_date=target_date,
@@ -818,9 +848,19 @@ def _silence_between(earlier: date, later: date) -> int:
 def _exclude_before_reset(
     readings: list[Reading], excluded: list[Exclusion], reset_on: date, reason: str
 ) -> tuple[list[Reading], list[Exclusion]]:
-    """Move every reading dated before ``reset_on`` from the series into the
-    exclusions, named ``before_reset: <reason>``, so ``readings`` and
-    ``excluded`` stay disjoint and exhaustive over the rows in ``[D-66, D]``."""
+    """Move every reading dated before ``reset_on`` out of the series into
+    the exclusions, named ``before_reset: <reason>``, so what is kept and
+    what is excluded stay disjoint and exhaustive over the rows in
+    ``[D-66, D]``.
+
+    Both resets call it (T098): the gap rule on the pre-filter readings of
+    every tier, before the baseline tier is resolved on the clipped window,
+    and the era-boundary clip on the collapsed one-per-day series, after
+    it -- off-tier rows are already listed ``off_baseline_tier`` there and
+    must not be listed twice. Until T098 the tier-change branch narrowed
+    ``baseline`` without moving anything, so the readings it dropped were
+    in neither list and the contract's ``before_reset: tier_change`` was
+    unreachable (review cycle 4, G-C4-3)."""
     kept = [r for r in readings if r.date >= reset_on]
     dropped = [
         Exclusion(r.date, r.session_id, f"{REASON_BEFORE_RESET}: {reason}")
@@ -852,43 +892,91 @@ def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
     )
 
 
-def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]) -> date | None:
-    """Clause (c) with the tolerance: the first local day of ``new``'s era
-    when the two eras do not interleave, else ``None``.
+@dataclass(frozen=True)
+class EraBoundary:
+    """Where the resolved tier's era begins, and whether rule 4 reports it.
+
+    D4a (decision log 2026-09-13; T098): **clip always, report
+    conditionally**. ``first_day`` is the era's true first day -- the day
+    ``baseline`` is clipped at, whether or not anything is reported --
+    and ``reported`` says whether rule 4(c)'s week half also holds, which
+    is the only thing that decides what the athlete is *told*. The two
+    were one branch until T098, so the tolerance's week half, judged on
+    the **sliding** judged week, reached the band: a capture on a tier
+    that is not the baseline tier, contributing nothing to the week mean,
+    withdrew the reset, un-clipped ``baseline`` back to ``[D-66, D-7]``
+    and dragged a seven-week-old device era back into it -- ``hrv_normal``
+    on a week that reads suppressed against the era-correct baseline,
+    flipping with no new data (review cycle 4, G-C4-1).
+    """
+
+    #: ``B_start``'s local day: the resolved tier's first reading after the
+    #: old era's last. ``build_series`` clips ``baseline`` to
+    #: ``[max(D-66, first_day), D-7]`` on it unconditionally.
+    first_day: date
+    #: Rule 4(c)'s week half on this boundary's strays: ``reset_on`` /
+    #: ``reset_reason`` are reported only when it holds.
+    reported: bool
+
+
+def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[date, date]) -> EraBoundary | None:
+    """Clause (c) with the tolerance: where ``new``'s era begins, and
+    whether the boundary is one rule 4 reports -- or ``None`` when the two
+    eras interleave and no era of ``new`` began at all.
 
     A *boundary* is an old-tier reading ``A_end`` and the first new-tier
     reading after it, ``B_start``, with no old-tier reading in between. The
     readings on the wrong side of it -- every old-tier reading after
     ``B_start``, and every new-tier reading from the old era's **first
-    local day** up to ``A_end`` -- are the *strays*, and the boundary is an
-    era boundary when, **together**, they are ``_isolated``. Together, not
-    each side on its own: a finished trial split down the middle leaves
-    fewer than 14 on either side and 20 in all, and it is one interleaved
-    era. From the old era's first *day*, not its first instant: the day
-    is the unit every count is taken in (T095), and a new-tier capture
-    earlier that same morning is a day the new tier was in use inside the
-    old era -- read by the instant, a daily device's reading on the
-    morning a trial began fell outside the span, and on the one day the
-    trial held exactly 14 in the previous window the 13 inside were
-    "isolated" and a phantom reset was asserted (M1's series, 2026-08-12).
-    New-tier readings before that day belong to the era the old tier
-    replaced and are neither strays nor a start (``reset_on`` is the first
-    reading *after* the old era). Two readings at the very same instant
-    are simultaneous, not strays: a new-tier capture at the instant of
-    ``A_end`` means the old tier did not predate the new one (the
-    switch-day tie, interleaved, unchanged from review cycle 3), and an
-    old-tier capture at the instant of ``B_start`` is judged at its own
-    turn as ``A_end``, where the same tie refuses it. Of several era
-    boundaries the one with the fewest stray days is the era boundary --
-    the switch that explains the most readings -- ties to the later one,
-    the younger baseline being the cautious reading (``research/00``
-    §1.7). ``reset_on`` is ``B_start``'s local day.
+    local day** up to ``A_end`` -- are the *strays*. **One rule decides
+    both consequences** (D4a, decision log 2026-09-13):
+
+    * a boundary is an **era boundary** when its strays, together, are
+      fewer than ``MIN_BASELINE_READINGS`` distinct local days -- never
+      dense enough to be a baseline of their own, so the old era ended
+      before the new one began. Of several, the one whose strays are also
+      absent from the judged week (``_isolated``, the tolerance's week
+      half) first, then the one with the fewest stray days -- the switch
+      that explains the most readings -- ties to the later one, the
+      younger baseline being the cautious reading (``research/00`` §1.7);
+    * that boundary's ``B_start`` day is where the resolved tier's era
+      begins, **always**: ``build_series`` clips ``baseline`` there
+      whether or not anything is reported, because the era boundary is a
+      property of the athlete's capture history;
+    * it is **reported** as a ``tier_change`` only when its strays are
+      ``_isolated`` -- also fewer than ``MIN_WINDOW_READINGS`` distinct
+      days inside ``[D-6, D]``. That half says whether the other device
+      was in use *this week*, which is a statement about what the athlete
+      is told, not about where the era began, and it is judged on the
+      sliding week (rule 2's own edge).
+
+    Ordering the candidates by the week half first is what keeps every
+    reported reset exactly where it was before T098: an isolated boundary
+    is always a candidate (``_isolated`` implies fewer than 14 stray days),
+    so whenever one exists it is still chosen, by fewest stray days and
+    the same tie-break, and ``reset_on`` does not move.
+
+    Strays are counted from the old era's first *day*, not its first
+    instant: the day is the unit every count is taken in (T095), and a
+    new-tier capture earlier that same morning is a day the new tier was
+    in use inside the old era -- read by the instant, a daily device's
+    reading on the morning a trial began fell outside the span, and on the
+    one day the trial held exactly 14 in the previous window the 13 inside
+    were "isolated" and a phantom reset was asserted (M1's series,
+    2026-08-12). New-tier readings before that day belong to the era the
+    old tier replaced and are neither strays nor a start (``first_day`` is
+    the first reading *after* the old era). Two readings at the very same
+    instant are simultaneous, not strays: a new-tier capture at the
+    instant of ``A_end`` means the old tier did not predate the new one
+    (the switch-day tie, interleaved, unchanged from review cycle 3), and
+    an old-tier capture at the instant of ``B_start`` is judged at its own
+    turn as ``A_end``, where the same tie refuses it.
     """
     old = sorted(old, key=lambda r: r.start_time)
     new = sorted(new, key=lambda r: r.start_time)
     new_instants = [r.start_time for r in new]
     from_old_first_day = bisect_left([r.date for r in new], old[0].date)
-    boundaries: list[tuple[int, datetime, date]] = []
+    boundaries: list[tuple[bool, int, datetime, date]] = []
     for i, a_end in enumerate(old):
         j = bisect_right(new_instants, a_end.start_time)  # the first new-tier reading after A_end
         if j == len(new):
@@ -898,12 +986,15 @@ def _era_boundary(old: Iterable[Reading], new: Iterable[Reading], judged: tuple[
         if j > from_old_first_day and new_instants[j - 1] == a_end.start_time:
             continue  # simultaneous: the old tier does not predate the new one
         strays = (*old[i + 1 :], *new[from_old_first_day:j])
-        if _isolated(strays, judged):
-            boundaries.append((len(_days(strays)), a_end.start_time, new[j].date))
+        stray_days = len(_days(strays))
+        if stray_days < MIN_BASELINE_READINGS:
+            boundaries.append((_isolated(strays, judged), stray_days, a_end.start_time, new[j].date))
     if not boundaries:
         return None
-    _, _, first_day = max(boundaries, key=lambda boundary: (-boundary[0], boundary[1]))
-    return first_day
+    reported, _, _, first_day = max(
+        boundaries, key=lambda boundary: (boundary[0], -boundary[1], boundary[2])
+    )
+    return EraBoundary(first_day=first_day, reported=reported)
 
 
 def tier_change_reset(
@@ -912,12 +1003,24 @@ def tier_change_reset(
     baseline_readings: Iterable[Reading],
     week_readings: Iterable[Reading],
     judged: tuple[date, date],
-) -> date | None:
-    """The local day a fresh baseline begins on after a sustained tier
-    change, or ``None``.
+) -> EraBoundary | None:
+    """The era boundary between the previous window's tier and the resolved
+    one -- the local day a fresh baseline begins on, and whether it is
+    *reported* -- or ``None`` when there is none.
 
-    ``tier_change`` is asserted when, and only when (rule 4, T094; decision
-    log 2026-09-11, tolerance 2026-09-12):
+    **The clip and the report are two consequences of one boundary** (D4a,
+    decision log 2026-09-13; T098). ``build_series`` clips ``baseline`` to
+    ``[max(D-66, first_day), D-7]`` whenever this returns a boundary, and
+    reports ``reset_reason`` / ``reset_on`` only when the boundary is
+    ``reported``. Clauses (a) and (b) below, and the existence of an era
+    boundary, gate both; the two differ in exactly one thing, the week half
+    of clause (c)'s tolerance (``_era_boundary``). Before T098 they were one
+    branch, so a capture of the *other* tier in the judged week -- which
+    contributes nothing to the week mean -- withdrew the reset and with it
+    the clip, and a finished device era re-entered the band (G-C4-1).
+
+    A boundary is found, and ``tier_change`` is *reported*, when and only
+    when (rule 4, T094; decision log 2026-09-11, tolerance 2026-09-12):
 
     (a) the resolved baseline tier ``tier`` **sustains** the current
         baseline window -- read on at least ``MIN_BASELINE_READINGS``
@@ -939,7 +1042,11 @@ def tier_change_reset(
         ``MIN_BASELINE_READINGS`` distinct days in all and fewer than
         ``MIN_WINDOW_READINGS`` inside the judged week), so the old
         era ended before the new one began and what lies across the
-        boundary is corroboration, not use (``_era_boundary``). Compared
+        boundary is corroboration, not use (``_era_boundary``). Its two
+        halves are read apart (T098): the candidacy half -- fewer than
+        ``MIN_BASELINE_READINGS`` stray days in all -- is what makes the
+        boundary an era boundary and clips the baseline; the week half is
+        what makes it ``reported``. Compared
         on the captures' instants, as the same-day collapse orders them,
         so two devices worn on the switch morning are ordered by which was
         worn first; a previous-tier capture at the very instant of the

@@ -1414,15 +1414,36 @@ components:
               minItems: 2
               maxItems: 2
               description: >
-                Closed local-date interval [max(date-66, reset_on), date-7]. Empty
+                Closed local-date interval [max(date-66, R), date-7], where R is
+                the day the current baseline era began. R is not reset_on: a
+                tier-change era boundary clips this window whether or not the
+                change is reported, so a clipped window beside a null
+                reset_reason is a correct state (the readings clipped away are
+                listed before_reset: tier_change). Empty
                 after a reset landing inside the judged week, rendered as the
                 formula yields it (first after last) with n 0 — clients must not
                 assume window[0] ≤ window[1].
             n: { type: integer, description: "Baseline readings, one per local day on `tier`." }
             tier: { type: string, nullable: true, description: "The source tier the baseline and window are built on." }
             established: { type: boolean, description: "n ≥ min_baseline_readings. Below it, hrv_suppressed is never emitted." }
-            reset_on: { type: string, format: date, nullable: true }
-            reset_reason: { type: string, enum: [coverage_gap, tier_change], nullable: true }
+            reset_on:
+              type: string
+              format: date
+              nullable: true
+              description: >
+                The day the current baseline era began, when the re-establishment
+                is reported. It says what the athlete is told, not how window was
+                built — a null reset_on does not mean the baseline spans the full
+                60 days; read window.
+            reset_reason:
+              type: string
+              enum: [coverage_gap, tier_change]
+              nullable: true
+              description: >
+                Why the re-establishment is reported. The baseline clip is decided
+                by the era boundary alone, so a null here can sit beside a clipped
+                window, and a reported tier_change never sits beside an unclipped
+                one.
         window:
           type: array
           items: { type: string, format: date }

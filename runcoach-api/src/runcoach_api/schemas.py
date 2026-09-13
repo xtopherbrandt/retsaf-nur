@@ -60,8 +60,12 @@ class Band(BaseModel):
 class Baseline(BaseModel):
     window: tuple[datetime.date, datetime.date] = Field(
         description=(
-            "Closed local-date interval the baseline readings were taken from: [max(date-66, reset_on), "
-            "date-7]. When a reset lands after date-7 (a coverage gap ending inside the judged week) the "
+            "Closed local-date interval the baseline readings were taken from: [max(date-66, R), "
+            "date-7], where R is the day the current baseline era began. **R is not reset_on.** A "
+            "tier-change era boundary clips this window whether or not the change is reported, so a "
+            "clipped window beside a null `reset_reason` is a correct state: the band is era-correct "
+            "and the athlete is simply told nothing about it (the readings clipped away are listed "
+            "`before_reset: tier_change`). For `coverage_gap` R is reset_on. When a reset lands after date-7 (a coverage gap ending inside the judged week) the "
             "interval is empty and is rendered exactly as the formula yields it -- first after last -- "
             "with `n` 0, so the clip can be verified from `reset_on` and `date`; clients must not assume "
             "window[0] <= window[1]."
@@ -79,9 +83,13 @@ class Baseline(BaseModel):
     )
     reset_on: datetime.date | None = Field(
         description=(
-            "Local day the current baseline era began, when a reset was detected; else null. For "
-            "`tier_change` it is the era's true first day and may precede window[0] (the window is clipped "
-            "at date-66; the era is not, and reset_on does not slide as it ages). For `coverage_gap` it is "
+            "Local day the current baseline era began, **when the re-establishment is reported**; else "
+            "null. It says what the athlete is told, not how `window` was built: a tier-change era "
+            "boundary clips `window` whenever it exists, and is reported here only when the other tier "
+            "was also not in use in the judged week [date-6, date]. So a null reset_on does not mean the "
+            "baseline spans the full 60 days -- read `window`. For `tier_change` it is the era's true "
+            "first day and may precede window[0] (the window is clipped at date-66; the era is not, and "
+            "reset_on does not slide as it ages). For `coverage_gap` it is "
             "the resumption day and never precedes window[0]: the gap is reported only while the resumption "
             "lies inside [date-66, date], and window[0] is the resumption itself for as long as it is."
         )
@@ -95,7 +103,10 @@ class Baseline(BaseModel):
             "[date-66, date] -- 67 days; `tier_change` until the previous window [date-126, date-67] is no "
             "longer sustained by the old tier. A resumption that was also a device switch is therefore "
             "reported as `coverage_gap` first, then as `tier_change` on the same reset_on, then as null -- "
-            "one era, three reports, no event between them (F005 Negative Class)."
+            "one era, three reports, no event between them (F005 Negative Class). The reason is the "
+            "**report** only: the baseline clip is decided by the era boundary alone, so a null here can "
+            "sit beside a clipped `window` and a reported `tier_change` never sits beside an unclipped "
+            "one (F005 decision log D4, 2026-09-13)."
         )
     )
 
