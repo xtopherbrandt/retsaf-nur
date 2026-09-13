@@ -86,6 +86,14 @@ def readings(tier: str, days: list[date], value: float = 40.0, prefix: str | Non
     return [row(local(day, 6), tier, value, f"{prefix}-{day}" if prefix else None) for day in days]
 
 
+def parsed_reading(day: date, hh: int, tier: str) -> hrv_trend.Reading:
+    """One already-parsed ``Reading`` taken at local ``hh:00`` on ``day``:
+    what ``build_series`` hands the era rules, for the pins that call
+    ``_era_boundary`` directly. The value is the same for every reading, so
+    only the day, the hour and the tier tell them apart."""
+    return hrv_trend.Reading(day, f"{tier}-{day}-{hh}", tier, 40.0, datetime.fromisoformat(local(day, hh)))
+
+
 def span(first: date, last: date, step: int = 1) -> list[date]:
     """Every ``step``-th local day of the closed interval ``[first, last]``."""
     days = []
@@ -1441,14 +1449,10 @@ def test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of() -> None:
     week captures (3 days, 3 in the week); the 09-05 boundary's are the
     four early strap days (4 days, none in the week).
     """
-    def reading(day: date, hh: int, tier: str) -> hrv_trend.Reading:
-        start_time = local(day, hh)
-        return hrv_trend.Reading(day, f"{tier}-{day}-{hh}", tier, 40.0, datetime.fromisoformat(start_time))
-
-    old = [reading(date(2026, 7, 1), 6, SNAPSHOT)]
-    old += [reading(day, 6, SNAPSHOT) for day in span(date(2026, 9, 3), date(2026, 9, 5))]
-    new = [reading(day, 7, STRAP) for day in span(date(2026, 7, 1), date(2026, 7, 4))]
-    new += [reading(date(2026, 9, 6), 7, STRAP)]
+    old = [parsed_reading(date(2026, 7, 1), 6, SNAPSHOT)]
+    old += [parsed_reading(day, 6, SNAPSHOT) for day in span(date(2026, 9, 3), date(2026, 9, 5))]
+    new = [parsed_reading(day, 7, STRAP) for day in span(date(2026, 7, 1), date(2026, 7, 4))]
+    new += [parsed_reading(date(2026, 9, 6), 7, STRAP)]
 
     assert hrv_trend._era_boundary(old, new, hrv_trend.judged_window(D)) == hrv_trend.EraBoundary(
         first_day=date(2026, 9, 6), reported=True
@@ -1522,15 +1526,10 @@ def test_the_era_boundary_tie_on_stray_days_goes_to_the_later_boundary() -> None
     the athlete's band would be built over a reading from the era that
     ended.
     """
-
-    def reading(day: date, hh: int, tier: str) -> hrv_trend.Reading:
-        start_time = local(day, hh)
-        return hrv_trend.Reading(day, f"{tier}-{day}-{hh}", tier, 40.0, datetime.fromisoformat(start_time))
-
     last_snapshot = ago(70)
     strays = [last_snapshot + timedelta(days=k) for k in (2, 4)]
-    old = [reading(day, 6, SNAPSHOT) for day in span(ago(126), last_snapshot) + strays]
-    new = [reading(day, 7, STRAP) for day in span(last_snapshot + timedelta(days=1), D)]
+    old = [parsed_reading(day, 6, SNAPSHOT) for day in span(ago(126), last_snapshot) + strays]
+    new = [parsed_reading(day, 7, STRAP) for day in span(last_snapshot + timedelta(days=1), D)]
     judged = hrv_trend.judged_window(D)
 
     # The two tying boundaries' strays: the later boundary's are the second
