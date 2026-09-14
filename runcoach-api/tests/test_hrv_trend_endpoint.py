@@ -846,29 +846,57 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 #:    reported ``tier_change``);
 #: 3. the mechanism that makes the clip stop mattering, named with the
 #:    expression that implements it;
-#: 4-6. T105's correction: the no-op stretch is conditional on the report
-#:    outliving the day ``date-66`` reaches ``R``, that condition is the old
-#:    tier still sustaining ``[date-126, date-67]``, and the inference a
-#:    client must *not* draw.
+#: 4-6. T105's correction as T109 re-derived it: the no-op stretch is
+#:    conditional on the report outliving the day ``date-66`` reaches ``R``;
+#:    that condition is *liveness*, which is rule 4's three conditions
+#:    together and not clause (b) alone; and the inference a client must
+#:    *not* draw.
+#:
+#: Re-derived from the code, not from the prose, in T109 (review cycle 6,
+#: G-C6-6): entry 5 used to read "only while the old tier still sustains the
+#: previous window [date-126, date-67]", transcribed from the sentence it
+#: pinned in the same pass that wrote it, and that sentence was false -- so
+#: this tuple held a false equivalence in place and made removing it go red.
+#: Each entry below was re-checked against ``build_series`` at
+#: ``D = R + 66`` on a daily switch series before it was kept: 1 and 2 on a
+#: reported boundary with ``R > D-66`` (window clipped) and on the same
+#: series with three old-tier days in ``[D-6, D]`` (null reason, same
+#: clipped window); 3 at ``R+66`` and ``R+79`` (window un-clipped); 5 on the
+#: three one-clause-fails series -- (a) fails with 11 strap days while the
+#: snapshot still holds 60 in ``[D-126, D-67]``, (b) fails with 10 snapshot
+#: days there, the week half fails on three stray days -- each null while
+#: the other two conditions hold; 6 on T105's sparse-old-tier series, where
+#: ``tier_change`` is reported on ``R+20..R+44`` and clipped on every one of
+#: those days, 22 days before ``date-66`` reaches ``R``.
 RESET_REASON_CLAIMS = (
     "a null here can sit beside a clipped `window`",
     "a reported `tier_change` is always clipped",
     "once the era's first day is date-66 or older the clip `max(date-66, R)` is a no-op",
     "that no-op stretch is conditional, not promised",
-    "only while the old tier still sustains the previous window [date-126, date-67]",
+    "liveness is rule 4's three conditions together, not any one of them alone",
     "a client cannot infer from seeing a `tier_change` that an un-clipped `window` will follow",
 )
 
 #: Phrasings withdrawn as false, which no copy may carry again: T103's
 #: universal ("a reported ``tier_change`` never sits beside an unclipped
-#: one") and T105's replacement universal ("the last stretch of *every*
-#: report's lifetime"). The one-shot ``! grep -q`` in those tasks' own
-#: acceptance probes is the weak form ``sweep-the-claim-not-the-diff``
-#: warns about -- it never runs again. These do.
+#: one"), T105's replacement universal ("the last stretch of *every*
+#: report's lifetime"), and T109's two spellings of T105's false
+#: equivalence -- the gloss that equated report-liveness with clause (b)
+#: ("only while the old tier still sustains ...") and the lifetime sentence
+#: that stated the same equivalence the other way round ("`tier_change`
+#: until the previous window ... is no longer sustained by the old tier",
+#: which lived in the served copy alone and so was invisible to a pin that
+#: only compared the two copies' shared run). Both are false for the same
+#: reason: clause (b) is necessary for the report, not sufficient. The
+#: one-shot ``! grep -q`` in those tasks' own acceptance probes is the weak
+#: form ``sweep-the-claim-not-the-diff`` warns about -- it never runs again.
+#: These do.
 RESET_REASON_WITHDRAWN = (
     "never sits beside an unclipped",
     "last stretch of every",
     "every report's lifetime",
+    "only while the old tier still sustains",
+    "is no longer sustained by the old tier",
 )
 
 #: Where the two copies must agree word for word. The served description is
@@ -906,13 +934,22 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     required to state identically, and the run is compared across them, so
     a correction applied to one copy alone fails here.
 
-    Authorship, per ``contract-tables-need-an-independent-oracle``: these
-    fragments were transcribed from the contract prose alongside T105's
-    correction, not derived from the spec by a separate pass. What keeps
-    the check from being vacuous is that it constrains two independently
-    edited artifacts jointly and encodes the **negative** claims -- the
-    two universals no code path produces, reproduced against
-    ``build_series`` before this test was written.
+    Authorship, per ``contract-tables-need-an-independent-oracle`` -- and
+    the thing this pin got wrong (T109, review cycle 6 G-C6-6). The
+    fragments were originally transcribed from the contract prose in the
+    *same pass* that wrote it, so entry 5 inherited that pass's false
+    equivalence and this test then held it in place: removing the false
+    clause went red, and the check built to stop false prose recurring had
+    become the reason it could not be withdrawn. An oracle that transcribes
+    prose inherits whatever is wrong with the prose and promotes it to an
+    enforced invariant. The pattern is right; the authorship was not, which
+    is G-C5-7's no-independent-oracle shape again. T109 re-derived every
+    entry from ``build_series`` -- the runs are listed above
+    ``RESET_REASON_CLAIMS`` -- rather than from the sentence it pins. What
+    keeps the check from being vacuous is that it constrains two
+    independently edited artifacts jointly and encodes the **negative**
+    claims -- the universals and the equivalence no code path produces,
+    each reproduced against ``build_series``.
     """
     target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
     contract = _flat(
