@@ -1419,7 +1419,11 @@ components:
                 tier-change era boundary clips this window whether or not the
                 change is reported, so a clipped window beside a null
                 reset_reason is a correct state (the readings clipped away are
-                listed before_reset: tier_change). Empty
+                listed before_reset: tier_change). For coverage_gap, R is the
+                later of the resumption and any era boundary: the two clips
+                compose as the later of their first days, so R is reset_on only
+                when no era boundary falls after the resumption, and window[0]
+                may lie after reset_on. Empty
                 after a reset landing inside the judged week, rendered as the
                 formula yields it (first after last) with n 0 — clients must not
                 assume window[0] ≤ window[1].

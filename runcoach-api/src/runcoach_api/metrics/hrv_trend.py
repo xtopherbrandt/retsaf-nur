@@ -1123,10 +1123,12 @@ def tier_change_reset(
 
     **The clip and the report are two consequences of one boundary** (D4a,
     decision log 2026-09-13; T098). ``build_series`` clips ``baseline`` to
-    ``[max(D-66, first_day), D-7]`` whenever this returns a boundary, and
-    reports ``reset_reason`` / ``reset_on`` only when the boundary is
-    ``reported``. Clauses (a) and (b) below, and the existence of an era
-    boundary, gate both; the two differ in exactly one thing, the week half
+    ``[max(D-66, gap_reset_on, first_day), D-7]`` whenever this returns a
+    boundary -- since T107 whether or not a coverage gap fired, the two
+    clips composing as the later of their first days -- and reports
+    ``reset_reason`` / ``reset_on`` only when the boundary is ``reported``
+    *and* no gap outranked it. Clauses (a) and (b) below, and the existence
+    of an era boundary, gate both; the two differ in exactly one thing, the week half
     of clause (c)'s tolerance (``_era_boundary``). Before T098 they were one
     branch, so a capture of the *other* tier in the judged week -- which
     contributes nothing to the week mean -- withdrew the reset and with it
@@ -1178,8 +1180,10 @@ def tier_change_reset(
     era of the same tier in the previous window (a 40-day strap trial
     between two snapshot eras) is not mistaken for this one. It can
     therefore precede the clipped window's first day; ``build_series``
-    reports ``[max(D-66, reset_on), D-7]``. The reset stops being reported
-    when the previous window ``[D-126, D-67]`` is no longer sustained by
+    reports ``[max(D-66, gap_reset_on, reset_on), D-7]`` -- the gap term
+    being why a reported ``coverage_gap``'s ``reset_on`` can precede
+    ``window[0]`` too (T107), in the other direction. The reset stops being
+    reported when the previous window ``[D-126, D-67]`` is no longer sustained by
     the old tier, so that (b) fails -- ``sustained_tier`` is the
     highest-fidelity tier with ``MIN_BASELINE_READINGS`` days there, so
     the boundary is direction-dependent (review cycle 3, S1): for a

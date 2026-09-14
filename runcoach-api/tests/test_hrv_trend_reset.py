@@ -1838,10 +1838,20 @@ def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
     *If the rule were "the gap wins the clip as well as the report"* the
     first three assertions go red -- ``baseline_window`` reads
     ``(07-29, 08-31)``, the trial ids are in ``series``, and no exclusion
-    names ``before_reset: tier_change``. *If the era clip replaced the
-    gap's rather than composing with it*, the pre-gap snapshot readings
-    would carry no ``before_reset: coverage_gap`` entry, which is why they
-    are named explicitly rather than left to the exhaustiveness check.
+    names ``before_reset: tier_change``. *If the gap branch stopped
+    clipping and only reported*, the pre-resumption snapshot readings would
+    carry no ``before_reset: coverage_gap`` entry, which is why they are
+    named explicitly rather than left to the exhaustiveness check.
+
+    What this pin **cannot** see is the other direction of the
+    composition. The era boundary is the later of the two clips on this
+    series, so replacing ``max(boundary.first_day, baseline[0])`` with
+    ``boundary.first_day`` leaves every assertion here green -- including
+    the ``before_reset: coverage_gap`` entries above, which the gap branch
+    writes at line 557 before the composition is reached and which are
+    therefore blind to how the two clips compose. The gap-later direction
+    is pinned by
+    ``test_the_era_clip_does_not_replace_the_gaps_when_the_gap_is_later``.
     """
     rows = gap_and_switch(with_gap=True)
     result = build(rows, target=GAP_AND_SWITCH_D)
@@ -1873,6 +1883,108 @@ def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
     assert sorted(session_id for session_id in listed if session_id in in_windows) == sorted(in_windows)
     assert len(listed) == len(set(listed))
 
+
+#: The gap-later counterpart of the pair above: here the era boundary
+#: (2026-06-25) is **earlier** than the resumption (2026-08-15), so the
+#: composition at ``hrv_trend.py:617`` must keep the *gap's* first day.
+#: Same target date as the pair above; baseline ``[2026-07-03, 2026-08-31]``
+#: before any clip, previous window ``[2026-05-04, 2026-07-02]``.
+ERA_THEN_GAP_D = date(2026, 9, 7)
+#: The switch off the snapshot era: the strap's -- and the baseline era's --
+#: true first day, on both variants. It sits **eight days before** ``D-66``
+#: on purpose. The era's first reading must fall outside the baseline
+#: window, in ``previous_readings``, because ``tier_change_reset`` reads
+#: ``baseline_readings`` *after* the gap branch has clipped them: an era
+#: beginning inside the window would have its first day moved to the
+#: resumption by the gap's own clip and the composition would have nothing
+#: to compose. Eight days is also few enough that the strap does not
+#: sustain the previous window, so rule 4(b) still reads the old tier there.
+ERA_THEN_GAP_ERA_FIRST_DAY = date(2026, 6, 25)
+#: The resumption after the 35-day silence (2026-07-11 .. 2026-08-14),
+#: inside the strap era and 51 days *after* its first day.
+ERA_THEN_GAP_RESUMPTION = date(2026, 8, 15)
+#: The strap days inside the baseline window that the silence swallows --
+#: the gap's alone to remove, and the ones the era clip could not touch.
+ERA_THEN_GAP_PRE_SILENCE = span(date(2026, 7, 3), date(2026, 7, 10))
+
+
+def era_then_gap(*, with_gap: bool) -> list[dict]:
+    """A daily health_snapshot era to 2026-06-24, a switch to a daily strap
+    on 2026-06-25, and -- with ``with_gap=True`` -- a **35-day silence**
+    (2026-07-11 .. 2026-08-14) *inside* the strap era, resuming on
+    2026-08-15.
+
+    The mirror image of ``gap_and_switch``: there the era boundary was the
+    later of the two clips, here the resumption is. The two variants differ
+    in the silence and in nothing else, and the judged week is the same
+    rows on both.
+    """
+    if with_gap:
+        strap_days = span(ERA_THEN_GAP_ERA_FIRST_DAY, date(2026, 7, 10)) + span(
+            ERA_THEN_GAP_RESUMPTION, date(2026, 8, 31)
+        )
+    else:
+        strap_days = span(ERA_THEN_GAP_ERA_FIRST_DAY, date(2026, 8, 31))
+    rows = readings(SNAPSHOT, span(date(2026, 3, 1), date(2026, 6, 24)), 60.0, "snap")
+    rows += readings(STRAP, strap_days, 40.0, "era")
+    rows += readings(STRAP, span(date(2026, 9, 1), ERA_THEN_GAP_D), 39.0, "week")
+    return rows
+
+
+def test_the_era_clip_does_not_replace_the_gaps_when_the_gap_is_later() -> None:
+    """The other direction of the same composition, which nothing in the
+    tree pinned before this: the era boundary is **earlier** than the
+    resumption, so ``max(boundary.first_day, baseline[0])`` must keep the
+    *gap's* first day.
+
+    ``with_gap=False`` is the control and is what makes this pin
+    non-vacuous: the same rows without the silence report ``tier_change``
+    on 2026-06-25 -- the era's true first day, eight days before ``D-66``,
+    which is why it precedes that control's own ``window[0]`` (T094). So
+    the era boundary on the gapped series is real, admitted, and 51 days
+    before the resumption. With the silence the published window must
+    still open on 2026-08-15 -- the day the series resumes -- because the
+    baseline holds no reading before it.
+
+    *If the composition took the era's first day rather than the later of
+    the two* (``baseline = (boundary.first_day, baseline[1])``), the
+    gapped series would publish ``(2026-06-25, 2026-08-31)``: an interval
+    claiming 51 days the series does not contain, beside an ``n`` of 17
+    and a ``reset_on`` of 2026-08-15 *inside* it. Only the reported
+    interval moves under that rule -- ``baseline_readings``, the exclusion
+    lists and ``series`` are all fixed before line 617, and ``n``,
+    ``band`` and ``verdict`` are identical either way -- which is why this
+    pin asserts ``baseline_window[0]`` against the first day the baseline
+    actually holds rather than trusting any of them to notice.
+    """
+    gapped = build(era_then_gap(with_gap=True), target=ERA_THEN_GAP_D)
+    control = build(era_then_gap(with_gap=False), target=ERA_THEN_GAP_D)
+
+    # The gapped series first, so that a composition taking the era's first
+    # day alone is reported here rather than by the control's D-66 floor,
+    # which the same edit also removes.
+    assert (gapped.reset_reason, gapped.reset_on) == ("coverage_gap", ERA_THEN_GAP_RESUMPTION)
+    assert gapped.baseline_window == (ERA_THEN_GAP_RESUMPTION, ago(7, ERA_THEN_GAP_D))
+
+    # The control: the era boundary exists, is admitted, and is 2026-06-25.
+    assert (control.reset_reason, control.reset_on) == ("tier_change", ERA_THEN_GAP_ERA_FIRST_DAY)
+    assert control.baseline_window == (ago(66, ERA_THEN_GAP_D), ago(7, ERA_THEN_GAP_D))
+    assert control.reset_on < control.baseline_window[0]
+    assert gapped.tier == control.tier == STRAP
+
+    # The window is not wider than the readings it claims to be taken from:
+    # the first baseline reading *is* window[0], on a series whose era
+    # boundary would have opened it 51 days earlier.
+    assert gapped.baseline[0].date == gapped.baseline_window[0]
+    assert len(gapped.baseline) == 17
+
+    # The strap days the silence swallowed are the gap's, listed under it:
+    # inside the un-clipped window, after the era boundary, so no era clip
+    # could have removed them.
+    reasons = excluded_reasons(gapped)
+    pre_silence = {f"era-{day}" for day in ERA_THEN_GAP_PRE_SILENCE}
+    assert {reasons[session_id] for session_id in pre_silence} == {"before_reset: coverage_gap"}
+    assert pre_silence.isdisjoint({r.session_id for r in gapped.series})
 
 # ---------------------------------------------------------------------------
 # adversarial rows

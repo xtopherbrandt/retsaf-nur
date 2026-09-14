@@ -939,6 +939,71 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     )
 
 
+#: The same treatment for ``baseline.window``, added by T107 (review cycle
+#: 6). Until then the two copies of the *window* contract were compared by
+#: nothing -- the pin above reads ``reset_reason`` only -- and they had in
+#: fact drifted: ``schemas.Baseline.window`` carried "For `coverage_gap` R
+#: is reset_on", which T107 falsified (the era boundary can clip later than
+#: the resumption, so ``window[0]`` may lie after a ``coverage_gap``'s
+#: ``reset_on``), while ``contracts/openapi.yaml`` said nothing about
+#: ``coverage_gap`` at all. One copy false, the other silent, both green.
+WINDOW_CLAIMS = (
+    "r is not reset_on",
+    "a tier-change era boundary clips this window whether or not the change is reported",
+    "the two clips compose as the later of their first days",
+    "may lie after reset_on",
+    "clients must not assume window[0]",
+)
+
+#: Withdrawn by T107 as false, in each copy's own idiom (the schema copy
+#: marks up identifiers, the YAML copy does not), so the claim cannot come
+#: back at either site in the spelling that site would use.
+WINDOW_WITHDRAWN = (
+    "for `coverage_gap` r is reset_on",
+    "for coverage_gap r is reset_on",
+)
+
+
+def test_the_two_copies_of_the_window_contract_publish_the_same_claims() -> None:
+    """T107 (review cycle 6), the ``reset_reason`` pin above applied to
+    ``baseline.window``, whose two copies nothing compared.
+
+    The gap it closes is the one that let T107's sixth site survive a
+    claim-sweep: ``schemas.Baseline.window`` published "For `coverage_gap`
+    R is reset_on" -- the same claim as "a `coverage_gap`'s ``reset_on``
+    never precedes ``window[0]``", stated as an identity on ``window[0]``
+    rather than as a "never", and false in exactly the case T107 creates
+    (``test_the_era_clip_does_not_replace_the_gaps_when_the_gap_is_later``
+    publishes ``reset_on`` 2026-08-15 under a window opening 2026-08-15
+    while the era boundary sits at 2026-06-25; on T107's other pin the
+    reported ``reset_on`` 2026-07-29 precedes ``window[0]`` 2026-08-13).
+    It was served to clients through ``app.openapi()`` and contradicted
+    ``Baseline.reset_on`` three fields below. A phrase-shaped sweep could
+    not see it; a claim-shaped pin can, and ``WINDOW_WITHDRAWN`` is that
+    pin.
+
+    *If the correction had been applied to one copy only* -- which is what
+    happened to the claim itself, and what ``check_drift.py`` cannot see,
+    comparing paths and parameters but never prose -- the shared-claim
+    loop goes red on whichever copy dropped it.
+    """
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    contract = _flat(
+        target["components"]["schemas"]["HrvTrend"]["properties"]["baseline"]["properties"]["window"][
+            "description"
+        ]
+    )
+    served = _flat(app.openapi()["components"]["schemas"]["Baseline"]["properties"]["window"]["description"])
+
+    for claim in WINDOW_CLAIMS:
+        flat = _flat(claim)
+        assert flat in contract, f"contracts/openapi.yaml no longer publishes: {claim}"
+        assert flat in served, f"schemas.Baseline.window no longer publishes: {claim}"
+    for withdrawn in WINDOW_WITHDRAWN:
+        assert _flat(withdrawn) not in contract, f"withdrawn as false, back in the contract: {withdrawn}"
+        assert _flat(withdrawn) not in served, f"withdrawn as false, back in the schema: {withdrawn}"
+
+
 def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
     """One stored row as ``db.hrv_rows`` hands it to ``build_series``, in the
     UTC zone the rendering pins below configure."""

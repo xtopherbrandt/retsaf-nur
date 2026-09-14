@@ -65,10 +65,13 @@ class Baseline(BaseModel):
             "tier-change era boundary clips this window whether or not the change is reported, so a "
             "clipped window beside a null `reset_reason` is a correct state: the band is era-correct "
             "and the athlete is simply told nothing about it (the readings clipped away are listed "
-            "`before_reset: tier_change`). For `coverage_gap` R is reset_on. When a reset lands after date-7 (a coverage gap ending inside the judged week) the "
-            "interval is empty and is rendered exactly as the formula yields it -- first after last -- "
-            "with `n` 0, so the clip can be verified from `reset_on` and `date`; clients must not assume "
-            "window[0] <= window[1]."
+            "`before_reset: tier_change`). For `coverage_gap`, R is the later of the resumption and "
+            "any era boundary: the two clips compose as the later of their first days, so R is "
+            "reset_on only when no era boundary falls after the resumption, and window[0] may lie "
+            "after reset_on. When a reset lands after date-7 (a coverage gap ending inside the judged "
+            "week) the interval is empty and is rendered exactly as the formula yields it -- first "
+            "after last -- with `n` 0, so the clip can be verified from `reset_on` and `date`; "
+            "clients must not assume window[0] <= window[1]."
         )
     )
     n: int = Field(description="Number of baseline readings (one per local day, on `tier`).")
