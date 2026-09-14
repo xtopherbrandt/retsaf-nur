@@ -31,9 +31,11 @@ import statistics
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise, repeat
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
 from runcoach_api import main as main_module
@@ -828,6 +830,115 @@ def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
     assert "empty" in window and "n" in window, "IDEA-046's rendering decision is documented"
 
 
+#: The checked-in target contract, the copy ``check_drift.py`` compares
+#: endpoints against. Its ``reset_reason`` prose and ``schemas.Baseline``'s
+#: are hand-synchronised: nothing in the tree compared them until T105.
+CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
+
+#: The sentences of the ``baseline.reset_reason`` description a client is
+#: invited to key on, transcribed as the smallest fragment that carries each
+#: claim rather than as the paragraph around it. One per decision a reader
+#: could make differently if it vanished:
+#:
+#: 1. the mirror half T098 needed published (a null reason beside a clipped
+#:    window is a correct state, not a bug to report);
+#: 2. T103's surviving primary clause (the clip is unconditional under a
+#:    reported ``tier_change``);
+#: 3. the mechanism that makes the clip stop mattering, named with the
+#:    expression that implements it;
+#: 4-6. T105's correction: the no-op stretch is conditional on the report
+#:    outliving the day ``date-66`` reaches ``R``, that condition is the old
+#:    tier still sustaining ``[date-126, date-67]``, and the inference a
+#:    client must *not* draw.
+RESET_REASON_CLAIMS = (
+    "a null here can sit beside a clipped `window`",
+    "a reported `tier_change` is always clipped",
+    "once the era's first day is date-66 or older the clip `max(date-66, R)` is a no-op",
+    "that no-op stretch is conditional, not promised",
+    "only while the old tier still sustains the previous window [date-126, date-67]",
+    "a client cannot infer from seeing a `tier_change` that an un-clipped `window` will follow",
+)
+
+#: Phrasings withdrawn as false, which no copy may carry again: T103's
+#: universal ("a reported ``tier_change`` never sits beside an unclipped
+#: one") and T105's replacement universal ("the last stretch of *every*
+#: report's lifetime"). The one-shot ``! grep -q`` in those tasks' own
+#: acceptance probes is the weak form ``sweep-the-claim-not-the-diff``
+#: warns about -- it never runs again. These do.
+RESET_REASON_WITHDRAWN = (
+    "never sits beside an unclipped",
+    "last stretch of every",
+    "every report's lifetime",
+)
+
+#: Where the two copies must agree word for word. The served description is
+#: the longer one (it also carries the lifetimes and "a timezone change is
+#: never a reset"), so equality is not available; what T103 and T105 both
+#: required is that this shared run be *the same words at both sites*, and
+#: that is what is asserted.
+RESET_REASON_SHARED_ANCHOR = "baseline clip is decided by the era boundary alone"
+
+
+def _flat(text: str) -> str:
+    """Folded YAML and an implicitly concatenated Python literal wrap at
+    different columns, so compare on whitespace-normalised lowercase."""
+    return " ".join(text.split()).lower()
+
+
+def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -> None:
+    """G-C6-2 (review cycle 6). ``contracts/openapi.yaml`` and
+    ``schemas.Baseline.reset_reason`` publish the same contract to two
+    audiences and were kept in step by hand. ``check_drift.py`` compares
+    path, method, 2xx presence, multipart properties and required query
+    parameters -- never description prose -- so a false sentence in either
+    copy, or a correction landed in only one, passes every gate in the
+    tree. T103 published a false universal here and T105 replaced it with
+    a second one; each was caught by a ``! grep -q`` inside its own
+    acceptance probe, which by construction never runs again.
+
+    This is ``PUBLISHED_REASONS``' pattern applied to prose that is not an
+    enum: pin the **claim**, not the paragraph. ``RESET_REASON_CLAIMS``
+    lists the six sentences a client could act on, each as the shortest
+    fragment that carries it, so a legitimate rewording of the surrounding
+    text stays green while dropping a claim from either copy goes red.
+    ``RESET_REASON_WITHDRAWN`` holds the two phrasings retracted as false.
+    ``RESET_REASON_SHARED_ANCHOR`` starts the run the two sites are
+    required to state identically, and the run is compared across them, so
+    a correction applied to one copy alone fails here.
+
+    Authorship, per ``contract-tables-need-an-independent-oracle``: these
+    fragments were transcribed from the contract prose alongside T105's
+    correction, not derived from the spec by a separate pass. What keeps
+    the check from being vacuous is that it constrains two independently
+    edited artifacts jointly and encodes the **negative** claims -- the
+    two universals no code path produces, reproduced against
+    ``build_series`` before this test was written.
+    """
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    contract = _flat(
+        target["components"]["schemas"]["HrvTrend"]["properties"]["baseline"]["properties"][
+            "reset_reason"
+        ]["description"]
+    )
+    served = _flat(app.openapi()["components"]["schemas"]["Baseline"]["properties"]["reset_reason"]["description"])
+
+    for claim in RESET_REASON_CLAIMS:
+        flat = _flat(claim)
+        assert flat in contract, f"contracts/openapi.yaml no longer publishes: {claim}"
+        assert flat in served, f"schemas.Baseline.reset_reason no longer publishes: {claim}"
+    for withdrawn in RESET_REASON_WITHDRAWN:
+        assert _flat(withdrawn) not in contract, f"withdrawn as false, back in the contract: {withdrawn}"
+        assert _flat(withdrawn) not in served, f"withdrawn as false, back in the schema: {withdrawn}"
+
+    start = contract.find(_flat(RESET_REASON_SHARED_ANCHOR))
+    assert start != -1, "the contract's shared run no longer starts where the anchor says"
+    shared = contract[start:]
+    assert shared in served, (
+        "the two copies have stopped stating the shared run in the same words; "
+        "T103 and T105 both required them to. The contract says: " + shared
+    )
+
+
 def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
     """One stored row as ``db.hrv_rows`` hands it to ``build_series``, in the
     UTC zone the rendering pins below configure."""
@@ -988,11 +1099,19 @@ def test_a_reported_tier_change_sits_beside_the_unclipped_window_once_the_era_is
     reported, ``window`` would have to differ from ``baseline_window(D)``,
     so the ``window`` assertion on those two rows is what goes red --
     ``reset_on`` names the era's first day beneath ``window[0]`` all the
-    same, and the body lists no ``before_reset: tier_change`` row, because
-    the clip that removed nothing inside ``[D-66, D]`` has nothing to
-    list. The first row is the edge from the other side: a younger era is
+    same. The first row is the edge from the other side: a younger era is
     clipped at its own first day, so the pin discriminates the two states
-    rather than describing one."""
+    rather than describing one.
+
+    T105 (review cycle 6, G-C6-3) removed a trailing assertion that no
+    ``before_reset`` row reached ``excluded``. It could not fail on any of
+    the three rows -- the clip lists only readings of the **resolved**
+    tier and this fixture seeds no strap reading before the boundary, so
+    the list is empty even on ``era_age=60`` where the clip genuinely
+    binds and drops ``[D-66, D-61]`` -- and its stated justification ("the
+    clip removed nothing") was false of that row.
+    ``test_the_tier_change_clip_is_listed_in_a_rendered_body_whether_or_not_it_is_reported``
+    pins the listing behaviour on a fixture that can produce it."""
     era_first_day = D - timedelta(days=era_age)
     day_before_era = era_first_day - timedelta(days=1)
     body = _rendered(
@@ -1008,7 +1127,6 @@ def test_a_reported_tier_change_sits_beside_the_unclipped_window_once_the_era_is
     assert body["baseline"]["reset_on"] <= body["baseline"]["window"][0]
     assert body["baseline"]["n"] == n and body["baseline"]["established"] is True
     assert body["baseline"]["tier"] == STRAP
-    assert not [entry for entry in body["excluded"] if entry["reason"].startswith("before_reset")]
 
 
 def test_the_query_parameters_are_from_and_to_and_both_optional() -> None:

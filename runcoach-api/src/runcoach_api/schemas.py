@@ -107,10 +107,13 @@ class Baseline(BaseModel):
             "**report** only: the baseline clip is decided by the era boundary alone, so a null here can "
             "sit beside a clipped `window`; a reported `tier_change` is always clipped, though once the "
             "era's first day is date-66 or older the clip `max(date-66, R)` is a no-op and `window` is "
-            "indistinguishable from the un-clipped [date-66, date-7] -- the last stretch of every "
-            "report's lifetime, from the day date-66 reaches R until the previous window "
-            "[date-126, date-67] is no longer sustained by the old tier (F005 decision log D4, "
-            "2026-09-13; T103)."
+            "indistinguishable from the un-clipped [date-66, date-7]. That no-op stretch is "
+            "conditional, not promised: it runs from the day date-66 reaches R only for a report "
+            "still live on that day -- that is, only while the old tier still sustains the previous "
+            "window [date-126, date-67] then. When the old tier's density decays first, the report "
+            "ends before date-66 reaches R and every reported day of it is clipped, so a client "
+            "cannot infer from seeing a `tier_change` that an un-clipped `window` will follow "
+            "(F005 decision log D4, 2026-09-13; T103, T105)."
         )
     )
 
