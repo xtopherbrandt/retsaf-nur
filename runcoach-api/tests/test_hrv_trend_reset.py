@@ -299,7 +299,13 @@ def test_a_gap_reset_takes_precedence_over_a_tier_change() -> None:
     """Both triggers at once -- a snapshot era, a 25-day silence, a strap era
     dense enough to sustain a baseline -- report the gap: it is the event the
     backward scan meets, and its resumption day is where the fresh baseline
-    begins. Documented in the module; pinned here."""
+    begins. Documented in the module; pinned here.
+
+    The precedence is over the **report**, and since T107 over that alone
+    (review cycle 6, G-C6-5). This series cannot see the difference: the
+    resumption and the switch are the **same day**, so the gap's clip and
+    the era's coincide and no baseline day separates them. That is why the
+    two pins near ``gap_and_switch`` put them on different days."""
     resume_on = ago(30)
     before = readings(SNAPSHOT, span(ago(126), resume_on - timedelta(days=26)), 60.0, "snap")
     after = readings(STRAP, span(resume_on, D), 40.0, "strap")
@@ -884,7 +890,8 @@ class Judged(NamedTuple):
     ``report`` keeps the old triple, so every expectation written before
     T099 stands verbatim; the four fields beside it are what T098's D4a made
     independent of it -- the clip happens whenever an era boundary exists,
-    and only ``reset_reason`` / ``reset_on`` wait on the judged week.
+    and only ``reset_reason`` / ``reset_on`` wait on the judged week (and,
+    since T107, on a coverage gap not having already claimed the report).
     """
 
     tier: str | None
@@ -1385,7 +1392,8 @@ def test_the_band_does_not_step_when_the_judged_week_slides_past_the_old_tiers_c
     ``research/00`` §1.7 tolerates least and ``judge``'s own docstring
     names as forbidden.
 
-    Under D4a the clip is unconditional: the baseline begins on the era's
+    Under D4a the clip is unconditional -- of the report here, and of a
+    coverage gap since T107: the baseline begins on the era's
     true first day on every one of the five days, ``n`` grows by exactly
     one a day as the window slides, the band drifts by less than 0.02 a
     day with no step, and the verdict is the era-correct
@@ -1680,6 +1688,193 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
 
 
 # ---------------------------------------------------------------------------
+# T107 (review cycle 6, G-C6-5): a coverage gap must not cancel the era clip
+#
+# Until T107 ``build_series`` asked rule 4 only ``if reset_on is None``, so a
+# coverage gap anywhere in ``[D-66, D]`` meant ``tier_change_reset`` was
+# never called, no era boundary was computed and **nothing was clipped** --
+# three lines below a comment reading "D4a (T098): the clip is
+# unconditional". The clip and the report are two consequences of the era
+# boundary (``research/00`` §5.4), and only the *report* was ever the gap's
+# to win. The existing precedence pin,
+# ``test_a_gap_reset_takes_precedence_over_a_tier_change``, puts the
+# resumption and the switch on the **same day**, where the two clips
+# coincide and the defect is invisible -- the branch beside the bug. These
+# two put them on different days.
+# ---------------------------------------------------------------------------
+
+#: The target date the pair below is judged on: baseline ``[2026-07-03,
+#: 2026-08-31]``, judged week ``[2026-09-01, 2026-09-07]``, previous window
+#: ``[2026-05-04, 2026-07-02]``.
+GAP_AND_SWITCH_D = date(2026, 9, 7)
+#: The strap trial inside the snapshot era -- six stray days, comfortably
+#: below the candidacy half's 14, so the era boundary is admitted and
+#: reported on both series. Its readings are the ones the clip must remove.
+GAP_AND_SWITCH_TRIAL = span(date(2026, 8, 1), date(2026, 8, 6))
+#: The strap era proper: the switch day through the last baseline day.
+GAP_AND_SWITCH_ERA = span(date(2026, 8, 13), date(2026, 8, 31))
+#: The resumption after the 24-day silence, and the era's first day. The
+#: whole point of the pair is that they are different days.
+GAP_AND_SWITCH_RESUMPTION = date(2026, 7, 29)
+GAP_AND_SWITCH_FIRST_DAY = GAP_AND_SWITCH_ERA[0]
+
+
+def gap_and_switch(*, with_gap: bool) -> list[dict]:
+    """A daily health_snapshot era, a six-day strap trial inside it, and a
+    genuine switch to a daily strap on 2026-08-13 -- optionally with a
+    **24-day silence** (2026-07-05 .. 2026-07-28) inside the snapshot era.
+
+    The two series differ in that silence and in nothing else: the strap
+    trial, the strap era and the judged week are the same rows in both, so
+    the 7-day mean is byte-identical and only the baseline can move.
+    ``with_gap=True`` makes the resumption 2026-07-29 the gap reset. Three
+    days are then distinct on purpose: the window opens on 2026-07-03, the
+    gap clips at 2026-07-29 and the era boundary is 2026-08-13 either way,
+    so each clip has readings only it can remove -- the snapshot readings
+    of 07-03 and 07-04 are the gap's alone, the six trial readings of
+    08-01 .. 08-06 the era's alone -- and no one clip can stand in for the
+    composition.
+    """
+    if with_gap:
+        snapshot_days = span(date(2026, 5, 4), date(2026, 7, 4)) + span(
+            GAP_AND_SWITCH_RESUMPTION, date(2026, 8, 12)
+        )
+    else:
+        snapshot_days = span(date(2026, 5, 4), date(2026, 8, 12))
+    rows = readings(
+        SNAPSHOT, [day for day in snapshot_days if day not in GAP_AND_SWITCH_TRIAL], 60.0, "snap"
+    )
+    rows += readings(STRAP, GAP_AND_SWITCH_TRIAL, 26.0, "trial")
+    rows += [
+        row(local(day, 6), STRAP, 41.0 if i % 2 == 0 else 39.0, f"era-{day}")
+        for i, day in enumerate(GAP_AND_SWITCH_ERA)
+    ]
+    rows += readings(STRAP, span(date(2026, 9, 1), GAP_AND_SWITCH_D), 39.0, "week")
+    return rows
+
+
+def test_a_coverage_gap_does_not_cancel_the_era_clip() -> None:
+    """G-C6-5 (review cycle 6, HIGH): the critic's two series, differing
+    only by a 24-day silence, with the judged week byte-identical.
+
+    Reproduced at 79b4d1c before this pin was written. The silence resumes
+    the **old** tier at 2026-07-29 and the switch to the strap is on
+    2026-08-13, so the gap's clip (07-29) is *earlier* than the era's
+    (08-13) and the two do not coincide. At 79b4d1c:
+
+    * with the 24-day silence -- ``coverage_gap``, window 07-29 .. 08-31,
+      ``n`` 25, ``band.lo`` 3.4915, ``hrv_normal``;
+    * without it, the same switch -- ``tier_change``, window
+      08-13 .. 08-31, ``n`` 19, ``band.lo`` 3.6771, ``hrv_suppressed``.
+
+    The 7-day mean is 3.6636 on both. The six 26 ms readings of a strap
+    trial the athlete abandoned in August -- readings ``research/00`` §5.4
+    says are **never** in the band -- were pulled back into it by the gap
+    alone, and a genuinely suppressed week read ``hrv_normal``: §1.7's
+    least-tolerated direction, through a door neither G-C4-1 nor G-C5-1
+    touched and with **no threshold to cross**.
+
+    *If the rule were what the gate at ``hrv_trend.py:554`` implemented* --
+    a gap cancels the era clip rather than only winning the report -- the
+    gap row below would read ``(07-29, 08-31)`` / 25 / 3.4915 /
+    ``hrv_normal`` and every assertion under "the era clip survives" goes
+    red. *If instead the gap's clip were dropped in favour of the era's*
+    (``baseline[0] = boundary.first_day`` rather than the later of the
+    two), nothing here moves -- 08-13 is the later of the two on this
+    series -- which is why the sibling pin below asserts the composition
+    on the readings each clip alone would leave behind.
+    """
+    (with_gap,) = reported(gap_and_switch(with_gap=True), [GAP_AND_SWITCH_D])
+    (without_gap,) = reported(gap_and_switch(with_gap=False), [GAP_AND_SWITCH_D])
+
+    # The report still belongs to the gap: that half of precedence is unchanged.
+    assert with_gap.report == (STRAP, "coverage_gap", GAP_AND_SWITCH_RESUMPTION)
+    assert without_gap.report == (STRAP, "tier_change", GAP_AND_SWITCH_FIRST_DAY)
+
+    # The era clip survives the gap: the same band, on the same window, on both.
+    assert (
+        with_gap.baseline_window
+        == without_gap.baseline_window
+        == (GAP_AND_SWITCH_FIRST_DAY, ago(7, GAP_AND_SWITCH_D))
+    )
+    assert with_gap.baseline_n == without_gap.baseline_n == 19
+    assert with_gap.band_lo == pytest.approx(3.6771, abs=5e-5)
+    assert with_gap.band_lo == pytest.approx(without_gap.band_lo)
+    assert with_gap.verdict == without_gap.verdict == hrv_trend.VERDICT_SUPPRESSED
+
+    # The same week, the same mean, and it is below both bands.
+    means = [
+        hrv_trend.judge(build(gap_and_switch(with_gap=flag), target=GAP_AND_SWITCH_D)).ln_rmssd_7d_mean
+        for flag in (True, False)
+    ]
+    assert means[0] == means[1] == pytest.approx(3.6636, abs=5e-5)
+    assert means[0] < with_gap.band_lo
+
+
+def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
+    """The invariant T107 exists to establish, asserted on the clip's own
+    evidence rather than on the band: ``reset_reason`` is ``coverage_gap``
+    and ``reset_on`` is the resumption, **and yet** the pre-era readings
+    are absent from ``baseline`` and listed ``before_reset: tier_change``.
+
+    The two clips compose as the **later** of the two first days: neither
+    pre-gap nor pre-era readings may be in the band, so the baseline's
+    first day is ``max(resumption, era first day)``. Both halves are
+    asserted here -- the six trial readings sit *after* the resumption
+    (07-29) and *before* the era (08-13), so they survive the gap's clip
+    and can only be removed by the era's, while the snapshot readings of
+    07-03 and 07-04 lie inside the window and before the resumption, so
+    they are the gap's alone -- which is what makes this a pin on the
+    composition and not on either clip standing in for both.
+
+    ``research/00`` §1.6's "each reading in exactly one list" is asserted
+    too, over every stored row in ``[D-66, D]``: the gap branch moves
+    readings out of the pre-filter ``readings`` it rebinds, and the era
+    branch out of the collapsed ``series`` built from what the gap left,
+    so no reading can reach both lists. It is asserted rather than argued
+    because the two branches now run on the same request for the first
+    time.
+
+    *If the rule were "the gap wins the clip as well as the report"* the
+    first three assertions go red -- ``baseline_window`` reads
+    ``(07-29, 08-31)``, the trial ids are in ``series``, and no exclusion
+    names ``before_reset: tier_change``. *If the era clip replaced the
+    gap's rather than composing with it*, the pre-gap snapshot readings
+    would carry no ``before_reset: coverage_gap`` entry, which is why they
+    are named explicitly rather than left to the exhaustiveness check.
+    """
+    rows = gap_and_switch(with_gap=True)
+    result = build(rows, target=GAP_AND_SWITCH_D)
+    trial_ids = {r["session_id"] for r in rows if r["session_id"].startswith("trial-")}
+
+    assert (result.reset_reason, result.reset_on) == ("coverage_gap", GAP_AND_SWITCH_RESUMPTION)
+    assert result.baseline_window == (GAP_AND_SWITCH_FIRST_DAY, ago(7, GAP_AND_SWITCH_D))
+    assert trial_ids.isdisjoint({r.session_id for r in result.series})
+
+    reasons = excluded_reasons(result)
+    assert {reasons[session_id] for session_id in trial_ids} == {"before_reset: tier_change"}
+    # The gap's own clip is still doing its half: the pre-resumption
+    # snapshot readings are excluded under the gap, not under the era.
+    pre_gap = {
+        session_id for session_id, reason in reasons.items() if reason == "before_reset: coverage_gap"
+    }
+    assert pre_gap and all(session_id.startswith("snap-") for session_id in pre_gap)
+    assert max(session_id[len("snap-") :] for session_id in pre_gap) < str(GAP_AND_SWITCH_RESUMPTION)
+
+    # research/00 §1.6: exactly one list, over every stored row in [D-66, D].
+    in_windows = {
+        r["session_id"]
+        for r in rows
+        if ago(66, GAP_AND_SWITCH_D)
+        <= datetime.fromisoformat(r["start_time"]).astimezone(AUCKLAND).date()
+        <= GAP_AND_SWITCH_D
+    }
+    listed = [r.session_id for r in result.series] + [entry.session_id for entry in result.excluded]
+    assert sorted(session_id for session_id in listed if session_id in in_windows) == sorted(in_windows)
+    assert len(listed) == len(set(listed))
+
+
+# ---------------------------------------------------------------------------
 # adversarial rows
 # ---------------------------------------------------------------------------
 
@@ -1702,10 +1897,15 @@ def test_one_resumption_era_is_reported_coverage_gap_then_tier_change_then_nothi
       window, so rule 4(b) fails (rule 5's forward stop, ``S+80``).
 
     The two reports' ``reset_on`` differs in one thing the schema states:
-    ``coverage_gap``'s can never precede ``window[0]`` (the resumption is
-    the clip's first day while it is reported at all), ``tier_change``'s
-    can (the era's true first day, ``R``, against a window clipped at
-    ``D-66``). The re-attribution is an accepted cost, named in F005's
+    ``coverage_gap``'s can never precede ``window[0]`` *by outliving its
+    own clip* (the resumption is the clip's first day while the gap is
+    reported at all), ``tier_change``'s can (the era's true first day,
+    ``R``, against a window clipped at ``D-66``). Since T107 a
+    ``coverage_gap``'s can precede ``window[0]`` for the other reason --
+    an era boundary clipping later than the resumption -- which is not
+    this series: here the two clips coincide on ``R``, which is why the
+    ``>=`` assertions below still hold and why this pin could not see
+    G-C6-5. The re-attribution is an accepted cost, named in F005's
     Negative Class; the baseline is established from ``R+20`` on, so
     nothing downstream is misled. T095's tolerance does not move the
     ``R+67`` hand-off: the boundary has no strays on either side.

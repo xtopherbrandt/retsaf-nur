@@ -994,8 +994,14 @@ def test_every_published_exclusion_reason_is_observed_in_a_rendered_response() -
     endpoints, not enum prose), and ``before_reset: tier_change`` was exactly
     that until T098 made the era clip unconditional (review cycle 4, G-C4-3).
 
-    Two series, because the two resets cannot co-occur -- the coverage gap
-    takes precedence and the era clip runs only when it did not fire:
+    Two series, one per reason, because each is clearest where it is the
+    only reset in play. The two resets **can** co-occur (T107, review cycle
+    6 G-C6-5: the gap takes precedence over the *report* alone, and the era
+    clip runs whether or not it fired) -- the two task notes that recorded
+    "the two resets cannot co-occur" are what left the co-occurring case
+    without a fixture for three cycles; it is pinned in
+    ``test_hrv_trend_reset.py`` rather than here, because the exclusion
+    chain is what this test is about:
 
     * a snapshot era with a ten-day strap trial inside it and a genuine
       switch to a daily strap, plus one row for each screen of the exclusion

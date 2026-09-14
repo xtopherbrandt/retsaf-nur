@@ -90,8 +90,10 @@ class Baseline(BaseModel):
             "baseline spans the full 60 days -- read `window`. For `tier_change` it is the era's true "
             "first day and may precede window[0] (the window is clipped at date-66; the era is not, and "
             "reset_on does not slide as it ages). For `coverage_gap` it is "
-            "the resumption day and never precedes window[0]: the gap is reported only while the resumption "
-            "lies inside [date-66, date], and window[0] is the resumption itself for as long as it is."
+            "the resumption day: the gap is reported only while the resumption lies inside "
+            "[date-66, date], so it never precedes window[0] because the report outlived its clip -- but it "
+            "does when a tier-change era boundary clipped the window later than the resumption, since the "
+            "two clips compose as the later of their first days and only the *report* is the gap's."
         )
     )
     reset_reason: Literal["coverage_gap", "tier_change"] | None = Field(

@@ -174,6 +174,22 @@ class HrvSeries:
     two disjoint slices. ``readings`` is the post-exclusion, pre-filter set
     of every tier -- what T092 measures the coverage gap on, because a gap
     is "no entry in the post-exclusion series", not "no stored row".
+
+    **The two clips are not symmetric in what they rebind, deliberately.**
+    The gap clip runs before the tier is resolved, so it rebinds
+    ``readings`` itself -- the gap's era is an era of *every* tier. The
+    era-boundary clip runs after the collapse and is a statement about the
+    **resolved tier's** era, so it rebinds ``series`` alone; rebinding
+    ``readings`` there would drop on-tier pre-boundary readings from the
+    population the gap rule is defined over while leaving the off-tier
+    ones, which is a different set from either. The cost is the standing
+    advisory that ``readings`` still contains readings that ``excluded``
+    lists ``before_reset: tier_change`` -- an overlap inside this dataclass
+    only, unreachable from ``main.py``, which reads ``series``,
+    ``baseline``, ``window`` and ``excluded`` and never ``readings``. T107
+    left it exactly as it was rather than widen it: the era clip's
+    population is unchanged (``series``), and every list the response is
+    built from stays disjoint and exhaustive.
     """
 
     target_date: date
@@ -193,12 +209,17 @@ class HrvSeries:
     #: ``REASON_TIER_CHANGE``. Both ``None`` when nothing is reported.
     #: Defaulted so a series can be built without naming them.
     #: ``baseline_window`` is **not** a function of these: it is clipped to
-    #: ``[max(D-66, <the era's first day>), D-7]`` whenever an era boundary
-    #: exists, whether or not rule 4 reports it (D4a, decision log
-    #: 2026-09-13; T098) -- a tier-change era's first day may precede the
-    #: window (T094). So a ``null`` ``reset_reason`` on a clipped window is
-    #: a reachable state, and it is the athlete being told nothing about a
-    #: baseline that is nonetheless era-correct.
+    #: ``[max(D-66, <a gap resumption>, <the era's first day>), D-7]`` --
+    #: the era boundary's half applies whenever a boundary exists, whether
+    #: or not rule 4 reports it (D4a, decision log 2026-09-13; T098) **and
+    #: whether or not a coverage gap has already fired** (T107, review
+    #: cycle 6 G-C6-5: until then any gap cancelled the era clip outright).
+    #: A tier-change era's first day may precede the window (T094). So a
+    #: ``null`` ``reset_reason`` on a clipped window is a reachable state,
+    #: and it is the athlete being told nothing about a baseline that is
+    #: nonetheless era-correct; so, since T107, is a ``coverage_gap``
+    #: whose ``reset_on`` precedes ``baseline_window[0]`` because the era
+    #: boundary clipped later than the resumption.
     reset_on: date | None = None
     reset_reason: str | None = None
 
@@ -480,7 +501,16 @@ def build_series(
     ``[D-6, D]``). Coupled, as they were until T098, the week half -- judged
     on the **sliding** judged week -- reached the band, and one capture of
     the other tier, contributing nothing to the week mean, un-clipped a
-    finished device era back into it (review cycle 4, G-C4-1). ``rows``
+    finished device era back into it (review cycle 4, G-C4-1).
+
+    **A coverage gap cancels neither** (T107, review cycle 6, G-C6-5).
+    The gap's precedence is over the *report* alone: rule 4 is asked on
+    every request, and the two clips compose as the later of their first
+    days -- ``[max(D-66, <the resumption>, <the era's first day>), D-7]``
+    -- because neither pre-gap nor pre-boundary readings may be in the
+    band (``research/00`` §5.4). Until T107 this branch sat behind ``if
+    reset_on is None``, so any gap in ``[D-66, D]`` meant no boundary was
+    computed and nothing was clipped at all. ``rows``
     must span ``[D-126, D]`` for the rule to be able to
     fire, since a narrower read leaves the previous window empty, which
     reads as "thin" and never as a change. See ``coverage_gap_reset`` and
@@ -522,11 +552,14 @@ def build_series(
     if earliest_start_time is not None:
         earliest_day, _ = local_day("<earliest_start_time>", earliest_start_time, zone)
 
-    reset_on = coverage_gap_reset(readings, earlier_readings, earliest_day)
-    reset_reason = REASON_COVERAGE_GAP if reset_on is not None else None
-    if reset_on is not None:
-        baseline = (reset_on, baseline[1])
-        readings, excluded = _exclude_before_reset(readings, excluded, reset_on, REASON_COVERAGE_GAP)
+    gap_reset_on = coverage_gap_reset(readings, earlier_readings, earliest_day)
+    reset_on = gap_reset_on
+    reset_reason = REASON_COVERAGE_GAP if gap_reset_on is not None else None
+    if gap_reset_on is not None:
+        baseline = (gap_reset_on, baseline[1])
+        readings, excluded = _exclude_before_reset(
+            readings, excluded, gap_reset_on, REASON_COVERAGE_GAP
+        )
 
     # The population both the tier rule and the tier-change rule read: every
     # tier, inside the (possibly clipped) baseline window -- and, for the
@@ -551,26 +584,50 @@ def build_series(
 
     series = tuple(series_by_day[day] for day in sorted(series_by_day))
 
-    if reset_on is None:
-        boundary = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
-        if boundary is not None:
-            # D4a (T098): the clip is unconditional. The era may have begun
-            # before D-66 (T094: ``first_day`` is its true first day, not
-            # the first inside the window); the window reported is the
-            # schema's ``[max(D-66, boundary.first_day), D-7]``, whether or
-            # not ``reset_on`` is reported. The readings the clip removes
-            # leave the series for ``excluded`` as
-            # ``before_reset: tier_change``, so they are in exactly one list
-            # (``research/00`` §1.6) and the contract's published enum
-            # member is reachable.
-            baseline = (max(boundary.first_day, baseline[0]), baseline[1])
-            kept, excluded = _exclude_before_reset(
-                list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
-            )
-            series = tuple(kept)
-            if boundary.reported:
-                reset_on = boundary.first_day
-                reset_reason = REASON_TIER_CHANGE
+    boundary = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
+    if boundary is not None:
+        # D4a (T098), made true of a gapped series by T107 (review cycle 6,
+        # G-C6-5): the clip is unconditional -- on the report *and* on the
+        # coverage gap. Until T107 this branch sat behind ``if reset_on is
+        # None``, so any gap in ``[D-66, D]`` meant rule 4 was never asked
+        # and **nothing was clipped**, which drew an abandoned device era
+        # back into the band and read a suppressed week as normal, with no
+        # threshold to cross. ``research/00`` §5.4 says the now-sustaining
+        # tier's pre-boundary readings are *never* in the band; only the
+        # *report* was ever the gap's to win.
+        #
+        # The two clips compose as the **later** first day. Each says the
+        # same kind of thing -- these readings are not of this baseline's
+        # era -- so the band must contain neither the pre-gap nor the
+        # pre-boundary readings, and the admissible set is the
+        # intersection. ``baseline[0]`` already carries
+        # ``max(D-66, gap_reset_on)``, so this one ``max`` composes all
+        # three. The era may have begun before D-66 (T094: ``first_day`` is
+        # its true first day, not the first inside the window); the window
+        # reported is the schema's
+        # ``[max(D-66, gap_reset_on, boundary.first_day), D-7]``, whether or
+        # not ``reset_on`` is reported.
+        #
+        # Nothing is listed twice (``research/00`` §1.6). The gap branch
+        # rebinds ``readings`` before the collapse, so ``series`` holds only
+        # what it kept; this branch excludes out of ``series``. The two
+        # populations are therefore disjoint by construction, and a boundary
+        # earlier than the resumption removes nothing here rather than
+        # re-excluding what the gap already took.
+        baseline = (max(boundary.first_day, baseline[0]), baseline[1])
+        kept, excluded = _exclude_before_reset(
+            list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
+        )
+        series = tuple(kept)
+        # The gap keeps the *report* -- rule 4's precedence is unchanged, and
+        # only it was ever precedence over. A gapped series can therefore
+        # report ``coverage_gap`` on a window clipped later than the
+        # resumption, which is the one claim T107 had to qualify: a
+        # ``coverage_gap``'s ``reset_on`` no longer never precedes
+        # ``baseline_window[0]``.
+        if boundary.reported and gap_reset_on is None:
+            reset_on = boundary.first_day
+            reset_reason = REASON_TIER_CHANGE
 
     # Once, after both reset branches have had their say: each moves
     # readings into ``excluded`` out of order (``_exclude_before_reset``
@@ -825,11 +882,16 @@ def coverage_gap_reset(
       reported as ``tier_change`` on the same ``reset_on`` from that day
       until rule 4(b) fails (``tier_change_reset``), then as nothing -- one
       era, one ``reset_on``, three reports and no event between them, the
-      accepted cost named in F005's Negative Class. It follows that a
-      ``coverage_gap``'s ``reset_on`` never precedes ``baseline_window[0]``
-      (the clip's first day *is* the resumption while it is reported),
-      whereas a ``tier_change``'s can (the era's true first day against a
-      window clipped at ``D-66``).
+      accepted cost named in F005's Negative Class. A ``coverage_gap``'s
+      ``reset_on`` precedes ``baseline_window[0]``
+      only when an era boundary clipped the window *later* than the
+      resumption -- never because the gap report has outlived its own
+      clip, as a ``tier_change``'s ``reset_on`` can (the era's true first
+      day against a window clipped at ``D-66``). Before T107 (review cycle
+      6, G-C6-5) it could not precede it at all, because a gap cancelled
+      the era clip outright; the composed clip is
+      ``max(D-66, resumption, era first day)`` and the gap keeps only the
+      *report*.
     """
     days = sorted(_days(readings))
     if not days:
@@ -859,11 +921,15 @@ def _exclude_before_reset(
     what is excluded stay disjoint and exhaustive over the rows in
     ``[D-66, D]``.
 
-    Both resets call it (T098): the gap rule on the pre-filter readings of
-    every tier, before the baseline tier is resolved on the clipped window,
-    and the era-boundary clip on the collapsed one-per-day series, after
-    it -- off-tier rows are already listed ``off_baseline_tier`` there and
-    must not be listed twice. Until T098 the tier-change branch narrowed
+    Both resets call it (T098), and since T107 both can call it on one
+    request: the gap rule on the pre-filter readings of every tier, before
+    the baseline tier is resolved on the clipped window, and the
+    era-boundary clip on the collapsed one-per-day series, after it --
+    off-tier rows are already listed ``off_baseline_tier`` there and must
+    not be listed twice. The two populations cannot overlap either,
+    because the gap branch **rebinds** ``readings`` and the series is built
+    from what it kept, so a reading the gap excluded is not there for the
+    era clip to exclude again (``research/00`` §1.6's "exactly one list"). Until T098 the tier-change branch narrowed
     ``baseline`` without moving anything, so the readings it dropped were
     in neither list and the contract's ``before_reset: tier_change`` was
     unreachable (review cycle 4, G-C4-3)."""
@@ -942,7 +1008,9 @@ class EraBoundary:
 
     #: ``B_start``'s local day: the resolved tier's first reading after the
     #: old era's last. ``build_series`` clips ``baseline`` to
-    #: ``[max(D-66, first_day), D-7]`` on it unconditionally.
+    #: ``[max(D-66, first_day), D-7]`` on it unconditionally -- on the
+    #: report (T098) and, since T107, on a coverage gap too, composing with
+    #: the gap's own clip as the later of the two first days.
     first_day: date
     #: Rule 4(c)'s week half on this boundary's strays: ``reset_on`` /
     #: ``reset_reason`` are reported only when it holds.
@@ -1153,9 +1221,19 @@ def tier_change_reset(
     eras interleave and no reset is reported -- G6's intended behaviour,
     and the accepted cost of tolerating the isolated capture.
 
-    A coverage gap takes precedence: ``build_series`` only asks this rule
-    when no gap reset was found, because the gap's resumption day is where
-    the fresh baseline begins and the tier was already resolved on that era.
+    A coverage gap takes precedence **over the report, and over that
+    alone** (T107, review cycle 6 G-C6-5). ``build_series`` asks this rule
+    on every request, gap or no gap, and composes the two clips as the
+    later of their first days; when a gap has fired, ``reset_reason`` stays
+    ``coverage_gap`` and this boundary's ``reported`` is not consulted.
+    Until T107 the rule was asked only ``if reset_on is None``, so any gap
+    in ``[D-66, D]`` meant no boundary was computed and **nothing was
+    clipped** -- an abandoned device era re-entered the band and a
+    suppressed week read ``hrv_normal``, with no threshold to cross. Note
+    that ``baseline_readings`` reaching this rule is already gap-clipped,
+    so clause (a) is judged on the resumption era; the boundary itself is
+    found over both windows and may precede the resumption, in which case
+    the gap's clip is the later one and this one removes nothing.
     """
     if tier is None:
         return None
