@@ -1688,6 +1688,174 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
 
 
 # ---------------------------------------------------------------------------
+# T108 (review cycle 6, G-C5-2, raised in cycle 5 and scheduled after cycle 6
+# measured its scope): the unit the tolerance counts in is **distinct local
+# days**, not captures, and three sites say so -- ``_era_boundary``'s
+# candidacy gate (``stray_days = len(_days(strays))``) and both halves of
+# ``_isolated``. Every stray fixture written before this one seeds exactly
+# one capture per stray day, so a regression to captures at any of the three
+# survived the whole F005 suite: verified in-process at 7103fd7, 387/387
+# green under each of the three mutants, against a control mutant (``<`` ->
+# ``<=`` at the same gate) that killed 3 and proved the harness live.
+#
+# The population is F004's own: **an athlete who re-takes a morning after a
+# bad reading.** Thirteen stray days are fourteen stray captures, and under a
+# regression to captures the boundary is refused, the pre-switch trial
+# re-enters the band and a suppressed week reads normal -- D5's accepted
+# cliff, crossed by a re-take rather than by a capture, which is what F005's
+# Negative Class and AC 17 now name this unit as deciding.
+#
+# Each pin below therefore asserts values that **differ between the two
+# readings of the unit**. A fixture with one capture per stray day cannot;
+# that is precisely how these three sites went undefended for five cycles.
+# ---------------------------------------------------------------------------
+
+
+def with_a_retaken_morning(trial_days: int, retake_index: int | None) -> list[dict]:
+    """``test_thirteen_stray_days_...``'s series -- a genuine switch at
+    ``D-30``, plus a strap trial at 07:00 wholly inside the snapshot era and
+    straddling ``D-67`` so the strap never sustains the previous window --
+    with one trial morning optionally **re-taken** at 08:00 after its 07:00
+    capture. The re-take adds a stray *capture* and no stray *day*: it is the
+    only difference between the two series the pin below compares."""
+    days = span(ago(72), ago(72) + timedelta(days=trial_days - 1))
+    assert in_previous_window(days, D) < hrv_trend.MIN_BASELINE_READINGS
+    rows = genuine_switch(ago(30), D, snapshot_from=ago(126))
+    rows += [row(local(day, 7), STRAP, 25.0, f"strap-trial-{day}") for day in days]
+    if retake_index is not None:
+        retaken = days[retake_index]
+        rows += [row(local(retaken, 8), STRAP, 25.0, f"strap-trial-retake-{retaken}")]
+    return rows
+
+
+def test_a_retaken_trial_morning_is_one_more_stray_capture_and_no_more_stray_day() -> None:
+    """The candidacy half counts **days**, so an athlete who re-takes a bad
+    morning inside the old era still has 13 stray days -- and 14 stray
+    captures. The pair below is one series and the same series with a second
+    capture at 08:00 on ``D-60``, the last trial morning and one that sits
+    inside ``[D-66, D-7]``, so the extra capture is real and reaches the era
+    rules: it is listed as ``same_day_later_capture`` before the collapse,
+    and the 07:00 capture of that day is then clipped ``before_reset:
+    tier_change`` like every other trial reading. Both sides read
+    ``tier_change`` on ``D-29``, ``baseline`` clipped to ``[D-29, D-7]``,
+    ``n`` 23 and a flat 25 ms band.
+
+    **The observable that differs between days and captures** is every line
+    of the report and of the clip.
+
+    *If the rule counted captures* -- ``stray_days = len(strays)`` at
+    ``hrv_trend.py:1099``, the mutant this pin kills, which survived 387/387
+    at 7103fd7 -- the re-taken side would read 14 stray captures, ``14 < 14``
+    would fail, **no boundary would exist at all**, and this side alone would
+    read ``(STRAP, None, None)`` on the un-clipped ``baseline_window(D)``
+    with ``n`` 30: the abandoned snapshot era back in the band because the
+    athlete took one reading twice.
+
+    *If ``_isolated``'s candidacy half counted captures* --
+    ``len(readings) < MIN_BASELINE_READINGS`` at ``hrv_trend.py:986``, the
+    second mutant this pin kills -- the gate would still admit the boundary
+    on 13 days, so the clip would stand at ``[D-29, D-7]`` with ``n`` 23 and
+    only ``reset_reason`` / ``reset_on`` would go to ``(None, None)``. The
+    two mutants are told apart here: the first moves the window and ``n``,
+    the second moves the report alone."""
+    (once,) = reported(with_a_retaken_morning(13, retake_index=None), [D])
+    (retaken,) = reported(with_a_retaken_morning(13, retake_index=12), [D])
+    retaken_on = ago(60)
+
+    # :1099's death certificate -- the window and n it alone would move.
+    assert retaken.baseline_window == once.baseline_window == (ago(29), ago(7))
+    assert retaken.baseline_n == once.baseline_n == 23
+    # :986's death certificate -- the report, which both mutants would move.
+    assert retaken.report == once.report == (STRAP, "tier_change", ago(29))
+    assert retaken.band_lo == pytest.approx(flat_band_lo(25.0))
+    assert retaken.verdict == once.verdict == hrv_trend.VERDICT_NORMAL
+
+    # The re-take is a real second capture of that morning, listed twice over.
+    listing = excluded_reasons(build(with_a_retaken_morning(13, retake_index=12), target=D))
+    assert listing[f"strap-trial-retake-{retaken_on}"] == hrv_trend.REASON_SAME_DAY_LATER_CAPTURE
+    assert listing[f"strap-trial-{retaken_on}"] == f"{hrv_trend.REASON_BEFORE_RESET}: tier_change"
+
+
+def test_isolated_counts_distinct_days_in_both_halves_not_captures() -> None:
+    """``_isolated`` stated directly, which is the cleaner statement of a
+    two-term predicate: through ``build_series`` each half is only visible in
+    the projection it happens to control, and the week half's own count is
+    then buried under the candidacy half's. Both halves are asserted here on
+    stray sets whose day count and capture count **differ**, which is the
+    whole of what this pin adds -- every other ``_isolated`` fixture in the
+    suite seeds one capture per day, so both readings of the unit agree on
+    it.
+
+    The candidacy set is a 13-morning trial of which ``D-69`` was re-taken:
+    13 days, 14 captures, none inside ``[D-6, D]``. The week set is two
+    old-tier mornings inside ``[D-6, D]`` of which ``D-3`` was re-taken: 2
+    days, 3 captures, and 2 days in all.
+
+    *If the candidacy half counted captures* (``len(readings) <
+    MIN_BASELINE_READINGS``, ``hrv_trend.py:986``) the first assertion would
+    read ``False`` on ``14 < 14``. *If the week half counted captures*
+    (``len(_within(readings, judged)) < MIN_WINDOW_READINGS``,
+    ``hrv_trend.py:987``) the second would read ``False`` on ``3 < 3``. Both
+    mutants survived 387/387 at 7103fd7."""
+    judged = hrv_trend.judged_window(D)
+
+    trial_days = span(ago(72), ago(60))
+    candidacy = [parsed_reading(day, 7, STRAP) for day in trial_days]
+    candidacy.append(parsed_reading(ago(69), 8, STRAP))
+    assert (len(candidacy), len(hrv_trend._days(candidacy))) == (14, 13)
+    assert hrv_trend._within(candidacy, judged) == ()
+    assert hrv_trend._isolated(candidacy, judged) is True
+
+    week = [parsed_reading(ago(4), 6, SNAPSHOT), parsed_reading(ago(3), 6, SNAPSHOT)]
+    week.append(parsed_reading(ago(3), 9, SNAPSHOT))
+    inside = hrv_trend._within(week, judged)
+    assert (len(inside), len(hrv_trend._days(inside))) == (3, 2)
+    assert len(hrv_trend._days(week)) == 2 < hrv_trend.MIN_BASELINE_READINGS
+    assert hrv_trend._isolated(week, judged) is True
+
+
+def test_a_retaken_morning_in_the_judged_week_is_two_old_tier_days_not_three() -> None:
+    """The week half -- ``EraBoundary.reported`` -- counts **days** inside
+    ``[D-6, D]``, so the third *capture* of a re-taken old-tier morning does
+    not do what the third old-tier *day* does. ``trial_then_switch``'s series
+    with snapshot strays on ``base-4`` and ``base-3``, then the same series
+    with ``base-3`` re-taken at 09:00: 2 stray days, 3 stray captures inside
+    the judged week. The switch is still reported.
+
+    **The observable that differs between days and captures** is
+    ``reset_reason`` / ``reset_on``, and only those: the candidacy half is
+    untouched at 12 stray days (13 captures), so ``baseline_window``, ``n``,
+    the band and the verdict are identical on both sides and under every one
+    of the three mutants. The companion pin
+    ``test_a_third_old_tier_capture_in_the_judged_week_moves_the_report_and_nothing_else``
+    is the three-*day* side of the same threshold, and it cannot tell the two
+    readings apart because its third capture is also a third day.
+
+    *If the week half counted captures* -- ``len(_within(readings, judged)) <
+    MIN_WINDOW_READINGS`` at ``hrv_trend.py:987``, the mutant this pin kills
+    and the only one of the three it moves, which survived 387/387 at
+    7103fd7 -- the re-taken side would read ``3 < 3`` false, the boundary
+    would be admitted but not reported, and the athlete would be told
+    ``(None, None)`` because they took one morning twice."""
+    base = date(2026, 9, 7)
+    era_first_day = ago(39, base)
+    retaken_on = ago(3, base)
+    once = trial_then_switch(base, (4, 3))
+    retaken = [*once, row(local(retaken_on, 9), SNAPSHOT, 40.0, f"snap-stray-retake-{retaken_on}")]
+
+    (plain,) = reported(once, [base])
+    (twice,) = reported(retaken, [base])
+
+    # :987's death certificate: the report survives the re-taken morning.
+    assert twice.report == plain.report == (STRAP, "tier_change", era_first_day)
+    # What the re-take does not move, under the correct rule or any mutant.
+    assert twice.baseline_window == plain.baseline_window == (era_first_day, ago(7, base))
+    assert twice.baseline_n == plain.baseline_n == 33
+    assert twice.band_lo == pytest.approx(plain.band_lo)
+    assert twice.verdict == plain.verdict == hrv_trend.VERDICT_SUPPRESSED
+
+
+# ---------------------------------------------------------------------------
 # T107 (review cycle 6, G-C6-5): a coverage gap must not cancel the era clip
 #
 # Until T107 ``build_series`` asked rule 4 only ``if reset_on is None``, so a
