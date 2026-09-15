@@ -1253,6 +1253,30 @@ def tier_change_reset(
     so clause (a) is judged on the resumption era; the boundary itself is
     found over both windows and may precede the resumption, in which case
     the gap's clip is the later one and this one removes nothing.
+
+    **What that clip does to clause (c)** -- the question this docstring
+    was silent on until T118 (review cycle 7, G-C7-3), having answered it
+    for (a) alone. ``baseline_readings`` and ``week_readings`` are both
+    derived from the gap-rebound series, so the readings of
+    ``[D-66, gap_reset_on)`` are absent from ``_era_boundary``'s **stray
+    count** too, not only from (a)'s candidacy count. New-tier readings
+    hidden there would have been strays of every *late* ``A_end`` -- they
+    lie between the old era's first day and that boundary's ``B_start`` --
+    so hiding them shrinks the stray term for late boundaries and can
+    admit, or promote over an earlier candidate, a boundary the full
+    capture history refuses or dates earlier. That boundary's
+    ``first_day`` can then fall **after** the resumption, and the
+    composed clip removes post-resumption readings of the baseline tier
+    from the band as ``before_reset: tier_change``. T107 created this
+    reachability: before it the gap cancelled this branch outright.
+    **Accepted and named, not fixed** (user decision 2026-09-15); the
+    measured reachability, and why its error direction waits on T116's
+    change to the thin-baseline verdict rule, are priced in F005's
+    Negative Class. Pinned at both levels by
+    ``test_the_gap_clip_moves_the_era_boundary_later_than_the_full_history_finds``
+    (one history, the boundary dated 2026-07-03 on the full population and
+    2026-08-14 on the gap-clipped one) and
+    ``test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption``.
     """
     if tier is None:
         return None

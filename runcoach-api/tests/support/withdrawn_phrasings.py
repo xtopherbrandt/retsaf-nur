@@ -23,7 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 WITHDRAWN_SCAN_ANCHORS = (
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "metrics" / "hrv_trend.py",
-        "the gap's clip is the later one and this one removes nothing",
+        "one history, the boundary dated 2026-07-03 on the full population and 2026-08-14 on the gap-clipped one",
         True,
     ),
     (
