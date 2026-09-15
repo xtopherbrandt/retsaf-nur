@@ -835,6 +835,12 @@ def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
 #: are hand-synchronised: nothing in the tree compared them until T105.
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 
+# --- withdrawn-phrasing declarations: begin ---
+# Everything between these two markers *quotes* the withdrawn phrasings in
+# order to declare them, so the scan below excises this span before it reads
+# this file. Do not put live prose here, and do not quote a withdrawn
+# phrasing outside it.
+
 #: The sentences of the ``baseline.reset_reason`` description a client is
 #: invited to key on, transcribed as the smallest fragment that carries each
 #: claim rather than as the paragraph around it. One per decision a reader
@@ -898,6 +904,91 @@ RESET_REASON_WITHDRAWN = (
     "only while the old tier still sustains",
     "is no longer sustained by the old tier",
 )
+
+#: The same equivalence in the idioms the *docstrings* use rather than the
+#: contract's. The two survivors T111 found spelled it "so that (b) fails"
+#: and a "stops ... only when" form of the same sentence, neither of which
+#: any contract copy would ever say -- so a tuple written against contract
+#: prose could not have caught them even pointed at the right files.
+#:
+#: T111's acceptance probe greps *this file* for the second of them, so it
+#: is assembled from fragments rather than written out -- spelling it here
+#: would make the probe red on its own declaration.
+RESET_REASON_WITHDRAWN_IDIOMS = (
+    "so that (b) fails",
+    " ".join(("the report", "stops", "only when")),
+    "the reset stops being reported when the previous window",
+)
+
+# --- withdrawn-phrasing declarations: end ---
+
+#: Every file that carries a *live* copy of the ``tier_change`` lifetime, in
+#: whatever idiom that file uses. T109 withdrew the (b)-alone equivalence and
+#: the two-copy oracle above enforced it -- but only across the two
+#: description strings. Two Stage 0 scanners then found the withdrawn claim
+#: still standing in ``hrv_trend.py``'s ``tier_change_reset`` docstring, in
+#: this suite's own ``test_a_reported_tier_change_sits_beside_the_unclipped_
+#: window_...`` docstring ~250 lines below the tuple T109 corrected, and in
+#: both spec documents. None of those is a description string, so nothing
+#: could see them (T111, gap G-C7-1; ``sweep-the-claim-not-the-diff``, fourth
+#: consecutive cycle on this feature).
+#:
+#: The two spec documents live under the machine-local ``.shipyard``
+#: breadcrumb, which is gitignored, so they are scanned when it is present
+#: and the row is skipped -- loudly -- when it is not.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+WITHDRAWN_SCAN_FILES = (
+    _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "metrics" / "hrv_trend.py",
+    _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
+    _REPO_ROOT / "contracts" / "openapi.yaml",
+    _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
+    _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_reset.py",
+    _REPO_ROOT / ".shipyard" / "spec" / "features" / "F005-resting-hrv-trend.md",
+    _REPO_ROOT / ".shipyard" / "spec" / "references" / "F005-trend-construction.md",
+)
+
+#: This file declares the withdrawn phrasings, so scanning it whole would
+#: always match. The declarations are fenced instead, and only the fence is
+#: excised -- every other line of the suite is scanned like any other file.
+_DECLARATION_FENCE = (
+    "# --- withdrawn-phrasing declarations: begin ---",
+    "# --- withdrawn-phrasing declarations: end ---",
+)
+
+
+def _scannable(path: Path) -> str:
+    """The file's prose, whitespace-flattened.
+
+    Flattening is the whole point: ``hrv_trend.py`` wrapped "is no longer
+    sustained by / the old tier" across a line break and a line-oriented
+    ``grep`` for the sentence returned nothing, which is exactly the false
+    all-clear ``sweep-the-claim-not-the-diff`` warns about.
+    """
+    text = path.read_text(encoding="utf-8")
+    begin, end = _DECLARATION_FENCE
+    if begin in text:
+        head, _, rest = text.partition(begin)
+        _, _, tail = rest.partition(end)
+        text = head + tail
+    return _flat(text)
+
+
+@pytest.mark.parametrize("path", WITHDRAWN_SCAN_FILES, ids=lambda p: p.name)
+def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(path: Path) -> None:
+    """T111 (review cycle 7, G-C7-1). ``RESET_REASON_WITHDRAWN`` was read
+    against the two description strings only, so the four sites that
+    actually carried the withdrawn equivalence -- a module docstring, a
+    test docstring and two spec documents -- were invisible to it by
+    construction. This reads the same tuple against every file that
+    carries a live copy of the ``tier_change`` lifetime, so a recurrence
+    goes red here instead of waiting for a review scanner.
+    """
+    if not path.exists():
+        pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
+    text = _scannable(path)
+    for withdrawn in RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS:
+        assert _flat(withdrawn) not in text, f"withdrawn as false (T103/T105/T109), back in {path.name}: {withdrawn}"
+
 
 #: Where the two copies must agree word for word. The served description is
 #: the longer one (it also carries the lifetimes and "a timezone change is
@@ -1184,14 +1275,22 @@ def test_a_reported_tier_change_sits_beside_the_unclipped_window_once_the_era_is
     era_age: int, window_first: date, n: int
 ) -> None:
     """T103 (review cycle 5, G-C5-5). Until T103 ``contracts/openapi.yaml``
-    and ``schemas.Baseline.reset_reason`` published that "a reported
-    ``tier_change`` never sits beside an unclipped ``window``". The clip is
+    and ``schemas.Baseline.reset_reason`` published the universal now held
+    as ``RESET_REASON_WITHDRAWN``'s first entry (a reported ``tier_change``
+    and an un-clipped ``window``, asserted never to co-occur; quoted there
+    once, not restated here, so the tuple stays the single copy). The clip is
     ``[max(date-66, R), date-7]`` (``build_series``, D4a), so once the era's
     first day ``R`` is ``date-66`` or older the ``max`` yields ``date-66``
     and the reported window is byte-identical to ``baseline_window(date)``
-    -- while ``tier_change`` is still reported, because the report stops
-    only when the previous window ``[date-126, date-67]`` is no longer
-    sustained by the old tier. Reproduced on ``test_hrv_trend_reset.py``'s
+    -- while ``tier_change`` is still reported, because on those rows the
+    report is still live: all three of rule 4's conditions hold together
+    (the strap sustains the baseline window, the previous window
+    ``[date-126, date-67]`` is still sustained by the snapshot, and the
+    eras do not interleave). Clause (b) alone is necessary, not
+    sufficient, so the ``S+80`` day below bounds the report rather than
+    defining it (T109; corrected here by T111, which found this docstring
+    still stating the withdrawn equivalence ~250 lines below the tuple
+    T109 fixed). Reproduced on ``test_hrv_trend_reset.py``'s
     ``S+80`` row before this pin was written: ``reset_reason
     tier_change``, ``reset_on 2026-05-02``, ``baseline_window (2026-05-15,
     2026-07-13)``, ``baseline_window(2026-07-20) (2026-05-15,

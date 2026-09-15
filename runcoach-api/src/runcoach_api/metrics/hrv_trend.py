@@ -1182,19 +1182,26 @@ def tier_change_reset(
     therefore precede the clipped window's first day; ``build_series``
     reports ``[max(D-66, gap_reset_on, reset_on), D-7]`` -- the gap term
     being why a reported ``coverage_gap``'s ``reset_on`` can precede
-    ``window[0]`` too (T107), in the other direction. The reset stops being
-    reported when the previous window ``[D-126, D-67]`` is no longer sustained by
-    the old tier, so that (b) fails -- ``sustained_tier`` is the
-    highest-fidelity tier with ``MIN_BASELINE_READINGS`` days there, so
-    the boundary is direction-dependent (review cycle 3, S1): for a
-    forward switch (snapshot to strap) it is the day the strap reaches 14
-    there, ``S+80`` for a daily device; for the reverse one (strap to
-    snapshot) the old strap keeps that window by fidelity until it drops
-    below 14 there, ``T+114``, a month after the snapshot reached 14
-    (``T+81``). Either way the old tier holds at least 14 days in the
-    previous window while (b) holds, so there is never a reset whose first
-    day is unknown, and an era boundary always has a ``B`` reading after
-    it by construction.
+    ``window[0]`` too (T107), in the other direction. **The report is live
+    only while (a), (b) and the week half all hold** -- any one of the
+    three can lapse on its own and this returns nothing on that day
+    (T109; T111 corrected this paragraph, which read the (b) route as the
+    whole lifetime). The (b) route is the one with a closed form, and it
+    is the *latest* of the three: ``sustained_tier`` is the
+    highest-fidelity tier with ``MIN_BASELINE_READINGS`` days in
+    ``[D-126, D-67]``, so the day (b) lapses is direction-dependent
+    (review cycle 3, S1): for a forward switch (snapshot to strap) it is
+    the day the strap reaches 14 there, ``S+80`` for a daily device; for
+    the reverse one (strap to snapshot) the old strap keeps that window by
+    fidelity until it drops below 14 there, ``T+114``, a month after the
+    snapshot reached 14 (``T+81``). Those dates bound the report; they do
+    not promise it, because (a) or the week half may have ended it
+    earlier -- a resolved tier that never reaches or falls back below
+    ``MIN_BASELINE_READINGS`` in the baseline window, or a few days of the
+    other device inside ``[D-6, D]``. Either way the old tier holds at
+    least 14 days in the previous window while (b) holds, so there is
+    never a reset whose first day is unknown, and an era boundary always
+    has a ``B`` reading after it by construction.
 
     What each clause refuses to call a change. (a): a thin new tier is not
     yet "dense enough to sustain a baseline" (F005), and a single off-tier
