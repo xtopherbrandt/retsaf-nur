@@ -920,12 +920,48 @@ def _load_module(name: str, path: Path) -> ModuleType:
 
 #: The withdrawn phrasings, the docstring idioms of the same claims, and the
 #: files scanned for them live in ``tests/support/withdrawn_phrasings.py``
-#: (T114, gap G-C7-10). They used to live here, in the file that scans for
-#: them, and the fence that stopped the scan matching its own declarations was
-#: defeated twice by a marker pairing off with another copy of itself -- the
-#: second time by the commit that fixed the first. Moving the declarations out
-#: deletes the fence, the excision and that whole class of defect: this file is
-#: now scanned in full, like every other file in the table.
+#: (T114, gap G-C7-10). That module is deliberately outside the scan corpus:
+#: it is not listed in ``WITHDRAWN_SCAN_FILES``, so nothing reads it, which is
+#: what lets it hold the literals. What *is* asserted about the corpus is that
+#: it still holds all seven files
+#: (``test_the_scan_corpus_still_holds_every_file_it_was_built_for``) and that
+#: each of them carries none of the phrasings (the parametrised scan below).
+#: Measured 2026-09-15 by flattening every ``.py``/``.md``/``.yaml``/``.toml``
+#: /``.txt``/``.json`` file in the tree: the only other files carrying a
+#: withdrawn phrasing are historical records -- the CHANGELOG's retraction
+#: entries, five completed task files, three subagent-return transcripts and
+#: two verdicts -- which ``sweep-the-claim-not-the-diff`` says to leave. That
+#: is a measurement of one tree on one date, not an invariant; nothing asserts
+#: it, and a new live copy outside the seven corpus files would not be seen.
+#: T115 (G-C7-18) moved everything except the declarations themselves here, to
+#: a file the scan reads in full, so the residue nothing reads is three tuples
+#: and a one-line docstring rather than seventy further lines of gloss --
+#: gloss being exactly what has twice drifted into a literal copy of a
+#: withdrawn phrasing on this feature.
+#:
+#: Why the declarations moved out. Until T114 they lived here, in the file
+#: that scans for them, and every consequence of that self-reference had to be
+#: engineered around:
+#:
+#: * the scan would have matched its own declarations, so the declaring
+#:   literals were wrapped in marker comments and excised before scanning. Two
+#:   generations of that fence were defeated by a marker pairing off with
+#:   another copy of itself, the second time *by the commit that fixed the
+#:   first* (T113 split one fenced region into two, after which deleting the
+#:   first end marker left the fence balanced, the suite green and ~12 lines
+#:   of live commentary silently unscanned);
+#: * prose near the declarations could not quote a withdrawn phrasing without
+#:   turning the scan red on itself, so glosses survived on markup asterisks
+#:   or by index alone;
+#: * the anchor proving the scan had read this file was itself one of the
+#:   literals in that table, so a truncation dropped the live copy and passed
+#:   on the configuration copy (measured 2026-09-14: truncating the suite
+#:   after line 1000 left it green).
+#:
+#: Moving the declarations out removes all three at once. There is no fence in
+#: the tree any more, nothing is excised from any scanned file, and this file
+#: is read in full by the parametrised scan below -- whose
+#: ``test_hrv_trend_endpoint.py`` row is what fails if it stops being.
 #:
 #: Loaded from its path because the workspace runs pytest with
 #: ``--import-mode=importlib``, under which nothing in ``tests/`` is importable
@@ -936,6 +972,67 @@ _DECLARATIONS = _load_module(
 RESET_REASON_WITHDRAWN = _DECLARATIONS.RESET_REASON_WITHDRAWN
 RESET_REASON_WITHDRAWN_IDIOMS = _DECLARATIONS.RESET_REASON_WITHDRAWN_IDIOMS
 WITHDRAWN_SCAN_FILES = _DECLARATIONS.WITHDRAWN_SCAN_FILES
+
+#: What the three declarations are (T115, G-C7-18: this note used to live
+#: beside them, in the module nothing scans).
+#:
+#: ``RESET_REASON_WITHDRAWN`` holds the phrasings withdrawn as false, which no
+#: live copy may carry again, in the order they are declared:
+#:
+#: 1. T103's universal (a reported ``tier_change`` and an un-clipped window can
+#:    never hold at the same time);
+#: 2-3. T105's replacement universal, in the two spellings it was written in
+#:    (the no-op stretch presented as something every report ends in, rather
+#:    than as the conditional stretch it is);
+#: 4-5. T109's two spellings of T105's false equivalence -- the gloss that
+#:    equated report-liveness with clause (b), which lived in both contract
+#:    copies, and the lifetime sentence that stated the same equivalence the
+#:    other way round, which lived in the served copy alone and so was
+#:    invisible to a pin that only compared the two copies' shared run.
+#:
+#: Entries 4 and 5 are false for the same reason: clause (b) is necessary for
+#: the report, not sufficient. The one-shot ``! grep -q`` in those tasks' own
+#: acceptance probes is the weak form ``sweep-the-claim-not-the-diff`` warns
+#: about -- it never runs again. These do.
+#:
+#: ``RESET_REASON_WITHDRAWN_IDIOMS`` holds the same equivalence in the idioms
+#: the *docstrings* use rather than the contract's. The two survivors T111
+#: found are its entries 1 and 2 -- a form keyed on clause (b) failing, and a
+#: form keyed on when the report ceases, neither of which any contract copy
+#: would ever say -- so a tuple written against contract prose could not have
+#: caught them even pointed at the right files.
+#:
+#: ``WITHDRAWN_SCAN_FILES`` is every file that carries a *live* copy of the
+#: ``tier_change`` lifetime, in whatever idiom that file uses. T109 withdrew
+#: the (b)-alone equivalence and the two-copy oracle enforced it -- but only
+#: across the two description strings. Two Stage 0 scanners then found the
+#: withdrawn claim still standing in ``hrv_trend.py``'s ``tier_change_reset``
+#: docstring, in this suite's own docstring for the reported-``tier_change``
+#: case, and in both spec documents. None of those is a description string, so
+#: nothing could see them (T111, gap G-C7-1; ``sweep-the-claim-not-the-diff``,
+#: fourth consecutive cycle on this feature).
+#:
+#: The two spec documents live under the machine-local ``.shipyard``
+#: breadcrumb, which is gitignored, so they are scanned when it is present and
+#: the row is skipped -- loudly -- when it is not.
+#:
+#: Paired with each file is its **positive control**: a live phrase the
+#: scanned text must contain. Every other assertion in the scan is negative,
+#: so without this the scan is green over a file it never read -- an empty
+#: read, or a path that stopped carrying the prose it is here for (T113, gap
+#: G-C7-6). What an anchor has to be is asserted rather than described:
+#: ``test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy``
+#: fails if an anchor is absent from its file, if it occurs more than once
+#: there, or if it starts before the 98% mark of that file's flattened text
+#: (T115, G-C7-17). Measured 2026-09-15 on the layout of that date, the seven
+#: anchors start at 99.1%, 99.4%, 99.8%, 99.6%, 99.6%, 99.9% and 99.7% of
+#: their files' flattened text, and each occurs exactly once -- that is a
+#: measurement of one layout on one date and not an invariant, which is why
+#: the two assertions above exist. The invariant is the 98% floor with
+#: the uniqueness, and what trips it is a second occurrence of an anchor
+#: phrase earlier in its file, or a truncation dropping the tail past an
+#: anchor. An edit confined to the last two percent after an anchor is not
+#: something these controls can see.
 
 
 #: T114 (review cycle 7, G-C7-14). Eight live notes in this suite and in
@@ -968,11 +1065,22 @@ WITHDRAWN_ORDER = (
 
 
 def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None:
-    """The index-by-index pin ``WITHDRAWN_ORDER`` describes. A reorder, a
-    mid-tuple insert, a deletion or a reworded entry all go red here, and the
-    length check makes an *append* the only change that passes silently --
-    which is the only one that leaves every existing index pointing where the
-    prose says it points."""
+    """The index-by-index pin ``WITHDRAWN_ORDER`` describes.
+
+    The digest loop is what catches a reorder, a mid-tuple insert, a reword or
+    a deleted entry: each of those either re-points a pinned index at a
+    different claim, so that index's digest no longer matches, or indexes past
+    the end of the tuple and raises before the comparison.
+
+    The two length assertions after it close the one change the digest loop
+    cannot see: a ``WITHDRAWN_ORDER`` row deleted *together with* its tuple
+    entry, which leaves every surviving digest correct while the scan has
+    silently stopped guarding that phrasing (T115, G-C7-16). They also make an
+    append red until ``WITHDRAWN_ORDER`` gains the row that pins the new entry
+    -- an entry no row pins is one the index notes cannot name. The ``>=``
+    that stood here before T115 could not fail at all: the pinned indices are
+    contiguous ``1..N``, so a short tuple always raised ``IndexError`` in the
+    loop above first."""
     tuples = {
         "RESET_REASON_WITHDRAWN": RESET_REASON_WITHDRAWN,
         "RESET_REASON_WITHDRAWN_IDIOMS": RESET_REASON_WITHDRAWN_IDIOMS,
@@ -986,7 +1094,14 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
         )
     for name, tup in tuples.items():
         pinned = [row for row in WITHDRAWN_ORDER if row[0] == name]
-        assert len(tup) >= len(pinned), f"{name} lost an entry the prose names by index"
+        assert len(tup) == len(pinned), (
+            f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
+            f"every entry is pinned by exactly one row, and every row pins an entry"
+        )
+    assert len(WITHDRAWN_ORDER) == 8, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 8: a row and its "
+        f"tuple entry dropped together leave every remaining digest correct"
+    )
 
 
 def test_the_scan_corpus_still_holds_every_file_it_was_built_for() -> None:
@@ -1040,9 +1155,19 @@ def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(path
     if not path.exists():
         pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
     text = _scannable(path)
-    assert _flat(anchor) in text, (
+    flat_anchor = _flat(anchor)
+    assert flat_anchor in text, (
         f"{path.name}: the scan did not read its live anchor, so every all-clear below "
         f"would be a report over text nothing read: {anchor}"
+    )
+    assert text.count(flat_anchor) == 1, (
+        f"{path.name}: the anchor occurs {text.count(flat_anchor)} times, so a truncation "
+        f"dropping the tail past the last one still finds an earlier copy: {anchor}"
+    )
+    assert text.find(flat_anchor) / len(text) > 0.98, (
+        f"{path.name}: the anchor starts at "
+        f"{text.find(flat_anchor) / len(text):.1%} of the flattened text, not past 98%, so "
+        f"a truncation of the tail can drop live prose and still leave the anchor: {anchor}"
     )
     for withdrawn in RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS:
         assert _flat(withdrawn) not in text, f"withdrawn as false (T103/T105/T109), back in {path.name}: {withdrawn}"
