@@ -95,16 +95,63 @@ WINDOW_DAYS = 7
 #: week, else the candidate read last takes it; with no candidate, the
 #: densest tier). Days, not captures (T095): ``judge``'s ``established``
 #: counts the collapsed one-per-day series, and the same number must mean
-#: the same thing wherever the response echoes it. Candidacy has no
-#: recency of its own -- a stale trial is a candidate until it ages out
-#: (F005 "stale candidacy"). ``tier_change_reset`` reads it as "sustains"
-#: and as the tolerance's candidacy threshold, and T084 as "established".
+#: the same thing wherever the response echoes it. Since T117 candidacy
+#: also carries a recency condition (``RECENCY_TOLERANCE_DAYS``), so a
+#: trial abandoned more than four weeks before the tier the athlete is
+#: actually on was last read is no longer a candidate -- until T117 it
+#: stayed one until it aged out of the window, which is the defect
+#: IDEA-064 named and F005's Negative Class priced as "stale candidacy".
+#: ``tier_change_reset`` reads this constant as "sustains" and as the
+#: tolerance's candidacy threshold -- **in neither place with the recency
+#: condition attached**, see that function -- and T084 as "established".
 MIN_BASELINE_READINGS = 14
 #: A silence of **more than** this many consecutive local days with no entry
 #: in the post-exclusion series re-establishes the baseline (T092;
 #: construction reference "Constants": survives a taper, a holiday or a
 #: two-week illness; catches an era break). 21 does not reset; 22 does.
 GAP_RESET_DAYS = 21
+#: A candidate for the baseline must also have been read **recently**,
+#: relative to the other candidates: a tier whose latest local day in the
+#: baseline window falls more than this many days behind the latest such
+#: day of any candidate is struck from the candidate set before rule 2 is
+#: asked (``resolve_baseline_tier``; T117, 2026-09-15, closing IDEA-064).
+#: The comparison is between candidates, not against an absolute offset
+#: from ``D-7``, so the response's ``thresholds`` block gains no key.
+#:
+#: Why 28, and not any other value in the measured green band
+#: ``[18, 44]`` (394 tests of the five HRV suites, re-measured
+#: 2026-09-15; 17 strips a legitimately resuming snapshot, 45 re-admits
+#: the July trial):
+#:
+#: * **28 = 4 x ``WINDOW_DAYS``** -- four judged weeks. Stated in the
+#:   rule's own unit, it says a tier read at least once in any four
+#:   consecutive judged weeks is never struck for staleness.
+#: * **28 > ``GAP_RESET_DAYS`` (21)**, which is the load-bearing half.
+#:   The two mechanisms answer different questions and must not overlap:
+#:   ``coverage_gap_reset`` measures the silence of the series as a whole
+#:   (every tier together) and calls more than 21 days a *break*; this
+#:   measures one tier's silence *while another tier kept capturing*. A
+#:   tolerance of 21 or less would let relative staleness strike a tier
+#:   for a silence shorter than the shortest silence this feature is
+#:   willing to call a break -- two rules disagreeing about the same
+#:   number of days. Above 21 they cannot: pinned by
+#:   ``test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it``,
+#:   whose ``GAP_RESET_DAYS`` row goes red the moment the tolerance is
+#:   lowered to it.
+#:
+#: Which of the two fires first is not a race but a partition, and it is
+#: decided by *where the readings are*, not by 28 against 21. When the
+#: whole series goes silent for more than 21 days, the gap reset clips
+#: ``[D-66, gap_reset_on)`` out of the window before any tier is counted,
+#: so the pre-gap era never reaches candidacy and this rule is never
+#: consulted. When one tier goes silent while another carries the series,
+#: there is no gap to report and this rule is the only one that acts. The
+#: gap reset therefore always fires first *where it fires at all* -- and
+#: the exception, the case where neither applies, is a lone tier with no
+#: rival: it is its own most recent candidate, so its gap is zero and it
+#: is never struck however old it is (that is the coverage gap's
+#: population, not this one).
+RECENCY_TOLERANCE_DAYS = 28
 
 #: The tier enum (``models.Session.hrv_source_tier``), highest fidelity first.
 #: The order is the authority's (``research/00`` §3.3 and its register row:
@@ -335,7 +382,11 @@ def _of_tier(readings: Iterable[Reading], tier: str) -> tuple[Reading, ...]:
 
 
 def _last_read(readings: Iterable[Reading]) -> dict[str, date]:
-    """The latest local day each tier was read on -- rule 3's recency."""
+    """The latest local day each tier was read on.
+
+    Read by both of the module's recency rules, which are not the same
+    rule: rule 1's **admission gate** (``RECENCY_TOLERANCE_DAYS``) and
+    rule 3's **tie-break** among the candidates that survive it."""
     last: dict[str, date] = {}
     for r in readings:
         if r.tier not in last or r.date > last[r.tier]:
@@ -382,7 +433,12 @@ def resolve_baseline_tier(
     by T094, decision log 2026-09-11).
 
     1. The *candidates* are the tiers with at least ``MIN_BASELINE_READINGS``
-       in ``baseline_counts``.
+       in ``baseline_counts`` **and read recently enough**: a tier whose
+       latest day in ``last_read`` falls more than ``RECENCY_TOLERANCE_DAYS``
+       behind the latest day of any candidate is struck (T117, 2026-09-15,
+       closing IDEA-064). The comparison is between candidates, so a lone
+       candidate is its own reference and is never struck, and the
+       response's ``thresholds`` block gains no key.
     2. If any candidate holds at least ``MIN_WINDOW_READINGS`` in
        ``week_counts``, the baseline tier is the highest-fidelity such
        candidate.
@@ -416,25 +472,62 @@ def resolve_baseline_tier(
     keeps the established snapshot baseline, and the strap capture is
     corroboration (§3.7.3). The accepted costs, named in F005's Negative
     Class: a strap worn two or three days a week takes and loses the
-    baseline whenever its count in the sliding judged week crosses 3, and
-    candidacy has no recency of its own, so an abandoned trial still in
-    the window plus three strap days this week is judged on the trial's
-    band ("stale candidacy"). Every count is in distinct local days
+    baseline whenever its count in the sliding judged week crosses 3 --
+    the oscillation, which the recency condition deliberately does **not**
+    touch, because both tiers are in current use. "Stale candidacy" -- an
+    abandoned trial still in the window plus three strap days this week,
+    judged on the trial's band -- was the second such cost and is **closed**
+    by T117 rather than accepted; it is priced in F005's Negative Class as
+    resolved by change. Every count is in distinct local days
     (T095; IDEA-047 closed) -- ``_tier_counts`` is the one place the unit
     is taken.
+
+    **Two recency notions now live in this function, and they are not the
+    same rule.** Rule 3's recency is a **tie-break among admitted
+    candidates**: it chooses between tiers that are all still eligible, so
+    removing a tier from its consideration only changes which of several
+    valid baselines is taken. Rule 1's recency is an **admission gate**: it
+    removes a tier from the set entirely, and the baseline then goes
+    somewhere else. The distinction is not decorative -- it is why the
+    parameter-free form of this condition could not be built. A strict
+    comparison (``tier.last_read > other.last_read``) was implemented and
+    measured on 2026-09-15 and turned **5 pinned tests red in both error
+    directions**, because a daily lower-fidelity tier is *always* read at
+    least as recently as a 2-3-day-a-week higher-fidelity one: on the
+    oscillation series (a documented, ``@must``-required accepted cost) the
+    strap's latest is 2026-08-28 against the snapshot's 2026-09-01, a gap
+    of **4 days**; on the stale July trial the gap is **45**. Any strict
+    day-comparison rejects both alike, voiding rule 2's fidelity precedence
+    instead of qualifying it, and it strips a legitimately resuming
+    snapshot on ``D+3`` as well. The two populations differ only in *how*
+    stale, which is a magnitude, and a magnitude is a constant -- hence
+    ``RECENCY_TOLERANCE_DAYS``. Do not re-propose the parameter-free form.
 
     ``last_read`` may be omitted only where there is no baseline window to
     be recent in -- ``build_series``'s empty-baseline fallback, which
     applies the rule to the judged week standing in for both; candidates
-    there tie on recency and fall to count, then fidelity.
+    there tie on recency and fall to count, then fidelity, and all default
+    to ``date.min``, so rule 1's gate sees every gap as zero and strikes
+    nothing.
     """
     candidates = [tier for tier in TIER_FIDELITY if baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS]
+    last_read = last_read or {}
+    if candidates:
+        # Rule 1's recency condition (T117): relative to the candidates
+        # themselves, never to ``D-7``. ``latest`` is the most recent day
+        # any candidate was read in the baseline window, so a lone
+        # candidate is always its own ``latest`` and is never struck.
+        latest = max(last_read.get(tier, date.min) for tier in candidates)
+        candidates = [
+            tier
+            for tier in candidates
+            if (latest - last_read.get(tier, date.min)).days <= RECENCY_TOLERANCE_DAYS
+        ]
     for tier in candidates:
         if week_counts.get(tier, 0) >= MIN_WINDOW_READINGS:
             return tier
     if not candidates:
         return _densest_tier(baseline_counts)
-    last_read = last_read or {}
     return max(
         candidates,
         key=lambda tier: (last_read.get(tier, date.min), baseline_counts[tier], -_FIDELITY_RANK[tier]),
@@ -1267,6 +1360,51 @@ def tier_change_reset(
     so clause (a) is judged on the resumption era; the boundary itself is
     found over both windows and may precede the resumption, in which case
     the gap's clip is the later one and this one removes nothing.
+
+    **Rule 1's recency condition does not reach either clause here, and
+    that is a decision, not an omission** (T117, 2026-09-15, the question
+    left open by IDEA-064). ``RECENCY_TOLERANCE_DAYS`` strikes a stale
+    candidate from ``resolve_baseline_tier``'s candidate set; neither
+    clause (a) nor clause (b) applies it, and both still read
+    ``MIN_BASELINE_READINGS`` alone.
+
+    *Clause (a)* takes the tier ``build_series`` already resolved, so the
+    recency gate has been applied before this function is called -- a tier
+    struck for staleness never arrives here as ``tier`` at all. Restating
+    the gate in (a) would be a second copy of one rule.
+
+    *Clause (b)* is the substantive half, and the answer is **no**. The two
+    clauses ask different questions. Rule 1 asks which tier may **build
+    today's band**, where staleness is a defect because the band would
+    describe an athlete who no longer exists. Clause (b) asks only which
+    tier **sustained the previous window** ``[D-126, D-67]`` -- a
+    historical fact about a window that is by construction at least 67 days
+    old, used to detect that something changed. No band is built from it
+    and no verdict rests on it; "the tier the athlete used to be on" is
+    precisely the thing a staleness gate would forget, and forgetting it
+    withdraws the report of the change it exists to announce. Measured, not
+    asserted: applying the same relative gate to ``sustained_tier`` here on
+    2026-09-15 turned **two** pinned tests red across the reset and series
+    suites --
+    ``test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline``
+    (the abandoned strap is stripped from ``[D-126, D-67]`` once the daily
+    snapshot there outruns it by 28 days, so the reverse transition's
+    report ends long before ``T+114``, the day the strap actually drops
+    below 14) and
+    ``test_one_resumption_era_is_reported_coverage_gap_then_tier_change_then_nothing``
+    (the pre-layoff tier is stripped, and the middle of the three reports
+    goes missing). Those two are the assertions that go red if this
+    decision is ever reversed without being re-argued.
+
+    What the recency condition therefore does **not** close: G12, the stale
+    trial of the *new* tier that still holds 14 days in the previous window
+    and delays a genuine switch's reset. That refusal is clause (b)'s, and
+    it survives the gate for a reason worth recording -- when the gate was
+    applied experimentally, ``test_an_older_trial_of_the_new_tier_does_not_
+    delay_a_genuine_switchs_reset`` stayed **green**, because the trial's
+    14 days are also strays under clause (c)'s candidacy half, so the
+    boundary is refused there instead. G12's row in F005's Negative Class
+    stands unchanged.
 
     **What that clip does to clause (c)** -- the question this docstring
     was silent on until T118 (review cycle 7, G-C7-3), having answered it

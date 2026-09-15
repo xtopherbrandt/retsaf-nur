@@ -807,9 +807,14 @@ def test_the_tier_flips_on_the_day_the_strap_count_in_the_sliding_week_crosses_3
 # asserts a reset on an empty week both neighbours withdraw (G2); rule 4's
 # "sustained tier changed and owns the baseline" fires a phantom reset on
 # alternate weeks of a young 2/3-day strap habit (G6); and rule 2's
-# candidacy has no recency, so a stale trial plus three strap days re-owns
-# the baseline on a two-month-old band (G7 -- the accepted, named cost:
-# "stale candidacy" in F005's Negative Class). Rule 3 is now the candidate
+# candidacy had no recency at all, so a stale trial plus three strap days
+# re-owned the baseline on a two-month-old band (G7 -- named in F005's
+# Negative Class as "stale candidacy" and accepted as a cost in cycle 2,
+# re-opened in cycle 6 by T110 once the forbidden error direction was
+# named, and **closed by change** in cycle 7 by T117, which gave rule 1
+# the relative recency condition ``RECENCY_TOLERANCE_DAYS``; the two
+# tests below carry the new expectation and the constant's brackets).
+# Rule 3 is now the candidate
 # whose latest baseline-window reading is most recent (ties by count, then
 # fidelity; no candidate at all still falls to the densest tier), and rule 4
 # fires only when the eras do not interleave -- over both windows together,
@@ -855,31 +860,128 @@ def test_a_young_oscillation_habit_alternates_the_tier_and_never_resets() -> Non
     ]
 
 
-def test_stale_candidacy_a_july_trial_plus_three_strap_days_owns_the_week_on_the_july_band() -> None:
-    """G7, pinned as the named cost (F005 Negative Class, "stale candidacy";
-    the candidacy question is an IDEA, not this task). The abandoned July
-    trial is still a candidate on 2026-09-06 and 09-07 (its 14 readings sit
-    inside ``[D-66, D-7]``), and three strap days this week cover the week,
-    so rule 2 hands the strap the baseline and the week is judged against
-    a band whose every reading is from July. No reset: the snapshot
-    readings interleave with the trial. On 09-08 the first trial day ages
-    out, the strap holds 13, and the snapshot takes the baseline back."""
+def test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band() -> None:
+    """G7, **closed by T117** (IDEA-064; user decision 2026-09-15) -- the
+    series is the reproduction and is kept verbatim; only the expectation
+    moved. The abandoned July trial still holds its 14 days inside
+    ``[D-66, D-7]`` on 2026-09-06 and 09-07, and three strap days still
+    cover each of those weeks, so rules 1 and 2 alone would hand the strap
+    the baseline and judge the week against a band whose every reading is
+    seven weeks old. Rule 1's recency condition refuses it: the strap was
+    last read on 2026-07-16 and the snapshot -- the other candidate, and
+    the one read most recently -- on ``D-7``, 45 and 46 days later, both
+    beyond ``RECENCY_TOLERANCE_DAYS``. The strap is struck from the
+    candidate set before rule 2 is asked, the snapshot keeps its own
+    60-day band on all three days, and the flip the athlete used to see on
+    09-06 and back on 09-08 does not happen.
+
+    **What moves for the athlete, measured 2026-09-15.** On 2026-09-06 the
+    verdict changes from ``hrv_normal`` to ``hrv_suppressed``: the week
+    holds three of the series' fourteen genuinely suppressed days
+    (08-31..09-02 at 25 ms) and the snapshot's own band calls them what
+    they are, where the July strap band called the same week normal. That
+    is exactly the forbidden direction IDEA-064 named -- a genuinely
+    suppressed week reading normal on a stale band -- and this assertion
+    is where it is now enforced. On 09-07 the verdict stays ``hrv_normal``,
+    for a different and correct reason: only two suppressed days remain in
+    that week, 7-day mean 3.5598 against the snapshot band's ``lo``
+    3.5079, so the athlete has recovered. Both days are now judged against
+    the 60-day snapshot window ending ``D-7``, not against 14 July strap
+    readings.
+
+    Before T117 the first two targets read ``tier == STRAP``, ``len(baseline)
+    == 14``, ``max(baseline day) == 2026-07-16`` and ``hrv_normal`` on a
+    band built entirely in July; that is what this test asserted, and it is
+    what goes red if the recency filter in ``resolve_baseline_tier`` is
+    deleted. The failure modes this walk separates, each run: the filter
+    absent (09-06/09-07 revert to the strap); the filter applied with the
+    comparison reversed, so the *most* recent candidate is struck (09-08
+    loses the snapshot); and the tolerance widened past 46 days (09-07
+    reverts alone, 09-06 following at 45)."""
     this_week = [D - timedelta(days=6), D - timedelta(days=4), D - timedelta(days=2)]
     rows = trial_then_abandon() + readings(STRAP, this_week, 79.0)
 
+    verdicts = {}
     for target in (date(2026, 9, 6), date(2026, 9, 7)):
         result = build(rows, target=target)
-        assert result.tier == STRAP, target
-        assert len(result.baseline) == 14, target
-        assert max(r.date for r in result.baseline) == date(2026, 7, 16), target
-        assert len(result.window) == 3, target
+        in_baseline = [r for r in result.readings if r.date <= target - timedelta(days=7)]
+        strap_days = {r.date for r in in_baseline if r.tier == STRAP}
+        snapshot_last = max(r.date for r in in_baseline if r.tier == SNAPSHOT)
+        assert len(strap_days) == 14, target
+        assert max(strap_days) == date(2026, 7, 16), target
+        assert (snapshot_last - max(strap_days)).days > hrv_trend.RECENCY_TOLERANCE_DAYS, target
+        week = [r for r in result.readings if r.date > target - timedelta(days=7)]
+        assert len({r.date for r in week if r.tier == STRAP}) == 3, target
+
+        assert result.tier == SNAPSHOT, target
+        assert len(result.baseline) == 60, target
+        assert max(r.date for r in result.baseline) == target - timedelta(days=7), target
         assert result.reset_reason is None and result.reset_on is None, target
+        assert len(result.window) == 7, target
         verdict = hrv_trend.judge(result)
-        assert verdict.established is True and verdict.verdict == "hrv_normal", target
+        assert verdict.established is True, target
+        verdicts[target] = verdict.verdict
+
+    assert verdicts == {date(2026, 9, 6): "hrv_suppressed", date(2026, 9, 7): "hrv_normal"}
 
     back = build(rows, target=date(2026, 9, 8))
     assert back.tier == SNAPSHOT
     assert back.reset_reason is None and back.reset_on is None
+
+
+def stale_trial_gap(gap: int, target: date = D) -> list[dict]:
+    """A daily snapshot over ``[target-199, target]``, a 14-day strap trial
+    whose last day sits ``gap`` days before the snapshot's last day in the
+    baseline window ``target-7``, and three strap days in the judged week.
+
+    The strap is a candidate by count and covers the week on every ``gap``
+    the helper is called with, so the only thing that separates the walk's
+    rows is rule 1's recency condition."""
+    end = target - timedelta(days=7) - timedelta(days=gap)
+    rows = readings(SNAPSHOT, days_between(target - timedelta(days=199), target), hh=7)
+    rows += readings(STRAP, days_between(end - timedelta(days=13), end), 79.0)
+    week_days = [target - timedelta(days=6), target - timedelta(days=4), target - timedelta(days=2)]
+    rows += readings(STRAP, week_days, 79.0)
+    return rows
+
+
+def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it() -> None:
+    """T117's constant, at both of its edges and at the seam with the
+    coverage-gap rule. One series shape, one moving part: how far the
+    strap trial's last baseline-window day sits behind the snapshot's.
+
+    ``gap`` 28 admits the strap and it takes the week by fidelity;
+    ``gap`` 29 strikes it and the snapshot keeps its own 60-day band. The
+    third row is the seam ``RECENCY_TOLERANCE_DAYS > GAP_RESET_DAYS``
+    states: a silence of 21 days is the longest the coverage-gap rule does
+    **not** call a break, so no candidate may be struck for one -- this
+    row goes red if the tolerance is ever lowered to ``GAP_RESET_DAYS`` or
+    below, and it is the assertion behind the ordering claim in
+    ``research/00`` §5.4 and in ``resolve_baseline_tier``'s docstring.
+
+    Distinct failure modes, each run before this was kept: the filter
+    deleted (``gap`` 29 reverts to the strap); the comparison written
+    ``<`` rather than ``<=`` (``gap`` 28 flips); the tolerance set to 21
+    (the seam row flips); and the filter applied to the raw day counts
+    rather than to ``last_read`` (every row flips, the strap never being
+    the denser tier here). None of the four rows carries a reset: the
+    snapshot runs daily through the trial, so the eras interleave."""
+    assert hrv_trend.RECENCY_TOLERANCE_DAYS == 28
+    assert hrv_trend.RECENCY_TOLERANCE_DAYS > hrv_trend.GAP_RESET_DAYS
+
+    observed = {}
+    for gap in (hrv_trend.GAP_RESET_DAYS, 27, 28, 29):
+        result = build(stale_trial_gap(gap))
+        in_baseline = [r for r in result.readings if r.date <= D - timedelta(days=7)]
+        assert len({r.date for r in in_baseline if r.tier == STRAP}) == 14, gap
+        week = [r for r in result.readings if r.date > D - timedelta(days=7)]
+        assert len({r.date for r in week if r.tier == STRAP}) == 3, gap
+        observed[gap] = (result.tier, len(result.baseline), result.reset_reason)
+
+    assert observed[hrv_trend.GAP_RESET_DAYS] == (STRAP, 14, None)
+    assert observed[27] == (STRAP, 14, None)
+    assert observed[28] == (STRAP, 14, None)
+    assert observed[29] == (SNAPSHOT, 60, None)
 
 
 def test_the_fallback_keeps_the_device_the_athlete_used_last_through_a_thin_week() -> None:

@@ -951,7 +951,10 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     day: the old era still ends at ``SW`` and the new one begins at
     ``SW+1``, so ``tier_change on SW+1`` is reported from the day the strap
     first owns the baseline -- ``SW+20`` with the stray (it is a distinct
-    day, and candidacy has no recency: IDEA-064, untouched here), ``SW+21``
+    day, and rule 1's recency condition does not strike the strap here:
+    both tiers are in current use days apart, far inside
+    ``RECENCY_TOLERANCE_DAYS``; T117 changed the rule, not this walk),
+    ``SW+21``
     without -- and on every later day of the era. On ``SW+20`` the reset
     also clips the stray out of the reported era, so the response says
     what is true of it: ``baseline.n`` 13 and ``established: false`` --
