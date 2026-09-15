@@ -858,12 +858,30 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 #:    together and not clause (b) alone; and the inference a client must
 #:    *not* draw.
 #:
-#: Re-derived from the code, not from the prose, in T109 (review cycle 6,
-#: G-C6-6): entry 5 used to read "only while the old tier still sustains the
-#: previous window [date-126, date-67]", transcribed from the sentence it
-#: pinned in the same pass that wrote it, and that sentence was false -- so
-#: this tuple held a false equivalence in place and made removing it go red.
-#: Each entry below was re-checked against ``build_series`` at
+#: Authorship, corrected by T112 (review cycle 7, G-C7-2). T109's note here
+#: said the entries were "re-derived from ``build_series``" -- which is the
+#: wrong direction for a **contract** table: a claim derived from the
+#: implementation it exists to constrain cannot detect an implementation
+#: defect by construction (``contract-tables-need-an-independent-oracle``;
+#: ``project-domain-and-spec-fidelity`` names ``research/00`` the authority).
+#: The entries are **constrained by ``research/00`` §5.4 and F005** -- rule
+#: 4's three conditions, the clip-versus-report split of decision log D4 --
+#: and were *checked against* ``build_series``, which is a reproduction, not
+#: a derivation. What T109 got right is that they are no longer transcribed
+#: from the prose they pin: entry 5 used to read "only while the old tier
+#: still sustains the previous window [date-126, date-67]", copied from the
+#: sentence it pinned in the same pass that wrote it, and that sentence was
+#: false -- so this tuple held a false equivalence in place and made removing
+#: it go red.
+#:
+#: This tuple can still only see the *words*. What makes entry 5 falsifiable
+#: by the implementation is
+#: ``test_hrv_trend_reset.test_clause_a_lapsing_nulls_the_report_while_clause
+#: _b_and_the_week_half_still_hold`` (T112), which drives the (a)-lapses
+#: series through ``build_series``; with the clause (a) gate deleted that pin
+#: goes red and every assertion here stays green.
+#:
+#: Each entry below was reproduced against ``build_series`` at
 #: ``D = R + 66`` on a daily switch series before it was kept: 1 and 2 on a
 #: reported boundary with ``R > D-66`` (window clipped) and on the same
 #: series with three old-tier days in ``[D-6, D]`` (null reason, same
@@ -916,7 +934,7 @@ RESET_REASON_WITHDRAWN = (
 #: would make the probe red on its own declaration.
 RESET_REASON_WITHDRAWN_IDIOMS = (
     "so that (b) fails",
-    " ".join(("the report", "stops", "only when")),
+    " ".join(("the report", "stops", "only when")),  # noqa: FLY002 -- see the note above
     "the reset stops being reported when the previous window",
 )
 
@@ -1034,13 +1052,22 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     become the reason it could not be withdrawn. An oracle that transcribes
     prose inherits whatever is wrong with the prose and promotes it to an
     enforced invariant. The pattern is right; the authorship was not, which
-    is G-C5-7's no-independent-oracle shape again. T109 re-derived every
-    entry from ``build_series`` -- the runs are listed above
-    ``RESET_REASON_CLAIMS`` -- rather than from the sentence it pins. What
-    keeps the check from being vacuous is that it constrains two
-    independently edited artifacts jointly and encodes the **negative**
-    claims -- the universals and the equivalence no code path produces,
-    each reproduced against ``build_series``.
+    is G-C5-7's no-independent-oracle shape again. The entries are
+    constrained by ``research/00`` §5.4 and F005 rather than by the sentence
+    they pin, and each was reproduced against ``build_series`` -- the runs
+    are listed above ``RESET_REASON_CLAIMS`` (T109; the stated authorship
+    corrected by T112, which found it claiming the entries were *derived
+    from* the implementation they exist to constrain).
+
+    What this check is and is not. It constrains two independently edited
+    artifacts jointly and encodes the **negative** claims, so a false
+    sentence cannot return to either copy quietly. It remains a check on
+    *words*: no assertion here can fail because ``build_series`` changed.
+    The behavioural half of entry 5 is
+    ``test_hrv_trend_reset.test_clause_a_lapsing_nulls_the_report_while_
+    clause_b_and_the_week_half_still_hold`` (T112, G-C7-2) -- verified red
+    against a ``build_series`` that reports ``tier_change`` on a lapsed
+    clause (a), while every assertion in this test stayed green.
     """
     target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
     contract = _flat(

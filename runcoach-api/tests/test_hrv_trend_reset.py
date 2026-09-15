@@ -2550,6 +2550,109 @@ def test_two_gaps_inside_the_window_reset_on_the_later_resumption() -> None:
     assert {reasons[f"first-{day}"] for day in (ago(66), ago(65))} == {"before_reset: coverage_gap"}
 
 
+# ---------------------------------------------------------------------------
+# T112 (review cycle 7, G-C7-2): report-liveness is rule 4's three
+# conditions, and clause (a) can lapse on its own
+#
+# T109 published "liveness is rule 4's three conditions together, not any one
+# of them alone" in both contract copies and through ``app.openapi()``, and
+# its whole test footprint was string containment: one literal swapped in
+# ``RESET_REASON_CLAIMS``, two appended to ``RESET_REASON_WITHDRAWN``,
+# docstrings rewritten. Nothing behavioural. If ``build_series`` regressed so
+# that a lapsed clause (a) still reported ``tier_change``, every assertion in
+# ``test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims``
+# stayed green -- the claim was a substring of prose asserted to appear in two
+# copies of that prose. This is the series T109 reproduced in-process and then
+# discarded, landed as a pin that the implementation can break.
+# ---------------------------------------------------------------------------
+
+#: T109's reproduction, stated as the fixture's own constants rather than
+#: relative to the suite-wide ``D``: the switch day, the target 66 days later,
+#: and the two strap runs the pin and its control differ by.
+R_SWITCH = date(2026, 5, 1)
+D_SWITCH = R_SWITCH + timedelta(days=66)
+CLAUSE_A_LAPSED_DAYS = 11
+CLAUSE_A_HELD_DAYS = MIN_BASELINE_READINGS = hrv_trend.MIN_BASELINE_READINGS
+
+
+def clause_a_series(strap_days: int) -> list[dict]:
+    """A daily ``health_snapshot`` for 200 days up to ``R-1``, then a daily
+    ``chest_strap_raw`` on ``R`` for ``strap_days`` days and never again."""
+    return readings(
+        SNAPSHOT, span(R_SWITCH - timedelta(days=200), R_SWITCH - timedelta(days=1)), 40.0, "snap"
+    ) + readings(STRAP, span(R_SWITCH, R_SWITCH + timedelta(days=strap_days - 1)), 40.0, "strap")
+
+
+def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_still_hold() -> None:
+    """The published claim, attacked at the one condition its prose was
+    written to be about. At ``D = R+66`` the strap holds **11** of the 14
+    distinct days clause (a) needs in ``[D-66, D-7]``, so (a) has lapsed --
+    while clause (b) demonstrably holds (the snapshot holds all **60** days
+    of ``[D-126, D-67]``, so the previous window is sustained by a tier other
+    than the resolved one) and the week half holds too. ``reset_reason`` must
+    be ``None`` anyway.
+
+    All three are asserted, not just the null. A pin that asserted only the
+    null could not tell "(a) lapsed" from "nothing happened here", which is
+    the branch-beside-the-bug shape this project keeps escaping through
+    (``review-catches-what-tests-cannot``). The control is the same series
+    with three more strap days and nothing else changed: (a) then holds and
+    ``tier_change`` **is** reported, on the same ``reset_on``, the same
+    window and the same judged week -- so clause (a)'s day count is the only
+    thing that moved, and the week half is shown to hold by the report
+    itself rather than by an assertion about an empty set.
+
+    Authorship (``contract-tables-need-an-independent-oracle``): the series,
+    the day counts and the expected null come from the task text and
+    ``research/00`` §5.4's three conditions, not from reading
+    ``build_series``. The two clause-(b) facts below are computed from the
+    **fixture's own days** rather than from the result's ``series``, which is
+    already tier-filtered.
+
+    Perturbation (T112, recorded in the Delivered note): deleting
+    ``tier_change_reset``'s clause (a) gate -- the
+    ``_tier_counts(baseline_readings).get(tier, 0) < MIN_BASELINE_READINGS``
+    early return -- makes an 11-day strap report ``tier_change on R`` and
+    turns this test red; restored, it is green again.
+    """
+    judged = hrv_trend.judged_window(D_SWITCH)
+    previous = hrv_trend.previous_window(D_SWITCH)
+
+    lapsed = hrv_trend.build_series(clause_a_series(CLAUSE_A_LAPSED_DAYS), AUCKLAND, D_SWITCH)
+    held = hrv_trend.build_series(clause_a_series(CLAUSE_A_HELD_DAYS), AUCKLAND, D_SWITCH)
+
+    # Clause (b) holds: the previous window is sustained by the snapshot,
+    # which is not the resolved tier. Counted over the fixture's own days.
+    previous_snapshot_days = [
+        day for day in span(R_SWITCH - timedelta(days=200), R_SWITCH - timedelta(days=1))
+        if previous[0] <= day <= previous[1]
+    ]
+    sustained = hrv_trend.sustained_tier(
+        hrv_trend._tier_counts(parsed_reading(day, 6, SNAPSHOT) for day in previous_snapshot_days)
+    )
+    assert len(previous_snapshot_days) == 60
+    assert sustained == SNAPSHOT
+    assert lapsed.tier == STRAP and sustained != lapsed.tier, "(b) holds: the old tier sustains"
+
+    # The week half holds: no reading of either tier falls in [D-6, D], so
+    # no era boundary can have a stray day there -- and the control, whose
+    # judged week is identical, is reported, which is the week half holding.
+    assert not [day for day in span(*judged) if day <= R_SWITCH + timedelta(days=CLAUSE_A_HELD_DAYS)]
+    assert hrv_trend._isolated((), judged)
+    assert held.reset_reason == "tier_change" and held.reset_on == R_SWITCH
+
+    # Clause (a) has lapsed -- and that alone nulls the report.
+    assert len(lapsed.baseline) == CLAUSE_A_LAPSED_DAYS < MIN_BASELINE_READINGS
+    assert lapsed.reset_reason is None
+    assert lapsed.reset_on is None
+
+    # Nothing else separates the two runs.
+    unclipped = (D_SWITCH - timedelta(days=66), D_SWITCH - timedelta(days=7))
+    assert lapsed.baseline_window == held.baseline_window == unclipped
+    assert lapsed.tier == held.tier == STRAP
+    assert len(held.baseline) == CLAUSE_A_HELD_DAYS
+
+
 def test_the_reset_constants_are_the_construction_references() -> None:
     assert hrv_trend.GAP_RESET_DAYS == 21
     assert hrv_trend.REASON_COVERAGE_GAP == "coverage_gap"
