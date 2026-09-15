@@ -25,13 +25,18 @@ bottom is the parser's deliverable
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
+import io
 import json
 import math
+import os
 import statistics
+import tokenize
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
+from functools import cache
 from itertools import pairwise, repeat
 from pathlib import Path
 from types import ModuleType
@@ -840,11 +845,14 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 
 # ``RESET_REASON_CLAIMS`` below declares the contract's live claim fragments.
 # The retracted phrasings are *not* declared here: they live in
-# ``tests/support/withdrawn_phrasings.py``, which is the one file outside the
-# scan corpus (T114, gap G-C7-10). This file is therefore scanned in full, and
-# the standing rule for it is the same as for every other scanned file -- do
-# not quote a withdrawn phrasing anywhere in it. Notes that need to point at
-# one name it by its index, or paraphrase it.
+# ``tests/support/withdrawn_phrasings.py``, the one module the walk holds out
+# for a *declaration* reason rather than a historical-record one (T114, gap
+# G-C7-10; T119, gap G-C7-20 -- the note here used to call it the single file
+# outside the scan, which the exclusion tables below have made untrue). This
+# file is walked like any other, and the standing rule for it is the same as
+# for every other scanned file -- do not quote a withdrawn phrasing anywhere
+# in it. Notes that need to point at one name it by its index, or paraphrase
+# it.
 
 #: The sentences of the ``baseline.reset_reason`` description a client is
 #: invited to key on, transcribed as the smallest fragment that carries each
@@ -918,26 +926,20 @@ def _load_module(name: str, path: Path) -> ModuleType:
     return module
 
 
-#: The withdrawn phrasings, the docstring idioms of the same claims, and the
-#: files scanned for them live in ``tests/support/withdrawn_phrasings.py``
-#: (T114, gap G-C7-10). That module is deliberately outside the scan corpus:
-#: it is not listed in ``WITHDRAWN_SCAN_FILES``, so nothing reads it, which is
-#: what lets it hold the literals. What *is* asserted about the corpus is that
-#: it still holds all seven files
-#: (``test_the_scan_corpus_still_holds_every_file_it_was_built_for``) and that
-#: each of them carries none of the phrasings (the parametrised scan below).
-#: Measured 2026-09-15 by flattening every ``.py``/``.md``/``.yaml``/``.toml``
-#: /``.txt``/``.json`` file in the tree: the only other files carrying a
-#: withdrawn phrasing are historical records -- the CHANGELOG's retraction
-#: entries, five completed task files, three subagent-return transcripts and
-#: two verdicts -- which ``sweep-the-claim-not-the-diff`` says to leave. That
-#: is a measurement of one tree on one date, not an invariant; nothing asserts
-#: it, and a new live copy outside the seven corpus files would not be seen.
-#: T115 (G-C7-18) moved everything except the declarations themselves here, to
-#: a file the scan reads in full, so the residue nothing reads is three tuples
-#: and a one-line docstring rather than seventy further lines of gloss --
-#: gloss being exactly what has twice drifted into a literal copy of a
-#: withdrawn phrasing on this feature.
+#: The withdrawn phrasings and the docstring idioms of the same claims are
+#: declared in ``tests/support/withdrawn_phrasings.py`` (T114, gap G-C7-10).
+#: That module is the one file the walk below holds out for a *declaration*
+#: reason: it **is** the literals, so reading it would match them by
+#: construction. What stops it being a hiding place is
+#: ``test_the_unscanned_declaration_module_stays_a_declaration_table``, which
+#: goes red if the module grows a comment, a top-level statement that is not
+#: an import or an assignment, or a docstring longer than one line -- so there
+#: is no prose in it for a claim to drift into.
+#:
+#: Everything else about the scan -- the roots, the file kinds, the two
+#: exclusion tables and their reasons, the anchors -- lives in this file
+#: instead, which the walk reads in full (T115, gap G-C7-18; T119, gap
+#: G-C7-18).
 #:
 #: Why the declarations moved out. Until T114 they lived here, in the file
 #: that scans for them, and every consequence of that self-reference had to be
@@ -960,8 +962,10 @@ def _load_module(name: str, path: Path) -> ModuleType:
 #:
 #: Moving the declarations out removes all three at once. There is no fence in
 #: the tree any more, nothing is excised from any scanned file, and this file
-#: is read in full by the parametrised scan below -- whose
-#: ``test_hrv_trend_endpoint.py`` row is what fails if it stops being.
+#: is read in full by the walk -- which
+#: ``test_the_walk_reaches_every_file_an_anchor_speaks_for`` asserts by name
+#: for this path, and whose anchor row would fail if the read stopped
+#: reaching the tail.
 #:
 #: Loaded from its path because the workspace runs pytest with
 #: ``--import-mode=importlib``, under which nothing in ``tests/`` is importable
@@ -971,7 +975,6 @@ _DECLARATIONS = _load_module(
 )
 RESET_REASON_WITHDRAWN = _DECLARATIONS.RESET_REASON_WITHDRAWN
 RESET_REASON_WITHDRAWN_IDIOMS = _DECLARATIONS.RESET_REASON_WITHDRAWN_IDIOMS
-WITHDRAWN_SCAN_FILES = _DECLARATIONS.WITHDRAWN_SCAN_FILES
 
 #: What the three declarations are (T115, G-C7-18: this note used to live
 #: beside them, in the module nothing scans).
@@ -1002,37 +1005,10 @@ WITHDRAWN_SCAN_FILES = _DECLARATIONS.WITHDRAWN_SCAN_FILES
 #: would ever say -- so a tuple written against contract prose could not have
 #: caught them even pointed at the right files.
 #:
-#: ``WITHDRAWN_SCAN_FILES`` is every file that carries a *live* copy of the
-#: ``tier_change`` lifetime, in whatever idiom that file uses. T109 withdrew
-#: the (b)-alone equivalence and the two-copy oracle enforced it -- but only
-#: across the two description strings. Two Stage 0 scanners then found the
-#: withdrawn claim still standing in ``hrv_trend.py``'s ``tier_change_reset``
-#: docstring, in this suite's own docstring for the reported-``tier_change``
-#: case, and in both spec documents. None of those is a description string, so
-#: nothing could see them (T111, gap G-C7-1; ``sweep-the-claim-not-the-diff``,
-#: fourth consecutive cycle on this feature).
-#:
-#: The two spec documents live under the machine-local ``.shipyard``
-#: breadcrumb, which is gitignored, so they are scanned when it is present and
-#: the row is skipped -- loudly -- when it is not.
-#:
-#: Paired with each file is its **positive control**: a live phrase the
-#: scanned text must contain. Every other assertion in the scan is negative,
-#: so without this the scan is green over a file it never read -- an empty
-#: read, or a path that stopped carrying the prose it is here for (T113, gap
-#: G-C7-6). What an anchor has to be is asserted rather than described:
-#: ``test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy``
-#: fails if an anchor is absent from its file, if it occurs more than once
-#: there, or if it starts before the 98% mark of that file's flattened text
-#: (T115, G-C7-17). Measured 2026-09-15 on the layout of that date, the seven
-#: anchors start at 99.1%, 99.4%, 99.8%, 99.6%, 99.6%, 99.9% and 99.7% of
-#: their files' flattened text, and each occurs exactly once -- that is a
-#: measurement of one layout on one date and not an invariant, which is why
-#: the two assertions above exist. The invariant is the 98% floor with
-#: the uniqueness, and what trips it is a second occurrence of an anchor
-#: phrase earlier in its file, or a truncation dropping the tail past an
-#: anchor. An edit confined to the last two percent after an anchor is not
-#: something these controls can see.
+#: The third thing the scan needs -- *which files it reads* -- stopped being a
+#: declaration in T119 (gap G-C7-18). It is the tree walk below, and the
+#: anchors beside it are what prove the walk read something rather than
+#: reporting all-clear over an empty match.
 
 
 #: T114 (review cycle 7, G-C7-14). Eight live notes in this suite and in
@@ -1104,12 +1080,200 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
     )
 
 
-def test_the_scan_corpus_still_holds_every_file_it_was_built_for() -> None:
-    """A dropped row in ``WITHDRAWN_SCAN_FILES`` stops a file being scanned and
-    takes its parametrised case with it, so the remaining cases still pass and
-    the count in the summary is the only trace. Pinned by name (T114): the
-    parametrisation cannot notice its own absence."""
-    assert [path.name for path, _ in WITHDRAWN_SCAN_FILES] == [
+# ---------------------------------------------------------------------------
+# The scan: a walk over two trees, and the tables that say what is held out.
+# ---------------------------------------------------------------------------
+
+#: T119 (review cycle 7, gap G-C7-18). Until now the files the scan read were
+#: a seven-path allowlist, and its completeness was a dated manual measurement
+#: that nothing asserted. An allowlist is one level weaker than the string
+#: sweep ``sweep-the-claim-not-the-diff`` warns about: a string sweep passes as
+#: soon as the sentence is reworded, an allowlist passes as soon as the
+#: sentence **moves file**. Two of the seven also lived under the gitignored
+#: ``.shipyard`` breadcrumb and were skipped when it was absent, so a checkout
+#: without it scanned five files and read the two normative documents nowhere
+#: -- the two documents whose drift from each other produced G-C6-4, G-C6-7
+#: and half of cycle 7's findings.
+#:
+#: What replaces it is the complement: walk both trees, and name what is held
+#: out. No file is added to the scan by hand any more; a file leaves it only
+#: through one of the three tables below, each entry of which states its
+#: reason.
+SCAN_SUFFIXES = (".py", ".md", ".yaml")
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: The two roots. The first is the committed tree. The second is the Shipyard
+#: data dir, reached through the ``.shipyard`` junction, which is gitignored
+#: and machine-local -- so **in a checkout without it the walk is the first
+#: root alone**, and that is a statement two assertions hold up rather than a
+#: sentence: ``test_the_walk_reads_whole_trees_and_not_an_empty_one`` floors
+#: the two roots separately and requires the first to exist, and
+#: ``test_the_walk_reaches_every_file_an_anchor_speaks_for`` *fails* rather
+#: than skips when a committed anchored file is not reached. The two normative
+#: F005 documents are under the second root, so they are scanned wherever the
+#: breadcrumb is and nowhere else; moving them into the committed tree is the
+#: only thing that would change that, and it is not this task's to do.
+SCAN_ROOTS = (_REPO_ROOT, _REPO_ROOT / ".shipyard")
+
+#: Floors on how many files each root must yield, by root index. Measured
+#: 2026-09-15 on this tree: **125** files under the committed root (127 found,
+#: two held out) and **139** under the breadcrumb (265 found, 126 held out as
+#: history) -- so what a checkout without the breadcrumb scans is 125 files,
+#: against the five the allowlist reached there. Those two numbers are a
+#: measurement of one tree on one date. The floors below are the invariant,
+#: and they sit well under the measurement on purpose: their job is not to pin
+#: a count -- ordinary growth and ordinary deletion must not trip them -- but
+#: to catch the one failure a tree walk has that an allowlist does not, a walk
+#: that has stopped descending and is reporting all-clear over nothing.
+SCAN_ROOT_FLOORS = (100, 100)
+
+#: Machinery, not prose. Matched on a **directory name** at any depth, so this
+#: table cannot grow into a list of individual files.
+SCAN_EXCLUDED_DIR_NAMES = (
+    (".git", "an object store, not text anyone writes"),
+    (".venv", "the installed dependency tree; none of it is this project's prose"),
+    ("__pycache__", "compiled bytecode"),
+    (".pytest_cache", "run state"),
+    (".ruff_cache", "run state"),
+    (".hypothesis", "run state"),
+    ("node_modules", "vendored dependencies"),
+    (".shipyard", "walked as its own root, so this stops the data dir being visited twice"),
+)
+
+#: Detached mutation-testing worktrees (``.mut-T108`` and friends) are a
+#: second copy of the tree at some earlier commit, so every hit in one is a
+#: duplicate of a hit already counted -- or a historical one.
+SCAN_EXCLUDED_DIR_PREFIX = ".mut-"
+
+#: Historical record. ``sweep-the-claim-not-the-diff`` step 3 says a completed
+#: task file, a raw transcript and a dated verdict legitimately quote a
+#: withdrawn phrasing *as the thing that was withdrawn*, and are to be left
+#: alone. Each row is ``(root index, a directory prefix or a file name, why)``
+#: -- a pattern, never an individual file, because **the exclusion table is
+#: the new allowlist if it is allowed to grow**, and a growing list of
+#: individual exemptions is the fence pattern that failed twice this cycle.
+#:
+#: What keeps it from growing is
+#: ``test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing``:
+#: a row that shelters nothing is dead weight and must be deleted rather than
+#: kept in case it is needed. ``.subagent-returns/`` needs no row -- those
+#: transcripts are ``.txt`` and were never in ``SCAN_SUFFIXES``.
+SCAN_EXCLUDED_HISTORY = (
+    (0, "CHANGELOG.md", "its retraction entries quote each phrasing as the thing being retracted"),
+    (1, "spec/tasks/", "a task file is the dated record of one task's decision, the withdrawal included"),
+    (1, "verify/", "a review verdict quotes the phrasing it found, at the date it found it"),
+)
+
+#: The one exclusion that is not history. ``withdrawn_phrasings.py`` holds the
+#: literals the scan searches for, so reading it would match every one of them
+#: by construction. It is kept honest by
+#: ``test_the_unscanned_declaration_module_stays_a_declaration_table`` rather
+#: than by trust.
+SCAN_EXCLUDED_DECLARATIONS = (
+    0,
+    "runcoach-api/tests/support/withdrawn_phrasings.py",
+    "it declares the phrasings the scan searches for; every literal in it is a declaration",
+)
+
+
+def _history_exclusion(root_index: int, rel: str) -> str | None:
+    """The ``SCAN_EXCLUDED_HISTORY`` pattern that holds ``rel`` out, or None."""
+    for index, pattern, _reason in SCAN_EXCLUDED_HISTORY:
+        if index == root_index and (rel == pattern or rel.startswith(pattern)):
+            return pattern
+    return None
+
+
+@cache
+def _candidate_files(root_index: int) -> tuple[Path, ...]:
+    """Every ``SCAN_SUFFIXES`` file under a root, before the path exclusions.
+
+    Directory pruning happens here (``os.walk`` rather than ``rglob``) because
+    ``.venv`` alone holds tens of thousands of ``.py`` files, and a walk that
+    descends into it and filters afterwards is the difference between a scan
+    that runs in every suite run and one that is quietly disabled for being
+    slow.
+    """
+    root = SCAN_ROOTS[root_index]
+    pruned = {name for name, _reason in SCAN_EXCLUDED_DIR_NAMES}
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d for d in dirnames if d not in pruned and not d.startswith(SCAN_EXCLUDED_DIR_PREFIX)
+        ]
+        for name in filenames:
+            if Path(name).suffix.lower() in SCAN_SUFFIXES:
+                found.append(Path(dirpath) / name)
+    return tuple(sorted(found))
+
+
+@cache
+def _scanned_files(root_index: int) -> tuple[Path, ...]:
+    """The files the scan actually reads under one root."""
+    root = SCAN_ROOTS[root_index]
+    declaring_root, declaring_rel, _why = SCAN_EXCLUDED_DECLARATIONS
+    kept: list[Path] = []
+    for path in _candidate_files(root_index):
+        rel = path.relative_to(root).as_posix()
+        if _history_exclusion(root_index, rel) is not None:
+            continue
+        if root_index == declaring_root and rel == declaring_rel:
+            continue
+        kept.append(path)
+    return tuple(kept)
+
+
+def _walked_roots() -> tuple[int, ...]:
+    """The indices of the roots present on this machine."""
+    return tuple(i for i, root in enumerate(SCAN_ROOTS) if root.exists())
+
+
+def _all_scanned_files() -> tuple[Path, ...]:
+    return tuple(path for i in _walked_roots() for path in _scanned_files(i))
+
+
+#: The positive controls, one per file whose live prose this feature's
+#: corrections had to reach. These are no longer the scan's *input* -- the
+#: walk decides that -- they are its evidence that it read something. Each row
+#: is ``(path, a live phrase that file must contain, is it committed)``.
+#:
+#: A negative scan over an empty read is green, which is the shape T113 (gap
+#: G-C7-6) found and the shape a tree walk reproduces one level out if the
+#: walk silently matches nothing. What an anchor has to be is asserted rather
+#: than described:
+#: ``test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy``
+#: fails if an anchor is absent from its file, if it occurs more than once
+#: there, or if it starts before the 98% mark of that file's flattened text
+#: (T115, gap G-C7-17). Measured 2026-09-15 on the layout of that date, the
+#: seven anchors start past 99% of their files and each occurs exactly once --
+#: that is a measurement of one layout on one date and not an invariant, which
+#: is why the two assertions exist. The invariant is the 98% floor with the
+#: uniqueness, and what trips it is a second occurrence of an anchor phrase
+#: earlier in its file, or a truncation dropping the tail past an anchor. An
+#: edit confined to the last two percent after an anchor is not something
+#: these controls can see.
+#:
+#: The last two rows are ``False`` for *committed*: they live under the
+#: gitignored breadcrumb and are absent from a fresh checkout, where their
+#: cases skip loudly. Every other row is required to exist and to be reached.
+#:
+#: The table itself is declared in ``withdrawn_phrasings.py`` with the other
+#: literals, and for the same reason: an anchor is a verbatim copy of a live
+#: phrase, and one of the seven is a phrase in *this* file -- written here it
+#: would be a second occurrence of that anchor and the uniqueness assertion
+#: would fail on it (T119). The reasons stay here, where the walk reads them.
+WITHDRAWN_SCAN_ANCHORS = _DECLARATIONS.WITHDRAWN_SCAN_ANCHORS
+
+
+def test_the_anchor_table_still_speaks_for_every_file_it_was_built_for() -> None:
+    """A dropped row takes its parametrised case with it, so the remaining
+    cases still pass and the count in the summary is the only trace. Pinned by
+    name (T114): the parametrisation cannot notice its own absence. Under the
+    walk a dropped row no longer stops the file being *scanned* -- the walk
+    still reaches it -- it stops the file being proved *read*, which is the
+    same false all-clear in slower motion."""
+    assert [path.name for path, _anchor, _committed in WITHDRAWN_SCAN_ANCHORS] == [
         "hrv_trend.py",
         "schemas.py",
         "openapi.yaml",
@@ -1120,13 +1284,128 @@ def test_the_scan_corpus_still_holds_every_file_it_was_built_for() -> None:
     ]
 
 
+def test_the_walk_reads_whole_trees_and_not_an_empty_one() -> None:
+    """A walk that matches nothing reports all-clear over nothing.
+
+    That is the allowlist's own failure mode one level out, and it is the
+    thing this replacement had to be built not to do: a mistyped suffix, a
+    root that stopped resolving, a prune list that swallowed the tree, any of
+    them leaves every negative assertion below vacuously true. The floors are
+    what make that red."""
+    assert SCAN_ROOTS[0].exists(), (
+        f"the committed tree is not at {SCAN_ROOTS[0]}: the walk has no root and every "
+        f"all-clear below would be a report over nothing"
+    )
+    for index, floor in enumerate(SCAN_ROOT_FLOORS):
+        if index not in _walked_roots():
+            assert index == 1, f"root {SCAN_ROOTS[index]} is absent and is not the breadcrumb"
+            continue
+        count = len(_scanned_files(index))
+        assert count >= floor, (
+            f"{SCAN_ROOTS[index]} yielded {count} files, under the floor of {floor}: the walk "
+            f"has stopped descending, so every phrasing assertion over it is vacuous"
+        )
+
+
+def test_the_walk_reaches_every_file_an_anchor_speaks_for() -> None:
+    """The anchors prove their files were *read*; this proves the walk still
+    *reaches* them. Without it an exclusion pattern widened by one character
+    could drop a live file out of the walk while its anchor case went on
+    passing -- the anchor test opens the file directly.
+
+    The committed rows fail rather than skip when absent, which is what turns
+    "in a checkout without the breadcrumb the walk is the committed tree
+    alone" from a sentence into a checked claim: five of the seven anchored
+    files are reached on every machine, and the assertion below is what says
+    so."""
+    reached = set(_all_scanned_files())
+    for path, _anchor, committed in WITHDRAWN_SCAN_ANCHORS:
+        if not committed and not path.exists():
+            continue
+        assert path.exists(), f"{path} is committed and must be in every checkout"
+        assert path in reached, (
+            f"{path} is not in the walk: an exclusion pattern, a pruned directory or a "
+            f"suffix has taken a file with live prose out of the scan"
+        )
+
+
+def test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing() -> None:
+    """The exclusion table is the new allowlist if it is allowed to grow.
+
+    Every historical-record row must currently hold out at least one real file
+    that really does carry a withdrawn phrasing. A row that shelters nothing
+    is not protecting history, it is widening the blind spot on the chance
+    that it might one day be needed -- delete it and add it back when a hit
+    appears. This is the assertion that keeps the table a short list of
+    patterns rather than the seven-path allowlist in a new shape.
+
+    A row under an absent root is skipped, not failed: its evidence is not on
+    this machine to look at."""
+    withdrawn = RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS
+    checked = 0
+    for root_index, pattern, reason in SCAN_EXCLUDED_HISTORY:
+        if root_index not in _walked_roots():
+            continue
+        checked += 1
+        root = SCAN_ROOTS[root_index]
+        sheltered = [
+            path
+            for path in _candidate_files(root_index)
+            if _history_exclusion(root_index, path.relative_to(root).as_posix()) == pattern
+            and any(_flat(phrase) in _scannable(path) for phrase in withdrawn)
+        ]
+        assert sheltered, (
+            f"the exclusion {pattern!r} ({reason}) shelters no file carrying a withdrawn "
+            f"phrasing: it is widening the blind spot for nothing and should be deleted"
+        )
+    assert checked, "no exclusion row was checkable: both roots' history is out of reach"
+
+
+def test_the_unscanned_declaration_module_stays_a_declaration_table() -> None:
+    """The declaration module is the only file held out for a non-historical
+    reason, so it is the only place prose could sit unread -- which is exactly
+    what T115 was closing when it moved seventy lines of gloss out of it, and
+    gloss is what has twice on this feature drifted into a literal copy of a
+    withdrawn phrasing.
+
+    Until now, that the module stays a bare declaration table was a sentence
+    nothing enforced, which is cycle 7's one repeated defect shape. This is
+    the assertion: imports, assignments and a single-line docstring are all it
+    may hold, and it may hold no comments at all."""
+    root_index, rel, _reason = SCAN_EXCLUDED_DECLARATIONS
+    path = SCAN_ROOTS[root_index] / rel
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in tree.body:
+        docstring = isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+        assert docstring or isinstance(node, ast.Import | ast.ImportFrom | ast.Assign | ast.AnnAssign), (
+            f"{rel} line {node.lineno} is a {type(node).__name__}: this module is held out of "
+            f"the scan, so anything in it beyond imports, assignments and its docstring is "
+            f"text nothing reads"
+        )
+    comments = [
+        token.string
+        for token in tokenize.generate_tokens(io.StringIO(source).readline)
+        if token.type == tokenize.COMMENT
+    ]
+    assert comments == [], (
+        f"{rel} has grown {len(comments)} comment(s): prose in the one unscanned module is "
+        f"prose no scan can see -- put it beside the scan instead: {comments[:3]}"
+    )
+    doc = ast.get_docstring(tree) or ""
+    assert "\n" not in doc and len(doc) <= 120, (
+        f"{rel}'s docstring runs to {len(doc)} characters: it is the one piece of prose in an "
+        f"unscanned file and stays one short line"
+    )
+
+
 def _scannable(path: Path) -> str:
     """The file's whole text, whitespace-flattened. Nothing is excised.
 
-    Flattening is the whole point: ``hrv_trend.py`` wrapped "is no longer
-    sustained by / the old tier" across a line break and a line-oriented
-    ``grep`` for the sentence returned nothing, which is exactly the false
-    all-clear ``sweep-the-claim-not-the-diff`` warns about.
+    Flattening is the whole point: ``hrv_trend.py`` wrapped a retracted
+    sentence across a line break and a line-oriented ``grep`` for it returned
+    nothing, which is exactly the false all-clear
+    ``sweep-the-claim-not-the-diff`` warns about.
 
     T114 (gap G-C7-10) removed the excision this function used to do. Two
     generations of fence lived here -- a marker pair whose literals had to be
@@ -1136,23 +1415,49 @@ def _scannable(path: Path) -> str:
     balance-asserting loop, and split one fenced region into two in the same
     commit; deleting the *first* of the two end markers then left the loop
     balanced, ~12 lines of live commentary unscanned and the suite green.
-    Guarding a fence is what failed, twice. There is no fence now, and no
-    file in the scan corpus contains a withdrawn phrasing to hide from it.
+    Guarding a fence is what failed, twice. There is no fence now, and that no
+    file the walk reaches carries a withdrawn phrasing is not a claim made
+    here but the assertion below, run over every file the walk reaches.
     """
     return _flat(path.read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize(("path", "anchor"), WITHDRAWN_SCAN_FILES, ids=[path.name for path, _ in WITHDRAWN_SCAN_FILES])
-def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(path: Path, anchor: str) -> None:
-    """T111 (review cycle 7, G-C7-1). ``RESET_REASON_WITHDRAWN`` was read
-    against the two description strings only, so the four sites that
-    actually carried the withdrawn equivalence -- a module docstring, a
-    test docstring and two spec documents -- were invisible to it by
-    construction. This reads the same tuple against every file that
-    carries a live copy of the ``tier_change`` lifetime, so a recurrence
-    goes red here instead of waiting for a review scanner.
-    """
+def test_the_withdrawn_phrasings_are_gone_from_every_file_the_walk_reaches() -> None:
+    """T111 (review cycle 7, gap G-C7-1) read ``RESET_REASON_WITHDRAWN``
+    against the two description strings only, so the four sites that actually
+    carried the withdrawn equivalence -- a module docstring, a test docstring
+    and two spec documents -- were invisible to it by construction. T111's fix
+    named those files; T119's stops naming files at all, because an allowlist
+    passes as soon as the sentence moves file.
+
+    Every offender is collected before the assertion so one run names all of
+    them: a phrasing that has come back has usually come back in more than one
+    place, and reporting the first hit turns one sweep into several."""
+    offenders = [
+        f"{path}: {phrase}"
+        for path in _all_scanned_files()
+        for phrase in RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS
+        if _flat(phrase) in _scannable(path)
+    ]
+    assert not offenders, "withdrawn as false (T103/T105/T109), back in: " + "; ".join(offenders)
+
+
+@pytest.mark.parametrize(
+    ("path", "anchor", "committed"),
+    WITHDRAWN_SCAN_ANCHORS,
+    ids=[path.name for path, _anchor, _committed in WITHDRAWN_SCAN_ANCHORS],
+)
+def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(
+    path: Path, anchor: str, committed: bool
+) -> None:
+    """The positive half of the scan, one case per file whose live prose this
+    feature's corrections had to reach: the anchor says this file's text was
+    read to its tail, so the negative sweep above is a report over something
+    rather than over an empty string. The phrasing check is repeated here
+    because it reports per file, and because it is what fails first if a
+    correction is reverted in one of the seven files that have carried one."""
     if not path.exists():
+        assert not committed, f"{path} is committed and must be in every checkout"
         pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
     text = _scannable(path)
     flat_anchor = _flat(anchor)
