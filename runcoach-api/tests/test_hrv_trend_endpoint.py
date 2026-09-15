@@ -1037,6 +1037,9 @@ WITHDRAWN_ORDER = (
     ("RESET_REASON_WITHDRAWN_IDIOMS", 1, "d8f727d91f20", "T111's docstring survivor, (b)-fails form"),
     ("RESET_REASON_WITHDRAWN_IDIOMS", 2, "74d7925e934a", "T111's docstring survivor, stops-only-when form"),
     ("RESET_REASON_WITHDRAWN_IDIOMS", 3, "5f10a1615377", "T111's third docstring spelling"),
+    ("VERDICT_WITHDRAWN", 1, "c547f180e777", "T116's asymmetric enumeration of unavailable"),
+    ("VERDICT_WITHDRAWN", 2, "92bd3da2474a", "T116's suppression-only gloss, contract idiom"),
+    ("VERDICT_WITHDRAWN", 3, "0900df973b19", "T116's leading suppression-only claim"),
 )
 
 
@@ -1060,6 +1063,7 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
     tuples = {
         "RESET_REASON_WITHDRAWN": RESET_REASON_WITHDRAWN,
         "RESET_REASON_WITHDRAWN_IDIOMS": RESET_REASON_WITHDRAWN_IDIOMS,
+        "VERDICT_WITHDRAWN": VERDICT_WITHDRAWN,
     }
     for name, index, digest, what in WITHDRAWN_ORDER:
         entry = tuples[name][index - 1]
@@ -1074,10 +1078,39 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
             f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
             f"every entry is pinned by exactly one row, and every row pins an entry"
         )
-    assert len(WITHDRAWN_ORDER) == 8, (
-        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 8: a row and its "
+    assert len(WITHDRAWN_ORDER) == 11, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 11: a row and its "
         f"tuple entry dropped together leave every remaining digest correct"
     )
+
+
+def test_every_declared_withdrawn_tuple_is_swept() -> None:
+    """A tuple can be declared and then left out of the walk, which is not a
+    failure any assertion over the walk can see: the sweep reports all-clear
+    over the phrasings it *was* given.
+
+    That is the state ``VERDICT_WITHDRAWN`` was in from T116 until T122 -- read
+    against the two contract copies only, while the ``reset_reason`` tuples
+    were read against every walked file -- and it is the same shape as the
+    ``WITHDRAWN_ORDER`` row T115 closed: a declaration nothing connects to the
+    thing that uses it. This reads the declaration module's own namespace, so a
+    fourth tuple is red until it is in ``WITHDRAWN_SWEPT``, and no one has to
+    remember."""
+    declared = {
+        name: value
+        for name, value in vars(_DECLARATIONS).items()
+        if not name.startswith("_")
+        and isinstance(value, tuple)
+        and value
+        and all(isinstance(entry, str) for entry in value)
+    }
+    assert declared, "the declaration module declares no phrasing tuple at all: the walk reads nothing"
+    for name, value in sorted(declared.items()):
+        missing = [entry for entry in value if entry not in WITHDRAWN_SWEPT]
+        assert not missing, (
+            f"{name} is declared but not in WITHDRAWN_SWEPT, so the walk never looks for "
+            f"{len(missing)} of its phrasings and every all-clear over them is vacuous: {missing}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1149,10 +1182,34 @@ SCAN_EXCLUDED_DIR_PREFIX = ".mut-"
 #: Historical record. ``sweep-the-claim-not-the-diff`` step 3 says a completed
 #: task file, a raw transcript and a dated verdict legitimately quote a
 #: withdrawn phrasing *as the thing that was withdrawn*, and are to be left
-#: alone. Each row is ``(root index, a directory prefix or a file name, why)``
-#: -- a pattern, never an individual file, because **the exclusion table is
-#: the new allowlist if it is allowed to grow**, and a growing list of
-#: individual exemptions is the fence pattern that failed twice this cycle.
+#: alone. Each row is ``(root index, a directory prefix or a file name, why)``.
+#:
+#: **Two of the three rows are directory prefixes and one is a single named
+#: file, and that is the honest description** (corrected 2026-09-15, T122:
+#: this note used to say "a pattern, never an individual file", which the row
+#: spec beside it and row 0 both contradict). A directory prefix holds out a
+#: *class* of documents -- every task file, every verdict -- and grows only
+#: when the project grows a new class. ``CHANGELOG.md`` holds out one file by
+#: name, and what keeps the table from becoming an allowlist is therefore not
+#: its shape but
+#: ``test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing``
+#: plus the rule that a row must name a document class that is *by its nature*
+#: a dated record. A second named file would be the fence pattern returning,
+#: and should be refused on that ground rather than on the shape of the entry.
+#:
+#: **``CHANGELOG.md`` is the row where that rule is weakest, and the blind
+#: spot is stated rather than argued away.** Its retraction entries do quote
+#: each withdrawn phrasing as the thing being retracted, which is why the row
+#: exists. But the CHANGELOG is also where this project writes **new live
+#: normative prose** -- T116's entry is ~1,400 words of it and T117's was
+#: written into the same list by T120 -- and nothing inside the file
+#: distinguishes the live text from the historical: no section marker, no
+#: per-entry convention, nothing the walk could key on. So a withdrawn
+#: phrasing re-emitted in a *new* CHANGELOG entry is invisible to this scan,
+#: by construction and not by accident. Nothing distinguishes them today; the
+#: cheapest thing that would is a convention that quarantines quoted
+#: retractions into a marked block, and that is a change to how the CHANGELOG
+#: is written rather than to this table.
 #:
 #: What keeps it from growing is
 #: ``test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing``:
@@ -1296,9 +1353,21 @@ def test_the_walk_reads_whole_trees_and_not_an_empty_one() -> None:
         f"the committed tree is not at {SCAN_ROOTS[0]}: the walk has no root and every "
         f"all-clear below would be a report over nothing"
     )
+    # T122: the loop below is over the *floors*, so a third root added without
+    # a floor row is walked and never floored, and a truncated floors table
+    # silently stops flooring the roots past its end -- the same shape T115
+    # closed for WITHDRAWN_ORDER. One root, one floor.
+    assert len(SCAN_ROOT_FLOORS) == len(SCAN_ROOTS), (
+        f"{len(SCAN_ROOT_FLOORS)} floors against {len(SCAN_ROOTS)} roots: a root with no floor "
+        f"row is walked with nothing checking that the walk descended into it"
+    )
     for index, floor in enumerate(SCAN_ROOT_FLOORS):
         if index not in _walked_roots():
-            assert index == 1, f"root {SCAN_ROOTS[index]} is absent and is not the breadcrumb"
+            # Root 0 is the committed tree and is required above; every other
+            # root is machine-local and may be absent. Written as "not the
+            # committed root" rather than "== 1" so a third root does not
+            # make a legitimately absent breadcrumb fail here (T122).
+            assert index != 0, f"root {SCAN_ROOTS[index]} is the committed tree and must exist"
             continue
         count = len(_scanned_files(index))
         assert count >= floor, (
@@ -1340,8 +1409,12 @@ def test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing()
     patterns rather than the seven-path allowlist in a new shape.
 
     A row under an absent root is skipped, not failed: its evidence is not on
-    this machine to look at."""
-    withdrawn = RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS
+    this machine to look at.
+
+    What this cannot check is *scope within* a sheltered file: the
+    ``CHANGELOG.md`` row shelters real retraction quotes and, with them, every
+    live entry in the same file (T122, stated in the table's own note)."""
+    withdrawn = WITHDRAWN_SWEPT
     checked = 0
     for root_index, pattern, reason in SCAN_EXCLUDED_HISTORY:
         if root_index not in _walked_roots():
@@ -1436,10 +1509,10 @@ def test_the_withdrawn_phrasings_are_gone_from_every_file_the_walk_reaches() -> 
     offenders = [
         f"{path}: {phrase}"
         for path in _all_scanned_files()
-        for phrase in RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS
+        for phrase in WITHDRAWN_SWEPT
         if _flat(phrase) in _scannable(path)
     ]
-    assert not offenders, "withdrawn as false (T103/T105/T109), back in: " + "; ".join(offenders)
+    assert not offenders, "withdrawn as false (T103/T105/T109/T116), back in: " + "; ".join(offenders)
 
 
 @pytest.mark.parametrize(
@@ -1474,8 +1547,10 @@ def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(
         f"{text.find(flat_anchor) / len(text):.1%} of the flattened text, not past 98%, so "
         f"a truncation of the tail can drop live prose and still leave the anchor: {anchor}"
     )
-    for withdrawn in RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS:
-        assert _flat(withdrawn) not in text, f"withdrawn as false (T103/T105/T109), back in {path.name}: {withdrawn}"
+    for withdrawn in WITHDRAWN_SWEPT:
+        assert _flat(withdrawn) not in text, (
+            f"withdrawn as false (T103/T105/T109/T116), back in {path.name}: {withdrawn}"
+        )
 
 
 #: Where the two copies must agree word for word. The served description is
@@ -1682,11 +1757,33 @@ VERDICT_CLAIMS = (
 
 #: Withdrawn by T116 as the asymmetry itself, in each copy's own spelling
 #: (the YAML copy parenthesised the section number, the schema copy did not).
-VERDICT_WITHDRAWN = (
-    "a below-band week on an unestablished baseline",
-    "suppression is withheld, not read as normal",
-    "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established baseline",
-)
+#:
+#: T122 (review cycle 7) moved this tuple into ``withdrawn_phrasings.py`` and
+#: into the walk. Until then it was read against the **two contract copies
+#: only**, while ``RESET_REASON_WITHDRAWN`` was read against all 265 walked
+#: files -- so a restored asymmetric sentence in ``research/00`` §5.4, spec
+#: §3.7.3, the construction reference or any docstring was invisible to it *by
+#: construction*, which is precisely the gap T111 found for ``reset_reason``
+#: and T119 then closed by replacing the allowlist with a walk. Measured
+#: before the move: no live copy existed anywhere in the 265, so this is a
+#: scope gap and not an escaped phrasing.
+#:
+#: Entry 1 is **not** the bare fragment the contract carried. "A below-band
+#: week on an unestablished baseline" is also the still-true title of
+#: [[IDEA-043]]/T084 and appears in a live docstring in this file describing
+#: what T116 withdrew, so swept over 265 files it reddens on true text. What
+#: T116 withdrew is the **enumeration** -- unavailable listed that cell and
+#: not its two neighbours -- so entry 1 carries the neighbour it was listed
+#: beside, which no true sentence pairs it with.
+VERDICT_WITHDRAWN = _DECLARATIONS.VERDICT_WITHDRAWN
+
+#: Every withdrawn phrasing the walk reads, in one name so a fourth tuple
+#: cannot be declared and then left out of the sweep -- which is the shape
+#: ``VERDICT_WITHDRAWN`` was in until T122, and the same shape T115 closed for
+#: ``WITHDRAWN_ORDER``. ``test_every_declared_withdrawn_tuple_is_swept`` is
+#: what holds it: it reads the declaration module's own namespace rather than
+#: this line.
+WITHDRAWN_SWEPT = RESET_REASON_WITHDRAWN + RESET_REASON_WITHDRAWN_IDIOMS + VERDICT_WITHDRAWN
 
 #: The run the two copies must state identically, from this anchor to the end.
 VERDICT_SHARED_ANCHOR = "hrv_normal and hrv_suppressed both assert an established baseline"

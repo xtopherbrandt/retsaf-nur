@@ -1,4 +1,4 @@
-"""The withdrawn ``reset_reason`` phrasings. Declarations only -- see the scan."""
+"""The withdrawn ``reset_reason`` and ``verdict`` phrasings. Declarations only -- see the scan."""
 
 from __future__ import annotations
 
@@ -16,6 +16,12 @@ RESET_REASON_WITHDRAWN_IDIOMS = (
     "so that (b) fails",
     "the report stops only when",
     "the reset stops being reported when the previous window",
+)
+
+VERDICT_WITHDRAWN = (
+    "too few readings this week, a below-band week on an unestablished baseline",
+    "suppression is withheld, not read as normal",
+    "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established baseline",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
