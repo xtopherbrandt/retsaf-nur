@@ -1188,10 +1188,13 @@ def tier_change_reset(
     (T109; T111 corrected this paragraph, which read the (b) route as the
     whole lifetime). The (b) route is the one with a closed form -- the
     construction reference's own words, restored here by T113 (gap
-    G-C7-7): T111 added to them a universal about which of the three
-    conditions lapses last, and the forward switch named just below
-    contradicts it, since there (a) and the week half never lapse at all
-    and (b) is the only condition that ever ends the report.
+    G-C7-7), in place of the universal T111 had added to them about which
+    of the three conditions lapses last. No such universal holds: which
+    condition ends a given report is a property of the series, and the
+    justification clause is dropped rather than re-stated (T114, gap
+    G-C7-13 -- it had claimed (a) and the week half never lapse on a
+    forward switch, two sentences before this paragraph says either of
+    them may have ended the report earlier).
     ``sustained_tier`` is the
     highest-fidelity tier with ``MIN_BASELINE_READINGS`` days in
     ``[D-126, D-67]``, so the day (b) lapses is direction-dependent

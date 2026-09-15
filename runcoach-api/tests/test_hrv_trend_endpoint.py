@@ -25,6 +25,8 @@ bottom is the parser's deliverable
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
 import math
 import statistics
@@ -32,6 +34,7 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise, repeat
 from pathlib import Path
+from types import ModuleType
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -835,16 +838,13 @@ def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
 #: are hand-synchronised: nothing in the tree compared them until T105.
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 
-# The three tuples below declare the contract's live claim fragments and the
-# phrasings this project has retracted. Only the two tuples that *quote* a
-# retracted phrasing are fenced -- each one individually, between the two
-# markers ``_DECLARATION_FENCE`` holds -- and only those two literals are
-# excised before this file is scanned. (T113, gap G-C7-6: the fence used to
-# be one 103-line span, some 70 lines of it live prose plus
-# ``RESET_REASON_CLAIMS``, none of which the scan that reports on this file
-# ever read.) Do not put prose inside a fence, and do not quote a withdrawn
-# phrasing outside one -- the notes below refer to withdrawn entries by their
-# index instead of spelling them.
+# ``RESET_REASON_CLAIMS`` below declares the contract's live claim fragments.
+# The retracted phrasings are *not* declared here: they live in
+# ``tests/support/withdrawn_phrasings.py``, which is the one file outside the
+# scan corpus (T114, gap G-C7-10). This file is therefore scanned in full, and
+# the standing rule for it is the same as for every other scanned file -- do
+# not quote a withdrawn phrasing anywhere in it. Notes that need to point at
+# one name it by its index, or paraphrase it.
 
 #: The sentences of the ``baseline.reset_reason`` description a client is
 #: invited to key on, transcribed as the smallest fragment that carries each
@@ -863,8 +863,9 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 #:    together and not clause (b) alone; and the inference a client must
 #:    *not* draw.
 #:
-#: Not fenced: no entry here is a withdrawn phrasing, so this tuple is read by
-#: the file scan like any other live line (T113, G-C7-6).
+#: No entry here is a withdrawn phrasing, so this tuple is read by the file
+#: scan like any other live line (T113, G-C7-6) -- as, since T114, is every
+#: other line of this file.
 #:
 #: Authorship, corrected by T112 (review cycle 7, G-C7-2). T109's note here
 #: said the entries were "re-derived from ``build_series``" -- which is the
@@ -908,147 +909,122 @@ RESET_REASON_CLAIMS = (
     "a client cannot infer from seeing a `tier_change` that an un-clipped `window` will follow",
 )
 
-#: Phrasings withdrawn as false, which no copy may carry again, in the order
-#: they are declared below -- named here by index, since spelling one outside
-#: the fence would make the scan red on its own commentary:
-#:
-#: 1. T103's universal (a reported ``tier_change`` and an unclipped window
-#:    can never sit together);
-#: 2-3. T105's replacement universal, in the two spellings it was written in
-#:    (the no-op stretch as the last stretch of *every* report's lifetime);
-#: 4-5. T109's two spellings of T105's false equivalence -- the gloss that
-#:    equated report-liveness with clause (b), which lived in both contract
-#:    copies, and the lifetime sentence that stated the same equivalence the
-#:    other way round, which lived in the served copy alone and so was
-#:    invisible to a pin that only compared the two copies' shared run.
-#:
-#: Entries 4 and 5 are false for the same reason: clause (b) is necessary for
-#: the report, not sufficient. The one-shot ``! grep -q`` in those tasks' own
-#: acceptance probes is the weak form ``sweep-the-claim-not-the-diff`` warns
-#: about -- it never runs again. These do.
-# --- withdrawn-phrasing declarations: begin ---
-RESET_REASON_WITHDRAWN = (
-    "never sits beside an unclipped",
-    "last stretch of every",
-    "every report's lifetime",
-    "only while the old tier still sustains",
-    "is no longer sustained by the old tier",
-)
-# --- withdrawn-phrasing declarations: end ---
+def _load_module(name: str, path: Path) -> ModuleType:
+    """Import a module from its path (see the note below on ``importlib``)."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-#: The same equivalence in the idioms the *docstrings* use rather than the
-#: contract's. The two survivors T111 found are entries 1 and 2 below -- a
-#: "(b) fails" form and a "stops ... only when" form of the same sentence,
-#: neither of which any contract copy would ever say -- so a tuple written
-#: against contract prose could not have caught them even pointed at the
-#: right files.
-#:
-#: T111's acceptance probe greps *this file* for the second of them, so it
-#: is assembled from fragments rather than written out -- spelling it here
-#: would make the probe red on its own declaration.
-# --- withdrawn-phrasing declarations: begin ---
-RESET_REASON_WITHDRAWN_IDIOMS = (
-    "so that (b) fails",
-    " ".join(("the report", "stops", "only when")),  # noqa: FLY002 -- see the note above
-    "the reset stops being reported when the previous window",
-)
-# --- withdrawn-phrasing declarations: end ---
 
-#: Every file that carries a *live* copy of the ``tier_change`` lifetime, in
-#: whatever idiom that file uses. T109 withdrew the (b)-alone equivalence and
-#: the two-copy oracle above enforced it -- but only across the two
-#: description strings. Two Stage 0 scanners then found the withdrawn claim
-#: still standing in ``hrv_trend.py``'s ``tier_change_reset`` docstring, in
-#: this suite's own ``test_a_reported_tier_change_sits_beside_the_unclipped_
-#: window_...`` docstring ~250 lines below the tuple T109 corrected, and in
-#: both spec documents. None of those is a description string, so nothing
-#: could see them (T111, gap G-C7-1; ``sweep-the-claim-not-the-diff``, fourth
-#: consecutive cycle on this feature).
+#: The withdrawn phrasings, the docstring idioms of the same claims, and the
+#: files scanned for them live in ``tests/support/withdrawn_phrasings.py``
+#: (T114, gap G-C7-10). They used to live here, in the file that scans for
+#: them, and the fence that stopped the scan matching its own declarations was
+#: defeated twice by a marker pairing off with another copy of itself -- the
+#: second time by the commit that fixed the first. Moving the declarations out
+#: deletes the fence, the excision and that whole class of defect: this file is
+#: now scanned in full, like every other file in the table.
 #:
-#: The two spec documents live under the machine-local ``.shipyard``
-#: breadcrumb, which is gitignored, so they are scanned when it is present
-#: and the row is skipped -- loudly -- when it is not.
-#: Paired with each file is its **positive control**: a live phrase that must
-#: survive ``_scannable``. Every other assertion in the scan is negative, so
-#: without this the scan is green over a file it never read -- an empty read,
-#: a fence that swallowed the rest of the file, a path that stopped carrying
-#: the prose it is here for (T113, gap G-C7-6). Each anchor is taken from
-#: *live* prose near the end of its file, after every fence in it, so
-#: anything that truncates the scanned text takes the anchor with it.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-WITHDRAWN_SCAN_FILES = (
-    (
-        _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "metrics" / "hrv_trend.py",
-        "those dates bound the report; they do not promise it",
-    ),
-    (
-        _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "a timezone change is never a reset",
-    ),
-    (
-        _REPO_ROOT / "contracts" / "openapi.yaml",
-        "baseline clip is decided by the era boundary alone",
-    ),
-    (
-        _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
-        "which is the parameter's problem and is named as such",
-    ),
-    (
-        _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_reset.py",
-        "the branch-beside-the-bug shape this project keeps escaping through",
-    ),
-    (
-        _REPO_ROOT / ".shipyard" / "spec" / "features" / "F005-resting-hrv-trend.md",
-        "those dates bound the report, they do",
-    ),
-    (
-        _REPO_ROOT / ".shipyard" / "spec" / "references" / "F005-trend-construction.md",
-        "it is the route with a closed form",
-    ),
+#: Loaded from its path because the workspace runs pytest with
+#: ``--import-mode=importlib``, under which nothing in ``tests/`` is importable
+#: by name.
+_DECLARATIONS = _load_module(
+    "withdrawn_phrasings", Path(__file__).parent / "support" / "withdrawn_phrasings.py"
+)
+RESET_REASON_WITHDRAWN = _DECLARATIONS.RESET_REASON_WITHDRAWN
+RESET_REASON_WITHDRAWN_IDIOMS = _DECLARATIONS.RESET_REASON_WITHDRAWN_IDIOMS
+WITHDRAWN_SCAN_FILES = _DECLARATIONS.WITHDRAWN_SCAN_FILES
+
+
+#: T114 (review cycle 7, G-C7-14). Eight live notes in this suite and in
+#: ``hrv_trend.py`` address a withdrawn phrasing **by its index** -- "entry 4",
+#: "entries 1 and 2 below", "``RESET_REASON_WITHDRAWN``'s first entry" -- and
+#: until now nothing pinned either tuple's order or contents, so a reorder or
+#: a mid-tuple insert silently re-pointed every one of those references at a
+#: different claim, with no test able to notice.
+#:
+#: Each row is (tuple name, 1-based index, the first 12 hex digits of the
+#: SHA-256 of the flattened entry, what that entry is). The digest is used
+#: rather than the phrasing for the reason the fence used to exist: a literal
+#: copy here would be a second copy of a withdrawn phrasing in a scanned file.
+#: Unlike the fence, nothing has to stay balanced for this to work -- a wrong
+#: digest is a failure, not a silent excision. Regenerate a row only when the
+#: entry is *deliberately* changed, and fix the prose that names its index in
+#: the same commit:
+#:
+#:     hashlib.sha256(_flat(entry).encode()).hexdigest()[:12]
+WITHDRAWN_ORDER = (
+    ("RESET_REASON_WITHDRAWN", 1, "68cdf4d5e54a", "T103's universal"),
+    ("RESET_REASON_WITHDRAWN", 2, "13eab33ef6be", "T105's replacement, spelling 1"),
+    ("RESET_REASON_WITHDRAWN", 3, "0cf46dd3cda0", "T105's replacement, spelling 2"),
+    ("RESET_REASON_WITHDRAWN", 4, "66a6009ab905", "T109's (b)-alone gloss, contract idiom"),
+    ("RESET_REASON_WITHDRAWN", 5, "4d68ca692f13", "T109's (b)-alone gloss, lifetime idiom"),
+    ("RESET_REASON_WITHDRAWN_IDIOMS", 1, "d8f727d91f20", "T111's docstring survivor, (b)-fails form"),
+    ("RESET_REASON_WITHDRAWN_IDIOMS", 2, "74d7925e934a", "T111's docstring survivor, stops-only-when form"),
+    ("RESET_REASON_WITHDRAWN_IDIOMS", 3, "5f10a1615377", "T111's third docstring spelling"),
 )
 
-#: This file declares the withdrawn phrasings, so scanning it whole would
-#: always match. Each declaring *literal* is fenced instead, and only the
-#: fenced literals are excised -- every other line of the suite, commentary
-#: included, is scanned like any other file (T113, gap G-C7-6).
-#: Assembled rather than written out, for the same reason the idioms below
-#: are: a literal copy of either marker here is a *third* marker in this
-#: file, and it pairs off with a real one. With the markers spelled, an end
-#: marker mistyped at one of the fenced literals was absorbed by the copy in
-#: this very tuple -- the span between them silently excised, the fence still
-#: balanced, and the scan still green (measured, T113).
-_DECLARATION_FENCE = tuple(
-    f"# --- withdrawn-phrasing declarations: {edge} ---" for edge in ("begin", "end")
-)
+
+def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None:
+    """The index-by-index pin ``WITHDRAWN_ORDER`` describes. A reorder, a
+    mid-tuple insert, a deletion or a reworded entry all go red here, and the
+    length check makes an *append* the only change that passes silently --
+    which is the only one that leaves every existing index pointing where the
+    prose says it points."""
+    tuples = {
+        "RESET_REASON_WITHDRAWN": RESET_REASON_WITHDRAWN,
+        "RESET_REASON_WITHDRAWN_IDIOMS": RESET_REASON_WITHDRAWN_IDIOMS,
+    }
+    for name, index, digest, what in WITHDRAWN_ORDER:
+        entry = tuples[name][index - 1]
+        actual = hashlib.sha256(_flat(entry).encode()).hexdigest()[:12]
+        assert actual == digest, (
+            f"{name} entry {index} is no longer {what}: every note that names "
+            f"that index now points at a different claim (got {actual})"
+        )
+    for name, tup in tuples.items():
+        pinned = [row for row in WITHDRAWN_ORDER if row[0] == name]
+        assert len(tup) >= len(pinned), f"{name} lost an entry the prose names by index"
+
+
+def test_the_scan_corpus_still_holds_every_file_it_was_built_for() -> None:
+    """A dropped row in ``WITHDRAWN_SCAN_FILES`` stops a file being scanned and
+    takes its parametrised case with it, so the remaining cases still pass and
+    the count in the summary is the only trace. Pinned by name (T114): the
+    parametrisation cannot notice its own absence."""
+    assert [path.name for path, _ in WITHDRAWN_SCAN_FILES] == [
+        "hrv_trend.py",
+        "schemas.py",
+        "openapi.yaml",
+        "test_hrv_trend_endpoint.py",
+        "test_hrv_trend_reset.py",
+        "F005-resting-hrv-trend.md",
+        "F005-trend-construction.md",
+    ]
 
 
 def _scannable(path: Path) -> str:
-    """The file's prose, whitespace-flattened, every fenced literal excised.
+    """The file's whole text, whitespace-flattened. Nothing is excised.
 
     Flattening is the whole point: ``hrv_trend.py`` wrapped "is no longer
     sustained by / the old tier" across a line break and a line-oriented
     ``grep`` for the sentence returned nothing, which is exactly the false
     all-clear ``sweep-the-claim-not-the-diff`` warns about.
 
-    Every fence pair is excised, not only the first, and **an unbalanced
-    fence is an error rather than a silent truncation** (T113, gap G-C7-6):
-    the earlier form guarded only ``if begin in text``, so a missing or
-    mistyped end marker dropped everything from the begin marker to EOF --
-    in this very file, one of the four docstrings the scan was written to
-    cover -- and every negative assertion then passed over text nothing had
-    read.
+    T114 (gap G-C7-10) removed the excision this function used to do. Two
+    generations of fence lived here -- a marker pair whose literals had to be
+    assembled rather than written, because a literal copy of a marker is
+    another marker and pairs off with a real one. T113 replaced a
+    ``if begin in text`` form that silently dropped everything to EOF with a
+    balance-asserting loop, and split one fenced region into two in the same
+    commit; deleting the *first* of the two end markers then left the loop
+    balanced, ~12 lines of live commentary unscanned and the suite green.
+    Guarding a fence is what failed, twice. There is no fence now, and no
+    file in the scan corpus contains a withdrawn phrasing to hide from it.
     """
-    text = path.read_text(encoding="utf-8")
-    begin, end = _DECLARATION_FENCE
-    kept: list[str] = []
-    while begin in text:
-        head, _, rest = text.partition(begin)
-        assert end in rest, f"{path.name}: a declaration fence opens and never closes; the rest of the file would go unscanned"
-        kept.append(head)
-        _, _, text = rest.partition(end)
-    assert end not in text, f"{path.name}: a declaration fence closes without opening; a begin marker is missing or mistyped"
-    kept.append(text)
-    return _flat("".join(kept))
+    return _flat(path.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize(("path", "anchor"), WITHDRAWN_SCAN_FILES, ids=[path.name for path, _ in WITHDRAWN_SCAN_FILES])
@@ -1121,7 +1097,11 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     lists the six sentences a client could act on, each as the shortest
     fragment that carries it, so a legitimate rewording of the surrounding
     text stays green while dropping a claim from either copy goes red.
-    ``RESET_REASON_WITHDRAWN`` holds the two phrasings retracted as false.
+    ``RESET_REASON_WITHDRAWN`` holds the **five** phrasings retracted as
+    false -- T103's universal, T105's replacement in its two spellings, and
+    T109's two spellings of the (b)-alone equivalence (T114, G-C7-15: this
+    line said "the two" from T103's day and was never updated as T105 and
+    T109 appended to the tuple).
     ``RESET_REASON_SHARED_ANCHOR`` starts the run the two sites are
     required to state identically, and the run is compared across them, so
     a correction applied to one copy alone fails here.
