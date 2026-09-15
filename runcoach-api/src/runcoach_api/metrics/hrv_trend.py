@@ -775,17 +775,31 @@ def judge(series: HrvSeries) -> HrvVerdict:
     - no band (fewer than two baseline readings) -> ``hrv_unavailable``;
     - fewer than ``MIN_WINDOW_READINGS`` in the week -> ``hrv_unavailable``
       (two bad mornings are not a trend, however bad);
-    - the mean strictly below ``band.lo`` on an **established** baseline
-      (``>= MIN_BASELINE_READINGS``) -> ``hrv_suppressed``, with ``below_by``;
-    - the mean inside **or above** the band -> ``hrv_normal``;
-    - the mean below the band on a baseline that is *not* established ->
-      ``hrv_unavailable``. §3.7.3 says the suppression is *withheld* until
-      the baseline is adequately established; it does not say the week reads
-      normal. ``hrv_normal`` would tell Section 6 that readiness is intact on
-      the strength of the very reading that says otherwise -- up-regulating
-      on weak evidence, which ``research/00`` §1.7 forbids -- so the honest
-      verdict is that there is none, and the response carries ``baseline_n``
-      and ``established`` to say why.
+    - on a baseline that is *not* established (``< MIN_BASELINE_READINGS``)
+      -> ``hrv_unavailable``, wherever the mean sits;
+    - otherwise, on an **established** baseline: the mean strictly below
+      ``band.lo`` -> ``hrv_suppressed``, with ``below_by``; the mean inside
+      **or above** the band -> ``hrv_normal``.
+
+    **The establishment gate is symmetric, and that is a 2026-09-15 change**
+    (T116, [[IDEA-062]]). §3.7.3 says the suppression is *withheld* until the
+    baseline is adequately established; it does not say the week reads
+    normal, and until T116 it did. Either verdict on a 2-to-13-reading
+    baseline tells Section 6 something on evidence the same response reports
+    unestablished, and the ``hrv_normal`` direction is the forbidden one:
+    it says readiness is intact, so a planned hard session stands on weak
+    evidence -- up-regulating on weak evidence, which ``research/00`` §1.7
+    forbids. So the honest verdict is that there is none, and the response
+    carries ``baseline_n`` and ``established`` to say why. This is reachable
+    after **every** reset this feature performs: a coverage gap or a tier
+    change collapses the baseline deliberately, and the athlete then
+    traverses ~12 unestablished days, previously all of them reading
+    ``hrv_normal`` unless the week fell below the band.
+
+    Pinned by ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``,
+    ``test_a_thin_baseline_above_the_band_is_unavailable_too`` and
+    ``test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``
+    in ``test_hrv_trend_band.py``, and by the contract table there.
 
     The band itself is asserted whenever it can be built, established or
     not, and whether or not the week has readings: it is a property of the
@@ -801,12 +815,12 @@ def judge(series: HrvSeries) -> HrvVerdict:
     verdict = VERDICT_UNAVAILABLE
     below_by = None
     if band is not None and window_mean is not None and readings_in_window >= MIN_WINDOW_READINGS:
-        if window_mean < band.lo:
-            if established:
+        if established:
+            if window_mean < band.lo:
                 verdict = VERDICT_SUPPRESSED
                 below_by = band.lo - window_mean
-        else:
-            verdict = VERDICT_NORMAL
+            else:
+                verdict = VERDICT_NORMAL
 
     return HrvVerdict(
         verdict=verdict,

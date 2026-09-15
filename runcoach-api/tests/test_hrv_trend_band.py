@@ -17,14 +17,25 @@ reference "The band"; decision log rows "Thin and degenerate data" and
   readings, whatever the baseline;
 - otherwise ``suppressed`` when the window mean is strictly below ``band.lo``
   *and* the baseline is established; ``normal`` when the mean is inside or
-  above the band;
-- a below-band mean on an unestablished baseline is the one cell the text
-  does not name. It is **unavailable** here, not normal: §3.7.3 says the
+  above the band *and* the baseline is established;
+- **every verdict but ``hrv_unavailable`` requires an established baseline**
+  (T116, 2026-09-15, a behaviour change). Neither cell the spec's text left
+  unnamed -- below the band on an unestablished baseline, and inside or above
+  it on one -- reads as a verdict: both are **unavailable**. §3.7.3 says the
   suppression is *withheld* until the baseline is established, and
   ``hrv_normal`` would tell Section 6 that readiness is intact on the
-  strength of the very reading that says otherwise -- up-regulating on weak
-  evidence, which ``research/00`` §1.7 forbids. ``hrv_unavailable`` makes the
-  readiness logic widen its guardrails instead.
+  strength of a baseline the same response reports unestablished -- up-
+  regulating on weak evidence, which ``research/00`` §1.7 forbids.
+  ``hrv_unavailable`` makes the readiness logic widen its guardrails instead.
+- **The asymmetry was the defect** ([[IDEA-062]]). Until T116 this docstring
+  argued §1.7 for the below-band cell alone and the table returned ``normal``
+  regardless of establishment for its two neighbours, so a week judged
+  against a band built from 2 to 13 readings reported ``hrv_normal`` -- and
+  that is reachable after **every** reset this feature performs, since a gap
+  reset or a tier change collapses the baseline and the athlete then
+  traverses ~12 unestablished days. Eight of the 90 rows below moved with the
+  rule; the direct pin is
+  ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``.
 
 The table enumerates ``{baseline n: 0, 1, 2, 13, 14, 41} x {window n: 0, 2,
 3, 7} x {mean: below, inside, above}`` exhaustively, boring rows included, so
@@ -459,15 +470,54 @@ def test_established_flips_at_exactly_fourteen_baseline_readings() -> None:
     assert hrv_trend.MIN_BASELINE_READINGS == 14
 
 
-def test_a_thin_baseline_with_the_mean_inside_the_band_is_normal() -> None:
-    """Only the suppression is withheld (§3.7.3); a thin baseline whose week
-    sits inside its band still reads normal, with ``established`` false so a
-    consumer can see the confidence it carries."""
+def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
+    """T116 (2026-09-15, behaviour change; [[IDEA-062]]): the establishment
+    gate is symmetric, so the ``normal`` is withheld on a thin baseline
+    exactly as the suppression is. Five baseline readings and a week sitting
+    inside their band read ``hrv_unavailable`` -- ``hrv_normal`` here would
+    tell Section 6 readiness is intact on a baseline the same response
+    reports unestablished, the up-regulating direction ``research/00`` §1.7
+    forbids, and it is reachable after every reset the feature performs.
+
+    Until T116 this same series asserted ``hrv_normal``; the band is still
+    reported, because the band is a property of the baseline and only the
+    verdict is withheld. Perturbation: drop the ``established`` gate from
+    ``judge``'s inside-or-above arm and this goes red (``hrv_normal``)."""
     result = verdict_for(alternating(5), [42.0] * 7)
 
-    assert result.verdict == NORMAL
+    assert result.verdict == UNAVAILABLE
+    assert result.verdict != NORMAL
     assert result.established is False
     assert result.baseline_n == 5
+    assert result.band is not None, "the band is still reported; only the verdict is withheld"
+    assert result.band.lo <= result.ln_rmssd_7d_mean <= result.band.hi
+    assert result.below_by is None
+
+
+def test_a_thin_baseline_above_the_band_is_unavailable_too() -> None:
+    """The third cell of the same rule, and a distinct failure mode from the
+    one above: a gate written as ``if window_mean <= band.hi`` would keep this
+    one red while the inside cell passed. Seven window readings well above a
+    five-reading baseline's band still read ``hrv_unavailable``."""
+    result = verdict_for(alternating(5), [60.0] * 7)
+
+    assert result.band is not None
+    assert result.ln_rmssd_7d_mean > result.band.hi
+    assert result.verdict == UNAVAILABLE
+    assert result.established is False
+
+
+def test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings() -> None:
+    """The companion of ``test_established_flips_at_exactly_fourteen_baseline_readings``
+    on the other side of the band, and the input that would stay green if the
+    gate were written as ``>= 13``: 13 readings inside the band are
+    unavailable, 14 are normal, and nothing but the baseline size moved."""
+    thin = verdict_for(alternating(13), [42.0] * 7)
+    enough = verdict_for(alternating(14), [42.0] * 7)
+
+    assert (thin.established, thin.verdict) == (False, UNAVAILABLE)
+    assert (enough.established, enough.verdict) == (True, NORMAL)
+    assert thin.band is not None and enough.band is not None
 
 
 def test_too_few_readings_this_week_is_unavailable_not_normal() -> None:
@@ -599,9 +649,18 @@ def expected_row(baseline_n: int, window_n: int, position: str) -> tuple[str, bo
     established = baseline_n >= 14
     if not band or window_n < 3:
         return UNAVAILABLE, band, established, False
+    if not established:
+        # T116: the establishment gate is symmetric. Below the band the
+        # suppression is withheld; inside or above it the ``normal`` is
+        # withheld for the same reason -- ``hrv_normal`` on a 2-to-13-reading
+        # baseline asserts intact readiness on evidence the same response
+        # calls unestablished, the up-regulating direction ``research/00``
+        # §1.7 forbids. Both are ``hrv_unavailable``, and the band is still
+        # reported so the consumer can see what was withheld.
+        return UNAVAILABLE, True, False, False
     if position == BELOW:
-        return (SUPPRESSED, True, True, True) if established else (UNAVAILABLE, True, False, False)
-    return NORMAL, True, established, False
+        return SUPPRESSED, True, True, True
+    return NORMAL, True, True, False
 
 
 CONTRACT_TABLE = [

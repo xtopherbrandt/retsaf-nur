@@ -955,9 +955,19 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     without -- and on every later day of the era. On ``SW+20`` the reset
     also clips the stray out of the reported era, so the response says
     what is true of it: ``baseline.n`` 13 and ``established: false`` --
-    the band steps a day early, the reset explains the step, and no
-    suppression can be asserted on it. Red at 0891061 on all three walked
-    days.
+    the band steps a day early, the reset explains the step, and **no
+    verdict at all** can be asserted on it. Red at 0891061 on all three
+    walked days.
+
+    **``SW+20``'s verdict moved on 2026-09-15** (T116, a behaviour change):
+    it was ``hrv_normal`` -- the week sits inside a band built from the 13
+    clipped-era readings -- and is now ``hrv_unavailable``, because
+    ``hrv_normal`` requires ``established`` as ``hrv_suppressed`` already
+    did. This series is the shape the change is *for*: the reset collapsed
+    the baseline to 13 readings one day early, and the response said so in
+    ``established`` while the verdict said readiness was intact. ``SW+21``
+    and ``SW+60``, at 14 and 53 readings, are unmoved -- which is what makes
+    the first element and not the whole list the assertion that changed.
 
     **What the tolerance controls here** (T099). The stray moves the clip,
     so on ``SW+20`` the whole answer changes, not only the report: the
@@ -1011,7 +1021,13 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     ]
     assert [judged.baseline_n for judged in stray_walk] == [13, 14, 53]
     assert [judged.band_lo for judged in stray_walk] == pytest.approx([flat_band_lo(25.0)] * 3)
-    assert [judged.verdict for judged in stray_walk] == [hrv_trend.VERDICT_NORMAL] * 3
+    # T116: the band is reported on all three days; the verdict is withheld
+    # on the one the reset left unestablished.
+    assert [judged.verdict for judged in stray_walk] == [
+        hrv_trend.VERDICT_UNAVAILABLE,
+        hrv_trend.VERDICT_NORMAL,
+        hrv_trend.VERDICT_NORMAL,
+    ]
 
     early = build(control + stray, target=walk[0])
     assert early.baseline_window == (switch + timedelta(days=1), walk[0] - timedelta(days=7))

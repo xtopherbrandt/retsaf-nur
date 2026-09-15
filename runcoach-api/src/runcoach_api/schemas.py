@@ -53,7 +53,13 @@ class Band(BaseModel):
         )
     )
     lo: float = Field(description="mean - half_width. The verdict is hrv_suppressed strictly below this.")
-    hi: float = Field(description="mean + half_width. A mean above it is hrv_normal, not unavailable.")
+    hi: float = Field(
+        description=(
+            "mean + half_width. A mean above it is hrv_normal on an established baseline, not "
+            "unavailable; on an unestablished one it is hrv_unavailable like every other position "
+            "(see verdict)."
+        )
+    )
     floored: bool = Field(description="True when the computed half-width fell below band_floor and the floor was used.")
 
 
@@ -214,12 +220,18 @@ class HrvTrendResponse(BaseModel):
     )
     verdict: Literal["hrv_normal", "hrv_suppressed", "hrv_unavailable"] = Field(
         description=(
-            "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established "
-            "baseline; hrv_unavailable when no band, too few readings this week, a below-band week on "
-            "an unestablished baseline (suppression is withheld, not read as normal), or when `date` is "
-            "after the athlete's local today in `timezone` -- whatever the window holds, no verdict is "
-            "asserted about a day that has not happened, and the other fields are still reported as "
-            "computed."
+            "hrv_normal and hrv_suppressed both assert an established baseline -- baseline.n at or "
+            "above the min_baseline_readings threshold the response echoes -- and differ only in "
+            "where the 7-day mean sits: strictly below band.lo is hrv_suppressed, inside or above "
+            "the band is hrv_normal. hrv_unavailable when no band, too few readings this week, any "
+            "week judged against an unestablished baseline (below, inside or above the band alike: "
+            "3.7.3 withholds the suppression there, and hrv_normal there would tell a consumer "
+            "readiness is intact on evidence this same response reports unestablished, the "
+            "up-regulating direction research/00 1.7 forbids), or when `date` is after the athlete's "
+            "local today in `timezone` -- whatever the window holds, no verdict is asserted about a "
+            "day that has not happened, and the other fields are still reported as computed. The "
+            "band is still reported whenever the baseline can build one, established or not, so an "
+            "unavailable verdict remains checkable by hand."
         )
     )
     ln_rmssd_7d_mean: float | None = Field(

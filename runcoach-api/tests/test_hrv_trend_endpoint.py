@@ -1652,6 +1652,87 @@ def test_the_two_copies_of_the_window_contract_publish_the_same_claims() -> None
         assert _flat(withdrawn) not in served, f"withdrawn as false, back in the schema: {withdrawn}"
 
 
+#: The same treatment for ``verdict``, added by T116 (review cycle 7,
+#: [[IDEA-062]]). Until T116 the two copies published an **asymmetric** rule:
+#: the suppression was withheld on an unestablished baseline and the
+#: ``hrv_normal`` was not, so a client reading either copy was told that
+#: ``hrv_normal`` carries no claim about ``baseline.established`` -- which was
+#: true, and was the defect. The claims below are the symmetric rule, and
+#: ``VERDICT_WITHDRAWN`` holds the asymmetric one in each copy's own idiom so
+#: it cannot come back at either site quietly.
+#:
+#: Authorship (``contract-tables-need-an-independent-oracle``, and T109's
+#: correction of this pattern): these fragments are **not** transcriptions of
+#: the paragraph. They are the four things a client can act on, taken from the
+#: user decision of 2026-09-15 and from ``research/00`` §1.7, and each is
+#: reproduced against ``judge`` by a named behavioural pin rather than by this
+#: file: entry 1 and entry 3 by
+#: ``test_hrv_trend_band.test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``
+#: and ``..._above_the_band_is_unavailable_too``, entry 2 by
+#: ``test_hrv_trend_band.test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``,
+#: entry 4 by the same tests' ``result.band is not None`` assertions. This
+#: test constrains the **words**; nothing here fails because ``judge``
+#: changed, which is the division T112 named.
+VERDICT_CLAIMS = (
+    "hrv_normal and hrv_suppressed both assert an established baseline",
+    "inside or above the band is hrv_normal",
+    "any week judged against an unestablished baseline (below, inside or above the band alike",
+    "the band is still reported whenever the baseline can build one, established or not",
+)
+
+#: Withdrawn by T116 as the asymmetry itself, in each copy's own spelling
+#: (the YAML copy parenthesised the section number, the schema copy did not).
+VERDICT_WITHDRAWN = (
+    "a below-band week on an unestablished baseline",
+    "suppression is withheld, not read as normal",
+    "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established baseline",
+)
+
+#: The run the two copies must state identically, from this anchor to the end.
+VERDICT_SHARED_ANCHOR = "hrv_normal and hrv_suppressed both assert an established baseline"
+
+
+def test_the_two_copies_of_the_verdict_contract_publish_the_same_claims() -> None:
+    """T116 (review cycle 7, [[IDEA-062]]), the ``reset_reason`` and
+    ``window`` pins above applied to ``verdict`` -- the third pair of
+    hand-synchronised description copies in this contract, and the one that
+    published a rule ``judge`` has now stopped following.
+
+    What makes it necessary rather than decorative: ``check_drift.py``
+    compares path, method, 2xx codes and required query parameters, never
+    prose, so had T116 corrected only ``schemas.py`` the contract in
+    ``contracts/openapi.yaml`` would have gone on telling clients that a
+    below-band week on an unestablished baseline is the *only* thin-baseline
+    cell that reads unavailable, and every gate in the tree would have
+    stayed green. The shared-run assertion is what makes a one-copy
+    correction red; ``VERDICT_WITHDRAWN`` is what makes a *reverted* one red.
+
+    The distinct failure modes this goes red on, each run to confirm it:
+    (1) a claim dropped from either copy; (2) the old asymmetric sentence
+    restored in either copy; (3) the correction landed in one copy only,
+    which the shared run catches even when both copies still carry every
+    claim.
+    """
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    contract = _flat(target["components"]["schemas"]["HrvTrend"]["properties"]["verdict"]["description"])
+    served = _flat(app.openapi()["components"]["schemas"]["HrvTrendResponse"]["properties"]["verdict"]["description"])
+
+    for claim in VERDICT_CLAIMS:
+        flat = _flat(claim)
+        assert flat in contract, f"contracts/openapi.yaml no longer publishes: {claim}"
+        assert flat in served, f"schemas.HrvTrendResponse.verdict no longer publishes: {claim}"
+    for withdrawn in VERDICT_WITHDRAWN:
+        assert _flat(withdrawn) not in contract, f"withdrawn as false, back in the contract: {withdrawn}"
+        assert _flat(withdrawn) not in served, f"withdrawn as false, back in the schema: {withdrawn}"
+
+    start = contract.find(_flat(VERDICT_SHARED_ANCHOR))
+    assert start != -1, "the contract's shared run no longer starts where the anchor says"
+    shared = contract[start:]
+    assert shared in served, (
+        "the two copies have stopped stating the verdict rule in the same words. The contract says: " + shared
+    )
+
+
 def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
     """One stored row as ``db.hrv_rows`` hands it to ``build_series``, in the
     UTC zone the rendering pins below configure."""
