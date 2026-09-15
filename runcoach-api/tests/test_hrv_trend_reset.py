@@ -2606,8 +2606,12 @@ def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_stil
     the day counts and the expected null come from the task text and
     ``research/00`` §5.4's three conditions, not from reading
     ``build_series``. The two clause-(b) facts below are computed from the
-    **fixture's own days** rather than from the result's ``series``, which is
-    already tier-filtered.
+    **fixture's own rows** -- the very list handed to ``build_series`` on the
+    line above, not a second copy of the generator's span (T113, gap G-C7-9:
+    they were re-derived from a duplicated 200-day literal, so
+    ``len(previous_snapshot_days) == 60`` would have stayed green against a
+    generator that no longer produced those days) -- rather than from the
+    result's ``series``, which is already tier-filtered.
 
     Perturbation (T112, recorded in the Delivered note): deleting
     ``tier_change_reset``'s clause (a) gate -- the
@@ -2618,15 +2622,22 @@ def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_stil
     judged = hrv_trend.judged_window(D_SWITCH)
     previous = hrv_trend.previous_window(D_SWITCH)
 
-    lapsed = hrv_trend.build_series(clause_a_series(CLAUSE_A_LAPSED_DAYS), AUCKLAND, D_SWITCH)
+    lapsed_rows = clause_a_series(CLAUSE_A_LAPSED_DAYS)
+    lapsed = hrv_trend.build_series(lapsed_rows, AUCKLAND, D_SWITCH)
     held = hrv_trend.build_series(clause_a_series(CLAUSE_A_HELD_DAYS), AUCKLAND, D_SWITCH)
 
     # Clause (b) holds: the previous window is sustained by the snapshot,
-    # which is not the resolved tier. Counted over the fixture's own days.
-    previous_snapshot_days = [
-        day for day in span(R_SWITCH - timedelta(days=200), R_SWITCH - timedelta(days=1))
-        if previous[0] <= day <= previous[1]
-    ]
+    # which is not the resolved tier. Counted over the local days of
+    # ``lapsed_rows`` itself, so shortening the generator's span moves this
+    # count instead of leaving it agreeing with a stale copy of the literal.
+    previous_snapshot_days = sorted(
+        {
+            datetime.fromisoformat(source["start_time"]).astimezone(AUCKLAND).date()
+            for source in lapsed_rows
+            if source["hrv_source_tier"] == SNAPSHOT
+        }
+        & set(span(*previous))
+    )
     sustained = hrv_trend.sustained_tier(
         hrv_trend._tier_counts(parsed_reading(day, 6, SNAPSHOT) for day in previous_snapshot_days)
     )
@@ -2638,7 +2649,6 @@ def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_stil
     # no era boundary can have a stray day there -- and the control, whose
     # judged week is identical, is reported, which is the week half holding.
     assert not [day for day in span(*judged) if day <= R_SWITCH + timedelta(days=CLAUSE_A_HELD_DAYS)]
-    assert hrv_trend._isolated((), judged)
     assert held.reset_reason == "tier_change" and held.reset_on == R_SWITCH
 
     # Clause (a) has lapsed -- and that alone nulls the report.

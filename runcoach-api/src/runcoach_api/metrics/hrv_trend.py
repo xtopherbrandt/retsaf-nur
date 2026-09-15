@@ -1186,8 +1186,13 @@ def tier_change_reset(
     only while (a), (b) and the week half all hold** -- any one of the
     three can lapse on its own and this returns nothing on that day
     (T109; T111 corrected this paragraph, which read the (b) route as the
-    whole lifetime). The (b) route is the one with a closed form, and it
-    is the *latest* of the three: ``sustained_tier`` is the
+    whole lifetime). The (b) route is the one with a closed form -- the
+    construction reference's own words, restored here by T113 (gap
+    G-C7-7): T111 added to them a universal about which of the three
+    conditions lapses last, and the forward switch named just below
+    contradicts it, since there (a) and the week half never lapse at all
+    and (b) is the only condition that ever ends the report.
+    ``sustained_tier`` is the
     highest-fidelity tier with ``MIN_BASELINE_READINGS`` days in
     ``[D-126, D-67]``, so the day (b) lapses is direction-dependent
     (review cycle 3, S1): for a forward switch (snapshot to strap) it is
