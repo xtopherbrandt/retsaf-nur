@@ -29,8 +29,13 @@ dicts and no database. Rows are read **by key** (``session_id``,
    take.
 2. **Resolve the baseline tier**: among the tiers read on at least
    ``MIN_BASELINE_READINGS`` **distinct local days** in the baseline window
-   (the *candidates*), the highest-fidelity one that **also covers the
-   judged week** with at least ``MIN_WINDOW_READINGS`` distinct local days;
+   **and** read within ``RECENCY_TOLERANCE_DAYS`` of the most recent
+   baseline-window day of any such tier (the *candidates*; the recency
+   condition is T117's, stated in full at ``RECENCY_TOLERANCE_DAYS`` and at
+   ``resolve_baseline_tier``, and the comparison is between candidates, so a
+   lone candidate is its own reference and is never struck), the
+   highest-fidelity one that **also covers the judged week** with at least
+   ``MIN_WINDOW_READINGS`` distinct local days;
    when no candidate covers the week, the candidate **the athlete used
    last** -- the one whose latest reading in the baseline window is most
    recent, ties by count then fidelity (T094); when there is no candidate
@@ -398,8 +403,13 @@ def sustained_tier(counts: Mapping[str, int]) -> str | None:
     """The highest-fidelity tier with at least ``MIN_BASELINE_READINGS`` in
     ``counts``, or ``None`` when no tier sustains a baseline there.
 
-    Rule 1 of the tier rule on its own. ``resolve_baseline_tier`` narrows
-    this to the tiers that also cover the judged week; ``tier_change_reset``
+    Rule 1 of the tier rule on its own, and only its *count* half.
+    ``resolve_baseline_tier`` narrows this **twice** since T117: first to the
+    tiers read recently enough relative to the other candidates
+    (``RECENCY_TOLERANCE_DAYS``, rule 1's admission gate), then to those that
+    also cover the judged week. So this function is not the candidate set --
+    it is the candidate set before either narrowing, which is why
+    ``resolve_baseline_tier`` does not call it. ``tier_change_reset``
     reads it unnarrowed on the previous window ``[D-126, D-67]`` only
     (rule 4(b)) -- the current window is tested by the resolved tier's own
     count there (rule 4(a)) -- because a change of baseline is a change

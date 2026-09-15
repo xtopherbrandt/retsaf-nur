@@ -1437,7 +1437,7 @@ components:
                 assume window[0] ≤ window[1].
             n: { type: integer, description: "Baseline readings, one per local day on `tier`." }
             tier: { type: string, nullable: true, description: "The source tier the baseline and window are built on." }
-            established: { type: boolean, description: "n ≥ min_baseline_readings. Below it, hrv_suppressed is never emitted." }
+            established: { type: boolean, description: "n ≥ min_baseline_readings. Below it both verdicts are withheld — hrv_suppressed and hrv_normal alike — and hrv_unavailable is the only verdict emitted (see verdict)." }
             reset_on:
               type: string
               format: date

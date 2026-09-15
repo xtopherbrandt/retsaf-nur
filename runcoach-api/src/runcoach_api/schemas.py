@@ -52,7 +52,13 @@ class Band(BaseModel):
             "`floored` says which branch produced it."
         )
     )
-    lo: float = Field(description="mean - half_width. The verdict is hrv_suppressed strictly below this.")
+    lo: float = Field(
+        description=(
+            "mean - half_width. A mean strictly below it is hrv_suppressed on an established "
+            "baseline; on an unestablished one it is hrv_unavailable like every other position "
+            "(see verdict)."
+        )
+    )
     hi: float = Field(
         description=(
             "mean + half_width. A mean above it is hrv_normal on an established baseline, not "
@@ -88,7 +94,10 @@ class Baseline(BaseModel):
         )
     )
     established: bool = Field(
-        description="n >= min_baseline_readings. Below it, hrv_suppressed is never emitted."
+        description=(
+            "n >= min_baseline_readings. Below it both verdicts are withheld -- hrv_suppressed "
+            "and hrv_normal alike -- and hrv_unavailable is the only verdict emitted (see verdict)."
+        )
     )
     reset_on: datetime.date | None = Field(
         description=(
@@ -180,8 +189,9 @@ class HrvPoint(BaseModel):
     are null *together*, and only when that day's baseline holds fewer than
     two readings. A baseline that is computable but not established
     (2 <= n < 14) still carries its band here even though the verdict for
-    that day is withheld: the chart may draw it; the verdict may not suppress
-    on it. ``ln_rmssd`` is independent of the band: null whenever the
+    that day is withheld: the chart may draw it, and the day's verdict is
+    withheld -- no verdict of any kind is asserted on it, not merely no
+    suppression (T116). ``ln_rmssd`` is independent of the band: null whenever the
     post-exclusion series has no reading that day, with or without a band.
     """
 
