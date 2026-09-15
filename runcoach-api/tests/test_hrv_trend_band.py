@@ -37,9 +37,14 @@ reference "The band"; decision log rows "Thin and degenerate data" and
   rule; the direct pin is
   ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``.
 
-The table enumerates ``{baseline n: 0, 1, 2, 13, 14, 41} x {window n: 0, 2,
-3, 7} x {mean: below, inside, above}`` exhaustively, boring rows included, so
-an omitted cell would be visible (contract-tables-need-an-independent-oracle).
+The table enumerates ``{baseline n: 0, 1, 2, 13, 14, 41} x {window n: 0, 1,
+2, 3, 7} x {mean: below, inside, above}`` exhaustively -- 6 x 5 x 3 = **90**
+rows, the count ``test_the_contract_table_is_exhaustive`` asserts and the
+count the paragraph above uses -- boring rows included, so an omitted cell
+would be visible (contract-tables-need-an-independent-oracle). The window
+axis is five values, not four: ``window n: 1`` was dropped from this sentence
+while ``CONTRACT_TABLE`` kept it, which made the enumeration describe a
+72-row table this module has never had (corrected 2026-09-15, T122).
 
 Perturbation evidence for the four published claims (IDEA-034) is recorded
 in the docstring of the test that pins each claim.
@@ -509,9 +514,14 @@ def test_a_thin_baseline_above_the_band_is_unavailable_too() -> None:
 
 def test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings() -> None:
     """The companion of ``test_established_flips_at_exactly_fourteen_baseline_readings``
-    on the other side of the band, and the input that would stay green if the
-    gate were written as ``>= 13``: 13 readings inside the band are
-    unavailable, 14 are normal, and nothing but the baseline size moved."""
+    on the other side of the band, and the input that **catches** a gate
+    written as ``>= 13``: 13 readings inside the band are unavailable, 14 are
+    normal, and nothing but the baseline size moved. Measured under that
+    mutation (``MIN_BASELINE_READINGS`` = 13, 2026-09-15): ``thin.established``
+    becomes ``True`` and ``thin.verdict`` becomes ``hrv_normal``, so the first
+    assertion below goes **red** -- which is the whole of this test's
+    discriminating power, and the reverse of what this docstring claimed
+    until T122 ("the input that would stay green")."""
     thin = verdict_for(alternating(13), [42.0] * 7)
     enough = verdict_for(alternating(14), [42.0] * 7)
 

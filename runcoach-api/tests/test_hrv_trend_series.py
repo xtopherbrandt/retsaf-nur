@@ -896,8 +896,11 @@ def test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band
     deleted. The failure modes this walk separates, each run: the filter
     absent (09-06/09-07 revert to the strap); the filter applied with the
     comparison reversed, so the *most* recent candidate is struck (09-08
-    loses the snapshot); and the tolerance widened past 46 days (09-07
-    reverts alone, 09-06 following at 45)."""
+    loses the snapshot); and the tolerance widened to 45 days (09-06
+    reverts alone at 45, 09-07 following at 46 -- 09-06's gap is 45 and
+    09-07's is 46, stated correctly two paragraphs above, so the *smaller*
+    gap is re-admitted first; measured 2026-09-15, T121, which found the two
+    dates swapped here and "past 46" written for "to 45")."""
     this_week = [D - timedelta(days=6), D - timedelta(days=4), D - timedelta(days=2)]
     rows = trial_then_abandon() + readings(STRAP, this_week, 79.0)
 
@@ -936,7 +939,12 @@ def stale_trial_gap(gap: int, target: date = D) -> list[dict]:
 
     The strap is a candidate by count and covers the week on every ``gap``
     the helper is called with, so the only thing that separates the walk's
-    rows is rule 1's recency condition."""
+    rows is rule 1's recency condition.
+
+    ``gap`` is in the unit rule 1's gate compares -- a difference between two
+    ``last_read`` days -- which is **not** the unit ``_silence_between``
+    reports: a ``gap`` of ``g`` is a silence of ``g - 1`` whole days. Read the
+    walk's rows against ``GAP_RESET_DAYS`` with that in hand (T121)."""
     end = target - timedelta(days=7) - timedelta(days=gap)
     rows = readings(SNAPSHOT, days_between(target - timedelta(days=199), target), hh=7)
     rows += readings(STRAP, days_between(end - timedelta(days=13), end), 79.0)
@@ -951,26 +959,42 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     strap trial's last baseline-window day sits behind the snapshot's.
 
     ``gap`` 28 admits the strap and it takes the week by fidelity;
-    ``gap`` 29 strikes it and the snapshot keeps its own 60-day band. The
-    third row is the seam ``RECENCY_TOLERANCE_DAYS > GAP_RESET_DAYS``
-    states: a silence of 21 days is the longest the coverage-gap rule does
-    **not** call a break, so no candidate may be struck for one -- this
-    row goes red if the tolerance is ever lowered to ``GAP_RESET_DAYS`` or
-    below, and it is the assertion behind the ordering claim in
-    ``research/00`` §5.4 and in ``resolve_baseline_tier``'s docstring.
+    ``gap`` 29 strikes it and the snapshot keeps its own 60-day band.
+
+    **The seam row is ``GAP_RESET_DAYS + 1``, not ``GAP_RESET_DAYS``, and
+    the difference is a unit** (corrected and measured 2026-09-15, T121;
+    until then this docstring and ``RECENCY_TOLERANCE_DAYS``'s own comment
+    both named the ``GAP_RESET_DAYS`` row as the pin, and both were false).
+    ``gap`` here is a difference between two ``last_read`` **days**, while
+    ``_silence_between`` is ``(later - earlier).days - 1``, so a ``gap`` of
+    ``g`` is a silence of ``g - 1`` whole days: ``gap`` 21 is a **20-day**
+    silence, one short of the longest silence the coverage-gap rule does not
+    call a break. The seam ``RECENCY_TOLERANCE_DAYS > GAP_RESET_DAYS`` says
+    no candidate may be struck for a silence of 21 days or fewer, and the
+    row that carries that is ``gap == GAP_RESET_DAYS + 1`` (22): measured
+    across tolerances 19..29, it is admitted at a tolerance of 22 and struck
+    at 21, so it is the row -- and the only row here -- that goes red the
+    moment the tolerance is lowered to ``GAP_RESET_DAYS``. The
+    ``GAP_RESET_DAYS`` row itself is ordinary: it survives a tolerance of 21
+    and reds only at 20, pinning ``>= GAP_RESET_DAYS`` and not the seam. It
+    is kept as the neighbour that shows the boundary is between the two.
+    Both rows stand behind the ordering claim in ``research/00`` §5.4 and in
+    ``resolve_baseline_tier``'s docstring.
 
     Distinct failure modes, each run before this was kept: the filter
     deleted (``gap`` 29 reverts to the strap); the comparison written
-    ``<`` rather than ``<=`` (``gap`` 28 flips); the tolerance set to 21
-    (the seam row flips); and the filter applied to the raw day counts
-    rather than to ``last_read`` (every row flips, the strap never being
-    the denser tier here). None of the four rows carries a reset: the
-    snapshot runs daily through the trial, so the eras interleave."""
+    ``<`` rather than ``<=`` (``gap`` 28 flips); the tolerance set to
+    ``GAP_RESET_DAYS`` (the ``gap`` 22 and ``gap`` 27 rows flip; ``gap`` 21
+    does **not**, which is why it could never have been the seam pin); and
+    the filter applied to the raw day counts rather than to ``last_read``
+    (every row flips, the strap never being the denser tier here). None of
+    the five rows carries a reset: the snapshot runs daily through the
+    trial, so the eras interleave."""
     assert hrv_trend.RECENCY_TOLERANCE_DAYS == 28
     assert hrv_trend.RECENCY_TOLERANCE_DAYS > hrv_trend.GAP_RESET_DAYS
 
     observed = {}
-    for gap in (hrv_trend.GAP_RESET_DAYS, 27, 28, 29):
+    for gap in (hrv_trend.GAP_RESET_DAYS, hrv_trend.GAP_RESET_DAYS + 1, 27, 28, 29):
         result = build(stale_trial_gap(gap))
         in_baseline = [r for r in result.readings if r.date <= D - timedelta(days=7)]
         assert len({r.date for r in in_baseline if r.tier == STRAP}) == 14, gap
@@ -979,6 +1003,9 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
         observed[gap] = (result.tier, len(result.baseline), result.reset_reason)
 
     assert observed[hrv_trend.GAP_RESET_DAYS] == (STRAP, 14, None)
+    # The seam row: a silence of exactly GAP_RESET_DAYS whole days, which the
+    # coverage-gap rule does not call a break, so candidacy may not strike it.
+    assert observed[hrv_trend.GAP_RESET_DAYS + 1] == (STRAP, 14, None)
     assert observed[27] == (STRAP, 14, None)
     assert observed[28] == (STRAP, 14, None)
     assert observed[29] == (SNAPSHOT, 60, None)

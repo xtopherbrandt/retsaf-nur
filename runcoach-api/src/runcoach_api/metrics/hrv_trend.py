@@ -124,9 +124,19 @@ GAP_RESET_DAYS = 21
 #: from ``D-7``, so the response's ``thresholds`` block gains no key.
 #:
 #: Why 28, and not any other value in the measured green band
-#: ``[18, 44]`` (394 tests of the five HRV suites, re-measured
-#: 2026-09-15; 17 strips a legitimately resuming snapshot, 45 re-admits
-#: the July trial):
+#: ``[18, 44]``, re-measured 2026-09-15 and **scoped to the 394 tests of
+#: the five HRV suites that predate T117's own tolerance pin** (T121: the
+#: five suites collect 395, and the 395th is
+#: ``test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it``,
+#: which asserts ``RECENCY_TOLERANCE_DAYS == 28`` and hardcodes its gap
+#: rows -- so it is red at every N != 28 by construction, and over all 395
+#: the green band is ``{28}``. The band is a statement about the rest of
+#: the suite, and it was published without that scope until T121 measured
+#: it). The two ends are real and are what the band means: N=17 reds
+#: ``test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a_week_again``
+#: -- a legitimately resuming snapshot is struck -- and N=45 reds
+#: ``test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band``
+#: -- the July trial is re-admitted:
 #:
 #: * **28 = 4 x ``WINDOW_DAYS``** -- four judged weeks. Stated in the
 #:   rule's own unit, it says a tier read at least once in any four
@@ -139,10 +149,27 @@ GAP_RESET_DAYS = 21
 #:   tolerance of 21 or less would let relative staleness strike a tier
 #:   for a silence shorter than the shortest silence this feature is
 #:   willing to call a break -- two rules disagreeing about the same
-#:   number of days. Above 21 they cannot: pinned by
+#:   number of days.
+#:
+#:   **The two rules count in different units, and the seam is stated
+#:   here in one** (measured and corrected 2026-09-15, T121). This gate
+#:   compares two ``last_read`` **days**; ``_silence_between`` is
+#:   ``(later - earlier).days - 1``. So a day difference of ``g`` is a
+#:   silence of ``g - 1`` whole days, staleness strikes at
+#:   ``g > RECENCY_TOLERANCE_DAYS`` -- that is, at a silence of
+#:   ``RECENCY_TOLERANCE_DAYS`` days or more -- and a break is a silence
+#:   of **more than** ``GAP_RESET_DAYS`` days. The two therefore stop
+#:   disagreeing exactly at ``RECENCY_TOLERANCE_DAYS >= 22``, which is
+#:   ``> GAP_RESET_DAYS``: the strict inequality above is the right one.
+#:   It is pinned by
 #:   ``test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it``,
-#:   whose ``GAP_RESET_DAYS`` row goes red the moment the tolerance is
-#:   lowered to it.
+#:   by its **``gap == GAP_RESET_DAYS + 1``** row -- a silence of exactly
+#:   ``GAP_RESET_DAYS`` days, admitted at a tolerance of 22 and struck at
+#:   21. Until T121 this comment named that suite's ``GAP_RESET_DAYS``
+#:   row instead, which does not pin the seam at all: at a tolerance of 21
+#:   a day difference of 21 is still ``<=`` the tolerance, so that row
+#:   stays green, and what actually reddened at 21 was the hardcoded 27
+#:   row the prose treated as ordinary.
 #:
 #: Which of the two fires first is not a race but a partition, and it is
 #: decided by *where the readings are*, not by 28 against 21. When the
