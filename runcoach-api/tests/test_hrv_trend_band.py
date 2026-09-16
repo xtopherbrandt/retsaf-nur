@@ -747,3 +747,180 @@ def test_contract_table(baseline_n: int, window_n: int, position: str, expected:
         assert result.ln_rmssd_7d_mean == pytest.approx(math.log(WINDOW_VALUE[position]), abs=1e-12)
     else:
         assert result.ln_rmssd_7d_mean is None
+
+
+# ---------------------------------------------------------------------------
+# T127: the device return, walked morning by morning through ``judge``
+#
+# The suite's one database-backed section, and it is deliberate. Everything
+# above is a pure unit test over hand-built rows; this walk's series comes
+# from ``tests/support/seed_hrv_series.py``'s generator (``conftest``'s
+# ``_seed_hrv_series``, reached through the ``seed_hrv_series`` fixture) so
+# that the geometry [[T125]] reproduces -- stated there as three ``--era``
+# flags -- cannot drift from the fixture the reproduction was measured on.
+# One seeding per geometry, then ``build_series``/``judge`` at each target in
+# turn: the walk is over the athlete's mornings, not over the store.
+#
+# Why this exists. Rule 1's recency gate is pinned exhaustively in
+# ``test_hrv_trend_series.py`` and its *consequence* was pinned on one series
+# at one geometry. The population it never reached is the mirror one: the
+# carrier tier stops because the athlete went back to the other device. There
+# the gate evicts the tier he is currently using and the verdict is computed
+# from the surviving tier's last pre-return days -- which is [[T125]].
+# ---------------------------------------------------------------------------
+
+SNAPSHOT = "health_snapshot"
+PROFILE = "HRV Snapshot"
+
+#: [[T125]]'s reproduction geometry, as three eras. An established era on one
+#: tier; a 39-day silence on it while the other tier carries the series; then
+#: the first tier RESUMES. ``RETURN_FIRST`` is the athlete's first morning
+#: back, and the walk's target date steps across the return era, so step ``r``
+#: is his ``r``-th morning back -- the critic's 724-geometry sweep row ``r``,
+#: which fixes ``D`` and moves the return day instead.
+ERA_A_END = date(2026, 7, 31)
+CARRIER_END = date(2026, 9, 8)
+RETURN_FIRST = date(2026, 9, 9)
+RETURN_DAYS = 8
+
+#: Which tier plays which part. Both orders are walked: the returning tier is
+#: the **higher**-fidelity one in the first (rule 2 hands it the week the
+#: moment it covers it) and the **lower**-fidelity one in the second (rule 2
+#: can only reach it because the carrier has no week day left at all). The
+#: two arrive at the same place by different routes, and neither route was
+#: pinned at the verdict.
+RETURN_GEOMETRIES = (
+    ("strap-returns", STRAP, SNAPSHOT),
+    ("snapshot-returns", SNAPSHOT, STRAP),
+)
+
+
+def _seed_return_series(seed_hrv_series, home_tier: str, carrier_tier: str, suppressed: bool) -> list[dict]:
+    """The three eras above, seeded through the real ingestion path, as the
+    four-column rows ``build_series`` takes.
+
+    The two tiers are captured at different local hours, which two eras on the
+    same mornings need (T096): ``session_id`` is derived from
+    ``(source_device, start_time)`` and the synthetic device is one string.
+    A Tier-1 era additionally needs a declared profile name to resolve as
+    ``chest_strap_raw`` at all.
+    """
+    rows: list[dict] = []
+    for tier, end, days, suppress_last, hour in (
+        (home_tier, ERA_A_END, 80, 0, 6),
+        (carrier_tier, CARRIER_END, 39, 0, 7),
+        (home_tier, RETURN_FIRST + timedelta(days=RETURN_DAYS - 1), RETURN_DAYS, RETURN_DAYS if suppressed else 0, 6),
+    ):
+        kwargs = {
+            "end": end,
+            "days": days,
+            "suppress_last": suppress_last,
+            "tier": tier,
+            "zone": AUCKLAND,
+            "local_hour": hour,
+        }
+        if tier == STRAP:
+            kwargs["profile_names"] = [PROFILE]
+        rows += seed_hrv_series(**kwargs).rows
+    return rows
+
+
+@pytest.mark.parametrize("suppressed", [True, False], ids=["suppressed-return", "healthy-return"])
+@pytest.mark.parametrize(
+    ("name", "home_tier", "carrier_tier"), RETURN_GEOMETRIES, ids=[geometry[0] for geometry in RETURN_GEOMETRIES]
+)
+def test_the_device_return_is_walked_morning_by_morning_through_judge(
+    seed_hrv_series, name: str, home_tier: str, carrier_tier: str, suppressed: bool
+) -> None:
+    """[[T125]]'s geometry at the verdict, every morning of the return, both
+    tiers, both value levels (T127).
+
+    **The expectations are derived by hand from the eras and then confirmed
+    against the shipped code at ``3f1430c``; they are not a capture of it.**
+    The derivation, per morning ``r`` (target ``CARRIER_END + r``):
+
+    * **Which tier.** For ``r`` in 1..7 the carrier holds ``32 + r`` days of
+      the baseline window and the returning tier's era-A days are 33 or more
+      behind the carrier's latest -- past ``RECENCY_TOLERANCE_DAYS`` -- so the
+      gate strikes the tier the athlete is *using* and the carrier resolves.
+      At ``r = 8`` the return's first morning (``2026-09-09``) has entered the
+      baseline window, so the returning tier's ``last_read`` is current, it is
+      a candidate again on 21 days (20 from era A plus that one), and rule 2
+      hands it the week -- which it now covers alone, the carrier having
+      stopped on ``CARRIER_END``.
+    * **What fed the mean.** The carrier stopped on ``CARRIER_END``, so while
+      it owns the baseline the judged week holds ``7 - r`` of its days and the
+      athlete's own ``r`` return mornings are excluded as
+      ``off_baseline_tier``. **That is the defect this walk exists to make
+      visible**: at ``r = 4`` -- [[T125]]'s reproduced day, ``2026-09-12`` --
+      the verdict is computed from ``09-06``, ``09-07`` and ``09-08``, three
+      mornings that all predate his return.
+    * **The verdict.** ``r`` in 1..4 leaves three or more carrier days in the
+      week, on an established baseline of ordinary alternating values, so the
+      week mean sits inside its own band: ``hrv_normal`` -- *including at*
+      ``r = 3`` *and* ``r = 4``, **whatever the return mornings said**. From
+      ``r = 5`` fewer than three remain and the verdict is
+      ``hrv_unavailable``. At ``r = 8`` the week is the return's own seven
+      mornings against a 21-day band: ``hrv_suppressed`` on a suppressed
+      return, ``hrv_normal`` on a healthy one -- the first day of the walk on
+      which the value level of the athlete's actual mornings changes anything
+      he is told.
+    * **The reset.** ``tier_change`` is reported on ``r = 1`` and ``r = 2``
+      and withdrawn from ``r = 3``, by clause (c)'s week half: the boundary is
+      era A's last day against the carrier's first, and the return mornings
+      sit on the far side of it, so once three of them fall inside the judged
+      week they are no longer isolated and the report lapses. Nothing else
+      about the answer moves on that day, which is why it took a verdict-level
+      walk to notice that it moves at all.
+
+    Spot-checked by hand at ``r = 1`` (six carrier days, ``hrv_normal``),
+    ``r = 4`` (the reproduction: ``health_snapshot``, ``readings_in_window``
+    3, ``09-06``/``09-07``/``09-08``, ``hrv_normal`` -- field for field what
+    [[T125]] reports), and ``r = 8`` suppressed (a band over ten 38.0s, ten
+    44.0s and one 25.0 gives ``lo`` near 3.62 against a week mean of
+    ``ln 25`` = 3.22, so ``hrv_suppressed``) and healthy (``lo`` near 3.67
+    against a week mean near 3.72, so ``hrv_normal``).
+
+    Perturbation ([[T125]] form 5a, measured 2026-09-16): red at ``r = 3`` and
+    ``r = 4``, where the returning tier's week days become three and all of
+    them follow every carrier week day.
+    """
+    rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
+    return_week = [RETURN_FIRST + timedelta(days=i) for i in range(1, RETURN_DAYS)]
+
+    for r in range(1, RETURN_DAYS + 1):
+        target = CARRIER_END + timedelta(days=r)
+        series = build_series(rows, AUCKLAND, target)
+        verdict = judge(series)
+
+        if r < RETURN_DAYS:
+            expected_tier = carrier_tier
+            fed = [day for day in window_days(7, target) if day <= CARRIER_END]
+            expected_verdict = NORMAL if len(fed) >= 3 else UNAVAILABLE
+            expected_baseline_n = 32 + r
+        else:
+            expected_tier = home_tier
+            fed = return_week
+            expected_verdict = SUPPRESSED if suppressed else NORMAL
+            expected_baseline_n = 21
+
+        assert series.tier == expected_tier, r
+        assert [reading.date for reading in series.window] == fed, r
+        assert verdict.readings_in_window == len(fed), r
+        assert verdict.baseline_n == expected_baseline_n, r
+        assert verdict.established is True, r
+        assert verdict.verdict == expected_verdict, r
+        expected_reset = ("tier_change", date(2026, 8, 1)) if r <= 2 else (None, None)
+        assert (series.reset_reason, series.reset_on) == expected_reset, r
+
+    # The athlete's own four mornings are excluded, by name, on the day
+    # [[T125]] reproduces -- every judged-week day of 2026-09-12 that is not
+    # one of the three the verdict was computed from.
+    reproduction = build_series(rows, AUCKLAND, date(2026, 9, 12))
+    week = set(window_days(7, date(2026, 9, 12)))
+    off_tier = {
+        entry.date
+        for entry in reproduction.excluded
+        if entry.reason.startswith("off_baseline_tier") and entry.date in week
+    }
+    assert off_tier == {RETURN_FIRST + timedelta(days=i) for i in range(4)}

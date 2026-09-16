@@ -974,6 +974,41 @@ RECENCY_WALK_AT_SHIPPED = {
     29: (SNAPSHOT, 60, None),
 }
 
+#: The judged-week days each of the two possible outcomes feeds into
+#: ``ln_rmssd_7d_mean``. The fixture gives the strap exactly three week days
+#: and the snapshot all seven, so these two tuples are the whole reachable
+#: population of "which readings the athlete's verdict was computed from".
+RECENCY_TRIAL_WEEK_DAYS = (D - timedelta(days=6), D - timedelta(days=4), D - timedelta(days=2))
+RECENCY_SNAPSHOT_WEEK_DAYS = tuple(days_between(D - timedelta(days=6), D))
+
+#: **The consequence of the gate, which nothing in this file asserted before
+#: T127.** ``(verdict, readings_in_window, the days that fed
+#: ``ln_rmssd_7d_mean``, that mean)`` -- the two rows the fixture can produce,
+#: derived by hand from it rather than captured from a run. Every strap
+#: reading is 79.0 and every snapshot reading 40.0, and each tier's readings
+#: are identical to each other, so whichever tier survives the gate its
+#: baseline SD is zero, its band is floored on its own mean, and the judged
+#: week's mean sits exactly on it: ``hrv_normal`` either way, on an
+#: established baseline (14 or 60), from three week days or from seven. **The
+#: verdict is the same and everything behind it is different** -- which is the
+#: point. ``RECENCY_WALK_AT_SHIPPED`` says which tier the gate leaves
+#: standing; this says what the athlete is then told, and what it was computed
+#: from. A change that moves the second without moving the first -- the shape
+#: of [[T125]]'s form 5a -- is invisible to the triple and red here.
+RECENCY_ON_THE_TRIAL = ("hrv_normal", 3, RECENCY_TRIAL_WEEK_DAYS, math.log(79.0))
+RECENCY_ON_THE_SNAPSHOT = ("hrv_normal", 7, RECENCY_SNAPSHOT_WEEK_DAYS, math.log(40.0))
+
+#: Row by row, keyed like ``RECENCY_WALK_AT_SHIPPED``: ``gap`` 21..28 admit
+#: the trial and the athlete's week is judged from its three days; ``gap`` 29
+#: strikes it and the week is judged from the snapshot's seven.
+RECENCY_WALK_CONSEQUENCE_AT_SHIPPED = {
+    hrv_trend.GAP_RESET_DAYS: RECENCY_ON_THE_TRIAL,
+    hrv_trend.GAP_RESET_DAYS + 1: RECENCY_ON_THE_TRIAL,
+    27: RECENCY_ON_THE_TRIAL,
+    28: RECENCY_ON_THE_TRIAL,
+    29: RECENCY_ON_THE_SNAPSHOT,
+}
+
 
 def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it() -> None:
     """T117's constant, at both of its edges and at the seam with the
@@ -1021,7 +1056,19 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     the filter applied to the raw day counts rather than to ``last_read``
     (every row flips, the strap never being the denser tier here). None of
     the five rows carries a reset: the snapshot runs daily through the
-    trial, so the eras interleave."""
+    trial, so the eras interleave.
+
+    **This test never called ``judge`` until T127.** It pinned the gate's
+    arithmetic exhaustively -- tier, baseline ``n``, ``reset_reason`` -- and
+    said nothing about what the athlete is told, which is the only reason
+    T117 exists. It now asserts ``RECENCY_WALK_CONSEQUENCE_AT_SHIPPED`` per
+    row as well: the verdict, ``readings_in_window``, and the judged-week days
+    that fed ``ln_rmssd_7d_mean``. The verdict alone does not discriminate
+    here (both outcomes are ``hrv_normal``), and that is exactly the finding
+    worth pinning: **the gate changes which readings the answer is computed
+    from, and on this fixture it does not change the answer.** The other two
+    fields are what move -- three strap days at ``ln 79`` against seven
+    snapshot days at ``ln 40``."""
     assert hrv_trend.RECENCY_TOLERANCE_DAYS == 28
     assert hrv_trend.RECENCY_TOLERANCE_DAYS > hrv_trend.GAP_RESET_DAYS
 
@@ -1033,6 +1080,14 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
         week = [r for r in result.readings if r.date > D - timedelta(days=7)]
         assert len({r.date for r in week if r.tier == STRAP}) == 3, gap
         observed[gap] = (result.tier, len(result.baseline), result.reset_reason)
+        # T127: the consequence, per row, in the same loop that walks the
+        # gate. ``verdict`` is the athlete-visible half and the two fields
+        # after it are what it was computed from.
+        judged = hrv_trend.judge(result)
+        expected = RECENCY_WALK_CONSEQUENCE_AT_SHIPPED[gap]
+        fed = tuple(reading.date for reading in result.window)
+        assert (judged.verdict, judged.readings_in_window, fed) == expected[:3], gap
+        assert judged.ln_rmssd_7d_mean == pytest.approx(expected[3], abs=1e-12), gap
 
     assert observed == RECENCY_WALK_AT_SHIPPED
 
@@ -1069,16 +1124,38 @@ def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monke
     the module global at call time (``resolve_baseline_tier``). The onset
     assertions are the discriminating ones -- with the seam claim written as
     the singleton the docstrings published, this test is red on
-    ``{22, 27, 28} == {22}``."""
+    ``{22, 27, 28} == {22}``.
+
+    **T127.** The matrix is built by an explicit nested walk rather than the
+    dict comprehension it was written as, so that every one of its 60 cells
+    also asserts its *consequence* -- the verdict, ``readings_in_window`` and
+    the days that fed ``ln_rmssd_7d_mean`` -- inside the loop, and asserts it
+    against the cell's own tier: on the trial when the gate admits it, on the
+    snapshot when it strikes it. Neither the matrix nor any assertion over it
+    changed. What this adds is that a change which leaves all 60 tier triples
+    alone while moving the verdict cannot pass here, which is the shape
+    [[T125]]'s form 5a took."""
     shipped = hrv_trend.RECENCY_TOLERANCE_DAYS
     reset = hrv_trend.GAP_RESET_DAYS
 
-    def observe(gap: int, tolerance: int) -> tuple[str, int, str | None]:
+    def observe(gap: int, tolerance: int) -> tuple[hrv_trend.HrvSeries, tuple[str, int, str | None]]:
         monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", tolerance)
         result = build(stale_trial_gap(gap))
-        return (result.tier, len(result.baseline), result.reset_reason)
+        return result, (result.tier, len(result.baseline), result.reset_reason)
 
-    matrix = {(gap, tol): observe(gap, tol) for tol in range(19, 31) for gap in RECENCY_WALK}
+    # An explicit walk rather than the comprehension this was written as, so
+    # that the verdict assertion below sits **inside** the loop over the
+    # matrix's cells and not beside it (T127).
+    matrix = {}
+    for tol in range(19, 31):
+        for gap in RECENCY_WALK:
+            result, row = observe(gap, tol)
+            matrix[(gap, tol)] = row
+            judged = hrv_trend.judge(result)
+            expected = RECENCY_ON_THE_TRIAL if row[0] == STRAP else RECENCY_ON_THE_SNAPSHOT
+            fed = tuple(reading.date for reading in result.window)
+            assert (judged.verdict, judged.readings_in_window, fed) == expected[:3], (gap, tol)
+            assert judged.ln_rmssd_7d_mean == pytest.approx(expected[3], abs=1e-12), (gap, tol)
     monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", shipped)
 
     def reddens_at(tolerance: int) -> set[int]:

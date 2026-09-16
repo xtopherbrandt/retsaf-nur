@@ -1075,7 +1075,7 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 403  # re-measured 2026-09-16, T126 added one pin to test_hrv_trend_reset.py
+SCOPED_SUITE_COLLECTED = 407  # re-measured 2026-09-16, T127 added four pins to test_hrv_trend_band.py
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and

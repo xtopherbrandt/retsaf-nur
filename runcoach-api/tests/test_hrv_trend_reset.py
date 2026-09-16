@@ -59,6 +59,21 @@ SNAPSHOT = "health_snapshot"
 ESTABLISHED = 20
 THIN = 5
 
+# T127's verdict-level oracle for the two long walks in this module, spelled
+# out here rather than read from ``hrv_trend``: an expectation imported from
+# the thing it checks is not a check
+# (``contract-tables-need-an-independent-oracle.md``). Every reading in those
+# walks carries ``WALK_VALUE``, so the band is floored on ``ln WALK_VALUE`` and
+# the judged week's mean -- when there is one -- sits exactly on the band's own
+# mean. The verdict is therefore a function of one thing only: how many of the
+# judged week's days the **resolved tier** read. Fewer than ``WALK_MIN_WINDOW``
+# is ``hrv_unavailable`` (§3.7.4, "two bad mornings are not a trend"), and
+# anything else on an established baseline is ``hrv_normal``.
+WALK_VALUE = 40.0
+WALK_MIN_WINDOW = 3
+WALK_NORMAL = "hrv_normal"
+WALK_UNAVAILABLE = "hrv_unavailable"
+
 
 # ---------------------------------------------------------------------------
 # row builders (the same shapes as test_hrv_trend_series.py; duplicated
@@ -655,15 +670,45 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
     only at ``T+54``, when the strap drops below 14 in the window.
     Perturbation (the stop condition as previously documented, "as soon as
     the previous window holds 14 of the new tier"): withdrawn from
-    ``T+81`` -- red on ``T+81``..``T+113``."""
+    ``T+81`` -- red on ``T+81``..``T+113``.
+
+    **The walk asserts a verdict at every one of its 114 targets (T127), and
+    until 2026-09-16 it asserted none.** It read ``tier``,
+    ``reset_reason`` and ``reset_on`` per target and held exactly one verdict
+    assertion, at ``T+20``, *outside* the loop. That is why the form-5a
+    measurement of [[T125]] scored 0 red of 401 while silently flipping
+    ``T+3`` and ``T+4`` from ``hrv_normal`` to ``hrv_unavailable``: this
+    series is the only pinned one where that candidate fires on real week
+    readings, and it was pinned on precisely the three fields the candidate
+    does not touch. A 0-red result over a suite shaped like that is evidence
+    the suite cannot see the change, not that the change is safe. The three
+    assertions added are the verdict, ``readings_in_window``, and the judged
+    week days that fed ``ln_rmssd_7d_mean`` -- each derived from the two eras
+    above rather than captured from a run: while the strap owns the baseline
+    the week holds ``7 - k`` of its days (``T+1``: six, ``T+6``: one, nothing
+    from ``T+7``), and from ``T+21`` the daily snapshot fills all seven. So
+    the walk reads ``hrv_normal`` on ``T+1 .. T+4``, ``hrv_unavailable`` on
+    ``T+5 .. T+20`` and ``hrv_normal`` again on ``T+21 .. T+114``.
+    Perturbation (form 5a, re-measured 2026-09-16): red at ``k = 3`` and
+    ``k = 4``."""
     T = ago(60)
     strap_days = span(ago(190), T)
+    snapshot_days = span(T + timedelta(days=1), T + timedelta(days=120))
     rows = readings(STRAP, strap_days, 40.0, "strap")
-    rows += readings(SNAPSHOT, span(T + timedelta(days=1), T + timedelta(days=120)), 40.0, "snap")
+    rows += readings(SNAPSHOT, snapshot_days, 40.0, "snap")
+    on_tier = {STRAP: set(strap_days), SNAPSHOT: set(snapshot_days)}
 
     for k in range(1, 115):
         target = T + timedelta(days=k)
         result = build(rows, target=target)
+        expected_tier = STRAP if k < 21 else SNAPSHOT
+        # The judged week's days the resolved tier actually read -- the days
+        # that feed ``ln_rmssd_7d_mean``. Derived from the two eras, not from
+        # ``result``: the strap stops on ``T``, so while it owns the baseline
+        # the week holds ``7 - k`` of its days and none from ``T+7``; the
+        # snapshot runs daily, so from ``T+21`` the week is full.
+        fed = [day for day in span(target - timedelta(days=6), target) if day in on_tier[expected_tier]]
+        verdict = hrv_trend.judge(result)
         if k < 21:
             assert result.tier == STRAP, k
             assert result.reset_reason is None and result.reset_on is None, k
@@ -674,6 +719,10 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
         else:
             assert result.tier == SNAPSHOT, k
             assert result.reset_reason is None and result.reset_on is None, k
+        assert [r.date for r in result.window] == fed, k
+        assert verdict.readings_in_window == len(fed), k
+        assert verdict.verdict == (WALK_NORMAL if len(fed) >= WALK_MIN_WINDOW else WALK_UNAVAILABLE), k
+        assert verdict.ln_rmssd_7d_mean == (pytest.approx(math.log(WALK_VALUE), abs=1e-12) if fed else None), k
 
     assert in_previous_window(strap_days, T + timedelta(days=113)) == 14
     assert in_previous_window(strap_days, T + timedelta(days=114)) == 13
