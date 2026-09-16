@@ -806,6 +806,17 @@ def build_series(
     # Deterministic before anything is chosen by position: by instant, then
     # by id for two devices sharing an instant.
     readings.sort(key=lambda r: (r.start_time, r.session_id))
+    # **The unclipped population, kept before the gap rule can rebind
+    # ``readings``** (T129). Every reading of every tier inside
+    # ``[D-66, D]``, which is what rule 4 counts its *strays* over: the
+    # clip decides which readings enter the **band**, and must not also
+    # decide which readings ``_era_boundary`` can **see**. Until T129 the
+    # same clipped list answered both, so the readings of
+    # ``[D-66, gap_reset_on)`` were absent from the stray count and a
+    # coverage gap could *create* an era boundary the full capture history
+    # refuses -- a later boundary, on a band the athlete's own history does
+    # not support (G-C7-3; ``tier_change_reset``).
+    unclipped_readings = tuple(readings)
     previous_readings = _within(earlier_readings, previous)
     earliest_day = None
     if earliest_start_time is not None:
@@ -851,7 +862,14 @@ def build_series(
 
     series = tuple(series_by_day[day] for day in sorted(series_by_day))
 
-    boundary = tier_change_reset(previous_readings, tier, baseline_readings, week_readings, judged)
+    boundary = tier_change_reset(
+        previous_readings,
+        tier,
+        baseline_readings,
+        week_readings,
+        judged,
+        stray_population=unclipped_readings,
+    )
     if boundary is not None:
         # D4a (T098), made true of a gapped series by T107 (review cycle 6,
         # G-C6-5): the clip is unconditional -- on the report *and* on the
@@ -1426,6 +1444,7 @@ def tier_change_reset(
     baseline_readings: Iterable[Reading],
     week_readings: Iterable[Reading],
     judged: tuple[date, date],
+    stray_population: Iterable[Reading] | None = None,
 ) -> EraBoundary | None:
     """The era boundary between the previous window's tier and the resolved
     one -- the local day a fresh baseline begins on, and whether it is
@@ -1609,29 +1628,44 @@ def tier_change_reset(
     boundary is refused there instead. G12's row in F005's Negative Class
     stands unchanged.
 
-    **What that clip does to clause (c)** -- the question this docstring
-    was silent on until T118 (review cycle 7, G-C7-3), having answered it
-    for (a) alone. ``baseline_readings`` and ``week_readings`` are both
-    derived from the gap-rebound series, so the readings of
-    ``[D-66, gap_reset_on)`` are absent from ``_era_boundary``'s **stray
-    count** too, not only from (a)'s candidacy count. New-tier readings
-    hidden there would have been strays of every *late* ``A_end`` -- they
-    lie between the old era's first day and that boundary's ``B_start`` --
-    so hiding them shrinks the stray term for late boundaries and can
-    admit, or promote over an earlier candidate, a boundary the full
-    capture history refuses or dates earlier. That boundary's
-    ``first_day`` can then fall **after** the resumption, and the
-    composed clip removes post-resumption readings of the baseline tier
-    from the band as ``before_reset: tier_change``. T107 created this
-    reachability: before it the gap cancelled this branch outright.
-    **Accepted and named, not fixed** (user decision 2026-09-15); the
-    measured reachability, and why its error direction waits on T116's
-    change to the thin-baseline verdict rule, are priced in F005's
-    Negative Class. Pinned at both levels by
+    **What that clip does to clause (c): nothing, since T129** (2026-09-16,
+    ``research/00`` §5.4, resolving G-C7-3 **by change**). The clip decides
+    which readings enter the **band**; it does not decide which readings
+    ``_era_boundary`` may **see** when it counts strays. So this rule takes
+    a ``stray_population`` -- every reading of every tier inside
+    ``[D-66, D]``, gap-clipped or not, which ``build_series`` keeps before
+    the gap branch rebinds ``readings`` -- and clause (c) is asked over it
+    together with ``previous_readings``. Clause (a) is **unchanged** and
+    still reads the gap-clipped ``baseline_readings``, because (a) asks
+    whether the resumption era sustains a baseline of its own.
+
+    *What the change removed, kept here because the pins point at it.*
+    Until T129 one clipped population answered both, so the readings of
+    ``[D-66, gap_reset_on)`` were absent from the stray count too. New-tier
+    readings hidden there would have been strays of every *late* ``A_end``
+    -- they lie between the old era's first day and that boundary's
+    ``B_start`` -- so hiding them shrank the stray term for late boundaries
+    and could admit, or promote over an earlier candidate, a boundary the
+    full capture history refuses or dates earlier. That ``first_day`` could
+    then fall **after** the resumption, and the composed clip removed
+    post-resumption readings of the baseline tier from the band as
+    ``before_reset: tier_change``. T107 created that reachability (before
+    it the gap cancelled this branch outright); T118 accepted and named it
+    on 2026-09-15 on a **direction** -- 0 flips to ``hrv_normal`` in 40,000
+    trials -- and T123 falsified that direction on 2026-09-16 against the
+    post-T116 rule: of 26,360 well-formed randomized histories, 9,230 moved
+    the boundary, 4,466 of those held ``baseline_n >= 14``, 702 were
+    flip-reachable and **5 flipped** ``hrv_suppressed`` to ``hrv_normal``
+    on an identical week mean with the baseline established on both sides
+    -- up-regulation on weak evidence, which ``research/00`` §1.7 forbids.
+    At the fix the flip class is **0 of 26,360**. Pinned at both levels by
     ``test_the_gap_clip_moves_the_era_boundary_later_than_the_full_history_finds``
     (one history, the boundary dated 2026-07-03 on the full population and
-    2026-08-14 on the gap-clipped one) and
-    ``test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption``.
+    2026-08-14 on the gap-clipped one -- the *population dependence* itself,
+    which is still true of this rule and is what the caller now controls)
+    and, end to end, by
+    ``test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary``
+    and ``test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption``.
     """
     if tier is None:
         return None
@@ -1642,5 +1676,11 @@ def tier_change_reset(
     previous_tier = sustained_tier(_tier_counts(previous_readings))
     if previous_tier is None or previous_tier == tier:
         return None
-    everything = (*previous_readings, *baseline_readings, *week_readings)
+    # Clause (c)'s population is the **unclipped** one (T129): the strays are
+    # counted over every reading the capture history holds in
+    # ``[D-66, D]``, gap-clipped or not, plus the previous window. Callers
+    # that hand no ``stray_population`` are asking the rule about exactly the
+    # readings they passed, which is what the population-dependence pin does.
+    inside = tuple(stray_population) if stray_population is not None else (*baseline_readings, *week_readings)
+    everything = (*previous_readings, *inside)
     return _era_boundary(_of_tier(everything, previous_tier), _of_tier(everything, tier), judged)

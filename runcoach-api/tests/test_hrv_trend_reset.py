@@ -2223,25 +2223,36 @@ def test_the_era_clip_does_not_replace_the_gaps_when_the_gap_is_later() -> None:
     assert pre_silence.isdisjoint({r.session_id for r in gapped.series})
 
 # ---------------------------------------------------------------------------
-# T118 (review cycle 7, G-C7-3): a coverage gap can *create* the era boundary
+# T118 (review cycle 7, G-C7-3), **closed by T129 on 2026-09-16**: a coverage
+# gap could *create* the era boundary
 #
-# ``tier_change_reset`` is handed ``baseline_readings`` and ``week_readings``
-# derived from the **gap-rebound** ``readings``, so every reading in
-# ``[D-66, gap_reset_on)`` is invisible to ``_era_boundary``'s stray count as
-# well as to clause (a). New-tier readings hidden there would have been
-# strays of every *late* ``A_end`` -- they lie between the old era's first day
-# and that boundary's ``B_start`` -- so hiding them shrinks the stray term for
-# late boundaries, and a boundary the full capture history dates earlier (or
-# refuses outright) becomes the admitted winner. Its ``first_day`` can fall
-# **after** the resumption, clipping legitimate post-resumption days of the
-# baseline tier out of the band as ``before_reset: tier_change``.
+# ``tier_change_reset`` used to be handed ``baseline_readings`` and
+# ``week_readings`` derived from the **gap-rebound** ``readings`` and nothing
+# else, so every reading in ``[D-66, gap_reset_on)`` was invisible to
+# ``_era_boundary``'s stray count as well as to clause (a). New-tier readings
+# hidden there would have been strays of every *late* ``A_end`` -- they lie
+# between the old era's first day and that boundary's ``B_start`` -- so hiding
+# them shrank the stray term for late boundaries, and a boundary the full
+# capture history dates earlier (or refuses outright) became the admitted
+# winner. Its ``first_day`` could fall **after** the resumption, clipping
+# legitimate post-resumption days of the baseline tier out of the band as
+# ``before_reset: tier_change``.
 #
-# **T107 created this reachability**: before it the gap cancelled the era
+# **T107 created that reachability**: before it the gap cancelled the era
 # branch outright, so the path could not be taken. **User decision
-# 2026-09-15: accept it, name it, pin it.** The cost is priced in F005's
-# Negative Class; T118 changed no behaviour, and these two pins are written
-# against HEAD rather than red-first for that reason -- what is shown below
-# instead is the set of edits each assertion dies to.
+# 2026-09-15: accept it, name it, pin it** -- withdrawn on **2026-09-16**
+# once T123's re-run of the direction search the acceptance rested on found
+# the forbidden flip (5 of 26,360 well-formed histories, `hrv_suppressed` to
+# `hrv_normal` on an unchanged week mean, established on both sides). T129
+# hands rule 4 the **unclipped** population for its stray count, so the clip
+# decides the *band* and no longer decides what ``_era_boundary`` can see.
+#
+# The first pin below is unchanged and is the reason the fix is legible: it
+# asks ``tier_change_reset`` twice about **one** history with the population
+# as its variable, so it pins the *dependence*, which is still real and is now
+# the caller's to control. The second was T118's consequence pin and is
+# **inverted** by T129 -- its own docstring had named "handing rule 4 the
+# unclipped population" as one of the mutations that made it red.
 #
 # Neither T107 composition fixture can see it, because neither puts a clipped
 # day into any boundary's stray set -- the only way the clip can move
@@ -2388,46 +2399,57 @@ def test_the_gap_clip_moves_the_era_boundary_later_than_the_full_history_finds()
     assert full.first_day < GAP_MAKES_ERA_RESUMPTION < clipped.first_day
 
 
-def test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption() -> None:
-    """The same finding through ``build_series``, priced on the athlete's own
-    rows: four strap readings taken **at and after** the resumption -- on the
-    baseline tier, inside the era the gap itself opened -- are moved to
-    ``excluded`` as ``before_reset: tier_change`` by a boundary that exists
-    only because the clip hid the trial from it.
+def test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption() -> None:
+    """The same history through ``build_series``, **after T129**: the four
+    strap readings taken at and after the resumption stay in the band, and
+    no ``before_reset: tier_change`` entry exists at all.
 
-    Measured at HEAD (``cc13ffb``), target 2026-09-07:
+    This pin is the T118 one inverted, and the inversion is the change. It
+    used to assert the priced damage -- four on-tier days at and after the
+    resumption moved to ``excluded`` as ``before_reset: tier_change`` by a
+    boundary that existed *only* because the gap clip hid the ten-day trial
+    from ``_era_boundary``'s stray count (G-C7-3, accepted 2026-09-15). T129
+    hands rule 4 the **unclipped** population for that count, so the boundary
+    the full capture history finds -- 2026-07-03, the trial's own first day,
+    which the sibling pin above measures directly -- is the one found here
+    too. It precedes the resumption, so the gap's clip is the later of the
+    two and this branch removes nothing.
+
+    Measured at T129's HEAD, target 2026-09-07:
 
     * with the silence -- ``coverage_gap on 2026-08-05``, window
-      ``(2026-08-14, 2026-08-31)``, ``n`` 18, ``band.lo`` 3.6757,
+      ``(2026-08-05, 2026-08-31)``, ``n`` **22**, ``band.lo`` **3.6805**,
       ``hrv_suppressed``;
     * without it, the same rows -- no reset at all, window
       ``(2026-07-03, 2026-08-31)``, ``n`` 32, ``band.lo`` 3.4542,
       ``hrv_normal``.
 
-    The 7-day mean is 3.6636 on both. The two series are different capture
-    histories, so the pair demonstrates that the silence alone moves the
-    band; it is **not** a measurement of the cost's direction. The
-    same-history reference is the sibling pin above, where the full
-    population dates the boundary 2026-07-03 -- before the resumption, so the
-    gap's clip would be the later of the two and none of these four days
-    would leave the band. Against that reference this series moves ``n``
-    22 -> 18 and ``band.lo`` 3.6805 -> 3.6757, and reads ``hrv_suppressed``
-    either way.
+    The 7-day mean is 3.6636 on both, unchanged. The gapped side's ``n`` 22
+    and ``band.lo`` 3.6805 are **exactly the same-history reference numbers
+    the T118 version of this docstring named** as what the athlete's own full
+    capture history supports (it then measured 18 and 3.6757 against them);
+    shipped now equals that reference. The verdict on this particular series
+    is ``hrv_suppressed`` either way -- it is the *band*, not the verdict,
+    that this fixture moves. For the verdict, see
+    ``test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary``
+    below.
 
-    Red at HEAD under each of these, run against a mutated in-memory copy:
+    Red under each of these, run against a mutated in-memory copy:
 
+    * reverting T129 (rule 4 handed the gap-clipped population again) --
+      window ``(2026-08-14, 2026-08-31)``, ``n`` 18, ``band.lo`` 3.6757, and
+      the four ``early-`` rows listed ``before_reset: tier_change``: the
+      second, third, fourth, fifth, sixth, seventh and eleventh assertions;
     * restoring the pre-T107 gate (``if boundary is not None and reset_on is
-      None``) -- window ``(2026-08-05, 2026-08-31)``, ``n`` 22, no
-      ``before_reset: tier_change`` entry: the second, third, fifth and
-      ninth assertions;
-    * handing rule 4 the *unclipped* population -- the same three numbers,
-      for the reason this pin names;
-    * dropping the composition (``baseline = (baseline[0], baseline[1])``,
-      the gap's clip winning outright) -- ``window[0]`` reads 2026-08-05
-      while the four rows are still excluded, so the reported interval would
-      claim nine days the baseline does not hold: the second and third
-      assertions, which is why ``baseline[0].date`` is asserted beside
-      ``baseline_window[0]`` rather than trusting either alone.
+      None``) -- the same three numbers as T129 produces, because on *this*
+      history the era boundary now precedes the resumption and clips
+      nothing; so this fixture no longer discriminates T107, and
+      ``test_a_gap_and_a_switch_compose_as_the_later_first_day`` is what
+      does;
+    * dropping the composition (``baseline = (baseline[0], baseline[1])``) --
+      also green here, for the same reason. ``baseline[0].date`` is still
+      asserted beside ``baseline_window[0]`` so the reported interval can
+      never claim days the baseline does not hold.
     """
     gapped = build(gap_makes_era(with_gap=True), target=GAP_MAKES_ERA_D)
     (judged_gapped,) = reported(gap_makes_era(with_gap=True), [GAP_MAKES_ERA_D])
@@ -2435,21 +2457,23 @@ def test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption() -> None
 
     # The report is still the gap's -- that half of precedence is unchanged.
     assert judged_gapped.report == (STRAP, "coverage_gap", GAP_MAKES_ERA_RESUMPTION)
-    # ...and yet the window opens nine days after the resumption it names.
-    assert judged_gapped.baseline_window == (GAP_MAKES_ERA_FIRST_DAY, ago(7, GAP_MAKES_ERA_D))
-    assert gapped.baseline[0].date == GAP_MAKES_ERA_FIRST_DAY
-    assert judged_gapped.reset_on < judged_gapped.baseline_window[0]
+    # ...and the window now opens on the resumption it names.
+    assert judged_gapped.baseline_window == (GAP_MAKES_ERA_RESUMPTION, ago(7, GAP_MAKES_ERA_D))
+    assert gapped.baseline[0].date == GAP_MAKES_ERA_RESUMPTION
+    assert judged_gapped.reset_on == judged_gapped.baseline_window[0]
 
-    # The priced damage: on-tier days at and after the resumption, listed
-    # under an era boundary the full capture history dates before them.
+    # The damage that used to be priced here: on-tier days at and after the
+    # resumption, under an era boundary the full capture history dates before
+    # them. They stay in the band now, and nothing is clipped as a tier change.
     reasons = excluded_reasons(gapped)
-    lost = {f"early-{day}" for day in GAP_MAKES_ERA_ON_TIER_LOST}
-    assert {reasons[session_id] for session_id in lost} == {"before_reset: tier_change"}
-    assert lost.isdisjoint({r.session_id for r in gapped.series})
-    assert min(GAP_MAKES_ERA_ON_TIER_LOST) >= GAP_MAKES_ERA_RESUMPTION
-    assert judged_gapped.baseline_n == 18
+    kept = {f"early-{day}" for day in GAP_MAKES_ERA_ON_TIER_LOST}
+    assert kept.isdisjoint(reasons)
+    assert kept <= {r.session_id for r in gapped.series}
+    assert "before_reset: tier_change" not in set(reasons.values())
+    assert judged_gapped.baseline_n == 22
 
-    # The trial is the gap's own, as it was before T118 and still is.
+    # The trial is the gap's own, as it was before T118 and still is: T129
+    # moves which readings rule 4 *counts*, never which enter the band.
     trial_ids = {f"trial-{day}" for day in GAP_MAKES_ERA_TRIAL}
     assert {reasons[session_id] for session_id in trial_ids} == {"before_reset: coverage_gap"}
 
@@ -2458,7 +2482,7 @@ def test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption() -> None
     assert judged_control.report == (STRAP, None, None)
     assert judged_control.baseline_window == (ago(66, GAP_MAKES_ERA_D), ago(7, GAP_MAKES_ERA_D))
     assert judged_control.baseline_n == 32
-    assert judged_gapped.band_lo == pytest.approx(3.6757, abs=5e-5)
+    assert judged_gapped.band_lo == pytest.approx(3.6805, abs=5e-5)
     assert judged_control.band_lo == pytest.approx(3.4542, abs=5e-5)
     assert judged_gapped.verdict == hrv_trend.VERDICT_SUPPRESSED
     assert judged_control.verdict == hrv_trend.VERDICT_NORMAL
@@ -2467,6 +2491,140 @@ def test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption() -> None
         for flag in (True, False)
     ]
     assert means[0] == means[1] == pytest.approx(3.6636, abs=5e-5)
+
+
+# ---------------------------------------------------------------------------
+# T129 -- the widest witness of the direction search, pinned.
+#
+# The generator's own trial 6656 (seed 20260916, the re-run recorded in
+# ``spec/references/T123-direction-search-rerun.md`` and re-run at T129's
+# HEAD): the one geometry, of 26,360 well-formed histories, whose band moved
+# furthest in the **up-regulating** direction while the judged week's mean
+# stayed put. Values are the generator's own, rounded to 4 dp; nothing here
+# was tuned to produce the flip.
+# ---------------------------------------------------------------------------
+
+#: Target date, and the daily health_snapshot era that sustains
+#: ``[D-126, D-67]`` and so is rule 4(b)'s previous tier.
+UNCLIPPED_STRAY_D = date(2026, 9, 7)
+UNCLIPPED_STRAY_OLD_ERA = span(date(2026, 5, 4), date(2026, 7, 6))
+#: Five strap days inside the baseline window and before the resumption --
+#: the readings the gap clip used to hide from ``_era_boundary``.
+UNCLIPPED_STRAY_TRIAL = (25.8786, 20.3593, 22.9217, 25.6662, 19.4581)
+#: Twenty-two silent local days, 2026-07-12 .. 2026-08-02: more than
+#: ``GAP_RESET_DAYS``, so the gap fires on the resumption.
+UNCLIPPED_STRAY_RESUMPTION = date(2026, 8, 3)
+#: Seven strap days at and after the resumption...
+UNCLIPPED_STRAY_RESUMED = (49.7548, 53.7437, 58.3880, 49.2288, 51.8047, 57.5822, 57.4915)
+#: ...then seven health_snapshot captures, which are what make a *late*
+#: ``A_end`` exist at all...
+UNCLIPPED_STRAY_LATE_SNAPSHOT = (48.0370, 54.8932, 48.3585, 51.0485, 49.6316, 42.5190, 55.9967)
+#: ...and the strap era the late boundary would open, from 2026-08-17.
+UNCLIPPED_STRAY_ERA = (
+    29.7392, 30.9376, 29.2868, 32.9091, 32.6588, 29.1799, 29.9952, 32.9838,
+    28.7013, 30.1320, 24.7249, 31.3756, 32.8936, 31.3519, 28.1422,
+)
+#: Six strap mornings in the judged week -- one silent day, 2026-09-04.
+UNCLIPPED_STRAY_WEEK_DAYS = (
+    date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3),
+    date(2026, 9, 5), date(2026, 9, 6), date(2026, 9, 7),
+)
+UNCLIPPED_STRAY_WEEK = (30.8770, 30.7087, 36.5100, 27.5256, 28.6818, 31.7406)
+
+
+def _valued(first: date, tier: str, values: tuple[float, ...], prefix: str) -> list[dict]:
+    """One row per consecutive local day from ``first``, carrying ``values``."""
+    return [
+        row(local(first + timedelta(days=i), 6), tier, value, f"{prefix}-{first + timedelta(days=i)}")
+        for i, value in enumerate(values)
+    ]
+
+
+def unclipped_stray_witness() -> list[dict]:
+    """The widest witness of T129's direction re-run, as stored rows."""
+    rows = readings(SNAPSHOT, UNCLIPPED_STRAY_OLD_ERA, 55.0, "old")
+    rows += _valued(date(2026, 7, 7), STRAP, UNCLIPPED_STRAY_TRIAL, "trial")
+    rows += _valued(UNCLIPPED_STRAY_RESUMPTION, STRAP, UNCLIPPED_STRAY_RESUMED, "resume")
+    rows += _valued(date(2026, 8, 10), SNAPSHOT, UNCLIPPED_STRAY_LATE_SNAPSHOT, "late")
+    rows += _valued(date(2026, 8, 17), STRAP, UNCLIPPED_STRAY_ERA, "era")
+    rows += [
+        row(local(day, 6), STRAP, value, f"week-{day}")
+        for day, value in zip(UNCLIPPED_STRAY_WEEK_DAYS, UNCLIPPED_STRAY_WEEK, strict=True)
+    ]
+    return rows
+
+
+def test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary() -> None:
+    """**The witness G-C7-3's acceptance was withdrawn on** (T129, closing the
+    `research/00` §1.7 violation T123 measured). One capture history, one
+    judged week, one week mean -- and two different verdicts, decided by
+    nothing but whether the gap clip was allowed to hide five readings from
+    rule 4's stray count.
+
+    The arithmetic **is** the finding. Target 2026-09-07,
+    ``coverage_gap on 2026-08-03``, resolved tier ``chest_strap_raw``,
+    ``readings_in_window`` 6 and ``withheld`` false on both sides::
+
+        7-day mean       3.430187    identical on both sides
+        before T129      lo 3.371352  n=15, window (2026-08-17, 2026-08-31)  -> hrv_normal
+        at T129          lo 3.450867  n=22, window (2026-08-03, 2026-08-31)  -> hrv_suppressed
+
+    Same week, same mean, ``established`` on **both** sides -- so T116's
+    thin-baseline gate does not reach this, which is exactly why the
+    40,000-trial search that G-C7-3 was accepted on could not see it. The
+    band moved 0.079515 ln in the **up-regulating** direction because the
+    five pre-gap strap days of 2026-07-07 .. 07-11 were invisible to
+    ``_era_boundary``: hidden, the seven late snapshots of 08-10 .. 08-16
+    leave only seven strays for ``A_end`` = 2026-08-16, which beats the
+    early boundary; visible, they are twelve, and the boundary the athlete's
+    full capture history finds precedes the resumption, so the gap's own clip
+    is the later of the two and the seven resumption mornings stay in the
+    band.
+
+    **Red-first evidence.** Written against ``2b5f569`` (pre-T129) and run
+    there before the production change existed: the first assertion failed
+    with ``hrv_normal``, ``baseline_n`` 15, ``band.lo`` 3.371352 and
+    ``baseline_window[0]`` 2026-08-17. It is red again under a mutated
+    in-memory copy that reverts T129 (``everything`` rebuilt from the
+    gap-clipped ``baseline_readings`` and ``week_readings``).
+
+    Provenance: trial 6656 of the ``gap_makes_era`` generator at seed
+    20260916, the re-run of T123's half-1 search at T129's HEAD -- **18 flips
+    of 26,360 well-formed histories before, 0 after**. The values are that
+    trial's own, rounded to 4 dp; none was chosen. The old era's value is the
+    one thing that is uniform (55.0 ms): it is ``health_snapshot`` and so
+    never enters the strap's band, it only has to sustain the previous
+    window.
+    """
+    rows = unclipped_stray_witness()
+    series = build(rows, target=UNCLIPPED_STRAY_D)
+    verdict = hrv_trend.judge(series)
+
+    # The verdict, first: this is the forbidden direction, closed.
+    assert verdict.verdict == hrv_trend.VERDICT_SUPPRESSED
+
+    # ...on a band the athlete's own full capture history supports.
+    assert series.reset_reason == "coverage_gap"
+    assert series.reset_on == UNCLIPPED_STRAY_RESUMPTION
+    assert series.tier == STRAP
+    assert series.baseline_window == (UNCLIPPED_STRAY_RESUMPTION, ago(7, UNCLIPPED_STRAY_D))
+    assert verdict.baseline_n == 22
+    assert verdict.band is not None
+    assert verdict.band.lo == pytest.approx(3.450867, abs=5e-6)
+
+    # The week is not what moved: mean, count and fairness are the same
+    # numbers the pre-T129 rule saw, and the baseline is established on both
+    # sides, so neither T116's gate nor T125's withhold is doing this work.
+    assert verdict.ln_rmssd_7d_mean == pytest.approx(3.430187, abs=5e-6)
+    assert verdict.readings_in_window == 6
+    assert series.withheld is False
+    assert verdict.established is True
+
+    # The mechanism, stated where it can break: the seven resumption
+    # mornings are in the band, and nothing is clipped as a tier change.
+    resumed = {f"resume-{UNCLIPPED_STRAY_RESUMPTION + timedelta(days=i)}" for i in range(7)}
+    assert resumed <= {r.session_id for r in series.series}
+    assert "before_reset: tier_change" not in set(excluded_reasons(series).values())
 
 
 # ---------------------------------------------------------------------------
