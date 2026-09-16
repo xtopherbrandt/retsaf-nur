@@ -22,7 +22,15 @@ VERDICT_WITHDRAWN = (
     "too few readings this week, a below-band week on an unestablished baseline",
     "suppression is withheld, not read as normal",
     "hrv_suppressed only when the 7-day mean is strictly below band.lo on an established baseline",
+    "then a fresh baseline is begun for the new tier and a suppression verdict is withheld until it is established",
 )
+
+WINDOW_WITHDRAWN = (
+    "tier_change`). for `coverage_gap` r is reset_on",
+    "tier_change). for coverage_gap r is reset_on",
+)
+
+ESTABLISHED_WITHDRAWN = ("below it, hrv_suppressed is never emitted",)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 

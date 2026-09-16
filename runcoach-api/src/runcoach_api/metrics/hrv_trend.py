@@ -124,15 +124,29 @@ GAP_RESET_DAYS = 21
 #: from ``D-7``, so the response's ``thresholds`` block gains no key.
 #:
 #: Why 28, and not any other value in the measured green band
-#: ``[18, 44]``, re-measured 2026-09-15 and **scoped to the 394 tests of
-#: the five HRV suites that predate T117's own tolerance pin** (T121: the
-#: five suites collect 395, and the 395th is
-#: ``test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it``,
-#: which asserts ``RECENCY_TOLERANCE_DAYS == 28`` and hardcodes its gap
-#: rows -- so it is red at every N != 28 by construction, and over all 395
-#: the green band is ``{28}``. The band is a statement about the rest of
-#: the suite, and it was published without that scope until T121 measured
-#: it). The two ends are real and are what the band means: N=17 reds
+#: ``[18, 44]``, measured 2026-09-15 and **scoped to the tests of the five
+#: HRV suites that predate T117's own tolerance pin**. The scope is half of
+#: what the bracket means: the tolerance's own pins assert this value or
+#: its measured consequences and are red at every other N by construction,
+#: so over the *whole* of the five suites the green band is ``{28}`` and
+#: the bracket is a statement about the rest of them. The band was
+#: published without that scope until T121 measured it.
+#:
+#: **The corpus is named by a relation, not by a number** (T123, review
+#: cycle 8). It is the five suites' collected tests less the pins named in
+#: ``BAND_CORPUS_EXCLUDES``, and both the live collection and that
+#: subtraction are asserted by
+#: ``test_hrv_trend_endpoint.test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_published``
+#: -- read the count from ``SCOPED_SUITE_COLLECTED`` there, never from a
+#: literal here. T121 wrote the literal ("the five suites collect 395")
+#: into this comment and three normative documents to give the band its
+#: missing scope, and the next commit of T121's own fix batch added a test
+#: to one of those five suites and made all four wrong, with nothing in
+#: the tree able to notice. The dated corpus the bracket was measured over
+#: was 394 tests, which is ``BAND_CORPUS_WHEN_MEASURED``; the assertion
+#: reports how far the suites have grown past it.
+#:
+#: The two ends are real and are what the band means: N=17 reds
 #: ``test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a_week_again``
 #: -- a legitimately resuming snapshot is struck -- and N=45 reds
 #: ``test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band``
@@ -168,8 +182,16 @@ GAP_RESET_DAYS = 21
 #:   21. Until T121 this comment named that suite's ``GAP_RESET_DAYS``
 #:   row instead, which does not pin the seam at all: at a tolerance of 21
 #:   a day difference of 21 is still ``<=`` the tolerance, so that row
-#:   stays green, and what actually reddened at 21 was the hardcoded 27
-#:   row the prose treated as ordinary.
+#:   stays green. T121's replacement said "what actually reddened at 21
+#:   was the hardcoded 27 row" -- a **singular**, and also wrong (T123,
+#:   review cycle 8). Measured over the walk's five rows at tolerances
+#:   19..30: at 21 the ``gap`` 22, 27 **and** 28 rows all redden. What
+#:   makes the ``GAP_RESET_DAYS + 1`` row the pin is not that it is the
+#:   only red row at 21 but that it is the only one whose red *onset* is
+#:   there -- green at 22, red at 21 -- every other admitted row having
+#:   reddened at some higher tolerance already. That relation is asserted,
+#:   not just stated, by
+#:   ``test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days``.
 #:
 #: Which of the two fires first is not a race but a partition, and it is
 #: decided by *where the readings are*, not by 28 against 21. When the

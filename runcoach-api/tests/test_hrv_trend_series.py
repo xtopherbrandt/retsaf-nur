@@ -953,6 +953,11 @@ def stale_trial_gap(gap: int, target: date = D) -> list[dict]:
     return rows
 
 
+#: The ``gap`` rows both recency tests below walk, in one name so the onset
+#: pin cannot fall out of step with the walk it describes (T123).
+RECENCY_WALK = (hrv_trend.GAP_RESET_DAYS, hrv_trend.GAP_RESET_DAYS + 1, 27, 28, 29)
+
+
 def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it() -> None:
     """T117's constant, at both of its edges and at the seam with the
     coverage-gap rule. One series shape, one moving part: how far the
@@ -972,20 +977,30 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     call a break. The seam ``RECENCY_TOLERANCE_DAYS > GAP_RESET_DAYS`` says
     no candidate may be struck for a silence of 21 days or fewer, and the
     row that carries that is ``gap == GAP_RESET_DAYS + 1`` (22): measured
-    across tolerances 19..29, it is admitted at a tolerance of 22 and struck
-    at 21, so it is the row -- and the only row here -- that goes red the
-    moment the tolerance is lowered to ``GAP_RESET_DAYS``. The
+    across tolerances 19..30, it is admitted at a tolerance of 22 and struck
+    at 21. **It is not the only row that goes red at 21** -- ``gap`` 27 and
+    ``gap`` 28 are red there too, and so is every row below its own gap; that
+    "only row" claim was measured wrong by T121 and is corrected here (T123,
+    review cycle 8). What singles this row out is its red *onset*: it is the
+    only row in the walk that is green at a tolerance of 22 and red at 21, so
+    it and nothing else pins the seam at ``GAP_RESET_DAYS``. The
     ``GAP_RESET_DAYS`` row itself is ordinary: it survives a tolerance of 21
     and reds only at 20, pinning ``>= GAP_RESET_DAYS`` and not the seam. It
     is kept as the neighbour that shows the boundary is between the two.
+    The whole onset relation, and the measured red set at every tolerance in
+    19..30, is asserted by
+    ``test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days``
+    below, so neither this paragraph nor the list further down can be the
+    only thing carrying it again.
     Both rows stand behind the ordering claim in ``research/00`` §5.4 and in
     ``resolve_baseline_tier``'s docstring.
 
     Distinct failure modes, each run before this was kept: the filter
     deleted (``gap`` 29 reverts to the strap); the comparison written
     ``<`` rather than ``<=`` (``gap`` 28 flips); the tolerance set to
-    ``GAP_RESET_DAYS`` (the ``gap`` 22 and ``gap`` 27 rows flip; ``gap`` 21
-    does **not**, which is why it could never have been the seam pin); and
+    ``GAP_RESET_DAYS`` (the ``gap`` 22, ``gap`` 27 **and** ``gap`` 28 rows
+    flip -- three, not the two this list named until T123; ``gap`` 21 does
+    **not**, which is why it could never have been the seam pin); and
     the filter applied to the raw day counts rather than to ``last_read``
     (every row flips, the strap never being the denser tier here). None of
     the five rows carries a reset: the snapshot runs daily through the
@@ -994,7 +1009,7 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     assert hrv_trend.RECENCY_TOLERANCE_DAYS > hrv_trend.GAP_RESET_DAYS
 
     observed = {}
-    for gap in (hrv_trend.GAP_RESET_DAYS, hrv_trend.GAP_RESET_DAYS + 1, 27, 28, 29):
+    for gap in RECENCY_WALK:
         result = build(stale_trial_gap(gap))
         in_baseline = [r for r in result.readings if r.date <= D - timedelta(days=7)]
         assert len({r.date for r in in_baseline if r.tier == STRAP}) == 14, gap
@@ -1009,6 +1024,77 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     assert observed[27] == (STRAP, 14, None)
     assert observed[28] == (STRAP, 14, None)
     assert observed[29] == (SNAPSHOT, 60, None)
+
+
+def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monkeypatch) -> None:
+    """The claim the docstring above rests on, as an assertion rather than as
+    a sentence (T123, review cycle 8: the sentence was measured wrong twice).
+
+    Both prior spellings named a *singleton*. T121's said the seam row is
+    "the only row here that goes red the moment the tolerance is lowered to
+    ``GAP_RESET_DAYS``"; the sibling list nine lines below it named a *pair*,
+    "the ``gap`` 22 and ``gap`` 27 rows flip"; and ``RECENCY_TOLERANCE_DAYS``'
+    own comment named a different singleton again, "the hardcoded 27 row".
+    All three are false and they disagree with each other. Measured here, over
+    the identical fixture, by the set of walk rows whose admission differs from
+    its admission at the shipped tolerance -- i.e. the rows that would go red:
+
+        tolerance   19..20          21          22..26      27      28   29..30
+        reddens     21,22,27,28     22,27,28    27,28       28      --   29
+
+    So **three** rows go red at a tolerance of ``GAP_RESET_DAYS``, not one and
+    not two. What actually singles the seam row out is not how many rows are
+    red there but where each row's red *onset* is: every admitted row ``g``
+    is red at every tolerance below ``g``, so lowering the tolerance one step
+    past 28 reddens one more row each time. Only ``gap == GAP_RESET_DAYS + 1``
+    has its onset at ``GAP_RESET_DAYS`` itself -- green at 22, red at 21 --
+    and that is what makes it, and not its neighbours, the pin for
+    ``RECENCY_TOLERANCE_DAYS > GAP_RESET_DAYS``. The ``GAP_RESET_DAYS`` row's
+    onset is one step later still, at 20, which is why it cannot be the seam.
+
+    Nothing about ``hrv_trend`` moves here: the tolerance is monkeypatched on
+    the module for the duration of the matrix and restored, and the gate reads
+    the module global at call time (``resolve_baseline_tier``). The onset
+    assertions are the discriminating ones -- with the seam claim written as
+    the singleton the docstrings published, this test is red on
+    ``{22, 27, 28} == {22}``."""
+    shipped = hrv_trend.RECENCY_TOLERANCE_DAYS
+    reset = hrv_trend.GAP_RESET_DAYS
+
+    def admitted(gap: int, tolerance: int) -> bool:
+        monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", tolerance)
+        return build(stale_trial_gap(gap)).tier == STRAP
+
+    matrix = {(gap, tol): admitted(gap, tol) for tol in range(19, 31) for gap in RECENCY_WALK}
+    monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", shipped)
+
+    def reddens_at(tolerance: int) -> set[int]:
+        """The walk rows this test file's neighbour above would fail on, were
+        the tolerance ``tolerance``: those whose admission differs from the
+        admission the neighbour's hardcoded expectations were taken at."""
+        return {g for g in RECENCY_WALK if matrix[(g, tolerance)] != matrix[(g, shipped)]}
+
+    assert reddens_at(shipped) == set(), "the walk is not green at the shipped tolerance"
+    assert reddens_at(reset) == {22, 27, 28}, (
+        "three rows go red at a tolerance of GAP_RESET_DAYS, not the one the "
+        "docstrings named nor the two the 'distinct failure modes' list named"
+    )
+    assert reddens_at(reset + 1) == {27, 28}
+    assert reddens_at(27) == {28}
+    assert reddens_at(29) == {29}
+
+    # The seam: exactly one row is red at GAP_RESET_DAYS and green one step
+    # above it, and it is ``gap == GAP_RESET_DAYS + 1``. This -- not a count
+    # of red rows -- is what makes that row the pin, and it is the assertion
+    # that reddens if a future author swaps the seam row for a neighbour.
+    assert reddens_at(reset) - reddens_at(reset + 1) == {reset + 1}
+    # Every admitted row's onset is one below its own gap, which is the
+    # relation the "one more row each step" reading depends on.
+    for gap in RECENCY_WALK:
+        if matrix[(gap, shipped)]:
+            assert gap not in reddens_at(gap), gap
+            assert gap in reddens_at(gap - 1), gap
+
 
 
 def test_the_fallback_keeps_the_device_the_athlete_used_last_through_a_thin_week() -> None:
