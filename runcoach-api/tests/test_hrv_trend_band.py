@@ -851,20 +851,35 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     * **What fed the mean.** The carrier stopped on ``CARRIER_END``, so while
       it owns the baseline the judged week holds ``7 - r`` of its days and the
       athlete's own ``r`` return mornings are excluded as
-      ``off_baseline_tier``. **That is the defect this walk exists to make
+      ``off_baseline_tier``. **That is the defect this walk was written to make
       visible**: at ``r = 4`` -- [[T125]]'s reproduced day, ``2026-09-12`` --
-      the verdict is computed from ``09-06``, ``09-07`` and ``09-08``, three
-      mornings that all predate his return.
-    * **The verdict.** ``r`` in 1..4 leaves three or more carrier days in the
-      week, on an established baseline of ordinary alternating values, so the
-      week mean sits inside its own band: ``hrv_normal`` -- *including at*
-      ``r = 3`` *and* ``r = 4``, **whatever the return mornings said**. From
-      ``r = 5`` fewer than three remain and the verdict is
-      ``hrv_unavailable``. At ``r = 8`` the week is the return's own seven
-      mornings against a 21-day band: ``hrv_suppressed`` on a suppressed
-      return, ``hrv_normal`` on a healthy one -- the first day of the walk on
-      which the value level of the athlete's actual mornings changes anything
-      he is told.
+      the mean is computed from ``09-06``, ``09-07`` and ``09-08``, three
+      mornings that all predate his return. The tier, the band and the
+      excluded list still read exactly that way; **T125 changed what is said
+      about it, not what it is**, which is why every assertion in this walk
+      except the verdict is unmoved.
+    * **The verdict.** ``r = 1`` and ``r = 2`` leave five and four carrier
+      days in the week against one and two return mornings, on an established
+      baseline of ordinary alternating values, so the week mean sits inside
+      its own band: ``hrv_normal``. From ``r = 3`` the athlete holds
+      ``MIN_WINDOW_READINGS`` week mornings of his own, every one later than
+      every day that fed the mean, and **T125's withhold fires**: the week is
+      not a fair sample of the tier being judged, so no verdict is asserted --
+      ``hrv_unavailable`` at ``r = 3`` and ``r = 4``, where this walk pinned
+      ``hrv_normal`` before the fix, and at ``r = 5..7``, where fewer than
+      three carrier days remain and the answer was already ``hrv_unavailable``
+      for the ordinary reason. At ``r = 8`` the week is the return's own seven
+      mornings against a 21-day band -- the carrier has no week day left and
+      nothing is withheld -- so ``hrv_suppressed`` on a suppressed return and
+      ``hrv_normal`` on a healthy one: the first day of the walk on which the
+      value level of the athlete's actual mornings changes anything he is
+      told.
+    * **``r = 1`` and ``r = 2`` are not fixed, and no measured form fixes
+      them.** One and two return mornings are below ``MIN_WINDOW_READINGS``,
+      so the verdict there still comes from pre-return days and still reads
+      ``hrv_normal``. The constant that hides those two rows is the same one
+      that keeps the withhold from firing on a stray capture; F005's Negative
+      Class carries the residual.
     * **The reset.** ``tier_change`` is reported on ``r = 1`` and ``r = 2``
       and withdrawn from ``r = 3``, by clause (c)'s week half: the boundary is
       era A's last day against the carrier's first, and the return mornings
@@ -875,15 +890,27 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
 
     Spot-checked by hand at ``r = 1`` (six carrier days, ``hrv_normal``),
     ``r = 4`` (the reproduction: ``health_snapshot``, ``readings_in_window``
-    3, ``09-06``/``09-07``/``09-08``, ``hrv_normal`` -- field for field what
-    [[T125]] reports), and ``r = 8`` suppressed (a band over ten 38.0s, ten
-    44.0s and one 25.0 gives ``lo`` near 3.62 against a week mean of
-    ``ln 25`` = 3.22, so ``hrv_suppressed``) and healthy (``lo`` near 3.67
-    against a week mean near 3.72, so ``hrv_normal``).
+    3, ``09-06``/``09-07``/``09-08`` -- field for field what [[T125]] reports,
+    and since T125 ``hrv_unavailable`` rather than ``hrv_normal``), and
+    ``r = 8`` suppressed (a band over ten 38.0s, ten 44.0s and one 25.0 gives
+    ``lo`` near 3.62 against a week mean of ``ln 25`` = 3.22, so
+    ``hrv_suppressed``) and healthy (``lo`` near 3.67 against a week mean near
+    3.72, so ``hrv_normal``).
 
-    Perturbation ([[T125]] form 5a, measured 2026-09-16): red at ``r = 3`` and
-    ``r = 4``, where the returning tier's week days become three and all of
-    them follow every carrier week day.
+    **The four expectations this walk changed at T125, and why.** It was
+    written at T127 to pin the *defect* -- its own derivation above said
+    ``hrv_normal`` at ``r = 3`` and ``r = 4`` "whatever the return mornings
+    said" -- so that any candidate fix would redden it and be seen. T125's
+    form 2 is that fix, and those two targets in each of the four parametrised
+    cases are the sanctioned change. Nothing else in the walk moved: tier,
+    ``fed``, ``readings_in_window``, ``baseline_n``, ``established`` and the
+    reset tuple are byte-identical to their pre-fix values at every ``r``,
+    which is the measured claim that form 2 changes only what is said.
+
+    Perturbation, re-run 2026-09-16 after the fix: deleting ``not
+    series.withheld`` from ``judge``'s verdict branch reds this walk at
+    ``r = 3`` and ``r = 4`` in all four cases, and nothing else in the five
+    suites.
     """
     rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
     return_week = [RETURN_FIRST + timedelta(days=i) for i in range(1, RETURN_DAYS)]
@@ -896,7 +923,15 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
         if r < RETURN_DAYS:
             expected_tier = carrier_tier
             fed = [day for day in window_days(7, target) if day <= CARRIER_END]
-            expected_verdict = NORMAL if len(fed) >= 3 else UNAVAILABLE
+            # [[T125]] form 2. The athlete's own mornings inside the judged
+            # week are every week day the carrier did not capture, and each of
+            # them is later than every day that fed the mean (the carrier
+            # stopped on ``CARRIER_END``). Once ``MIN_WINDOW_READINGS`` of them
+            # are in the week, the week is not a fair sample of the tier the
+            # verdict would be computed on, and no verdict is asserted.
+            returned = [day for day in window_days(7, target) if day > CARRIER_END]
+            withheld = len(returned) >= hrv_trend.MIN_WINDOW_READINGS
+            expected_verdict = NORMAL if len(fed) >= 3 and not withheld else UNAVAILABLE
             expected_baseline_n = 32 + r
         else:
             expected_tier = home_tier

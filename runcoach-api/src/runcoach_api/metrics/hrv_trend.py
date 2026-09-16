@@ -81,7 +81,7 @@ import math
 import statistics
 from bisect import bisect_left, bisect_right
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -328,6 +328,17 @@ class HrvSeries:
     #: boundary clipped later than the resumption.
     reset_on: date | None = None
     reset_reason: str | None = None
+    #: T125. The judged week is not a fair sample of ``tier``: a tier rule 1's
+    #: recency gate struck for staleness holds ``MIN_WINDOW_READINGS`` days of
+    #: this week, all of them later than every one of ``tier``'s -- the
+    #: athlete has gone back to a device the gate evicted, and every reading
+    #: the verdict would be computed from predates his return. ``judge``
+    #: answers ``hrv_unavailable`` on it. Nothing else here is a function of
+    #: it: ``tier``, ``baseline_window``, ``series``, ``excluded`` and both
+    #: reset fields are byte-identical to what they were before T125, which is
+    #: the point -- form 2 changes what is *said* about this week, not what
+    #: the week is. See ``verdict_withheld``.
+    withheld: bool = False
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -453,6 +464,102 @@ def _last_read(readings: Iterable[Reading]) -> dict[str, date]:
     return last
 
 
+def _recency_struck(candidates: Sequence[str], last_read: Mapping[str, date]) -> set[str]:
+    """Rule 1's recency gate (T117), as the **set it strikes** rather than the
+    set it keeps.
+
+    A candidate whose latest day in ``last_read`` falls more than
+    ``RECENCY_TOLERANCE_DAYS`` behind the latest day of any candidate is
+    struck. The comparison is between the candidates themselves, so a lone
+    candidate is its own reference and is never struck, and an empty candidate
+    list strikes nothing.
+
+    **Why this is a function and not four lines inside
+    ``resolve_baseline_tier``** (T125, 2026-09-16). ``build_series`` needs the
+    same set the gate applied in order to ask T125's question -- *did the gate
+    strike the tier the athlete is currently using?* -- and it must be the same
+    set, not a second transcription of the rule: the defect T125 closes exists
+    precisely because two places measured recency over two different windows.
+    The gate itself is unchanged, up to and including which tier it returns on
+    every series in the suites (T125 measured tier-identical to shipped on all
+    2050 sweep geometries); only the set became nameable from outside.
+    """
+    if not candidates:
+        return set()
+    latest = max(last_read.get(tier, date.min) for tier in candidates)
+    return {
+        tier
+        for tier in candidates
+        if (latest - last_read.get(tier, date.min)).days > RECENCY_TOLERANCE_DAYS
+    }
+
+
+def verdict_withheld(
+    tier: str | None,
+    week_readings: Iterable[Reading],
+    baseline_counts: Mapping[str, int],
+    last_read: Mapping[str, date],
+) -> bool:
+    """Whether the judged week is too unrepresentative of the athlete *now*
+    for any verdict to be asserted on it (T125, 2026-09-16, form 2).
+
+    True when a tier the recency gate **struck** holds at least
+    ``MIN_WINDOW_READINGS`` distinct days inside the judged week and **every
+    one of them is later than every judged-week day of the resolved tier**.
+    That is the returning-device shape, stated without a notion of "device" in
+    the vocabulary: the athlete has gone back to a tier the gate evicted for
+    staleness, he has recorded a full week's-worth of mornings on it, and the
+    readings the verdict would be computed from are all *older* than every one
+    of them. The week is then not a fair sample of the tier being judged, so
+    no verdict is asserted and the response says ``hrv_unavailable``.
+
+    **Day sets, not counts, and that is why this cannot live inside
+    ``resolve_baseline_tier``.** "Entirely pre-return" is a statement about the
+    order of two sets of days; counts cannot express it. The rule that could be
+    written with counts -- "the struck tier covers the week" -- is satisfied by
+    an *abandoned trial* too (T125 form 1, measured: it re-admits the July
+    trial and turns ``test_stale_candidacy_...`` red), which is the whole
+    difficulty: a device return and an abandoned trial differ in the day order,
+    not in the counts. Measured 2026-09-16 by dropping the order clause and
+    keeping the count: **5 red** across the five HRV suites --
+    ``test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band``,
+    the recency walk, the seam-matrix row and two reset-suite band pins -- each
+    a week the struck tier covers and does not own. The order clause is
+    load-bearing, and it is pinned from both sides: deleting ``not
+    series.withheld`` from ``judge`` reds the device-return walk's four cases
+    at ``r = 3``, and nothing else in the five suites.
+
+    **This does not re-resolve the tier.** ``tier``, ``baseline_window``, the
+    band, the reset and ``excluded`` are whatever they were; the withhold is
+    downstream of all of them and changes only the verdict. On T125's
+    2050-geometry sweep the resolved tier and the reported baseline window are
+    identical to shipped on every row, and the only verdict change in either
+    direction is ``hrv_normal -> hrv_unavailable``, 72 times.
+
+    **The residual, named in F005's Negative Class.** ``MIN_WINDOW_READINGS``
+    on the returning tier is the guard that keeps a stray cross-device capture
+    from withholding a legitimate verdict, and it is *the same constant* that
+    makes the athlete's first two mornings back invisible to this rule -- so
+    days 1 and 2 of a return are still judged on pre-return readings, and no
+    form measured at T125 closes them. Loosening the constant to reach them is
+    exactly the change that starts producing false withholds.
+    """
+    if tier is None:
+        return False
+    candidates = [t for t in TIER_FIDELITY if baseline_counts.get(t, 0) >= MIN_BASELINE_READINGS]
+    struck = _recency_struck(candidates, last_read)
+    if not struck:
+        return False
+    # The resolved tier's own week days: the ones that would feed the mean.
+    resolved_days = _days(_of_tier(week_readings, tier))
+    newest_judged = max(resolved_days, default=date.min)
+    for candidate in struck:
+        days = _days(_of_tier(week_readings, candidate))
+        if len(days) >= MIN_WINDOW_READINGS and min(days) > newest_judged:
+            return True
+    return False
+
+
 def sustained_tier(counts: Mapping[str, int]) -> str | None:
     """The highest-fidelity tier with at least ``MIN_BASELINE_READINGS`` in
     ``counts``, or ``None`` when no tier sustains a baseline there.
@@ -576,17 +683,12 @@ def resolve_baseline_tier(
     """
     candidates = [tier for tier in TIER_FIDELITY if baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS]
     last_read = last_read or {}
-    if candidates:
-        # Rule 1's recency condition (T117): relative to the candidates
-        # themselves, never to ``D-7``. ``latest`` is the most recent day
-        # any candidate was read in the baseline window, so a lone
-        # candidate is always its own ``latest`` and is never struck.
-        latest = max(last_read.get(tier, date.min) for tier in candidates)
-        candidates = [
-            tier
-            for tier in candidates
-            if (latest - last_read.get(tier, date.min)).days <= RECENCY_TOLERANCE_DAYS
-        ]
+    # Rule 1's recency condition (T117): relative to the candidates
+    # themselves, never to ``D-7``, so a lone candidate is its own reference
+    # and is never struck. Factored into ``_recency_struck`` by T125, which
+    # needs the struck set itself at the verdict; the gate is unchanged.
+    struck = _recency_struck(candidates, last_read)
+    candidates = [tier for tier in candidates if tier not in struck]
     for tier in candidates:
         if week_counts.get(tier, 0) >= MIN_WINDOW_READINGS:
             return tier
@@ -724,7 +826,15 @@ def build_series(
     baseline_readings = _within(readings, baseline)
     week_readings = _within(readings, judged)
     week_counts = _tier_counts(week_readings)
-    tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts, _last_read(baseline_readings))
+    baseline_counts = _tier_counts(baseline_readings)
+    baseline_last_read = _last_read(baseline_readings)
+    tier = resolve_baseline_tier(baseline_counts, week_counts, baseline_last_read)
+    # T125, asked of exactly the inputs the tier rule was asked of, so the
+    # struck set here is the set the gate applied and not a second reading of
+    # the rule. An empty baseline window resolves through the fallback below,
+    # where there are no candidates, nothing is struck and no band exists
+    # anyway, so the question is answered ``False`` on the real window only.
+    withheld = verdict_withheld(tier, week_readings, baseline_counts, baseline_last_read)
     if tier is None:
         tier = resolve_baseline_tier(week_counts, week_counts)
 
@@ -805,6 +915,7 @@ def build_series(
         excluded=tuple(excluded),
         reset_on=reset_on,
         reset_reason=reset_reason,
+        withheld=withheld,
     )
 
 
@@ -932,6 +1043,8 @@ def judge(series: HrvSeries) -> HrvVerdict:
     - no band (fewer than two baseline readings) -> ``hrv_unavailable``;
     - fewer than ``MIN_WINDOW_READINGS`` in the week -> ``hrv_unavailable``
       (two bad mornings are not a trend, however bad);
+    - a week that is not a fair sample of ``series.tier`` -- ``series.withheld``
+      (T125) -> ``hrv_unavailable``, however many readings it holds;
     - on a baseline that is *not* established (``< MIN_BASELINE_READINGS``)
       -> ``hrv_unavailable``, wherever the mean sits;
     - otherwise, on an **established** baseline: the mean strictly below
@@ -962,10 +1075,27 @@ def judge(series: HrvSeries) -> HrvVerdict:
     ``test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``
     in ``test_hrv_trend_band.py``, and by the contract table there.
 
+    **The withhold is the same argument as the establishment gate, one window
+    over** (T125, 2026-09-16; ``research/00`` §5.4, spec §3.7.3/§3.7.4). T116
+    withheld both verdicts when the *baseline* is too thin to support either.
+    T125 withholds both when the *week* is not the athlete's: rule 1's recency
+    gate struck the tier he is currently recording on, so the mean is computed
+    from the surviving tier's last few days before he came back, and its
+    ``hrv_normal`` direction is §1.7's forbidden one -- readiness is intact, on
+    a week the athlete did not live. The condition is computed in
+    ``build_series`` (``verdict_withheld``), not here, because it is a
+    statement about the order of two tiers' judged-week days and this function
+    sees one tier's. The measured cost, priced in F005's Negative Class: 72 of
+    2050 swept return geometries move ``hrv_normal -> hrv_unavailable``, which
+    is the athlete's third and fourth mornings back on top of the fifth to
+    seventh, already silent -- five of his first seven. No verdict moves in the
+    other direction, and the tier, band and window are unchanged on every row.
+
     The band itself is asserted whenever it can be built, established or
     not, and whether or not the week has readings: it is a property of the
     baseline, and the contract's ``points[]`` draws it on days with no
-    reading (T091).
+    reading (T091). That is true of a withheld week too -- the band is the
+    baseline's, and the baseline is not what is in doubt.
     """
     band = build_band(ln_rmssd(reading) for reading in series.baseline)
     baseline_n = len(series.baseline)
@@ -975,7 +1105,12 @@ def judge(series: HrvSeries) -> HrvVerdict:
 
     verdict = VERDICT_UNAVAILABLE
     below_by = None
-    if band is not None and window_mean is not None and readings_in_window >= MIN_WINDOW_READINGS:
+    if (
+        band is not None
+        and window_mean is not None
+        and readings_in_window >= MIN_WINDOW_READINGS
+        and not series.withheld
+    ):
         if established:
             if window_mean < band.lo:
                 verdict = VERDICT_SUPPRESSED

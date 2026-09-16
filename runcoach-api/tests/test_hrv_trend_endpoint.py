@@ -1075,7 +1075,9 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 407  # re-measured 2026-09-16, T127 added four pins to test_hrv_trend_band.py
+SCOPED_SUITE_COLLECTED = 407  # re-measured 2026-09-16 (T125): unmoved -- T125 changed four
+#                              # parametrised expectations and one oracle in place, adding no test.
+#                              # Last moved by T127, which added four pins to test_hrv_trend_band.py.
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and
@@ -2012,9 +2014,10 @@ ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
 #: Authorship (``contract-tables-need-an-independent-oracle``): the claims are
 #: not a transcription of the sentence, and the thing that makes that true is
 #: ``test_the_thresholds_description_names_the_tier_constant_the_block_omits``
-#: below, whose oracle is ``resolve_baseline_tier``'s own source: it reads the
-#: constants that function applies, subtracts the published keys, and requires
-#: the remainder to be named in both descriptions. So claim 2 is re-derivable
+#: below, whose oracle is the tier rule's own source -- ``resolve_baseline_tier``
+#: and the module-level helpers it calls, since T125 factored ``_recency_struck``
+#: out of it: it reads the constants that rule applies, subtracts the published
+#: keys, and requires the remainder to be named in both descriptions. So claim 2 is re-derivable
 #: from the tree and reddens on a tier rule that starts applying a second
 #: unpublished constant, which no reading of the sentence could do. Claim 3 is
 #: reproduced against ``build_series`` by
@@ -2247,23 +2250,59 @@ def test_the_two_copies_of_the_thresholds_contract_publish_the_same_claims() -> 
     )
 
 
+#: Where the tier rule starts. The oracle below walks out from here.
+TIER_RULE_ENTRY = "resolve_baseline_tier"
+
+
+def _tier_rule_source() -> dict[str, ast.FunctionDef]:
+    """``resolve_baseline_tier`` and every module-level function it reaches,
+    by name, parsed out of ``hrv_trend``'s source.
+
+    **Why the call graph and not one function body** (T125, 2026-09-16). Until
+    T125 this oracle read ``resolve_baseline_tier``'s body alone, and T125
+    factored rule 1's recency gate into ``_recency_struck`` so that
+    ``build_series`` could ask which tiers it struck. The rule did not change
+    -- the same gate, applying the same constant, called from the same line --
+    but ``RECENCY_TOLERANCE_DAYS`` left the body, the oracle's remainder
+    emptied and it went red. A test that reddens when a rule is *refactored*
+    and not when it is *changed* is measuring the shape of the source, so the
+    oracle follows the rule into the helpers it calls instead. What it must not
+    become is "the name is mentioned somewhere": the walk is closed over
+    module-level functions reachable from ``resolve_baseline_tier`` by a direct
+    call, so a constant applied anywhere else in the module -- ``judge``,
+    ``build_series``, the reset rules -- is still outside it, and the failure
+    modes the test's docstring lists are all still live.
+    """
+    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    reached: dict[str, ast.FunctionDef] = {}
+    pending = [TIER_RULE_ENTRY]
+    while pending:
+        name = pending.pop()
+        if name in reached or name not in functions:
+            continue
+        reached[name] = functions[name]
+        pending += [
+            node.func.id
+            for node in ast.walk(functions[name])
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in functions
+        ]
+    return reached
+
+
 def _tier_resolution_constants() -> set[str]:
-    """Every module constant ``resolve_baseline_tier`` applies in its own body,
-    read out of the source instead of listed here.
+    """Every module constant the tier rule applies -- in
+    ``resolve_baseline_tier``'s own body or in a helper it calls -- read out of
+    the source instead of listed here.
 
     Listing them would make this file a second transcription of the thing it is
     supposed to be an oracle for. Parsed rather than grepped so a name inside a
-    docstring or a comment -- and this function's docstring names several --
+    docstring or a comment -- and these functions' docstrings name several --
     cannot be mistaken for one the code applies.
     """
-    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
-    body = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "resolve_baseline_tier"
-    )
     return {
         node.id
+        for body in _tier_rule_source().values()
         for node in ast.walk(body)
         if isinstance(node, ast.Name)
         and node.id.isupper()
@@ -2293,9 +2332,34 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
     ``recency_tolerance_days`` as a key, which the decision refused -- the
     remainder then empties and this is red, so the shape is held from this side
     too.
+
+    **T125 (2026-09-16) moved the constant and this followed it.** Form 2
+    factored rule 1's gate into ``hrv_trend._recency_struck`` so the struck set
+    could be read at the verdict; ``RECENCY_TOLERANCE_DAYS`` left
+    ``resolve_baseline_tier``'s body and this went red on a rule that had not
+    changed. The oracle now walks the tier rule's **call graph**
+    (``_tier_rule_source``) rather than one function body -- it follows the
+    constant into wherever the rule keeps it, and it is not weakened to "the
+    module mentions a constant somewhere": the walk is closed over module-level
+    functions reachable from ``resolve_baseline_tier`` by a direct call, so
+    ``judge``'s and ``build_series``'s constants are still outside it. All
+    three failure modes were re-demonstrated against the widened oracle on
+    2026-09-16, one at a time, each reverted: a seventh ``thresholds`` key
+    (``recency_tolerance_days`` published in both copies) -- red, remainder
+    empty; a second unpublished constant entering the tier rule
+    (``WINDOW_DAYS`` applied in ``_recency_struck`` -- deliberately in the
+    **factored helper**, where the pre-T125 oracle could not have seen it) --
+    red, remainder ``['recency_tolerance_days', 'window_days']``; and the name struck
+    from the served description -- red on ``schemas.Thresholds`` -- and from the
+    YAML copy -- red on ``contracts/openapi.yaml``.
     """
     applied = {name.lower() for name in _tier_resolution_constants()}
-    assert applied, "no module constant was read out of resolve_baseline_tier's body"
+    assert applied, "no module constant was read out of the tier rule's source"
+    reached = _tier_rule_source()
+    assert TIER_RULE_ENTRY in reached, (
+        f"{TIER_RULE_ENTRY} is no longer a module-level function of hrv_trend: this oracle "
+        f"walks out from it and has nothing to walk"
+    )
 
     target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
     published = target["components"]["schemas"]["HrvTrend"]["properties"]["thresholds"]
@@ -2309,9 +2373,9 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
         )
         omitted = applied - keys
         assert omitted == {"recency_tolerance_days"}, (
-            f"{label}: the tier rule applies {sorted(applied)} and the block publishes "
-            f"{sorted(keys)}, so the constants it applies and does not echo are "
-            f"{sorted(omitted)} -- not the one the description names"
+            f"{label}: the tier rule ({', '.join(sorted(reached))}) applies {sorted(applied)} "
+            f"and the block publishes {sorted(keys)}, so the constants it applies and does not "
+            f"echo are {sorted(omitted)} -- not the one the description names"
         )
         description = _flat(block["description"])
         for name in omitted:
