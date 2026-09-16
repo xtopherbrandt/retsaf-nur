@@ -126,7 +126,7 @@ GAP_RESET_DAYS = 21
 #:
 #: Why 28, and not any other value in the measured green band
 #: ``[18, 44]``, measured 2026-09-15 and **scoped to the 394 tests the five
-#: HRV suites held on that date less T117's own tolerance pins**
+#: HRV suites held on that date less the tolerance pin that existed then**
 #: (``BAND_CORPUS_WHEN_MEASURED``). The scope is half of
 #: what the bracket means: the tolerance's own pins assert this value or
 #: its measured consequences and are red at every other N by construction,

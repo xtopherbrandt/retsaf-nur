@@ -1075,7 +1075,7 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 401
+SCOPED_SUITE_COLLECTED = 402
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and
@@ -2001,19 +2001,32 @@ ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
 #: the retracted promise is a two-copy claim like the four above and is pinned
 #: the same way.
 #:
+#: Iteration 3's narrowed description was itself false and this tuple was four
+#: contiguous fragments of it, so the false sentence was pinned in place (review
+#: cycle 8 iteration 4, R2). It claimed tier resolution was "not in this block":
+#: ``resolve_baseline_tier`` applies ``MIN_BASELINE_READINGS`` and
+#: ``MIN_WINDOW_READINGS`` in its own body, and is handed counts taken over the
+#: ``BASELINE_DAYS`` window after the ``GAP_RESET_DAYS`` clip -- four of the six
+#: keys. The tuple was re-derived from the code rather than reworded.
+#:
 #: Authorship (``contract-tables-need-an-independent-oracle``): the claims are
-#: not a transcription of the sentence. They are what a client reading the
-#: block can act on -- what the six keys are the constants *of*, that tier
-#: resolution is outside them, and that the constant deciding it is not echoed
-#: -- taken from [[IDEA-070]] §"How far reproducibility actually breaks". The
-#: block's six keys and their values are pinned elsewhere:
-#: ``test_the_endpoint_reports_every_input_that_produced_the_verdict`` above
-#: and ``test_hrv_trend_band.test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses``.
+#: not a transcription of the sentence, and the thing that makes that true is
+#: ``test_the_thresholds_description_names_the_tier_constant_the_block_omits``
+#: below, whose oracle is ``resolve_baseline_tier``'s own source: it reads the
+#: constants that function applies, subtracts the published keys, and requires
+#: the remainder to be named in both descriptions. So claim 2 is re-derivable
+#: from the tree and reddens on a tier rule that starts applying a second
+#: unpublished constant, which no reading of the sentence could do. Claim 3 is
+#: reproduced against ``build_series`` by
+#: ``test_hrv_trend_series.test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band``
+#: -- the six alone make the July strap a candidate that covers the week, and
+#: the reported tier is the snapshot. The block's six keys and their values are
+#: pinned by ``test_the_endpoint_reports_every_input_that_produced_the_verdict``
+#: above and ``test_hrv_trend_band.test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses``.
 THRESHOLDS_CLAIMS = (
-    "the band-and-verdict constants",
-    "once the baseline tier was resolved",
-    "tier resolution is not in this block",
-    "a constant this response does not echo",
+    "the band, verdict and tier-resolution constants",
+    "recency_tolerance_days, which this response does not echo",
+    "derive a baseline.tier that disagrees with the reported one",
 )
 
 #: Retracted by [[IDEA-070]] in each copy's own spelling, and **positional**:
@@ -2025,7 +2038,9 @@ THRESHOLDS_CLAIMS = (
 THRESHOLDS_WITHDRAWN = _DECLARATIONS.THRESHOLDS_WITHDRAWN
 
 #: The run the two copies must state identically, from this anchor to the end.
-THRESHOLDS_SHARED_ANCHOR = "tier resolution is not in this block"
+#: They differ only in the citation that ends the first sentence, so the anchor
+#: is the correction itself.
+THRESHOLDS_SHARED_ANCHOR = "they are not all of tier resolution"
 
 
 #: Every withdrawn phrasing the walk reads, in one name so a declared tuple
@@ -2230,6 +2245,80 @@ def test_the_two_copies_of_the_thresholds_contract_publish_the_same_claims() -> 
         "the two copies of the thresholds description have stopped naming the same cost in the "
         "same words. The contract says: " + shared
     )
+
+
+def _tier_resolution_constants() -> set[str]:
+    """Every module constant ``resolve_baseline_tier`` applies in its own body,
+    read out of the source instead of listed here.
+
+    Listing them would make this file a second transcription of the thing it is
+    supposed to be an oracle for. Parsed rather than grepped so a name inside a
+    docstring or a comment -- and this function's docstring names several --
+    cannot be mistaken for one the code applies.
+    """
+    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
+    body = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "resolve_baseline_tier"
+    )
+    return {
+        node.id
+        for node in ast.walk(body)
+        if isinstance(node, ast.Name)
+        and node.id.isupper()
+        and isinstance(getattr(hrv_trend, node.id, None), int | float)
+    }
+
+
+def test_the_thresholds_description_names_the_tier_constant_the_block_omits() -> None:
+    """Review cycle 8 iteration 4, F1. The independent oracle
+    ``THRESHOLDS_CLAIMS`` claimed to have and did not.
+
+    Iteration 3 published "tier resolution is not in this block: it applies a
+    constant this response does not echo" into both copies and pinned it with
+    four verbatim fragments of itself. The first half is false --
+    ``resolve_baseline_tier`` applies ``MIN_BASELINE_READINGS`` and
+    ``MIN_WINDOW_READINGS`` directly and its counts come from the
+    ``BASELINE_DAYS`` window after the ``GAP_RESET_DAYS`` clip -- and no
+    assertion in the tree could say so, because every assertion about it was
+    quoting it.
+
+    So the claim is checked against the code: the constants the tier rule
+    applies, less the keys the block publishes, must be exactly the constant
+    both descriptions name. That is one assertion with three failure modes, each
+    run red before this was committed: the description stops naming
+    ``recency_tolerance_days`` (the state this replaces); the tier rule starts
+    applying a second constant the response does not echo; and the block gains
+    ``recency_tolerance_days`` as a key, which the decision refused -- the
+    remainder then empties and this is red, so the shape is held from this side
+    too.
+    """
+    applied = {name.lower() for name in _tier_resolution_constants()}
+    assert applied, "no module constant was read out of resolve_baseline_tier's body"
+
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    published = target["components"]["schemas"]["HrvTrend"]["properties"]["thresholds"]
+    served = app.openapi()["components"]["schemas"]["Thresholds"]
+
+    for label, block in (("contracts/openapi.yaml", published), ("schemas.Thresholds", served)):
+        keys = set(block["properties"])
+        assert applied & keys, (
+            f"{label}: the description calls these the band, verdict and tier-resolution "
+            f"constants, but the tier rule applies none of the published keys {sorted(keys)}"
+        )
+        omitted = applied - keys
+        assert omitted == {"recency_tolerance_days"}, (
+            f"{label}: the tier rule applies {sorted(applied)} and the block publishes "
+            f"{sorted(keys)}, so the constants it applies and does not echo are "
+            f"{sorted(omitted)} -- not the one the description names"
+        )
+        description = _flat(block["description"])
+        for name in omitted:
+            assert name in description, (
+                f"{label} applies {name} to resolve baseline.tier and neither publishes it "
+                f"nor names it: the block's description is a false account of what it carries"
+            )
 
 
 def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
