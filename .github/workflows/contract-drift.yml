@@ -27,7 +27,10 @@ jobs:
       - name: Contract drift check
         # --package runcoach-api puts the FastAPI app on the path so the check
         # can generate the as-built schema in-process (no server/config needed).
-        # --with pyyaml supplies the one extra dep the check itself needs.
-        # (Alternatively add pyyaml to runcoach-api's dev dependency group and
-        # drop `--with pyyaml`.)
+        # --with pyyaml supplies the dep the check itself needs. T091 has since
+        # added pyyaml to runcoach-api's dev group, so this flag is now
+        # belt-and-braces rather than load-bearing -- it is kept because
+        # `.claude/rules/project-api-contract.md` rule 4 puts this exact command
+        # in the acceptance probe of every route-changing task, and the workflow
+        # and the probe should be the same command.
         run: uv run --package runcoach-api --with pyyaml python contracts/check_drift.py

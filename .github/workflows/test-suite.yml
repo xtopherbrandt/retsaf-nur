@@ -1,0 +1,69 @@
+name: test-suite
+
+# Runs the whole workspace suite on a clean Linux checkout, so the corpus
+# phrasing scan, the floors, the AST oracle and the walk-verdict checker are
+# exercised somewhere other than the author's laptop (T131).
+#
+# Two things this job is deliberately built to NOT do:
+#
+#   1. **Pass on a partial collection.** The workspace-root `conftest.py`
+#      drops a member from collection when that member's runtime deps are not
+#      importable -- a green exit over half the suite. So the suite is run
+#      from the `uv sync --all-packages` environment directly (invoking
+#      `uv run --package <member>` here would re-sync the shared venv down to
+#      that one member and re-create exactly that hole), and the run is then
+#      measured by `.github/scripts/assert_suite_floor.py`, which fails on an
+#      error, on a case count under the floor, and on any workspace member
+#      that contributed no cases at all.
+#   2. **Pretend the machine-local breadcrumb is here.** A runner has no
+#      `.shipyard` junction, so scan root 1 is absent and the two
+#      `committed: False` anchors skip -- loudly, by design. That is the CI
+#      condition, not a defect; see T124 for the reachability half, which
+#      this workflow does not close.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync the whole workspace
+        # --all-packages, not --package: both members' deps must be present or
+        # the root conftest quietly drops one of them from collection.
+        # --all-groups: pytest, httpx, hypothesis and pyyaml live in the
+        # members' own `dev` groups, and a sync that skipped them would fail
+        # loudly at `pytest` rather than quietly -- but stating it beats
+        # relying on which groups uv includes by default.
+        run: uv sync --all-packages --all-groups
+
+      - name: Full test suite
+        # Invoked from the synced environment rather than through `uv run`,
+        # which would re-resolve the venv to a single package.
+        run: .venv/bin/pytest -q -p no:cacheprovider --junitxml=pytest-report.xml
+
+      - name: Guard against a run that collected too little
+        # Runs even when the step above failed, so a partial or empty
+        # collection is named as such rather than read off an exit code.
+        if: always()
+        run: >-
+          .venv/bin/python .github/scripts/assert_suite_floor.py pytest-report.xml
+          --min-tests 1200
+          --require-dir runcoach-api/tests
+          --require-dir runcoach-cli/tests
+
+      - name: Upload the JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.xml

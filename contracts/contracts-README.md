@@ -57,7 +57,15 @@ Every operation carries three vendor extensions:
   uv run --package runcoach-api --with pyyaml python contracts/check_drift.py
   ```
 
-  Wired in `.github/workflows/contract-drift.yml`.
+  Installed as `.github/workflows/contract-drift.yml`, which runs it on pushes
+  to `main` and on pull requests touching `contracts/**`, `runcoach-api/**` or
+  the workflow itself. T131 **moved** the workflow there from
+  `contracts/contract-drift.yml` and left no copy behind: the duplicate at that
+  path is what let this sentence assert a wiring that did not exist for months
+  (IDEA-067). It also still runs from the acceptance probe of any task that
+  changes a live route, which is the only thing that ran it before.
+  A green check is a narrower signal than the name suggests — the list above is
+  the whole of what is compared.
 
 ## Editing rules
 
