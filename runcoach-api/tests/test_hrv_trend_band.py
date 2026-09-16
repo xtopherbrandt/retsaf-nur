@@ -33,7 +33,9 @@ reference "The band"; decision log rows "Thin and degenerate data" and
   against a band built from 2 to 13 readings reported ``hrv_normal`` -- and
   that is reachable after **every** reset this feature performs, since a gap
   reset or a tier change collapses the baseline and the athlete then
-  traverses ~12 unestablished days. Eight of the 90 rows below moved with the
+  traverses 20 unestablished days, 12 of which used to read ``hrv_normal``
+  (``R+8 .. R+19``; the first eight had no band). Eight of the 90 rows below
+  moved with the
   rule; the direct pin is
   ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``.
 

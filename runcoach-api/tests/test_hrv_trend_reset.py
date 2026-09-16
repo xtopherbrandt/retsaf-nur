@@ -2816,6 +2816,57 @@ def test_two_gaps_inside_the_window_reset_on_the_later_resumption() -> None:
     assert {reasons[f"first-{day}"] for day in (ago(66), ago(65))} == {"before_reset: coverage_gap"}
 
 
+
+# ---------------------------------------------------------------------------
+# how long the quiet lasts (T126)
+# ---------------------------------------------------------------------------
+
+#: The reset day ``R`` of the walk below, chosen so ``D`` is ``R+20``.
+R_RESET = ago(20)
+
+#: ``R+k`` for the first ``k`` at which ``established`` is true. The baseline
+#: window is ``[D-66, D-7]``, so a reading on ``R`` enters it at ``D = R+7``
+#: and the fourteenth distinct day ``R+13`` at ``D = R+20``.
+ESTABLISHMENT_DELAY_DAYS = 20
+
+#: ``R+k`` for the first ``k`` at which the baseline has the two readings a
+#: band needs, hence the first day whose verdict T116 *changed*: before it
+#: the day already read ``hrv_unavailable`` for want of a band.
+FIRST_CHANGED_DAY = 8
+
+
+def test_the_establishment_delay_after_a_reset_is_twenty_days() -> None:
+    """A daily capturer is ``hrv_unavailable`` for **20** days after a reset,
+    ``R+0 .. R+19``, and established on ``R+20``.
+
+    T126. The documents priced T116's accepted cost as "~12 days", which is
+    the count of days whose verdict *changed* (``R+8 .. R+19``) and not the
+    duration of the quiet: ``R+0 .. R+7`` already read ``hrv_unavailable``
+    because a band needs two readings. Both numbers are true of different
+    things and the two were conflated, so the duration is pinned here rather
+    than restated anywhere.
+    """
+    days = [R_RESET + timedelta(days=k) for k in range(ESTABLISHMENT_DELAY_DAYS + 1)]
+    series = [build(gapped_history(30, R_RESET, target=day), target=day) for day in days]
+    walk = [(k, hrv_trend.judge(result)) for k, result in enumerate(series)]
+
+    established_at = [k for k, verdict in walk if verdict.established]
+    assert established_at == [ESTABLISHMENT_DELAY_DAYS], "established first on R+20 and not before"
+
+    unavailable = [k for k, verdict in walk if verdict.verdict == "hrv_unavailable"]
+    assert unavailable == list(range(ESTABLISHMENT_DELAY_DAYS)), "20 quiet days, R+0..R+19"
+
+    # The 12 the documents were quoting: the days that have a band, hence the
+    # days that could have read ``hrv_normal`` before T116.
+    banded = [k for k, verdict in walk if verdict.band is not None]
+    assert banded == list(range(FIRST_CHANGED_DAY, ESTABLISHMENT_DELAY_DAYS + 1))
+    assert len(banded) - 1 == 12, "12 days changed verdict; 20 days are quiet"
+
+    # The quiet is a property of this reset, not of a series that lost it.
+    assert [result.reset_reason for result in series] == ["coverage_gap"] * len(days)
+    assert [result.reset_on for result in series] == [R_RESET] * len(days)
+
+
 # ---------------------------------------------------------------------------
 # T112 (review cycle 7, G-C7-2): report-liveness is rule 4's three
 # conditions, and clause (a) can lapse on its own

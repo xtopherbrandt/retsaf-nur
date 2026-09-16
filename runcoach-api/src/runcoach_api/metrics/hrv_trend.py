@@ -950,8 +950,12 @@ def judge(series: HrvSeries) -> HrvVerdict:
     carries ``baseline_n`` and ``established`` to say why. This is reachable
     after **every** reset this feature performs: a coverage gap or a tier
     change collapses the baseline deliberately, and the athlete then
-    traverses ~12 unestablished days, previously all of them reading
-    ``hrv_normal`` unless the week fell below the band.
+    traverses 20 unestablished days -- ``R+0 .. R+19``, pinned by
+    ``test_the_establishment_delay_after_a_reset_is_twenty_days``. Twelve of
+    them changed verdict at T116:
+    ``R+8 .. R+19``, previously all of them reading ``hrv_normal``
+    unless the week fell below the band. The first eight already read
+    ``hrv_unavailable``, because a band needs two readings (T126).
 
     Pinned by ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``,
     ``test_a_thin_baseline_above_the_band_is_unavailable_too`` and
