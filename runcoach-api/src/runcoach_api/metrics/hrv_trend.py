@@ -121,19 +121,21 @@ GAP_RESET_DAYS = 21
 #: day of any candidate is struck from the candidate set before rule 2 is
 #: asked (``resolve_baseline_tier``; T117, 2026-09-15, closing IDEA-064).
 #: The comparison is between candidates, not against an absolute offset
-#: from ``D-7``, so the response's ``thresholds`` block gains no key.
+#: from ``D-7``. The constant is not published in ``thresholds``
+#: ([[IDEA-070]], 2026-09-15).
 #:
 #: Why 28, and not any other value in the measured green band
-#: ``[18, 44]``, measured 2026-09-15 and **scoped to the tests of the five
-#: HRV suites that predate T117's own tolerance pin**. The scope is half of
+#: ``[18, 44]``, measured 2026-09-15 and **scoped to the 394 tests the five
+#: HRV suites held on that date less T117's own tolerance pins**
+#: (``BAND_CORPUS_WHEN_MEASURED``). The scope is half of
 #: what the bracket means: the tolerance's own pins assert this value or
 #: its measured consequences and are red at every other N by construction,
 #: so over the *whole* of the five suites the green band is ``{28}`` and
 #: the bracket is a statement about the rest of them. The band was
 #: published without that scope until T121 measured it.
 #:
-#: **The corpus is named by a relation, not by a number** (T123, review
-#: cycle 8). It is the five suites' collected tests less the pins named in
+#: **The corpus is named by a relation, not by a number** (review cycle 8,
+#: ``acfebae``). It is the five suites' collected tests less the pins named in
 #: ``BAND_CORPUS_EXCLUDES``, and both the live collection and that
 #: subtraction are asserted by
 #: ``test_hrv_trend_endpoint.test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_published``
@@ -142,9 +144,11 @@ GAP_RESET_DAYS = 21
 #: into this comment and three normative documents to give the band its
 #: missing scope, and the next commit of T121's own fix batch added a test
 #: to one of those five suites and made all four wrong, with nothing in
-#: the tree able to notice. The dated corpus the bracket was measured over
-#: was 394 tests, which is ``BAND_CORPUS_WHEN_MEASURED``; the assertion
-#: reports how far the suites have grown past it.
+#: the tree able to notice. That relation is the *live* corpus, and it is
+#: not what the bracket is a claim about: the bracket was run over the 394
+#: members it had on 2026-09-15 (``BAND_CORPUS_WHEN_MEASURED``), and the
+#: assertion reports how far the relation has grown past that rather than
+#: re-scoping the bracket to whatever it holds today.
 #:
 #: The two ends are real and are what the band means: N=17 reds
 #: ``test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a_week_again``
@@ -183,14 +187,15 @@ GAP_RESET_DAYS = 21
 #:   row instead, which does not pin the seam at all: at a tolerance of 21
 #:   a day difference of 21 is still ``<=`` the tolerance, so that row
 #:   stays green. T121's replacement said "what actually reddened at 21
-#:   was the hardcoded 27 row" -- a **singular**, and also wrong (T123,
-#:   review cycle 8). Measured over the walk's five rows at tolerances
+#:   was the hardcoded 27 row" -- a **singular**, and also wrong (review
+#:   cycle 8, ``acfebae``). Measured over the walk's five rows at tolerances
 #:   19..30: at 21 the ``gap`` 22, 27 **and** 28 rows all redden. What
 #:   makes the ``GAP_RESET_DAYS + 1`` row the pin is not that it is the
 #:   only red row at 21 but that it is the only one whose red *onset* is
-#:   there -- green at 22, red at 21 -- every other admitted row having
-#:   reddened at some higher tolerance already. That relation is asserted,
-#:   not just stated, by
+#:   there -- green at 22, red at 21. Each admitted row's onset sits one
+#:   step below its own ``gap``: 20, 21, 26 and 27 for the ``gap`` 21, 22,
+#:   27 and 28 rows, so at 21 the 27 and 28 rows are already red and the
+#:   21 row is not yet. That relation is asserted, not just stated, by
 #:   ``test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days``.
 #:
 #: Which of the two fires first is not a race but a partition, and it is
@@ -496,8 +501,8 @@ def resolve_baseline_tier(
        latest day in ``last_read`` falls more than ``RECENCY_TOLERANCE_DAYS``
        behind the latest day of any candidate is struck (T117, 2026-09-15,
        closing IDEA-064). The comparison is between candidates, so a lone
-       candidate is its own reference and is never struck, and the
-       response's ``thresholds`` block gains no key.
+       candidate is its own reference and is never struck. The constant
+       is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15).
     2. If any candidate holds at least ``MIN_WINDOW_READINGS`` in
        ``week_counts``, the baseline tier is the highest-fidelity such
        candidate.

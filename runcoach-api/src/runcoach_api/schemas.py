@@ -171,7 +171,13 @@ class ExcludedReading(BaseModel):
 
 
 class Thresholds(BaseModel):
-    """The heuristic constants the verdict was computed with (spec 03 §3.7; construction reference)."""
+    """The band-and-verdict constants: what the band and the verdict were computed with once
+    the baseline tier was resolved (spec 03 §3.7; construction reference).
+
+    Tier resolution is not in this block: it applies a constant this response does not echo,
+    so a client can see that the reported baseline.tier disagrees with these six but cannot
+    recompute the choice (IDEA-070, 2026-09-15).
+    """
 
     baseline_days: int
     min_baseline_readings: int

@@ -1,4 +1,4 @@
-"""The withdrawn ``reset_reason`` and ``verdict`` phrasings. Declarations only -- see the scan."""
+"""The withdrawn contract phrasings. Declarations only -- see the scan."""
 
 from __future__ import annotations
 
@@ -31,6 +31,11 @@ WINDOW_WITHDRAWN = (
 )
 
 ESTABLISHED_WITHDRAWN = ("below it, hrv_suppressed is never emitted",)
+
+THRESHOLDS_WITHDRAWN = (
+    "the heuristic constants the verdict was computed with (spec 03",
+    "the heuristic constants the verdict was computed with (spec/03",
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 

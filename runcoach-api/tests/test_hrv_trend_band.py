@@ -45,12 +45,14 @@ omitted cell would be visible (contract-tables-need-an-independent-oracle).
 The window axis is five values, not four: ``window n: 1`` was dropped from
 this sentence while ``CONTRACT_TABLE`` kept it, which made the enumeration
 describe a 72-row table this module has never had (corrected 2026-09-15,
-T121, in ``6502da7``; that correction was filed against T122 until T123 --
-review cycle 8 -- traced both notes back to the commit that wrote them).
-**Both axes of this enumeration are asserted as sets**, not just counted: the
-window axis since T122 and the baseline axis since T123, which found that
-substituting ``41`` for ``40`` here left all 122 tests in this module green
-while this sentence went on naming 41.
+T121, in ``6502da7``; that correction was filed against T122 until review
+cycle 8 traced both notes back to the commit that wrote them).
+**All three axes of this enumeration are asserted as sets**, not just
+counted: the window axis since ``2745b12``, the baseline axis since
+``acfebae`` -- which found that substituting ``41`` for ``40`` here left all
+122 tests in this module green while this sentence went on naming 41 -- and
+the position axis since review cycle 8 iteration 3, this sentence having
+said "both axes" over a table built from three.
 
 Perturbation evidence for the four published claims (IDEA-034) is recorded
 in the docstring of the test that pins each claim.
@@ -528,7 +530,8 @@ def test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings() -> N
     assertion below goes **red** -- which is the whole of this test's
     discriminating power, and the reverse of what this docstring claimed
     until T121 ("the input that would stay green"; the note said T122 until
-    T123 re-attributed it to ``6502da7``, the commit that actually wrote it)."""
+    review cycle 8 re-attributed it to ``6502da7``, the commit that actually
+    wrote it)."""
     thin = verdict_for(alternating(13), [42.0] * 7)
     enough = verdict_for(alternating(14), [42.0] * 7)
 
@@ -695,12 +698,20 @@ def test_the_contract_table_is_exhaustive_over_its_axes() -> None:
     # "Degenerate inputs": 0, 1, 2, 3 in window; review S3).
     assert {w for _, w, _, _ in CONTRACT_TABLE} == {0, 1, 2, 3, 7}
     # And the baseline axis, which the module docstring enumerates and until
-    # T123 nothing asserted: the count above cannot see a substitution, and
-    # measured 2026-09-15, replacing 41 with 40 left all 122 tests in this
+    # `acfebae` nothing asserted: the count above cannot see a substitution,
+    # and measured 2026-09-15, replacing 41 with 40 left all 122 tests in this
     # module green while the docstring still named 41. The four load-bearing
     # values are 1 (no band), 2 (the smallest band), 13 and 14 (either side of
     # MIN_BASELINE_READINGS); 0 and 41 are the empty and the ordinary ends.
     assert {b for b, _, _, _ in CONTRACT_TABLE} == {0, 1, 2, 13, 14, 41}
+    # And the third axis, which the docstring's "both axes" left out. Neither
+    # the count nor the row-uniqueness check can see a position *substituted*
+    # for another -- the table stays 90 distinct rows -- and WINDOW_VALUE and
+    # the band-position lookup only catch it while they carry exactly these
+    # three keys. Measured 2026-09-15: with a fourth key added to both and
+    # ABOVE swapped out of the comprehension, every other test in this module
+    # stays green and this is the one assertion that reddens.
+    assert {p for _, _, p, _ in CONTRACT_TABLE} == {BELOW, INSIDE, ABOVE}
     # And the table is not degenerate: every verdict appears, both established
     # states appear, and below_by appears in both states.
     assert {r[3][0] for r in CONTRACT_TABLE} == {NORMAL, SUPPRESSED, UNAVAILABLE}

@@ -954,8 +954,25 @@ def stale_trial_gap(gap: int, target: date = D) -> list[dict]:
 
 
 #: The ``gap`` rows both recency tests below walk, in one name so the onset
-#: pin cannot fall out of step with the walk it describes (T123).
+#: pin cannot fall out of step with the walk it describes (review cycle 8,
+#: ``acfebae``).
 RECENCY_WALK = (hrv_trend.GAP_RESET_DAYS, hrv_trend.GAP_RESET_DAYS + 1, 27, 28, 29)
+
+#: What the walk reports at the shipped tolerance, per row: ``(tier, baseline
+#: n, reset_reason)``. Both tests below read it -- the walk test as its
+#: expectations, the onset test as the external literal its matrix's shipped
+#: column is checked against. The onset test's own ``reddens_at`` cannot check
+#: that column: it is defined against it, so it reports green over it whatever
+#: ``build`` does (review cycle 8, iteration 3).
+RECENCY_WALK_AT_SHIPPED = {
+    hrv_trend.GAP_RESET_DAYS: (STRAP, 14, None),
+    # The seam row: a silence of exactly GAP_RESET_DAYS whole days, which the
+    # coverage-gap rule does not call a break, so candidacy may not strike it.
+    hrv_trend.GAP_RESET_DAYS + 1: (STRAP, 14, None),
+    27: (STRAP, 14, None),
+    28: (STRAP, 14, None),
+    29: (SNAPSHOT, 60, None),
+}
 
 
 def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_past_it() -> None:
@@ -980,8 +997,8 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     across tolerances 19..30, it is admitted at a tolerance of 22 and struck
     at 21. **It is not the only row that goes red at 21** -- ``gap`` 27 and
     ``gap`` 28 are red there too, and so is every row below its own gap; that
-    "only row" claim was measured wrong by T121 and is corrected here (T123,
-    review cycle 8). What singles this row out is its red *onset*: it is the
+    "only row" claim was measured wrong by T121 and is corrected here (review
+    cycle 8, ``acfebae``). What singles this row out is its red *onset*: it is the
     only row in the walk that is green at a tolerance of 22 and red at 21, so
     it and nothing else pins the seam at ``GAP_RESET_DAYS``. The
     ``GAP_RESET_DAYS`` row itself is ordinary: it survives a tolerance of 21
@@ -999,7 +1016,7 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     deleted (``gap`` 29 reverts to the strap); the comparison written
     ``<`` rather than ``<=`` (``gap`` 28 flips); the tolerance set to
     ``GAP_RESET_DAYS`` (the ``gap`` 22, ``gap`` 27 **and** ``gap`` 28 rows
-    flip -- three, not the two this list named until T123; ``gap`` 21 does
+    flip -- three, not the two this list named until review cycle 8; ``gap`` 21 does
     **not**, which is why it could never have been the seam pin); and
     the filter applied to the raw day counts rather than to ``last_read``
     (every row flips, the strap never being the denser tier here). None of
@@ -1017,18 +1034,13 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
         assert len({r.date for r in week if r.tier == STRAP}) == 3, gap
         observed[gap] = (result.tier, len(result.baseline), result.reset_reason)
 
-    assert observed[hrv_trend.GAP_RESET_DAYS] == (STRAP, 14, None)
-    # The seam row: a silence of exactly GAP_RESET_DAYS whole days, which the
-    # coverage-gap rule does not call a break, so candidacy may not strike it.
-    assert observed[hrv_trend.GAP_RESET_DAYS + 1] == (STRAP, 14, None)
-    assert observed[27] == (STRAP, 14, None)
-    assert observed[28] == (STRAP, 14, None)
-    assert observed[29] == (SNAPSHOT, 60, None)
+    assert observed == RECENCY_WALK_AT_SHIPPED
 
 
 def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monkeypatch) -> None:
     """The claim the docstring above rests on, as an assertion rather than as
-    a sentence (T123, review cycle 8: the sentence was measured wrong twice).
+    a sentence (review cycle 8, ``acfebae``: the sentence was measured wrong
+    twice).
 
     Both prior spellings named a *singleton*. T121's said the seam row is
     "the only row here that goes red the moment the tolerance is lowered to
@@ -1061,20 +1073,24 @@ def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monke
     shipped = hrv_trend.RECENCY_TOLERANCE_DAYS
     reset = hrv_trend.GAP_RESET_DAYS
 
-    def admitted(gap: int, tolerance: int) -> bool:
+    def observe(gap: int, tolerance: int) -> tuple[str, int, str | None]:
         monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", tolerance)
-        return build(stale_trial_gap(gap)).tier == STRAP
+        result = build(stale_trial_gap(gap))
+        return (result.tier, len(result.baseline), result.reset_reason)
 
-    matrix = {(gap, tol): admitted(gap, tol) for tol in range(19, 31) for gap in RECENCY_WALK}
+    matrix = {(gap, tol): observe(gap, tol) for tol in range(19, 31) for gap in RECENCY_WALK}
     monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", shipped)
 
     def reddens_at(tolerance: int) -> set[int]:
         """The walk rows this test file's neighbour above would fail on, were
-        the tolerance ``tolerance``: those whose admission differs from the
-        admission the neighbour's hardcoded expectations were taken at."""
+        the tolerance ``tolerance``: those whose row differs from the row the
+        neighbour's hardcoded expectations were taken at."""
         return {g for g in RECENCY_WALK if matrix[(g, tolerance)] != matrix[(g, shipped)]}
 
-    assert reddens_at(shipped) == set(), "the walk is not green at the shipped tolerance"
+    # The shipped column, against the literals the neighbour test runs on --
+    # tier, baseline ``n`` and ``reset_reason``. ``reddens_at(shipped)`` is
+    # empty by construction and is no witness for it.
+    assert {gap: matrix[(gap, shipped)] for gap in RECENCY_WALK} == RECENCY_WALK_AT_SHIPPED
     assert reddens_at(reset) == {22, 27, 28}, (
         "three rows go red at a tolerance of GAP_RESET_DAYS, not the one the "
         "docstrings named nor the two the 'distinct failure modes' list named"
@@ -1091,7 +1107,7 @@ def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monke
     # Every admitted row's onset is one below its own gap, which is the
     # relation the "one more row each step" reading depends on.
     for gap in RECENCY_WALK:
-        if matrix[(gap, shipped)]:
+        if matrix[(gap, shipped)][0] == STRAP:
             assert gap not in reddens_at(gap), gap
             assert gap in reddens_at(gap - 1), gap
 

@@ -1046,6 +1046,8 @@ WITHDRAWN_ORDER = (
     ("WINDOW_WITHDRAWN", 1, "7bad332b1fca", "T107's identity on window[0], schema idiom"),
     ("WINDOW_WITHDRAWN", 2, "5d2f570ec80d", "T107's identity on window[0], YAML idiom"),
     ("ESTABLISHED_WITHDRAWN", 1, "9b001bd01d01", "T116's asymmetric established gloss"),
+    ("THRESHOLDS_WITHDRAWN", 1, "be7083eef471", "IDEA-070's retracted promise, schema idiom"),
+    ("THRESHOLDS_WITHDRAWN", 2, "285bbbe3b570", "IDEA-070's retracted promise, YAML idiom"),
 )
 
 
@@ -1065,15 +1067,15 @@ SCOPED_HRV_SUITES = (
 #: What ``pytest --collect-only`` returns over those five files **at this
 #: commit**, re-measured as the last action before the commit that changes it.
 #:
-#: This constant exists so that no document has to carry the number (T123,
-#: review cycle 8). T121 published "the five suites collect 395" into three
+#: This constant exists so that no document has to carry the number (review
+#: cycle 8, ``acfebae``). T121 published "the five suites collect 395" into three
 #: normative documents to give the band its missing scope, and the very next
 #: commit in T121's own fix batch added a test to one of those five suites and
 #: made all three wrong -- silently, because nothing in the tree could see a
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 399
+SCOPED_SUITE_COLLECTED = 401
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and
@@ -1101,7 +1103,7 @@ def test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_publish
     ``RECENCY_TOLERANCE_DAYS``' comment, ``research/00`` §5.4, F005's Negative
     Class row and the construction reference's constants table each scope the
     ``[18, 44]`` band to the tests of the five HRV suites that predate T117's
-    tolerance pin. Until T123 that scope was carried by a transcribed literal
+    tolerance pin. Until ``acfebae`` that scope was carried by a transcribed literal
     at every one of those sites and by no assertion anywhere, so when ``140dfff``
     added a test to ``test_hrv_trend_endpoint.py`` -- one commit after the
     batch that wrote the literal, in the same batch -- all four went stale and
@@ -1166,7 +1168,7 @@ def _declared_phrasing_tuples() -> dict[str, tuple[str, ...]]:
 
     One filter, read by both the order pin and the sweep-scope guard below, so
     the two tables T122 wrote to stop the sweep drifting from the declarations
-    cannot themselves drift from each other (T123)."""
+    cannot themselves drift from each other (review cycle 8)."""
     return {
         name: value
         for name, value in vars(_DECLARATIONS).items()
@@ -1197,7 +1199,7 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
 
     The dispatch below is read from ``vars(_DECLARATIONS)`` by the same filter
     ``test_every_declared_withdrawn_tuple_is_swept`` uses, rather than from a
-    hand-kept literal of the tuple names (T123, review cycle 8). T122 built
+    hand-kept literal of the tuple names (review cycle 8, ``acfebae``). T122 built
     that filter precisely so the sweep could not fall out of step with the
     declarations and then left this table, one screen away and in the same
     commit, keyed on three names written out by hand -- so a fifth tuple was
@@ -1219,8 +1221,8 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
             f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
             f"every entry is pinned by exactly one row, and every row pins an entry"
         )
-    assert len(WITHDRAWN_ORDER) == 15, (
-        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 15: a row and its "
+    assert len(WITHDRAWN_ORDER) == 17, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 17: a row and its "
         f"tuple entry dropped together leave every remaining digest correct"
     )
 
@@ -1702,8 +1704,8 @@ RESET_REASON_SHARED_ANCHOR = "baseline clip is decided by the era boundary alone
 _QUOTE_CHARS = str.maketrans("", "", "\"'")
 
 #: Typography, folded to the ASCII the same claim is written in on the other
-#: side (T123, review cycle 8). ``contracts/openapi.yaml`` is prose in a YAML
-#: document and spells its operators and dashes typographically; ``schemas.py``
+#: side (review cycle 8, ``acfebae``). ``contracts/openapi.yaml`` is prose in a
+#: YAML document and spells its operators and dashes typographically; ``schemas.py``
 #: is Python source and spells them in ASCII. ``Baseline.established`` publishes
 #: the same four claims in both copies and differs **only** here -- ``n >=``
 #: against ``n >=``, ``--`` against ``--`` -- so without this fold the
@@ -1835,8 +1837,8 @@ WINDOW_CLAIMS = (
 #: marks up identifiers, the YAML copy does not), so the claim cannot come
 #: back at either site in the spelling that site would use.
 #:
-#: T123 (review cycle 8) moved this tuple into ``withdrawn_phrasings.py`` and
-#: into ``WITHDRAWN_SWEPT``. Until then it was a live **fourth** withdrawn
+#: Review cycle 8 (``acfebae``) moved this tuple into ``withdrawn_phrasings.py``
+#: and into ``WITHDRAWN_SWEPT``. Until then it was a live **fourth** withdrawn
 #: tuple declared in this module and read against the two ``window``
 #: description copies alone -- verbatim the scope gap T122 closed for
 #: ``VERDICT_WITHDRAWN`` one screen below, sitting one screen above the guard
@@ -1943,8 +1945,8 @@ VERDICT_CLAIMS = (
 #: beside, which no true sentence pairs it with.
 VERDICT_WITHDRAWN = _DECLARATIONS.VERDICT_WITHDRAWN
 
-#: The same treatment for ``baseline.established``, added by T123 (review
-#: cycle 8). T120 rewrote this description in both copies -- from the
+#: The same treatment for ``baseline.established``, added by review cycle 8
+#: (``acfebae``). T120 rewrote this description in both copies -- from the
 #: asymmetric gloss now declared as ``ESTABLISHED_WITHDRAWN``'s entry 1, which
 #: named the suppression alone, to the symmetric rule
 #: T116 implemented -- and added **no test**, which is the one thing review
@@ -1990,21 +1992,106 @@ ESTABLISHED_WITHDRAWN = _DECLARATIONS.ESTABLISHED_WITHDRAWN
 ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
 
 
+#: The same treatment for ``thresholds``, added by review cycle 8 iteration 3
+#: ([[IDEA-070]], user decision 2026-09-15). Both copies described the block as
+#: "the heuristic constants the verdict was computed with" while
+#: ``RECENCY_TOLERANCE_DAYS`` -- which decides whose band the verdict is
+#: computed against -- is neither in the block nor anywhere in the response.
+#: The decision narrowed the description rather than adding a seventh key, so
+#: the retracted promise is a two-copy claim like the four above and is pinned
+#: the same way.
+#:
+#: Authorship (``contract-tables-need-an-independent-oracle``): the claims are
+#: not a transcription of the sentence. They are what a client reading the
+#: block can act on -- what the six keys are the constants *of*, that tier
+#: resolution is outside them, and that the constant deciding it is not echoed
+#: -- taken from [[IDEA-070]] §"How far reproducibility actually breaks". The
+#: block's six keys and their values are pinned elsewhere:
+#: ``test_the_endpoint_reports_every_input_that_produced_the_verdict`` above
+#: and ``test_hrv_trend_band.test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses``.
+THRESHOLDS_CLAIMS = (
+    "the band-and-verdict constants",
+    "once the baseline tier was resolved",
+    "tier resolution is not in this block",
+    "a constant this response does not echo",
+)
+
+#: Retracted by [[IDEA-070]] in each copy's own spelling, and **positional**:
+#: the bare promise is quoted as the thing being retracted by IDEA-070 itself,
+#: by this cycle's review documents and by the review cursor, all of which the
+#: walk reads, so each entry carries the citation that followed it in the copy
+#: it was withdrawn from -- ``(spec 03`` in the schema, ``(spec/03`` in the
+#: YAML. See ``POSITIONAL_WITHDRAWN``.
+THRESHOLDS_WITHDRAWN = _DECLARATIONS.THRESHOLDS_WITHDRAWN
+
+#: The run the two copies must state identically, from this anchor to the end.
+THRESHOLDS_SHARED_ANCHOR = "tier resolution is not in this block"
+
+
 #: Every withdrawn phrasing the walk reads, in one name so a declared tuple
 #: cannot be left out of the sweep -- which is the shape ``VERDICT_WITHDRAWN``
-#: was in until T122, ``WINDOW_WITHDRAWN`` until T123, and the same shape T115
+#: was in until T122, ``WINDOW_WITHDRAWN`` until ``acfebae``, and the same shape T115
 #: closed for ``WITHDRAWN_ORDER``. ``test_every_declared_withdrawn_tuple_is_swept``
 #: is what holds it: it reads the declaration module's own namespace rather
 #: than this line, so the guard fires on a tuple nobody remembered -- which is
-#: what it did for ``ESTABLISHED_WITHDRAWN`` and ``WINDOW_WITHDRAWN`` when they
-#: were declared in this pass and this line was left alone.
+#: what it did for ``ESTABLISHED_WITHDRAWN`` and ``WINDOW_WITHDRAWN`` when
+#: ``acfebae`` declared them and left this line alone.
 WITHDRAWN_SWEPT = (
     RESET_REASON_WITHDRAWN
     + RESET_REASON_WITHDRAWN_IDIOMS
     + VERDICT_WITHDRAWN
     + WINDOW_WITHDRAWN
     + ESTABLISHED_WITHDRAWN
+    + THRESHOLDS_WITHDRAWN
 )
+
+#: Being in ``WITHDRAWN_SWEPT`` is not the same as reaching the whole walk.
+#: These tuples' entries each carry the clause that followed them in the copy
+#: they were withdrawn from, because the bare fragment is also quoted -- as the
+#: thing being retracted -- by documents the walk reads. So they match a
+#: restoration *in place* and nothing else: their reach is the two contract
+#: copies, not the walked tree. ``WINDOW_WITHDRAWN``'s entries also carry the
+#: pre-T107 comma-less spelling, and what that buys is narrower than "a revert
+#: is caught" (measured 2026-09-15 by flattening each revision): entry 1 fires
+#: on a byte-exact revert of ``schemas.py`` to ``7103fd7^``; entry 2 fires on
+#: nothing there, the YAML copy never having carried the claim at all (see that
+#: tuple's own note); and both live copies now write the comma, so a revert made
+#: by editing today's sentence in place matches neither.
+POSITIONAL_WITHDRAWN = {
+    "WINDOW_WITHDRAWN": ("tier_change`).", "tier_change)."),
+    "THRESHOLDS_WITHDRAWN": ("(spec 03", "(spec/03"),
+}
+
+
+def test_the_positional_withdrawn_entries_are_the_ones_that_declare_it() -> None:
+    """Review cycle 8, S-B: ``WINDOW_WITHDRAWN`` was moved into the walk and
+    gained no reach by it, because both of its entries carry a disambiguating
+    clause that only the two contract copies contain. That is a property of the
+    entries, so it is asserted on them rather than written above them.
+
+    Both directions matter. An entry in a named tuple that has lost its clause
+    is a phrasing that now sweeps the whole tree and will redden on the
+    documents that quote it; an entry outside the table that has acquired one
+    is a tuple whose reach has silently narrowed to one sentence's position --
+    which is the state ``WINDOW_WITHDRAWN`` was in, unstated, from T107 until
+    now."""
+    declared = _declared_phrasing_tuples()
+    markers = tuple(marker for group in POSITIONAL_WITHDRAWN.values() for marker in group)
+    for name, expected in POSITIONAL_WITHDRAWN.items():
+        assert name in declared, f"{name} is in POSITIONAL_WITHDRAWN but is not a declared tuple"
+        for entry in declared[name]:
+            assert any(marker in entry for marker in expected), (
+                f"{name} entry {entry!r} no longer carries the clause that scopes it to the copy "
+                f"it was withdrawn from: swept bare it reddens on every document quoting it"
+            )
+    for name, value in declared.items():
+        if name in POSITIONAL_WITHDRAWN:
+            continue
+        for entry in value:
+            assert not any(marker in entry for marker in markers), (
+                f"{name} entry {entry!r} carries a positional clause while {name} is not in "
+                f"POSITIONAL_WITHDRAWN: its reach is one sentence's position, not the walk"
+            )
 
 #: The run the two copies must state identically, from this anchor to the end.
 VERDICT_SHARED_ANCHOR = "hrv_normal and hrv_suppressed both assert an established baseline"
@@ -2052,7 +2139,7 @@ def test_the_two_copies_of_the_verdict_contract_publish_the_same_claims() -> Non
 
 
 def test_the_two_copies_of_the_established_contract_publish_the_same_claims() -> None:
-    """T123 (review cycle 8), the fourth of these pins and the one T120 owed.
+    """Review cycle 8 (``acfebae``), the fourth of these pins and the one T120 owed.
 
     ``baseline.established`` is the flag the whole symmetric rule is keyed on,
     and it is published twice -- in ``contracts/openapi.yaml`` and in
@@ -2064,7 +2151,7 @@ def test_the_two_copies_of_the_established_contract_publish_the_same_claims() ->
 
     The distinct failure modes, each run to confirm this goes red on it:
     (1) a claim dropped from either copy (the claim loop); (2) the pre-T116
-    sentence restored in either copy (the withdrawn loop -- and, since T123 put
+    sentence restored in either copy (the withdrawn loop -- and, since ``acfebae`` put
     ``ESTABLISHED_WITHDRAWN`` into ``WITHDRAWN_SWEPT``, restored in *any* of the
     265 walked files, which is the half the two-copy loop cannot reach);
     (3) the correction landed in one copy only, which the shared run catches
@@ -2101,6 +2188,47 @@ def test_the_two_copies_of_the_established_contract_publish_the_same_claims() ->
     assert shared in served, (
         "the two copies of the established rule have stopped stating the shared run in the "
         "same words; T120 corrected both and pinned neither. The contract says: " + shared
+    )
+
+
+def test_the_two_copies_of_the_thresholds_contract_publish_the_same_claims() -> None:
+    """[[IDEA-070]], user decision 2026-09-15: the fifth of these pins, and the
+    one the narrowed promise is shipped with rather than after.
+
+    What the block promised was "the heuristic constants the verdict was
+    computed with". ``RECENCY_TOLERANCE_DAYS`` decides which tier's band the
+    verdict is computed against, is not one of the six keys, and is echoed
+    nowhere else in the response -- so the promise was false from T117 on, at
+    both copies, and nothing in the tree could say so: ``check_drift.py`` reads
+    path, method, 2xx presence and required parameters, never prose.
+
+    The decision was to narrow the description and not to publish the constant,
+    so the six keys and the contract shape are unchanged and the assertions
+    here are about the words alone. The failure modes, each run to confirm this
+    goes red on it: (1) a claim dropped from either copy; (2) the retracted
+    promise back in either copy -- or, through ``WITHDRAWN_SWEPT``, anywhere
+    else the walk reads it in the spelling its own copy used; (3) the
+    correction landed in one copy only, which the shared run catches while both
+    copies still carry every claim.
+    """
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    contract = _flat(target["components"]["schemas"]["HrvTrend"]["properties"]["thresholds"]["description"])
+    served = _flat(app.openapi()["components"]["schemas"]["Thresholds"]["description"])
+
+    for claim in THRESHOLDS_CLAIMS:
+        flat = _flat(claim)
+        assert flat in contract, f"contracts/openapi.yaml no longer publishes: {claim}"
+        assert flat in served, f"schemas.Thresholds no longer publishes: {claim}"
+    for withdrawn in THRESHOLDS_WITHDRAWN:
+        assert _flat(withdrawn) not in contract, f"withdrawn as false, back in the contract: {withdrawn}"
+        assert _flat(withdrawn) not in served, f"withdrawn as false, back in the schema: {withdrawn}"
+
+    start = contract.find(_flat(THRESHOLDS_SHARED_ANCHOR))
+    assert start != -1, "the contract's shared run no longer starts where the anchor says"
+    shared = contract[start:]
+    assert shared in served, (
+        "the two copies of the thresholds description have stopped naming the same cost in the "
+        "same words. The contract says: " + shared
     )
 
 
