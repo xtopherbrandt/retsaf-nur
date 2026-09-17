@@ -1075,11 +1075,11 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 408  # re-measured 2026-09-16 (T129), as the last action before the
-#                              # commit: +1. T129 added one pin to test_hrv_trend_reset.py (the
-#                              # widest witness of its direction re-run) and renamed one there
-#                              # (the T118 consequence pin, inverted by the fix), so the net is
-#                              # one test. Nothing publishes this literal; T125 left it at 407.
+SCOPED_SUITE_COLLECTED = 409  # re-measured 2026-09-16 (T132), as the last action before the
+#                              # commit: +1. T132 added one pin to test_hrv_trend_band.py (the
+#                              # never-used-tier reproduction) and touched no other test's
+#                              # identity, so the net is one test. Nothing publishes this
+#                              # literal; T129 left it at 408.
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and

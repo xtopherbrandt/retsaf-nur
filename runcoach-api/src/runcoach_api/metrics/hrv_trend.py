@@ -501,17 +501,39 @@ def verdict_withheld(
     last_read: Mapping[str, date],
 ) -> bool:
     """Whether the judged week is too unrepresentative of the athlete *now*
-    for any verdict to be asserted on it (T125, 2026-09-16, form 2).
+    for any verdict to be asserted on it (T125, 2026-09-16, form 2; widened
+    T132, 2026-09-16, form B).
 
-    True when a tier the recency gate **struck** holds at least
-    ``MIN_WINDOW_READINGS`` distinct days inside the judged week and **every
-    one of them is later than every judged-week day of the resolved tier**.
-    That is the returning-device shape, stated without a notion of "device" in
-    the vocabulary: the athlete has gone back to a tier the gate evicted for
-    staleness, he has recorded a full week's-worth of mornings on it, and the
-    readings the verdict would be computed from are all *older* than every one
-    of them. The week is then not a fair sample of the tier being judged, so
-    no verdict is asserted and the response says ``hrv_unavailable``.
+    True when a tier **the recency gate struck, or that the athlete has never
+    used in the baseline window at all** (T132: ``baseline_counts`` reads 0
+    there and the judged week holds ``>= MIN_WINDOW_READINGS`` of its own
+    days -- zero is not a tuned threshold, it is the only value that means
+    "never used") holds at least ``MIN_WINDOW_READINGS`` distinct days inside
+    the judged week and **every one of them is later than every judged-week
+    day of the resolved tier**. That is the returning-*or-brand-new*-device
+    shape, stated without a notion of "device" in the vocabulary: the athlete
+    has gone back to (or bought) a tier the resolved tier does not own, he has
+    recorded a full week's-worth of mornings on it, and the readings the
+    verdict would be computed from are all *older* than every one of them.
+    The week is then not a fair sample of the tier being judged, so no
+    verdict is asserted and the response says ``hrv_unavailable``.
+
+    **Why the candidate gate alone could not see a brand-new device (T132,
+    review cycle 9, G-C9-1).** ``struck ⊆ candidates``, and ``candidates``
+    requires ``>= MIN_BASELINE_READINGS`` distinct days in the (gap-clipped)
+    baseline window. A tier whose first-ever reading falls inside the judged
+    week has zero baseline-window days -- it is never a candidate, so never
+    struck, so the withhold above could never fire for it, however cleanly
+    its days were ordered after the resolved tier's own. T125's own
+    reproduction always had a tier with *some* baseline-window history (an
+    abandoned trial or a genuine return); T132's does not, and the recency
+    gate's question -- "is this tier stale relative to the other candidates"
+    -- has no candidate to ask it of. Measured (``spec/references/T125-fix-
+    form-measurements.md`` §T132): three widening forms all close the
+    reproduction; form B (used here) is the narrowest -- it touches only a
+    tier with *zero* baseline-window presence, leaving every tier with 1..13
+    days of it (an established-adjacent geometry, not a new one) exactly as
+    shipped.
 
     **Day sets, not counts, and that is why this cannot live inside
     ``resolve_baseline_tier``.** "Entirely pre-return" is a statement about the
@@ -543,17 +565,60 @@ def verdict_withheld(
     days 1 and 2 of a return are still judged on pre-return readings, and no
     form measured at T125 closes them. Loosening the constant to reach them is
     exactly the change that starts producing false withholds.
+
+    **T132's own residual, structural rather than a corner case.** For the
+    first ``MIN_WINDOW_READINGS`` days, a **legitimate, permanent** device
+    switch is the *same shape* as T132's forbidden geometry: an un-established
+    tier holding ``>= MIN_WINDOW_READINGS`` week days, every one later than
+    the resolved (still-legitimately-baseline-owning) tier's. Nothing in
+    ``week_readings``, ``baseline_counts`` or ``last_read`` alone separates
+    "a device he will never use again" from "a device he bought yesterday and
+    will use forever" -- both are un-established, both have a full week,
+    both are entirely after. This widening therefore also silences
+    ``hrv_normal`` on a permanent switch's third and fourth mornings (T132,
+    measured: the single red this form produces against the suite, in
+    ``test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline``,
+    ``k = 3`` and ``k = 4``) -- the *freely tolerated* direction
+    (``research/00`` §1.7: down-regulating, here to silence, on weak
+    evidence), accepted as two days of silence per permanent device switch in
+    exchange for closing the forbidden direction on a brand-new device that
+    goes unused again. ``tier_change_reset`` is the mechanism that
+    distinguishes the two in general -- it accumulates 14 baseline-window
+    days of the new tier before handing over the baseline -- and no predicate
+    over a single week's shape can do what a time-accumulating mechanism is
+    for.
     """
     if tier is None:
         return False
     candidates = [t for t in TIER_FIDELITY if baseline_counts.get(t, 0) >= MIN_BASELINE_READINGS]
     struck = _recency_struck(candidates, last_read)
-    if not struck:
+    # T132 (form B, 2026-09-16, decision log review cycle 9). ``struck`` is
+    # drawn from ``candidates``, which requires >= MIN_BASELINE_READINGS
+    # distinct days in the baseline window -- so a tier whose first-ever
+    # reading falls inside the judged week has zero baseline-window days and
+    # can never be a candidate, never struck, however many judged-week days
+    # it holds and however cleanly they are ordered after the resolved
+    # tier's own. That is not an abandoned-trial or a returning-device
+    # question -- both of those tiers have *some* baseline-window history,
+    # which is exactly what the recency gate above is measuring recency
+    # against -- it is a tier the athlete has **never used before**, for
+    # which "recently struck" is not the right question at all: zero is not
+    # a tuned threshold, it is the only value that means "never used in the
+    # baseline window". Widen the set the order clause below is asked about
+    # to include it, once it holds a full week's evidence of its own.
+    week_counts = _tier_counts(week_readings)
+    never_used = {
+        t
+        for t in TIER_FIDELITY
+        if baseline_counts.get(t, 0) == 0 and week_counts.get(t, 0) >= MIN_WINDOW_READINGS
+    }
+    widened = struck | never_used
+    if not widened:
         return False
     # The resolved tier's own week days: the ones that would feed the mean.
     resolved_days = _days(_of_tier(week_readings, tier))
     newest_judged = max(resolved_days, default=date.min)
-    for candidate in struck:
+    for candidate in widened:
         days = _days(_of_tier(week_readings, candidate))
         if len(days) >= MIN_WINDOW_READINGS and min(days) > newest_judged:
             return True

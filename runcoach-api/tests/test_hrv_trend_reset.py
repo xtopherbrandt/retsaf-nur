@@ -686,11 +686,36 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
     week days that fed ``ln_rmssd_7d_mean`` -- each derived from the two eras
     above rather than captured from a run: while the strap owns the baseline
     the week holds ``7 - k`` of its days (``T+1``: six, ``T+6``: one, nothing
-    from ``T+7``), and from ``T+21`` the daily snapshot fills all seven. So
-    the walk reads ``hrv_normal`` on ``T+1 .. T+4``, ``hrv_unavailable`` on
-    ``T+5 .. T+20`` and ``hrv_normal`` again on ``T+21 .. T+114``.
+    from ``T+7``), and from ``T+21`` the daily snapshot fills all seven.
     Perturbation (form 5a, re-measured 2026-09-16): red at ``k = 3`` and
-    ``k = 4``."""
+    ``k = 4``.
+
+    **``k = 3`` and ``k = 4`` moved again under T132 (2026-09-16, form B,
+    ratified), and this time on purpose.** At ``k = 3`` and ``k = 4`` the
+    snapshot -- a tier with **zero** baseline-window days, exactly T132's own
+    predicate -- has recorded 3 and 4 of its own week days respectively,
+    every one later than the strap's remaining week days (``7 - k``, all on
+    or before ``T``). That is T132's forbidden shape field for field: an
+    un-established tier holding ``>= MIN_WINDOW_READINGS`` week days, all
+    after the resolved tier's. T132's widening therefore withholds here too,
+    and ``judge`` reports ``hrv_unavailable`` where it read ``hrv_normal``
+    before. **This is the same trade T125 made, one axis over, and the
+    direction is the one ``research/00`` §1.7 tolerates freely**: in this
+    fixture both eras read 40.0 ms -- a healthy athlete who has simply
+    switched devices -- so the lost verdict is a correct ``hrv_normal``,
+    replaced by silence, not a wrong verdict replaced by a right one. Two
+    days of silence on a permanent, legitimate device switch is the priced
+    cost of closing the forbidden direction on a device that goes unused
+    again (F005's Negative Class, T132 row): nothing in ``week_readings``,
+    ``baseline_counts`` or ``last_read`` distinguishes the two shapes for the
+    first ``MIN_WINDOW_READINGS`` days of either.
+
+    So the walk now reads ``hrv_normal`` on ``T+1 .. T+2``,
+    ``hrv_unavailable`` on ``T+3 .. T+20`` and ``hrv_normal`` again on
+    ``T+21 .. T+114``. Perturbation (T132, re-measured 2026-09-16): reverting
+    ``verdict_withheld`` to the shipped (pre-T132) candidate gate reds this
+    walk back at ``k = 3`` and ``k = 4`` (``hrv_unavailable`` where
+    ``hrv_normal`` is now asserted)."""
     T = ago(60)
     strap_days = span(ago(190), T)
     snapshot_days = span(T + timedelta(days=1), T + timedelta(days=120))
@@ -721,7 +746,18 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
             assert result.reset_reason is None and result.reset_on is None, k
         assert [r.date for r in result.window] == fed, k
         assert verdict.readings_in_window == len(fed), k
-        assert verdict.verdict == (WALK_NORMAL if len(fed) >= WALK_MIN_WINDOW else WALK_UNAVAILABLE), k
+        # T132 (2026-09-16, form B, ratified): at k = 3 and k = 4 the snapshot
+        # -- zero baseline-window days, >= MIN_WINDOW_READINGS week days, all
+        # later than the strap's remaining ones -- is T132's own forbidden
+        # shape, and the withhold now fires. Every other k is unmoved: below
+        # k = 3 the snapshot has not yet reached MIN_WINDOW_READINGS; from
+        # k = 5 the strap's own week is already short enough to read
+        # unavailable for the ordinary reason.
+        t132_withheld = k in (3, 4)
+        expected_verdict = WALK_UNAVAILABLE if t132_withheld else (
+            WALK_NORMAL if len(fed) >= WALK_MIN_WINDOW else WALK_UNAVAILABLE
+        )
+        assert verdict.verdict == expected_verdict, k
         assert verdict.ln_rmssd_7d_mean == (pytest.approx(math.log(WALK_VALUE), abs=1e-12) if fed else None), k
 
     assert in_previous_window(strap_days, T + timedelta(days=113)) == 14

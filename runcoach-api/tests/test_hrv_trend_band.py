@@ -959,3 +959,77 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
         if entry.reason.startswith("off_baseline_tier") and entry.date in week
     }
     assert off_tier == {RETURN_FIRST + timedelta(days=i) for i in range(4)}
+
+
+# ---------------------------------------------------------------------------
+# T132: the withhold is blind to a device the athlete has never used before
+# ---------------------------------------------------------------------------
+
+
+def test_the_withhold_reaches_a_never_used_tier_bought_this_week() -> None:
+    """T132 (review cycle 9, G-C9-1; task file, reproduction verbatim).
+
+    [[T125]]'s form 2 (``verdict_withheld``) can only withhold on a tier the
+    recency gate **struck** -- and a struck tier must first be a
+    *candidate*, which requires ``>= MIN_BASELINE_READINGS`` distinct days in
+    the (gap-clipped) baseline window. A tier whose first-ever reading falls
+    **inside the judged week** has zero baseline-window days, so it is never
+    a candidate, never struck, and the withhold could never fire for it --
+    however many judged-week days it holds and however cleanly they are
+    ordered after the resolved tier's own.
+
+    Reproduction: ``chest_strap_raw`` daily 2026-07-04..2026-09-04 @ 40.0 ms
+    (the athlete's long-standing habit; 60 distinct baseline-window days,
+    ``[2026-07-04, 2026-09-01]``), then ``health_snapshot`` -- a tier he has
+    **never used before** -- on 2026-09-05..2026-09-07 @ 15.0 ms (three
+    deeply-suppressed mornings, all strictly later than every strap day),
+    judged at D = 2026-09-08, Pacific/Auckland.
+
+    Shipped: ``chest_strap_raw`` resolves (it still covers the week's first
+    three days and the snapshot cannot be a candidate at all), ``withheld``
+    is ``False``, ``readings_in_window`` is 3 (the three *stale* strap
+    mornings 09-02..09-04), ``baseline_n`` is 60, ``established`` is
+    ``True`` -- ``hrv_normal``. The athlete is told readiness is intact on a
+    mean of three mornings he did not live, while his own three
+    brand-new-device mornings -- the ones actually suppressed -- are
+    silently excluded as ``off_baseline_tier``. ``research/00`` §1.7's
+    forbidden direction: up-regulating (staying silent about suppression)
+    on weak evidence.
+
+    T132 (form B, user decision, review cycle 9, against the measured table
+    in ``spec/references/T125-fix-form-measurements.md``): union today's
+    ``struck`` with any tier holding **zero** baseline-window days and
+    ``>= MIN_WINDOW_READINGS`` distinct judged-week days. The strict
+    day-order clause is unchanged -- every one of that tier's week days must
+    still be later than every judged-week day of the resolved tier, exactly
+    as T125 already requires of a struck tier. After the fix:
+    ``withheld=True``, and ``judge`` reports ``hrv_unavailable`` -- the
+    tier, ``readings_in_window``, ``baseline_n`` and the fed days are
+    unchanged, matching T125's own "the withhold changes only what is said"
+    finding one axis over.
+
+    Perturbation: reverting ``verdict_withheld`` to the shipped candidate
+    gate (``struck`` alone, no zero-baseline-and-full-week union) reds this
+    test; restoring it goes green again.
+    """
+    strap_days = [date(2026, 7, 4) + timedelta(days=i) for i in range((date(2026, 9, 4) - date(2026, 7, 4)).days + 1)]
+    snapshot_days = [date(2026, 9, 5), date(2026, 9, 6), date(2026, 9, 7)]
+    target = date(2026, 9, 8)
+
+    rows = [row(day, 40.0, STRAP) for day in strap_days]
+    rows += [row(day, 15.0, SNAPSHOT) for day in snapshot_days]
+
+    series = build_series(rows, AUCKLAND, target)
+    verdict = judge(series)
+
+    # The judged-week days that fed the mean -- the three stale strap
+    # mornings, per T127's shape: assert the day set, not just its count.
+    fed = [date(2026, 9, 2), date(2026, 9, 3), date(2026, 9, 4)]
+
+    assert series.tier == STRAP
+    assert series.withheld is True
+    assert [reading.date for reading in series.window] == fed
+    assert verdict.readings_in_window == 3
+    assert verdict.baseline_n == 60
+    assert verdict.established is True
+    assert verdict.verdict == UNAVAILABLE
