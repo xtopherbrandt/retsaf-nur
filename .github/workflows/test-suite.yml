@@ -51,6 +51,17 @@ jobs:
         # which would re-resolve the venv to a single package.
         run: .venv/bin/pytest -q -p no:cacheprovider --junitxml=pytest-report.xml
 
+      - name: Walk-verdict checker
+        # T134 -- T127's AST check (each of F005's three long walks asserts a
+        # verdict inside its own loop body, not merely outside it) had zero
+        # references anywhere in the tree and had run exactly once, by hand,
+        # at T127's own acceptance probe. Also invoked from the local suite
+        # (test_walk_verdict_checker.py), so this is redundant on a laptop
+        # but is what makes it run here too, on every commit, off Python
+        # rather than off memory.
+        if: always()
+        run: .venv/bin/python runcoach-api/tests/support/check_walk_verdicts.py
+
       - name: Guard against a run that collected too little
         # Runs even when the step above failed, so a partial or empty
         # collection is named as such rather than read off an exit code.

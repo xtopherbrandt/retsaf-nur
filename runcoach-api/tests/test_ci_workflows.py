@@ -26,6 +26,7 @@ same shape applies to the workflows themselves: they are discovered by listing
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 import textwrap
 from pathlib import Path
@@ -275,6 +276,43 @@ def test_no_workflow_shaped_file_sits_where_actions_will_never_look() -> None:
     )
 
 
+#: Splits a `run:` block into individual shell statements, on `&&`, `||`,
+#: `;` and newlines. Not a general shell parser -- every step in this repo's
+#: workflows is a short, literal script with none of those operators sitting
+#: inside a quoted string, so this is exact here.
+_SHELL_STATEMENT_SEP = re.compile(r"&&|\|\||;|\n")
+
+
+def _shell_statements(commands: list[str]) -> list[tuple[str, list[str]]]:
+    """``(statement text, its shell words)`` for every statement anyone in
+    ``commands`` will actually execute.
+
+    T134 (review cycle 9, G-C9-3): a plain substring check over the *whole*
+    joined `run:` text -- ``"uv sync --all-packages" in joined`` -- stays
+    green when the phrase sits inside an unrelated ``echo`` and the real sync
+    drops the flag: ``echo "note - uv sync --all-packages is recommended" &&
+    uv sync``. Splitting into statements and tokenizing each with
+    :mod:`shlex` closes that: the phrase's three words land inside a single
+    quoted ``echo`` argument -- one shell word, not three -- and can never be
+    mistaken for the words of a real invocation. This is the general form,
+    not a fix scoped to the one assertion it was found on: every check below
+    that asks "was X actually run" is built over this, not over ``joined``.
+    """
+    statements: list[tuple[str, list[str]]] = []
+    for command in commands:
+        for statement in _SHELL_STATEMENT_SEP.split(command):
+            statement = statement.strip()
+            if not statement:
+                continue
+            try:
+                words = shlex.split(statement)
+            except ValueError:
+                continue
+            if words:
+                statements.append((statement, words))
+    return statements
+
+
 # ------------------------------------- the suite workflow cannot pass on half
 def _suite_workflows() -> list[Path]:
     suites = []
@@ -318,10 +356,19 @@ def test_a_suite_workflow_cannot_report_green_over_a_partial_collection(
     document = _load(workflow)
     commands = _run_commands(document)
     joined = "\n".join(commands)
+    statements = _shell_statements(commands)
 
-    assert "uv sync --all-packages" in joined, (
-        f"{workflow.name} runs pytest without `uv sync --all-packages`: a member "
-        "whose deps are absent is dropped from collection and the job still exits 0"
+    # Matched as the words of a statement actually executed, not as a
+    # substring of the joined step text (T134, G-C9-3): the words must be
+    # ``uv sync`` at the front of some real invocation, with
+    # ``--all-packages`` among its own arguments -- not merely mentioned
+    # somewhere in the run block, which an unrelated `echo` satisfies too.
+    sync_invocations = [words for _text, words in statements if words[:2] == ["uv", "sync"]]
+    assert any("--all-packages" in words for words in sync_invocations), (
+        f"{workflow.name} does not actually run `uv sync --all-packages` (an "
+        "invocation with those words, not merely that phrase appearing in the "
+        "step text): a member whose deps are absent is dropped from collection "
+        "and the job still exits 0"
     )
 
     emitted = re.findall(r"--junitxml=(\S+)", joined)
@@ -330,14 +377,18 @@ def test_a_suite_workflow_cannot_report_green_over_a_partial_collection(
         "downstream can tell a full run from an empty one"
     )
     for report in emitted:
+        # T134, G-C9-3's second instance in this file: the report's filename
+        # has to be one of a statement's own shell words, not merely a
+        # substring of the statement's text -- `report in command` stayed
+        # green for `echo "we will read pytest-report.xml later"`, which
+        # reads nothing.
         consumers = [
-            command
-            for command in commands
-            if report in command and "--junitxml" not in command
+            text for text, words in statements if report in words and "--junitxml" not in text
         ]
         assert consumers, (
-            f"{workflow.name} writes {report} and no later step reads it: the run "
-            "is measured by nobody and a collection of zero passes"
+            f"{workflow.name} writes {report} and no later statement actually "
+            "reads it (as its own argument, not merely naming it in text): the "
+            "run is measured by nobody and a collection of zero passes"
         )
         # Matched with a boundary, not as a substring: `--min-tests-disabled`
         # is not `--min-tests`, and a substring test passes on it.

@@ -746,14 +746,24 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
             assert result.reset_reason is None and result.reset_on is None, k
         assert [r.date for r in result.window] == fed, k
         assert verdict.readings_in_window == len(fed), k
-        # T132 (2026-09-16, form B, ratified): at k = 3 and k = 4 the snapshot
-        # -- zero baseline-window days, >= MIN_WINDOW_READINGS week days, all
-        # later than the strap's remaining ones -- is T132's own forbidden
-        # shape, and the withhold now fires. Every other k is unmoved: below
-        # k = 3 the snapshot has not yet reached MIN_WINDOW_READINGS; from
-        # k = 5 the strap's own week is already short enough to read
-        # unavailable for the ordinary reason.
-        t132_withheld = k in (3, 4)
+        # T132 (2026-09-16, form B, ratified): the snapshot -- zero baseline-
+        # window days, >= MIN_WINDOW_READINGS week days, all later than the
+        # strap's remaining ones -- is T132's own forbidden shape, and the
+        # withhold fires while that shape holds. Derived from the two eras
+        # above rather than captured (T134): ``expected_tier != SNAPSHOT``
+        # excludes k >= 21, where the snapshot is itself the resolved tier
+        # and can never be its own "later candidate" -- a set's earliest day
+        # is never after its own latest. On this fixture that leaves exactly
+        # k = 3 and k = 4: below k = 3 the snapshot has not yet reached
+        # MIN_WINDOW_READINGS; from k = 5 the strap's own week is already
+        # short enough to read unavailable for the ordinary reason.
+        week_days = span(target - timedelta(days=6), target)
+        snap_in_week = len([d for d in week_days if d in on_tier[SNAPSHOT]])
+        t132_withheld = (
+            expected_tier != SNAPSHOT
+            and snap_in_week >= WALK_MIN_WINDOW
+            and len(fed) >= WALK_MIN_WINDOW
+        )
         expected_verdict = WALK_UNAVAILABLE if t132_withheld else (
             WALK_NORMAL if len(fed) >= WALK_MIN_WINDOW else WALK_UNAVAILABLE
         )

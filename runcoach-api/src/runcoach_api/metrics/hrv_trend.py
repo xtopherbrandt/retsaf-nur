@@ -338,7 +338,18 @@ class HrvSeries:
     #: reset fields are byte-identical to what they were before T125, which is
     #: the point -- form 2 changes what is *said* about this week, not what
     #: the week is. See ``verdict_withheld``.
-    withheld: bool = False
+    #:
+    #: **Defaults closed, unlike its literal name suggests** (T134). ``band``
+    #: (``None``) and ``established`` (``False``) both default toward
+    #: ``hrv_unavailable`` in this module; an unset ``withheld`` must too, or
+    #: a future construction site that forgets the argument silently
+    #: manufactures a series eligible for ``hrv_normal`` -- the direction
+    #: ``research/00`` Section 1.7 forbids on weak evidence. ``build_series``
+    #: is this dataclass's only construction site today (grep: ``HrvSeries(``
+    #: appears once in the whole tree) and always passes the computed value,
+    #: so this default is unreached by it and changes no verdict; it exists
+    #: for the call site that does not yet exist.
+    withheld: bool = True
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
