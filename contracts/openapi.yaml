@@ -1427,8 +1427,10 @@ components:
             sustain a trend -- resolve_baseline_tier answered "no tier at all")
             or no_band (a tier resolved, but its baseline holds fewer than two
             readings, so no band exists) whenever band is null; then
-            week_too_thin (fewer than min_window_readings readings in the judged
-            week); then week_not_representative (the judged week is not a fair
+            week_too_thin (fewer than min_window_readings readings of
+            baseline.tier in the judged week; readings of other tiers are
+            listed in excluded[] as off_baseline_tier and do not count toward
+            readings_in_window); then week_not_representative (the judged week is not a fair
             sample of baseline.tier -- T125/T132: a returning or brand-new
             device's week entirely predates the tier being judged); then
             baseline_unestablished (baseline.n below min_baseline_readings,
