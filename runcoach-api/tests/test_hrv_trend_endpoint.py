@@ -339,6 +339,9 @@ def test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200(configur
         assert empty.json()["band"] is None
         assert empty.json()["baseline"]["established"] is False
         assert empty.json()["included"] == [] and empty.json()["excluded"] == []
+        # T137: no reading of any tier at all is the structural cause, not
+        # the generic "no band".
+        assert empty.json()["unavailable_reason"] == "no_tier_sustains_a_trend"
 
     seeder.snapshots(days(D - timedelta(days=26), D), baseline_values(27))
     seeder.persist()
@@ -350,9 +353,16 @@ def test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200(configur
     assert future.status_code == 200 and before.status_code == 200
     assert future.json()["verdict"] == "hrv_unavailable"
     assert future.json()["readings_in_window"] == 0
+    # T137: this row is D + 400 relative to the real clock (this test does not
+    # freeze it), so it is unconditionally after today -- the route's own
+    # override reports day_not_happened here, not the structural cause that
+    # also happens to hold (every reading is outside_windows): a day that has
+    # not happened is the one true reason no verdict is asserted about it.
+    assert future.json()["unavailable_reason"] == "day_not_happened"
     assert before.json()["verdict"] == "hrv_unavailable"
     assert before.json()["baseline"]["established"] is False
     assert before.json()["baseline"]["n"] == 0
+    assert before.json()["unavailable_reason"] == "no_tier_sustains_a_trend"
 
 
 def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, seeder, monkeypatch) -> None:
@@ -376,12 +386,17 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
         ahead = {k: get(client, to=(D + timedelta(days=k)).isoformat()).json() for k in (1, 2, 4)}
 
     assert today["verdict"] == "hrv_suppressed" and today["below_by"] > 0
+    assert today["unavailable_reason"] is None
     for k, body in ahead.items():
         assert body["date"] == (D + timedelta(days=k)).isoformat()
         # The window is full and the baseline established: the guard is the
         # clock, not thin data.
         assert body["readings_in_window"] >= 3 and body["baseline"]["established"] is True
         assert body["verdict"] == "hrv_unavailable", (k, body["verdict"])
+        # T137: day_not_happened, not the fields that would otherwise have
+        # explained a suppressed/normal verdict -- the pure rule never gets a
+        # say once the day is in the future.
+        assert body["unavailable_reason"] == "day_not_happened", (k, body["unavailable_reason"])
         assert body["below_by"] is None
 
 

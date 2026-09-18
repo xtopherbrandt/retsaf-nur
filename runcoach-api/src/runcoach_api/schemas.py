@@ -249,6 +249,39 @@ class HrvTrendResponse(BaseModel):
             "unavailable verdict remains checkable by hand."
         )
     )
+    unavailable_reason: (
+        Literal[
+            hrv_trend.REASON_NO_TIER,
+            hrv_trend.REASON_NO_BAND,
+            hrv_trend.REASON_WEEK_TOO_THIN,
+            hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE,
+            hrv_trend.REASON_BASELINE_UNESTABLISHED,
+            hrv_trend.REASON_DAY_NOT_HAPPENED,
+        ]
+        | None
+    ) = Field(
+        description=(
+            "Why `verdict` is hrv_unavailable; null whenever it is not (research/00 1.6: the response "
+            "must be reproducible by hand, and this was the one place that invariant failed -- F005's "
+            "Negative Class row 'the verdict still cannot say why it is unavailable', closed by T137). "
+            "`judge` evaluates four causes in a fixed order and reports the first that fires: "
+            f"`{hrv_trend.REASON_NO_TIER}` (no resting-HRV reading of any tier can sustain a trend -- "
+            "resolve_baseline_tier answered 'no tier at all') or "
+            f"`{hrv_trend.REASON_NO_BAND}` (a tier resolved, but its baseline holds fewer than two "
+            "readings, so no band exists) whenever band is null; then "
+            f"`{hrv_trend.REASON_WEEK_TOO_THIN}` (fewer than min_window_readings readings in the judged "
+            "week); then "
+            f"`{hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE}` (the judged week is not a fair sample of "
+            "baseline.tier -- T125/T132: a returning or brand-new device's week entirely predates the "
+            "tier being judged); then "
+            f"`{hrv_trend.REASON_BASELINE_UNESTABLISHED}` (baseline.n below min_baseline_readings, "
+            "reported as established: false, T116). "
+            f"`{hrv_trend.REASON_DAY_NOT_HAPPENED}` (date is after the athlete's local today) is decided "
+            "at the route, after judge, and overrides whichever of the other five would otherwise have "
+            "applied: the fields that would explain them are still computed and returned as usual, but "
+            "a day that has not happened is the one true reason no verdict is asserted about it."
+        )
+    )
     ln_rmssd_7d_mean: float | None = Field(
         description=(
             "Mean of ln rMSSD over the readings in `window`. Null only when the window is empty; it is "

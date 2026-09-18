@@ -314,10 +314,24 @@ def _withhold_future(
     computed, because the band is a property of the baseline ``[d-66, d-7]``
     (which lies wholly in the past) and the contract's ``points[]`` draws it
     on days with no reading (T091), and because the response must still be
-    reproducible by hand (``research/00`` §1.6)."""
+    reproducible by hand (``research/00`` §1.6).
+
+    **``unavailable_reason`` (T137).** Overridden to ``REASON_DAY_NOT_HAPPENED``
+    whenever this withholds, regardless of whichever of ``judge``'s own four
+    causes the pure rule reported (including ``None``, on a day that would
+    otherwise have read ``hrv_normal`` or ``hrv_suppressed``): the fields that
+    would explain those causes are still reported as computed, so the only
+    claim actually true of *this* response is that the day has not happened
+    yet -- not, say, that the baseline is unestablished, which for a
+    near-future day it usually is not."""
     if day <= today:
         return verdict
-    return replace(verdict, verdict=hrv_trend.VERDICT_UNAVAILABLE, below_by=None)
+    return replace(
+        verdict,
+        verdict=hrv_trend.VERDICT_UNAVAILABLE,
+        below_by=None,
+        unavailable_reason=hrv_trend.REASON_DAY_NOT_HAPPENED,
+    )
 
 
 def _judge_days(
@@ -390,6 +404,7 @@ def _trend_response(
         timezone=series.timezone,
         points=points,
         verdict=verdict.verdict,
+        unavailable_reason=verdict.unavailable_reason,
         ln_rmssd_7d_mean=verdict.ln_rmssd_7d_mean,
         below_by=verdict.below_by,
         band=None

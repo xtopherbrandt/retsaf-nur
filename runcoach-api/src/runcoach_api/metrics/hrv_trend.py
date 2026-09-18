@@ -1040,6 +1040,36 @@ VERDICT_NORMAL = "hrv_normal"
 VERDICT_SUPPRESSED = "hrv_suppressed"
 VERDICT_UNAVAILABLE = "hrv_unavailable"
 
+#: Why ``hrv_unavailable`` was emitted (T137, review cycle 9, closing F005's
+#: Negative Class row "the verdict still cannot say *why* it is unavailable",
+#: open since cycle 4). Six causes in all -- T128's AST oracle
+#: (``test_hrv_unavailable_causes.py``) derives the same six from ``judge``,
+#: ``main.py`` and ``resolve_baseline_tier`` independently of this module, and
+#: is the authority if the two ever disagree. The first four are ``judge``'s
+#: own guards, evaluated in the fixed order stated in its docstring; the last
+#: two exist outside the pure rule -- one at the route
+#: (``main._withhold_future``), one structural (``resolve_baseline_tier``
+#: answering "no tier at all"). ``HrvVerdict.unavailable_reason`` is exactly
+#: one of these, or ``None`` whenever ``verdict`` is not ``hrv_unavailable``.
+REASON_NO_TIER = "no_tier_sustains_a_trend"
+REASON_NO_BAND = "no_band"
+REASON_WEEK_TOO_THIN = "week_too_thin"
+REASON_WEEK_NOT_REPRESENTATIVE = "week_not_representative"
+REASON_BASELINE_UNESTABLISHED = "baseline_unestablished"
+#: Decided at the route, not here (``main._withhold_future``); listed so the
+#: full six-member set lives in one place.
+REASON_DAY_NOT_HAPPENED = "day_not_happened"
+
+#: The six, in the precedence ``judge`` applies plus the route's own (T137).
+UNAVAILABLE_REASONS: tuple[str, ...] = (
+    REASON_NO_TIER,
+    REASON_NO_BAND,
+    REASON_WEEK_TOO_THIN,
+    REASON_WEEK_NOT_REPRESENTATIVE,
+    REASON_BASELINE_UNESTABLISHED,
+    REASON_DAY_NOT_HAPPENED,
+)
+
 
 @dataclass(frozen=True)
 class Band:
@@ -1069,6 +1099,12 @@ class HrvVerdict:
     unavailable. ``below_by`` is ``band.lo - mean`` when suppressed, else
     ``None``. ``band`` is ``None`` when the baseline holds fewer than two
     readings. ``established`` is ``baseline_n >= MIN_BASELINE_READINGS``.
+    ``unavailable_reason`` (T137) is the first of ``judge``'s own guards to
+    fire, or ``None`` whenever ``verdict`` is not ``hrv_unavailable``; the
+    route may override it to ``REASON_DAY_NOT_HAPPENED`` (``_withhold_future``)
+    regardless of what this function decided, since a day that has not
+    happened is the reason no verdict is asserted about it whatever its
+    computed fields would otherwise have said.
     """
 
     verdict: str
@@ -1078,6 +1114,7 @@ class HrvVerdict:
     baseline_n: int
     established: bool
     readings_in_window: int
+    unavailable_reason: str | None = None
 
 
 def ln_rmssd(reading: Reading) -> float:
@@ -1123,6 +1160,46 @@ def build_band(ln_values: Iterable[float]) -> Band | None:
     half_width = BAND_FLOOR if floored else computed
     mean = statistics.fmean(values)
     return Band(mean=mean, half_width=half_width, lo=mean - half_width, hi=mean + half_width, floored=floored)
+
+
+def _unavailable_reason(
+    series: HrvSeries,
+    band: Band | None,
+    window_mean: float | None,
+    readings_in_window: int,
+    established: bool,
+) -> str | None:
+    """Which of ``judge``'s own four guards is the first to fire, in the
+    fixed order ``judge`` evaluates them (its docstring's order): no band,
+    then a week too thin to mean anything, then a week withheld as
+    unrepresentative (T125/T132), then an unestablished baseline (T116).
+    ``None`` once none of them fire -- the verdict is asserted, not withheld.
+
+    A separate function, not a rewrite of ``judge``'s own ``if``, **on
+    purpose**: T128's oracle (``test_hrv_unavailable_causes.py``) parses
+    ``judge``'s source for the guards that leave the verdict at
+    ``hrv_unavailable``, and this function's own conditionals must not be
+    mistaken for a second, competing set of them. It is asked with exactly
+    the values ``judge`` itself computed, so the two can never disagree about
+    *which* guard fired -- only this function additionally names it.
+
+    The ``no band`` guard is one cause in ``judge`` and two in the enum: T128
+    names the **structural** case -- ``resolve_baseline_tier`` answered "no
+    tier at all" -- separately from a resolved tier whose baseline is merely
+    too thin, because ``series.tier is None`` implies ``band is None`` (an
+    empty tier resolves to an empty ``series.baseline``) but not the
+    converse, and the two are told apart here rather than folding the
+    structural case silently into ``no_band``.
+    """
+    if band is None:
+        return REASON_NO_TIER if series.tier is None else REASON_NO_BAND
+    if window_mean is None or readings_in_window < MIN_WINDOW_READINGS:
+        return REASON_WEEK_TOO_THIN
+    if series.withheld:
+        return REASON_WEEK_NOT_REPRESENTATIVE
+    if not established:
+        return REASON_BASELINE_UNESTABLISHED
+    return None
 
 
 def judge(series: HrvSeries) -> HrvVerdict:
@@ -1190,6 +1267,17 @@ def judge(series: HrvSeries) -> HrvVerdict:
     baseline, and the contract's ``points[]`` draws it on days with no
     reading (T091). That is true of a withheld week too -- the band is the
     baseline's, and the baseline is not what is in doubt.
+
+    **``unavailable_reason`` (T137).** The four guards above are evaluated in
+    this fixed order, and the response now carries which one fired --
+    ``_unavailable_reason`` reads exactly the same four values this function
+    computed, so it can never disagree with what actually happened here. Two
+    more causes exist outside this pure function: the structural one --
+    ``resolve_baseline_tier`` answering "no tier at all" -- is folded into the
+    ``no band`` guard's report (``series.tier is None`` implies ``band is
+    None``, so the two share a guard here and are told apart by name only),
+    and the day-not-happened one is the route's (``main._withhold_future``),
+    which overrides whatever this function decided.
     """
     band = build_band(ln_rmssd(reading) for reading in series.baseline)
     baseline_n = len(series.baseline)
@@ -1212,6 +1300,8 @@ def judge(series: HrvSeries) -> HrvVerdict:
             else:
                 verdict = VERDICT_NORMAL
 
+    reason = _unavailable_reason(series, band, window_mean, readings_in_window, established)
+
     return HrvVerdict(
         verdict=verdict,
         ln_rmssd_7d_mean=window_mean,
@@ -1220,6 +1310,7 @@ def judge(series: HrvSeries) -> HrvVerdict:
         baseline_n=baseline_n,
         established=established,
         readings_in_window=readings_in_window,
+        unavailable_reason=reason,
     )
 
 

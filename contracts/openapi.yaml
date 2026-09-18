@@ -1395,6 +1395,37 @@ components:
             the other fields are still reported as computed. The band is still
             reported whenever the baseline can build one, established or not, so
             an unavailable verdict remains checkable by hand.
+        unavailable_reason:
+          type: string
+          nullable: true
+          enum:
+            - no_tier_sustains_a_trend
+            - no_band
+            - week_too_thin
+            - week_not_representative
+            - baseline_unestablished
+            - day_not_happened
+          description: >
+            Why verdict is hrv_unavailable; null whenever it is not (research/00
+            §1.6 -- this is the one place that invariant failed until T137,
+            closing F005's Negative Class row "the verdict still cannot say why
+            it is unavailable", open since review cycle 4). judge evaluates four
+            causes in a fixed order and reports the first that fires:
+            no_tier_sustains_a_trend (no resting-HRV reading of any tier can
+            sustain a trend -- resolve_baseline_tier answered "no tier at all")
+            or no_band (a tier resolved, but its baseline holds fewer than two
+            readings, so no band exists) whenever band is null; then
+            week_too_thin (fewer than min_window_readings readings in the judged
+            week); then week_not_representative (the judged week is not a fair
+            sample of baseline.tier -- T125/T132: a returning or brand-new
+            device's week entirely predates the tier being judged); then
+            baseline_unestablished (baseline.n below min_baseline_readings,
+            reported as established: false, T116). day_not_happened (date is
+            after the athlete's local today) is decided at the route, after
+            judge, and overrides whichever of the other five would otherwise
+            have applied -- the fields that would explain them are still
+            computed and returned as usual, but a day that has not happened is
+            the one true reason no verdict is asserted about it.
         ln_rmssd_7d_mean:
           type: number
           nullable: true
