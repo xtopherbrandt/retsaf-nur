@@ -1116,6 +1116,45 @@ class HrvVerdict:
     readings_in_window: int
     unavailable_reason: str | None = None
 
+    def __post_init__(self) -> None:
+        """Refuse a verdict whose two published fields disagree (T144).
+
+        ``HrvSeries.withheld`` (T134) closes the same hole by **defaulting**
+        toward ``hrv_unavailable``, and the note there asks any field on this
+        path to do likewise. This one cannot, and the difference is in the
+        type rather than in the reasoning: ``withheld`` is a ``bool`` with a
+        safe conservative value -- ``True`` says *nothing*, the direction
+        ``research/00`` Section 1.7 tolerates freely. ``unavailable_reason``
+        has no such value. Each of its six members names a **specific** cause,
+        so a sentinel default would have to assert one, and publishing a cause
+        that did not fire is not silence on weak evidence, it is a second
+        false claim in the field that exists to stop the first; while a
+        sentinel *outside* the six is unpublishable (``schemas.py`` and
+        ``contracts/openapi.yaml`` both refuse a seventh value) and so would
+        need catching here anyway.
+
+        So the invariant itself is made structural, in the same direction and
+        in both: the biconditional those two documents already state as
+        ``null whenever it is not``. That closes what a default of any value
+        could not -- ``_withhold_future`` and any future ``replace`` can flip
+        ``verdict`` while leaving a stale reason behind, and a defaulted field
+        is not consulted on a ``replace``.
+
+        Unreached by shipped code and moves no verdict: ``judge`` computes the
+        reason from exactly the guards that left ``verdict`` at
+        ``VERDICT_UNAVAILABLE`` (``_unavailable_reason`` returns ``None`` on
+        precisely the condition under which ``judge`` asserts a verdict), and
+        ``main._withhold_future`` sets both fields together. ``ValueError``
+        rather than ``assert`` so that ``python -O`` does not strip it.
+        """
+        withheld = self.verdict == VERDICT_UNAVAILABLE
+        if withheld != (self.unavailable_reason is not None):
+            raise ValueError(
+                f"verdict={self.verdict!r} and unavailable_reason="
+                f"{self.unavailable_reason!r} disagree: unavailable_reason is "
+                f"set exactly when verdict is {VERDICT_UNAVAILABLE!r}"
+            )
+
 
 def ln_rmssd(reading: Reading) -> float:
     """``ln`` of the reading, **unguarded on purpose**. ``build_series``

@@ -199,6 +199,65 @@ def test_unavailable_reason_is_null_whenever_the_verdict_is_asserted() -> None:
     assert suppressed.unavailable_reason is None
 
 
+def test_the_verdict_refuses_to_be_built_with_the_two_fields_disagreeing() -> None:
+    """T144. The invariant above, made **structural** rather than merely
+    upheld by ``judge``.
+
+    ``judge`` is the only construction site and ``main._withhold_future`` the
+    only ``replace``, and both pass a reason exactly when the verdict is
+    ``hrv_unavailable`` -- so nothing is wrong today. What is missing is the
+    *catch*: a future site writing
+    ``HrvVerdict(verdict=VERDICT_UNAVAILABLE, ...)`` without the kwarg used to
+    construct cleanly and emit ``verdict: "hrv_unavailable",
+    unavailable_reason: null``, a response ``schemas.py`` and
+    ``contracts/openapi.yaml`` both describe as impossible ("null whenever it
+    is not") and neither can refuse, because ``None`` is a legal value of the
+    field in every other row.
+
+    Both directions are asserted, because ``replace`` makes the second as
+    reachable as the first: a ``replace(v, verdict=VERDICT_NORMAL)`` that
+    forgets to clear the reason carries a stale explanation on an asserted
+    verdict, which a default -- of any value -- could not have caught.
+
+    The legal constructions are re-asserted here too, so that a guard which
+    rejects *everything* is not mistaken for one that bites correctly.
+    """
+    import pytest
+
+    legal_fields: dict = {
+        "ln_rmssd_7d_mean": None,
+        "below_by": None,
+        "band": None,
+        "baseline_n": 0,
+        "established": False,
+        "readings_in_window": 0,
+    }
+
+    # unavailable without a reason: the T144 hole.
+    with pytest.raises(ValueError, match="unavailable_reason"):
+        hrv_trend.HrvVerdict(verdict=hrv_trend.VERDICT_UNAVAILABLE, **legal_fields)
+
+    # an asserted verdict carrying a reason: the converse.
+    for asserted in (hrv_trend.VERDICT_NORMAL, hrv_trend.VERDICT_SUPPRESSED):
+        with pytest.raises(ValueError, match="unavailable_reason"):
+            hrv_trend.HrvVerdict(verdict=asserted, unavailable_reason=WEEK_TOO_THIN, **legal_fields)
+
+    # and the two legal shapes still build.
+    withheld = hrv_trend.HrvVerdict(
+        verdict=hrv_trend.VERDICT_UNAVAILABLE, unavailable_reason=WEEK_TOO_THIN, **legal_fields
+    )
+    assert withheld.unavailable_reason == WEEK_TOO_THIN
+    asserted_verdict = hrv_trend.HrvVerdict(verdict=hrv_trend.VERDICT_NORMAL, **legal_fields)
+    assert asserted_verdict.unavailable_reason is None
+
+    # ``replace`` re-runs the guard, so the route's own override is covered by
+    # it: flipping the verdict without the reason is refused there too.
+    from dataclasses import replace
+
+    with pytest.raises(ValueError, match="unavailable_reason"):
+        replace(withheld, verdict=hrv_trend.VERDICT_NORMAL)
+
+
 def test_unavailable_reason_no_tier_when_the_store_holds_no_reading_at_all() -> None:
     """The structural cause (T128's ``resolve_baseline_tier`` answering "no
     tier at all"): an empty series resolves ``tier`` to ``None``, so ``band``
@@ -316,10 +375,21 @@ def test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_sch
 
     annotation = HrvTrendResponse.model_fields["unavailable_reason"].annotation
     literals: list[str] = []
+    widening: list[object] = []
     for member in typing.get_args(annotation):
         if typing.get_origin(member) is typing.Literal:
             literals.extend(typing.get_args(member))
-    assert literals, f"unavailable_reason is not a closed Literal enum: {annotation!r}"
+        elif member is not type(None):
+            widening.append(member)
+    # T144: the assertion below used to be ``assert literals`` alone, whose
+    # message claimed closure it did not check -- ``str | Literal[...] | None``
+    # still yields six ``literals`` and stayed green under exactly that
+    # mutation. The union's *other* members are what closure is about, so they
+    # are named here rather than in the message only.
+    assert literals, f"unavailable_reason names no Literal member at all: {annotation!r}"
+    assert not widening, (
+        f"unavailable_reason is not a closed Literal enum -- the union also admits {widening!r}: {annotation!r}"
+    )
     assert set(literals) == set(module_names), (sorted(literals), sorted(module_names))
     assert type(None) in typing.get_args(annotation), "the field must admit null"
 
