@@ -569,13 +569,45 @@ def verdict_withheld(
     identical to shipped on every row, and the only verdict change in either
     direction is ``hrv_normal -> hrv_unavailable``, 72 times.
 
-    **The residual, named in F005's Negative Class.** ``MIN_WINDOW_READINGS``
-    on the returning tier is the guard that keeps a stray cross-device capture
-    from withholding a legitimate verdict, and it is *the same constant* that
-    makes the athlete's first two mornings back invisible to this rule -- so
-    days 1 and 2 of a return are still judged on pre-return readings, and no
-    form measured at T125 closes them. Loosening the constant to reach them is
-    exactly the change that starts producing false withholds.
+    **The residual, named in F005's Negative Class -- and it is a closed form,
+    not a count.** ``MIN_WINDOW_READINGS`` on the returning tier is the guard
+    that keeps a stray cross-device capture from withholding a legitimate
+    verdict, and it is *the same constant* that makes the athlete's opening
+    mornings back invisible to this rule: while he holds fewer than
+    ``MIN_WINDOW_READINGS`` return days in the judged week, the verdict there
+    still comes from pre-return readings and still reads ``hrv_normal``.
+    **How many such mornings:** ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``,
+    where ``k3`` is the offset at which the returning tier's
+    ``MIN_WINDOW_READINGS``-th distinct local day enters the judged week
+    (T145, measured 2026-09-18 over all 64 weekly return patterns containing
+    day 0, on this arm and on T132's ``never_used`` arm, zero mismatches,
+    stable for layoffs s = 33..48). The wording that stood here until then
+    gave the **daily** figure -- ``k3 = 2`` -- as the general bound. It is
+    **four** mornings whenever the return is captured **sub-daily** (4/wk
+    spread, 3/wk, 2/wk); a 4/wk *clustered* return is two, like the daily one,
+    so the axis is the spacing of the captures, not their weekly count. Only
+    ``k3`` belongs to this rule: the cap ``WINDOW_DAYS - MIN_WINDOW_READINGS``
+    = 4 is the **carrier's** judged-week coverage expiring (a daily carrier
+    ending RET-1 leaves ``6 - k`` carrier days in the week, so
+    ``week_too_thin`` bites at ``k = 4``), and it would end the residual
+    whether or not this withhold existed. No form measured at T125 closes the
+    residual, and loosening the constant to reach it is exactly the change
+    that starts producing false withholds, so the behaviour is **left
+    unchanged** (user decision 2026-09-18, review cycle 10) and carried to
+    IDEA-071's sprint.
+
+    **And at sub-daily density this withhold decides no verdict at all.** At
+    4/wk-spread and 3/wk it flips ``series.withheld`` true only at ``k =
+    4..6``, where ``readings_in_window`` is already 2, 1 and 0 and
+    ``week_too_thin`` precedes it in ``_unavailable_reason``'s fixed order --
+    the verdict would be identical with the withhold deleted. At 2/wk it never
+    fires (checked to ``k = 40``). For the "two days a week" and oscillating
+    athletes F005's Negative Class names as first-class populations, T125 and
+    T132 are **inert**: the whole of their sub-daily silence is incidental
+    carrier-week-coverage expiry. Any new measurement here must vary capture
+    density -- it is the one axis no sweep in nine cycles varied, and a walk
+    indexed by "days since return" must say whether it means days elapsed or
+    mornings captured.
 
     **T132's own residual, structural rather than a corner case.** For the
     first ``MIN_WINDOW_READINGS`` days, a **legitimate, permanent** device
@@ -591,9 +623,12 @@ def verdict_withheld(
     ``test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline``,
     ``k = 3`` and ``k = 4``) -- the *freely tolerated* direction
     (``research/00`` §1.7: down-regulating, here to silence, on weak
-    evidence), accepted as two days of silence per permanent device switch in
-    exchange for closing the forbidden direction on a brand-new device that
-    goes unused again. ``tier_change_reset`` is the mechanism that
+    evidence), accepted as two days of silence per permanent device switch
+    *at daily capture* in exchange for closing the forbidden direction on a
+    brand-new device that goes unused again. That price is a daily-capture
+    figure: a **sub-daily** switch costs zero days attributable to this
+    widening, because there it flips ``withheld`` only on days
+    ``week_too_thin`` already decides (T145, 2026-09-18). ``tier_change_reset`` is the mechanism that
     distinguishes the two in general -- it accumulates 14 baseline-window
     days of the new tier before handing over the baseline -- and no predicate
     over a single week's shape can do what a time-accumulating mechanism is
