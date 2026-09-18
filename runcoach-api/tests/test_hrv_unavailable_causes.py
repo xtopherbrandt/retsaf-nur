@@ -34,6 +34,7 @@ it says nothing about what §6 is told to *do* with one. Those stay review's.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -433,8 +434,10 @@ def test_the_false_universal_is_gone_from_every_spec_document() -> None:
 
 def test_f005_prices_t116_and_t126_as_net_cost_until_e007() -> None:
     """T128 deliverable 2. Both accepted costs are silence -- 20 days of
-    ``hrv_unavailable`` after every reset (T116, re-confirmed at the corrected
-    duration by T126) -- and both acceptances rest on the same sentence: that
+    ``hrv_unavailable`` after every **coverage-gap** reset (T116, re-confirmed
+    at the corrected duration by T126; narrowed from "every reset" on
+    2026-09-17 by T138, which measured the other reset kind at 18 days and by
+    a different mechanism) -- and both acceptances rest on the same sentence: that
     down-regulation is the direction ``research/00`` §1.7 tolerates freely,
     because §6 widens its guardrails rather than being told readiness is
     intact.
@@ -457,3 +460,197 @@ def test_f005_prices_t116_and_t126_as_net_cost_until_e007() -> None:
             f"F005's Negative Class does not say {phrase!r}: T116's and T126's costs are "
             f"accepted on a compensating behaviour that has not been built"
         )
+
+
+# ---------------------------------------------------------------------------
+# The tier-change silence is stated beside the coverage-gap figure (T138)
+#
+# Every cost table in this feature priced the quiet "after every reset" on a
+# figure established by a coverage-gap walk. T138 measured the other reset
+# kind -- a clean, gapless, permanent source-tier change -- at 18 silent days
+# against the gap's 20, and the two must now appear together everywhere the
+# gap's figure appears, in authority order: research/00, then spec/03, then
+# F005's cost table.
+#
+# **Both figures are derived here, not typed**, for the same reason T133 gave:
+# a number in a document is a consequence of the constants it was computed
+# from, so the pin has to red when a constant moves rather than track it. Move
+# MIN_BASELINE_READINGS to 15 and the two figures become 19 and 21, neither of
+# which the documents carry, and every row below goes red -- which is the
+# signal that three documents are now stale, not that this test is wrong.
+# ---------------------------------------------------------------------------
+
+#: The quiet after a clean source-tier change: it begins when the withhold
+#: arms (``MIN_WINDOW_READINGS - 1``) and ends when clause (a)'s candidacy
+#: resolves (``MIN_BASELINE_READINGS + WINDOW_DAYS - 1``). Derived here as the
+#: difference; derived again, independently and against a walked series, in
+#: ``test_hrv_trend_reset.py``.
+TIER_CHANGE_SILENCE_DAYS = (
+    hrv_trend.MIN_BASELINE_READINGS + hrv_trend.WINDOW_DAYS - hrv_trend.MIN_WINDOW_READINGS
+)
+
+#: The quiet after a coverage gap (T126), and the tier change's reporting lag,
+#: which are the same length for the same reason: both end when a baseline of
+#: ``MIN_BASELINE_READINGS`` distinct days has reached ``D-7``.
+COVERAGE_GAP_QUIET_DAYS = hrv_trend.MIN_BASELINE_READINGS + hrv_trend.WINDOW_DAYS - 1
+
+#: The closed form the three documents quote, so that a reader can recompute
+#: the figure rather than take it. Flattened the way the blocks are.
+#: ``_flat`` drops underscores along with the emphasis, so the form is
+#: flattened here rather than retyped in its flattened spelling.
+CLOSED_FORM = _flat("min_baseline_readings + 7 - min_window_readings")
+
+COST_SITES = (
+    Site(
+        label="research/00 5.4 T138 measurement",
+        root_index=0,
+        rel="specification/research/00-design-decisions.md",
+        lead="**The 20-day quiet was measured for one of the two reset kinds",
+        committed=True,
+    ),
+    Site(
+        label="spec/03 3.7.3 establishment gate",
+        root_index=0,
+        rel="specification/spec/03-derived-metric-formulas.md",
+        lead="- **Either position on a baseline that is not yet established**",
+        committed=True,
+    ),
+    Site(
+        label="F005 Negative Class tier-change silence row",
+        root_index=1,
+        rel="spec/features/F005-resting-hrv-trend.md",
+        lead="| The cost nobody had measured:",
+        committed=False,
+    ),
+)
+
+
+@pytest.mark.parametrize("site", COST_SITES, ids=[site.label for site in COST_SITES])
+def test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure(site: Site) -> None:
+    """Each block that prices the quiet after a reset carries **both** figures
+    and the closed form that produces the tier-change one.
+
+    T138, deliverable 1. Four things are required of every block, and each of
+    them is a separate way the amendment could have been done badly:
+
+    * the tier-change figure (**18**), so the cost exists in the document at
+      all;
+    * the coverage-gap figure (**20**) in the same block, so the two are
+      stated *beside* each other rather than in separate places a reader
+      would have to find -- the precedence inversion T133 caught one cycle
+      ago was exactly a corrected figure landing in one document and not its
+      neighbours;
+    * the **closed form**, so the number is recomputable rather than quoted
+      (``research/00`` §1.6's reproduce-it-by-hand property, applied to the
+      feature's own cost table);
+    * both reset kinds named in the block, because the defect being fixed is
+      one figure standing for two mechanisms.
+
+    Both figures come from ``hrv_trend``'s constants, never from a literal, so
+    this parametrization reds when a constant moves and the documents go
+    stale -- it does not quietly follow the constant to a new number the
+    documents never stated.
+    """
+    _resolve(site)
+    block = _block(site)
+
+    assert CLOSED_FORM in block, (
+        f"{site.label}: the block quotes a number without the closed form {CLOSED_FORM!r} that "
+        f"produces it, so a reader cannot recompute it when a constant moves"
+    )
+    # The figure is required **as the closed form's stated result**, not as a
+    # bare digit anywhere in the block. A bare ``str(18) in block`` is the
+    # vacuous-grep shape T128 caught: these blocks are long, and 18, 19, 20 and
+    # 21 all occur in them incidentally (``R+2 .. R+19``, ``gap_reset_days``),
+    # so under a mutation of MIN_BASELINE_READINGS two of the three sites
+    # stayed green on a number that was never the figure. Measured.
+    stated = re.search(
+        re.escape(CLOSED_FORM) + r"[^|]*?= ?" + str(TIER_CHANGE_SILENCE_DAYS) + r"(?![0-9])",
+        block,
+    )
+    assert stated, (
+        f"{site.label}: the block carries the closed form but does not state its result as "
+        f"{TIER_CHANGE_SILENCE_DAYS}. Either the amendment is missing here, or a constant moved "
+        f"and this document still publishes the old figure -- amend research/00, then spec/03, "
+        f"then F005, in that order"
+    )
+    # The coverage-gap figure has to appear as ``R+20`` -- the day the reset is
+    # finally reported, which is also the length of the gap's own quiet -- and
+    # not as a bare "20 days". "more than 21 days of no captures" and the like
+    # already sit in these blocks, so a looser form stays green at the mutated
+    # constant and proves nothing. Measured both ways.
+    assert f"r+{COVERAGE_GAP_QUIET_DAYS}" in block, (
+        f"{site.label}: the block states the tier-change silence without naming R+"
+        f"{COVERAGE_GAP_QUIET_DAYS}, the day the reset is finally reported -- which is the "
+        f"coverage gap's own quiet, and the comparison this whole amendment is for"
+    )
+    assert "coverage gap" in block and "tier change" in block, (
+        f"{site.label}: the block does not name both reset kinds, which is the distinction the "
+        f"whole amendment exists to draw"
+    )
+
+
+def test_the_tier_change_delay_is_named_and_accepted_in_the_negative_class() -> None:
+    """F005's Negative Class names the ~20-day reporting lag **and records a
+    decision on it**, where before T138 it did neither.
+
+    T138, deliverable 3. Naming a cost and accepting it are different acts,
+    and this feature's own history is the argument for asserting both: the
+    stale-candidacy row was named in T094, priced in one direction only, and
+    its acceptance had to be re-opened in T110 once the second direction was
+    written down. So this requires the lag to be *stated* (the response says
+    no reset happened while one has), *decided* (accepted, not left open),
+    and decided **on a reason** -- that clause (a) accumulates over time and
+    an earlier report would be a prediction that must be withdrawn.
+
+    Skips loudly rather than failing where F005 is absent: it lives under the
+    machine-local ``.shipyard`` breadcrumb, which is gitignored (the
+    ``committed: False`` convention of ``SITES`` above).
+    """
+    site = COST_SITES[-1]
+    path = _resolve(site)
+    text = _flat(path.read_text(encoding="utf-8"))
+
+    assert "the response says no reset happened when one did" in text, (
+        "F005's Negative Class does not state the reporting lag: for the whole delay "
+        "baseline.reset_reason is null while a reset has in fact happened"
+    )
+    assert "named and accepted 2026-09-17" in text, (
+        "the lag is stated but no decision is recorded on it; T138's deliverable is a deliberate "
+        "acceptance, not a mention"
+    )
+    assert "latency, not inaccuracy" in text, (
+        "the lag must be distinguished from a wrong date -- reset_on is correct when it arrives"
+    )
+    assert "time-accumulating" in text, (
+        "the acceptance must carry its reason: clause (a) accumulates, so an earlier report would "
+        "be a prediction and would have to be withdrawn on every abandoned trial"
+    )
+
+
+def test_the_feature_composes_its_silences_against_a_rate() -> None:
+    """F005 sums the four silences it has accumulated and answers the question
+    none of its documents asked.
+
+    T138, deliverable 4. The feature added silence in T116/T126, T125, T132
+    and now T138 and never composed them; the critic's question is at what
+    point a rule that mostly says nothing stops being conservative. This pins
+    that the paragraph exists, that it is arithmetic rather than a gesture (it
+    names a worst realistic case with a total), and that it commits to an
+    answer rather than restating the question.
+    """
+    site = COST_SITES[-1]
+    path = _resolve(site)
+    text = _flat(path.read_text(encoding="utf-8"))
+
+    assert "composing the silences" in text, "F005 never sums the silences it has added"
+    assert "stop being conservative and start being useless" in text, (
+        "the critic's question is not asked in the document"
+    )
+    assert "129 of 365 days" in text, (
+        "the composition must be arithmetic over a worst realistic case, not a qualitative worry"
+    )
+    assert "length is not the test" in text and "nullity" in text, (
+        "the paragraph must commit to an answer; answering it imperfectly is better than leaving "
+        "it unasked, but restating the question is not answering it"
+    )

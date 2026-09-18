@@ -1090,11 +1090,12 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 409  # re-measured 2026-09-16 (T132), as the last action before the
-#                              # commit: +1. T132 added one pin to test_hrv_trend_band.py (the
-#                              # never-used-tier reproduction) and touched no other test's
-#                              # identity, so the net is one test. Nothing publishes this
-#                              # literal; T129 left it at 408.
+SCOPED_SUITE_COLLECTED = 413  # re-measured 2026-09-17 (T138), as the last action before the
+#                              # commit: +4. T138 added four pins to test_hrv_trend_reset.py (the
+#                              # tier-change walk -- the silence, the reporting lag, and the two
+#                              # dependencies of the figure) and touched no other test's identity,
+#                              # so the net is four tests. Nothing publishes this literal; T132
+#                              # left it at 409.
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and
@@ -1475,6 +1476,11 @@ def _all_scanned_files() -> tuple[Path, ...]:
 #: phrase, and one of the seven is a phrase in *this* file -- written here it
 #: would be a second occurrence of that anchor and the uniqueness assertion
 #: would fail on it (T119). The reasons stay here, where the walk reads them.
+#: Re-anchored for ``test_hrv_trend_reset.py`` on 2026-09-17 (T138): that module
+#: gained a tier-change walk section after its old anchor ("nothing else separates
+#: the two runs"), which then sat at 91% of the flattened text and no longer proved
+#: the tail was read. An anchor names its file's **last** live line by construction,
+#: so appending to a scanned file means re-anchoring it in the same commit.
 WITHDRAWN_SCAN_ANCHORS = _DECLARATIONS.WITHDRAWN_SCAN_ANCHORS
 
 

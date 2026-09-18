@@ -62,7 +62,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_reset.py",
-        "nothing else separates the two runs",
+        "and no reset is ever reported either",
         True,
     ),
     (
