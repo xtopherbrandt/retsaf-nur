@@ -209,9 +209,12 @@ CAUSES = (
         phrase="the judged week is not a fair sample of the resolved tier",
         note="T125: computed in build_series (verdict_withheld), read here",
     ),
-    # MUTATION (T137, mutate #3): the "baseline is unestablished" cause
-    # removed from the table -- confirming T128's oracle reds when a cause
-    # and the code it claims to check no longer agree.
+    Cause(
+        key="the baseline is unestablished",
+        guards=("established",),
+        phrase="a baseline below min_baseline_readings (14), reported as established: false",
+        note="T116: symmetric since 2026-09-15; the dominant cause after every reset",
+    ),
     Cause(
         key="the day has not happened",
         withholders=("_withhold_future",),

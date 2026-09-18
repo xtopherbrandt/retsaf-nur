@@ -247,3 +247,118 @@ def test_unavailable_reason_baseline_unestablished_alone() -> None:
     assert verdict.readings_in_window >= hrv_trend.MIN_WINDOW_READINGS
     assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE
     assert verdict.unavailable_reason == BASELINE_UNESTABLISHED
+
+
+# ---------------------------------------------------------------------------
+# the invariant, swept -- and the enum's closure across the three declarations
+# ---------------------------------------------------------------------------
+
+
+def test_unavailable_reason_is_set_exactly_when_the_verdict_is_withheld_across_the_switch_walk() -> None:
+    """The biconditional, swept rather than sampled:
+    ``verdict == hrv_unavailable`` **iff** ``unavailable_reason is not None``,
+    on every local day of the task's device-switch geometry -- the run that
+    crosses from asserted verdicts (09-02 and earlier) into the two opaque
+    withheld days and on into the thin-window ones.
+
+    Both directions are asserted on every day, and every reported reason must
+    be a member of ``UNAVAILABLE_REASONS``: an implementation that set the
+    field on *every* day, or left it ``None`` on a withheld one, or invented a
+    seventh name, reds here. ``judge`` is called and ``.verdict`` read inside
+    this loop's own body (T127/T134's shape), so losing the verdict assertion
+    is itself visible.
+    """
+    strap_days = span(date(2026, 1, 1), date(2026, 8, 31))
+    snapshot_days = span(date(2026, 9, 1), date(2026, 9, 12))
+    rows = readings(STRAP, strap_days, 40.0, "strap") + readings(SNAPSHOT, snapshot_days, 40.0, "snap")
+
+    seen_withheld = 0
+    seen_asserted = 0
+    for day in span(date(2026, 8, 20), date(2026, 9, 12)):
+        verdict = hrv_trend.judge(build(rows, day))
+        withheld = verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE
+        assert (verdict.unavailable_reason is not None) is withheld, (
+            day,
+            verdict.verdict,
+            verdict.unavailable_reason,
+        )
+        if withheld:
+            seen_withheld += 1
+            assert verdict.unavailable_reason in R.UNAVAILABLE_REASONS, (day, verdict.unavailable_reason)
+        else:
+            seen_asserted += 1
+
+    # The walk must actually cross the boundary, or the sweep above proves
+    # nothing about either direction (a -k that deselects everything exits 0).
+    assert seen_withheld > 0 and seen_asserted > 0, (seen_withheld, seen_asserted)
+
+
+def test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_schema_and_the_contract() -> (
+    None
+):
+    """One closed enum, declared three times, and the three must agree name
+    for name -- the module's ``UNAVAILABLE_REASONS``, the ``Literal`` on
+    ``HrvTrendResponse.unavailable_reason``, and ``HrvTrend``'s ``enum`` in
+    ``contracts/openapi.yaml``. A field added to the code without moving the
+    published contract is exactly the drift this task's probe exists to
+    refuse; this pins the *values*, which a structural drift check does not
+    read.
+    """
+    import typing
+    from pathlib import Path
+
+    import yaml
+    from runcoach_api.schemas import HrvTrendResponse
+
+    module_names = list(R.UNAVAILABLE_REASONS)
+    assert len(module_names) == 6, module_names
+    assert len(set(module_names)) == 6, "the six names must be distinct"
+
+    annotation = HrvTrendResponse.model_fields["unavailable_reason"].annotation
+    literals: list[str] = []
+    for member in typing.get_args(annotation):
+        if typing.get_origin(member) is typing.Literal:
+            literals.extend(typing.get_args(member))
+    assert literals, f"unavailable_reason is not a closed Literal enum: {annotation!r}"
+    assert set(literals) == set(module_names), (sorted(literals), sorted(module_names))
+    assert type(None) in typing.get_args(annotation), "the field must admit null"
+
+    contract_path = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
+    with contract_path.open(encoding="utf-8") as fh:
+        contract = yaml.safe_load(fh)
+    published = contract["components"]["schemas"]["HrvTrend"]["properties"]["unavailable_reason"]["enum"]
+    assert set(published) == set(module_names), (sorted(published), sorted(module_names))
+    assert published == module_names, "and in the module's own precedence order"
+
+
+def test_the_schema_refuses_an_unavailable_reason_outside_the_six() -> None:
+    """Closed, not merely documented: a seventh value is a validation error,
+    so a future cause cannot reach a client unnamed by the contract.
+
+    The partial payload below is missing other required fields on purpose --
+    so a bare ``pytest.raises(ValidationError)`` would be green whatever the
+    field's type is, which is the T134 failure mode. The assertion is
+    therefore on the error's **location**: ``unavailable_reason`` must be
+    among the rejected fields with the seventh value, and must **not** be
+    among them when the value is one of the six.
+    """
+    import pytest
+    from pydantic import ValidationError
+    from runcoach_api.schemas import HrvTrendResponse
+
+    def locations(reason: str) -> set[tuple]:
+        payload = {
+            "date": "2026-09-03",
+            "from": "2026-09-03",
+            "timezone": "Pacific/Auckland",
+            "points": [],
+            "verdict": "hrv_unavailable",
+            "unavailable_reason": reason,
+        }
+        with pytest.raises(ValidationError) as caught:
+            HrvTrendResponse.model_validate(payload)
+        return {tuple(error["loc"]) for error in caught.value.errors()}
+
+    assert ("unavailable_reason",) in locations("the_week_looked_odd")
+    for legal in R.UNAVAILABLE_REASONS:
+        assert ("unavailable_reason",) not in locations(legal), legal
