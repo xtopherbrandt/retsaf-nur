@@ -3262,11 +3262,22 @@ def test_the_reset_constants_are_the_construction_references() -> None:
 #     so ``established`` is **true** on every silent day, ``baseline.n``
 #     merely decays, and ``reset_reason`` is **null on every one of them**.
 #
-# So the silence here is produced by *week coverage on the outgoing tier*,
-# not by the establishment gate -- and ``research/00`` 5.4 and spec/03 3.7.3,
-# which say a re-establishment "(a coverage gap or a source-tier change)"
-# puts the athlete "20 days beneath ``min_baseline_readings``", are true of
-# the gap and false of the switch in both particulars.
+# So the silence here is **not** the establishment gate's doing; it is the
+# two week-level mechanisms in sequence, and the split is asserted below
+# rather than narrated (T143). Measured over the walk: the T125/T132
+# withhold silences ``R+2`` and ``R+3`` -- the outgoing tier's week is still
+# thick enough to judge, but the new tier has taken it over -- and week
+# coverage on the outgoing tier silences ``R+4 .. R+19``, once the old tier
+# holds fewer than ``MIN_WINDOW_READINGS`` days of ``[D-6, D]``. That is
+# ``research/00`` 5.4's "``week_not_representative`` on two of them and
+# ``week_too_thin`` on the other sixteen", and F005's reporting-lag row says
+# the same; ``DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS`` and
+# ``DOCUMENTED_TIER_CHANGE_THIN_DAYS`` below are those two numbers, pinned.
+#
+# ``research/00`` 5.4 and spec/03 3.7.3, which say a re-establishment
+# "(a coverage gap or a source-tier change)" puts the athlete "20 days
+# beneath ``min_baseline_readings``", are therefore true of the gap and
+# false of the switch in both particulars.
 # ---------------------------------------------------------------------------
 
 #: The switch day ``R``: the new tier's first local day, and the day
@@ -3285,6 +3296,16 @@ R_TIER_SWITCH = date(2026, 9, 1)
 #: it is a consequence of, never retyped).
 DOCUMENTED_TIER_CHANGE_SILENCE_DAYS = 18
 DOCUMENTED_TIER_CHANGE_REPORTING_LAG_DAYS = 20
+
+#: How the 18 divides by cause (T143). ``research/00`` 5.4 (ii) and F005's
+#: reporting-lag row publish it as "``week_not_representative`` on two of
+#: them and ``week_too_thin`` on the other sixteen" -- an invariant that,
+#: until T143, no test could break. Same discipline as the 18 itself: the
+#: literals are the documents' and the boundary between the two runs is
+#: derived from ``hrv_trend``'s constants, so a constant that moves the
+#: boundary leaves these behind and reds the walk.
+DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS = 2
+DOCUMENTED_TIER_CHANGE_THIN_DAYS = 16
 
 #: The outgoing tier's baseline on the switch day: it has been read daily for
 #: 200 days, so it holds every one of ``BASELINE_DAYS``.
@@ -3305,6 +3326,31 @@ def first_reported_day(step: int = 1) -> int:
     return (hrv_trend.MIN_BASELINE_READINGS - 1) * step + hrv_trend.WINDOW_DAYS
 
 
+def week_thins_at() -> int:
+    """``k`` for the first ``D = R+k`` whose judged week holds fewer than
+    ``MIN_WINDOW_READINGS`` days *of the outgoing tier*.
+
+    The old tier stopped dead on ``R-1``, so on ``D = R+k`` it holds the
+    ``WINDOW_DAYS - 1 - k`` days of ``[D-6, D]`` that fall on or before
+    ``R-1``. That first drops below ``MIN_WINDOW_READINGS`` at
+    ``k = WINDOW_DAYS - MIN_WINDOW_READINGS`` -- measured across the walk,
+    ``readings_in_window`` runs 6, 5, 4, 3, **2**, 1, 0 at ``k`` = 0..6, and
+    2 < 3 first happens at ``k`` = 4.
+
+    Independent of ``step``: it is a property of when the *old* tier stopped,
+    not of how densely the new one records.
+
+    T143 corrected this: the expression here used to add one more (giving 5),
+    which was both wrong by one and dead -- ``withheld_at`` won the ``min``
+    below at both walked densities, so no test could read it. It is kept
+    rather than deleted because the race it describes is real (at a sparse
+    enough ``step`` the withhold arms *after* the old tier's week empties),
+    and it is no longer dead: it is now the boundary between the two
+    ``unavailable_reason`` runs the silence test asserts.
+    """
+    return hrv_trend.WINDOW_DAYS - hrv_trend.MIN_WINDOW_READINGS
+
+
 def first_silent_day(step: int = 1) -> int:
     """``k`` for the first ``D = R+k`` that reads ``hrv_unavailable``,
     derived from the two rules that can silence it first.
@@ -3315,14 +3361,14 @@ def first_silent_day(step: int = 1) -> int:
       ``MIN_WINDOW_READINGS`` days of the judged week, all later than the
       resolved tier's newest judged day, which at ``step`` is
       ``(MIN_WINDOW_READINGS - 1) * step``;
-    * **week coverage on the outgoing tier** -- the old tier stopped on
-      ``R-1``, so it holds ``WINDOW_DAYS - 1 - k`` days of ``[D-6, D]``, and
-      it drops below ``MIN_WINDOW_READINGS`` at
-      ``k = WINDOW_DAYS - MIN_WINDOW_READINGS + 1``.
+    * **week coverage on the outgoing tier** -- ``week_thins_at`` above.
+
+    At both walked densities the withhold wins (2 at ``step`` = 1, and a tie
+    at 4 when ``step`` = 2), which is why the quiet opens with
+    ``week_not_representative`` and only later becomes ``week_too_thin``.
     """
     withheld_at = (hrv_trend.MIN_WINDOW_READINGS - 1) * step
-    week_thins_at = hrv_trend.WINDOW_DAYS - hrv_trend.MIN_WINDOW_READINGS + 1
-    return min(withheld_at, week_thins_at)
+    return min(withheld_at, week_thins_at())
 
 
 def tier_change_silence_days(step: int = 1) -> int:
@@ -3377,6 +3423,9 @@ class SwitchDay(NamedTuple):
     tier: str | None
     reset_reason: str | None
     reset_on: date | None
+    #: T137's cause, carried so the walk can assert *which* mechanism
+    #: silenced each day rather than only that it was silent (T143).
+    unavailable_reason: str | None
 
 
 def switch_walk(rows: list[dict], through: int) -> list[SwitchDay]:
@@ -3395,6 +3444,7 @@ def switch_walk(rows: list[dict], through: int) -> list[SwitchDay]:
                 result.tier,
                 result.reset_reason,
                 result.reset_on,
+                verdict.unavailable_reason,
             )
         )
     return walk
@@ -3465,6 +3515,33 @@ def test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_t
         "the documents' '20 days beneath min_baseline_readings' is false of a clean switch"
     )
     assert all(day.tier == SNAPSHOT for day in quiet), "the outgoing tier still owns the baseline"
+
+    # Which mechanism silenced each day. Until T143 the section header named
+    # one mechanism in prose and nothing in the walk could tell 18 silent
+    # days "for the reason claimed" from 18 for some other mix; these two
+    # runs partition the quiet, so a day silenced by anything else -- an
+    # unestablished baseline, say, or no band at all -- lands in neither and
+    # reds.
+    withheld = [day.k for day in quiet if day.unavailable_reason == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE]
+    too_thin = [day.k for day in quiet if day.unavailable_reason == hrv_trend.REASON_WEEK_TOO_THIN]
+    assert withheld == list(range(first_silent_day(), week_thins_at())), (
+        "the quiet opens with T125/T132's withhold: the outgoing tier's week is still thick enough "
+        "to judge, but the new tier has taken the week over"
+    )
+    assert too_thin == list(range(week_thins_at(), first_reported_day())), (
+        "and becomes week_too_thin once the outgoing tier holds fewer than MIN_WINDOW_READINGS days "
+        "of [D-6, D] -- told to an athlete who captured every single morning (research/00 5.4 (ii))"
+    )
+    assert (len(withheld), len(too_thin)) == (
+        DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS,
+        DOCUMENTED_TIER_CHANGE_THIN_DAYS,
+    ), (
+        "research/00 5.4 (ii) and F005's reporting-lag row publish the split as "
+        f"week_not_representative on {DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS} of the silent days and "
+        f"week_too_thin on the other {DOCUMENTED_TIER_CHANGE_THIN_DAYS}; these constants now produce "
+        f"{len(withheld)} and {len(too_thin)}. Amend the documents in authority order, or restore "
+        "the constant"
+    )
     assert [day.baseline_n for day in quiet] == sorted((day.baseline_n for day in quiet), reverse=True)
     assert max(day.baseline_n for day in quiet) == BASELINE_FULL
 
@@ -3505,12 +3582,20 @@ def test_the_tier_change_delay_reports_the_switch_twenty_days_after_it_happened(
     assert silent_on_the_reset == list(range(first_reported_day())), (
         "every day from the switch up to the day before the report says no reset happened"
     )
+    # research/00 5.4 (i) publishes *both* reset fields as null through the
+    # lag, and ``reset_on`` is the one a consumer would read to date the
+    # move. T143 replaced a tautology here -- the old line recomputed
+    # ``R + report.k`` from ``report.k`` and subtracted ``reset_on``, which
+    # ``switch_walk`` and the assertion above had already fixed, so it could
+    # never be the first line to red -- with this, which reds if the route
+    # ever starts dating a reset before it names one.
+    assert all(day.reset_on is None for day in walk[: first_reported_day()]), (
+        "and dates none either: reset_on is null on every day of the lag"
+    )
 
     report = walk[first_reported_day()]
     assert report.reset_reason == "tier_change"
     assert report.reset_on == R_TIER_SWITCH
-    reported_on = R_TIER_SWITCH + timedelta(days=report.k)
-    assert (reported_on - report.reset_on).days == first_reported_day()
     assert first_reported_day() == DOCUMENTED_TIER_CHANGE_REPORTING_LAG_DAYS, (
         f"F005's Negative Class records a {DOCUMENTED_TIER_CHANGE_REPORTING_LAG_DAYS}-day reporting "
         f"lag; these constants now produce {first_reported_day()}"
@@ -3570,7 +3655,20 @@ def test_the_tier_change_silence_is_zero_when_the_old_tier_outlasts_candidacy() 
     mornings.
     """
     overlap = first_reported_day() + 1
-    walk = switch_walk(clean_switch_history(overlap=overlap), through=first_reported_day() + 4)
+    # "Never" needs a witness at least as wide as the claim (T143). The old
+    # walk stopped at ``R+24``, four days past the overlap, so a report at
+    # ``R+30`` would have passed it. It runs now until the interleaved era
+    # has aged out of **both** windows the tier-change rule compares -- the
+    # baseline window ``[D-66, D-7]`` and ``previous_window``'s
+    # ``[D-126, D-67]`` -- because past that day both resolve the new tier
+    # alone, there is no interleaving left anywhere for rule 4 to read, and
+    # the two windows agree forever after. That is
+    # ``overlap + WINDOW_DAYS + 2 * BASELINE_DAYS`` = ``R+148``.
+    through = overlap + hrv_trend.WINDOW_DAYS + 2 * hrv_trend.BASELINE_DAYS
+    walk = switch_walk(clean_switch_history(overlap=overlap, days_after=through), through=through)
 
     assert [day.verdict for day in walk] == [WALK_NORMAL] * len(walk), "no silent day"
     assert {day.reset_reason for day in walk} == {None}, "and no reset is ever reported either"
+    assert {day.unavailable_reason for day in walk} == {None}, (
+        "nothing is withheld, so nothing has a cause to name"
+    )
