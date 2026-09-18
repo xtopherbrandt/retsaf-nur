@@ -1092,7 +1092,15 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 414  # re-measured 2026-09-18 (T140), as the last action before the
+SCOPED_SUITE_COLLECTED = 415  # re-measured 2026-09-18 (T147), as the last action before the
+#                              # commit: +1. T147 added one pin to
+#                              # test_hrv_trend_band.py -- the capture-density
+#                              # walk -- and strengthened an existing
+#                              # test_hrv_trend_reset.py test in place, which
+#                              # changes no identity. Nothing publishes this
+#                              # number; the previous value was T140's, whose
+#                              # own note follows.
+# SCOPED_SUITE_COLLECTED = 414  # re-measured 2026-09-18 (T140), as the last action before the
 #                              # commit: +1. T140 added one pin to this file, the two-copies
 #                              # assertion for unavailable_reason, and touched no other test's
 #                              # identity here. Its other two parametrizations grew in

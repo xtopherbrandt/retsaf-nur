@@ -974,6 +974,169 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
 
 
 # ---------------------------------------------------------------------------
+# T147: the residual's axis is the SPACING of the captures, not their count
+# ---------------------------------------------------------------------------
+
+#: Weekly capture patterns for the return era -- local-day offsets from
+#: ``RETURN_FIRST``, repeating every seven days -- with the two counts T145
+#: measured and this walk re-measures against the shipped code:
+#:
+#: * ``retired_band_mornings``: how many of his opening mornings back are
+#:   still answered ``hrv_normal`` from a judged week fed **entirely** by
+#:   pre-return days -- the residual F005's Negative Class prices, whose
+#:   closed form is ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``;
+#: * ``attributable_days``: how many days of the ensuing silence T125/T132's
+#:   withhold actually decides, i.e. carry ``week_not_representative`` rather
+#:   than the ``week_too_thin`` that would have silenced them anyway.
+#:
+#: **The two 4/wk rows are the point of this table.** They hold the same
+#: number of captures per week and disagree on both counts, while the
+#: *clustered* one agrees with daily throughout -- so neither count is a
+#: function of weekly density, and a bound glossed as a property of how many
+#: mornings a week he captures is false of half the 4/wk athletes. The axis
+#: is how far apart the captures sit: ``k3``, the offset at which his
+#: ``MIN_WINDOW_READINGS``-th distinct return day enters the judged week, is
+#: 2 at daily and at 4/wk-clustered alike and 4 or more at the three spread
+#: patterns.
+RETURN_DENSITIES = (
+    ("daily", (0, 1, 2, 3, 4, 5, 6), 2, 2),
+    ("4/wk clustered", (0, 1, 2, 4), 2, 2),
+    ("4/wk spread", (0, 2, 4, 6), 4, 0),
+    ("3/wk", (0, 2, 4), 4, 0),
+    ("2/wk", (0, 3), 4, 0),
+)
+
+#: How far past ``RETURN_FIRST`` the walk below runs. Through ``k = 6`` the
+#: carrier still owns the baseline under every pattern in
+#: ``RETURN_DENSITIES`` (asserted, not assumed), which is the whole stretch
+#: either count can be non-zero over: the residual is capped at
+#: ``WINDOW_DAYS - MIN_WINDOW_READINGS`` = 4 and the withhold has stopped
+#: mattering well before the handover.
+DENSITY_WALK_DAYS = 7
+
+#: The return era's seeded length, long enough that every pattern's third
+#: distinct capture day falls inside it (2/wk reaches it on ``RETURN_FIRST +
+#: 7``, one day past the walk).
+DENSITY_RETURN_DAYS = 21
+
+
+def _seed_density_eras(seed_hrv_series, home_tier: str, carrier_tier: str) -> tuple[list[dict], list[dict]]:
+    """``_seed_return_series``'s three eras, seeded **once**, with the return
+    era handed back separately so each pattern can thin it.
+
+    The store is one isolated database per test and ``session_id`` is derived
+    from ``(source_device, start_time)``, so re-seeding the same eras per
+    pattern would collide rather than repeat: the eras are seeded once here
+    and only the row *list* is filtered below. The return era is contiguous,
+    and ``seed_hrv_series`` places its ``i``-th reading on ``first_day + i``,
+    so row ``i`` is ``RETURN_FIRST + i`` and the thinning needs no timestamp
+    arithmetic.
+    """
+    eras: list[list[dict]] = []
+    for tier, end, days, hour in (
+        (home_tier, ERA_A_END, 80, 6),
+        (carrier_tier, CARRIER_END, 39, 7),
+        (home_tier, RETURN_FIRST + timedelta(days=DENSITY_RETURN_DAYS - 1), DENSITY_RETURN_DAYS, 6),
+    ):
+        kwargs = {
+            "end": end,
+            "days": days,
+            "suppress_last": 0,
+            "tier": tier,
+            "zone": AUCKLAND,
+            "local_hour": hour,
+        }
+        if tier == STRAP:
+            kwargs["profile_names"] = [PROFILE]
+        eras.append(seed_hrv_series(**kwargs).rows)
+    era_a, carrier, return_era = eras
+    assert len(return_era) == DENSITY_RETURN_DAYS
+    return era_a + carrier, return_era
+
+
+def test_the_return_residual_turns_on_capture_spacing_not_weekly_count(seed_hrv_series) -> None:
+    """[[T147]], review cycle 10, G-C10-11/12: the walk above's geometry at
+    five capture densities.
+
+    Every fixture this feature has measured the device return over seeds
+    **contiguous daily mornings** -- ``_seed_return_series`` above, and all
+    2050 rows of ``spec/references/T125-fix-form-measurements.md`` -- so the
+    non-daily half of both the residual bound and T132's priced cost was
+    stated and restated with no pin under it. That is how the bound came to
+    be glossed as a property of how many mornings a week the athlete
+    captures, when both counts are measured to turn on **how far apart** they
+    sit: a 4/wk clustered return agrees with the daily one on both counts,
+    and 4/wk spread with 3/wk and 2/wk.
+
+    What is asserted, per pattern, over ``k = 0 .. 6``:
+
+    * the carrier still owns the baseline throughout, so both counts are read
+      off the same phase under every pattern and the walk is not silently
+      comparing different stretches;
+    * ``retired_band_mornings`` -- ``hrv_normal`` from a week fed entirely by
+      days at or before ``CARRIER_END`` -- equals the table **and** equals
+      ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``, with ``k3`` derived
+      from the seeded capture days rather than restated beside them;
+    * ``attributable_days`` -- ``unavailable_reason ==
+      "week_not_representative"`` -- equals the table, which is **zero** at
+      every spread pattern: there the withhold flips only on days
+      ``week_too_thin`` already decides, and ``week_too_thin`` precedes it in
+      ``_unavailable_reason``'s fixed order;
+    * and the cross-pattern claim itself: the two 4/wk rows disagree while
+      carrying the same weekly count.
+
+    Perturbation, both run and reverted 2026-09-18 ([[T147]]): moving
+    ``week_not_representative`` ahead of ``week_too_thin`` in
+    ``_unavailable_reason``'s fixed order reds this walk at the first row it
+    reaches, ``attributable_days`` 2 -> 5 at daily -- the order is what makes
+    the spread patterns' attributable count zero, so it is load-bearing for
+    the whole right-hand column. Relaxing ``verdict_withheld``'s ``len(days)
+    >= MIN_WINDOW_READINGS`` to ``>`` reds it on the other count,
+    ``retired_band_mornings`` 2 -> 3 at daily, and the closed form with it.
+    """
+    before_return, return_era = _seed_density_eras(seed_hrv_series, STRAP, SNAPSHOT)
+
+    measured: dict[str, tuple[int, int]] = {}
+    for name, weekly_offsets, expected_retired, expected_attributable in RETURN_DENSITIES:
+        rows = before_return + [row for i, row in enumerate(return_era) if i % 7 in weekly_offsets]
+        captured = [RETURN_FIRST + timedelta(days=i) for i in range(DENSITY_RETURN_DAYS) if i % 7 in weekly_offsets]
+
+        retired_band_mornings = 0
+        attributable_days = 0
+        for k in range(DENSITY_WALK_DAYS):
+            target = RETURN_FIRST + timedelta(days=k)
+            series = build_series(rows, AUCKLAND, target)
+            verdict = judge(series)
+
+            assert series.tier == SNAPSHOT, (name, k)
+            fed = [reading.date for reading in series.window]
+            if verdict.verdict == NORMAL and fed and max(fed) <= CARRIER_END:
+                retired_band_mornings += 1
+            if verdict.unavailable_reason == "week_not_representative":
+                assert verdict.verdict == UNAVAILABLE, (name, k)
+                attributable_days += 1
+
+        # ``k3``: the offset at which his ``MIN_WINDOW_READINGS``-th distinct
+        # return day enters the judged week, read off the days actually
+        # seeded rather than restated from the table above.
+        k3 = (captured[hrv_trend.MIN_WINDOW_READINGS - 1] - RETURN_FIRST).days
+        closed_form = min(hrv_trend.WINDOW_DAYS - hrv_trend.MIN_WINDOW_READINGS, k3)
+
+        assert retired_band_mornings == expected_retired, name
+        assert retired_band_mornings == closed_form, (name, k3)
+        assert attributable_days == expected_attributable, name
+        measured[name] = (retired_band_mornings, attributable_days)
+
+    # The claim the gloss got wrong, asserted directly: the same weekly count
+    # with different spacing gives a different answer, and the clustered
+    # return is the daily one's twin rather than the spread ones'.
+    assert len(RETURN_DENSITIES[1][1]) == len(RETURN_DENSITIES[2][1]) == 4
+    assert measured["4/wk clustered"] == measured["daily"]
+    assert measured["4/wk clustered"] != measured["4/wk spread"]
+    assert measured["4/wk spread"] == measured["3/wk"] == measured["2/wk"]
+
+
+# ---------------------------------------------------------------------------
 # T132: the withhold is blind to a device the athlete has never used before
 # ---------------------------------------------------------------------------
 

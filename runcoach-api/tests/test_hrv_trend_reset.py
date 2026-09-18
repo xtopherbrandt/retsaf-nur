@@ -411,6 +411,41 @@ def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppressi
     baseline (target D: 23 strap readings in ``[D-66, D-7]``), the tier
     changes, the reset is reported as ``tier_change`` on the first strap
     day, and the baseline window is clipped there.
+
+    **What silences those days is week coverage, not establishment** --
+    [[T147]], review cycle 10, G-C10-13. This test's name and F005's
+    criterion both read as though an establishment gate were holding the
+    verdict back, and until now nothing here could tell the difference: the
+    assertions stopped at ``build_series`` and never called ``judge``, so
+    deleting ``judge``'s establishment requirement outright would not have
+    reddened a line of it. It is a proxy for the claim it is cited for.
+
+    Walked here instead, ``D-29 .. D-9``, every day of the switch:
+    ``established`` is **true on every one of them**. The snapshot keeps its
+    own baseline while the strap accumulates (``n`` decays 60 -> 47, never
+    below ``MIN_BASELINE_READINGS``), and on the first day the strap owns the
+    baseline it holds exactly ``MIN_BASELINE_READINGS`` and answers
+    ``hrv_normal`` at once. There is no day in the scenario on which an
+    unestablished baseline decides anything, because clause (a) will not
+    report the change until the resolved tier has held
+    ``MIN_BASELINE_READINGS`` distinct baseline-window days -- so the gate
+    the name invokes **cannot fire here**. The quiet partitions into
+    ``week_not_representative`` (D-27, D-26) and then ``week_too_thin``
+    (D-25 .. D-10), which is [[T138]]'s mechanism and the split [[T143]]
+    pins morning by morning. The name is kept because two reference
+    documents and T092 cite it; this paragraph and the walk below say what it
+    actually holds.
+
+    Perturbation, all three run and reverted 2026-09-18 ([[T147]]): deleting
+    ``judge``'s establishment requirement (its ``if established`` branch)
+    leaves the walk below **green** -- which is the point, and the honest
+    statement of what this test can and cannot pin: no day in this scenario
+    reaches that branch unestablished, so no assertion here may be cited for
+    that gate. Raising the establishment threshold past the baseline
+    (``baseline_n >= MIN_BASELINE_READINGS + 100``) reds the walk's per-day
+    ``established`` assertion immediately, and swapping
+    ``_unavailable_reason``'s first two guards reds the partition below --
+    which is what pins the mechanism the criterion now names.
     """
     snapshot_era = readings(SNAPSHOT, span(ago(126), ago(30)), 60.0, "snap")
     strap_era = readings(STRAP, span(ago(29), D), 25.0, "strap")
@@ -438,6 +473,36 @@ def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppressi
     assert [r.date for r in established.baseline] == span(ago(29), ago(7))
     assert all(r.tier == STRAP for r in established.baseline)
     assert len(established.baseline) >= hrv_trend.MIN_BASELINE_READINGS
+
+    # T147. The same switch through ``judge``, day by day. ``established`` is
+    # the column the criterion and this test's name both turn on, so it is
+    # asserted on every day rather than sampled, and the silence is
+    # attributed to the guard that actually produces it.
+    quiet: dict[str, list[date]] = {}
+    for n in range(29, 8, -1):
+        day = ago(n)
+        verdict = hrv_trend.judge(build(rows, target=day))
+        assert verdict.established is True, day
+        quiet.setdefault(verdict.unavailable_reason or verdict.verdict, []).append(day)
+
+    assert quiet == {
+        # Two mornings still judged on the snapshot's own week, and then --
+        # at ago(9) -- the first morning the strap owns the baseline, which
+        # answers immediately rather than waiting on establishment.
+        "hrv_normal": [ago(29), ago(28), ago(9)],
+        # The strap holds 3 or more judged-week days, all later than the
+        # snapshot's -- T125/T132's withhold, reported under its own name.
+        "week_not_representative": span(ago(27), ago(26)),
+        # From here the snapshot has fewer than 3 days left in the week, and
+        # week_too_thin precedes the withhold in judge's fixed order.
+        "week_too_thin": span(ago(25), ago(10)),
+    }
+
+    handover = hrv_trend.judge(build(rows, target=ago(9)))
+    assert handover.verdict == "hrv_normal"
+    assert handover.unavailable_reason is None
+    assert handover.baseline_n == hrv_trend.MIN_BASELINE_READINGS
+    assert handover.established is True
 
 
 def test_a_tier_that_differs_only_because_the_previous_window_is_thin_is_not_a_change() -> None:

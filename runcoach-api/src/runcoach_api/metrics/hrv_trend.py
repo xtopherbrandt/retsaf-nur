@@ -625,10 +625,17 @@ def verdict_withheld(
     (``research/00`` §1.7: down-regulating, here to silence, on weak
     evidence), accepted as two days of silence per permanent device switch
     *at daily capture* in exchange for closing the forbidden direction on a
-    brand-new device that goes unused again. That price is a daily-capture
-    figure: a **sub-daily** switch costs zero days attributable to this
-    widening, because there it flips ``withheld`` only on days
-    ``week_too_thin`` already decides (T145, 2026-09-18). ``tier_change_reset`` is the mechanism that
+    brand-new device that goes unused again. That price belongs to
+    **contiguous** capture, not to daily capture as such: a switch whose
+    captures are **spread** -- 4/wk spread, 3/wk, 2/wk -- costs zero days
+    attributable to this widening, because there it flips ``withheld`` only
+    on days ``week_too_thin`` already decides, while a 4/wk *clustered*
+    switch pays the same two days the daily one does (T145 2026-09-18; the
+    summary here said "a sub-daily switch" until T147 corrected it
+    2026-09-18, the enumeration below it having been right all along, and
+    the five densities are pinned in
+    ``test_hrv_trend_band.test_the_return_residual_turns_on_capture_spacing_not_weekly_count``).
+    ``tier_change_reset`` is the mechanism that
     distinguishes the two in general -- it accumulates 14 baseline-window
     days of the new tier before handing over the baseline -- and no predicate
     over a single week's shape can do what a time-accumulating mechanism is
