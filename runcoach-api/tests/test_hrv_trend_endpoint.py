@@ -1063,6 +1063,8 @@ WITHDRAWN_ORDER = (
     ("ESTABLISHED_WITHDRAWN", 1, "9b001bd01d01", "T116's asymmetric established gloss"),
     ("THRESHOLDS_WITHDRAWN", 1, "be7083eef471", "IDEA-070's retracted promise, schema idiom"),
     ("THRESHOLDS_WITHDRAWN", 2, "285bbbe3b570", "IDEA-070's retracted promise, YAML idiom"),
+    ("SILENCE_RATE_WITHDRAWN", 1, "394adbef2936", "T138's composed-silence scenario, the event the rule cannot detect"),
+    ("SILENCE_RATE_WITHDRAWN", 2, "02e9956b8dc3", "T138's composed-silence headline, the rate and its share of the year"),
 )
 
 
@@ -1242,8 +1244,8 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
             f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
             f"every entry is pinned by exactly one row, and every row pins an entry"
         )
-    assert len(WITHDRAWN_ORDER) == 17, (
-        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 17: a row and its "
+    assert len(WITHDRAWN_ORDER) == 19, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 19: a row and its "
         f"tuple entry dropped together leave every remaining digest correct"
     )
 
@@ -2126,6 +2128,36 @@ THRESHOLDS_WITHDRAWN = _DECLARATIONS.THRESHOLDS_WITHDRAWN
 THRESHOLDS_SHARED_ANCHOR = "they are not all of tier resolution"
 
 
+#: Withdrawn by [[T141]] (review cycle 10, G-C10-2), the fifth withdrawal this
+#: feature has had to record and the first that is not a false *rule* but a
+#: false *quantity*. T138 answered the cycle-9 critic's question -- at what
+#: point does a rule that mostly says nothing stop being conservative -- by
+#: composing this feature's four silences against a rate, and published the
+#: total into ``research/00`` §5.4 and F005's Negative Class. Entry 1 is the
+#: scenario that produced the largest term of that total: a same-tier device
+#: replacement, which the rule **cannot detect** -- ``tier_change_reset`` keys
+#: on ``hrv_source_tier`` and there is no notion of device identity anywhere in
+#: the rule's vocabulary, so the event fires no reset and costs zero silent
+#: days. Entry 2 is the headline the total was published as. Both are declared
+#: rather than merely deleted because the user decision was to **withdraw the
+#: figure, not re-derive it** (any replacement rate would assume how often a
+#: real athlete crosses between the three tiers -- a judgement about people, in
+#: the document that is this system's authority on measured facts), and a
+#: figure that is never going to be recomputed is exactly the kind that comes
+#: back by being re-typed from a task file or a review verdict.
+#:
+#: Entry 1 is the load-bearing one. The two numbers are arithmetic that could
+#: in principle be re-derived for some other scenario; the scenario is the part
+#: that names an event outside the rule's vocabulary, and a withdrawal that
+#: struck the numbers and kept it would leave the defect in place.
+#:
+#: Neither entry is positional (see ``POSITIONAL_WITHDRAWN``): the task file
+#: and the cycle-10 verdict that quote them as the thing being withdrawn are
+#: both held out by ``SCAN_EXCLUDED_HISTORY``, so a bare-fragment match here is
+#: a restoration and not a record.
+SILENCE_RATE_WITHDRAWN = _DECLARATIONS.SILENCE_RATE_WITHDRAWN
+
+
 #: Every withdrawn phrasing the walk reads, in one name so a declared tuple
 #: cannot be left out of the sweep -- which is the shape ``VERDICT_WITHDRAWN``
 #: was in until T122, ``WINDOW_WITHDRAWN`` until ``acfebae``, and the same shape T115
@@ -2141,6 +2173,7 @@ WITHDRAWN_SWEPT = (
     + WINDOW_WITHDRAWN
     + ESTABLISHED_WITHDRAWN
     + THRESHOLDS_WITHDRAWN
+    + SILENCE_RATE_WITHDRAWN
 )
 
 #: Being in ``WITHDRAWN_SWEPT`` is not the same as reaching the whole walk.

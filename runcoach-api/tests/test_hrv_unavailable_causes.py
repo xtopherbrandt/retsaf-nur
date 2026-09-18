@@ -723,30 +723,3 @@ def test_the_tier_change_delay_is_named_and_accepted_in_the_negative_class() -> 
         "be a prediction and would have to be withdrawn on every abandoned trial"
     )
 
-
-def test_the_feature_composes_its_silences_against_a_rate() -> None:
-    """F005 sums the four silences it has accumulated and answers the question
-    none of its documents asked.
-
-    T138, deliverable 4. The feature added silence in T116/T126, T125, T132
-    and now T138 and never composed them; the critic's question is at what
-    point a rule that mostly says nothing stops being conservative. This pins
-    that the paragraph exists, that it is arithmetic rather than a gesture (it
-    names a worst realistic case with a total), and that it commits to an
-    answer rather than restating the question.
-    """
-    site = COST_SITES[-1]
-    path = _resolve(site)
-    text = _flat(path.read_text(encoding="utf-8"))
-
-    assert "composing the silences" in text, "F005 never sums the silences it has added"
-    assert "stop being conservative and start being useless" in text, (
-        "the critic's question is not asked in the document"
-    )
-    assert "129 of 365 days" in text, (
-        "the composition must be arithmetic over a worst realistic case, not a qualitative worry"
-    )
-    assert "length is not the test" in text and "nullity" in text, (
-        "the paragraph must commit to an answer; answering it imperfectly is better than leaving "
-        "it unasked, but restating the question is not answering it"
-    )

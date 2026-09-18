@@ -32,6 +32,11 @@ WINDOW_WITHDRAWN = (
 
 ESTABLISHED_WITHDRAWN = ("below it, hrv_suppressed is never emitted",)
 
+SILENCE_RATE_WITHDRAWN = (
+    "replaces a chest strap every four months",
+    "129 of 365 days -- 35% of the calendar",
+)
+
 THRESHOLDS_WITHDRAWN = (
     "the heuristic constants the verdict was computed with (spec 03",
     "the heuristic constants the verdict was computed with (spec/03",
