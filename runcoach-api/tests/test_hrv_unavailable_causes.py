@@ -175,6 +175,21 @@ class Cause:
     but *which* phrases must be present is decided by the code, through
     ``guards`` / ``withholders`` / ``structural``. A row whose code side no
     longer matches the source is red before its phrase is ever looked for.
+
+    **``note`` carries claims that nothing checks (T142, 2026-09-18).** The
+    ``note`` on "the baseline is unestablished" asserted, falsely, that this
+    cause dominates after *every* kind of reset -- false of a tier change,
+    where it never fires -- and it survived T128, T138 and every review
+    since. ``compare=False`` was
+    *not* the mechanism, and flipping it would not have caught this: no test
+    in this module compares, hashes or sorts a ``Cause``, so the exclusion
+    protects an equality that does not exist. The real gap is that ``note``
+    is never **read** by an assertion, while ``phrase`` is (see
+    ``_the_block_names_every_cause``, which looks each ``phrase`` up in the
+    document). ``compare=False`` is therefore left exactly as it was --
+    changing it would alter this dataclass's comparison semantics to no
+    effect. A ``note`` here is commentary for the reader, not a pinned claim;
+    a claim that must hold belongs in ``phrase``, where a probe reaches it.
     """
 
     key: str
@@ -214,7 +229,14 @@ CAUSES = (
         key="the baseline is unestablished",
         guards=("established",),
         phrase="a baseline below min_baseline_readings (14), reported as established: false",
-        note="T116: symmetric since 2026-09-15; the dominant cause after every reset",
+        note=(
+            "T116: symmetric since 2026-09-15; the dominant cause after a coverage-gap "
+            "reset. Corrected in place 2026-09-18 (T142), which had claimed it dominant "
+            "after every kind of reset: a clean source-tier change leaves established "
+            "true (n decays 60 -> 47), so this cause never fires for it at all -- its "
+            "silence is 'the judged week is too thin' (T138). Nothing asserts on a note; "
+            "see the dataclass docstring."
+        ),
     ),
     Cause(
         key="the day has not happened",

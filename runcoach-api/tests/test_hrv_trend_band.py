@@ -31,10 +31,17 @@ reference "The band"; decision log rows "Thin and degenerate data" and
   argued §1.7 for the below-band cell alone and the table returned ``normal``
   regardless of establishment for its two neighbours, so a week judged
   against a band built from 2 to 13 readings reported ``hrv_normal`` -- and
-  that is reachable after **every** reset this feature performs, since a gap
-  reset or a tier change collapses the baseline and the athlete then
-  traverses 20 unestablished days, 12 of which used to read ``hrv_normal``
-  (``R+8 .. R+19``; the first eight had no band). Eight of the 90 rows below
+  that is reachable after a **coverage-gap** reset, which collapses the
+  baseline, so the athlete then traverses 20 unestablished days, 12 of which
+  used to read ``hrv_normal`` (``R+8 .. R+19``; the first eight had no band)
+  -- **corrected in place 2026-09-18 ([[T142]]), following ``research/00``
+  §5.4: until now this said the cell was reachable after *every* reset, naming
+  a gap reset and a tier change alike as collapsing the baseline, and that is
+  false of a tier change. A clean source-tier change does not collapse the
+  baseline at all (``established`` stays true, ``n`` decays 60 -> 47), so it
+  has zero unestablished days and this cell is unreachable through it; its
+  18-day silence is week coverage on the abandoned tier, a different
+  mechanism ([[T138]]).** Eight of the 90 rows below
   moved with the
   rule; the direct pin is
   ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``.
@@ -492,7 +499,12 @@ def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
     inside their band read ``hrv_unavailable`` -- ``hrv_normal`` here would
     tell Section 6 readiness is intact on a baseline the same response
     reports unestablished, the up-regulating direction ``research/00`` §1.7
-    forbids, and it is reachable after every reset the feature performs.
+    forbids, and it is reachable after every **coverage-gap** reset the
+    feature performs -- corrected in place 2026-09-18 ([[T142]]) from "after
+    every reset the feature performs", which is false of a tier change: a
+    clean source-tier change leaves ``established`` true (``n`` decays 60 ->
+    47) and traverses zero unestablished days, so it never reaches this cell
+    ([[T138]]).
 
     Until T116 this same series asserted ``hrv_normal``; the band is still
     reported, because the band is a property of the baseline and only the
