@@ -211,12 +211,17 @@ CAUSES = (
     Cause(
         key="the judged week is too thin",
         guards=("readings_in_window >= MIN_WINDOW_READINGS", "window_mean is not None"),
-        phrase="fewer than min_window_readings (3) readings in the judged week",
+        phrase="fewer than min_window_readings (3) readings of baseline.tier in the judged week",
         note=(
             "two guards, one cause: an empty week is the only way window_mean is None, so the "
             "None-narrowing conjunct is the same rule stated for the type checker. If the two "
             "ever come apart -- a week mean that can be absent with three readings present -- "
-            "this row is where that has to be argued, and the assertion below makes it be."
+            "this row is where that has to be argued, and the assertion below makes it be. "
+            "The phrase gained 'of baseline.tier' in T148, carrying the qualifier T146 added to "
+            "the contract: readings of other tiers sit in the judged week and are excluded from "
+            "readings_in_window, so a count of all readings in the week is not the rule. The "
+            "literal (3) is load-bearing -- _flat does not strip parentheses -- and the six "
+            "blocks below were swept to the qualified wording in the same pass."
         ),
     ),
     Cause(
@@ -355,6 +360,32 @@ CONTRACT_SITES = (
         lead="hrv_normal and hrv_suppressed both assert an established baseline",
         committed=True,
         end="unavailable_reason:",
+    ),
+    #: T148. The two rows above stop at ``unavailable_reason:``, which is
+    #: exactly where the block a client reads to learn what each **enum member**
+    #: means begins -- so until these two rows existed that block was covered by
+    #: no site at all, and T146's defect in it could return unseen. Measured
+    #: 2026-09-18: a cause phrase gutted inside the ``unavailable_reason``
+    #: description left this module green at 20 passed, while the same mutation
+    #: in the ``verdict`` description above reddened it. Both rows are bounded
+    #: at ``ln_rmssd_7d_mean:``, the next field in each copy, for the reason
+    #: ``Site`` gives: unbounded, the read would run on into the fields below
+    #: and report their text as this block's.
+    Site(
+        label="openapi.yaml HrvTrend.unavailable_reason description",
+        root_index=0,
+        rel="contracts/openapi.yaml",
+        lead="Why verdict is hrv_unavailable; null whenever it is not",
+        committed=True,
+        end="ln_rmssd_7d_mean:",
+    ),
+    Site(
+        label="schemas.py HrvTrendResponse.unavailable_reason description",
+        root_index=0,
+        rel="runcoach-api/src/runcoach_api/schemas.py",
+        lead="Why verdict is hrv_unavailable; null whenever it is not",
+        committed=True,
+        end="ln_rmssd_7d_mean:",
     ),
 )
 
