@@ -1090,12 +1090,13 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 413  # re-measured 2026-09-17 (T138), as the last action before the
-#                              # commit: +4. T138 added four pins to test_hrv_trend_reset.py (the
-#                              # tier-change walk -- the silence, the reporting lag, and the two
-#                              # dependencies of the figure) and touched no other test's identity,
-#                              # so the net is four tests. Nothing publishes this literal; T132
-#                              # left it at 409.
+SCOPED_SUITE_COLLECTED = 414  # re-measured 2026-09-18 (T140), as the last action before the
+#                              # commit: +1. T140 added one pin to this file, the two-copies
+#                              # assertion for unavailable_reason, and touched no other test's
+#                              # identity here. Its other two parametrizations grew in
+#                              # test_hrv_unavailable_causes.py, which is not one of the five
+#                              # suites, so they do not reach this number. Nothing publishes this
+#                              # literal; T138 left it at 413.
 
 #: The collected tests the band's corpus **excludes**: the pins that assert the
 #: tolerance's own value, directly or by holding its measured consequences, and
@@ -1970,6 +1971,62 @@ VERDICT_CLAIMS = (
 #: beside, which no true sentence pairs it with.
 VERDICT_WITHDRAWN = _DECLARATIONS.VERDICT_WITHDRAWN
 
+#: The same treatment for ``unavailable_reason``, added by T140. T137
+#: published this field -- twenty lines below ``verdict`` in the same schema
+#: object -- as a **fourth** pair of hand-synchronised description copies, and
+#: pinned neither the pair nor the prose. The six enum *members* are read by
+#: value out of the module, the schema ``Literal`` and the YAML ``enum`` by
+#: ``test_hrv_unavailable_reason``'s
+#: ``test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_schema_and_the_contract``,
+#: so a **renamed member** does red -- but the sentences saying what each
+#: member means, in what order they are reported, and which of them overrides
+#: the rest were held by nothing. That is the exact failure mode the
+#: ``verdict`` pin's own docstring names: ``check_drift.py`` compares path,
+#: method, 2xx codes and required query parameters, never prose, so a
+#: correction landing in one copy only is invisible to every other gate.
+#:
+#: Authorship (``contract-tables-need-an-independent-oracle``): these are not a
+#: transcription of the paragraph. They are the four things a client reading
+#: this field can act on -- the null invariant, that what it reports is the
+#: *first* cause to fire rather than all that hold, the distinction between the
+#: structural no-tier case and a resolved tier whose baseline is merely too
+#: thin, and that ``day_not_happened`` is decided elsewhere and beats the other
+#: five -- and each is reproduced against the running app by a named
+#: behavioural pin rather than by this file: entry 1 by
+#: ``test_hrv_unavailable_reason.test_unavailable_reason_is_null_whenever_the_verdict_is_asserted``,
+#: entry 2 by ``..._reports_the_withheld_week_before_an_unestablished_baseline``,
+#: entry 3 by ``..._no_tier_when_the_store_holds_no_reading_at_all`` and
+#: ``..._no_band_when_a_resolved_tier_has_fewer_than_two_baseline_readings``,
+#: entry 4 by ``test_a_future_to_and_a_pre_history_to_are_both_unavailable_with_200``
+#: and ``test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict`` in
+#: this file. This test constrains the **words**; nothing here fails because
+#: ``judge`` changed, which is the division T112 named.
+#:
+#: No withdrawn tuple: nothing about this field has been retracted. That
+#: machinery exists for claims that were published and became false, and
+#: inventing an entry for it would put a digest in ``WITHDRAWN_ORDER`` pinning
+#: a sentence no copy ever carried.
+UNAVAILABLE_REASON_CLAIMS = (
+    "null whenever it is not",
+    "reports the first that fires",
+    "a tier resolved, but its baseline holds fewer than two readings, so no band exists",
+    "is decided at the route, after judge, and overrides whichever of the other five",
+)
+
+#: The run the two copies must state identically, from this anchor to the end.
+#: It starts at the ordering sentence and not at the field's first word
+#: **because the two copies genuinely differ before it**: the YAML parenthesis
+#: cites ``research/00`` 1.6 and dates the closure, the schema copy states the
+#: reproduce-it-by-hand property that section is about. Both are true, neither
+#: is the rule. Everything from here on is the rule, and it is identical once
+#: flattened -- which it was not before T140: the two copies punctuated the
+#: ``day_not_happened`` clause differently (a dash in the YAML, a colon in the
+#: schema), a divergence nothing in the tree could see because no pin compared
+#: them.
+UNAVAILABLE_REASON_SHARED_ANCHOR = (
+    "judge evaluates four causes in a fixed order and reports the first that fires"
+)
+
 #: The same treatment for ``baseline.established``, added by review cycle 8
 #: (``acfebae``). T120 rewrote this description in both copies -- from the
 #: asymmetric gloss now declared as ``ESTABLISHED_WITHDRAWN``'s entry 1, which
@@ -2176,6 +2233,70 @@ def test_the_two_copies_of_the_verdict_contract_publish_the_same_claims() -> Non
     shared = contract[start:]
     assert shared in served, (
         "the two copies have stopped stating the verdict rule in the same words. The contract says: " + shared
+    )
+
+
+#: T140. ``unavailable_reason``'s two copies differ in one more way than
+#: ``verdict``'s do: ``schemas.py`` marks every field and enum member it names
+#: as a **code span** (16 backticks) and the YAML copy marks none, so the two
+#: publish one sentence in two markups. Same problem ``_TYPOGRAPHY`` was added
+#: for, same answer -- fold, rather than re-type a published description into
+#: its twin's conventions.
+#:
+#: It is **not** folded into ``_flat`` itself, which is the tempting move. That
+#: would silently change ``_flat(WINDOW_WITHDRAWN[0])`` -- the one declared
+#: phrasing carrying backticks, quoted in the schema copy's own spelling --
+#: moving its ``WITHDRAWN_ORDER`` digest and collapsing that tuple's two
+#: deliberately distinct spellings into one string searched twice. The fold
+#: belongs to the comparison that needs it, not to every sweep in this file.
+#: ``test_hrv_unavailable_causes.py``'s own ``_flat`` drops code spans for the
+#: same reason, over documents where nothing is digested.
+def _unmarked(text: str) -> str:
+    """``_flat`` with markdown code spans dropped as well."""
+    return _flat(text.replace("`", ""))
+
+
+def test_the_two_copies_of_the_unavailable_reason_contract_publish_the_same_claims() -> None:
+    """T140, deliverable 3: the same pin for the field ``verdict`` now points
+    at, which shipped in T137 with its *members* pinned and its *prose* held by
+    nothing.
+
+    ``verdict`` and ``unavailable_reason`` are two fields of one schema object
+    describing one rule, and T140 exists because they contradicted each other:
+    ``verdict`` enumerated four causes, ``unavailable_reason`` twenty lines
+    below it published six, and every gate in the tree was green -- the pin
+    above passed **because both copies of ``verdict`` were wrong identically**,
+    which is what a pin comparing two copies and nothing else can always do.
+    That is why T140's other deliverable points
+    ``test_hrv_unavailable_causes.py``'s oracle at both copies: this test holds
+    the two copies to each other, that one holds them to ``judge``, and neither
+    is sufficient alone.
+
+    The failure modes, each run to confirm this goes red on it: (1) a claim
+    dropped from either copy; (2) the correction landed in one copy only, which
+    the shared run catches even where both copies still carry every claim.
+    """
+    target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    contract = _unmarked(
+        target["components"]["schemas"]["HrvTrend"]["properties"]["unavailable_reason"]["description"]
+    )
+    served = _unmarked(
+        app.openapi()["components"]["schemas"]["HrvTrendResponse"]["properties"]["unavailable_reason"][
+            "description"
+        ]
+    )
+
+    for claim in UNAVAILABLE_REASON_CLAIMS:
+        flat = _unmarked(claim)
+        assert flat in contract, f"contracts/openapi.yaml no longer publishes: {claim}"
+        assert flat in served, f"schemas.HrvTrendResponse.unavailable_reason no longer publishes: {claim}"
+
+    start = contract.find(_unmarked(UNAVAILABLE_REASON_SHARED_ANCHOR))
+    assert start != -1, "the contract's shared run no longer starts where the anchor says"
+    shared = contract[start:]
+    assert shared in served, (
+        "the two copies of unavailable_reason have stopped stating the cause order in the same "
+        "words; T137 wrote both and pinned neither. The contract says: " + shared
     )
 
 

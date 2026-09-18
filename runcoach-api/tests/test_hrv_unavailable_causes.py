@@ -244,6 +244,20 @@ class Site:
     moves; ``committed`` is the ``withdrawn_phrasings`` convention -- a row
     under the ``.shipyard`` root is absent from a fresh checkout and skips
     there loudly instead of failing.
+
+    ``end`` is T140's addition and is empty for every markdown row, which is
+    the behaviour those rows had before it existed: a prose block in a
+    document is one long line, so the lead line *is* the block. A block in
+    ``contracts/openapi.yaml`` or ``schemas.py`` is not -- a folded YAML
+    scalar and an implicitly concatenated Python literal both wrap, and a
+    cause named across a wrap is invisible to a one-line read. ``end`` names
+    the first line **after** the block, exclusive, and those rows are required
+    to carry one **because an unbounded read is how this defect was nearly
+    mismeasured**: T140's own first probe sliced a fixed character count from
+    the ``verdict`` enum line, ran past the description into
+    ``unavailable_reason``'s enum below it, and reported a cause present that
+    the description does not contain. The window is bounded at the next key,
+    here as there.
     """
 
     label: str
@@ -251,6 +265,7 @@ class Site:
     rel: str
     lead: str
     committed: bool
+    end: str = ""
 
 
 SITES = (
@@ -284,6 +299,48 @@ SITES = (
     ),
 )
 
+#: T140. The two **published** copies of the same enumeration, which ``SITES``
+#: could not reach: it held four markdown documents and no contract copy, so
+#: ``spec/03`` §3.7.4's own sentence -- "the enumeration is pinned to the code
+#: by ``test_hrv_unavailable_causes.py``" -- was false of the contract clients
+#: actually read. ``contracts/openapi.yaml``'s
+#: ``HrvTrend.properties.verdict.description`` and its hand-synchronised twin
+#: ``schemas.HrvTrendResponse.verdict`` both named **four** of the six causes,
+#: while ``unavailable_reason`` -- added by T137 twenty lines below the first
+#: of them -- published all six. Two fields of one schema object contradicted
+#: each other and every gate in the tree was green:
+#: ``test_the_two_copies_of_the_verdict_contract_publish_the_same_claims``
+#: compares the two copies **to each other**, so it passed *because* both were
+#: wrong identically, and ``check_drift.py`` never reads prose.
+#:
+#: Kept a sibling tuple rather than folded into ``SITES`` because the rows are
+#: read differently: a markdown block is one line and these are wrapped, so
+#: each carries the ``end`` that bounds it (see ``Site``). Both files are
+#: committed, so neither takes the skip-on-fresh-checkout path.
+CONTRACT_SITES = (
+    Site(
+        label="openapi.yaml HrvTrend.verdict description",
+        root_index=0,
+        rel="contracts/openapi.yaml",
+        lead="hrv_normal and hrv_suppressed both assert an established baseline",
+        committed=True,
+        end="unavailable_reason:",
+    ),
+    Site(
+        label="schemas.py HrvTrendResponse.verdict description",
+        root_index=0,
+        rel="runcoach-api/src/runcoach_api/schemas.py",
+        lead="hrv_normal and hrv_suppressed both assert an established baseline",
+        committed=True,
+        end="unavailable_reason:",
+    ),
+)
+
+#: Every block that enumerates the causes, documents and contract alike. The
+#: two tuples stay separate for how they are *read*; there is one population to
+#: check, and it is this.
+ENUMERATING_SITES = SITES + CONTRACT_SITES
+
 #: Withdrawn by T128 as **false**, not merely stale: T116 and T125 both emit
 #: ``hrv_unavailable`` on a tier that is sustaining a trend, with the band and
 #: the week mean in the same response. Quoted here because this module is not
@@ -296,15 +353,32 @@ FALSE_UNIVERSAL = (
 def _block(site: Site) -> str:
     """The site's block, flattened. Located by its lead rather than by line
     number, and required to be unique: two lines carrying the lead means the
-    block has been copied and this would pin whichever came first."""
+    block has been copied and this would pin whichever came first.
+
+    With no ``end`` the block is the lead line alone, which is what a markdown
+    paragraph is. With an ``end`` it runs from the lead line to the first line
+    below it carrying that marker, exclusive -- and the marker is required to
+    be found, so a renamed terminator reds here rather than silently widening
+    the window to the rest of the file.
+    """
     path = SCAN_ROOTS[site.root_index] / site.rel
     lead = _flat(site.lead)
-    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if lead in _flat(line)]
-    assert len(lines) == 1, (
-        f"{site.label}: {len(lines)} lines carry the lead {site.lead!r}, not 1 -- the block has "
+    source = path.read_text(encoding="utf-8").splitlines()
+    leads = [index for index, line in enumerate(source) if lead in _flat(line)]
+    assert len(leads) == 1, (
+        f"{site.label}: {len(leads)} lines carry the lead {site.lead!r}, not 1 -- the block has "
         f"moved, been reworded or been duplicated, and this oracle is reading the wrong text"
     )
-    return _flat(lines[0])
+    if not site.end:
+        return _flat(source[leads[0]])
+    end = _flat(site.end)
+    stops = [index for index in range(leads[0] + 1, len(source)) if end in _flat(source[index])]
+    assert stops, (
+        f"{site.label}: no line below the lead carries the terminator {site.end!r}, so the block "
+        f"has no bound -- reading to the end of the file would find the causes named in the "
+        f"fields below this one and report them as this one's"
+    )
+    return _flat(" ".join(source[leads[0] : stops[0]]))
 
 
 def _resolve(site: Site) -> Path:
@@ -381,7 +455,7 @@ def test_every_unavailable_cause_is_claimed_by_exactly_one_code_element() -> Non
     )
 
 
-@pytest.mark.parametrize("site", SITES, ids=[site.label for site in SITES])
+@pytest.mark.parametrize("site", ENUMERATING_SITES, ids=[site.label for site in ENUMERATING_SITES])
 def test_each_block_enumerates_every_unavailable_cause_the_code_can_produce(site: Site) -> None:
     """The blocks a reader of the spec meets ``hrv_unavailable`` in, held
     against the code's own cause set.
@@ -401,7 +475,7 @@ def test_each_block_enumerates_every_unavailable_cause_the_code_can_produce(site
     )
 
 
-@pytest.mark.parametrize("site", SITES, ids=[site.label for site in SITES])
+@pytest.mark.parametrize("site", ENUMERATING_SITES, ids=[site.label for site in ENUMERATING_SITES])
 def test_the_false_universal_about_unavailable_causes_is_gone_from_every_block(site: Site) -> None:
     """The stronger half of the defect: ``spec/02`` and ``spec/03`` did not
     merely under-enumerate, they asserted the complement. Checked over each

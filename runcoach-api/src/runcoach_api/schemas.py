@@ -238,15 +238,24 @@ class HrvTrendResponse(BaseModel):
             "hrv_normal and hrv_suppressed both assert an established baseline -- baseline.n at or "
             "above the min_baseline_readings threshold the response echoes -- and differ only in "
             "where the 7-day mean sits: strictly below band.lo is hrv_suppressed, inside or above "
-            "the band is hrv_normal. hrv_unavailable when no band, too few readings this week, any "
-            "week judged against an unestablished baseline (below, inside or above the band alike: "
-            "3.7.3 withholds the suppression there, and hrv_normal there would tell a consumer "
-            "readiness is intact on evidence this same response reports unestablished, the "
-            "up-regulating direction research/00 1.7 forbids), or when `date` is after the athlete's "
-            "local today in `timezone` -- whatever the window holds, no verdict is asserted about a "
-            "day that has not happened, and the other fields are still reported as computed. The "
-            "band is still reported whenever the baseline can build one, established or not, so an "
-            "unavailable verdict remains checkable by hand."
+            "the band is hrv_normal. hrv_unavailable has six causes, and the response names which "
+            "of them fired; judge evaluates them in this order and reports the first: when no "
+            "resting-HRV reading of any tier can sustain a trend -- the structural case, "
+            'resolve_baseline_tier answering "no tier at all"; when there are fewer than two '
+            "baseline readings, so no band exists; when there are fewer than min_window_readings "
+            "(3) readings in the judged week; when the judged week is not a fair sample of the "
+            "resolved tier, its readings all predating the athlete's return to, or first adoption "
+            "of, another device (T125/T132); when there is a baseline below min_baseline_readings "
+            "(14), reported as established: false -- any week judged against an unestablished "
+            "baseline (below, inside or above the band alike: 3.7.3 withholds the suppression "
+            "there, and hrv_normal there would tell a consumer readiness is intact on evidence "
+            "this same response reports unestablished, the up-regulating direction research/00 "
+            "1.7 forbids); and when the judged day is after the athlete's local today in "
+            "timezone, which is decided at the route and overrides whichever of the other five "
+            "would otherwise have applied -- whatever the window holds, no verdict is asserted "
+            "about a day that has not happened, and the other fields are still reported as "
+            "computed. The band is still reported whenever the baseline can build one, "
+            "established or not, so an unavailable verdict remains checkable by hand."
         )
     )
     unavailable_reason: (
@@ -278,7 +287,7 @@ class HrvTrendResponse(BaseModel):
             "reported as established: false, T116). "
             f"`{hrv_trend.REASON_DAY_NOT_HAPPENED}` (date is after the athlete's local today) is decided "
             "at the route, after judge, and overrides whichever of the other five would otherwise have "
-            "applied: the fields that would explain them are still computed and returned as usual, but "
+            "applied -- the fields that would explain them are still computed and returned as usual, but "
             "a day that has not happened is the one true reason no verdict is asserted about it."
         )
     )
