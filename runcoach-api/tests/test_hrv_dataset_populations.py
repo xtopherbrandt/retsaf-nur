@@ -92,7 +92,7 @@ SHIFTED_STRAYS = (3, 2, 1)
 TRIAL_THEN_SWITCH_ERA = 87  # ``trial_then_switch``'s snapshot era: base-126 .. base-40
 
 
-def _slice(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> str:
+def _slice(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -> str:
     """The rows a verdict was judged on, spelled out -- a witness prints the slice it
     compared (``a-witness-must-print-the-slice-it-compared``)."""
     week = ", ".join(f"{r.date}:{r.tier[:5]}:{r.rmssd_ms:g}" for r in series.window)
@@ -104,8 +104,9 @@ def _slice(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> str:
     )
 
 
-def _judged(rows: list[dict], target: date) -> tuple[hrv_trend.HrvSeries, hrv_trend.HrvVerdict]:
-    series = hrv_trend.build_series(rows, pop.AUCK, target)
+def _judged(rows: list[dict], target: date) -> tuple[hrv_trend.SingleDatasetView, hrv_trend.HrvVerdict]:
+    # T151's bridge: the dataset F005's resolver picks, on the F005 shape; T155 replaces it.
+    series = hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, pop.AUCK, target))
     return series, hrv_trend.judge(series)
 
 

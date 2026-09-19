@@ -341,7 +341,7 @@ def _judge_days(
     to: datetime.date,
     today: datetime.date,
     earliest_start_time: str | None = None,
-) -> list[tuple[hrv_trend.HrvSeries, hrv_trend.HrvVerdict]]:
+) -> list[tuple[hrv_trend.SingleDatasetView, hrv_trend.HrvVerdict]]:
     """Every local day in ``[from, to]``, in order, judged against its own
     baseline ``[d-66, d-7]`` by the pure computation over the one set of
     ``rows`` -- ~30 evaluations of a function of ``target_date`` for a month's
@@ -354,17 +354,28 @@ def _judge_days(
     (``db.earliest_hrv_reading``), handed to every day alike: it is a
     property of the store, not of the day.
 
+    **T151's bridge, owned by T155.** ``build_series`` now returns one
+    dataset per source tier (F006), and ``judge`` still takes one dataset.
+    Until T155 lands F006's selection (highest-fidelity judgeable dataset,
+    skipped past on baseline-window staleness), the dataset handed to
+    ``judge`` and rendered is the one F005's retired resolver would have
+    picked, flattened onto the F005 series shape by
+    ``hrv_trend.select_by_retired_resolver``. T155 replaces that call with
+    the selector and removes the view; nothing else here is a function of
+    which dataset was chosen.
+
     Raises ``OverflowError`` where a day's windows reach past the calendar's
     origin; the route names that as the parameters' problem."""
     judged = []
     for offset in range((to - from_).days + 1):
         day = from_ + datetime.timedelta(days=offset)
-        series = hrv_trend.build_series(rows, zone, day, earliest_start_time)
+        datasets = hrv_trend.build_series(rows, zone, day, earliest_start_time)
+        series = hrv_trend.select_by_retired_resolver(datasets)  # T151 bridge; T155 removes
         judged.append((series, _withhold_future(hrv_trend.judge(series), day, today)))
     return judged
 
 
-def _point(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> HrvPoint:
+def _point(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -> HrvPoint:
     """One day of the contract's ``points[]``: the reading the day's own
     series holds for it (null when none) and the band the day's own baseline
     asserts (all three null together when it cannot build one). The band
@@ -384,7 +395,7 @@ def _point(series: hrv_trend.HrvSeries, verdict: hrv_trend.HrvVerdict) -> HrvPoi
 def _trend_response(
     from_: datetime.date,
     points: list[HrvPoint],
-    series: hrv_trend.HrvSeries,
+    series: hrv_trend.SingleDatasetView,
     verdict: hrv_trend.HrvVerdict,
 ) -> HrvTrendResponse:
     """Render the pure module's result on the contract's shape.

@@ -1092,7 +1092,18 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 419  # re-measured 2026-09-18 (T124, iteration 2), as the last action
+SCOPED_SUITE_COLLECTED = 423  # re-measured 2026-09-19 (T151), as the last action before the
+#                              # commit: +4. Four pins added to
+#                              # test_hrv_trend_series.py on F006's N-dataset
+#                              # shape (a dataset per tier with its own band
+#                              # and n; per-dataset collapse; the global gap
+#                              # clipping every dataset alike; the T151
+#                              # bridge). No identity elsewhere changed: the
+#                              # suites' build helpers were re-pointed at the
+#                              # bridge, not added to. Nothing publishes this
+#                              # number; the previous value was T124's second
+#                              # pass, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 419  # re-measured 2026-09-18 (T124, iteration 2), as the last action
 #                              # before the commit: +3. Three pins added to this
 #                              # suite: the walk's .shipyard* prune, and the two
 #                              # absent-anchor pins (reach walk, anchor case).
@@ -2693,7 +2704,8 @@ def _rendered(rows: list[dict], to: date = D) -> dict:
     ``judge``, ``_trend_response`` -- as the JSON body a client receives. The
     seam that matters here is ``_trend_response``'s trim: a reason the module
     emits is only *published* if it survives into this dict."""
-    series = hrv_trend.build_series(rows, ZoneInfo("UTC"), to)
+    # T151's bridge, as the route itself applies it; T155 replaces it.
+    series = hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, ZoneInfo("UTC"), to))
     response = main_module._trend_response(to - timedelta(days=126), [], series, hrv_trend.judge(series))
     return json.loads(response.model_dump_json(by_alias=True))
 

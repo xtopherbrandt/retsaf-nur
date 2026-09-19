@@ -1,7 +1,8 @@
 """T083 -- ``metrics/hrv_trend.py``: local-day bucketing and series construction (F005).
 
 The pure half of the trend: stored rows in, a clean one-reading-per-local-day
-series for one source tier out. Nothing here touches the band or the verdict
+dataset per source tier out (N datasets since F006/T151; the pins below read one
+through T151's bridge). Nothing here touches the band or the verdict
 (T084) or reset detection (T092).
 
 The tests are pure unit tests over hand-built row dicts, which is what the
@@ -87,11 +88,16 @@ def days_between(first: date, last: date) -> list[date]:
     return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
-def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.HrvSeries:
-    return hrv_trend.build_series(rows, zone, target)
+def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.SingleDatasetView:
+    """The series through T151's bridge: the one dataset F005's resolver
+    would have made the baseline tier, on the F005 series shape, so every
+    pin below reads what it read before the N-way partition. T155 replaces
+    the bridge with F006's selection; the pins on the partition itself
+    read ``hrv_trend.build_series`` directly (end of file)."""
+    return hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, zone, target))
 
 
-def excluded_reasons(result: hrv_trend.HrvSeries) -> dict[str, str]:
+def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
     return {entry.session_id: entry.reason for entry in result.excluded}
 
 
@@ -1138,7 +1144,7 @@ def test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days(monke
     shipped = hrv_trend.RECENCY_TOLERANCE_DAYS
     reset = hrv_trend.GAP_RESET_DAYS
 
-    def observe(gap: int, tolerance: int) -> tuple[hrv_trend.HrvSeries, tuple[str, int, str | None]]:
+    def observe(gap: int, tolerance: int) -> tuple[hrv_trend.SingleDatasetView, tuple[str, int, str | None]]:
         monkeypatch.setattr(hrv_trend, "RECENCY_TOLERANCE_DAYS", tolerance)
         result = build(stale_trial_gap(gap))
         return result, (result.tier, len(result.baseline), result.reset_reason)
@@ -1570,3 +1576,125 @@ def test_a_capture_that_failed_f004s_quality_gates_is_already_absent(synthetic, 
     assert [r.session_id for r in result.series] == [good.session_id]
     assert result.series[0].date == date(2026, 9, 2)
     assert excluded_reasons(result) == {gated.session_id: "null_tier"}
+
+
+# ---------------------------------------------------------------------------
+# F006 / T151 -- the series is N per-tier datasets, one per tier present
+# ---------------------------------------------------------------------------
+
+
+def _two_tier_history() -> list[dict]:
+    """AC1's geometry: 41 ``chest_strap_raw`` and 57 ``health_snapshot``
+    distinct local days inside ``[D-66, D-7]``, overlapping on 41 of them,
+    each tier at its own level (60 ms and 40 ms) so a band that mixed them
+    would be visibly neither. The judged week holds three strap mornings
+    and seven snapshot ones."""
+    rows = readings(STRAP, days_between(D - timedelta(days=47), D - timedelta(days=7)), 60.0)
+    rows += readings(SNAPSHOT, days_between(D - timedelta(days=63), D - timedelta(days=7)), 40.0, hh=7)
+    rows += readings(STRAP, days_between(D - timedelta(days=6), D - timedelta(days=4)), 60.0)
+    rows += readings(SNAPSHOT, days_between(D - timedelta(days=6), D), 40.0, hh=7)
+    return rows
+
+
+def test_build_series_returns_a_dataset_per_tier_each_with_its_own_band_and_n() -> None:
+    """F006 AC1/AC2, the walking skeleton's first red: on a two-tier history
+    **both** tiers carry a non-null band and an independent ``n``. Under F005
+    the resolved tier (the strap: highest fidelity, covers the week) owned the
+    only band and the snapshot's 57 days were ``off_baseline_tier`` with no
+    band at all. Each band is built from that tier's readings alone (§3.7.3
+    anti-mixing, honoured by construction): the strap's mean is ``ln 60`` and
+    the snapshot's ``ln 40``, and a band over the union would be neither."""
+    series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
+
+    by_tier = {dataset.tier: dataset for dataset in series.datasets}
+    assert [dataset.tier for dataset in series.datasets] == [STRAP, SNAPSHOT], "one per tier present, fidelity order"
+
+    strap, snapshot = by_tier[STRAP], by_tier[SNAPSHOT]
+    assert strap.band is not None and snapshot.band is not None
+    assert (strap.n, snapshot.n) == (41, 57)
+    assert strap.established is True and snapshot.established is True
+    assert strap.band.mean == pytest.approx(math.log(60.0))
+    assert snapshot.band.mean == pytest.approx(math.log(40.0))
+    assert {r.tier for r in strap.baseline} == {STRAP} and {r.tier for r in snapshot.baseline} == {SNAPSHOT}
+    assert (len(strap.window), len(snapshot.window)) == (3, 7)
+    assert strap.baseline_window == snapshot.baseline_window == (D - timedelta(days=66), D - timedelta(days=7))
+
+
+def test_a_days_captures_feed_their_own_datasets_and_collapse_within_each() -> None:
+    """A morning with a strap capture at 07:00 and a snapshot at 07:05 puts
+    one reading in **each** dataset; two strap captures on one day keep the
+    earlier (``same_day_later_capture``) and the day counts once in that
+    dataset's ``n`` (AC3, AC4). The exclusions ``build_series`` makes are one
+    shared list: the strap's re-take is in it, and nothing of the snapshot's."""
+    both = D - timedelta(days=10)
+    retaken = D - timedelta(days=20)
+    rows = readings(STRAP, baseline_days(20), 60.0) + readings(SNAPSHOT, baseline_days(20), 40.0, hh=7)
+    rows += [row(local(both, 7, 5), SNAPSHOT, 41.0, "snapshot-both")]
+    rows += [row(local(retaken, 9), STRAP, 61.0, "strap-retake")]
+
+    series = hrv_trend.build_series(rows, AUCKLAND, D)
+    by_tier = {dataset.tier: dataset for dataset in series.datasets}
+
+    strap_days = [r.date for r in by_tier[STRAP].series]
+    assert strap_days.count(retaken) == 1 and by_tier[STRAP].n == 20
+    assert both in strap_days and both in [r.date for r in by_tier[SNAPSHOT].series]
+    assert by_tier[SNAPSHOT].n == 20
+    assert {e.session_id: e.reason for e in series.excluded} == {
+        "strap-retake": "same_day_later_capture",
+        "snapshot-both": "same_day_later_capture",
+    }
+    assert {r.session_id for r in series.readings} >= {"snapshot-both", "strap-retake"}, (
+        "the shared readings are the post-exclusion population of every tier"
+    )
+
+
+def test_the_coverage_gap_is_global_and_clips_every_dataset_identically() -> None:
+    """AC16 across the N-way partition. One tier silent while the other
+    carries the series is **no** gap: both datasets keep ``[D-66, D-7]``.
+    Every tier silent for more than ``GAP_RESET_DAYS`` is one gap, found
+    before the partition, and both datasets are clipped at the same
+    resumption with the same ``coverage_gap`` report."""
+    strap_silent = readings(SNAPSHOT, days_between(D - timedelta(days=66), D), 40.0, hh=7)
+    strap_silent += readings(STRAP, days_between(D - timedelta(days=66), D - timedelta(days=40)), 60.0)
+    strap_silent += readings(STRAP, days_between(D - timedelta(days=9), D), 60.0)
+    bridged = hrv_trend.build_series(strap_silent, AUCKLAND, D)
+    assert bridged.gap_reset_on is None
+    assert {d.baseline_window for d in bridged.datasets} == {(D - timedelta(days=66), D - timedelta(days=7))}
+    assert all(d.reset_reason is None for d in bridged.datasets)
+
+    resumed_on = D - timedelta(days=30)
+    everyone_silent = readings(SNAPSHOT, days_between(D - timedelta(days=66), D - timedelta(days=55)), 40.0, hh=7)
+    everyone_silent += readings(STRAP, days_between(D - timedelta(days=66), D - timedelta(days=55)), 60.0)
+    everyone_silent += readings(SNAPSHOT, days_between(resumed_on, D), 40.0, hh=7)
+    everyone_silent += readings(STRAP, days_between(resumed_on, D), 60.0)
+    gapped = hrv_trend.build_series(everyone_silent, AUCKLAND, D)
+    assert gapped.gap_reset_on == resumed_on
+    assert {d.baseline_window for d in gapped.datasets} == {(resumed_on, D - timedelta(days=7))}
+    assert {(d.reset_on, d.reset_reason) for d in gapped.datasets} == {(resumed_on, "coverage_gap")}
+    assert all(r.date >= resumed_on for r in gapped.readings), "the gap rebinds the shared readings"
+    assert {d.n for d in gapped.datasets} == {24}, "each dataset's n is its own post-clip distinct days"
+
+
+def test_the_t151_bridge_hands_judge_the_dataset_the_retired_resolver_picks() -> None:
+    """The temporary selection (T151; T155 replaces it): the single-dataset
+    view is the dataset ``resolve_baseline_tier`` would have chosen, and
+    ``judge`` on it reports that dataset's own band, ``n`` and
+    ``established`` -- the same values the dataset carries, not a second
+    computation. The other tier's readings are listed ``off_baseline_tier``
+    on the view alone, as F005 listed them, so every pin on that behaviour
+    is reachable until T152 retires the reason."""
+    series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
+    view = hrv_trend.select_by_retired_resolver(series)
+
+    assert view.tier == STRAP
+    assert view.selected is series.datasets[0]
+    assert view.baseline == view.selected.baseline and view.window == view.selected.window
+    verdict = hrv_trend.judge(view)
+    assert verdict.band == view.selected.band
+    assert (verdict.baseline_n, verdict.established) == (view.selected.n, view.selected.established)
+    assert verdict.verdict == "hrv_normal"
+
+    off_tier = {e.session_id for e in view.excluded if e.reason == f"off_baseline_tier: {SNAPSHOT}"}
+    assert off_tier == {r.session_id for r in series.readings if r.tier == SNAPSHOT}
+    assert not any(e.reason.startswith("off_baseline_tier") for e in series.excluded)
+    assert view.readings == series.readings and view.target_date == D

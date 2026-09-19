@@ -174,7 +174,7 @@ def test_every_point_carries_the_band_its_own_judge_call_asserted(configure, see
     readings = drifting_series(D - timedelta(days=74), D)
     real_judge = hrv_trend.judge
 
-    def shifted_judge(series: hrv_trend.HrvSeries) -> hrv_trend.HrvVerdict:
+    def shifted_judge(series: hrv_trend.SingleDatasetView) -> hrv_trend.HrvVerdict:
         verdict = real_judge(series)
         band = verdict.band
         assert band is not None

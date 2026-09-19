@@ -1,11 +1,12 @@
 """The resting-HRV trend (F005, spec §3.7): the series, the band and verdict, and the resets.
 
-This module turns stored ``sessions`` rows into **a clean one-reading-per-
-local-day series for one source tier** (``build_series``, T083), judges the
-target date against the SWC band built over that series (``judge``, T084),
-and re-establishes the baseline after a coverage gap or a sustained tier
-change (``coverage_gap_reset`` / ``tier_change_reset``, T092). The three
-sections follow in that order. The window constants and every exclusion and
+This module turns stored ``sessions`` rows into **one clean one-reading-per-
+local-day dataset per source tier present** (``build_series``, T083; N
+datasets since F006/T151), judges one dataset's target date against the SWC
+band built over its baseline (``judge``, T084), and clips or re-establishes
+a baseline after a coverage gap or a sustained tier change
+(``coverage_gap_reset`` / ``tier_change_reset``, T092). The three sections
+follow in that order. The window constants and every exclusion and
 reset reason are declared together at the top, because ``build_series``
 reads them all; the band's own constants sit with the band.
 
@@ -27,37 +28,34 @@ dicts and no database. Rows are read **by key** (``session_id``,
    rows (every ordinary session, and every capture F004's quality gates
    failed), a tier string the enum does not name, and a value ``ln`` cannot
    take.
-2. **Resolve the baseline tier**: among the tiers read on at least
-   ``MIN_BASELINE_READINGS`` **distinct local days** in the baseline window
-   **and** read within ``RECENCY_TOLERANCE_DAYS`` of the most recent
-   baseline-window day of any such tier (the *candidates*; the recency
-   condition is T117's, stated in full at ``RECENCY_TOLERANCE_DAYS`` and at
-   ``resolve_baseline_tier``, and the comparison is between candidates, so a
-   lone candidate is its own reference and is never struck), the
-   highest-fidelity one that **also covers the judged week** with at least
-   ``MIN_WINDOW_READINGS`` distinct local days;
-   when no candidate covers the week, the candidate **the athlete used
-   last** -- the one whose latest reading in the baseline window is most
-   recent, ties by count then fidelity (T094); when there is no candidate
-   at all, the tier read on the **most** days in the baseline window, ties
-   to fidelity. Every count in rules 1-3 is in distinct local days, the
-   unit ``judge`` reports as ``baseline_n`` and ``readings_in_window``
-   (T095; before it rules 1-3 counted captures, so one re-taken morning
-   handed a week to a tier that could not judge it) --
-   not the highest tier present, so one borrowed chest-strap capture cannot
-   demote a 45-reading Health Snapshot baseline to ``n=1`` (§3.7.3: "never
-   merged into the same band"), a two-week strap trial abandoned two months
-   ago cannot blank the snapshot's verdict (T093; F005 "Negative Class"),
-   and a thin week cannot hand a switched athlete's baseline back to the
-   device they abandoned (T094).
-3. **Filter** to that tier.
-4. **Collapse** to one reading per local day: the earliest capture of the
-   day, within the tier.
+2. **Clip the coverage gap**, globally: the silence of the series as a
+   whole, every tier together (``coverage_gap_reset``, AC16), rebinds the
+   post-exclusion readings and the first day of every dataset's window
+   alike, before any tier is looked at.
+3. **Partition** the readings by tier -- one ``HrvDataset`` per tier
+   present (F006, ``research/00`` §5.4 amended 2026-09-18; T151). A morning
+   carrying two tiers' captures feeds both datasets.
+4. **Collapse** to one reading per local day **within each dataset**: the
+   earliest capture of the day on that tier; every later one is
+   ``same_day_later_capture``. Every count anywhere is in distinct local
+   days, the unit ``judge`` reports as ``baseline_n`` and
+   ``readings_in_window`` (T095; ``_tier_counts`` is the one place it is
+   taken). Then each dataset's own era clip (``tier_change_reset``, asked
+   with that tier), its band, ``n``, ``established`` and ``withheld``.
 
-Doing (4) before (3) silently drops any day whose highest-fidelity capture is
-off the baseline tier even when a usable on-tier reading existed, and
-``readings_in_window`` decides ``hrv_unavailable`` -- so the order is
-outcome-determining, not cosmetic.
+Doing (4) before (3) -- collapsing across tiers, then partitioning --
+silently drops any day whose earliest capture is on another tier even when
+a usable reading of this tier existed, and ``readings_in_window`` decides
+``hrv_unavailable`` -- so the order is outcome-determining, not cosmetic.
+
+**Which dataset is judged is not decided here.** F005 resolved *the*
+baseline tier inside ``build_series`` (``resolve_baseline_tier``: rule 1's
+candidacy in distinct local days with T117's recency gate, rule 2's week
+coverage, rule 3's last-used candidate; T093/T094/T095/T117). F006 replaces
+that with a selection among the datasets (T155); until it lands,
+``select_by_retired_resolver`` is the one place the retired rule is still
+asked, and it hands ``judge`` and the route the dataset F005 would have
+resolved, on the F005 series shape (``SingleDatasetView``).
 
 **Days are the athlete's local days.** ``start_time`` is stored as an aware
 UTC ISO string (``mapping.py``, ``+00:00``). Each row is bucketed with
@@ -272,84 +270,150 @@ class Exclusion:
 
 
 @dataclass(frozen=True)
-class HrvSeries:
-    """The series for one target date, bucketed in one zone.
+class HrvDataset:
+    """One source tier's dataset for one target date (F006, T151;
+    ``research/00`` §5.4 as amended 2026-09-18, spec §3.7.3's per-tier
+    dataset model).
 
-    ``series`` is the deliverable: one reading per local day, on ``tier``,
-    in date order, over ``[D-66, D]``. ``baseline`` and ``window`` are its
-    two disjoint slices. ``readings`` is the post-exclusion, pre-filter set
-    of every tier -- what T092 measures the coverage gap on, because a gap
-    is "no entry in the post-exclusion series", not "no stored row".
+    ``series`` is one reading per local day **on this tier**, in date order,
+    over the era-clipped ``[first, D]``; ``baseline`` and ``window`` are its
+    two disjoint slices, ``[first, D-7]`` and ``[D-6, D]``. ``band``, ``n``
+    and ``established`` are the band over ``baseline`` (``build_band``), its
+    count in distinct local days, and ``n >= MIN_BASELINE_READINGS`` -- the
+    same three values ``judge`` computes from the same two slices, carried
+    here so every dataset reports them whether or not it is the one judged
+    (AC1, AC2). No reading of another tier is in any of them: the anti-mixing
+    rule is honoured by construction, not by a filter.
+
+    ``judge`` reads ``tier``, ``baseline``, ``window`` and ``withheld`` of
+    whatever it is handed, so a dataset is judgeable on its own; until T155
+    lands the selection, ``select_by_retired_resolver`` decides which one
+    the route hands it.
+    """
+
+    #: The tier every reading here carries. ``None`` on exactly one object:
+    #: the empty dataset ``select_by_retired_resolver`` manufactures when no
+    #: reading of any tier exists in ``[D-66, D]``, so ``judge`` can still
+    #: name the structural ``no_tier_sustains_a_trend`` cause. ``build_series``
+    #: constructs a dataset only for a tier that is present.
+    tier: str | None
+    #: ``[max(D-66, <the gap resumption>, <this tier's era first day>), D-7]``
+    #: (T092/T098/T107 composed): the gap term is global and identical on
+    #: every dataset; the era term is this dataset's own.
+    baseline_window: tuple[date, date]
+    series: tuple[Reading, ...]
+    baseline: tuple[Reading, ...]
+    window: tuple[Reading, ...]
+    band: Band | None
+    n: int
+    established: bool
+    #: T092. The local day the current baseline era began, when a reset is
+    #: **reported** for this dataset, and why: ``REASON_COVERAGE_GAP`` (the
+    #: global gap, the same on every dataset) or ``REASON_TIER_CHANGE`` (this
+    #: dataset's own era boundary, ``tier_change_reset`` asked with its
+    #: tier). Both ``None`` when nothing is reported. ``baseline_window`` is
+    #: **not** a function of these -- the era clip applies whenever a
+    #: boundary exists, reported or not (D4a, decision log 2026-09-13; T098),
+    #: and whether or not a gap fired (T107).
+    reset_on: date | None = None
+    reset_reason: str | None = None
+    #: T125/T132, asked of this dataset's tier: the judged week is not a fair
+    #: sample of it because a tier the recency gate struck, or one the
+    #: athlete had never used in the baseline window, holds
+    #: ``MIN_WINDOW_READINGS`` week days all later than every one of this
+    #: tier's. ``judge`` answers ``hrv_unavailable`` on it. See
+    #: ``verdict_withheld``; T158 keeps it at dataset scope.
+    #:
+    #: **Defaults closed** (T134, moved here with the field). ``band``
+    #: (``None``) and ``established`` (``False``) default toward
+    #: ``hrv_unavailable``; an unset ``withheld`` must too, or a construction
+    #: site that forgets the argument silently manufactures a dataset
+    #: eligible for ``hrv_normal`` -- the direction ``research/00`` Section
+    #: 1.7 forbids on weak evidence. ``build_series`` always passes the
+    #: computed value; the default exists for the call site that does not
+    #: yet exist, and ``test_hrv_series_withheld_defaults_closed.py`` pins it.
+    withheld: bool = True
+
+
+@dataclass(frozen=True)
+class HrvSeries:
+    """The series for one target date, bucketed in one zone: **N per-tier
+    datasets over one globally-clipped population** (F006, T151).
+
+    ``readings`` is the post-exclusion set of every tier inside
+    ``[D-66, D]``, after the coverage-gap clip -- what T092 measures the gap
+    on, because a gap is "no entry in the post-exclusion series", not "no
+    stored row", and it is measured over **every tier together** (AC16): one
+    tier's silence while another carries the series is not a gap.
+    ``datasets`` holds one ``HrvDataset`` per tier present in ``readings``,
+    in fidelity order, each built from its own tier's readings alone.
+    ``excluded`` is the one shared list of every row inside the windows that
+    contributed to nothing, and why: the screens, ``before_reset:
+    coverage_gap`` for the readings the global clip removed, and each
+    dataset's own ``same_day_later_capture`` and ``before_reset:
+    tier_change`` -- every row exactly once (``research/00`` §1.6; the
+    per-dataset ``included``/``excluded`` partition is T152's).
 
     **The two clips are not symmetric in what they rebind, deliberately.**
-    The gap clip runs before the tier is resolved, so it rebinds
-    ``readings`` itself -- the gap's era is an era of *every* tier. The
-    era-boundary clip runs after the collapse and is a statement about the
-    **resolved tier's** era, so it rebinds ``series`` alone; rebinding
-    ``readings`` there would drop on-tier pre-boundary readings from the
-    population the gap rule is defined over while leaving the off-tier
-    ones, which is a different set from either. The cost is the standing
-    advisory that ``readings`` still contains readings that ``excluded``
-    lists ``before_reset: tier_change`` -- an overlap inside this dataclass
-    only, unreachable from ``main.py``, which reads ``series``,
-    ``baseline``, ``window`` and ``excluded`` and never ``readings``. T107
-    left it exactly as it was rather than widen it: the era clip's
-    population is unchanged (``series``), and every list the response is
-    built from stays disjoint and exhaustive.
+    The gap clip runs before the partition, so it rebinds ``readings``
+    itself and ``baseline_window[0]`` for every dataset alike -- the gap's
+    era is an era of *every* tier. The era-boundary clip is asked once per
+    dataset and is a statement about **that tier's** era, so it rebinds that
+    dataset's ``series`` alone; ``readings`` still contains readings a
+    dataset's clip listed ``before_reset: tier_change``, an overlap inside
+    this dataclass only. ``main.py`` never reads ``readings``.
     """
 
     target_date: date
     #: The IANA key the rows were bucketed in, so the response can report it.
     timezone: str
+    #: The **global** window, ``[max(D-66, <the gap resumption>), D-7]``;
+    #: each dataset's own is this further clipped at its era boundary.
     baseline_window: tuple[date, date]
     judged_window: tuple[date, date]
-    #: ``None`` only when no reading of any tier exists in ``[D-66, D]``.
+    readings: tuple[Reading, ...]
+    excluded: tuple[Exclusion, ...]
+    #: One per tier present in ``readings``, in ``TIER_FIDELITY`` order;
+    #: empty when no reading of any tier exists in ``[D-66, D]``.
+    datasets: tuple[HrvDataset, ...]
+    #: The global coverage-gap resumption (``coverage_gap_reset``), or
+    #: ``None``. Every dataset's ``reset_on``/``reset_reason`` report it
+    #: when it is set; it is carried here because it is a property of the
+    #: series as a whole, not of any one dataset.
+    gap_reset_on: date | None = None
+
+
+@dataclass(frozen=True)
+class SingleDatasetView:
+    """**T151's bridge, removed by T155.** One dataset of an ``HrvSeries``
+    flattened onto the shape the F005 series had, so that ``judge``, the
+    route and every pin written against a single resolved tier read exactly
+    what they read before the partition. ``tier``, ``baseline_window``,
+    ``series``, ``baseline``, ``window``, ``withheld``, ``reset_on`` and
+    ``reset_reason`` are ``selected``'s; ``target_date``, ``timezone``,
+    ``judged_window`` and ``readings`` are the series'; ``excluded`` is the
+    series' list with every other dataset's readings listed
+    ``off_baseline_tier: <tier>`` in place of their own dataset's
+    exclusions, as F005 listed them (retired by T152). Constructed only by
+    ``select_by_retired_resolver``.
+    """
+
+    target_date: date
+    timezone: str
+    baseline_window: tuple[date, date]
+    judged_window: tuple[date, date]
     tier: str | None
     readings: tuple[Reading, ...]
     series: tuple[Reading, ...]
     baseline: tuple[Reading, ...]
     window: tuple[Reading, ...]
     excluded: tuple[Exclusion, ...]
-    #: T092. The local day the current baseline era began, when a reset is
-    #: **reported**, and why: ``REASON_COVERAGE_GAP`` or
-    #: ``REASON_TIER_CHANGE``. Both ``None`` when nothing is reported.
-    #: Defaulted so a series can be built without naming them.
-    #: ``baseline_window`` is **not** a function of these: it is clipped to
-    #: ``[max(D-66, <a gap resumption>, <the era's first day>), D-7]`` --
-    #: the era boundary's half applies whenever a boundary exists, whether
-    #: or not rule 4 reports it (D4a, decision log 2026-09-13; T098) **and
-    #: whether or not a coverage gap has already fired** (T107, review
-    #: cycle 6 G-C6-5: until then any gap cancelled the era clip outright).
-    #: A tier-change era's first day may precede the window (T094). So a
-    #: ``null`` ``reset_reason`` on a clipped window is a reachable state,
-    #: and it is the athlete being told nothing about a baseline that is
-    #: nonetheless era-correct; so, since T107, is a ``coverage_gap``
-    #: whose ``reset_on`` precedes ``baseline_window[0]`` because the era
-    #: boundary clipped later than the resumption.
     reset_on: date | None = None
     reset_reason: str | None = None
-    #: T125. The judged week is not a fair sample of ``tier``: a tier rule 1's
-    #: recency gate struck for staleness holds ``MIN_WINDOW_READINGS`` days of
-    #: this week, all of them later than every one of ``tier``'s -- the
-    #: athlete has gone back to a device the gate evicted, and every reading
-    #: the verdict would be computed from predates his return. ``judge``
-    #: answers ``hrv_unavailable`` on it. Nothing else here is a function of
-    #: it: ``tier``, ``baseline_window``, ``series``, ``excluded`` and both
-    #: reset fields are byte-identical to what they were before T125, which is
-    #: the point -- form 2 changes what is *said* about this week, not what
-    #: the week is. See ``verdict_withheld``.
-    #:
-    #: **Defaults closed, unlike its literal name suggests** (T134). ``band``
-    #: (``None``) and ``established`` (``False``) both default toward
-    #: ``hrv_unavailable`` in this module; an unset ``withheld`` must too, or
-    #: a future construction site that forgets the argument silently
-    #: manufactures a series eligible for ``hrv_normal`` -- the direction
-    #: ``research/00`` Section 1.7 forbids on weak evidence. ``build_series``
-    #: is this dataclass's only construction site today (grep: ``HrvSeries(``
-    #: appears once in the whole tree) and always passes the computed value,
-    #: so this default is unreached by it and changes no verdict; it exists
-    #: for the call site that does not yet exist.
     withheld: bool = True
+    #: The dataset this view flattens, or ``None`` when the series holds no
+    #: dataset at all.
+    selected: HrvDataset | None = None
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -824,7 +888,8 @@ def build_series(
     target_date: date,
     earliest_start_time: str | None = None,
 ) -> HrvSeries:
-    """Exclude, resolve the tier, filter, collapse -- in that order.
+    """Exclude, clip the global gap, partition by tier, collapse within each
+    -- in that order -- and return one ``HrvDataset`` per tier present.
 
     ``rows`` are ``sessions`` rows (or dicts) carrying ``session_id``,
     ``start_time``, ``resting_rmssd_ms`` and ``hrv_source_tier``; any other
@@ -845,28 +910,27 @@ def build_series(
     earlier reading is known", which is correct for a caller whose rows
     are the whole history and wrong for one whose rows are a window of it.
 
-    **Tier fallback when the baseline window is empty.** The tier rule is
-    stated over the baseline window (and the judged week it must cover);
-    when the baseline window holds no reading of any tier (a new athlete's
-    first week, a request before any history) the same rule is applied to
-    the judged window standing in for both, so a day with a reading still
-    carries it in the series. No band can be built from an
-    empty baseline, so the verdict for such a day is T084's ``unavailable``
-    whichever tier is chosen; the fallback only decides which reading the
-    contract's ``points[].ln_rmssd`` shows.
+    **N datasets, one population** (F006, T151). Every tier present in the
+    gap-clipped readings gets a dataset built from its own readings alone,
+    with its own band, ``n``, ``established`` and ``withheld``; a tier with
+    readings only in the judged week gets one with an empty baseline (no
+    band, ``hrv_unavailable`` whichever is judged), which is what F005's
+    empty-baseline fallback used to decide by choosing a tier. Which dataset
+    is judged is ``select_by_retired_resolver``'s until T155.
 
-    **Resets (T092)** are detected between the exclusion step and the tier
-    step, because a coverage gap clips the baseline window *before* the
-    tier is resolved on it -- the fresh baseline is begun from the
-    resumption on whatever tier sustains it there. The sustained-tier-change
-    rule runs after the series is built: it finds the era boundary between
-    the tier that sustained the previous window ``[D-126, D-67]``
-    (``sustained_tier``, rule 1 alone) and the resolved tier, when the
-    latter sustains the current window and the readings on the wrong side
-    of that boundary are never dense enough to be a baseline of their own
-    (``tier_change_reset`` / ``_era_boundary``, T094; judged over both
-    windows since sprint-005 review cycle 3, with T095's density
-    tolerance).
+    **Resets (T092).** The coverage gap is detected between the exclusion
+    step and the partition, because it clips the baseline window of *every*
+    dataset before any tier is looked at -- it measures the silence of the
+    series as a whole, and one tier's silence while another carries the
+    series is no gap (AC16). The sustained-tier-change rule runs once per
+    dataset after its collapse: it finds the era boundary between the tier
+    that sustained the previous window ``[D-126, D-67]`` (``sustained_tier``,
+    rule 1 alone) and this dataset's tier, when the latter sustains the
+    current window and the readings on the wrong side of that boundary are
+    never dense enough to be a baseline of their own (``tier_change_reset``
+    / ``_era_boundary``, T094; judged over both windows since sprint-005
+    review cycle 3, with T095's density tolerance; per dataset since T151,
+    re-derived by T154).
 
     **The clip and the report are two consequences of that boundary, not
     one** (D4a, decision log 2026-09-13; T098). The baseline window is
@@ -949,93 +1013,112 @@ def build_series(
             readings, excluded, gap_reset_on, REASON_COVERAGE_GAP
         )
 
-    # The population both the tier rule and the tier-change rule read: every
-    # tier, inside the (possibly clipped) baseline window -- and, for the
-    # tier rule's week-coverage test, every tier inside the judged week.
+    # The population every per-dataset rule reads: every tier, inside the
+    # (possibly clipped) baseline window -- and, for the week-coverage and
+    # withhold questions, every tier inside the judged week. Computed once,
+    # before the partition, so each dataset is asked its questions against
+    # the same cross-tier facts (T125: the struck set must be the one set).
     baseline_readings = _within(readings, baseline)
     week_readings = _within(readings, judged)
-    week_counts = _tier_counts(week_readings)
     baseline_counts = _tier_counts(baseline_readings)
     baseline_last_read = _last_read(baseline_readings)
-    tier = resolve_baseline_tier(baseline_counts, week_counts, baseline_last_read)
-    # T125, asked of exactly the inputs the tier rule was asked of, so the
-    # struck set here is the set the gate applied and not a second reading of
-    # the rule. An empty baseline window resolves through the fallback below,
-    # where there are no candidates, nothing is struck and no band exists
-    # anyway, so the question is answered ``False`` on the real window only.
-    withheld = verdict_withheld(tier, week_readings, baseline_counts, baseline_last_read)
-    if tier is None:
-        tier = resolve_baseline_tier(week_counts, week_counts)
 
-    series_by_day: dict[date, Reading] = {}
-    for reading in readings:
-        if reading.tier != tier:
-            excluded.append(
-                Exclusion(reading.date, reading.session_id, f"{REASON_OFF_BASELINE_TIER}: {reading.tier}")
-            )
-        elif reading.date in series_by_day:
-            excluded.append(Exclusion(reading.date, reading.session_id, REASON_SAME_DAY_LATER_CAPTURE))
-        else:
-            series_by_day[reading.date] = reading
+    # F006 (T151): one dataset per tier present, in fidelity order. The
+    # per-day collapse is **within** a tier (AC4): the earliest capture of
+    # the day on that tier is kept and every later one is listed
+    # ``same_day_later_capture``. A day carrying two tiers' captures feeds
+    # both datasets (AC3); nothing is ``off_baseline_tier`` here, because no
+    # tier is *the* baseline tier any more (the bridge below re-lists the
+    # non-selected datasets' readings that way until T152 retires the reason).
+    datasets: list[HrvDataset] = []
+    for tier in TIER_FIDELITY:
+        on_tier = _of_tier(readings, tier)
+        if not on_tier:
+            continue
+        series_by_day: dict[date, Reading] = {}
+        for reading in on_tier:
+            if reading.date in series_by_day:
+                excluded.append(Exclusion(reading.date, reading.session_id, REASON_SAME_DAY_LATER_CAPTURE))
+            else:
+                series_by_day[reading.date] = reading
+        series = tuple(series_by_day[day] for day in sorted(series_by_day))
+        dataset_window = baseline
 
-    series = tuple(series_by_day[day] for day in sorted(series_by_day))
-
-    boundary = tier_change_reset(
-        previous_readings,
-        tier,
-        baseline_readings,
-        week_readings,
-        judged,
-        stray_population=unclipped_readings,
-    )
-    if boundary is not None:
-        # D4a (T098), made true of a gapped series by T107 (review cycle 6,
-        # G-C6-5): the clip is unconditional -- on the report *and* on the
-        # coverage gap. Until T107 this branch sat behind ``if reset_on is
-        # None``, so any gap in ``[D-66, D]`` meant rule 4 was never asked
-        # and **nothing was clipped**, which drew an abandoned device era
-        # back into the band and read a suppressed week as normal, with no
-        # threshold to cross. ``research/00`` §5.4 says the now-sustaining
-        # tier's pre-boundary readings are *never* in the band; only the
-        # *report* was ever the gap's to win.
-        #
-        # The two clips compose as the **later** first day. Each says the
-        # same kind of thing -- these readings are not of this baseline's
-        # era -- so the band must contain neither the pre-gap nor the
-        # pre-boundary readings, and the admissible set is the
-        # intersection. ``baseline[0]`` already carries
-        # ``max(D-66, gap_reset_on)``, so this one ``max`` composes all
-        # three. The era may have begun before D-66 (T094: ``first_day`` is
-        # its true first day, not the first inside the window); the window
-        # reported is the schema's
-        # ``[max(D-66, gap_reset_on, boundary.first_day), D-7]``, whether or
-        # not ``reset_on`` is reported.
-        #
-        # Nothing is listed twice (``research/00`` §1.6). The gap branch
-        # rebinds ``readings`` before the collapse, so ``series`` holds only
-        # what it kept; this branch excludes out of ``series``. The two
-        # populations are therefore disjoint by construction, and a boundary
-        # earlier than the resumption removes nothing here rather than
-        # re-excluding what the gap already took.
-        baseline = (max(boundary.first_day, baseline[0]), baseline[1])
-        kept, excluded = _exclude_before_reset(
-            list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
+        # T125/T132, asked of this tier against the cross-tier facts above,
+        # on the real baseline window only: an empty window has no
+        # candidates, nothing struck and no band anyway, so F005 answered it
+        # ``False`` through its fallback and this does the same.
+        withheld = bool(baseline_readings) and verdict_withheld(
+            tier, week_readings, baseline_counts, baseline_last_read
         )
-        series = tuple(kept)
-        # The gap keeps the *report* -- rule 4's precedence is unchanged, and
-        # only it was ever precedence over. A gapped series can therefore
-        # report ``coverage_gap`` on a window clipped later than the
-        # resumption, which is the one claim T107 had to qualify: a
-        # ``coverage_gap``'s ``reset_on`` no longer never precedes
-        # ``baseline_window[0]``.
-        if boundary.reported and gap_reset_on is None:
-            reset_on = boundary.first_day
-            reset_reason = REASON_TIER_CHANGE
 
-    # Once, after both reset branches have had their say: each moves
-    # readings into ``excluded`` out of order (``_exclude_before_reset``
-    # appends what it drops), and nothing between here and there reads the
-    # order.
+        # The cross-tier era question (T092/T094), asked once per dataset
+        # with this tier as the resolved one -- the same clauses (a), (b)
+        # and (c) over the same populations, so the dataset F005 would have
+        # resolved gets the boundary F005 found (T154 re-derives the rest).
+        boundary = tier_change_reset(
+            previous_readings,
+            tier,
+            baseline_readings,
+            week_readings,
+            judged,
+            stray_population=unclipped_readings,
+        )
+        dataset_reset_on, dataset_reset_reason = reset_on, reset_reason
+        if boundary is not None:
+            # D4a (T098), made true of a gapped series by T107 (review cycle
+            # 6, G-C6-5): the clip is unconditional -- on the report *and* on
+            # the coverage gap. ``research/00`` §5.4 says the now-sustaining
+            # tier's pre-boundary readings are *never* in the band; only the
+            # *report* was ever the gap's to win.
+            #
+            # The two clips compose as the **later** first day. Each says
+            # the same kind of thing -- these readings are not of this
+            # baseline's era -- so the band must contain neither the pre-gap
+            # nor the pre-boundary readings, and the admissible set is the
+            # intersection. ``baseline[0]`` already carries
+            # ``max(D-66, gap_reset_on)``, so this one ``max`` composes all
+            # three. The era may have begun before D-66 (T094: ``first_day``
+            # is its true first day, not the first inside the window).
+            #
+            # Nothing is listed twice (``research/00`` §1.6). The gap branch
+            # rebinds ``readings`` before the partition, so ``series`` holds
+            # only what it kept; this branch excludes out of ``series``. A
+            # boundary earlier than the resumption removes nothing here
+            # rather than re-excluding what the gap already took.
+            dataset_window = (max(boundary.first_day, baseline[0]), baseline[1])
+            kept, excluded = _exclude_before_reset(
+                list(series), excluded, boundary.first_day, REASON_TIER_CHANGE
+            )
+            series = tuple(kept)
+            # The gap keeps the *report* -- rule 4's precedence is unchanged,
+            # and only it was ever precedence over. A gapped series can
+            # therefore report ``coverage_gap`` on a window clipped later
+            # than the resumption (T107).
+            if boundary.reported and gap_reset_on is None:
+                dataset_reset_on = boundary.first_day
+                dataset_reset_reason = REASON_TIER_CHANGE
+
+        dataset_baseline = _within(series, dataset_window)
+        datasets.append(
+            HrvDataset(
+                tier=tier,
+                baseline_window=dataset_window,
+                series=series,
+                baseline=dataset_baseline,
+                window=_within(series, judged),
+                band=build_band(ln_rmssd(reading) for reading in dataset_baseline),
+                n=len(dataset_baseline),
+                established=len(dataset_baseline) >= MIN_BASELINE_READINGS,
+                reset_on=dataset_reset_on,
+                reset_reason=dataset_reset_reason,
+                withheld=withheld,
+            )
+        )
+
+    # Once, after every clip has had its say: each moves readings into
+    # ``excluded`` out of order (``_exclude_before_reset`` appends what it
+    # drops), and nothing between here and there reads the order.
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
     return HrvSeries(
@@ -1043,15 +1126,81 @@ def build_series(
         timezone=zone.key,
         baseline_window=baseline,
         judged_window=judged,
-        tier=tier,
         readings=tuple(readings),
-        series=series,
-        baseline=_within(series, baseline),
-        window=_within(series, judged),
         excluded=tuple(excluded),
-        reset_on=reset_on,
-        reset_reason=reset_reason,
-        withheld=withheld,
+        datasets=tuple(datasets),
+        gap_reset_on=gap_reset_on,
+    )
+
+
+def select_by_retired_resolver(series: HrvSeries) -> SingleDatasetView:
+    """**T151's bridge, removed by T155.** The one dataset ``judge`` and the
+    route are handed until F006's selection lands: the dataset F005's
+    ``resolve_baseline_tier`` would have made the baseline tier, flattened
+    onto the F005 series shape (``SingleDatasetView``).
+
+    The rule is F005's, unchanged, applied to the series' own population:
+    the tier resolved over the global baseline window and the judged week
+    (``resolve_baseline_tier``, rules 1-3), falling to the judged week
+    standing in for both when the baseline window is empty, and to no
+    dataset at all when there is no reading of any tier. ``build_series``
+    no longer resolves a tier; this is the only place the retired rule is
+    still asked, so the walking skeleton carries F005's observable
+    behaviour through every existing pin without the datasets and a single
+    resolved tier both living inside ``build_series`` as parallel truths.
+
+    Every reading of a non-selected dataset is listed
+    ``off_baseline_tier: <tier>`` in the view's ``excluded``, in place of
+    its own dataset's entries, exactly as F005 listed it; the rest of the
+    shared list is carried over. T152 retires that reason with the
+    per-dataset partition, and T155 retires this function with the view.
+    """
+    baseline_readings = _within(series.readings, series.baseline_window)
+    week_readings = _within(series.readings, series.judged_window)
+    week_counts = _tier_counts(week_readings)
+    tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts, _last_read(baseline_readings))
+    if tier is None:
+        tier = resolve_baseline_tier(week_counts, week_counts)
+    selected = next((dataset for dataset in series.datasets if dataset.tier == tier), None)
+
+    off_tier = [r for r in series.readings if r.tier != tier]
+    off_tier_ids = {r.session_id for r in off_tier}
+    excluded = [e for e in series.excluded if e.session_id not in off_tier_ids]
+    excluded += [Exclusion(r.date, r.session_id, f"{REASON_OFF_BASELINE_TIER}: {r.tier}") for r in off_tier]
+    excluded.sort(key=lambda e: (e.date, e.session_id))
+
+    if selected is None:
+        return SingleDatasetView(
+            target_date=series.target_date,
+            timezone=series.timezone,
+            baseline_window=series.baseline_window,
+            judged_window=series.judged_window,
+            tier=None,
+            readings=series.readings,
+            series=(),
+            baseline=(),
+            window=(),
+            excluded=tuple(excluded),
+            reset_on=series.gap_reset_on,
+            reset_reason=REASON_COVERAGE_GAP if series.gap_reset_on is not None else None,
+            withheld=False,
+            selected=None,
+        )
+    return SingleDatasetView(
+        target_date=series.target_date,
+        timezone=series.timezone,
+        baseline_window=selected.baseline_window,
+        judged_window=series.judged_window,
+        tier=selected.tier,
+        readings=series.readings,
+        series=selected.series,
+        baseline=selected.baseline,
+        window=selected.window,
+        excluded=tuple(excluded),
+        reset_on=selected.reset_on,
+        reset_reason=selected.reset_reason,
+        withheld=selected.withheld,
+        selected=selected,
     )
 
 
@@ -1498,11 +1647,12 @@ def _exclude_before_reset(
     ``[D-66, D]``.
 
     Both resets call it (T098), and since T107 both can call it on one
-    request: the gap rule on the pre-filter readings of every tier, before
-    the baseline tier is resolved on the clipped window, and the
-    era-boundary clip on the collapsed one-per-day series, after it --
-    off-tier rows are already listed ``off_baseline_tier`` there and must
-    not be listed twice. The two populations cannot overlap either,
+    request: the gap rule on the readings of every tier, before the
+    partition, and each dataset's era-boundary clip on that dataset's
+    collapsed one-per-day series, after it -- another tier's rows are in
+    another dataset (T151) and a re-taken morning is already listed
+    ``same_day_later_capture``, so neither is listed twice. The two
+    populations cannot overlap either,
     because the gap branch **rebinds** ``readings`` and the series is built
     from what it kept, so a reading the gap excluded is not there for the
     era clip to exclude again (``research/00`` §1.6's "exactly one list"). Until T098 the tier-change branch narrowed

@@ -137,7 +137,7 @@ def test_the_cost_figure_constants_derive_from_judges_own_thresholds() -> None:
     ever move, this goes red before either corpus assertion runs."""
     band_min = _band_min_readings()
 
-    def series(baseline_n: int) -> hrv_trend.HrvSeries:
+    def series(baseline_n: int) -> hrv_trend.HrvDataset:
         day = date(2026, 3, 1)
 
         def reading(i: int, value: float) -> hrv_trend.Reading:
@@ -151,17 +151,17 @@ def test_the_cost_figure_constants_derive_from_judges_own_thresholds() -> None:
 
         baseline = tuple(reading(i, 40.0 + (i % 3)) for i in range(baseline_n))
         window = tuple(reading(1000 + i, 40.0 + i) for i in range(hrv_trend.MIN_WINDOW_READINGS))
-        return hrv_trend.HrvSeries(
-            target_date=day,
-            timezone="UTC",
-            baseline_window=(day, day),
-            judged_window=(day, day),
+        # One dataset, hand-built (T151): ``judge`` reads a dataset's
+        # ``tier``, ``baseline``, ``window`` and ``withheld``.
+        return hrv_trend.HrvDataset(
             tier="chest_strap_raw",
-            readings=baseline + window,
+            baseline_window=(day, day),
             series=baseline + window,
             baseline=baseline,
             window=window,
-            excluded=(),
+            band=None,
+            n=len(baseline),
+            established=len(baseline) >= MIN_BASELINE_READINGS,
             withheld=False,
         )
 

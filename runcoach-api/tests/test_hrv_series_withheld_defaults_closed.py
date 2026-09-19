@@ -1,13 +1,14 @@
-"""T134 -- ``HrvSeries.withheld`` fails closed, or is documented at the field for why not.
+"""T134 -- ``withheld`` fails closed, or is documented at the field for why not.
 
-``hrv_trend.py``'s ``build_series`` is ``HrvSeries``'s only construction site in the whole
-tree (verified by grep: ``HrvSeries(`` appears exactly once, in ``hrv_trend.py`` itself), and
-it always passes the computed ``withheld`` value -- so the dataclass field's own default was,
-before this task, unreached in practice but *permissive* in direction: a future construction
-path that omitted the argument would silently manufacture a series eligible for
-``hrv_normal``, the one direction ``research/00`` Section 1.7 forbids on weak evidence.
-``band`` (``None``) and ``established`` (``False``) both default toward ``hrv_unavailable`` in
-this same module; ``withheld`` was the odd one out.
+**Re-pointed by T151 (F006):** the field moved from ``HrvSeries`` to ``HrvDataset`` when the
+series became N per-tier datasets, and the pin moved with it. ``hrv_trend.py``'s
+``build_series`` is ``HrvDataset``'s only production construction site (``HrvDataset(``
+appears there once), and it always passes the computed ``withheld`` value -- so the dataclass
+field's own default was, before T134, unreached in practice but *permissive* in direction: a
+future construction path that omitted the argument would silently manufacture a dataset
+eligible for ``hrv_normal``, the one direction ``research/00`` Section 1.7 forbids on weak
+evidence. ``band`` (``None``) and ``established`` (``False``) both default toward
+``hrv_unavailable`` in this same module; ``withheld`` was the odd one out.
 
 Kept out of the five HRV suites (test_hrv_trend_band.py/_endpoint.py/_points.py/_reset.py/
 _series.py) so nobody's SCOPED_SUITE_COLLECTED pin has to move for a test about a field
@@ -21,11 +22,12 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from runcoach_api.metrics.hrv_trend import (
-    HrvSeries,
     VERDICT_NORMAL,
     VERDICT_UNAVAILABLE,
+    HrvDataset,
     build_series,
     judge,
+    select_by_retired_resolver,
 )
 
 AUCKLAND = ZoneInfo("Pacific/Auckland")
@@ -47,15 +49,19 @@ def _row(day: date, value: float = VALUE) -> dict:
     }
 
 
-def _settled_series() -> HrvSeries:
-    """An established, in-band series -- ``judge`` reads it ``hrv_normal``
+def _settled_series() -> HrvDataset:
+    """An established, in-band dataset -- ``judge`` reads it ``hrv_normal``
     today, and must go on doing so: it is the regression half of this
     module's proof that the field's new default moves no verdict for the
-    one construction path that exists."""
+    one construction path that exists. The one dataset of a one-tier
+    series, taken through T151's bridge so it is the very object the route
+    hands ``judge`` (T155 replaces the bridge; the dataset stays)."""
     days = [D - timedelta(days=7) - timedelta(days=i) for i in range(20)][::-1]
     days += [D - timedelta(days=i) for i in range(7)][::-1]
     rows = [_row(day) for day in days]
-    return build_series(rows, AUCKLAND, D)
+    selected = select_by_retired_resolver(build_series(rows, AUCKLAND, D)).selected
+    assert selected is not None and selected.tier == STRAP
+    return selected
 
 
 def test_build_series_still_reads_normal_on_a_settled_athlete() -> None:
@@ -72,9 +78,9 @@ def test_build_series_still_reads_normal_on_a_settled_athlete() -> None:
 
 def test_a_series_constructed_without_withheld_reads_unavailable() -> None:
     """The deliverable itself, and its own mutation probe in one: build a
-    real, established, in-band series through ``build_series`` (so every
+    real, established, in-band dataset through ``build_series`` (so every
     other field is exactly what production would compute), then construct a
-    **second** ``HrvSeries`` from its fields with ``withheld`` *omitted*
+    **second** ``HrvDataset`` from its fields with ``withheld`` *omitted*
     entirely -- not copied, not defaulted from the first -- so the
     dataclass's own default is what decides the verdict.
 
@@ -91,13 +97,13 @@ def test_a_series_constructed_without_withheld_reads_unavailable() -> None:
 
     fields_but_withheld = {
         field.name: getattr(settled, field.name)
-        for field in dataclasses.fields(HrvSeries)
+        for field in dataclasses.fields(HrvDataset)
         if field.name != "withheld"
     }
-    unset = HrvSeries(**fields_but_withheld)
+    unset = HrvDataset(**fields_but_withheld)
 
     assert judge(unset).verdict == VERDICT_UNAVAILABLE, (
-        "HrvSeries.withheld must default closed: a construction site that omits it "
+        "HrvDataset.withheld must default closed: a construction site that omits it "
         "should read hrv_unavailable, not silently inherit hrv_normal eligibility"
     )
 

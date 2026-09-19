@@ -129,11 +129,20 @@ def in_previous_window(days: list[date], target: date) -> int:
     return sum(1 for day in days if first <= day <= last)
 
 
-def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.HrvSeries:
-    return hrv_trend.build_series(rows, zone, target)
+def build(
+    rows, zone: ZoneInfo = AUCKLAND, target: date = D, earliest_start_time: str | None = None
+) -> hrv_trend.SingleDatasetView:
+    """The series through T151's bridge: the one dataset F005's resolver
+    would have made the baseline tier, on the F005 series shape, so every
+    reset pin below reads what it read before the N-way partition (the
+    era clip is asked once per dataset, and the selected one's is the one
+    F005 found). T155 replaces the bridge with F006's selection."""
+    return hrv_trend.select_by_retired_resolver(
+        hrv_trend.build_series(rows, zone, target, earliest_start_time)
+    )
 
 
-def excluded_reasons(result: hrv_trend.HrvSeries) -> dict[str, str]:
+def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
     return {entry.session_id: entry.reason for entry in result.excluded}
 
 
@@ -2778,7 +2787,7 @@ def test_one_resumption_era_is_reported_coverage_gap_then_tier_change_then_nothi
     rows = readings(SNAPSHOT, span(date(2026, 1, 1), date(2026, 4, 1)), 60.0, "snap")
     rows += readings(STRAP, span(R, R + timedelta(days=90)), 25.0, "strap")
 
-    def at(offset: int) -> hrv_trend.HrvSeries:
+    def at(offset: int) -> hrv_trend.SingleDatasetView:
         return build(rows, target=R + timedelta(days=offset))
 
     for offset in (0, 14, 66):
@@ -3069,8 +3078,8 @@ def test_a_genuinely_new_athlete_keeps_reporting_no_reset() -> None:
     first_ever = readings(STRAP, span(ago(40), D), 40.0, "first")
 
     with_junk = build(junk + first_ever)
-    nothing_known = hrv_trend.build_series(first_ever, AUCKLAND, D, earliest_start_time=None)
-    first_row_is_earliest = hrv_trend.build_series(first_ever, AUCKLAND, D, earliest_start_time=local(ago(40), 6))
+    nothing_known = build(first_ever, AUCKLAND, D, earliest_start_time=None)
+    first_row_is_earliest = build(first_ever, AUCKLAND, D, earliest_start_time=local(ago(40), 6))
 
     assert len(junk) == 35
     for result in (with_junk, nothing_known, first_row_is_earliest):
@@ -3092,8 +3101,8 @@ def test_the_earliest_known_reading_may_come_from_the_store_rather_than_the_rows
     """
     rows = readings(STRAP, span(ago(40), D), 40.0, "after")
 
-    layoff = hrv_trend.build_series(rows, AUCKLAND, D, earliest_start_time=local(date(2025, 3, 1), 6))
-    new_athlete = hrv_trend.build_series(rows, AUCKLAND, D)
+    layoff = build(rows, AUCKLAND, D, earliest_start_time=local(date(2025, 3, 1), 6))
+    new_athlete = build(rows, AUCKLAND, D)
 
     assert layoff.reset_reason == "coverage_gap"
     assert layoff.reset_on == ago(40)
@@ -3101,7 +3110,7 @@ def test_the_earliest_known_reading_may_come_from_the_store_rather_than_the_rows
     assert new_athlete.reset_reason is None and new_athlete.reset_on is None
     assert [r.session_id for r in layoff.series] == [r.session_id for r in new_athlete.series]
     with pytest.raises(ValueError, match="naive"):
-        hrv_trend.build_series(rows, AUCKLAND, D, earliest_start_time="2025-03-01T06:00:00")
+        build(rows, AUCKLAND, D, earliest_start_time="2025-03-01T06:00:00")
 
 
 def test_two_gaps_inside_the_window_reset_on_the_later_resumption() -> None:
@@ -3258,8 +3267,8 @@ def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_stil
     previous = hrv_trend.previous_window(D_SWITCH)
 
     lapsed_rows = clause_a_series(CLAUSE_A_LAPSED_DAYS)
-    lapsed = hrv_trend.build_series(lapsed_rows, AUCKLAND, D_SWITCH)
-    held = hrv_trend.build_series(clause_a_series(CLAUSE_A_HELD_DAYS), AUCKLAND, D_SWITCH)
+    lapsed = build(lapsed_rows, AUCKLAND, D_SWITCH)
+    held = build(clause_a_series(CLAUSE_A_HELD_DAYS), AUCKLAND, D_SWITCH)
 
     # Clause (b) holds: the previous window is sustained by the snapshot,
     # which is not the resolved tier. Counted over the local days of

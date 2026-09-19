@@ -79,7 +79,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from runcoach_api.metrics import hrv_trend
-from runcoach_api.metrics.hrv_trend import build_series, judge
+from runcoach_api.metrics.hrv_trend import judge
 
 AUCKLAND = ZoneInfo("Pacific/Auckland")
 
@@ -140,6 +140,18 @@ def alternating(n: int, a: float = 40.0, b: float = 44.0) -> list[float]:
     """``a, b, a, b, ...`` -- a baseline whose dispersion is known and small,
     so ``inside``/``below``/``above`` window values can be placed by hand."""
     return [a if i % 2 == 0 else b for i in range(n)]
+
+
+def build_series(
+    rows: list[dict], zone: ZoneInfo, target: date, earliest_start_time: str | None = None
+) -> hrv_trend.SingleDatasetView:
+    """``hrv_trend.build_series`` through T151's bridge: the one dataset
+    F005's resolver would have made the baseline tier, on the F005 series
+    shape, so every band and verdict pin here reads what it read before the
+    N-way partition. T155 replaces the bridge with F006's selection."""
+    return hrv_trend.select_by_retired_resolver(
+        hrv_trend.build_series(rows, zone, target, earliest_start_time)
+    )
 
 
 def verdict_for(baseline: list[float], window: list[float], target: date = D) -> hrv_trend.HrvVerdict:

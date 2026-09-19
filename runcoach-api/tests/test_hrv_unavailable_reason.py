@@ -77,8 +77,9 @@ def span(first: date, last: date) -> list[date]:
     return days
 
 
-def build(rows: list[dict], target: date) -> hrv_trend.HrvSeries:
-    return hrv_trend.build_series(rows, AUCKLAND, target)
+def build(rows: list[dict], target: date) -> hrv_trend.SingleDatasetView:
+    # T151's bridge: the dataset F005's resolver picks, on the F005 shape; T155 replaces it.
+    return hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, AUCKLAND, target))
 
 
 # ---------------------------------------------------------------------------
