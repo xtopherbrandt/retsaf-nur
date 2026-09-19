@@ -459,6 +459,29 @@ def test_the_roots_match_the_scan_the_endpoint_suite_walks() -> None:
     )
 
 
+def test_a_site_that_is_absent_fails_to_resolve_rather_than_skipping() -> None:
+    """The pin on T124's deletion of the ``pytest.skip`` in ``_resolve``. Every
+    row in ``SITES`` exists in a committed checkout, so the deletion is
+    invisible to the rows themselves: put ``if not path.exists():
+    pytest.skip(...)`` back and every site test stays green on every machine.
+    This drives one absent row through ``_resolve`` and requires the failure.
+    A skip raised there is converted to a failure rather than allowed to
+    escape, because a skip *is* the outcome this pin refuses."""
+    absent = Site(
+        label="a site in no checkout",
+        root_index=0,
+        rel="spec-mirror/features/F999-in-no-checkout.md",
+        lead="a lead nothing carries",
+    )
+    path = SCAN_ROOTS[absent.root_index] / absent.rel
+    assert not path.exists(), f"{path} exists; this pin needs an absent path"
+    with pytest.raises(AssertionError, match="must be in every checkout"):
+        try:
+            _resolve(absent)
+        except pytest.skip.Exception as skipped:
+            pytest.fail(f"an absent site was skipped rather than failed: {skipped}")
+
+
 def test_every_unavailable_cause_is_claimed_by_exactly_one_code_element() -> None:
     """The half that makes the enumeration an oracle rather than a second
     transcription of the prose.

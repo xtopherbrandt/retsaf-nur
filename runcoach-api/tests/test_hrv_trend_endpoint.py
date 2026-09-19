@@ -1092,7 +1092,16 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 416  # re-measured 2026-09-18 (T124), as the last action before the
+SCOPED_SUITE_COLLECTED = 419  # re-measured 2026-09-18 (T124, iteration 2), as the last action
+#                              # before the commit: +3. Three pins added to this
+#                              # suite: the walk's .shipyard* prune, and the two
+#                              # absent-anchor pins (reach walk, anchor case).
+#                              # The third absent-path pin went to
+#                              # test_hrv_unavailable_causes.py, which is not
+#                              # one of the five. Nothing publishes this
+#                              # number; the previous value was T124's first
+#                              # pass, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 416  # re-measured 2026-09-18 (T124), as the last action before the
 #                              # commit: +1. T124 added
 #                              # test_the_walk_reaches_every_mirrored_document
 #                              # to this suite and no other identity changed:
@@ -1356,10 +1365,20 @@ SCAN_EXCLUDED_DIR_NAMES = (
     (".shipyard", "walked as its own root, so this stops the data dir being visited twice"),
 )
 
-#: Detached mutation-testing worktrees (``.mut-T108`` and friends) are a
-#: second copy of the tree at some earlier commit, so every hit in one is a
-#: duplicate of a hit already counted -- or a historical one.
-SCAN_EXCLUDED_DIR_PREFIX = ".mut-"
+#: Machinery again, matched on a **directory-name prefix** at any depth. Each
+#: row is ``(prefix, why)``. Detached mutation-testing worktrees (``.mut-T108``
+#: and friends) are a second copy of the tree at some earlier commit, so every
+#: hit in one is a duplicate of a hit already counted -- or a historical one.
+#: ``.shipyard*`` is the breadcrumb under any name: T124's acceptance probe
+#: hides the symlink by renaming it to ``.shipyard.probe-hidden`` inside the
+#: repo root, and the name row above did not know that spelling, so the walk
+#: descended into the data dir's historical files through the renamed link
+#: and failed one phrasing sweep on the author machine. A breadcrumb is never
+#: corpus, whatever it is called.
+SCAN_EXCLUDED_DIR_PREFIXES = (
+    (".mut-", "a detached mutation worktree: a second copy of the tree at an earlier commit"),
+    (".shipyard", "the data-dir breadcrumb under any name, renamed or not; never corpus"),
+)
 
 #: Historical record. ``sweep-the-claim-not-the-diff`` step 3 says a completed
 #: task file, a raw transcript and a dated verdict legitimately quote a
@@ -1434,13 +1453,17 @@ def _candidate_files(root_index: int) -> tuple[Path, ...]:
     that runs in every suite run and one that is quietly disabled for being
     slow.
     """
-    root = SCAN_ROOTS[root_index]
+    return _walk(SCAN_ROOTS[root_index])
+
+
+def _walk(root: Path) -> tuple[Path, ...]:
+    """The uncached walk behind ``_candidate_files``, over any root, so the
+    prune tables can be exercised against a tree built for the purpose."""
     pruned = {name for name, _reason in SCAN_EXCLUDED_DIR_NAMES}
+    prefixes = tuple(prefix for prefix, _reason in SCAN_EXCLUDED_DIR_PREFIXES)
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d for d in dirnames if d not in pruned and not d.startswith(SCAN_EXCLUDED_DIR_PREFIX)
-        ]
+        dirnames[:] = [d for d in dirnames if d not in pruned and not d.startswith(prefixes)]
         for name in filenames:
             if Path(name).suffix.lower() in SCAN_SUFFIXES:
                 found.append(Path(dirpath) / name)
@@ -1754,6 +1777,59 @@ def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(path
         assert _flat(withdrawn) not in text, (
             f"withdrawn as false (T103/T105/T109/T116), back in {path.name}: {withdrawn}"
         )
+
+
+#: A path no checkout carries, for the two absent-anchor pins below. Asserted
+#: absent before each use so a pin cannot quietly start exercising a real file.
+_ABSENT_ANCHOR_PATH = _REPO_ROOT / "spec-mirror" / "features" / "F999-in-no-checkout.md"
+
+
+def test_the_walk_prunes_the_breadcrumb_under_any_name(tmp_path: Path) -> None:
+    """T124's probe renames ``.shipyard`` to ``.shipyard.probe-hidden`` inside
+    the repo root for the duration of the run. A prune table that knows the
+    breadcrumb by its exact name only lets the walk descend through the
+    renamed link into the data dir's history, and that was measured: one
+    phrasing sweep failed on the author machine under the renamed link. Built
+    against a tree of its own so the assertion is on the prune rule and not
+    on what this machine happens to have at its root."""
+    (tmp_path / "live.md").write_text("corpus\n", encoding="utf-8")
+    for name in (".shipyard", ".shipyard.probe-hidden", ".shipyard-anything", ".mut-T999"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "history.md").write_text("never corpus\n", encoding="utf-8")
+    (tmp_path / "nested" / ".shipyard.moved").mkdir(parents=True)
+    (tmp_path / "nested" / ".shipyard.moved" / "history.md").write_text("never corpus\n", encoding="utf-8")
+    assert _walk(tmp_path) == (tmp_path / "live.md",)
+
+
+def test_an_anchored_file_that_is_absent_fails_the_reach_walk_rather_than_skipping(monkeypatch) -> None:
+    """The pin on T124's deletion of the ``continue``-on-absent-anchor path.
+    Every anchored path exists in a committed checkout, so the deletion is
+    invisible to the reach walk itself: put the ``continue`` back and the
+    walk is green on every machine, absent rows silently stepped over. This
+    drives one absent row through it and requires the failure."""
+    assert not _ABSENT_ANCHOR_PATH.exists(), f"{_ABSENT_ANCHOR_PATH} exists; this pin needs an absent path"
+    monkeypatch.setattr(
+        sys.modules[__name__], "WITHDRAWN_SCAN_ANCHORS", ((_ABSENT_ANCHOR_PATH, "an anchor nothing carries"),)
+    )
+    with pytest.raises(AssertionError, match="must be in every checkout"):
+        test_the_walk_reaches_every_file_an_anchor_speaks_for()
+
+
+def test_an_anchored_file_that_is_absent_fails_its_anchor_case_rather_than_skipping() -> None:
+    """The pin on T124's deletion of the ``pytest.skip`` in the parametrised
+    anchor case. Same shape as the walk pin above: with every anchored file
+    committed, a re-introduced ``if not path.exists(): pytest.skip(...)`` can
+    never fire and leaves the parametrisation green, so nothing but this
+    would notice it. A skip raised there is converted to a failure rather than
+    allowed to escape, because a skip *is* the outcome this pin refuses."""
+    assert not _ABSENT_ANCHOR_PATH.exists(), f"{_ABSENT_ANCHOR_PATH} exists; this pin needs an absent path"
+    with pytest.raises(AssertionError, match="must be in every checkout"):
+        try:
+            test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(
+                _ABSENT_ANCHOR_PATH, "an anchor nothing carries"
+            )
+        except pytest.skip.Exception as skipped:
+            pytest.fail(f"an absent anchored file was skipped rather than failed: {skipped}")
 
 
 #: Where the two copies must agree word for word. The served description is
