@@ -1092,7 +1092,22 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 423  # re-measured 2026-09-19 (T151), as the last action before the
+SCOPED_SUITE_COLLECTED = 438  # re-measured 2026-09-19 (T155), as the last action before the
+#                              # commit: +15. Fifteen pins added to
+#                              # test_hrv_trend_series.py on F006's selection
+#                              # (highest-fidelity judgeable dataset, the
+#                              # baseline-window recency gate, its boundary
+#                              # at the tolerance and +1, the simultaneous
+#                              # reference set, the confidence-weight pin,
+#                              # and the six adversarial probes plus a
+#                              # hypothesis contract). One identity renamed,
+#                              # not added: the T151 bridge pin is now
+#                              # test_the_selected_view_hands_judge_the_dataset_the_selection_picks.
+#                              # The build helpers were re-pointed at
+#                              # selected_view, not added to. Nothing
+#                              # publishes this number; the previous value
+#                              # was T151's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 423  # re-measured 2026-09-19 (T151), as the last action before the
 #                              # commit: +4. Four pins added to
 #                              # test_hrv_trend_series.py on F006's N-dataset
 #                              # shape (a dataset per tier with its own band
@@ -2704,8 +2719,8 @@ def _rendered(rows: list[dict], to: date = D) -> dict:
     ``judge``, ``_trend_response`` -- as the JSON body a client receives. The
     seam that matters here is ``_trend_response``'s trim: a reason the module
     emits is only *published* if it survives into this dict."""
-    # T151's bridge, as the route itself applies it; T155 replaces it.
-    series = hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, ZoneInfo("UTC"), to))
+    # F006's selection, as the route itself applies it (T155).
+    series = hrv_trend.selected_view(hrv_trend.build_series(rows, ZoneInfo("UTC"), to))
     response = main_module._trend_response(to - timedelta(days=126), [], series, hrv_trend.judge(series))
     return json.loads(response.model_dump_json(by_alias=True))
 

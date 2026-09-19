@@ -145,13 +145,11 @@ def alternating(n: int, a: float = 40.0, b: float = 44.0) -> list[float]:
 def build_series(
     rows: list[dict], zone: ZoneInfo, target: date, earliest_start_time: str | None = None
 ) -> hrv_trend.SingleDatasetView:
-    """``hrv_trend.build_series`` through T151's bridge: the one dataset
-    F005's resolver would have made the baseline tier, on the F005 series
-    shape, so every band and verdict pin here reads what it read before the
-    N-way partition. T155 replaces the bridge with F006's selection."""
-    return hrv_trend.select_by_retired_resolver(
-        hrv_trend.build_series(rows, zone, target, earliest_start_time)
-    )
+    """``hrv_trend.build_series`` through F006's selection (T155): the
+    selected dataset -- or the presentation fallback when none is judgeable
+    -- on the F005 series shape, so every band and verdict pin here reads
+    what it read before the N-way partition."""
+    return hrv_trend.selected_view(hrv_trend.build_series(rows, zone, target, earliest_start_time))
 
 
 def verdict_for(baseline: list[float], window: list[float], target: date = D) -> hrv_trend.HrvVerdict:
@@ -935,33 +933,67 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     series.withheld`` from ``judge``'s verdict branch reds this walk at
     ``r = 3`` and ``r = 4`` in all four cases, and nothing else in the five
     suites.
+
+    **Re-derived at F006 (T155, 2026-09-19): ``r = 5``, ``6`` and ``7``
+    changed tier and verdict; nothing else moved.** Shipped F005 kept the
+    *carrier* on those three mornings -- rule 3, the candidate read last,
+    once no candidate covered the week -- and answered ``hrv_unavailable``
+    (``week_too_thin``: ``readings_in_window`` ``7 - r``, ``baseline_n``
+    ``32 + r``, the shipped values this pin recorded). F006 selects among
+    **judgeable** datasets (``select_dataset``): from ``r = 5`` the carrier
+    holds two judged-week days and is not judgeable, while the returning
+    tier is established over its era-A days (23, 22, 21) and holds ``r``
+    mornings of the week -- it is the only judgeable dataset, so it is its
+    own recency reference and is selected, and the verdict is the return's
+    own three mornings earlier than at ``r = 8``. That is ``research/00``
+    §5.4 (iv): a return to a dataset the athlete established before is
+    **free**, its band was never destroyed. ``r = 1..4`` are unchanged --
+    there the carrier is judgeable and the returning tier, once judgeable at
+    ``r = 3``, is 33+ days behind it in the baseline window and skipped (AC6,
+    the reference §9 shape) -- and so is the withhold on ``r = 3`` and
+    ``r = 4``. Where the shipped and F006 verdicts differ is recorded in the
+    branch below rather than overwritten, so T162 can measure the rate.
     """
     rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
-    return_week = [RETURN_FIRST + timedelta(days=i) for i in range(1, RETURN_DAYS)]
+    era_a = [ERA_A_END - timedelta(days=i) for i in range(80)]
+    return_days = [RETURN_FIRST + timedelta(days=i) for i in range(RETURN_DAYS)]
 
     for r in range(1, RETURN_DAYS + 1):
         target = CARRIER_END + timedelta(days=r)
         series = build_series(rows, AUCKLAND, target)
         verdict = judge(series)
+        fed_by_carrier = [day for day in window_days(7, target) if day <= CARRIER_END]
+        returned = [day for day in window_days(7, target) if day > CARRIER_END]
 
-        if r < RETURN_DAYS:
+        if len(fed_by_carrier) >= hrv_trend.MIN_WINDOW_READINGS:
+            # r = 1..4: the carrier is judgeable and, from r = 3, the
+            # returning tier is judgeable too and 33+ days behind it in the
+            # baseline window, so it is skipped (F006 AC6; F005's gate struck
+            # it for the same reason). Unchanged from shipped.
             expected_tier = carrier_tier
-            fed = [day for day in window_days(7, target) if day <= CARRIER_END]
+            fed = fed_by_carrier
             # [[T125]] form 2. The athlete's own mornings inside the judged
             # week are every week day the carrier did not capture, and each of
             # them is later than every day that fed the mean (the carrier
             # stopped on ``CARRIER_END``). Once ``MIN_WINDOW_READINGS`` of them
             # are in the week, the week is not a fair sample of the tier the
             # verdict would be computed on, and no verdict is asserted.
-            returned = [day for day in window_days(7, target) if day > CARRIER_END]
             withheld = len(returned) >= hrv_trend.MIN_WINDOW_READINGS
-            expected_verdict = NORMAL if len(fed) >= 3 and not withheld else UNAVAILABLE
+            expected_verdict = NORMAL if not withheld else UNAVAILABLE
             expected_baseline_n = 32 + r
         else:
+            # r = 5..8: the carrier is not judgeable; the returning tier is
+            # the only judgeable dataset and is selected (F006, T155). Shipped
+            # F005 said, on r = 5..7: tier carrier, readings_in_window 7 - r,
+            # baseline_n 32 + r, hrv_unavailable (week_too_thin); r = 8 is
+            # unchanged. The baseline is its era-A days inside the window plus
+            # any return morning that has entered it (one, at r = 8).
+            first, last = hrv_trend.baseline_window(target)
             expected_tier = home_tier
-            fed = return_week
+            fed = returned
             expected_verdict = SUPPRESSED if suppressed else NORMAL
-            expected_baseline_n = 21
+            expected_baseline_n = len([day for day in era_a + return_days if first <= day <= last])
+            assert expected_baseline_n == (21 if r == RETURN_DAYS else 28 - r), r
 
         assert series.tier == expected_tier, r
         assert [reading.date for reading in series.window] == fed, r
@@ -1018,12 +1050,19 @@ RETURN_DENSITIES = (
     ("2/wk", (0, 3), 4, 0),
 )
 
-#: How far past ``RETURN_FIRST`` the walk below runs. Through ``k = 6`` the
+#: How far past ``RETURN_FIRST`` the walk below runs. Through ``k = 3`` the
 #: carrier still owns the baseline under every pattern in
 #: ``RETURN_DENSITIES`` (asserted, not assumed), which is the whole stretch
 #: either count can be non-zero over: the residual is capped at
 #: ``WINDOW_DAYS - MIN_WINDOW_READINGS`` = 4 and the withhold has stopped
-#: mattering well before the handover.
+#: mattering well before the handover. From ``k = 4`` the carrier holds two
+#: judged-week days and is no longer judgeable, and F006's selection (T155)
+#: hands the week to the returning strap wherever it holds
+#: ``MIN_WINDOW_READINGS`` of the week's days -- shipped F005 kept the
+#: carrier through ``k = 6`` on every pattern (rule 3), which is the value
+#: this walk pinned until 2026-09-19; neither count below moves, because
+#: those days were ``week_too_thin`` on the carrier and are the return's own
+#: mornings on the strap.
 DENSITY_WALK_DAYS = 7
 
 #: The return era's seeded length, long enough that every pattern's third
@@ -1082,9 +1121,13 @@ def test_the_return_residual_turns_on_capture_spacing_not_weekly_count(seed_hrv_
 
     What is asserted, per pattern, over ``k = 0 .. 6``:
 
-    * the carrier still owns the baseline throughout, so both counts are read
-      off the same phase under every pattern and the walk is not silently
-      comparing different stretches;
+    * the carrier owns the baseline through ``k = 3`` under every pattern, so
+      both counts are read off the same phase and the walk is not silently
+      comparing different stretches; from ``k = 4`` (re-derived at F006,
+      T155, 2026-09-19) the strap is selected wherever it holds
+      ``MIN_WINDOW_READINGS`` judged-week days and the carrier is presented
+      by the fallback where it does not (2/wk) -- shipped F005 kept the
+      carrier at every ``k``;
     * ``retired_band_mornings`` -- ``hrv_normal`` from a week fed entirely by
       days at or before ``CARRIER_END`` -- equals the table **and** equals
       ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``, with ``k3`` derived
@@ -1120,7 +1163,16 @@ def test_the_return_residual_turns_on_capture_spacing_not_weekly_count(seed_hrv_
             series = build_series(rows, AUCKLAND, target)
             verdict = judge(series)
 
-            assert series.tier == SNAPSHOT, (name, k)
+            strap_week = [day for day in captured if target - timedelta(days=6) <= day <= target]
+            carrier_week = [day for day in window_days(7, target) if day <= CARRIER_END]
+            if len(carrier_week) >= hrv_trend.MIN_WINDOW_READINGS:
+                expected_tier = SNAPSHOT  # judgeable carrier; the strap is skipped or not judgeable
+            elif len(strap_week) >= hrv_trend.MIN_WINDOW_READINGS:
+                expected_tier = STRAP  # F006 (T155): the only judgeable dataset; shipped F005 said SNAPSHOT
+            else:
+                expected_tier = SNAPSHOT  # nothing judgeable: the presentation fallback, read last
+            assert series.tier == expected_tier, (name, k)
+            assert k >= 4 or expected_tier == SNAPSHOT, (name, k)
             fed = [reading.date for reading in series.window]
             if verdict.verdict == NORMAL and fed and max(fed) <= CARRIER_END:
                 retired_band_mornings += 1

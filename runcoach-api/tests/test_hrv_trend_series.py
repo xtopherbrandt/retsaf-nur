@@ -27,6 +27,7 @@ omitted row would be visible (contract-tables-need-an-independent-oracle).
 from __future__ import annotations
 
 import ast
+import dataclasses
 import math
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
@@ -35,6 +36,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from runcoach_api import db
 from runcoach_api.metrics import hrv_trend
 from runcoach_api.models import RRInterval
@@ -89,12 +92,14 @@ def days_between(first: date, last: date) -> list[date]:
 
 
 def build(rows, zone: ZoneInfo = AUCKLAND, target: date = D) -> hrv_trend.SingleDatasetView:
-    """The series through T151's bridge: the one dataset F005's resolver
-    would have made the baseline tier, on the F005 series shape, so every
-    pin below reads what it read before the N-way partition. T155 replaces
-    the bridge with F006's selection; the pins on the partition itself
-    read ``hrv_trend.build_series`` directly (end of file)."""
-    return hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, zone, target))
+    """The series through F006's selection (T155): the selected dataset --
+    the highest-fidelity judgeable one not skipped for baseline-window
+    staleness, or the presentation fallback when none is judgeable -- on
+    the F005 series shape, so every pin below reads what it read before the
+    N-way partition. The pins on the partition and on the selection itself
+    read ``hrv_trend.build_series`` / ``select_dataset`` directly (end of
+    file)."""
+    return hrv_trend.selected_view(hrv_trend.build_series(rows, zone, target))
 
 
 def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
@@ -1675,18 +1680,19 @@ def test_the_coverage_gap_is_global_and_clips_every_dataset_identically() -> Non
     assert {d.n for d in gapped.datasets} == {24}, "each dataset's n is its own post-clip distinct days"
 
 
-def test_the_t151_bridge_hands_judge_the_dataset_the_retired_resolver_picks() -> None:
-    """The temporary selection (T151; T155 replaces it): the single-dataset
-    view is the dataset ``resolve_baseline_tier`` would have chosen, and
+def test_the_selected_view_hands_judge_the_dataset_the_selection_picks() -> None:
+    """Re-pointed by T155 (was T151's bridge pin over the retired resolver):
+    the single-dataset view is the dataset ``select_dataset`` selects, and
     ``judge`` on it reports that dataset's own band, ``n`` and
     ``established`` -- the same values the dataset carries, not a second
     computation. The other tier's readings are listed ``off_baseline_tier``
-    on the view alone, as F005 listed them, so every pin on that behaviour
-    is reachable until T152 retires the reason."""
+    on the view alone, as F005 listed them (T152's compatibility shim), so
+    every pin on that behaviour is reachable until T152 retires the reason."""
     series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
-    view = hrv_trend.select_by_retired_resolver(series)
+    view = hrv_trend.selected_view(series)
 
     assert view.tier == STRAP
+    assert view.selection is not None and view.selection.selected is series.datasets[0]
     assert view.selected is series.datasets[0]
     assert view.baseline == view.selected.baseline and view.window == view.selected.window
     verdict = hrv_trend.judge(view)
@@ -1698,3 +1704,410 @@ def test_the_t151_bridge_hands_judge_the_dataset_the_retired_resolver_picks() ->
     assert off_tier == {r.session_id for r in series.readings if r.tier == SNAPSHOT}
     assert not any(e.reason.startswith("off_baseline_tier") for e in series.excluded)
     assert view.readings == series.readings and view.target_date == D
+
+
+# ---------------------------------------------------------------------------
+# F006 / T155 -- selection: the highest-fidelity judgeable dataset, skipped
+# past on baseline-window staleness (research/00 5.4 amended 2026-09-18 (ii);
+# F006 AC5-AC8; reference section 9 for the series a first draft got wrong)
+#
+# Every pin below prints the slice it compared -- which datasets were
+# judgeable, which were skipped and by how many days -- through
+# ``Selection.describe()`` (a-witness-must-print-the-slice-it-compared).
+# ---------------------------------------------------------------------------
+
+
+def _carrier(first: date = D - timedelta(days=66), last: date = D) -> list[dict]:
+    """A daily ``health_snapshot`` over ``[first, last]`` at 40 ms, 07:00."""
+    return readings(SNAPSHOT, days_between(first, last), 40.0, hh=7)
+
+
+def _strap(days: list[date], value: float = 60.0) -> list[dict]:
+    return readings(STRAP, days, value)
+
+
+def _select(rows: list[dict], target: date = D) -> hrv_trend.Selection:
+    selection = hrv_trend.select_dataset(hrv_trend.build_series(rows, AUCKLAND, target))
+    print(selection.describe())
+    return selection
+
+
+def test_a_strap_whose_baseline_is_entirely_pre_layoff_is_skipped_for_the_watch() -> None:
+    """The first failing test, and reference section 9's reproducing series
+    (AC6). The strap is established on ``D-66..D-36`` (31 days), silent
+    ``D-35..D-5`` while the watch carries the series (so no coverage gap
+    fires, AC16), and back on ``D-4/D-2/D-0`` -- three judged-week days, so
+    it is judgeable and the highest fidelity. An unqualified gate reading
+    the strap's *latest* reading (``D-0``) selects it and judges the athlete
+    against a band whose every reading is 36 to 66 days old. The window is
+    normative: the strap's latest reading **within ``[D-66, D-7]``** is
+    ``D-36``, the watch's is ``D-7``, and 29 > ``RECENCY_TOLERANCE_DAYS``
+    skips it. Perturbation (measured while building): taking ``last_read``
+    over ``series.readings`` instead of the baseline-window slice selects the
+    strap and reds this."""
+    rows = _carrier() + _strap(days_between(D - timedelta(days=66), D - timedelta(days=36)))
+    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.judgeable == (STRAP, SNAPSHOT), slice_
+    assert selection.skipped == (STRAP,), slice_
+    assert selection.last_read[STRAP] == D - timedelta(days=36), slice_
+    assert selection.reference == D - timedelta(days=7), slice_
+    assert selection.gap(STRAP) == hrv_trend.RECENCY_TOLERANCE_DAYS + 1, slice_
+    assert selection.selected is not None and selection.selected.tier == SNAPSHOT, slice_
+
+
+def test_selection_promotes_the_highest_fidelity_judgeable_dataset() -> None:
+    """AC5: a strap judgeable and last read two days before the window's end
+    beside a judgeable daily watch selects the **strap** -- fidelity rank
+    decides, and a gap of 2 is nowhere near the tolerance. The watch is
+    denser (60 vs 20 baseline days) and read later; neither counts."""
+    rows = _carrier() + _strap(days_between(D - timedelta(days=28), D - timedelta(days=9)))
+    rows += _strap(days_between(D - timedelta(days=6), D - timedelta(days=4)))
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.judgeable == (STRAP, SNAPSHOT), slice_
+    assert selection.skipped == (), slice_
+    assert selection.gap(STRAP) == 2 and selection.gap(SNAPSHOT) == 0, slice_
+    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+
+
+def test_an_established_dataset_with_two_judged_week_days_is_not_a_candidate() -> None:
+    """AC8, the week half: 41 strap baseline days but only ``D-6`` and
+    ``D-4`` in the judged week -- established, not judgeable, so it is not
+    in ``judgeable`` at all, let alone skipped, and the watch is selected.
+    Under F005 this was rule 2's "covers the week" clause; here it is a
+    precondition of candidacy, stated once."""
+    rows = _carrier() + _strap(days_between(D - timedelta(days=47), D - timedelta(days=7)))
+    rows += _strap([D - timedelta(days=6), D - timedelta(days=4)])
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.judgeable == (SNAPSHOT,), slice_
+    assert selection.skipped == (), slice_
+    assert selection.selected is not None and selection.selected.tier == SNAPSHOT, slice_
+
+
+def test_judgeability_reads_the_datasets_own_post_clip_established_not_a_recount() -> None:
+    """AC8, the baseline half: ``established`` is the dataset's own count
+    over its **post-clip** window (T153/T154), never a recount of the shared
+    ``series.readings`` over the global window. Built through
+    ``build_series`` on the two-tier history (the strap is established, 41
+    days), then the strap dataset alone is replaced by one whose post-clip
+    ``n`` is 13 and ``established`` False while ``series.readings`` still
+    holds every one of its 41 window days. A selector recounting the shared
+    readings would still find the strap judgeable and select it; the one
+    that reads the dataset selects the watch."""
+    series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
+    strap, snapshot = series.datasets
+    assert strap.tier == STRAP and strap.established
+    clipped = dataclasses.replace(strap, baseline=strap.baseline[-13:], n=13, established=False)
+    reshaped = dataclasses.replace(series, datasets=(clipped, snapshot))
+    assert len({r.date for r in reshaped.readings if r.tier == STRAP and r.date <= D - timedelta(days=7)}) == 41
+
+    selection = hrv_trend.select_dataset(reshaped)
+    print(selection.describe())
+    assert selection.judgeable == (SNAPSHOT,), selection.describe()
+    assert selection.selected is not None and selection.selected.tier == SNAPSHOT, selection.describe()
+
+
+@pytest.mark.parametrize(
+    ("behind", "expect_skipped"),
+    [
+        (hrv_trend.RECENCY_TOLERANCE_DAYS, False),
+        (hrv_trend.RECENCY_TOLERANCE_DAYS + 1, True),
+    ],
+    ids=["exactly_the_tolerance", "one_past_it"],
+)
+def test_the_gate_boundary_is_strictly_greater_than_the_tolerance(behind: int, expect_skipped: bool) -> None:
+    """AC7's boundary, and the adversarial probe for the gate's one constant:
+    a strap whose latest baseline-window reading is exactly
+    ``RECENCY_TOLERANCE_DAYS`` behind the watch's is **not** skipped and
+    is selected; one day further behind it is skipped and the watch is
+    selected. The value is degenerate because it is the only point where
+    ``>`` and ``>=`` disagree, and F005's ``_recency_struck`` (reused
+    verbatim) is strict. Both rows are judgeable by construction: the
+    strap has three ``D-4/D-2/D-0`` week days and >= 14 baseline days."""
+    strap_last = D - timedelta(days=7) - timedelta(days=behind)
+    rows = _carrier() + _strap(days_between(D - timedelta(days=66), strap_last))
+    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.judgeable == (STRAP, SNAPSHOT), slice_
+    assert selection.gap(STRAP) == behind, slice_
+    assert (STRAP in selection.skipped) is expect_skipped, slice_
+    assert selection.selected is not None, slice_
+    assert selection.selected.tier == (SNAPSHOT if expect_skipped else STRAP), slice_
+
+
+def test_the_reference_is_the_latest_judgeable_read_not_the_end_of_the_window() -> None:
+    """AC7's reference set. Two judgeable datasets both stale against the
+    window's end -- the strap last read ``D-45``, the watch last read
+    ``D-52`` and both back for the judged week -- are within 7 days of
+    **each other**, so neither is skipped and the strap is selected. A gate
+    measuring against ``D-7`` (38 and 45 behind) would skip both; the
+    comparison is between the judgeable datasets themselves, and the
+    reference is the later of their two last reads. A third tier
+    (``health_api_overnight``) carries the series daily to ``D-7`` so no
+    coverage gap fires (AC16) -- it holds no judged-week day, so it is not
+    judgeable and its ``D-7`` is **not** the reference: the reference set is
+    the judgeable datasets, not every dataset present."""
+    rows = _carrier(D - timedelta(days=66), D - timedelta(days=52)) + _carrier(D - timedelta(days=6), D)
+    rows += readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
+    rows += _strap(days_between(D - timedelta(days=66), D - timedelta(days=45)))
+    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
+    assert selection.judgeable == (STRAP, SNAPSHOT), slice_
+    assert selection.reference == D - timedelta(days=45), slice_
+    assert selection.gap(STRAP) == 0 and selection.gap(SNAPSHOT) == 7, slice_
+    assert selection.skipped == (), slice_
+    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+
+
+def test_the_reference_maximum_is_taken_once_over_every_judgeable_dataset() -> None:
+    """AC7, "once, simultaneously, never iteratively", pinned on the
+    source: ``select_dataset`` calls F005's ``_recency_struck`` exactly
+    once, with the whole judgeable list, and reads ``_last_read`` over the
+    baseline-window slice (AC6 is a reuse of that scope, not a new
+    computation -- task technical notes). A loop that re-took the maximum
+    after each skip, or a second transcription of the gate, arrives here as
+    a second call or none."""
+    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "select_dataset")
+    calls = [
+        n.func.id
+        for n in ast.walk(function)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    ]
+    assert calls.count("_recency_struck") == 1, calls
+    assert calls.count("_last_read") == 1, calls
+    assert not any(isinstance(n, (ast.For, ast.While)) and "_recency_struck" in ast.unparse(n) for n in ast.walk(function))
+
+
+def test_the_numeric_confidence_weight_never_participates_in_selection() -> None:
+    """Deliverable 6 (reference section 3, "the two senses of quality,
+    split"): the **fidelity rank** arbitrates; the numeric per-tier
+    confidence weight section 3.7.1 defines is reported, never consulted.
+    Pinned two ways. Behaviourally: a sparse, noisy strap (three baseline
+    days a week, values swinging 30..90 ms) beside a dense, metronomic
+    watch (daily, 40 ms exactly) selects the strap, and swapping which tier
+    carries the noise moves nothing -- the reading values and the counts
+    are not inputs to the choice. Structurally: ``select_dataset`` orders
+    by ``_FIDELITY_RANK`` and reads no name that so much as mentions a
+    weight or a confidence, so a weight added to the module later cannot
+    reach the choice without reddening this."""
+    strap_days = [d for d in days_between(D - timedelta(days=66), D) if d.weekday() in (0, 2, 4)]
+    noisy = [row(local(d, 6), STRAP, 30.0 + 60.0 * (i % 2), f"noisy-{d}") for i, d in enumerate(strap_days)]
+    steady = _carrier()
+    assert len([d for d in strap_days if d >= D - timedelta(days=6)]) >= hrv_trend.MIN_WINDOW_READINGS
+    selection = _select(steady + noisy)
+    assert selection.selected is not None and selection.selected.tier == STRAP, selection.describe()
+
+    swapped = [row(local(d, 6), STRAP, 40.0, f"steady-{d}") for d in strap_days]
+    swapped += [
+        row(local(d, 7), SNAPSHOT, 30.0 + 60.0 * (i % 2), f"noisy-{d}")
+        for i, d in enumerate(days_between(D - timedelta(days=66), D))
+    ]
+    again = _select(swapped)
+    assert again.selected is not None and again.selected.tier == STRAP, again.describe()
+    assert again.judgeable == selection.judgeable == (STRAP, SNAPSHOT)
+
+    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "select_dataset")
+    names = {n.id for n in ast.walk(function) if isinstance(n, ast.Name)}
+    names |= {n.attr for n in ast.walk(function) if isinstance(n, ast.Attribute)}
+    assert "_FIDELITY_RANK" in names, names
+    offending = {n for n in names if "weight" in n.lower() or "confidence" in n.lower()}
+    assert not offending, offending
+    assert not any(k for k in vars(hrv_trend) if "confidence" in k.lower() and "weight" in k.lower()), (
+        "a confidence weight now exists in the module; it is reported on datasets[], never selected on"
+    )
+
+
+# --- the adversarial set (deliverable 7): what was fed, what routed, and why -
+
+
+def test_probe_zero_judgeable_datasets_selects_nothing_and_says_so() -> None:
+    """Degenerate: the candidate list is empty, so the reference maximum is a
+    maximum over nothing. Two forms. No rows at all: no dataset exists,
+    ``selected`` is ``None``, ``judgeable`` and ``skipped`` are empty and
+    ``reference`` is ``None`` -- nothing raised on ``max([])``. Two datasets
+    neither covering the week (the illness week): both established, neither
+    judgeable, same answer -- and the view still presents the dataset the
+    athlete used last so ``judge`` says ``week_too_thin`` on a 60-reading
+    baseline (AC9; T156 formalises the fallback)."""
+    empty = _select([])
+    assert (empty.selected, empty.judgeable, empty.skipped, empty.reference) == (None, (), (), None)
+    assert empty.last_read == {}
+
+    rows = _carrier(D - timedelta(days=66), D - timedelta(days=7))
+    rows += _strap(days_between(D - timedelta(days=66), D - timedelta(days=9)))
+    illness = _select(rows)
+    assert (illness.selected, illness.judgeable, illness.skipped, illness.reference) == (None, (), (), None)
+    assert illness.last_read == {STRAP: D - timedelta(days=9), SNAPSHOT: D - timedelta(days=7)}
+
+    view = hrv_trend.selected_view(hrv_trend.build_series(rows, AUCKLAND, D))
+    verdict = hrv_trend.judge(view)
+    assert view.tier == SNAPSHOT and view.selection is not None and view.selection.selected is None
+    assert (verdict.verdict, verdict.unavailable_reason) == ("hrv_unavailable", "week_too_thin")
+    assert verdict.baseline_n == 60 and verdict.established
+
+
+def test_probe_exactly_one_judgeable_dataset_is_its_own_reference() -> None:
+    """Degenerate: a reference set of size one. A lone judgeable strap last
+    read on ``D-50`` -- 43 days before the window's end, well past the
+    tolerance measured against ``D-7`` -- with three week days is its own
+    reference (gap 0), is never skipped and is selected. Anything that
+    compared against the window's end, or took the reference over every
+    dataset *present* rather than every *judgeable* one, would skip the
+    athlete's only judgeable instrument here: an overnight tier read daily
+    to ``D-7`` carries the series (no coverage gap, AC16) and holds no week
+    day, so it is present, established and not a candidate."""
+    rows = _strap(days_between(D - timedelta(days=66), D - timedelta(days=50)))
+    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+    rows += readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
+    selection = _select(rows)
+    slice_ = selection.describe()
+
+    assert selection.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
+    assert selection.judgeable == (STRAP,), slice_
+    assert selection.reference == selection.last_read[STRAP] == D - timedelta(days=50), slice_
+    assert selection.gap(STRAP) == 0 and selection.skipped == (), slice_
+    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+
+
+def test_probe_two_datasets_tied_on_fidelity_rank_is_a_construction_defect() -> None:
+    """Degenerate: two datasets with one rank. The dataset key is the tier
+    (reference section 1), so ``build_series`` can never produce two
+    datasets of one tier, and a hand-built series that does is a defect of
+    its caller -- a silent first-wins would hide it behind a plausible
+    answer, and there is no tie-break the spec names because the case does
+    not exist in it. Raised, naming the tier, like ``local_day`` raises on a
+    naive instant rather than guessing."""
+    series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
+    strap, snapshot = series.datasets
+    twinned = dataclasses.replace(series, datasets=(strap, dataclasses.replace(strap), snapshot))
+    with pytest.raises(ValueError, match=STRAP):
+        hrv_trend.select_dataset(twinned)
+
+
+def test_probe_a_dataset_whose_only_window_reading_is_the_windows_first_day() -> None:
+    """Degenerate: the closed interval's first day, ``D-66``. A strap read
+    once on ``D-66`` and on three week days is **inside** the window (its
+    ``last_read`` is ``D-66``, so the boundary is inclusive), holds one
+    baseline reading, is not established and so is not judgeable -- and
+    therefore not in the reference set, where it would sit 59 days behind
+    the watch. The same reading one day earlier, ``D-67``, is
+    ``outside_windows``: the strap then has no baseline reading at all and
+    no ``last_read`` entry. Either way the watch is the only candidate."""
+    week = _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+
+    inside = _select(_carrier() + _strap([D - timedelta(days=66)]) + week)
+    assert inside.last_read[STRAP] == D - timedelta(days=66), inside.describe()
+    assert inside.judgeable == (SNAPSHOT,) and inside.skipped == (), inside.describe()
+    assert inside.reference == D - timedelta(days=7), inside.describe()
+    assert inside.selected is not None and inside.selected.tier == SNAPSHOT, inside.describe()
+
+    outside = _select(_carrier() + _strap([D - timedelta(days=67)]) + week)
+    assert STRAP not in outside.last_read, outside.describe()
+    assert outside.judgeable == (SNAPSHOT,), outside.describe()
+    assert outside.selected is not None and outside.selected.tier == SNAPSHOT, outside.describe()
+
+
+def test_probe_every_judgeable_dataset_skipped_at_once_cannot_happen() -> None:
+    """Degenerate: the empty survivor set. It is unreachable by construction
+    -- the dataset holding the reference maximum is 0 days behind itself --
+    so a non-empty judgeable set always selects. Pinned at the gate that is
+    reused (``_recency_struck``, over every last-read assignment of one to
+    three tiers hypothesis can draw) and at the selection on the series
+    that comes closest: strap last read ``D-50`` and watch ``D-7``, both
+    judgeable, the strap 43 behind -- exactly one is skipped, never both."""
+
+    @given(
+        st.dictionaries(
+            st.sampled_from(hrv_trend.TIER_FIDELITY),
+            st.dates(min_value=date(2026, 1, 1), max_value=date(2026, 12, 31)),
+            min_size=1,
+            max_size=3,
+        )
+    )
+    def never_all(last_read: dict[str, date]) -> None:
+        candidates = [t for t in hrv_trend.TIER_FIDELITY if t in last_read]
+        struck = hrv_trend._recency_struck(candidates, last_read)
+        assert struck != set(candidates)
+        assert max(candidates, key=lambda t: last_read[t]) not in struck
+
+    never_all()
+
+    rows = _carrier() + _strap(days_between(D - timedelta(days=66), D - timedelta(days=50)))
+    rows += _strap(days_between(D - timedelta(days=6), D))
+    selection = _select(rows)
+    slice_ = selection.describe()
+    assert selection.gap(STRAP) == 43, slice_
+    assert selection.judgeable == (STRAP, SNAPSHOT) and selection.skipped == (STRAP,), slice_
+    assert len(selection.skipped) < len(selection.judgeable), slice_
+    assert selection.selected is not None and selection.selected.tier == SNAPSHOT, slice_
+
+
+def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> None:
+    """The contract as a property over hand-built datasets (any tier
+    present or not, 0..20 post-clip baseline days, 0..7 week days, any
+    last-read day inside the window): ``selected`` is ``None`` exactly when
+    nothing is judgeable; otherwise it is the lowest fidelity rank among
+    the judgeable datasets not skipped; ``skipped`` is a proper subset of
+    ``judgeable``; and ``reference`` is the latest last-read over the
+    judgeable datasets, skipped ones included. Hand-built rather than
+    through ``build_series`` so the property reaches geometries the row
+    builders above do not draw; the probes above are the real path."""
+    first, last = D - timedelta(days=66), D - timedelta(days=7)
+
+    def dataset(tier: str, n: int, week: int, last_read: date) -> hrv_trend.HrvDataset:
+        base_days = [last_read - timedelta(days=i) for i in range(n)][::-1] if n else []
+        baseline = tuple(
+            hrv_trend.Reading(d, f"{tier}-{d}", tier, 40.0, datetime(d.year, d.month, d.day, 6, tzinfo=UTC))
+            for d in base_days
+        )
+        window = tuple(
+            hrv_trend.Reading(d, f"{tier}-{d}", tier, 40.0, datetime(d.year, d.month, d.day, 6, tzinfo=UTC))
+            for d in days_between(D - timedelta(days=6), D)[:week]
+        )
+        return hrv_trend.HrvDataset(
+            tier=tier,
+            baseline_window=(first, last),
+            series=baseline + window,
+            baseline=baseline,
+            window=window,
+            band=None,
+            n=n,
+            established=n >= hrv_trend.MIN_BASELINE_READINGS,
+            withheld=False,
+        )
+
+    shape = st.tuples(st.integers(0, 20), st.integers(0, 7), st.dates(min_value=first, max_value=last))
+
+    @given(st.dictionaries(st.sampled_from(hrv_trend.TIER_FIDELITY), shape, max_size=3))
+    def contract(shapes: dict[str, tuple[int, int, date]]) -> None:
+        datasets = tuple(dataset(t, *shapes[t]) for t in hrv_trend.TIER_FIDELITY if t in shapes)
+        readings_ = tuple(r for d in datasets for r in d.series)
+        series = hrv_trend.HrvSeries(D, "Pacific/Auckland", (first, last), (D - timedelta(days=6), D), readings_, (), datasets)
+        selection = hrv_trend.select_dataset(series)
+
+        judgeable = [d for d in datasets if d.established and len({r.date for r in d.window}) >= 3]
+        assert selection.judgeable == tuple(d.tier for d in judgeable)
+        assert set(selection.skipped) < set(selection.judgeable) or not judgeable
+        if not judgeable:
+            assert selection.selected is None and selection.reference is None
+            return
+        assert selection.reference == max(shapes[t][2] for t in selection.judgeable)
+        survivors = [t for t in selection.judgeable if t not in selection.skipped]
+        assert selection.selected is not None and selection.selected.tier == survivors[0]
+        for t in selection.judgeable:
+            assert (t in selection.skipped) == ((selection.reference - shapes[t][2]).days > 28)
+
+    contract()

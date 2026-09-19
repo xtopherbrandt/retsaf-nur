@@ -354,15 +354,14 @@ def _judge_days(
     (``db.earliest_hrv_reading``), handed to every day alike: it is a
     property of the store, not of the day.
 
-    **T151's bridge, owned by T155.** ``build_series`` now returns one
-    dataset per source tier (F006), and ``judge`` still takes one dataset.
-    Until T155 lands F006's selection (highest-fidelity judgeable dataset,
-    skipped past on baseline-window staleness), the dataset handed to
-    ``judge`` and rendered is the one F005's retired resolver would have
-    picked, flattened onto the F005 series shape by
-    ``hrv_trend.select_by_retired_resolver``. T155 replaces that call with
-    the selector and removes the view; nothing else here is a function of
-    which dataset was chosen.
+    **Selection runs per judged day** (F006, T155; AC14). ``build_series``
+    returns one dataset per source tier, and ``judge`` takes one: the
+    dataset handed to it and rendered is the one ``hrv_trend.select_dataset``
+    selects for that day -- the highest-fidelity judgeable dataset, skipped
+    past on baseline-window staleness -- or the presentation fallback when
+    none is judgeable (AC9), flattened onto the F005 series shape by
+    ``hrv_trend.selected_view`` until T159 renders the datasets themselves.
+    Nothing else here is a function of which dataset was chosen.
 
     Raises ``OverflowError`` where a day's windows reach past the calendar's
     origin; the route names that as the parameters' problem."""
@@ -370,7 +369,7 @@ def _judge_days(
     for offset in range((to - from_).days + 1):
         day = from_ + datetime.timedelta(days=offset)
         datasets = hrv_trend.build_series(rows, zone, day, earliest_start_time)
-        series = hrv_trend.select_by_retired_resolver(datasets)  # T151 bridge; T155 removes
+        series = hrv_trend.selected_view(datasets)  # F006 selection (T155); T159 renders datasets[]
         judged.append((series, _withhold_future(hrv_trend.judge(series), day, today)))
     return judged
 

@@ -27,7 +27,7 @@ from runcoach_api.metrics.hrv_trend import (
     HrvDataset,
     build_series,
     judge,
-    select_by_retired_resolver,
+    selected_view,
 )
 
 AUCKLAND = ZoneInfo("Pacific/Auckland")
@@ -54,12 +54,12 @@ def _settled_series() -> HrvDataset:
     today, and must go on doing so: it is the regression half of this
     module's proof that the field's new default moves no verdict for the
     one construction path that exists. The one dataset of a one-tier
-    series, taken through T151's bridge so it is the very object the route
-    hands ``judge`` (T155 replaces the bridge; the dataset stays)."""
+    series, taken through F006's selection (T155) so it is the very object
+    the route hands ``judge``."""
     days = [D - timedelta(days=7) - timedelta(days=i) for i in range(20)][::-1]
     days += [D - timedelta(days=i) for i in range(7)][::-1]
     rows = [_row(day) for day in days]
-    selected = select_by_retired_resolver(build_series(rows, AUCKLAND, D)).selected
+    selected = selected_view(build_series(rows, AUCKLAND, D)).selected
     assert selected is not None and selected.tier == STRAP
     return selected
 

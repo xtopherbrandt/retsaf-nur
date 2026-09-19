@@ -105,8 +105,8 @@ def _slice(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -
 
 
 def _judged(rows: list[dict], target: date) -> tuple[hrv_trend.SingleDatasetView, hrv_trend.HrvVerdict]:
-    # T151's bridge: the dataset F005's resolver picks, on the F005 shape; T155 replaces it.
-    series = hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, pop.AUCK, target))
+    # F006's selection (T155), on the F005 shape; the pins record shipped F005's verdicts.
+    series = hrv_trend.selected_view(hrv_trend.build_series(rows, pop.AUCK, target))
     return series, hrv_trend.judge(series)
 
 

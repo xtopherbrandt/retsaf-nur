@@ -48,14 +48,18 @@ silently drops any day whose earliest capture is on another tier even when
 a usable reading of this tier existed, and ``readings_in_window`` decides
 ``hrv_unavailable`` -- so the order is outcome-determining, not cosmetic.
 
-**Which dataset is judged is not decided here.** F005 resolved *the*
-baseline tier inside ``build_series`` (``resolve_baseline_tier``: rule 1's
-candidacy in distinct local days with T117's recency gate, rule 2's week
-coverage, rule 3's last-used candidate; T093/T094/T095/T117). F006 replaces
-that with a selection among the datasets (T155); until it lands,
-``select_by_retired_resolver`` is the one place the retired rule is still
-asked, and it hands ``judge`` and the route the dataset F005 would have
-resolved, on the F005 series shape (``SingleDatasetView``).
+**Which dataset is judged is decided by ``select_dataset``, after the
+series is built** (F006, T155; ``research/00`` §5.4 amended 2026-09-18
+(ii)). F005 resolved *the* baseline tier inside ``build_series``
+(``resolve_baseline_tier``: rule 1's candidacy in distinct local days with
+T117's recency gate, rule 2's week coverage, rule 3's last-used candidate;
+T093/T094/T095/T117). F006 selects among the datasets instead: the
+highest-fidelity **judgeable** one -- established and holding a judged
+week -- skipped past when its latest baseline-window reading is more than
+``RECENCY_TOLERANCE_DAYS`` behind any judgeable dataset's. ``selected_view``
+hands ``judge`` and the route the selected dataset on the F005 series shape
+(``SingleDatasetView``) until T159 renders the datasets themselves;
+``resolve_baseline_tier`` is no longer on the verdict's path.
 
 **Days are the athlete's local days.** ``start_time`` is stored as an aware
 UTC ISO string (``mapping.py``, ``+00:00``). Each row is bucketed with
@@ -208,6 +212,15 @@ GAP_RESET_DAYS = 21
 #: rival: it is its own most recent candidate, so its gap is zero and it
 #: is never struck however old it is (that is the coverage gap's
 #: population, not this one).
+#:
+#: **Since F006 (T155) this same constant, through the same
+#: ``_recency_struck``, is the selection gate** (``select_dataset``; AC6/
+#: AC7): a judgeable dataset whose latest baseline-window reading falls
+#: more than this many days behind any judgeable dataset's is skipped. The
+#: constant is inherited, not re-justified: the ``[18, 44]`` band above
+#: was measured against the *fused* band, and its upper end no longer
+#: binds because a stale trial is not judgeable -- do not cite it as if it
+#: transferred (reference §10; T161/T162 re-measure it).
 RECENCY_TOLERANCE_DAYS = 28
 
 #: The tier enum (``models.Session.hrv_source_tier``), highest fidelity first.
@@ -286,16 +299,15 @@ class HrvDataset:
     rule is honoured by construction, not by a filter.
 
     ``judge`` reads ``tier``, ``baseline``, ``window`` and ``withheld`` of
-    whatever it is handed, so a dataset is judgeable on its own; until T155
-    lands the selection, ``select_by_retired_resolver`` decides which one
-    the route hands it.
+    whatever it is handed, so a dataset can be judged on its own;
+    ``select_dataset`` (T155) decides which one the route hands it.
     """
 
-    #: The tier every reading here carries. ``None`` on exactly one object:
-    #: the empty dataset ``select_by_retired_resolver`` manufactures when no
-    #: reading of any tier exists in ``[D-66, D]``, so ``judge`` can still
-    #: name the structural ``no_tier_sustains_a_trend`` cause. ``build_series``
-    #: constructs a dataset only for a tier that is present.
+    #: The tier every reading here carries. ``None`` on no dataset
+    #: ``build_series`` constructs -- it builds one only for a tier that is
+    #: present; the ``tier is None`` shape ``judge`` names as the structural
+    #: ``no_tier_sustains_a_trend`` cause is the empty ``SingleDatasetView``
+    #: ``selected_view`` manufactures when the series holds no dataset.
     tier: str | None
     #: ``[max(D-66, <the gap resumption>, <this tier's era first day>), D-7]``
     #: (T092/T098/T107 composed): the gap term is global and identical on
@@ -385,17 +397,25 @@ class HrvSeries:
 
 @dataclass(frozen=True)
 class SingleDatasetView:
-    """**T151's bridge, removed by T155.** One dataset of an ``HrvSeries``
-    flattened onto the shape the F005 series had, so that ``judge``, the
-    route and every pin written against a single resolved tier read exactly
-    what they read before the partition. ``tier``, ``baseline_window``,
-    ``series``, ``baseline``, ``window``, ``withheld``, ``reset_on`` and
-    ``reset_reason`` are ``selected``'s; ``target_date``, ``timezone``,
-    ``judged_window`` and ``readings`` are the series'; ``excluded`` is the
-    series' list with every other dataset's readings listed
+    """One dataset of an ``HrvSeries`` flattened onto the shape the F005
+    series had, so that ``judge``, the route and every pin written against
+    a single resolved tier read exactly what they read before the
+    partition. Constructed only by ``selected_view`` (T155; T151's bridge
+    built it over the retired resolver), which flattens the dataset
+    ``select_dataset`` selects -- or, when nothing is judgeable, the
+    presentation fallback (AC9; T156 formalises it) -- and retires with
+    T159, which renders the datasets themselves.
+
+    ``tier``, ``baseline_window``, ``series``, ``baseline``, ``window``,
+    ``withheld``, ``reset_on`` and ``reset_reason`` are ``selected``'s;
+    ``target_date``, ``timezone``, ``judged_window`` and ``readings`` are
+    the series'; ``selection`` is the decision the view presents, with the
+    judgeable and skipped datasets it can be reproduced from. ``excluded``
+    is the series' list with every other dataset's readings listed
     ``off_baseline_tier: <tier>`` in place of their own dataset's
-    exclusions, as F005 listed them (retired by T152). Constructed only by
-    ``select_by_retired_resolver``.
+    exclusions, as F005 listed them -- **T152's compatibility shim**: the
+    reason retires with the per-dataset partition, and the re-listing is
+    kept here only so its pins stay reachable until then.
     """
 
     target_date: date
@@ -411,9 +431,12 @@ class SingleDatasetView:
     reset_on: date | None = None
     reset_reason: str | None = None
     withheld: bool = True
-    #: The dataset this view flattens, or ``None`` when the series holds no
-    #: dataset at all.
+    #: The dataset this view flattens -- the selected one, or the fallback
+    #: -- or ``None`` when the series holds no dataset at all.
     selected: HrvDataset | None = None
+    #: The selection this view presents (``select_dataset``); ``None`` only
+    #: on a view built without one.
+    selection: Selection | None = None
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -916,7 +939,7 @@ def build_series(
     readings only in the judged week gets one with an empty baseline (no
     band, ``hrv_unavailable`` whichever is judged), which is what F005's
     empty-baseline fallback used to decide by choosing a tier. Which dataset
-    is judged is ``select_by_retired_resolver``'s until T155.
+    is judged is ``select_dataset``'s (T155), asked of the returned series.
 
     **Resets (T092).** The coverage gap is detected between the exclusion
     step and the partition, because it clips the baseline window of *every*
@@ -1028,7 +1051,7 @@ def build_series(
     # the day on that tier is kept and every later one is listed
     # ``same_day_later_capture``. A day carrying two tiers' captures feeds
     # both datasets (AC3); nothing is ``off_baseline_tier`` here, because no
-    # tier is *the* baseline tier any more (the bridge below re-lists the
+    # tier is *the* baseline tier any more (``selected_view`` re-lists the
     # non-selected datasets' readings that way until T152 retires the reason).
     datasets: list[HrvDataset] = []
     for tier in TIER_FIDELITY:
@@ -1133,35 +1156,172 @@ def build_series(
     )
 
 
-def select_by_retired_resolver(series: HrvSeries) -> SingleDatasetView:
-    """**T151's bridge, removed by T155.** The one dataset ``judge`` and the
-    route are handed until F006's selection lands: the dataset F005's
-    ``resolve_baseline_tier`` would have made the baseline tier, flattened
-    onto the F005 series shape (``SingleDatasetView``).
+@dataclass(frozen=True)
+class Selection:
+    """Which dataset is promoted into ``baseline``/``band``/``hrv_status``
+    for one target date, and the facts it was decided on (F006, T155;
+    ``research/00`` §5.4 amended 2026-09-18 (ii); AC5-AC8).
 
-    The rule is F005's, unchanged, applied to the series' own population:
-    the tier resolved over the global baseline window and the judged week
-    (``resolve_baseline_tier``, rules 1-3), falling to the judged week
-    standing in for both when the baseline window is empty, and to no
-    dataset at all when there is no reading of any tier. ``build_series``
-    no longer resolves a tier; this is the only place the retired rule is
-    still asked, so the walking skeleton carries F005's observable
-    behaviour through every existing pin without the datasets and a single
-    resolved tier both living inside ``build_series`` as parallel truths.
-
-    Every reading of a non-selected dataset is listed
-    ``off_baseline_tier: <tier>`` in the view's ``excluded``, in place of
-    its own dataset's entries, exactly as F005 listed it; the rest of the
-    shared list is carried over. T152 retires that reason with the
-    per-dataset partition, and T155 retires this function with the view.
+    ``judgeable`` are the tiers of the candidate datasets, in fidelity
+    order; ``skipped`` the subset the recency gate struck, in the same
+    order; ``last_read`` the latest baseline-window local day of **every**
+    tier present (``_last_read`` over the baseline-window slice, AC6's
+    normative scope), whether judgeable or not; ``reference`` the latest of
+    those over the judgeable tiers alone, ``None`` when nothing is
+    judgeable. ``selected`` is the first judgeable tier's dataset not
+    skipped, or ``None``. Everything a witness needs to print the slice the
+    decision compared is here (``describe``), so a pin can say which
+    datasets were candidates, which were skipped and by how many days.
     """
-    baseline_readings = _within(series.readings, series.baseline_window)
-    week_readings = _within(series.readings, series.judged_window)
-    week_counts = _tier_counts(week_readings)
-    tier = resolve_baseline_tier(_tier_counts(baseline_readings), week_counts, _last_read(baseline_readings))
-    if tier is None:
-        tier = resolve_baseline_tier(week_counts, week_counts)
-    selected = next((dataset for dataset in series.datasets if dataset.tier == tier), None)
+
+    selected: HrvDataset | None
+    judgeable: tuple[str, ...]
+    skipped: tuple[str, ...]
+    last_read: Mapping[str, date]
+    reference: date | None
+
+    def gap(self, tier: str) -> int | None:
+        """How many days ``tier``'s latest baseline-window reading falls
+        behind the reference; ``None`` for a tier that is not judgeable."""
+        if self.reference is None or tier not in self.judgeable:
+            return None
+        return (self.reference - self.last_read[tier]).days
+
+    def describe(self) -> str:
+        """One line naming the candidates, the skipped ones and the gaps."""
+        parts = []
+        for tier in TIER_FIDELITY:
+            if tier not in self.last_read:
+                continue
+            gap = f"(-{self.gap(tier)})" if tier in self.judgeable else ""
+            parts.append(f"{tier}:{self.last_read[tier]}{gap}{'!' if tier in self.skipped else ''}")
+        chosen = None if self.selected is None else self.selected.tier
+        return (
+            f"selected={chosen} judgeable={list(self.judgeable)} skipped={list(self.skipped)} "
+            f"reference={self.reference} last_read=[{' '.join(parts)}]"
+        )
+
+
+def select_dataset(series: HrvSeries) -> Selection:
+    """The dataset the verdict is taken from: the highest-fidelity
+    **judgeable** dataset, skipped past on baseline-window staleness (F006,
+    T155; ``research/00`` §5.4 amended 2026-09-18 (ii); spec §3.7.4).
+
+    1. **Candidates are the judgeable datasets** (AC8): ``established`` --
+       at least ``MIN_BASELINE_READINGS`` distinct local days in the
+       dataset's own **post-clip** baseline window, read from the dataset,
+       never recounted over the shared readings -- **and** at least
+       ``MIN_WINDOW_READINGS`` distinct judged-week days. F005's rule 2
+       ("covers the week") and the count half of its rule 1 are this one
+       condition, stated once.
+    2. **The highest fidelity rank wins** (AC5; ``_FIDELITY_RANK``, §3.7.1's
+       ratified hierarchy preserved: chest-strap raw RR over the numeric
+       tiers). The numeric confidence weight §3.7.1 defines is reported per
+       dataset and **never** consulted here (reference §3, the two senses of
+       quality split), so no recency-against-quality exchange rate exists.
+    3. **A candidate is skipped** (AC6/AC7) when its latest reading **within
+       the baseline window** ``[D-66, D-7]`` falls more than
+       ``RECENCY_TOLERANCE_DAYS`` behind the latest baseline-window reading
+       of any judgeable dataset -- strictly greater than. The gate is F005's
+       ``_recency_struck`` reused verbatim, over ``_last_read`` of the
+       baseline-window slice, which is exactly the scope AC6 makes normative
+       (task technical notes: a reuse, not a new computation; no window is
+       computed here). The reference maximum is taken **once,
+       simultaneously**, over every judgeable dataset including the ones
+       about to be skipped, so a lone dataset is its own reference and is
+       never skipped, and the dataset holding the maximum can never be.
+
+    **Why the window is normative** (reference §9, the defect a first draft
+    got wrong). A strap established on ``D-66..D-36``, silent to ``D-5``
+    while the snapshot carried the series, and back on ``D-4/D-2/D-0`` is
+    established and judgeable and the highest fidelity; its *latest*
+    reading is ``D-0``, gap 0, and an unqualified gate selects it and judges
+    the athlete against a band every reading of which is 36 to 66 days old
+    and entirely pre-layoff -- ``hrv_normal`` on a stale band, §1.7's
+    forbidden direction, on the exact mechanism T125 closed. Its latest
+    reading *in the window* is ``D-36``, 29 behind the snapshot's ``D-7``,
+    and it is skipped. Per-tier baselining removed every clip that checked
+    the *baseline's* recency; this gate is what puts the question back.
+
+    Selection runs per local day (the route calls this per judged day, AC14)
+    and reads nothing from yesterday: it is path-independent by
+    construction, which is what the deferred hysteresis (AC23) would give up.
+    ``withheld`` is not consulted here -- it is ``judge``'s, at dataset scope
+    (T158). Two datasets of one tier cannot come out of ``build_series``
+    (the dataset key is the tier, reference §1) and are refused rather than
+    resolved by position.
+    """
+    seen: set[str] = set()
+    for dataset in series.datasets:
+        if dataset.tier is None or dataset.tier in seen:
+            raise ValueError(
+                f"two datasets carry the tier {dataset.tier!r}: the dataset key is the tier, so this "
+                "series was not built by build_series and there is no rank to select on"
+            )
+        seen.add(dataset.tier)
+
+    by_rank = sorted(series.datasets, key=lambda d: _FIDELITY_RANK[d.tier])
+    judgeable = [d for d in by_rank if d.established and len(_days(d.window)) >= MIN_WINDOW_READINGS]
+    last_read = _last_read(_within(series.readings, series.baseline_window))
+    candidates = [d.tier for d in judgeable]
+    skipped = _recency_struck(candidates, last_read)
+    reference = max((last_read[tier] for tier in candidates), default=None)
+    selected = next((d for d in judgeable if d.tier not in skipped), None)
+    return Selection(
+        selected=selected,
+        judgeable=tuple(candidates),
+        skipped=tuple(tier for tier in candidates if tier in skipped),
+        last_read=last_read,
+        reference=reference,
+    )
+
+
+def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> HrvDataset | None:
+    """The dataset ``baseline``/``band`` are populated from when **no**
+    dataset is judgeable -- F005's rule 3, retained for presentation only
+    (AC9; ``research/00`` §5.4 (iii): "the dataset the athlete was read on
+    last"). No verdict is conferred by it: ``judge`` on a dataset with no
+    judged week answers ``week_too_thin``, and on an unestablished one
+    ``baseline_unestablished``. **T156 formalises this fallback** and the
+    cross-dataset ``unavailable_reason`` precedence; it is carried here so
+    the route has a dataset to render on the illness week and the three
+    shipped pins T156 names stay green through this task.
+
+    Among established datasets, the one read last in the baseline window,
+    ties by ``n`` then fidelity; with none established, the densest by
+    ``n``, ties to fidelity; with no baseline reading of any tier, the
+    densest in the judged week, ties to fidelity -- each clause the shape
+    F005's resolver gave it. ``None`` when the series holds no dataset.
+    """
+    if not series.datasets:
+        return None
+    established = [d for d in series.datasets if d.established]
+    if established:
+        return max(established, key=lambda d: (last_read[d.tier], d.n, -_FIDELITY_RANK[d.tier]))
+    if any(d.n for d in series.datasets):
+        return max(series.datasets, key=lambda d: (d.n, -_FIDELITY_RANK[d.tier]))
+    return max(series.datasets, key=lambda d: (len(_days(d.window)), -_FIDELITY_RANK[d.tier]))
+
+
+def selected_view(series: HrvSeries) -> SingleDatasetView:
+    """The one dataset ``judge`` and the route are handed, on the F005
+    series shape: the dataset ``select_dataset`` selects, or the
+    presentation fallback when nothing is judgeable, or an empty view with
+    ``tier`` ``None`` when the series holds no dataset at all (the
+    structural ``no_tier_sustains_a_trend`` cause). Replaces T151's bridge
+    over the retired resolver (T155); retires with T159.
+
+    **T152's compatibility shim.** Every reading of a non-presented dataset
+    is listed ``off_baseline_tier: <tier>`` in the view's ``excluded``, in
+    place of its own dataset's entries, exactly as F005 listed it -- kept
+    only so the two AC15 pins that observe the reason stay reachable until
+    T152 retires it with the per-dataset partition.
+    """
+    selection = select_dataset(series)
+    presented = selection.selected
+    if presented is None:
+        presented = _presentation_fallback(series, selection.last_read)
+    tier = None if presented is None else presented.tier
 
     off_tier = [r for r in series.readings if r.tier != tier]
     off_tier_ids = {r.session_id for r in off_tier}
@@ -1169,7 +1329,7 @@ def select_by_retired_resolver(series: HrvSeries) -> SingleDatasetView:
     excluded += [Exclusion(r.date, r.session_id, f"{REASON_OFF_BASELINE_TIER}: {r.tier}") for r in off_tier]
     excluded.sort(key=lambda e: (e.date, e.session_id))
 
-    if selected is None:
+    if presented is None:
         return SingleDatasetView(
             target_date=series.target_date,
             timezone=series.timezone,
@@ -1185,30 +1345,34 @@ def select_by_retired_resolver(series: HrvSeries) -> SingleDatasetView:
             reset_reason=REASON_COVERAGE_GAP if series.gap_reset_on is not None else None,
             withheld=False,
             selected=None,
+            selection=selection,
         )
     return SingleDatasetView(
         target_date=series.target_date,
         timezone=series.timezone,
-        baseline_window=selected.baseline_window,
+        baseline_window=presented.baseline_window,
         judged_window=series.judged_window,
-        tier=selected.tier,
+        tier=presented.tier,
         readings=series.readings,
-        series=selected.series,
-        baseline=selected.baseline,
-        window=selected.window,
+        series=presented.series,
+        baseline=presented.baseline,
+        window=presented.window,
         excluded=tuple(excluded),
-        reset_on=selected.reset_on,
-        reset_reason=selected.reset_reason,
-        withheld=selected.withheld,
-        selected=selected,
+        reset_on=presented.reset_on,
+        reset_reason=presented.reset_reason,
+        withheld=presented.withheld,
+        selected=presented,
+        selection=selection,
     )
 
 
 # ---------------------------------------------------------------------------
 # The SWC band, the thin-data guards and the verdict (T084)
 #
-# Everything in this section reads an ``HrvSeries`` and nothing else, so it
-# composes with T092's reset clipping of ``baseline`` without knowing about it.
+# Everything in this section reads **one dataset** -- an ``HrvDataset``, or
+# the route's ``SingleDatasetView`` of the selected one (T155) -- and nothing
+# else, so it composes with T092's reset clipping of ``baseline`` without
+# knowing about it, and never sees the other datasets of the series.
 # ---------------------------------------------------------------------------
 
 #: The register's shipped smallest-worthwhile-change width: the band is the
@@ -1393,7 +1557,7 @@ def build_band(ln_values: Iterable[float]) -> Band | None:
 
 
 def _unavailable_reason(
-    series: HrvSeries,
+    series: HrvDataset | SingleDatasetView,
     band: Band | None,
     window_mean: float | None,
     readings_in_window: int,
@@ -1414,12 +1578,14 @@ def _unavailable_reason(
     *which* guard fired -- only this function additionally names it.
 
     The ``no band`` guard is one cause in ``judge`` and two in the enum: T128
-    names the **structural** case -- ``resolve_baseline_tier`` answered "no
-    tier at all" -- separately from a resolved tier whose baseline is merely
-    too thin, because ``series.tier is None`` implies ``band is None`` (an
-    empty tier resolves to an empty ``series.baseline``) but not the
-    converse, and the two are told apart here rather than folding the
-    structural case silently into ``no_band``.
+    names the **structural** case -- no dataset at all, the empty view
+    ``selected_view`` builds when the series holds none (F005: ``resolve_
+    baseline_tier`` answering "no tier at all") -- separately from a
+    selected dataset whose baseline is merely too thin, because
+    ``series.tier is None`` implies ``band is None`` (the empty view has an
+    empty ``series.baseline``) but not the converse, and the two are told
+    apart here rather than folding the structural case silently into
+    ``no_band``.
     """
     if band is None:
         return REASON_NO_TIER if series.tier is None else REASON_NO_BAND
@@ -1432,8 +1598,12 @@ def _unavailable_reason(
     return None
 
 
-def judge(series: HrvSeries) -> HrvVerdict:
-    """The verdict for ``series.target_date`` from its two disjoint slices.
+def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
+    """The verdict for one dataset from its two disjoint slices -- the
+    dataset ``select_dataset`` selected, as the route hands it (T155), or
+    any ``HrvDataset`` on its own. The parameter keeps its F005 name
+    because ``test_hrv_unavailable_causes.py`` reads this function's guards
+    out of the source by name.
 
     The band is built over ``series.baseline`` (``[D-66, D-7]``) and the
     week's mean over ``series.window`` (``[D-6, D]``); because the slices do
@@ -1502,10 +1672,11 @@ def judge(series: HrvSeries) -> HrvVerdict:
     this fixed order, and the response now carries which one fired --
     ``_unavailable_reason`` reads exactly the same four values this function
     computed, so it can never disagree with what actually happened here. Two
-    more causes exist outside this pure function: the structural one --
-    ``resolve_baseline_tier`` answering "no tier at all" -- is folded into the
-    ``no band`` guard's report (``series.tier is None`` implies ``band is
-    None``, so the two share a guard here and are told apart by name only),
+    more causes exist outside this pure function: the structural one -- no
+    dataset at all, ``selected_view``'s empty view (F005: ``resolve_
+    baseline_tier`` answering "no tier at all") -- is folded into the ``no
+    band`` guard's report (``series.tier is None`` implies ``band is None``,
+    so the two share a guard here and are told apart by name only),
     and the day-not-happened one is the route's (``main._withhold_future``),
     which overrides whatever this function decided.
     """
@@ -1549,8 +1720,8 @@ def judge(series: HrvSeries) -> HrvVerdict:
 # (T092)
 #
 # ``build_series`` calls into this section at two points: the gap rule before
-# the tier is resolved (it clips the baseline window the tier is resolved on),
-# the tier-change rule after the series is built. Both read readings, never
+# the partition (it clips the baseline window of every dataset alike), the
+# tier-change rule once per dataset after its collapse. Both read readings, never
 # stored rows, so a gap spanned only by excluded rows still counts as a gap.
 # ---------------------------------------------------------------------------
 

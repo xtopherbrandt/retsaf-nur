@@ -132,14 +132,12 @@ def in_previous_window(days: list[date], target: date) -> int:
 def build(
     rows, zone: ZoneInfo = AUCKLAND, target: date = D, earliest_start_time: str | None = None
 ) -> hrv_trend.SingleDatasetView:
-    """The series through T151's bridge: the one dataset F005's resolver
-    would have made the baseline tier, on the F005 series shape, so every
-    reset pin below reads what it read before the N-way partition (the
-    era clip is asked once per dataset, and the selected one's is the one
-    F005 found). T155 replaces the bridge with F006's selection."""
-    return hrv_trend.select_by_retired_resolver(
-        hrv_trend.build_series(rows, zone, target, earliest_start_time)
-    )
+    """The series through F006's selection (T155): the selected dataset --
+    or the presentation fallback when none is judgeable -- on the F005
+    series shape, so every reset pin below reads what it read before the
+    N-way partition (the era clip is asked once per dataset, and the
+    selected one's is the one F005 found)."""
+    return hrv_trend.selected_view(hrv_trend.build_series(rows, zone, target, earliest_start_time))
 
 
 def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
@@ -1151,7 +1149,25 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     ``(t-66, t-7)`` on ``SW+20``, ``band_lo`` at the snapshot's ``ln(60)``
     level and ``hrv_unavailable``, because the snapshot era's last reading
     is ``SW`` and the judged week would hold none of it. The three walked
-    days are the band's step, its cause and its persistence."""
+    days are the band's step, its cause and its persistence.
+
+    **Re-derived at F006 (T155, 2026-09-19): ``SW+20`` with the stray now
+    reads as the control does.** Shipped F005 resolved the strap on
+    ``SW+20`` -- 14 global-window days with the stray, rule 2 -- then clipped
+    the stray out, and reported ``(chest_strap_raw, tier_change, SW+1)``
+    with ``baseline_n`` 13, ``established: false`` and ``hrv_unavailable``:
+    the band stepped a day early and the reset explained the step. F006
+    counts ``established`` over the dataset's **post-clip** window (AC8):
+    the strap dataset on ``SW+20`` holds 13 days and is not judgeable, the
+    snapshot holds 47 and no week day and is not judgeable either, and with
+    nothing judgeable the presentation fallback (AC9; T156) presents the
+    established dataset read last -- the snapshot, window ``(t-66, t-7)``,
+    ``n`` 47, ``hrv_unavailable`` on an empty week, no reset. The band no
+    longer steps early, because a dataset unestablished over its own window
+    is never presented over an established one; the strap dataset itself
+    still carries the clipped era (13 days, ``established`` false, asserted
+    below), and ``SW+21`` and ``SW+60`` still report the reset -- the stray
+    still does not silence it, which is what this pin is for."""
     switch = ago(60)
     control = genuine_switch(switch, switch + timedelta(days=70))
     stray = [row(local(switch - timedelta(days=11), 6, 30), STRAP, 25.0, "strap-stray")]
@@ -1166,7 +1182,13 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
         (STRAP, "tier_change", era_first_day),
         (STRAP, "tier_change", era_first_day),
     ]
-    assert [judged.report for judged in stray_walk] == [(STRAP, "tier_change", era_first_day)] * 3
+    # F006 (T155): ``SW+20`` presents the snapshot, as the control does;
+    # shipped F005 said ``(STRAP, "tier_change", era_first_day)`` on all three.
+    assert [judged.report for judged in stray_walk] == [
+        (SNAPSHOT, None, None),
+        (STRAP, "tier_change", era_first_day),
+        (STRAP, "tier_change", era_first_day),
+    ]
 
     # The control: no boundary on SW+20 (the snapshot still owns the
     # baseline, so clause (b) is never asked), the clip from SW+21 on.
@@ -1185,14 +1207,19 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
         hrv_trend.VERDICT_NORMAL,
     ]
 
-    # With the stray: the clip is the era's first day on all three days,
-    # and SW+20's baseline is the reported era alone -- 13 readings, one
-    # short of established, which is the whole point of reporting it.
+    # With the stray: the clip is the era's first day from SW+21 on. On
+    # SW+20 the strap's clipped era is 13 readings, one short of
+    # established, so F006 presents the snapshot instead (shipped F005:
+    # ``(era_first_day, SW+13)``, ``n`` 13, ``band_lo`` at ``ln(25)``).
     assert [judged.baseline_window for judged in stray_walk] == [
-        (era_first_day, target - timedelta(days=7)) for target in walk
+        (walk[0] - timedelta(days=66), walk[0] - timedelta(days=7)),
+        (era_first_day, walk[1] - timedelta(days=7)),
+        (era_first_day, walk[2] - timedelta(days=7)),
     ]
-    assert [judged.baseline_n for judged in stray_walk] == [13, 14, 53]
-    assert [judged.band_lo for judged in stray_walk] == pytest.approx([flat_band_lo(25.0)] * 3)
+    assert [judged.baseline_n for judged in stray_walk] == [47, 14, 53]
+    assert [judged.band_lo for judged in stray_walk] == pytest.approx(
+        [flat_band_lo(60.0), flat_band_lo(25.0), flat_band_lo(25.0)]
+    )
     # T116: the band is reported on all three days; the verdict is withheld
     # on the one the reset left unestablished.
     assert [judged.verdict for judged in stray_walk] == [
@@ -1201,9 +1228,16 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
         hrv_trend.VERDICT_NORMAL,
     ]
 
+    # The strap *dataset* on SW+20 still carries the clipped era -- the
+    # stray is out of it, 13 readings, unestablished (AC2: every dataset is
+    # computed whether or not it is presented); the view presents the
+    # snapshot because of exactly that.
     early = build(control + stray, target=walk[0])
-    assert early.baseline_window == (switch + timedelta(days=1), walk[0] - timedelta(days=7))
-    assert hrv_trend.judge(early).established is False and len(early.baseline) == 13
+    assert early.tier == SNAPSHOT and early.selection is not None and early.selection.selected is None
+    early_strap = next(d for d in hrv_trend.build_series(control + stray, AUCKLAND, walk[0]).datasets if d.tier == STRAP)
+    assert early_strap.baseline_window == (switch + timedelta(days=1), walk[0] - timedelta(days=7))
+    assert early_strap.established is False and len(early_strap.baseline) == 13
+    assert hrv_trend.judge(early_strap).established is False
 
 
 def test_an_older_trial_of_the_new_tier_does_not_delay_a_genuine_switchs_reset() -> None:

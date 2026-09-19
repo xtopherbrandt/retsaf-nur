@@ -46,8 +46,8 @@ SCRIPT = Path(__file__).parent / "support" / "seed_hrv_series.py"
 
 
 def _judge(rows, end: date) -> tuple[hrv_trend.SingleDatasetView, hrv_trend.HrvVerdict]:
-    # T151's bridge: the dataset F005's resolver picks, on the F005 shape; T155 replaces it.
-    series = hrv_trend.select_by_retired_resolver(hrv_trend.build_series(rows, AUCKLAND, end))
+    # F006's selection (T155), on the F005 shape.
+    series = hrv_trend.selected_view(hrv_trend.build_series(rows, AUCKLAND, end))
     return series, hrv_trend.judge(series)
 
 
