@@ -1172,6 +1172,13 @@ class Selection:
     skipped, or ``None``. Everything a witness needs to print the slice the
     decision compared is here (``describe``), so a pin can say which
     datasets were candidates, which were skipped and by how many days.
+
+    ``band_readings`` is every dataset read against its **own** band
+    (``read_against_band``, T157), in fidelity order, judgeable or not;
+    ``disagreed_with`` the tiers among them on the other side of their band
+    from ``selected`` (``disagreed_with``; AC10/AC11). Empty when nothing is
+    selected: a disagreement is with a verdict, and the presentation
+    fallback confers none.
     """
 
     selected: HrvDataset | None
@@ -1179,6 +1186,16 @@ class Selection:
     skipped: tuple[str, ...]
     last_read: Mapping[str, date]
     reference: date | None
+    band_readings: tuple[BandReading, ...] = ()
+    disagreed_with: tuple[str, ...] = ()
+
+    def disagreement(self) -> str:
+        """One line per dataset: ``n``, judged-week days, ``band.lo``, the
+        week mean and which side it reads -- the slice ``disagreed_with``
+        compared, for a witness to print."""
+        chosen = None if self.selected is None else self.selected.tier
+        rows = " ".join(r.describe() for r in self.band_readings)
+        return f"selected={chosen} disagreed_with={list(self.disagreed_with)} against_band=[{rows}]"
 
     def gap(self, tier: str) -> int | None:
         """How many days ``tier``'s latest baseline-window reading falls
@@ -1267,13 +1284,95 @@ def select_dataset(series: HrvSeries) -> Selection:
     skipped = _recency_struck(candidates, last_read)
     reference = max((last_read[tier] for tier in candidates), default=None)
     selected = next((d for d in judgeable if d.tier not in skipped), None)
+    against_band = tuple(read_against_band(d) for d in by_rank)
     return Selection(
         selected=selected,
         judgeable=tuple(candidates),
         skipped=tuple(tier for tier in candidates if tier in skipped),
         last_read=last_read,
         reference=reference,
+        band_readings=against_band,
+        disagreed_with=disagreed_with(selected, against_band),
     )
+
+
+@dataclass(frozen=True)
+class BandReading:
+    """One dataset read against its **own** band, whether or not it is
+    judgeable (F006, T157; AC10). ``band`` and ``week_mean`` are exactly
+    ``judge``'s ``band`` and ``ln_rmssd_7d_mean`` for this dataset --
+    ``build_band`` over its baseline (``None`` under two readings) and the
+    ``fmean`` of ``ln rMSSD`` over its judged week (``None`` on an empty
+    week). ``below`` is ``week_mean < band.lo``, **strictly less**, the
+    comparison ``judge`` makes for ``hrv_suppressed``; ``None`` when either
+    side is missing, so a dataset with one baseline reading, or none in the
+    week, cannot disagree and is visible here carrying ``n`` and
+    ``week_days`` instead (AC10's second sentence; T159 renders it).
+    """
+
+    tier: str
+    n: int
+    week_days: int
+    band: Band | None
+    week_mean: float | None
+    below: bool | None
+
+    def describe(self) -> str:
+        lo = None if self.band is None else f"{self.band.lo:.4f}"
+        mean = None if self.week_mean is None else f"{self.week_mean:.4f}"
+        side = {True: "below", False: "within", None: "-"}[self.below]
+        return f"{self.tier}:n={self.n},week={self.week_days},lo={lo},mean={mean},{side}"
+
+
+def read_against_band(dataset: HrvDataset) -> BandReading:
+    """``dataset`` read against its own band, by asking ``judge`` for the
+    band and the week mean it computes -- one arithmetic, not a second
+    derivation of it -- and comparing them the way ``judge`` does. The
+    verdict ``judge`` returns is discarded here: it is gated on
+    judgeability and ``withheld``, and this reading deliberately is not."""
+    verdict = judge(dataset)
+    below = (
+        None
+        if verdict.band is None or verdict.ln_rmssd_7d_mean is None
+        else verdict.ln_rmssd_7d_mean < verdict.band.lo
+    )
+    return BandReading(
+        tier=dataset.tier or "",
+        n=verdict.baseline_n,
+        week_days=len(_days(dataset.window)),
+        band=verdict.band,
+        week_mean=verdict.ln_rmssd_7d_mean,
+        below=below,
+    )
+
+
+def disagreed_with(selected: HrvDataset | None, readings: Iterable[BandReading]) -> tuple[str, ...]:
+    """The tiers whose reading against their own band is on the **other
+    side** from the selected dataset's (F006, T157; AC10/AC11;
+    ``research/00`` §5.4 amended 2026-09-18 (iii)), in the order given --
+    fidelity order from ``select_dataset``.
+
+    Both directions (AC11): a dataset reading below while the selected one
+    reads within, and one reading within while the selected reads below.
+    A dataset with no ``below`` -- no band (fewer than two baseline
+    readings) or no week mean -- cannot disagree. Judgeability is never
+    consulted: a band from two readings, a week of one, a withheld dataset,
+    all read and all can be named (AC10, taken literally). Nothing here
+    feeds ``judge``: the verdict is the selected dataset's, unchanged.
+
+    ``()`` when nothing is selected. The presentation fallback (AC9)
+    presents a dataset but confers no verdict, and a disagreement is with a
+    verdict; naming a dissenter against ``hrv_unavailable`` would report a
+    contradiction of a claim never made. ``band_readings`` still carries
+    every dataset's reading on that day.
+    """
+    if selected is None:
+        return ()
+    readings = tuple(readings)
+    own = next((r.below for r in readings if r.tier == selected.tier), None)
+    if own is None:
+        return ()
+    return tuple(r.tier for r in readings if r.tier != selected.tier and r.below is not None and r.below != own)
 
 
 def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> HrvDataset | None:
