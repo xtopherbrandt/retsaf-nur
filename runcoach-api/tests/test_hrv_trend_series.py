@@ -2248,3 +2248,323 @@ def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> 
             assert (t in selection.skipped) == ((selection.reference - shapes[t][2]).days > 28)
 
     contract()
+
+
+# ---------------------------------------------------------------------------
+# T158: the withhold (T125/T132) retained at dataset scope (AC24)
+#
+# ``research/00`` section 5.4 (v): a dataset that could not be selected -- not
+# judgeable, or skipped by the recency gate -- and that holds at least
+# MIN_WINDOW_READINGS judged-week days, every one later than every judged-week
+# day of the selected dataset, withholds the verdict. ``build_series`` asks it
+# of every dataset as if that dataset were the selected one (``verdict_withheld``),
+# ``selected_view`` carries the presented dataset's answer, ``judge`` reads it.
+# Every pin here prints the slice it compared: the selection line and each
+# dataset's n / week days / withheld.
+# ---------------------------------------------------------------------------
+
+
+def _withheld_slice(series: hrv_trend.HrvSeries) -> str:
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    datasets = " ".join(
+        f"{d.tier}:n{d.n}/est{int(d.established)}/week{sorted(str(x) for x in {r.date for r in d.window})}/withheld{int(d.withheld)}"
+        for d in series.datasets
+    )
+    line = f"{selection.describe()} | {datasets} | presented={view.tier} withheld={view.withheld} -> {verdict.verdict} {verdict.unavailable_reason}"
+    print(line)
+    return line
+
+
+def _strap_to(last_offset: int, value: float = 40.0) -> list[dict]:
+    """A daily strap from ``D-66`` to ``D - last_offset`` -- established, and
+    covering the judged week's first ``7 - last_offset`` days."""
+    return _strap(days_between(D - timedelta(days=66), D - timedelta(days=last_offset)), value)
+
+
+def _watch(offsets: list[int], value: float = 15.0) -> list[dict]:
+    """A ``health_snapshot`` on ``D - k`` for each ``k`` in ``offsets``, deeply
+    suppressed at 15 ms unless told otherwise, 07:00."""
+    return readings(SNAPSHOT, [D - timedelta(days=k) for k in offsets], value, hh=7)
+
+
+def test_a_brand_new_device_on_the_selected_datasets_stale_week_withholds_the_verdict() -> None:
+    """The task's first failing test, and AC24's own series: a daily strap
+    ``D-66..D-3`` (established on 60, four judged-week days ``D-6..D-3``,
+    judgeable, the only candidate, selected) and a watch the athlete bought
+    on ``D-2`` -- ``D-2, D-1, D`` at 15 ms, **zero** baseline-window days,
+    so never judgeable. Without the withhold the strap's stale four mornings
+    promote ``hrv_normal`` while the athlete's own three mornings, the ones
+    actually suppressed, sit in a dataset no verdict reads: the sixth
+    §1.7-forbidden population, which shipped F005 closes (T132) and AC21
+    forbids regressing.
+
+    Three-valued (``retiring-a-ratified-behaviour-needs-a-three-valued-pin``,
+    asked of a *retention*): green on shipped F005 (T132's form B --
+    ``never_used`` reads the watch's zero baseline days); **red with the
+    withhold deleted** -- perturbation 2026-09-19: dropping the ``withheld``
+    pass out of ``build_series`` (every dataset left at the closed default
+    is ``hrv_unavailable`` everywhere, so the perturbation is
+    ``withheld=False``) promotes ``hrv_normal`` here, and deleting ``not
+    series.withheld`` from ``judge`` does the same; green on F006 with the
+    withhold at dataset scope. The strap is the selected dataset, its week
+    is the four stale mornings, and the verdict is withheld --
+    ``week_not_representative`` -- not promoted.
+    """
+    series = hrv_trend.build_series(_strap_to(3) + _watch([2, 1, 0]), AUCKLAND, D)
+    slice_ = _withheld_slice(series)
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+
+    assert selection.judgeable == (STRAP,) and selection.selected is not None, slice_
+    assert selection.selected.tier == STRAP, slice_
+    (watch,) = [d for d in series.datasets if d.tier == SNAPSHOT]
+    assert watch.n == 0 and not watch.established and len(_days_of(watch)) == 3, slice_
+    assert [r.date for r in view.window] == days_between(D - timedelta(days=6), D - timedelta(days=3)), slice_
+    assert view.withheld is True, slice_
+    assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+    assert verdict.unavailable_reason == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE, slice_
+    assert verdict.readings_in_window == 4 and verdict.established is True, slice_
+
+
+def _days_of(dataset: hrv_trend.HrvDataset) -> set[date]:
+    return {r.date for r in dataset.window}
+
+
+@pytest.mark.parametrize(
+    ("baseline_days", "expected_withheld", "why"),
+    [
+        (0, True, "zero baseline days: T132's never-used device, the definitional case"),
+        (1, True, "one baseline day: not judgeable; shipped F005's form B left it as shipped (hrv_normal)"),
+        (13, True, "thirteen: the last unestablished count; not judgeable, so in the set"),
+        (14, False, "fourteen: established and judgeable, so it could have been selected -- not in the set"),
+    ],
+    ids=["zero", "one", "thirteen", "fourteen"],
+)
+def test_probe_zero_baseline_days_versus_one_at_dataset_scope(
+    baseline_days: int, expected_withheld: bool, why: str
+) -> None:
+    """Adversarial: the boundary shipped F005 drew and AC24 moves. T132's form
+    B widened the withhold to a tier with **zero** baseline-window days
+    only ("zero is not a tuned threshold"), leaving a tier with 1..13 days
+    exactly as shipped -- **not** withheld, the strap's stale week promoted
+    ``hrv_normal``. Measured on the build before this task (T151 carrying
+    F005's predicate), 2026-09-19: one baseline day -> ``withheld=False``,
+    ``hrv_normal``; thirteen -> the same. AC24 / ``research/00`` §5.4 (v)
+    asks the order clause of every dataset that is **not judgeable**, which
+    is the honest dataset-scope restatement: a watch with one baseline
+    reading is no more able to carry a verdict than one with none, and the
+    athlete's suppressed week is just as unread. So zero, one and thirteen
+    all withhold here; **this is the one verdict this task moves**
+    (``hrv_normal -> hrv_unavailable``, §1.7's freely tolerated direction),
+    and the confusion-table pin in ``test_hrv_dataset_populations.py``
+    records the same move on T130's era-10 row.
+
+    The far boundary, pinned with the argument: at **fourteen** the watch is
+    established, holds three week days, is judgeable and is **not** skipped
+    (both datasets read on ``D-7``), so it could have been selected and lost
+    only on fidelity rank. It is not in the set: the selected dataset
+    decides (§5.4 (iii)), the watch's own reading is reported in
+    ``disagreed_with`` (AC10), and withholding on a dataset that could have
+    spoken would be withhold-on-disagreement, the form the decision log
+    rejected. Degenerate because 13 -> 14 is the establishment gate itself
+    (T116), one reading apart, and the predicate flips on it.
+
+    Held constant: the strap (daily ``D-66..D-3`` at 40 ms, selected), the
+    watch's three week days (``D-2, D-1, D`` at 15 ms) and the target.
+    Varied: the watch's baseline-window days, ending on ``D-7``.
+    """
+    watch_baseline = _watch(list(range(7, 7 + baseline_days)), 40.0)
+    series = hrv_trend.build_series(_strap_to(3) + _watch([2, 1, 0]) + watch_baseline, AUCKLAND, D)
+    slice_ = f"{why}\n{_withheld_slice(series)}"
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    (watch,) = [d for d in series.datasets if d.tier == SNAPSHOT]
+
+    assert watch.n == baseline_days, slice_
+    assert watch.established is (baseline_days >= hrv_trend.MIN_BASELINE_READINGS), slice_
+    assert (SNAPSHOT in selection.judgeable) is (baseline_days >= hrv_trend.MIN_BASELINE_READINGS), slice_
+    assert selection.skipped == (), slice_
+    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+    assert view.withheld is expected_withheld, slice_
+    if expected_withheld:
+        assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+        assert verdict.unavailable_reason == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE, slice_
+    else:
+        assert verdict.verdict == hrv_trend.VERDICT_NORMAL, slice_
+        assert selection.disagreed_with == (SNAPSHOT,), slice_
+
+
+@pytest.mark.parametrize(
+    ("week_offsets", "expected_withheld"),
+    [([2, 1, 0], True), ([1, 0], False)],
+    ids=["exactly_min_window_readings", "one_fewer"],
+)
+def test_probe_the_withhold_needs_exactly_min_window_readings_of_the_other_datasets_week(
+    week_offsets: list[int], expected_withheld: bool
+) -> None:
+    """Adversarial: the count guard at its edge. ``MIN_WINDOW_READINGS`` (3)
+    on the non-judgeable dataset is the same constant that keeps a stray
+    cross-device capture from withholding a legitimate verdict and the one
+    that hides the athlete's opening mornings (T125's residual). Three
+    brand-new-watch mornings after the strap's last withhold; two do not,
+    and the strap's stale week is promoted ``hrv_normal`` -- the residual
+    F005's Negative Class prices, unchanged here (user decision 2026-09-18:
+    reaching it means acting on fewer than three readings of the new
+    device). Degenerate because the predicate flips on one reading, and a
+    ``>`` written for ``>=`` would move it to four.
+
+    Held constant: the strap (daily to ``D-3``), the watch's zero baseline
+    days, the target. Varied: the watch's week-day count, 3 -> 2.
+    """
+    series = hrv_trend.build_series(_strap_to(3) + _watch(week_offsets), AUCKLAND, D)
+    slice_ = _withheld_slice(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    (watch,) = [d for d in series.datasets if d.tier == SNAPSHOT]
+
+    assert len(_days_of(watch)) == len(week_offsets) and watch.n == 0, slice_
+    assert view.tier == STRAP, slice_
+    assert view.withheld is expected_withheld, slice_
+    assert verdict.verdict == (
+        hrv_trend.VERDICT_UNAVAILABLE if expected_withheld else hrv_trend.VERDICT_NORMAL
+    ), slice_
+
+
+@pytest.mark.parametrize(
+    ("week_offsets", "expected_withheld"),
+    [([3, 2, 1], False), ([2, 1, 0], True)],
+    ids=["tied_on_the_selected_datasets_latest_day", "one_day_later"],
+)
+def test_probe_a_week_day_tied_with_the_selected_datasets_latest_is_not_later(
+    week_offsets: list[int], expected_withheld: bool
+) -> None:
+    """Adversarial: the strict day-order boundary, kept exactly as shipped
+    (deliverable 2). The clause is ``min(other's week days) > max(selected's
+    week days)`` -- **strictly** later. The strap's latest week day is
+    ``D-3``; a watch on ``D-3, D-2, D-1`` shares that day (a morning with
+    two captures feeds both datasets, AC3), so its earliest day is tied,
+    not later, and nothing is withheld: the strap's own ``D-3`` is in the
+    week the verdict reads, and "every one later than every" is false.
+    Shift the watch one day, ``D-2, D-1, D``, and it withholds. Degenerate
+    because the tie is the one placement where ``>`` and ``>=`` disagree,
+    and ``>=`` here would be the count form T125 measured and rejected
+    (it re-admits the abandoned trial).
+
+    Held constant: the strap (daily to ``D-3``), three watch week days,
+    zero watch baseline days, the target. Varied: the watch's first week
+    day, ``D-3`` (tied) -> ``D-2`` (later).
+    """
+    series = hrv_trend.build_series(_strap_to(3) + _watch(week_offsets), AUCKLAND, D)
+    slice_ = _withheld_slice(series)
+    view = hrv_trend.selected_view(series)
+    (watch,) = [d for d in series.datasets if d.tier == SNAPSHOT]
+
+    assert view.tier == STRAP and max(_days_of(view.selected)) == D - timedelta(days=3), slice_
+    assert min(_days_of(watch)) == D - timedelta(days=max(week_offsets)), slice_
+    assert view.withheld is expected_withheld, slice_
+    assert hrv_trend.judge(view).verdict == (
+        hrv_trend.VERDICT_UNAVAILABLE if expected_withheld else hrv_trend.VERDICT_NORMAL
+    ), slice_
+
+
+@pytest.mark.parametrize("c", [0, 1], ids=["carrier_stops_at_the_return", "carrier_records_one_morning_into_it"])
+def test_probe_the_carrier_still_recording_through_the_return_disarms_the_withhold(c: int) -> None:
+    """Adversarial, and a **named residual pinned as the current fact, not
+    fixed here**: T130's disarming case. The athlete's strap era is
+    ``D-66..D-43`` (24 days, established), the watch carried the series
+    daily to ``D-3+c``, and the strap is back on ``D-2, D-1, D`` at 25 ms
+    against a 79 ms era. Under F006 the strap is judgeable **and skipped**
+    (last read ``D-43``, 36 behind the watch's ``D-7``, AC6) -- this is
+    T125's own arm of the set, the skipped dataset, which AC24's "not
+    judgeable" wording alone would drop (IDEA-083) -- and the watch is
+    selected.
+
+    ``c = 0``: the watch stopped on ``D-3``, every strap day is later than
+    every watch day, withheld, ``hrv_unavailable``.
+
+    ``c = 1``: the watch also captured ``D-2``. The order clause is false
+    on that one morning, nothing is withheld, and the watch's own five
+    mornings are judged against the watch's own band: ``hrv_normal`` on a
+    week whose strap mornings read 25 ms. That is T130's finding -- the
+    order clause is a fact about the judged week, and one carrier morning
+    inside the return erases it (0 of 2050 withheld at any ``c >= 1``) --
+    and it is **the disarm, pinned as current behaviour**: no predicate of
+    this family survives overlap without an unjustified parameter (T130,
+    nine candidates measured), the user carried the question to this
+    sprint's measurement tasks, and T161/T162 sweep it against shipped
+    F005 with capture density varied on both datasets (AC19/AC21). The
+    populations suite pins the same two rows on T130's own generator.
+
+    Held constant: the strap era and its values, the strap's three week
+    days, the watch's values and density. Varied: ``c``, the watch's last
+    day, ``D-3`` -> ``D-2``.
+    """
+    rows = _carrier(last=D - timedelta(days=3 - c))
+    rows += _strap(days_between(D - timedelta(days=66), D - timedelta(days=43)), 79.0)
+    rows += _strap([D - timedelta(days=2), D - timedelta(days=1), D], 25.0)
+    series = hrv_trend.build_series(rows, AUCKLAND, D)
+    slice_ = _withheld_slice(series)
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+
+    assert selection.judgeable == (STRAP, SNAPSHOT) and selection.skipped == (STRAP,), slice_
+    assert selection.gap(STRAP) == 36, slice_
+    assert view.tier == SNAPSHOT, slice_
+    if c == 0:
+        assert view.withheld is True, slice_
+        assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+        assert verdict.unavailable_reason == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE, slice_
+    else:
+        assert D - timedelta(days=2) in _days_of(view.selected), slice_
+        assert view.withheld is False, slice_
+        assert verdict.verdict == hrv_trend.VERDICT_NORMAL, slice_
+        assert all(r.tier == SNAPSHOT for r in view.window), slice_
+
+
+def test_the_withhold_reads_the_skipped_set_selection_reads_and_is_asked_of_every_dataset() -> None:
+    """The set the order clause is asked about is "every dataset that could
+    not have been selected": not judgeable, or skipped by the recency gate.
+    T125's lesson is that the struck set must be **the** set, not a second
+    transcription -- so ``build_series`` calls the gate ``select_dataset``
+    reuses (``_recency_struck``, over ``_last_read`` of the same
+    baseline-window slice) and this pin holds the two answers equal on
+    every dataset of every geometry above: recomputing ``verdict_withheld``
+    with ``select_dataset``'s own ``skipped`` reproduces the ``withheld``
+    each dataset carries. On the source, ``build_series`` calls
+    ``verdict_withheld`` once and ``_recency_struck`` once, and
+    ``select_dataset``'s own count is unchanged (its pin above).
+    """
+    geometries = {
+        "brand new watch": _strap_to(3) + _watch([2, 1, 0]),
+        "watch with one baseline day": _strap_to(3) + _watch([2, 1, 0]) + _watch([7], 40.0),
+        "tied day": _strap_to(3) + _watch([3, 2, 1]),
+        "return, carrier stopped": _carrier(last=D - timedelta(days=3))
+        + _strap(days_between(D - timedelta(days=66), D - timedelta(days=43)), 79.0)
+        + _strap([D - timedelta(days=2), D - timedelta(days=1), D], 25.0),
+        "illness week, nothing judgeable": _carrier(last=D - timedelta(days=7)) + _strap(baseline_days(20)),
+        "no baseline at all": _watch([2, 1, 0]) + _strap([D - timedelta(days=5)]),
+    }
+    for name, rows in geometries.items():
+        series = hrv_trend.build_series(rows, AUCKLAND, D)
+        selection = hrv_trend.select_dataset(series)
+        slice_ = f"{name}: {_withheld_slice(series)}"
+        for dataset in series.datasets:
+            recomputed = bool(_within_baseline(series)) and hrv_trend.verdict_withheld(
+                dataset, series.datasets, selection.skipped
+            )
+            assert dataset.withheld is recomputed, slice_
+
+    tree = ast.parse(Path(hrv_trend.__file__).read_text(encoding="utf-8"))
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "build_series")
+    calls = [n.func.id for n in ast.walk(function) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    assert calls.count("verdict_withheld") == 1, calls
+    assert calls.count("_recency_struck") == 1, calls
+
+
+def _within_baseline(series: hrv_trend.HrvSeries) -> tuple[hrv_trend.Reading, ...]:
+    return hrv_trend._within(series.readings, series.baseline_window)

@@ -954,6 +954,19 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     the reference §9 shape) -- and so is the withhold on ``r = 3`` and
     ``r = 4``. Where the shipped and F006 verdicts differ is recorded in the
     branch below rather than overwritten, so T162 can measure the rate.
+
+    **Re-pointed at T158 (F006 AC24, 2026-09-19): the withhold on ``r = 3``
+    and ``r = 4`` is now ``verdict_withheld`` at dataset scope.** The set the
+    order clause is asked of is every dataset that could not have been
+    selected -- not judgeable, or **skipped** by the recency gate -- and the
+    returning tier here is the skipped arm: established on era A, judgeable
+    from ``r = 3``, 33+ days behind the carrier in the baseline window. Its
+    ``r`` return mornings are all later than every carrier day (the carrier
+    stopped on ``CARRIER_END``), so the carrier's verdict is withheld; the
+    values this walk pins on those two mornings are unchanged
+    (``hrv_unavailable``, tier carrier, ``readings_in_window`` ``7 - r``).
+    This is T125's own population, and it is why the set is not "not
+    judgeable" alone (IDEA-083).
     """
     rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
     era_a = [ERA_A_END - timedelta(days=i) for i in range(80)]
@@ -1277,6 +1290,15 @@ def test_the_withhold_reaches_a_never_used_tier_bought_this_week() -> None:
     Perturbation: reverting ``verdict_withheld`` to the shipped candidate
     gate (``struck`` alone, no zero-baseline-and-full-week union) reds this
     test; restoring it goes green again.
+
+    **Re-pointed at T158 (F006 AC24, 2026-09-19).** ``verdict_withheld`` is
+    now asked at dataset scope, of every dataset that could not have been
+    selected: not judgeable, or skipped. The never-used snapshot (zero
+    baseline days) is the definitional non-judgeable dataset, so this
+    reproduction withholds exactly as before -- every value pinned below is
+    unchanged. What widened: a snapshot with 1..13 baseline days, which
+    T132's form B deliberately left as shipped, is not judgeable either and
+    withholds too (``test_hrv_trend_series.py::test_probe_zero_baseline_days_versus_one_at_dataset_scope``).
     """
     strap_days = [date(2026, 7, 4) + timedelta(days=i) for i in range((date(2026, 9, 4) - date(2026, 7, 4)).days + 1)]
     snapshot_days = [date(2026, 9, 5), date(2026, 9, 6), date(2026, 9, 7)]

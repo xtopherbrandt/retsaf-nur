@@ -217,14 +217,25 @@ def _confusion(c: int) -> tuple[dict[str, int], list[str]]:
 
 @pytest.mark.parametrize("c", [0, 1, 2, 3, 4, 5])
 def test_shipped_f005s_confusion_table_over_matched_era_lengths(c: int) -> None:
-    """T130's matched-pair confusion table, as a pin. At ``c`` = 0 shipped withholds on
-    16 of 17 returns and on 0 of 17 abandoned trials; the one miss is era 10, which
-    ``MIN_BASELINE_READINGS`` (14) never makes a candidate, so the order clause is never
+    """T130's matched-pair confusion table, as a pin. At ``c`` = 0 shipped F005 withheld
+    on 16 of 17 returns and on 0 of 17 abandoned trials; the one miss was era 10, which
+    ``MIN_BASELINE_READINGS`` (14) never made a candidate, so the order clause was never
     asked about it -- the same defect class T132 closed for a *zero*-day tier, left open
     for a 10-day one. At every ``c`` >= 1 the order clause is disarmed outright: **0 of
     17** returns withheld, because one carrier morning inside the return makes "every
     return day later than every carrier day" false. ``FP`` is 0 at every ``c``: shipped
     never false-withholds on the abandoned trial.
+
+    **Re-pointed at T158 (F006 AC24, 2026-09-19): the era-10 miss closes.** Shipped
+    F005 recorded ``TP 16 FN 1`` at ``c`` = 0 with ``detail[0] == "10:.."``. The withhold
+    at dataset scope asks the order clause of every dataset that is **not judgeable**
+    (or skipped), not only of a struck candidate or a zero-day tier, and a 10-day strap
+    era is unestablished and so not judgeable -- the athlete's three later strap
+    mornings withhold the carrier's stale week exactly as they do at era 15..90. That
+    is ``hrv_normal -> hrv_unavailable`` on one row, the direction §1.7 tolerates
+    freely; ``TP 17 FN 0``, ``detail[0] == "10:W."``. Nothing else in the table moves:
+    ``c`` >= 1 stays ``0 of 17`` (the T130 disarm, pinned below and in
+    ``test_hrv_trend_series.py``), and ``FP`` stays 0 at every ``c``.
 
     Held constant: the era's last day (``D-43``), the strap's week-day count (3), the
     carrier's density (daily), the strap's values (79 ms era, 25 ms week), target ``D``.
@@ -235,10 +246,11 @@ def test_shipped_f005s_confusion_table_over_matched_era_lengths(c: int) -> None:
     line = f"c={c}  TP {cells['TP']} FN {cells['FN']} | FP {cells['FP']} TN {cells['TN']}   {' '.join(detail)}"
     print(line)
 
-    expected = {"TP": 16, "FN": 1, "FP": 0, "TN": 17} if c == 0 else {"TP": 0, "FN": 17, "FP": 0, "TN": 17}
+    # Shipped F005 at c == 0: {"TP": 16, "FN": 1, "FP": 0, "TN": 17}, detail[0] == "10:..".
+    expected = {"TP": 17, "FN": 0, "FP": 0, "TN": 17} if c == 0 else {"TP": 0, "FN": 17, "FP": 0, "TN": 17}
     assert cells == expected, line
     if c == 0:
-        assert detail[0] == "10:..", line  # the single FN is era 10, and only era 10
+        assert detail[0] == "10:W.", line  # shipped's single FN, era 10, withholds at dataset scope
 
 
 def test_one_carrier_morning_inside_the_return_disarms_the_withhold_on_shipped_f005() -> None:

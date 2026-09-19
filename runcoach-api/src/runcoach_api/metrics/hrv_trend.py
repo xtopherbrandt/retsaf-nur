@@ -83,8 +83,8 @@ import math
 import statistics
 from bisect import bisect_left, bisect_right
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -335,12 +335,14 @@ class HrvDataset:
     #: and whether or not a gap fired (T107).
     reset_on: date | None = None
     reset_reason: str | None = None
-    #: T125/T132, asked of this dataset's tier: the judged week is not a fair
-    #: sample of it because a tier the recency gate struck, or one the
-    #: athlete had never used in the baseline window, holds
+    #: T125/T132 at dataset scope (T158, AC24; ``research/00`` §5.4 (v)),
+    #: asked of this dataset as if it were the selected one: the judged week
+    #: is not a fair sample of it because a dataset that could not have been
+    #: selected -- not judgeable, or skipped by the recency gate -- holds
     #: ``MIN_WINDOW_READINGS`` week days all later than every one of this
-    #: tier's. ``judge`` answers ``hrv_unavailable`` on it. See
-    #: ``verdict_withheld``; T158 keeps it at dataset scope.
+    #: dataset's. ``judge`` answers ``hrv_unavailable`` on it. See
+    #: ``verdict_withheld``; computed by ``build_series`` once every dataset
+    #: exists, since it reads the others' judgeability.
     #:
     #: **Defaults closed** (T134, moved here with the field). ``band``
     #: (``None``) and ``established`` (``False``) default toward
@@ -603,174 +605,176 @@ def _recency_struck(candidates: Sequence[str], last_read: Mapping[str, date]) ->
     }
 
 
+def is_judgeable(dataset: HrvDataset) -> bool:
+    """AC8's precondition of candidacy, stated once: established over the
+    dataset's own **post-clip** baseline window (read from the dataset,
+    never recounted) **and** at least ``MIN_WINDOW_READINGS`` distinct
+    judged-week days. ``select_dataset`` draws its candidates by it and
+    ``verdict_withheld`` (T158) draws the set it asks the order clause of by
+    its negation, so the two can never disagree about who could have been
+    selected."""
+    return dataset.established and len(_days(dataset.window)) >= MIN_WINDOW_READINGS
+
+
 def verdict_withheld(
-    tier: str | None,
-    week_readings: Iterable[Reading],
-    baseline_counts: Mapping[str, int],
-    last_read: Mapping[str, date],
+    dataset: HrvDataset,
+    datasets: Iterable[HrvDataset],
+    skipped: Collection[str | None],
 ) -> bool:
     """Whether the judged week is too unrepresentative of the athlete *now*
-    for any verdict to be asserted on it (T125, 2026-09-16, form 2; widened
-    T132, 2026-09-16, form B).
+    for any verdict to be asserted on ``dataset`` -- T125's order clause
+    (2026-09-16, form 2; widened T132, form B), **retained at dataset scope**
+    (T158, 2026-09-19; F006 AC24; ``research/00`` §5.4 (v)).
 
-    True when a tier **the recency gate struck, or that the athlete has never
-    used in the baseline window at all** (T132: ``baseline_counts`` reads 0
-    there and the judged week holds ``>= MIN_WINDOW_READINGS`` of its own
-    days -- zero is not a tuned threshold, it is the only value that means
-    "never used") holds at least ``MIN_WINDOW_READINGS`` distinct days inside
-    the judged week and **every one of them is later than every judged-week
-    day of the resolved tier**. That is the returning-*or-brand-new*-device
-    shape, stated without a notion of "device" in the vocabulary: the athlete
-    has gone back to (or bought) a tier the resolved tier does not own, he has
-    recorded a full week's-worth of mornings on it, and the readings the
-    verdict would be computed from are all *older* than every one of them.
-    The week is then not a fair sample of the tier being judged, so no
-    verdict is asserted and the response says ``hrv_unavailable``.
+    True when another dataset **that could not have been selected** -- one
+    that is not judgeable (``is_judgeable``: unestablished, or fewer than
+    ``MIN_WINDOW_READINGS`` week days), or one the recency gate ``skipped``
+    -- holds at least ``MIN_WINDOW_READINGS`` distinct days inside the
+    judged week and **every one of them is later than every judged-week
+    day of ``dataset``**. That is the returning-*or-brand-new*-device shape,
+    stated without a notion of "device" in the vocabulary: the athlete has
+    gone back to (or bought) a source the selected dataset does not read,
+    he has recorded a full week's-worth of mornings on it, and the readings
+    the verdict would be computed from are all *older* than every one of
+    them. The week is then not a fair sample of the dataset being judged,
+    so no verdict is asserted and the response says ``hrv_unavailable``.
+    Asked of every dataset by ``build_series``, as if that dataset were the
+    selected one, so a dataset judged on its own answers the same way the
+    route's view of it does.
 
-    **Why the candidate gate alone could not see a brand-new device (T132,
-    review cycle 9, G-C9-1).** ``struck ⊆ candidates``, and ``candidates``
-    requires ``>= MIN_BASELINE_READINGS`` distinct days in the (gap-clipped)
-    baseline window. A tier whose first-ever reading falls inside the judged
-    week has zero baseline-window days -- it is never a candidate, so never
-    struck, so the withhold above could never fire for it, however cleanly
-    its days were ordered after the resolved tier's own. T125's own
-    reproduction always had a tier with *some* baseline-window history (an
-    abandoned trial or a genuine return); T132's does not, and the recency
-    gate's question -- "is this tier stale relative to the other candidates"
-    -- has no candidate to ask it of. Measured (``spec/references/T125-fix-
-    form-measurements.md`` §T132): three widening forms all close the
-    reproduction; form B (used here) is the narrowest -- it touches only a
-    tier with *zero* baseline-window presence, leaving every tier with 1..13
-    days of it (an established-adjacent geometry, not a new one) exactly as
-    shipped.
+    **What moved from F005's form, and what did not.** F005 asked the
+    clause of ``struck | never_used``: the tiers rule 1's gate struck among
+    the *candidates* (``>= MIN_BASELINE_READINGS`` raw baseline-window days)
+    and, from T132, the tiers with **zero** baseline-window days and a full
+    week. ``struck`` is ``skipped`` here -- the same ``_recency_struck``
+    over the same baseline-window ``_last_read``, taken once by
+    ``build_series`` for every dataset and once by ``select_dataset`` (T125:
+    the set must be *the* set, pinned equal in
+    ``test_the_withhold_reads_the_skipped_set_selection_reads_and_is_asked_of_every_dataset``).
+    ``never_used`` is widened to **not judgeable**: T132 touched only a tier
+    with zero baseline-window presence and left a tier with 1..13 days
+    "exactly as shipped" -- not withheld, the outgoing tier's stale week
+    promoted ``hrv_normal``. AC24 asks it of every dataset that is not
+    judgeable, because a dataset with one baseline reading can no more
+    carry a verdict than one with none, and the athlete's suppressed week
+    is just as unread either way. That is the **one verdict this
+    restatement moves**: a non-judgeable dataset with 1..13 baseline days
+    and a full later week now withholds (``hrv_normal ->
+    hrv_unavailable``, §1.7's freely tolerated direction; T130's era-10
+    row in ``test_hrv_dataset_populations.py`` is the measured instance,
+    shipped's single ``FN`` at ``c = 0``). The strict day-order clause is
+    unchanged to the character. A judgeable dataset that is **not**
+    skipped is never in the set: it could have been selected and lost on
+    fidelity rank alone, the selected dataset decides (§5.4 (iii)) and its
+    disagreement is reported (AC10) -- withholding on it would be the
+    withhold-on-disagreement form the decision log rejected.
 
-    **Day sets, not counts, and that is why this cannot live inside
-    ``resolve_baseline_tier``.** "Entirely pre-return" is a statement about the
-    order of two sets of days; counts cannot express it. The rule that could be
-    written with counts -- "the struck tier covers the week" -- is satisfied by
-    an *abandoned trial* too (T125 form 1, measured: it re-admits the July
+    **Why "not judgeable **or skipped**", when AC24 says "not judgeable".**
+    T125's own population -- the returning strap, established on a
+    pre-layoff era and back for three mornings while the watch's week is
+    the stale one -- is judgeable under AC8 and *skipped* under AC6. Read
+    literally, AC24's set drops it and the device-return walk's ``r = 3``
+    and ``r = 4`` promote ``hrv_normal`` on the watch's pre-return week --
+    the exact reproduction T125 closed. The set is therefore "every
+    dataset that could not have been selected", which is what
+    ``struck | never_used`` always meant; IDEA-083 records the wording gap.
+
+    **Day sets, not counts, and that is why this reads windows and not
+    ``n``.** "Entirely pre-return" is a statement about the order of two
+    sets of days; counts cannot express it. The rule that could be written
+    with counts -- "the other dataset covers the week" -- is satisfied by an
+    *abandoned trial* too (T125 form 1, measured: it re-admits the July
     trial and turns ``test_stale_candidacy_...`` red), which is the whole
-    difficulty: a device return and an abandoned trial differ in the day order,
-    not in the counts. Measured 2026-09-16 by dropping the order clause and
-    keeping the count: **5 red** across the five HRV suites --
-    ``test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band``,
-    the recency walk, the seam-matrix row and two reset-suite band pins -- each
-    a week the struck tier covers and does not own. The order clause is
-    load-bearing, and it is pinned from both sides: deleting ``not
-    series.withheld`` from ``judge`` reds the device-return walk's four cases
-    at ``r = 3``, and nothing else in the five suites.
+    difficulty: a device return and an abandoned trial differ in the day
+    order, not in the counts. Measured 2026-09-16 by dropping the order
+    clause and keeping the count: **5 red** across the five HRV suites. The
+    order clause is load-bearing, and it is pinned from both sides:
+    deleting ``not series.withheld`` from ``judge`` reds the device-return
+    walk's four cases at ``r = 3``, and dropping this pass out of
+    ``build_series`` reds AC24's own series
+    (``test_a_brand_new_device_on_the_selected_datasets_stale_week_withholds_the_verdict``).
 
-    **This does not re-resolve the tier.** ``tier``, ``baseline_window``, the
-    band, the reset and ``excluded`` are whatever they were; the withhold is
-    downstream of all of them and changes only the verdict. On T125's
-    2050-geometry sweep the resolved tier and the reported baseline window are
-    identical to shipped on every row, and the only verdict change in either
-    direction is ``hrv_normal -> hrv_unavailable``, 72 times.
+    **This does not re-select.** ``select_dataset`` reads nothing here (the
+    withhold is applied to the promoted verdict, not to candidacy);
+    ``tier``, ``baseline_window``, the band, the reset and ``excluded`` are
+    whatever they were, and the withhold is downstream of all of them and
+    changes only the verdict. On T125's 2050-geometry sweep the resolved
+    tier and the reported baseline window were identical to shipped on
+    every row, and the only verdict change in either direction was
+    ``hrv_normal -> hrv_unavailable``, 72 times.
 
-    **The residual, named in F005's Negative Class -- and it is a closed form,
-    not a count.** ``MIN_WINDOW_READINGS`` on the returning tier is the guard
-    that keeps a stray cross-device capture from withholding a legitimate
-    verdict, and it is *the same constant* that makes the athlete's opening
-    mornings back invisible to this rule: while he holds fewer than
-    ``MIN_WINDOW_READINGS`` return days in the judged week, the verdict there
-    still comes from pre-return readings and still reads ``hrv_normal``.
-    **How many such mornings:** ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``,
-    where ``k3`` is the offset at which the returning tier's
-    ``MIN_WINDOW_READINGS``-th distinct local day enters the judged week
-    (T145, measured 2026-09-18 over all 64 weekly return patterns containing
-    day 0, on this arm and on T132's ``never_used`` arm, zero mismatches,
-    stable for layoffs s = 33..48). The wording that stood here until then
-    gave the **daily** figure -- ``k3 = 2`` -- as the general bound. It is
-    **four** mornings whenever the return is captured **sub-daily** (4/wk
-    spread, 3/wk, 2/wk); a 4/wk *clustered* return is two, like the daily one,
-    so the axis is the spacing of the captures, not their weekly count. Only
-    ``k3`` belongs to this rule: the cap ``WINDOW_DAYS - MIN_WINDOW_READINGS``
-    = 4 is the **carrier's** judged-week coverage expiring (a daily carrier
-    ending RET-1 leaves ``6 - k`` carrier days in the week, so
-    ``week_too_thin`` bites at ``k = 4``), and it would end the residual
-    whether or not this withhold existed. No form measured at T125 closes the
-    residual, and loosening the constant to reach it is exactly the change
-    that starts producing false withholds, so the behaviour is **left
-    unchanged** (user decision 2026-09-18, review cycle 10) and carried to
-    IDEA-071's sprint.
+    **The residual, named in F005's Negative Class -- and it is a closed
+    form, not a count.** ``MIN_WINDOW_READINGS`` on the returning dataset is
+    the guard that keeps a stray cross-device capture from withholding a
+    legitimate verdict, and it is *the same constant* that makes the
+    athlete's opening mornings back invisible to this rule: while he holds
+    fewer than ``MIN_WINDOW_READINGS`` return days in the judged week, the
+    verdict there still comes from pre-return readings and still reads
+    ``hrv_normal``. **How many such mornings:** ``min(WINDOW_DAYS -
+    MIN_WINDOW_READINGS, k3)``, where ``k3`` is the offset at which the
+    returning dataset's ``MIN_WINDOW_READINGS``-th distinct local day enters
+    the judged week (T145, measured 2026-09-18 over all 64 weekly return
+    patterns containing day 0, on this arm and on T132's ``never_used`` arm,
+    zero mismatches, stable for layoffs s = 33..48). It is **four** mornings
+    whenever the return is captured **sub-daily** (4/wk spread, 3/wk, 2/wk);
+    a 4/wk *clustered* return is two, like the daily one, so the axis is the
+    spacing of the captures, not their weekly count. Only ``k3`` belongs to
+    this rule: the cap ``WINDOW_DAYS - MIN_WINDOW_READINGS`` = 4 is the
+    **carrier's** judged-week coverage expiring, and it would end the
+    residual whether or not this withhold existed. No form measured at T125
+    closes the residual, and loosening the constant to reach it is exactly
+    the change that starts producing false withholds, so the behaviour is
+    **left unchanged** (user decision 2026-09-18, review cycle 10).
 
     **And at sub-daily density this withhold decides no verdict at all.** At
-    4/wk-spread and 3/wk it flips ``series.withheld`` true only at ``k =
-    4..6``, where ``readings_in_window`` is already 2, 1 and 0 and
-    ``week_too_thin`` precedes it in ``_unavailable_reason``'s fixed order --
-    the verdict would be identical with the withhold deleted. At 2/wk it never
-    fires (checked to ``k = 40``). For the "two days a week" and oscillating
-    athletes F005's Negative Class names as first-class populations, T125 and
-    T132 are **inert**: the whole of their sub-daily silence is incidental
-    carrier-week-coverage expiry. Any new measurement here must vary capture
-    density -- it is the one axis no sweep in nine cycles varied, and a walk
-    indexed by "days since return" must say whether it means days elapsed or
-    mornings captured.
+    4/wk-spread and 3/wk it flips ``withheld`` true only at ``k = 4..6``,
+    where ``readings_in_window`` is already 2, 1 and 0 and
+    ``week_too_thin`` precedes it in ``_unavailable_reason``'s fixed order
+    -- the verdict would be identical with the withhold deleted. At 2/wk it
+    never fires (checked to ``k = 40``). Any new measurement here must vary
+    capture density on **both** datasets (AC19), and a walk indexed by
+    "days since return" must say whether it means days elapsed or mornings
+    captured.
+
+    **The carrier-overlap disarm, pinned as the current fact (T130).** The
+    order clause is a fact about the judged week, so one carrier morning
+    inside the return -- the athlete puts the strap back on and does not
+    take the watch off -- makes "every one later than every" false and the
+    withhold never fires (0 of 2050 withheld at any ``c >= 1``; flips 54 /
+    72 / 90 at ``c`` = 1 / 2 / >= 3). Nine candidate predicates were
+    measured and none survives overlap without an unjustified parameter;
+    the user deferred it to this sprint's measurement tasks, and it is
+    **not** fixed here --
+    ``test_probe_the_carrier_still_recording_through_the_return_disarms_the_withhold``
+    pins both rows, and T161/T162 sweep the geometry against shipped F005.
 
     **T132's own residual, structural rather than a corner case.** For the
     first ``MIN_WINDOW_READINGS`` days, a **legitimate, permanent** device
-    switch is the *same shape* as T132's forbidden geometry: an un-established
-    tier holding ``>= MIN_WINDOW_READINGS`` week days, every one later than
-    the resolved (still-legitimately-baseline-owning) tier's. Nothing in
-    ``week_readings``, ``baseline_counts`` or ``last_read`` alone separates
-    "a device he will never use again" from "a device he bought yesterday and
-    will use forever" -- both are un-established, both have a full week,
-    both are entirely after. This widening therefore also silences
-    ``hrv_normal`` on a permanent switch's third and fourth mornings (T132,
-    measured: the single red this form produces against the suite, in
-    ``test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline``,
-    ``k = 3`` and ``k = 4``) -- the *freely tolerated* direction
-    (``research/00`` §1.7: down-regulating, here to silence, on weak
-    evidence), accepted as two days of silence per permanent device switch
-    *at daily capture* in exchange for closing the forbidden direction on a
-    brand-new device that goes unused again. That price belongs to
-    **contiguous** capture, not to daily capture as such: a switch whose
-    captures are **spread** -- 4/wk spread, 3/wk, 2/wk -- costs zero days
-    attributable to this widening, because there it flips ``withheld`` only
-    on days ``week_too_thin`` already decides, while a 4/wk *clustered*
-    switch pays the same two days the daily one does (T145 2026-09-18; the
-    summary here said "a sub-daily switch" until T147 corrected it
-    2026-09-18, the enumeration below it having been right all along, and
-    the five densities are pinned in
-    ``test_hrv_trend_band.test_the_return_residual_turns_on_capture_spacing_not_weekly_count``).
-    ``tier_change_reset`` is the mechanism that
-    distinguishes the two in general -- it accumulates 14 baseline-window
-    days of the new tier before handing over the baseline -- and no predicate
-    over a single week's shape can do what a time-accumulating mechanism is
-    for.
+    switch is the *same shape* as T132's forbidden geometry: an
+    un-established dataset holding ``>= MIN_WINDOW_READINGS`` week days,
+    every one later than the selected dataset's. Nothing in the two
+    datasets' windows separates "a device he will never use again" from "a
+    device he bought yesterday and will use forever". This widening
+    therefore also silences ``hrv_normal`` on a permanent switch's third and
+    fourth mornings at daily or 4/wk-clustered capture (T132/T145/T147,
+    pinned in ``test_hrv_trend_band.test_the_return_residual_turns_on_capture_spacing_not_weekly_count``)
+    -- the *freely tolerated* direction (``research/00`` §1.7), accepted as
+    two days of silence per permanent device switch in exchange for closing
+    the forbidden direction on a brand-new device that goes unused again.
+    ``tier_change_reset`` and, under F006, the new dataset's own
+    establishment are the mechanisms that distinguish the two in general;
+    no predicate over a single week's shape can do what a time-accumulating
+    mechanism is for.
     """
-    if tier is None:
-        return False
-    candidates = [t for t in TIER_FIDELITY if baseline_counts.get(t, 0) >= MIN_BASELINE_READINGS]
-    struck = _recency_struck(candidates, last_read)
-    # T132 (form B, 2026-09-16, decision log review cycle 9). ``struck`` is
-    # drawn from ``candidates``, which requires >= MIN_BASELINE_READINGS
-    # distinct days in the baseline window -- so a tier whose first-ever
-    # reading falls inside the judged week has zero baseline-window days and
-    # can never be a candidate, never struck, however many judged-week days
-    # it holds and however cleanly they are ordered after the resolved
-    # tier's own. That is not an abandoned-trial or a returning-device
-    # question -- both of those tiers have *some* baseline-window history,
-    # which is exactly what the recency gate above is measuring recency
-    # against -- it is a tier the athlete has **never used before**, for
-    # which "recently struck" is not the right question at all: zero is not
-    # a tuned threshold, it is the only value that means "never used in the
-    # baseline window". Widen the set the order clause below is asked about
-    # to include it, once it holds a full week's evidence of its own.
-    week_counts = _tier_counts(week_readings)
-    never_used = {
-        t
-        for t in TIER_FIDELITY
-        if baseline_counts.get(t, 0) == 0 and week_counts.get(t, 0) >= MIN_WINDOW_READINGS
-    }
-    widened = struck | never_used
-    if not widened:
-        return False
-    # The resolved tier's own week days: the ones that would feed the mean.
-    resolved_days = _days(_of_tier(week_readings, tier))
-    newest_judged = max(resolved_days, default=date.min)
-    for candidate in widened:
-        days = _days(_of_tier(week_readings, candidate))
+    newest_judged = max(_days(dataset.window), default=date.min)
+    for other in datasets:
+        if other is dataset or other.tier == dataset.tier:
+            continue
+        if is_judgeable(other) and other.tier not in skipped:
+            # It could have been selected and lost on fidelity rank alone:
+            # the selected dataset decides, and it is reported as disagreeing.
+            continue
+        days = _days(other.window)
         if len(days) >= MIN_WINDOW_READINGS and min(days) > newest_judged:
             return True
     return False
@@ -1065,7 +1069,6 @@ def build_series(
     # the same cross-tier facts (T125: the struck set must be the one set).
     baseline_readings = _within(readings, baseline)
     week_readings = _within(readings, judged)
-    baseline_counts = _tier_counts(baseline_readings)
     baseline_last_read = _last_read(baseline_readings)
 
     # F006 (T151): one dataset per tier present, in fidelity order. The
@@ -1089,14 +1092,6 @@ def build_series(
                 series_by_day[reading.date] = reading
         series = tuple(series_by_day[day] for day in sorted(series_by_day))
         dataset_window = baseline
-
-        # T125/T132, asked of this tier against the cross-tier facts above,
-        # on the real baseline window only: an empty window has no
-        # candidates, nothing struck and no band anyway, so F005 answered it
-        # ``False`` through its fallback and this does the same.
-        withheld = bool(baseline_readings) and verdict_withheld(
-            tier, week_readings, baseline_counts, baseline_last_read
-        )
 
         # The cross-tier era question (T092/T094), asked once per dataset
         # with this tier as the resolved one -- the same clauses (a), (b)
@@ -1183,9 +1178,29 @@ def build_series(
                 established=len(dataset_baseline) >= MIN_BASELINE_READINGS,
                 reset_on=dataset_reset_on,
                 reset_reason=dataset_reset_reason,
-                withheld=withheld,
+                # Closed (T134) until the dataset-scope pass below, which
+                # needs every dataset's judgeability and so runs after all
+                # of them exist.
+                withheld=True,
             )
         )
+
+    # T125/T132 at dataset scope (T158, AC24; ``research/00`` §5.4 (v)),
+    # asked of every dataset as if it were the selected one: the set the
+    # order clause is asked about is every dataset that could not have been
+    # selected -- not judgeable, or skipped by the recency gate. The gate is
+    # the one ``select_dataset`` reuses, over the same baseline-window
+    # ``_last_read``, so ``skipped`` here is *the* set (T125), not a second
+    # transcription; the equality is pinned. On the real baseline window
+    # only: an empty window has nothing judgeable, nothing skipped and no
+    # band anyway, so F005 answered it ``False`` through its fallback and
+    # this does the same.
+    judgeable = [dataset.tier for dataset in datasets if is_judgeable(dataset)]
+    skipped = _recency_struck(judgeable, baseline_last_read)
+    datasets = [
+        replace(dataset, withheld=bool(baseline_readings) and verdict_withheld(dataset, datasets, skipped))
+        for dataset in datasets
+    ]
 
     # Once, after every clip has had its say: each moves readings into
     # ``excluded`` out of order (``_exclude_before_reset`` appends what it
@@ -1326,7 +1341,7 @@ def select_dataset(series: HrvSeries) -> Selection:
         seen.add(dataset.tier)
 
     by_rank = sorted(series.datasets, key=lambda d: _FIDELITY_RANK[d.tier])
-    judgeable = [d for d in by_rank if d.established and len(_days(d.window)) >= MIN_WINDOW_READINGS]
+    judgeable = [d for d in by_rank if is_judgeable(d)]
     last_read = _last_read(_within(series.readings, series.baseline_window))
     candidates = [d.tier for d in judgeable]
     skipped = _recency_struck(candidates, last_read)
@@ -1797,9 +1812,11 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     from the surviving tier's last few days before he came back, and its
     ``hrv_normal`` direction is §1.7's forbidden one -- readiness is intact, on
     a week the athlete did not live. The condition is computed in
-    ``build_series`` (``verdict_withheld``), not here, because it is a
-    statement about the order of two tiers' judged-week days and this function
-    sees one tier's. The measured cost, priced in F005's Negative Class: 72 of
+    ``build_series`` (``verdict_withheld``, at dataset scope since T158: the
+    set asked is every dataset that could not have been selected), not here,
+    because it is a statement about the order of two datasets' judged-week
+    days and this function sees one dataset's. The measured cost, priced in
+    F005's Negative Class: 72 of
     2050 swept return geometries move ``hrv_normal -> hrv_unavailable``, which
     is the athlete's third and fourth mornings back on top of the fifth to
     seventh, already silent -- five of his first seven. No verdict moves in the

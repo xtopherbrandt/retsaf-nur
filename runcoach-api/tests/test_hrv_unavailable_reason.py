@@ -99,7 +99,9 @@ def test_unavailable_reason_separates_the_opaque_withhold_days_from_the_thin_win
     established at 60, and the verdict is ``hrv_unavailable`` solely because
     ``health_snapshot`` -- a tier never used in the baseline window -- holds a
     full judged week entirely after every one of ``chest_strap_raw``'s own
-    (T125/T132's ``verdict_withheld``). Nothing else in the pre-T137 response
+    (T125/T132's ``verdict_withheld``; at dataset scope since T158 -- the
+    snapshot is not judgeable, the strap is selected, and the strap's
+    ``withheld`` is what the view carries). Nothing else in the pre-T137 response
     said why. At 09-05 the resolved tier's own window has fallen to 2 days,
     below ``MIN_WINDOW_READINGS`` -- already explicable by
     ``readings_in_window`` alone, and the new field must report a
@@ -147,6 +149,12 @@ def test_unavailable_reason_reports_the_withheld_week_before_an_unestablished_ba
     strictly after the strap's. ``verdict_withheld`` fires (a tier with zero
     baseline-window days and >= ``MIN_WINDOW_READINGS`` judged-week days, all
     later than the resolved tier's own) on a baseline that is *also* thin.
+
+    Re-pointed at T158 (F006, 2026-09-19): nothing here is judgeable, so the
+    strap is the presentation fallback (AC9), and ``verdict_withheld`` at
+    dataset scope is asked of it as if selected -- the snapshot is not
+    judgeable and its three days are all later, so the fallback's
+    ``withheld`` is ``True`` and the precedence pinned below is unchanged.
     """
     D = date(2026, 9, 20)
     _, baseline_last = hrv_trend.baseline_window(D)

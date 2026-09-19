@@ -1104,7 +1104,23 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 440  # re-measured 2026-09-19 (T152), as the last action before the
+SCOPED_SUITE_COLLECTED = 452  # re-measured 2026-09-19 (T158), as the last action before the
+#                              # commit: +12. Twelve pins added to
+#                              # test_hrv_trend_series.py on the withhold
+#                              # retained at dataset scope (AC24): the
+#                              # brand-new-device series, the zero / one /
+#                              # thirteen / fourteen baseline-day boundary,
+#                              # the week-day count at 3 and 2, the tied and
+#                              # one-later day-order boundary, the carrier
+#                              # recording through the return at c = 0 and 1
+#                              # (T130's disarm, pinned as current), and the
+#                              # skipped-set equality with select_dataset.
+#                              # No identity elsewhere changed: T125/T132's
+#                              # pins in the band, reset and unavailable-
+#                              # reason suites were re-pointed in place.
+#                              # Nothing publishes this number; the previous
+#                              # value was T152's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 440  # re-measured 2026-09-19 (T152), as the last action before the
 #                              # commit: +2. Two pins added to
 #                              # test_hrv_trend_series.py on F006's per-dataset
 #                              # partition (the dual-capture morning feeding

@@ -819,7 +819,14 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
     ``T+21 .. T+114``. Perturbation (T132, re-measured 2026-09-16): reverting
     ``verdict_withheld`` to the shipped (pre-T132) candidate gate reds this
     walk back at ``k = 3`` and ``k = 4`` (``hrv_unavailable`` where
-    ``hrv_normal`` is now asserted)."""
+    ``hrv_normal`` is now asserted).
+
+    Re-pointed at T158 (F006 AC24, 2026-09-19): ``verdict_withheld`` at
+    dataset scope asks the clause of every dataset that is not judgeable,
+    so the snapshot withholds on ``k = 3`` and ``k = 4`` as the zero-day
+    tier it is, and from ``k = 8`` (1..13 baseline days, still not
+    judgeable) as well -- where the verdict is already ``hrv_unavailable``
+    for ``week_too_thin``, so no morning of this walk moves."""
     T = ago(60)
     strap_days = span(ago(190), T)
     snapshot_days = span(T + timedelta(days=1), T + timedelta(days=120))
