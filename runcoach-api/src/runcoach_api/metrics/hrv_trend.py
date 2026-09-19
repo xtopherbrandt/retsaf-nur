@@ -250,7 +250,7 @@ REASON_SAME_DAY_LATER_CAPTURE = "same_day_later_capture"
 #: the window, and ``research/00`` §1.6 wants it listed rather than
 #: silently dropped. Parameterised with the reason the era began:
 #: ``before_reset: coverage_gap`` for a resumption after a silence, and
-#: ``before_reset: tier_change`` for the readings of the resolved tier that
+#: ``before_reset: tier_change`` for the readings of a dataset's tier that
 #: predate its era boundary -- **whether or not the ``tier_change`` is
 #: reported**, because the clip is a property of the capture history and
 #: the report is a statement about what the athlete is told (D4a,
@@ -792,7 +792,7 @@ def sustained_tier(counts: Mapping[str, int]) -> str | None:
     it is the candidate set before either narrowing, which is why
     ``resolve_baseline_tier`` does not call it. ``tier_change_reset``
     reads it unnarrowed on the previous window ``[D-126, D-67]`` only
-    (rule 4(b)) -- the current window is tested by the resolved tier's own
+    (rule 4(b)) -- the current window is tested by the dataset's own tier's
     count there (rule 4(a)) -- because a change of baseline is a change
     from the tier that *sustained* the previous window, not from the tier
     a week chose (sprint-005 review cycle 3, M2: an earlier wording said
@@ -1094,9 +1094,18 @@ def build_series(
         dataset_window = baseline
 
         # The cross-tier era question (T092/T094), asked once per dataset
-        # with this tier as the resolved one -- the same clauses (a), (b)
-        # and (c) over the same populations, so the dataset F005 would have
-        # resolved gets the boundary F005 found (T154 re-derives the rest).
+        # with **this dataset's** tier -- the one call site, inside this
+        # loop, receiving no resolved tier because none exists under F006
+        # (T151 placed it; T154 pins it). Clauses (a), (b) and (c) are
+        # unchanged and are asked over the same cross-tier populations for
+        # every dataset: ``previous_readings``, the gap-clipped
+        # ``baseline_readings`` for (a), and the one unclipped
+        # ``stray_population`` of every tier for (c) (T129, kept global --
+        # narrowed to this dataset's own readings, another tier's habit
+        # inside this era would vanish from the stray count and T094's
+        # refused reset would come back). The answer is this dataset's own
+        # ``reset_on`` / ``reset_reason``; the route presents the selected
+        # dataset's (``selected_view``).
         boundary = tier_change_reset(
             previous_readings,
             tier,
@@ -2077,7 +2086,8 @@ def _isolated(readings: Iterable[Reading], judged: tuple[date, date]) -> bool:
 
 @dataclass(frozen=True)
 class EraBoundary:
-    """Where the resolved tier's era begins, and whether rule 4 reports it.
+    """Where the new tier's era begins (``tier_change_reset``'s ``tier``,
+    each dataset's own since F006), and whether rule 4 reports it.
 
     D4a (decision log 2026-09-13; T098): **clip always, report
     conditionally**. ``first_day`` is the era's true first day -- the day
@@ -2093,7 +2103,7 @@ class EraBoundary:
     flipping with no new data (review cycle 4, G-C4-1).
     """
 
-    #: ``B_start``'s local day: the resolved tier's first reading after the
+    #: ``B_start``'s local day: the new tier's first reading after the
     #: old era's last. ``build_series`` clips ``baseline`` to
     #: ``[max(D-66, first_day), D-7]`` on it unconditionally -- on the
     #: report (T098) and, since T107, on a coverage gap too, composing with
@@ -2136,7 +2146,7 @@ def _era_boundary(
       half) first, then the one with the fewest stray days -- the switch
       that explains the most readings -- ties to the later one, the
       younger baseline being the cautious reading (``research/00`` §1.7);
-    * that boundary's ``B_start`` day is where the resolved tier's era
+    * that boundary's ``B_start`` day is where ``new``'s era
       begins, **always**: ``build_series`` clips ``baseline`` there
       whether or not anything is reported, because the era boundary is a
       property of the athlete's capture history;
@@ -2199,15 +2209,36 @@ def _era_boundary(
 
 def tier_change_reset(
     previous_readings: Iterable[Reading],
-    tier: str | None,
+    tier: str,
     baseline_readings: Iterable[Reading],
     week_readings: Iterable[Reading],
     judged: tuple[date, date],
     stray_population: Iterable[Reading] | None = None,
 ) -> EraBoundary | None:
-    """The era boundary between the previous window's tier and the resolved
-    one -- the local day a fresh baseline begins on, and whether it is
+    """The era boundary between the previous window's tier and ``tier`` --
+    the local day a fresh baseline of ``tier`` begins on, and whether it is
     *reported* -- or ``None`` when there is none.
+
+    **Asked once per dataset, with that dataset's tier** (F006 AC17, T154;
+    T151 placed the call). Under F005 ``build_series`` resolved one tier and
+    asked this question about it, so ``tier`` was ``str | None`` -- ``None``
+    when the resolver found no tier at all. Under F006 there is no resolved
+    tier: every tier present has a dataset, and ``build_series``'s one call
+    site, inside its per-dataset loop, hands each dataset's own tier here
+    (``test_hrv_tier_change_per_dataset.py`` pins the call site, and the
+    answer three-valued against a mutant that hands the selected tier to
+    every dataset). The clauses below are unchanged; what each one now means
+    is "this dataset" where it used to mean "the resolved tier". For the
+    dataset that *is* ``previous_tier``, (b) short-circuits and nothing is
+    clipped or reported -- AC6, not this rule, defends the reference §9
+    series. The reported reset is therefore **per dataset**: the route
+    presents the *selected* dataset's own (``selected_view``), and a
+    non-selected dataset's report is carried in ``datasets``, never
+    promoted. Every dataset is asked over the **same** cross-tier
+    populations -- ``previous_readings``, the gap-clipped
+    ``baseline_readings`` for clause (a), and one ``stray_population`` of
+    every tier's unclipped readings for clause (c) -- so the question is per
+    dataset and the facts it is asked against are not.
 
     **The clip and the report are two consequences of one boundary** (D4a,
     decision log 2026-09-13; T098). ``build_series`` clips ``baseline`` to
@@ -2225,10 +2256,10 @@ def tier_change_reset(
     A boundary is found, and ``tier_change`` is *reported*, when and only
     when (rule 4, T094; decision log 2026-09-11, tolerance 2026-09-12):
 
-    (a) the resolved baseline tier ``tier`` **sustains** the current
-        baseline window -- read on at least ``MIN_BASELINE_READINGS``
-        distinct local days in ``baseline_readings`` (all tiers, already
-        clipped by any coverage gap), rule 1's candidacy;
+    (a) this dataset's tier ``tier`` **sustains** the current baseline
+        window -- read on at least ``MIN_BASELINE_READINGS`` distinct local
+        days in ``baseline_readings`` (all tiers, already clipped by any
+        coverage gap), rule 1's candidacy;
     (b) it differs from the tier the previous window ``[D-126, D-67]``
         sustains (``sustained_tier`` on ``previous_readings``: highest
         fidelity with at least ``MIN_BASELINE_READINGS`` days, rule 1
@@ -2238,7 +2269,7 @@ def tier_change_reset(
         ``baseline_readings`` and ``week_readings``, the last so that the
         tolerance's week half has readings to count; sprint-005 review
         cycle 3, M1 -- T094 judged it on the current window alone): with
-        ``A`` the previous tier and ``B`` the resolved tier, there is an
+        ``A`` the previous tier and ``B`` this dataset's ``tier``, there is an
         era boundary -- ``A``'s last era reading and ``B``'s first after it
         -- such that the readings on its wrong side, of either tier
         together, are **isolated** (``_isolated``: fewer than
@@ -2253,7 +2284,7 @@ def tier_change_reset(
         on the captures' instants, as the same-day collapse orders them,
         so two devices worn on the switch morning are ordered by which was
         worn first; a previous-tier capture at the very instant of the
-        resolved tier's first is simultaneous, not a stray, so the tie is
+        new tier's first is simultaneous, not a stray, so the tie is
         interleaved and reports nothing. Judged on the current window
         alone, (c) was vacuously true for a trial that had aged wholly
         into the previous window and a phantom ``tier_change`` was
@@ -2262,7 +2293,7 @@ def tier_change_reset(
         a genuine switch made the eras interleave and silenced the reset
         for the whole era (review cycle 3, G9, G12, IDEA-065).
 
-    The reset lands on the era's **true first day**: the resolved tier's
+    The reset lands on the era's **true first day**: ``tier``'s
     first reading after the era boundary -- so it does not slide one day
     per day once the era start ages past ``D-66`` (T094, G8), and an older
     era of the same tier in the previous window (a 40-day strap trial
@@ -2292,7 +2323,7 @@ def tier_change_reset(
     fidelity until it drops below 14 there, ``T+114``, a month after the
     snapshot reached 14 (``T+81``). Those dates bound the report; they do
     not promise it, because (a) or the week half may have ended it
-    earlier -- a resolved tier that never reaches or falls back below
+    earlier -- a ``tier`` that never reaches or falls back below
     ``MIN_BASELINE_READINGS`` in the baseline window, or a few days of the
     other device inside ``[D-6, D]``. Either way the old tier holds at
     least 14 days in the previous window while (b) holds, so there is
@@ -2349,10 +2380,15 @@ def tier_change_reset(
     clause (a) nor clause (b) applies it, and both still read
     ``MIN_BASELINE_READINGS`` alone.
 
-    *Clause (a)* takes the tier ``build_series`` already resolved, so the
-    recency gate has been applied before this function is called -- a tier
-    struck for staleness never arrives here as ``tier`` at all. Restating
-    the gate in (a) would be a second copy of one rule.
+    *Clause (a)* took, under F005, the tier ``build_series`` had already
+    resolved, so the recency gate had been applied before this function was
+    called and a tier struck for staleness never arrived here as ``tier``.
+    Under F006 (T154) the gate is ``select_dataset``'s and runs *after*
+    this: every dataset is asked, stale or not, and its answer is its own
+    report; the gate then decides only whose report the route presents. A
+    skipped dataset's report is still the true account of the band it
+    clipped, so restating the gate in (a) would be a second copy of one rule
+    that also blanked a report ``datasets`` is meant to carry.
 
     *Clause (b)* is the substantive half, and the answer is **no**. The two
     clauses ask different questions. Rule 1 asks which tier may **build
@@ -2426,8 +2462,6 @@ def tier_change_reset(
     ``test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary``
     and ``test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption``.
     """
-    if tier is None:
-        return None
     baseline_readings = tuple(baseline_readings)
     previous_readings = tuple(previous_readings)
     if _tier_counts(baseline_readings).get(tier, 0) < MIN_BASELINE_READINGS:
