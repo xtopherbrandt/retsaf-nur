@@ -1478,7 +1478,14 @@ components:
                 later of the resumption and any era boundary: the two clips
                 compose as the later of their first days, so R is reset_on only
                 when no era boundary falls after the resumption, and window[0]
-                may lie after reset_on. Empty
+                may lie after reset_on. A third clip is per dataset and unreported:
+                an internal capture hole of more than gap_reset_days (21) silent
+                local days inside the window the first two clips left -- one tier
+                silent while another bridged it, which the global gap cannot see --
+                clips this dataset at its last resumption, and the readings clipped
+                away are listed before_reset: coverage_gap beside a reset_reason
+                that stays null or the era rule's. The three clips compose as the
+                latest first day. Empty
                 after a reset landing inside the judged week, rendered as the
                 formula yields it (first after last) with n 0 — clients must not
                 assume window[0] ≤ window[1].
@@ -1500,7 +1507,14 @@ components:
               nullable: true
               description: >
                 Why the re-establishment is reported. The baseline clip is decided by the
-                era boundary alone, so a null here can sit beside a clipped `window`; a
+                era boundary alone, never by its report, so a null here can sit beside a
+                clipped `window`; and a third clip, per dataset and unreported, widens that
+                state: each dataset is also clipped at its last internal capture hole of
+                more than gap_reset_days (21) silent local days, counted exactly as
+                coverage_gap_reset counts a gap, with the pre-hole readings listed
+                `before_reset: coverage_gap` while this stays null or the era rule's. The
+                three clips -- era boundary, coverage gap, internal hole -- compose as the
+                latest first day, and only the first two are ever reported here. A
                 reported `tier_change` is always clipped, though once the era's first day
                 is date-66 or older the clip `max(date-66, R)` is a no-op and `window` is
                 indistinguishable from the un-clipped [date-66, date-7]. That no-op
