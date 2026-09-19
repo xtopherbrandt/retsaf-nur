@@ -49,9 +49,12 @@ from runcoach_api.metrics import hrv_trend
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: The same two roots ``test_hrv_trend_endpoint.py`` walks, for the same
-#: reason: **F005 lives behind the gitignored, machine-local ``.shipyard``
-#: junction, and a walk from the repo root does not follow it.** That blind
-#: spot has cost this feature at least three missed findings. The pair is
+#: reason: **F005's original lives behind the gitignored, machine-local
+#: ``.shipyard`` junction, and a walk from the repo root does not follow it.**
+#: That blind spot cost this feature at least three missed findings, and
+#: since T124 every F005 row below reads the committed copy under
+#: ``spec-mirror/`` (root 0) instead -- byte-equal to the original by
+#: ``test_normative_mirror.py`` -- so no row skips anywhere. The pair is
 #: restated rather than imported because importing that module executes a
 #: 2,500-line suite's worth of module-level setup to read one tuple; what
 #: keeps the two copies in step is
@@ -268,9 +271,9 @@ class Site:
     """One block that tells a reader when the HRV input goes unavailable.
 
     ``lead`` identifies the block's line rather than a line number, which
-    moves; ``committed`` is the ``withdrawn_phrasings`` convention -- a row
-    under the ``.shipyard`` root is absent from a fresh checkout and skips
-    there loudly instead of failing.
+    moves. Every row's file is committed and an absent one fails (T124): the
+    ``committed: False`` rows that used to skip under the absent ``.shipyard``
+    root now point at the committed copies under ``spec-mirror/``.
 
     ``end`` is T140's addition and is empty for every markdown row, which is
     the behaviour those rows had before it existed: a prose block in a
@@ -291,7 +294,6 @@ class Site:
     root_index: int
     rel: str
     lead: str
-    committed: bool
     end: str = ""
 
 
@@ -301,28 +303,24 @@ SITES = (
         root_index=0,
         rel="specification/spec/06-adaptation-logic.md",
         lead="**Guardrails.** The gate may **down-regulate freely",
-        committed=True,
     ),
     Site(
         label="spec/02 Degradation",
         root_index=0,
         rel="specification/spec/02-canonical-data-schema-ingestion.md",
         lead="**Degradation.** Degradation is decided at **tier level**",
-        committed=True,
     ),
     Site(
         label="spec/03 3.7.4 graceful degradation",
         root_index=0,
         rel="specification/spec/03-derived-metric-formulas.md",
         lead="**Graceful degradation across tiers, then unavailable.**",
-        committed=True,
     ),
     Site(
         label="F005 Negative Class verdict cost table",
-        root_index=1,
-        rel="spec/features/F005-resting-hrv-trend.md",
+        root_index=0,
+        rel="spec-mirror/features/F005-resting-hrv-trend.md",
         lead="The verdict still cannot say *why* it is unavailable",
-        committed=False,
     ),
 )
 
@@ -342,15 +340,13 @@ SITES = (
 #:
 #: Kept a sibling tuple rather than folded into ``SITES`` because the rows are
 #: read differently: a markdown block is one line and these are wrapped, so
-#: each carries the ``end`` that bounds it (see ``Site``). Both files are
-#: committed, so neither takes the skip-on-fresh-checkout path.
+#: each carries the ``end`` that bounds it (see ``Site``).
 CONTRACT_SITES = (
     Site(
         label="openapi.yaml HrvTrend.verdict description",
         root_index=0,
         rel="contracts/openapi.yaml",
         lead="hrv_normal and hrv_suppressed both assert an established baseline",
-        committed=True,
         end="unavailable_reason:",
     ),
     Site(
@@ -358,7 +354,6 @@ CONTRACT_SITES = (
         root_index=0,
         rel="runcoach-api/src/runcoach_api/schemas.py",
         lead="hrv_normal and hrv_suppressed both assert an established baseline",
-        committed=True,
         end="unavailable_reason:",
     ),
     #: T148. The two rows above stop at ``unavailable_reason:``, which is
@@ -376,7 +371,6 @@ CONTRACT_SITES = (
         root_index=0,
         rel="contracts/openapi.yaml",
         lead="Why verdict is hrv_unavailable; null whenever it is not",
-        committed=True,
         end="ln_rmssd_7d_mean:",
     ),
     Site(
@@ -384,7 +378,6 @@ CONTRACT_SITES = (
         root_index=0,
         rel="runcoach-api/src/runcoach_api/schemas.py",
         lead="Why verdict is hrv_unavailable; null whenever it is not",
-        committed=True,
         end="ln_rmssd_7d_mean:",
     ),
 )
@@ -435,10 +428,11 @@ def _block(site: Site) -> str:
 
 
 def _resolve(site: Site) -> Path:
+    """The site's file, which must exist in every checkout. This used to
+    ``pytest.skip`` an absent ``committed: False`` row, and that skip was how
+    F005's rows went unchecked on every machine but one (T124)."""
     path = SCAN_ROOTS[site.root_index] / site.rel
-    if not path.exists():
-        assert not site.committed, f"{path} is committed and must be in every checkout"
-        pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
+    assert path.exists(), f"{path} is committed and must be in every checkout"
     return path
 
 
@@ -578,9 +572,8 @@ def test_f005_prices_t116_and_t126_as_net_cost_until_e007() -> None:
     qualifier was written -- the T123 defect, and the reason this names what
     must be said instead.
     """
-    path = SCAN_ROOTS[1] / "spec/features/F005-resting-hrv-trend.md"
-    if not path.exists():
-        pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
+    path = SCAN_ROOTS[0] / "spec-mirror/features/F005-resting-hrv-trend.md"
+    assert path.exists(), f"{path} is committed and must be in every checkout"
     text = _flat(path.read_text(encoding="utf-8"))
     for phrase in ("net cost with no offsetting benefit", "deferred to e007", "e007 does not exist"):
         assert phrase in text, (
@@ -633,21 +626,18 @@ COST_SITES = (
         root_index=0,
         rel="specification/research/00-design-decisions.md",
         lead="**The 20-day quiet was measured for one of the two reset kinds",
-        committed=True,
     ),
     Site(
         label="spec/03 3.7.3 establishment gate",
         root_index=0,
         rel="specification/spec/03-derived-metric-formulas.md",
         lead="- **Either position on a baseline that is not yet established**",
-        committed=True,
     ),
     Site(
         label="F005 Negative Class tier-change silence row",
-        root_index=1,
-        rel="spec/features/F005-resting-hrv-trend.md",
+        root_index=0,
+        rel="spec-mirror/features/F005-resting-hrv-trend.md",
         lead="| The cost nobody had measured:",
-        committed=False,
     ),
 )
 
@@ -730,9 +720,9 @@ def test_the_tier_change_delay_is_named_and_accepted_in_the_negative_class() -> 
     and decided **on a reason** -- that clause (a) accumulates over time and
     an earlier report would be a prediction that must be withdrawn.
 
-    Skips loudly rather than failing where F005 is absent: it lives under the
-    machine-local ``.shipyard`` breadcrumb, which is gitignored (the
-    ``committed: False`` convention of ``SITES`` above).
+    Reads the committed copy under ``spec-mirror/`` (T124), so it fails
+    rather than skips where the machine-local ``.shipyard`` breadcrumb is
+    absent.
     """
     site = COST_SITES[-1]
     path = _resolve(site)

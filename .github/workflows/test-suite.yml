@@ -16,10 +16,13 @@ name: test-suite
 #      error, on a case count under the floor, and on any workspace member
 #      that contributed no cases at all.
 #   2. **Pretend the machine-local breadcrumb is here.** A runner has no
-#      `.shipyard` junction, so scan root 1 is absent and the two
-#      `committed: False` anchors skip -- loudly, by design. That is the CI
-#      condition, not a defect; see T124 for the reachability half, which
-#      this workflow does not close.
+#      `.shipyard` junction, so scan root 1 is absent. Until T124 the two
+#      normative F005 documents lived only under it and their anchors
+#      skipped here; T124 committed copies of the normative documents under
+#      `spec-mirror/`, so the scan reads them on this runner too and no
+#      anchor skips. What this runner still cannot do is compare those
+#      copies to their data-dir originals (test_normative_mirror.py skips
+#      that gate, loudly, where the data dir is unreachable).
 
 on:
   push:

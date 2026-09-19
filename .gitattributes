@@ -1,0 +1,6 @@
+# spec-mirror/ holds byte-for-byte copies of documents whose originals live in the Shipyard
+# data dir, and runcoach-api/tests/test_normative_mirror.py compares the two by bytes (T124).
+# The originals are not uniform in line endings (one is CRLF, one mixed), so any normalisation
+# on add or conversion on checkout would make every checkout differ from the original by
+# platform and fail the gate. `-text` stores and checks out the copies verbatim everywhere.
+spec-mirror/** -text

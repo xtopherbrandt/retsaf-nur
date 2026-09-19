@@ -48,36 +48,29 @@ WITHDRAWN_SCAN_ANCHORS = (
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "metrics" / "hrv_trend.py",
         "one history, the boundary dated 2026-07-03 on the full population and 2026-08-14 on the gap-clipped one",
-        True,
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
         "that fed neither the baseline nor the window",
-        True,
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
         "decision-record ids this reply is grounded in",
-        True,
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
         "which is the parameter's problem and is named as such",
-        True,
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_reset.py",
         "and no reset is ever reported either",
-        True,
     ),
     (
-        _REPO_ROOT / ".shipyard" / "spec" / "features" / "F005-resting-hrv-trend.md",
+        _REPO_ROOT / "spec-mirror" / "features" / "F005-resting-hrv-trend.md",
         "before a worktree-isolated builder can run the drift check",
-        False,
     ),
     (
-        _REPO_ROOT / ".shipyard" / "spec" / "references" / "F005-trend-construction.md",
+        _REPO_ROOT / "spec-mirror" / "references" / "F005-trend-construction.md",
         "not the absence of one string",
-        False,
     ),
 )

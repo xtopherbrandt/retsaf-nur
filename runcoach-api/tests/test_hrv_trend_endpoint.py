@@ -1092,7 +1092,15 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 415  # re-measured 2026-09-18 (T147), as the last action before the
+SCOPED_SUITE_COLLECTED = 416  # re-measured 2026-09-18 (T124), as the last action before the
+#                              # commit: +1. T124 added
+#                              # test_the_walk_reaches_every_mirrored_document
+#                              # to this suite and no other identity changed:
+#                              # the two breadcrumb anchor cases were
+#                              # re-pointed at spec-mirror/, not added. Nothing
+#                              # publishes this number; the previous value was
+#                              # T147's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 415  # re-measured 2026-09-18 (T147), as the last action before the
 #                              # commit: +1. T147 added one pin to
 #                              # test_hrv_trend_band.py -- the capture-density
 #                              # walk -- and strengthened an existing
@@ -1310,23 +1318,30 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: sentence: ``test_the_walk_reads_whole_trees_and_not_an_empty_one`` floors
 #: the two roots separately and requires the first to exist, and
 #: ``test_the_walk_reaches_every_file_an_anchor_speaks_for`` *fails* rather
-#: than skips when a committed anchored file is not reached. The two normative
-#: F005 documents are under the second root, so they are scanned wherever the
-#: breadcrumb is and nowhere else; moving them into the committed tree is the
-#: only thing that would change that, and it is not this task's to do.
+#: than skips when an anchored file is not reached -- every anchored file,
+#: since T124. The normative F005 and F006 documents used to be under the
+#: second root only, scanned wherever the breadcrumb was and nowhere else;
+#: T124 put committed copies under ``spec-mirror/``, so the first root reaches
+#: them on every machine, and ``test_normative_mirror.py`` is the gate that
+#: keeps each copy byte-equal to its data-dir original. On a machine with the
+#: breadcrumb both copies are scanned, which is harmless duplication.
 SCAN_ROOTS = (_REPO_ROOT, _REPO_ROOT / ".shipyard")
 
 #: Floors on how many files each root must yield, by root index. Measured
 #: 2026-09-15 on this tree: **125** files under the committed root (127 found,
 #: two held out) and **139** under the breadcrumb (265 found, 126 held out as
 #: history) -- so what a checkout without the breadcrumb scans is 125 files,
-#: against the five the allowlist reached there. Those two numbers are a
+#: against the five the allowlist reached there. Re-measured 2026-09-18 (T124):
+#: **137** under the committed root before the mirror and **143** with it --
+#: the five copied documents and the mirror's README. Those numbers are a
 #: measurement of one tree on one date. The floors below are the invariant,
-#: and they sit well under the measurement on purpose: their job is not to pin
+#: and they sit under the measurement on purpose: their job is not to pin
 #: a count -- ordinary growth and ordinary deletion must not trip them -- but
 #: to catch the one failure a tree walk has that an allowlist does not, a walk
-#: that has stopped descending and is reporting all-clear over nothing.
-SCAN_ROOT_FLOORS = (100, 100)
+#: that has stopped descending and is reporting all-clear over nothing. The
+#: root-0 floor was raised with the mirror; that the mirror itself is reached
+#: is ``test_the_walk_reaches_every_mirrored_document``, not the floor.
+SCAN_ROOT_FLOORS = (130, 100)
 
 #: Machinery, not prose. Matched on a **directory name** at any depth, so this
 #: table cannot grow into a list of individual files.
@@ -1460,7 +1475,7 @@ def _all_scanned_files() -> tuple[Path, ...]:
 #: The positive controls, one per file whose live prose this feature's
 #: corrections had to reach. These are no longer the scan's *input* -- the
 #: walk decides that -- they are its evidence that it read something. Each row
-#: is ``(path, a live phrase that file must contain, is it committed)``.
+#: is ``(path, a live phrase that file must contain)``.
 #:
 #: A negative scan over an empty read is green, which is the shape T113 (gap
 #: G-C7-6) found and the shape a tree walk reproduces one level out if the
@@ -1478,9 +1493,12 @@ def _all_scanned_files() -> tuple[Path, ...]:
 #: edit confined to the last two percent after an anchor is not something
 #: these controls can see.
 #:
-#: The last two rows are ``False`` for *committed*: they live under the
-#: gitignored breadcrumb and are absent from a fresh checkout, where their
-#: cases skip loudly. Every other row is required to exist and to be reached.
+#: Every row is required to exist and to be reached, on every machine. The
+#: last two used to carry a ``committed: False`` flag -- they lived under the
+#: gitignored breadcrumb and their cases skipped where it was absent, which
+#: is to say everywhere but one laptop. T124 re-pointed them at the committed
+#: copies under ``spec-mirror/`` and deleted the flag with the skip: a row
+#: that may be absent is a row the scan may silently not read.
 #:
 #: The table itself is declared in ``withdrawn_phrasings.py`` with the other
 #: literals, and for the same reason: an anchor is a verbatim copy of a live
@@ -1502,7 +1520,7 @@ def test_the_anchor_table_still_speaks_for_every_file_it_was_built_for() -> None
     walk a dropped row no longer stops the file being *scanned* -- the walk
     still reaches it -- it stops the file being proved *read*, which is the
     same false all-clear in slower motion."""
-    assert [path.name for path, _anchor, _committed in WITHDRAWN_SCAN_ANCHORS] == [
+    assert [path.name for path, _anchor in WITHDRAWN_SCAN_ANCHORS] == [
         "hrv_trend.py",
         "schemas.py",
         "openapi.yaml",
@@ -1554,20 +1572,35 @@ def test_the_walk_reaches_every_file_an_anchor_speaks_for() -> None:
     could drop a live file out of the walk while its anchor case went on
     passing -- the anchor test opens the file directly.
 
-    The committed rows fail rather than skip when absent, which is what turns
-    "in a checkout without the breadcrumb the walk is the committed tree
-    alone" from a sentence into a checked claim: five of the seven anchored
-    files are reached on every machine, and the assertion below is what says
-    so."""
+    Every row fails rather than skips when absent, which is what turns "in a
+    checkout without the breadcrumb the walk is the committed tree alone"
+    from a sentence into a checked claim: all seven anchored files are reached
+    on every machine, and the assertion below is what says so. Until T124 the
+    two breadcrumb rows were ``continue``d over when absent, and that was the
+    mechanism that let the two normative documents go unscanned everywhere
+    but one laptop."""
     reached = set(_all_scanned_files())
-    for path, _anchor, committed in WITHDRAWN_SCAN_ANCHORS:
-        if not committed and not path.exists():
-            continue
+    for path, _anchor in WITHDRAWN_SCAN_ANCHORS:
         assert path.exists(), f"{path} is committed and must be in every checkout"
         assert path in reached, (
             f"{path} is not in the walk: an exclusion pattern, a pruned directory or a "
             f"suffix has taken a file with live prose out of the scan"
         )
+
+
+def test_the_walk_reaches_every_mirrored_document() -> None:
+    """T124. The committed copies of the normative documents are the reason
+    the scan no longer skips anywhere, so the walk over the committed root
+    must reach every one of them -- by walking ``spec-mirror/``, not by naming
+    the four this task copied, because T161 and T162 add to it. An exclusion
+    pattern widened onto the mirror would otherwise hide the documents again
+    while the anchors (which open their files directly) stayed green."""
+    mirror = SCAN_ROOTS[0] / "spec-mirror"
+    copies = sorted(path for path in mirror.rglob("*.md") if path.name != "README.md")
+    assert len(copies) >= 4, f"{len(copies)} documents under {mirror}: the mirror T124 committed is not here"
+    reached = set(_scanned_files(0))
+    unreached = [str(path.relative_to(SCAN_ROOTS[0])) for path in copies if path not in reached]
+    assert not unreached, f"mirrored documents the committed walk does not reach: {unreached}"
 
 
 def test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing() -> None:
@@ -1688,22 +1721,20 @@ def test_the_withdrawn_phrasings_are_gone_from_every_file_the_walk_reaches() -> 
 
 
 @pytest.mark.parametrize(
-    ("path", "anchor", "committed"),
+    ("path", "anchor"),
     WITHDRAWN_SCAN_ANCHORS,
-    ids=[path.name for path, _anchor, _committed in WITHDRAWN_SCAN_ANCHORS],
+    ids=[path.name for path, _anchor in WITHDRAWN_SCAN_ANCHORS],
 )
-def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(
-    path: Path, anchor: str, committed: bool
-) -> None:
+def test_the_withdrawn_reset_reason_phrasings_are_gone_from_every_live_copy(path: Path, anchor: str) -> None:
     """The positive half of the scan, one case per file whose live prose this
     feature's corrections had to reach: the anchor says this file's text was
     read to its tail, so the negative sweep above is a report over something
     rather than over an empty string. The phrasing check is repeated here
     because it reports per file, and because it is what fails first if a
-    correction is reverted in one of the seven files that have carried one."""
-    if not path.exists():
-        assert not committed, f"{path} is committed and must be in every checkout"
-        pytest.skip(f"{path} is absent (the .shipyard breadcrumb is machine-local and gitignored)")
+    correction is reverted in one of the seven files that have carried one.
+    An absent file fails here rather than skips (T124): the skip was what let
+    two of the seven go unread on every machine but one."""
+    assert path.exists(), f"{path} is committed and must be in every checkout"
     text = _scannable(path)
     flat_anchor = _flat(anchor)
     assert flat_anchor in text, (
