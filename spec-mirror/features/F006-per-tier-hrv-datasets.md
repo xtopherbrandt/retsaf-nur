@@ -190,7 +190,43 @@ Full table in reference §11; the governing row:
 
 Carried forward (§11): same-tier replacement invisible; §3.7.3's device/firmware clause
 unimplemented; the 18-day adoption silence and its wrong `week_too_thin` reason; the 3×/week
-seven-day flip. **New, from AC17:** an internal hole shorter than `GAP_RESET_DAYS` still mixes eras.
+seven-day flip.
+
+**New, from AC17 (T153):** a dataset's internal hole of **at most** `GAP_RESET_DAYS` silent local
+days (21, the constant's own boundary: 22 clips, 21 does not, as `coverage_gap_reset` counts) is not
+clipped, so its band still mixes the two eras either side of it — measured: 21 silent days between a
+60 ms and a 40 ms era give a band mean of 3.97, neither `ln 60` nor `ln 40`. And a hole whose
+resumption lies **after** `D-7` is not internal to the baseline window and is not clipped either:
+the band is the pre-layoff era's, and whether it is judged is AC6's (a strap last read `D-30` beside
+a snapshot read `D-7` is 23 days behind, inside `RECENCY_TOLERANCE_DAYS`, and is selected on a band
+30..66 days old). Both directions are unreported. Who notices: nobody from the response —
+`reset_reason` is null in every case; the first is visible only in `baseline.window` staying `[D-66, D-7]`,
+the second not at all until `datasets[]` (T159) shows the dataset's latest baseline-window
+day. Cost: the first mixes eras (either direction, bounded by three weeks of silence); the second is
+up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary IDEA-080 names.
+
+- **The withhold is retained, not retired (T158, AC24).** T125/T132's `verdict_withheld` stays,
+  restated at dataset scope: a dataset that could not be selected — not judgeable, or skipped by the
+  recency gate — holding >= `MIN_WINDOW_READINGS` judged-week days every one later than the selected
+  dataset's withholds the verdict (`hrv_unavailable`, `week_not_representative`). Without it a
+  brand-new device (zero baseline days) leaves the outgoing dataset selected and promotes
+  `hrv_normal` on its stale week — the sixth §1.7-forbidden population, which shipped F005 closes.
+  **What widened, priced:** T132's form B touched only a zero-baseline-day tier; at dataset scope a
+  dataset with 1..13 baseline days and a full later week withholds too — `hrv_normal ->
+  hrv_unavailable`, the freely tolerated direction, measured as one row of T130's matched table (era
+  10: shipped `TP 16 / FN 1` at `c = 0` -> `TP 17 / FN 0`) and no other verdict in the HRV suites.
+  **Carried unchanged:** T130's carrier-overlap disarm (one carrier morning inside the return and
+  the clause is false; `0 of 17` at every `c >= 1`), pinned as the current fact and swept by
+  T161/T162; T125's `min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)` opening-mornings residual; a
+  judgeable, unskipped lower-fidelity dataset never withholds (it could have been selected; the
+  selected dataset decides and it is named in `disagreed_with`).
+- **The honest retirement count (task Technical Notes).** What this feature retires is
+  `resolve_baseline_tier`'s role as "one tier owns the only band" and the `off_baseline_tier`
+  exclusion (T152), i.e. the cross-tier *arbitration*. Everything else on IDEA-071's list is kept or
+  redeployed: T094/T095/T129 re-derived at dataset scope (AC17), T106 kept as a sub-mechanism of the
+  era clip, T107 and T116 retained, T093's fallback retained as AC9's presentation fallback (T156),
+  T117 redeployed as AC6's gate, **T125 and T132 retained here**. "Ten qualifiers retired" is not
+  the number; two mechanisms are.
 
 ## Decision Log
 
