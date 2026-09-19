@@ -227,6 +227,33 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   era clip, T107 and T116 retained, T093's fallback retained as AC9's presentation fallback (T156),
   T117 redeployed as AC6's gate, **T125 and T132 retained here**. "Ten qualifiers retired" is not
   the number; two mechanisms are.
+- **The reported reset is per dataset, and only the selected dataset's is presented (AC17, T154).**
+  `tier_change_reset` is asked once per dataset with that dataset's own tier over the same cross-tier
+  populations (every tier's unclipped readings in `[D-66, D]` for the stray count, T129 kept global),
+  so a dataset that is not selected can carry a reported `tier_change` the response does not show
+  until `datasets[]` (T159) — measured: a strap era that cleanly follows an overnight era reports
+  `(D-52, tier_change)` while the selected snapshot reports nothing, and `reset_reason` is null.
+  Accepted because the report describes the clip of the band it sits beside and no other. Who
+  notices: nobody from `hrv_status` or `reset_reason`; `datasets[]` (T159) shows it. And the mirror
+  residual: for the dataset that *is* `previous_tier`, clause (b) short-circuits, so an outgoing
+  dataset never reports anything however the incoming one was adopted (the task's "known" case) —
+  AC6, not this rule, decides whether it is judged.
+- **T093's row retires in two halves, honestly (T156).** T093 was one row for two mechanisms. Its
+  *week-coverage half* — "the baseline tier must cover the judged week", the gate that kept a
+  14-in-60 trial from owning a baseline it could never judge — is **subsumed by judgeability** (AC8):
+  a dataset is a candidate only when established and holding >= `min_window_readings` judged-week
+  days, so the population the gate closed cannot be selected, and its pins are re-pointed at
+  `is_judgeable` (`test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline`, green
+  unmoved). Its *rule-3 half* — "when no candidate covers the week, the tier the athlete was read on
+  last holds it" — is **retained, not retired**, as AC9's presentation fallback: with nothing
+  judgeable the response still carries `baseline`/`band` from the established dataset read last (ties
+  `n` then fidelity; else densest by `n`; else densest in the week), so the non-nullable contract
+  fields hold a value and the three illness-week pins stay green. What the fallback costs, in the
+  tolerated direction: it presents, it never judges — `hrv_unavailable` with the presented dataset's
+  own cause, no dissenter named — so an athlete whose new device already holds a full unestablished
+  week beside a silent established strap is told `week_too_thin` on the strap's `n`, the T138 18-day
+  adoption silence, unchanged and still carried above. Who notices: nobody from `hrv_status`;
+  `datasets[]` (T159) shows the covering dataset with its `n` and week count.
 
 ## Decision Log
 
