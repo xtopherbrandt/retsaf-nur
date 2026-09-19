@@ -2568,3 +2568,123 @@ def test_the_withhold_reads_the_skipped_set_selection_reads_and_is_asked_of_ever
 
 def _within_baseline(series: hrv_trend.HrvSeries) -> tuple[hrv_trend.Reading, ...]:
     return hrv_trend._within(series.readings, series.baseline_window)
+
+
+# ---------------------------------------------------------------------------
+# T156: the presentation fallback, formalised (F006 AC9; F005's rule 3 over
+# datasets, ``research/00`` 5.4 (iii))
+#
+# When no dataset is judgeable, ``selected_view`` presents one so that
+# ``baseline`` / ``band`` carry a value and no verdict is conferred. The
+# clause order is T155's provisional one, kept: (1) the established dataset
+# read last in the baseline window, ties by n then fidelity; (2) with none
+# established, the densest by n, ties to fidelity; (3) with no baseline
+# reading of any tier, the densest in the judged week, ties to fidelity.
+# Each clause is the shape F005's resolver gave it, which is what keeps the
+# three shipped illness-week pins above and the SW+20 reset pin unmoved.
+# ``SingleDatasetView.presented_by`` names the clause; every pin prints the
+# selection line, each dataset's n / last read / week days, and the clause.
+# ---------------------------------------------------------------------------
+
+
+def _fallback_slice(series: hrv_trend.HrvSeries) -> str:
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    datasets = " ".join(
+        f"{d.tier}:n{d.n}/est{int(d.established)}/last{selection.last_read.get(d.tier)}"
+        f"/week{len({r.date for r in d.window})}"
+        for d in series.datasets
+    )
+    line = f"{selection.describe()} | {datasets} | presented={view.tier} by={view.presented_by}"
+    print(line)
+    return line
+
+
+@pytest.mark.parametrize(
+    ("strap_days", "snapshot_days", "expected"),
+    [
+        (days_between(D - timedelta(days=66), D - timedelta(days=20)), days_between(D - timedelta(days=40), D - timedelta(days=7)), SNAPSHOT),
+        (days_between(D - timedelta(days=30), D - timedelta(days=7)), days_between(D - timedelta(days=66), D - timedelta(days=7)), SNAPSHOT),
+        (days_between(D - timedelta(days=66), D - timedelta(days=7)), days_between(D - timedelta(days=66), D - timedelta(days=7)), STRAP),
+    ],
+    ids=["read_last_beats_denser_and_higher_fidelity", "tied_on_read_last_then_n", "tied_on_both_then_fidelity"],
+)
+def test_the_fallback_presents_the_established_dataset_read_last_ties_by_n_then_fidelity(
+    strap_days: list[date], snapshot_days: list[date], expected: str
+) -> None:
+    """Clause 1, each term in turn, on an empty judged week with both
+    datasets established. A strap of 47 days last read ``D-20`` loses to a
+    snapshot of 34 last read ``D-7``: read last beats both density and
+    fidelity (T094's direction, "the tier the athlete is actually on").
+    Both read ``D-7``: the 60-day snapshot beats the 24-day strap on n.
+    Tied on both: the strap, on fidelity. The presented dataset carries
+    ``presented_by == FALLBACK_ESTABLISHED_READ_LAST`` and ``judge`` says
+    ``week_too_thin`` on it -- the fallback presents, it does not judge.
+    Perturbation: dropping the read-last term (densest established) reds
+    the first row; dropping the n term reds the second.
+    """
+    series = hrv_trend.build_series(_strap(strap_days, 40.0) + _carrier(snapshot_days[0], snapshot_days[-1]), AUCKLAND, D)
+    slice_ = _fallback_slice(series)
+    view = hrv_trend.selected_view(series)
+
+    assert all(d.established for d in series.datasets) and hrv_trend.select_dataset(series).selected is None, slice_
+    assert view.tier == expected and view.presented_by == hrv_trend.FALLBACK_ESTABLISHED_READ_LAST, slice_
+    assert hrv_trend.judge(view).unavailable_reason == hrv_trend.REASON_WEEK_TOO_THIN, slice_
+    assert view.selected is not None and view.selected.n == len(view.baseline), slice_
+
+
+@pytest.mark.parametrize(
+    ("strap_days", "snapshot_days", "expected", "clause", "reason"),
+    [
+        (
+            days_between(D - timedelta(days=9), D - timedelta(days=7)),
+            days_between(D - timedelta(days=13), D - timedelta(days=7)),
+            SNAPSHOT,
+            "FALLBACK_DENSEST_BASELINE",
+            hrv_trend.REASON_WEEK_TOO_THIN,
+        ),
+        (
+            days_between(D - timedelta(days=11), D - timedelta(days=7)),
+            days_between(D - timedelta(days=11), D - timedelta(days=7)),
+            STRAP,
+            "FALLBACK_DENSEST_BASELINE",
+            hrv_trend.REASON_WEEK_TOO_THIN,
+        ),
+        (
+            [D - timedelta(days=1), D],
+            [D - timedelta(days=2), D - timedelta(days=1), D],
+            SNAPSHOT,
+            "FALLBACK_DENSEST_WEEK",
+            hrv_trend.REASON_NO_BAND,
+        ),
+        (
+            [D - timedelta(days=1), D],
+            [D - timedelta(days=1), D],
+            STRAP,
+            "FALLBACK_DENSEST_WEEK",
+            hrv_trend.REASON_NO_BAND,
+        ),
+    ],
+    ids=["densest_baseline", "densest_baseline_tied_then_fidelity", "densest_week", "densest_week_tied_then_fidelity"],
+)
+def test_the_fallback_falls_to_the_densest_baseline_then_to_the_densest_week(
+    strap_days: list[date], snapshot_days: list[date], expected: str, clause: str, reason: str
+) -> None:
+    """Clauses 2 and 3. With nothing established, the densest by n (a
+    seven-day snapshot over a three-day strap; ties to the strap on
+    fidelity), and ``judge`` reports ``week_too_thin`` on a band it could
+    build from those few days. With no baseline reading of any tier, the
+    densest in the judged week (three snapshot mornings over two strap
+    ones; ties to the strap), and the reason is ``no_band`` on a real tier
+    -- never ``no_tier_sustains_a_trend``, which only an empty series
+    reports (``test_hrv_unavailable_reason.py``, T156). Perturbation:
+    clause 3 by fidelity alone reds the third row.
+    """
+    series = hrv_trend.build_series(_strap(strap_days, 40.0) + _carrier(snapshot_days[0], snapshot_days[-1]), AUCKLAND, D)
+    slice_ = _fallback_slice(series)
+    view = hrv_trend.selected_view(series)
+
+    assert not any(d.established for d in series.datasets), slice_
+    assert hrv_trend.select_dataset(series).selected is None, slice_
+    assert view.tier == expected and view.presented_by == getattr(hrv_trend, clause), slice_
+    assert hrv_trend.judge(view).unavailable_reason == reason, slice_

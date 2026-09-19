@@ -450,6 +450,13 @@ class SingleDatasetView:
     #: readings of a non-selected tier are in its own dataset here, not in
     #: ``excluded`` (T152). T159 renders these.
     datasets: tuple[HrvDataset, ...] = ()
+    #: Why ``selected`` is the dataset this view presents (T156): one of
+    #: ``PRESENTATIONS`` -- ``PRESENTED_SELECTED`` when ``selection.selected``
+    #: is it, else the ``_presentation_fallback`` clause that chose it --
+    #: or ``None`` on the empty view. ``selection.selected_reason`` is the
+    #: contract's ``selected_reason`` (AC13); this names the fallback clause
+    #: beside it, so the null-selection case is legible on the view.
+    presented_by: str | None = None
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -1228,6 +1235,31 @@ def build_series(
     )
 
 
+#: Why the selected dataset is the one promoted (F006 AC13, T156; T159
+#: renders it as ``selected_reason``). Closed: non-null exactly when
+#: ``Selection.selected`` is non-null, null with null (T144's shape).
+#: ``highest_fidelity_judgeable`` -- no judgeable dataset outranks it;
+#: ``higher_fidelity_skipped_stale`` -- one did, and the recency gate (AC6)
+#: skipped it.
+SELECTED_HIGHEST_FIDELITY = "highest_fidelity_judgeable"
+SELECTED_HIGHER_FIDELITY_STALE = "higher_fidelity_skipped_stale"
+SELECTED_REASONS: tuple[str, ...] = (SELECTED_HIGHEST_FIDELITY, SELECTED_HIGHER_FIDELITY_STALE)
+
+#: How the dataset a ``SingleDatasetView`` presents came to be presented
+#: (T156; ``SingleDatasetView.presented_by``): the selection, or one of the
+#: three clauses of ``_presentation_fallback``, in the order they are asked.
+PRESENTED_SELECTED = "selected"
+FALLBACK_ESTABLISHED_READ_LAST = "fallback_established_read_last"
+FALLBACK_DENSEST_BASELINE = "fallback_densest_baseline"
+FALLBACK_DENSEST_WEEK = "fallback_densest_week"
+PRESENTATIONS: tuple[str, ...] = (
+    PRESENTED_SELECTED,
+    FALLBACK_ESTABLISHED_READ_LAST,
+    FALLBACK_DENSEST_BASELINE,
+    FALLBACK_DENSEST_WEEK,
+)
+
+
 @dataclass(frozen=True)
 class Selection:
     """Which dataset is promoted into ``baseline``/``band``/``hrv_status``
@@ -1250,7 +1282,9 @@ class Selection:
     ``disagreed_with`` the tiers among them on the other side of their band
     from ``selected`` (``disagreed_with``; AC10/AC11). Empty when nothing is
     selected: a disagreement is with a verdict, and the presentation
-    fallback confers none.
+    fallback confers none (IDEA-082, settled by T156: the reading that
+    keeps the field's name honest and the fallback verdict-free).
+    ``selected_reason`` is AC13's closed enum, derived from ``skipped``.
     """
 
     selected: HrvDataset | None
@@ -1260,6 +1294,21 @@ class Selection:
     reference: date | None
     band_readings: tuple[BandReading, ...] = ()
     disagreed_with: tuple[str, ...] = ()
+
+    @property
+    def selected_reason(self) -> str | None:
+        """Why ``selected`` is the one (AC13; one of ``SELECTED_REASONS``),
+        ``None`` exactly when nothing is selected. Derived from the facts
+        this selection already carries rather than stored beside them, so
+        it cannot disagree with ``skipped``: a skipped tier of higher
+        fidelity than the selected one is the only way a candidate other
+        than the first by rank came to be selected."""
+        if self.selected is None or self.selected.tier is None:
+            return None
+        rank = _FIDELITY_RANK[self.selected.tier]
+        if any(_FIDELITY_RANK[tier] < rank for tier in self.skipped):
+            return SELECTED_HIGHER_FIDELITY_STALE
+        return SELECTED_HIGHEST_FIDELITY
 
     def disagreement(self) -> str:
         """One line per dataset: ``n``, judged-week days, ``band.lo``, the
@@ -1447,31 +1496,69 @@ def disagreed_with(selected: HrvDataset | None, readings: Iterable[BandReading])
     return tuple(r.tier for r in readings if r.tier != selected.tier and r.below is not None and r.below != own)
 
 
-def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> HrvDataset | None:
+@dataclass(frozen=True)
+class Presentation:
+    """The dataset ``_presentation_fallback`` presents and the clause that
+    chose it (one of the three ``FALLBACK_*`` names)."""
+
+    dataset: HrvDataset
+    clause: str
+
+
+def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> Presentation | None:
     """The dataset ``baseline``/``band`` are populated from when **no**
     dataset is judgeable -- F005's rule 3, retained for presentation only
-    (AC9; ``research/00`` §5.4 (iii): "the dataset the athlete was read on
-    last"). No verdict is conferred by it: ``judge`` on a dataset with no
-    judged week answers ``week_too_thin``, and on an unestablished one
-    ``baseline_unestablished``. **T156 formalises this fallback** and the
-    cross-dataset ``unavailable_reason`` precedence; it is carried here so
-    the route has a dataset to render on the illness week and the three
-    shipped pins T156 names stay green through this task.
+    (F006 AC9; ``research/00`` §5.4 (iii): "the dataset the athlete was
+    read on last"; formalised by T156, keeping the clause order T155 built
+    provisionally). No verdict is conferred by it and no dissenter is named
+    against it: ``judge`` on the presented dataset answers with that
+    dataset's own first-firing guard (``week_too_thin`` on an established
+    dataset with a thin week, ``baseline_unestablished`` or ``no_band`` on a
+    thin one), and ``disagreed_with`` is empty (``Selection``).
 
-    Among established datasets, the one read last in the baseline window,
-    ties by ``n`` then fidelity; with none established, the densest by
-    ``n``, ties to fidelity; with no baseline reading of any tier, the
-    densest in the judged week, ties to fidelity -- each clause the shape
-    F005's resolver gave it. ``None`` when the series holds no dataset.
+    The three clauses, asked in order, each the shape F005's resolver gave
+    it (``resolve_baseline_tier`` rule 3 and ``_densest_tier``):
+
+    1. **Among established datasets, the one read last in the baseline
+       window** (``last_read``, AC6's normative slice), ties by ``n`` then
+       fidelity -- T094's direction: the dataset the athlete is actually
+       on, which is what "keeps the tier stable" always meant; densest
+       instead handed a switched athlete's thin week back to the device he
+       abandoned. This clause is what holds the T138 tier-change silence
+       at its measured 18 days (the outgoing, established dataset keeps
+       the presentation and says ``week_too_thin``), and what keeps the
+       SW+20 stray pin in ``test_hrv_trend_reset.py`` on the snapshot.
+    2. **With none established, the densest by ``n``**, ties to fidelity:
+       an athlete with 45 snapshot readings who borrows a strap once keeps
+       the snapshot presentation, and the strap capture is corroboration.
+    3. **With no baseline reading of any tier, the densest in the judged
+       week**, ties to fidelity -- ``build_series``'s old empty-baseline
+       fallback, which applied rule 3 to the week standing in for both.
+
+    ``None`` exactly when the series holds no dataset, which is the
+    structural ``no_tier_sustains_a_trend`` cause (``test_hrv_unavailable_
+    causes.py`` reads this annotation for it since T156). A dataset with one
+    baseline reading is presented by clause 2 and reports ``no_band`` on a
+    real tier; a week-only series is presented by clause 3 and reports the
+    same -- neither is the structural case.
+
+    **The cross-dataset ``unavailable_reason`` precedence** (AC9, T156)
+    is this clause order composed with ``judge``'s guard order: which
+    dataset speaks is decided here (after ``select_dataset``), and which
+    of its causes is named is decided by ``judge`` on that dataset alone.
+    See ``_unavailable_reason``.
     """
     if not series.datasets:
         return None
     established = [d for d in series.datasets if d.established]
     if established:
-        return max(established, key=lambda d: (last_read[d.tier], d.n, -_FIDELITY_RANK[d.tier]))
+        chosen = max(established, key=lambda d: (last_read[d.tier], d.n, -_FIDELITY_RANK[d.tier]))
+        return Presentation(chosen, FALLBACK_ESTABLISHED_READ_LAST)
     if any(d.n for d in series.datasets):
-        return max(series.datasets, key=lambda d: (d.n, -_FIDELITY_RANK[d.tier]))
-    return max(series.datasets, key=lambda d: (len(_days(d.window)), -_FIDELITY_RANK[d.tier]))
+        chosen = max(series.datasets, key=lambda d: (d.n, -_FIDELITY_RANK[d.tier]))
+        return Presentation(chosen, FALLBACK_DENSEST_BASELINE)
+    chosen = max(series.datasets, key=lambda d: (len(_days(d.window)), -_FIDELITY_RANK[d.tier]))
+    return Presentation(chosen, FALLBACK_DENSEST_WEEK)
 
 
 def selected_view(series: HrvSeries) -> SingleDatasetView:
@@ -1487,11 +1574,22 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
     are not re-listed here: the partition of the span's rows into "in some
     dataset" and "excluded, with a reason" is made once by ``build_series``
     and the view presents it as it is.
+
+    **This is where the ``unavailable_reason`` precedence across datasets
+    is decided** (F006 AC9, T156). With N datasets, different datasets
+    satisfy different causes at once; the reason the response carries is
+    the first-firing guard of **the dataset this view presents** -- the
+    selected one, else the fallback's, else none -- and never a cause
+    satisfied by a dataset the response does not carry the baseline of.
+    ``presented_by`` names which of those it was.
     """
     selection = select_dataset(series)
     presented = selection.selected
+    presented_by: str | None = PRESENTED_SELECTED
     if presented is None:
-        presented = _presentation_fallback(series, selection.last_read)
+        fallback = _presentation_fallback(series, selection.last_read)
+        presented = None if fallback is None else fallback.dataset
+        presented_by = None if fallback is None else fallback.clause
     excluded = series.excluded
 
     if presented is None:
@@ -1512,6 +1610,7 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
             selected=None,
             selection=selection,
             datasets=series.datasets,
+            presented_by=None,
         )
     return SingleDatasetView(
         target_date=series.target_date,
@@ -1530,6 +1629,7 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
         selected=presented,
         selection=selection,
         datasets=series.datasets,
+        presented_by=presented_by,
     )
 
 
@@ -1753,6 +1853,24 @@ def _unavailable_reason(
     empty ``series.baseline``) but not the converse, and the two are told
     apart here rather than folding the structural case silently into
     ``no_band``.
+
+    **The precedence across datasets** (F006 AC9; ``research/00`` §5.4
+    (iii); T156). This function reads one dataset, and with N datasets the
+    question "which dataset's cause is named?" is answered *before* it is
+    asked, by ``selected_view``: (1) which dataset speaks -- the selected
+    dataset (``select_dataset``), else the presentation fallback
+    (``_presentation_fallback``: established read last, ties ``n`` then
+    fidelity; else densest by ``n``; else densest in the week), else no
+    dataset; (2) that dataset's own guard order, above. Two consequences
+    are the whole point. The reason is always true of the dataset whose
+    ``baseline``/``band``/``established`` the response carries -- an
+    illness week on an established strap beside an unestablished snapshot
+    that covered the week says ``week_too_thin`` on ``n`` 60, not the
+    snapshot's ``baseline_unestablished`` on a baseline the reader cannot
+    see. And ``no_tier_sustains_a_trend`` fires only when the series holds
+    no dataset at all: a null *selection* on an ordinary illness or holiday
+    week presents the dataset the athlete used last and names its cause.
+    Pinned in ``test_hrv_unavailable_reason.py`` (T156 section).
     """
     if band is None:
         return REASON_NO_TIER if series.tier is None else REASON_NO_BAND
@@ -1848,6 +1966,16 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     so the two share a guard here and are told apart by name only),
     and the day-not-happened one is the route's (``main._withhold_future``),
     which overrides whatever this function decided.
+
+    **Across datasets (F006, T156)** the guard order above is the second
+    half of the precedence, applied to the one dataset ``selected_view``
+    presents; the first half -- which dataset that is -- is decided there,
+    and the verdict promoted is this function's answer on the selected
+    dataset **unchanged** (AC11): nothing another dataset reads, in either
+    direction, enters here. When nothing is selected the presented dataset
+    is the AC9 fallback, this function still answers on it alone, and no
+    verdict is conferred because a dataset that is not judgeable cannot
+    pass the guards.
     """
     band = build_band(ln_rmssd(reading) for reading in series.baseline)
     baseline_n = len(series.baseline)

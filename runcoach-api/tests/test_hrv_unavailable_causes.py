@@ -160,12 +160,22 @@ def _endpoint_withholders() -> tuple[str, ...]:
 
 
 def _tier_resolution_may_fail() -> bool:
-    """Can ``resolve_baseline_tier`` answer "no tier at all"? That is the
+    """Can the presentation answer "no dataset at all"? That is the
     structural cause -- the only one of the six ``spec/02`` and ``spec/03``
-    described before T128 -- and it disappears the day the resolver is made
-    total."""
-    returns = _function(_module_tree(hrv_trend), "resolve_baseline_tier").returns
-    assert returns is not None, "resolve_baseline_tier lost its return annotation"
+    described before T128 -- and it disappears the day the presentation is
+    made total.
+
+    Re-anchored at T156 (F006, 2026-09-19): F005's ``resolve_baseline_tier``
+    answered "no tier at all" with ``None``, and ``selected_view`` built the
+    empty ``tier is None`` view on it. Under F006 nothing on the route calls
+    the resolver; the empty view is built when ``_presentation_fallback`` --
+    the AC9 fallback, asked once ``select_dataset`` has selected nothing --
+    returns ``None``, which it does exactly when the series holds no dataset.
+    Reading the retired resolver's annotation would keep this row green
+    forever, on a function the cause no longer passes through.
+    """
+    returns = _function(_module_tree(hrv_trend), "_presentation_fallback").returns
+    assert returns is not None, "_presentation_fallback lost its return annotation"
     return "None" in ast.unparse(returns)
 
 
@@ -256,7 +266,10 @@ CAUSES = (
         key="no tier sustains a trend at all",
         structural=True,
         phrase="no resting-HRV reading of any tier can sustain a trend",
-        note="resolve_baseline_tier returns None; the only cause the pre-T128 prose described",
+        note=(
+            "_presentation_fallback returns None (no dataset in the series; since T156 -- F005's "
+            "resolve_baseline_tier answered it before); the only cause the pre-T128 prose described"
+        ),
     ),
 )
 
@@ -513,8 +526,8 @@ def test_every_unavailable_cause_is_claimed_by_exactly_one_code_element() -> Non
 
     structural = [cause.key for cause in CAUSES if cause.structural]
     assert bool(structural) == _tier_resolution_may_fail(), (
-        f"resolve_baseline_tier {'can' if _tier_resolution_may_fail() else 'cannot'} answer 'no "
-        f"tier' and the table declares {structural}: the structural cause and the code disagree"
+        f"_presentation_fallback {'can' if _tier_resolution_may_fail() else 'cannot'} answer 'no "
+        f"dataset' and the table declares {structural}: the structural cause and the code disagree"
     )
 
     keys = [cause.key for cause in CAUSES]

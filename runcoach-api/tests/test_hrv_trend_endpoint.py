@@ -1104,7 +1104,19 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 452  # re-measured 2026-09-19 (T158), as the last action before the
+SCOPED_SUITE_COLLECTED = 459  # re-measured 2026-09-19 (T156), as the last action before the
+#                              # commit: +7. Seven pins added to
+#                              # test_hrv_trend_series.py on the presentation
+#                              # fallback formalised (AC9; F005's rule 3 over
+#                              # datasets): clause 1's three terms (read last,
+#                              # then n, then fidelity) and clauses 2 and 3
+#                              # (densest baseline, densest week, each with its
+#                              # fidelity tie). The precedence pins themselves
+#                              # are in test_hrv_unavailable_reason.py, outside
+#                              # the five. No identity elsewhere changed.
+#                              # Nothing publishes this number; the previous
+#                              # value was T158's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 452  # re-measured 2026-09-19 (T158), as the last action before the
 #                              # commit: +12. Twelve pins added to
 #                              # test_hrv_trend_series.py on the withhold
 #                              # retained at dataset scope (AC24): the

@@ -29,12 +29,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from runcoach_api.metrics import hrv_trend
 
 AUCKLAND = ZoneInfo("Pacific/Auckland")
 
 STRAP = "chest_strap_raw"
 SNAPSHOT = "health_snapshot"
+OVERNIGHT = "health_api_overnight"
 
 R = hrv_trend
 NO_TIER = R.REASON_NO_TIER
@@ -43,6 +45,10 @@ WEEK_TOO_THIN = R.REASON_WEEK_TOO_THIN
 WEEK_NOT_REPRESENTATIVE = R.REASON_WEEK_NOT_REPRESENTATIVE
 BASELINE_UNESTABLISHED = R.REASON_BASELINE_UNESTABLISHED
 DAY_NOT_HAPPENED = R.REASON_DAY_NOT_HAPPENED
+
+# The target date the T156 section judges at: baseline [2026-07-04, 2026-09-01],
+# judged week [2026-09-02, 2026-09-08] (F005's canonical example).
+D_156 = date(2026, 9, 8)
 
 
 # ---------------------------------------------------------------------------
@@ -441,3 +447,381 @@ def test_the_schema_refuses_an_unavailable_reason_outside_the_six() -> None:
     assert ("unavailable_reason",) in locations("the_week_looked_odd")
     for legal in R.UNAVAILABLE_REASONS:
         assert ("unavailable_reason",) not in locations(legal), legal
+
+
+# ---------------------------------------------------------------------------
+# T156: the precedence across datasets, and the presentation fallback (F006
+# AC9; ``research/00`` section 5.4 (iii) as amended 2026-09-19)
+#
+# With N datasets, different datasets satisfy different causes at once, and
+# ``judge``'s single-series guard order says nothing about which one the
+# response names. The precedence is two-level and lives in ``selected_view``:
+#
+#   1. **which dataset speaks** -- the selected dataset; else the presentation
+#      fallback (F005's rule 3 over datasets: the established dataset read last
+#      in the baseline window, ties by n then fidelity; else the densest by n;
+#      else the densest in the judged week, ties to fidelity); else no dataset;
+#   2. **that dataset's own guard order** in ``judge`` (no band, thin week,
+#      unrepresentative week, unestablished baseline).
+#
+# The reason is therefore always a true statement about the dataset whose
+# ``baseline`` / ``band`` / ``established`` the response carries -- never a
+# cause satisfied by a dataset the response does not present -- and the
+# structural ``no_tier_sustains_a_trend`` fires only when the series holds no
+# dataset at all. The fallback confers no verdict and names no dissenter
+# (IDEA-082, settled here). Every pin prints the slice it compared: the
+# selection line, each dataset's own reason, and what was presented and why.
+# ---------------------------------------------------------------------------
+
+
+def _series(rows: list[dict], target: date) -> hrv_trend.HrvSeries:
+    return hrv_trend.build_series(rows, AUCKLAND, target)
+
+
+def _slice(series: hrv_trend.HrvSeries) -> str:
+    """The slice the cross-dataset precedence compared: the selection, every
+    dataset's **own** reason (``judge`` on the dataset itself), and the
+    presented dataset, the clause that presented it and the reason reported."""
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    own = " ".join(
+        f"{d.tier}:n{d.n}/est{int(d.established)}/week{len({r.date for r in d.window})}"
+        f"/withheld{int(d.withheld)}->{hrv_trend.judge(d).unavailable_reason}"
+        for d in series.datasets
+    )
+    line = (
+        f"{selection.describe()} | own=[{own}] | presented={view.tier} by={view.presented_by} "
+        f"selected_reason={selection.selected_reason} -> {verdict.verdict} {verdict.unavailable_reason} "
+        f"n={verdict.baseline_n} est={verdict.established} week={verdict.readings_in_window}"
+    )
+    print(line)
+    return line
+
+
+def _daily(tier: str, first_offset: int, last_offset: int, value: float = 40.0, target: date = D_156) -> list[dict]:
+    """``tier`` on every local day ``target - first_offset .. target - last_offset``
+    (offsets counted back from the target, so ``66, 7`` is the whole baseline
+    window). Snapshot captures at 07:00, strap at 06:00, so a morning with
+    both feeds both datasets (AC3)."""
+    days = span(target - timedelta(days=first_offset), target - timedelta(days=last_offset))
+    prefix = f"{tier}-{first_offset}-{last_offset}-{value}"
+    hh = 7 if tier == SNAPSHOT else 8 if tier == OVERNIGHT else 6
+    return [row(local(day, hh), tier, value, f"{prefix}-{day}") for day in days]
+
+
+def test_the_illness_week_presents_the_dataset_used_last_and_says_week_too_thin() -> None:
+    """The task's first failing test (F006 AC9). A strap the athlete has
+    read daily through the whole baseline window (``D-66..D-7``, n 60) and
+    a snapshot he stopped on ``D-11`` (n 40), then an illness week: nothing
+    captured in ``[D-6, D]`` on either. No dataset is judgeable, so
+    ``selected_dataset`` is null -- and ``baseline.n`` is **still 60**, from
+    the strap, the established dataset read last (``D-7`` against
+    ``D-11``): the presentation fallback, F005's rule 3 retained. The reason
+    is ``week_too_thin``, which is true of the strap the response carries,
+    and **not** ``no_tier_sustains_a_trend``, which is what an
+    implementation that nulls the whole block on a null selection reports
+    (``series.tier is None``). Red against any such implementation; red too
+    if the fallback presents the snapshot (``n`` 40) or confers a verdict.
+    """
+    series = _series(_daily(STRAP, 66, 7) + _daily(SNAPSHOT, 50, 11), D_156)
+    slice_ = _slice(series)
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+
+    assert selection.judgeable == () and selection.selected is None, slice_
+    assert selection.selected_reason is None, slice_
+    assert view.tier == STRAP and view.presented_by == hrv_trend.FALLBACK_ESTABLISHED_READ_LAST, slice_
+    assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+    assert verdict.unavailable_reason == WEEK_TOO_THIN, slice_
+    assert verdict.unavailable_reason != NO_TIER, slice_
+    assert verdict.baseline_n == 60 and verdict.established is True and verdict.band is not None, slice_
+    assert verdict.readings_in_window == 0 and verdict.ln_rmssd_7d_mean is None, slice_
+    assert {d.tier for d in view.datasets} == {STRAP, SNAPSHOT}, slice_
+
+
+def test_probe_two_datasets_satisfying_different_causes_at_once_report_the_presented_ones() -> None:
+    """Adversarial (deliverable 5, row 1): two causes at opposite ends of
+    ``judge``'s chain, satisfied at the same time by different datasets.
+    The strap (n 60, established) has no judged-week reading --
+    ``week_too_thin``; a snapshot the athlete bought on ``D-11`` (n 5,
+    unestablished) covers all seven week days -- its own reason is
+    ``baseline_unestablished``, the guard nearest a verdict. Neither is
+    judgeable. The precedence presents the established dataset read last
+    (the strap, clause 1) and reports **its** reason, ``week_too_thin``,
+    with ``baseline.n`` 60. Degenerate because a "nearest a verdict"
+    precedence across datasets -- report the cause furthest along the
+    chain -- would name ``baseline_unestablished`` while the response
+    carried ``established: true`` on 60 readings: a reason about a dataset
+    the reader cannot see. The snapshot's own reason is asserted so the
+    contrast is measured, not assumed.
+    """
+    series = _series(_daily(STRAP, 66, 7) + _daily(SNAPSHOT, 11, 7) + _daily(SNAPSHOT, 6, 0), D_156)
+    slice_ = _slice(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    (snapshot,) = [d for d in series.datasets if d.tier == SNAPSHOT]
+
+    assert hrv_trend.select_dataset(series).selected is None, slice_
+    assert snapshot.n == 5 and not snapshot.established and len({r.date for r in snapshot.window}) == 7, slice_
+    assert hrv_trend.judge(snapshot).unavailable_reason == BASELINE_UNESTABLISHED, slice_
+    assert view.tier == STRAP and view.presented_by == hrv_trend.FALLBACK_ESTABLISHED_READ_LAST, slice_
+    assert verdict.unavailable_reason == WEEK_TOO_THIN, slice_
+    assert verdict.baseline_n == 60 and verdict.established is True, slice_
+
+
+def test_probe_every_dataset_satisfying_the_same_cause_reports_it_whichever_is_presented() -> None:
+    """Adversarial (row 2): all N (three) datasets satisfy one cause. Strap
+    and snapshot read daily through the window (n 60 each), the overnight
+    tier on 34 days; two, one and zero week days respectively -- every one
+    ``week_too_thin``. Clause 1 ties on read-last (all ``D-7``), then on n
+    (60, 60), and falls to fidelity: the strap. Degenerate because the
+    reason must be invariant to which dataset the tie-break lands on when
+    the causes agree -- so the strap is removed and the reason is asserted
+    again on the snapshot, and the reported reason equals every dataset's
+    own on both series.
+    """
+    rows = _daily(STRAP, 66, 7) + _daily(STRAP, 6, 5) + _daily(SNAPSHOT, 66, 7) + _daily(SNAPSHOT, 6, 6)
+    rows += _daily(OVERNIGHT, 40, 7)
+    series = _series(rows, D_156)
+    slice_ = _slice(series)
+    view = hrv_trend.selected_view(series)
+
+    assert [d.tier for d in series.datasets] == [STRAP, SNAPSHOT, OVERNIGHT], slice_
+    assert all(hrv_trend.judge(d).unavailable_reason == WEEK_TOO_THIN for d in series.datasets), slice_
+    assert view.tier == STRAP and view.presented_by == hrv_trend.FALLBACK_ESTABLISHED_READ_LAST, slice_
+    assert hrv_trend.judge(view).unavailable_reason == WEEK_TOO_THIN, slice_
+
+    without_strap = _series([r for r in rows if r["hrv_source_tier"] != STRAP], D_156)
+    slice_2 = _slice(without_strap)
+    view_2 = hrv_trend.selected_view(without_strap)
+    assert view_2.tier == SNAPSHOT and hrv_trend.judge(view_2).unavailable_reason == WEEK_TOO_THIN, slice_2
+    assert hrv_trend.judge(view_2).baseline_n == 60, slice_2
+
+
+def test_probe_a_dataset_with_a_band_but_no_judged_week_readings_is_presented_over_one_with_no_band() -> None:
+    """Adversarial (row 3): a dataset with a band but no judged-week
+    reading, beside one with a week but no band. The snapshot holds five
+    baseline days (a band from five, unestablished) and nothing in the
+    week; the strap holds one baseline day (no band) and three week days.
+    Nothing is established, so clause 2 presents the densest by n -- the
+    snapshot -- and its reason is ``week_too_thin``: the band guard passes
+    and the week guard is the first to fire. Degenerate because the
+    strap's ``no_band`` sits earlier in the chain than the reported cause,
+    so a precedence that took the *earliest* cause any dataset satisfies
+    would report ``no_band`` beside a non-null ``band``. The band is
+    asserted present on the verdict.
+    """
+    series = _series(_daily(SNAPSHOT, 11, 7) + _daily(STRAP, 7, 7) + _daily(STRAP, 2, 0), D_156)
+    slice_ = _slice(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    (strap,) = [d for d in series.datasets if d.tier == STRAP]
+
+    assert strap.n == 1 and strap.band is None and hrv_trend.judge(strap).unavailable_reason == NO_BAND, slice_
+    assert view.tier == SNAPSHOT and view.presented_by == hrv_trend.FALLBACK_DENSEST_BASELINE, slice_
+    assert verdict.band is not None and verdict.baseline_n == 5 and verdict.established is False, slice_
+    assert verdict.readings_in_window == 0, slice_
+    assert verdict.unavailable_reason == WEEK_TOO_THIN, slice_
+
+
+def test_the_fallback_confers_no_verdict_and_names_no_dissenter_even_when_its_own_week_reads_below() -> None:
+    """Adversarial (row 4) and IDEA-082's second reading, pinned: the
+    illness week where the fallback fires **and** the fallback dataset's
+    own two week mornings read far below its band (15 ms against a 40 ms
+    band), while a snapshot's one week morning reads within. Nothing is
+    judgeable; the strap is presented (tie on ``D-7`` and n, then
+    fidelity). The verdict is ``hrv_unavailable`` / ``week_too_thin`` with
+    ``below_by`` None -- two mornings are not a trend, however bad -- and
+    ``disagreed_with`` is **empty** although ``band_readings`` shows the
+    strap below and the snapshot within: a disagreement is with a verdict
+    (AC11, "with the selected one"), and the fallback confers none (AC9).
+    Degenerate because this is the one geometry where the two readings of
+    IDEA-082 (2) differ: treating the presented dataset as selected would
+    name the snapshot here, and a consumer would infer a suppression the
+    response refused to assert. Perturbation: pass the fallback dataset to
+    ``disagreed_with`` as if selected -> ``('health_snapshot',)``, red.
+    """
+    rows = _daily(STRAP, 66, 7) + _daily(STRAP, 6, 5, 15.0) + _daily(SNAPSHOT, 66, 7) + _daily(SNAPSHOT, 6, 6)
+    series = _series(rows, D_156)
+    slice_ = _slice(series)
+    selection = hrv_trend.select_dataset(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+    sides = {r.tier: r.below for r in selection.band_readings}
+
+    assert selection.selected is None and view.tier == STRAP, slice_
+    assert sides == {STRAP: True, SNAPSHOT: False}, slice_
+    assert verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE and verdict.unavailable_reason == WEEK_TOO_THIN, slice_
+    assert verdict.below_by is None and verdict.ln_rmssd_7d_mean is not None, slice_
+    assert selection.disagreed_with == (), slice_
+    # The perturbation, measured in-process rather than described: the
+    # fallback dataset handed to the predicate as if it were selected.
+    assert hrv_trend.disagreed_with(view.selected, selection.band_readings) == (SNAPSHOT,), slice_
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected_tier", "expected_by", "expected_reason"),
+    [
+        (
+            _daily(STRAP, 20, 20) + _daily(SNAPSHOT, 2, 0),
+            STRAP,
+            "FALLBACK_DENSEST_BASELINE",
+            NO_BAND,
+        ),
+        (
+            _daily(SNAPSHOT, 2, 0),
+            SNAPSHOT,
+            "FALLBACK_DENSEST_WEEK",
+            NO_BAND,
+        ),
+        ([], None, None, NO_TIER),
+    ],
+    ids=["one_baseline_reading_in_the_window", "no_baseline_reading_at_all", "no_dataset_at_all"],
+)
+def test_probe_the_fallback_dataset_itself_has_no_band(
+    rows: list[dict], expected_tier: str | None, expected_by: str | None, expected_reason: str
+) -> None:
+    """Adversarial (row 5): the week where the fallback dataset itself has
+    no band, and the boundary with the structural cause. One strap
+    reading on ``D-20`` beside a three-morning snapshot week: nothing is
+    established, the strap is the densest by n (1 against 0, clause 2),
+    its band is ``None`` and the reason is ``no_band`` -- on a real tier.
+    No baseline reading of any tier: clause 3 presents the densest in the
+    week, the snapshot, ``no_band`` again. Only a series with **no
+    dataset** reports ``no_tier_sustains_a_trend``. Degenerate because
+    ``band is None`` is one guard in ``judge`` and two causes in the enum,
+    told apart by ``tier is None`` alone: a fallback that gave up on an
+    unestablished series would collapse the first two rows into the third
+    and report "no reading of any tier" to an athlete who has some.
+    """
+    series = _series(rows, D_156)
+    slice_ = _slice(series)
+    view = hrv_trend.selected_view(series)
+    verdict = hrv_trend.judge(view)
+
+    assert hrv_trend.select_dataset(series).selected is None, slice_
+    assert view.tier == expected_tier, slice_
+    assert view.presented_by == (None if expected_by is None else getattr(hrv_trend, expected_by)), slice_
+    assert verdict.band is None and verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+    assert verdict.unavailable_reason == expected_reason, slice_
+    assert (view.tier is None) is (expected_reason == NO_TIER), slice_
+
+
+def test_the_reported_reason_is_always_the_presented_datasets_own() -> None:
+    """The invariant the precedence rests on, swept over every geometry
+    above and the T158 shapes: ``judge`` of the view **is** ``judge`` of the
+    dataset it presents -- the same ``HrvVerdict``, field for field -- so
+    the reason can only ever be a statement about the dataset whose
+    baseline the response carries; ``presented_by`` is ``selected`` exactly
+    when the selection is non-null; and the structural cause fires exactly
+    when the series holds no dataset. A precedence that consulted the
+    other datasets' causes, or a view that nulled the block on a null
+    selection, reds one of the three on some row.
+    """
+    geometries = {
+        "illness week": _daily(STRAP, 66, 7) + _daily(SNAPSHOT, 50, 11),
+        "different causes": _daily(STRAP, 66, 7) + _daily(SNAPSHOT, 11, 7) + _daily(SNAPSHOT, 6, 0),
+        "band, no week": _daily(SNAPSHOT, 11, 7) + _daily(STRAP, 7, 7) + _daily(STRAP, 2, 0),
+        "one baseline reading": _daily(STRAP, 20, 20) + _daily(SNAPSHOT, 2, 0),
+        "no baseline reading": _daily(SNAPSHOT, 2, 0),
+        "nothing": [],
+        "selected, dissent": _daily(STRAP, 66, 0) + _daily(SNAPSHOT, 66, 7) + _daily(SNAPSHOT, 6, 0, 15.0),
+        "selected, withheld": _daily(STRAP, 66, 3) + _daily(SNAPSHOT, 2, 0, 15.0),
+        "selected after a skip": _daily(STRAP, 66, 36) + _daily(STRAP, 4, 4) + _daily(STRAP, 2, 2)
+        + _daily(STRAP, 0, 0) + _daily(SNAPSHOT, 66, 0),
+    }
+    seen_selected = seen_fallback = 0
+    for name, rows in geometries.items():
+        series = _series(rows, D_156)
+        slice_ = f"{name}: {_slice(series)}"
+        selection = hrv_trend.select_dataset(series)
+        view = hrv_trend.selected_view(series)
+        verdict = hrv_trend.judge(view)
+        assert (view.presented_by == hrv_trend.PRESENTED_SELECTED) is (selection.selected is not None), slice_
+        assert (selection.selected_reason is not None) is (selection.selected is not None), slice_
+        if view.selected is None:
+            assert series.datasets == () and view.tier is None, slice_
+            assert verdict.unavailable_reason == NO_TIER, slice_
+            continue
+        assert verdict == hrv_trend.judge(view.selected), slice_
+        assert verdict.unavailable_reason != NO_TIER, slice_
+        assert view.presented_by in hrv_trend.PRESENTATIONS, slice_
+        seen_selected += selection.selected is not None
+        seen_fallback += selection.selected is None
+    assert seen_selected >= 3 and seen_fallback >= 5, (seen_selected, seen_fallback)
+
+
+def test_the_promoted_verdict_is_the_selected_datasets_unchanged_whatever_the_others_read() -> None:
+    """Deliverable 4 (AC11), with IDEA-082's first reading pinned. A strap
+    read daily through the window and the week (selected: the highest
+    fidelity judgeable dataset, nothing skipped) beside a snapshot read
+    daily through the window whose week reads 15 ms. Strap within, snapshot
+    below: ``hrv_normal``, reason null, the snapshot named. Strap below,
+    snapshot within: ``hrv_suppressed``, the snapshot named -- the other
+    direction (AC11). Both below: ``hrv_suppressed`` and **nobody named**
+    -- the snapshot agrees, and a field called ``disagreed_with`` that
+    listed it would be false (IDEA-082 (1): AC10's "reads below" is read
+    as "reads the other side of its band from the selected dataset", the
+    only reading under which AC11's "either direction" means anything).
+    On every row the promoted verdict is ``judge`` of the strap's own
+    dataset, field for field, so the others changed nothing about it.
+    """
+    for strap_week, snapshot_week, expected, named in (
+        (40.0, 15.0, hrv_trend.VERDICT_NORMAL, (SNAPSHOT,)),
+        (15.0, 40.0, hrv_trend.VERDICT_SUPPRESSED, (SNAPSHOT,)),
+        (15.0, 15.0, hrv_trend.VERDICT_SUPPRESSED, ()),
+    ):
+        rows = _daily(STRAP, 66, 7) + _daily(STRAP, 6, 0, strap_week)
+        rows += _daily(SNAPSHOT, 66, 7) + _daily(SNAPSHOT, 6, 0, snapshot_week)
+        series = _series(rows, D_156)
+        slice_ = _slice(series)
+        selection = hrv_trend.select_dataset(series)
+        view = hrv_trend.selected_view(series)
+        verdict = hrv_trend.judge(view)
+
+        assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+        assert selection.selected_reason == hrv_trend.SELECTED_HIGHEST_FIDELITY, slice_
+        assert view.presented_by == hrv_trend.PRESENTED_SELECTED, slice_
+        assert verdict.verdict == expected and verdict.unavailable_reason is None, slice_
+        assert selection.disagreed_with == named, slice_
+        assert verdict == hrv_trend.judge(selection.selected), slice_
+
+
+def test_selected_reason_is_a_closed_enum_null_exactly_with_a_null_selection() -> None:
+    """AC13, exposed for T159 on ``Selection`` (the contract renders it
+    there). Two members: ``highest_fidelity_judgeable`` when no judgeable
+    dataset outranks the selected one, and ``higher_fidelity_skipped_stale``
+    when one did and the recency gate skipped it -- reference section 9's
+    series: a strap established ``D-66..D-36``, back on ``D-4/D-2/D``,
+    beside a daily snapshot; the strap is judgeable, 29 days behind, and
+    skipped, so the snapshot is selected for the second reason. Null with
+    null on the illness week. The tuple is closed at two.
+    """
+    plain = _series(_daily(STRAP, 66, 0) + _daily(SNAPSHOT, 66, 0), D_156)
+    stale = _series(
+        _daily(STRAP, 66, 36) + _daily(STRAP, 4, 4) + _daily(STRAP, 2, 2) + _daily(STRAP, 0, 0)
+        + _daily(SNAPSHOT, 66, 0),
+        D_156,
+    )
+    illness = _series(_daily(STRAP, 66, 7), D_156)
+    slices = [_slice(s) for s in (plain, stale, illness)]
+
+    assert hrv_trend.SELECTED_REASONS == (
+        hrv_trend.SELECTED_HIGHEST_FIDELITY,
+        hrv_trend.SELECTED_HIGHER_FIDELITY_STALE,
+    ), slices
+    plain_selection = hrv_trend.select_dataset(plain)
+    assert plain_selection.selected is not None and plain_selection.selected.tier == STRAP, slices[0]
+    assert plain_selection.selected_reason == "highest_fidelity_judgeable", slices[0]
+
+    stale_selection = hrv_trend.select_dataset(stale)
+    assert stale_selection.skipped == (STRAP,) and stale_selection.gap(STRAP) == 29, slices[1]
+    assert stale_selection.selected is not None and stale_selection.selected.tier == SNAPSHOT, slices[1]
+    assert stale_selection.selected_reason == "higher_fidelity_skipped_stale", slices[1]
+
+    illness_selection = hrv_trend.select_dataset(illness)
+    assert illness_selection.selected is None and illness_selection.selected_reason is None, slices[2]
+    for selection in (plain_selection, stale_selection):
+        assert selection.selected_reason in hrv_trend.SELECTED_REASONS
