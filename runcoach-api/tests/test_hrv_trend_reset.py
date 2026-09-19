@@ -240,7 +240,14 @@ def test_a_gap_bridged_by_off_tier_readings_is_not_a_gap() -> None:
     """The series the gap is measured on is post-exclusion, pre-filter: a
     Health Snapshot reading on a day is an entry even when the baseline is
     on the chest strap. An athlete who kept capturing on a lower tier has no
-    coverage gap, and the strap baseline spans the stretch."""
+    coverage gap (AC16: the reset assertions below are unchanged).
+
+    **Re-derived at T153 (2026-09-19, F006 AC17).** Shipped through 785f89c
+    the strap baseline *spanned* the stretch (``min`` baseline date
+    ``D-66``). The 25 silent strap days are the strap dataset's own internal
+    hole, so its band is now clipped at the resumption, **unreported**: the
+    baseline opens on ``D-20`` with 14 readings, and nothing about the
+    reset moves -- no ``reset_on``, no ``reset_reason``, no global gap."""
     resume_on = ago(20)
     history = gapped_history(25, resume_on)
     bridge = readings(SNAPSHOT, span(resume_on - timedelta(days=25), resume_on - timedelta(days=1)), 38.0, "snap")
@@ -250,7 +257,9 @@ def test_a_gap_bridged_by_off_tier_readings_is_not_a_gap() -> None:
     assert result.reset_on is None
     assert result.reset_reason is None
     assert result.tier == STRAP
-    assert min(r.date for r in result.baseline) == ago(66)
+    assert min(r.date for r in result.baseline) == resume_on, "T153: the strap's own hole clips its band"
+    assert [r.date for r in result.baseline] == span(resume_on, ago(7))
+    assert result.baseline_window == (resume_on, ago(7))
 
 
 # ---------------------------------------------------------------------------
@@ -1449,7 +1458,21 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
     window is a 25 ms strap reading, so ``band_lo`` is ``ln(25) - 0.01``
     on both -- and it is asserted anyway: a clip that admitted the
     *snapshot* era would move it, and an assertion that cannot change
-    under the rule is still a tripwire under a wrong one."""
+    under the rule is still a tripwire under a wrong one.
+
+    **Re-derived at T153 (2026-09-19, F006 AC17).** Shipped through 785f89c
+    the 14 side read the un-clipped ``baseline_window(D)`` with ``n`` 31 --
+    "no boundary, so no clip at all". The trial (to ``D-59``) and the era
+    (from ``D-29``) are the strap dataset's own two eras, 29 silent days
+    apart, so the per-dataset internal-hole clip now cuts the 14 side at
+    ``D-29`` too, **unreported**: window ``(D-29, D-7)``, ``n`` 23, the
+    same window and ``n`` as the 13 side. The report is still ``None``
+    and the cliff research/00 §5.4 (2026-09-13) prices is, on this
+    geometry, closed by the hole clip rather than crossed. The survivor's
+    death certificate is re-pointed to what still separates the mutant from
+    the rule: the mutant finds an era boundary and lists the trial
+    ``before_reset: tier_change``; the rule finds none and the hole clip
+    lists it ``before_reset: coverage_gap``."""
     switch = ago(30)
     control = genuine_switch(switch, D, snapshot_from=ago(126))
 
@@ -1466,9 +1489,17 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
 
     assert thirteen.baseline_window == (ago(29), ago(7))
     assert thirteen.baseline_n == 23
-    # The survivor's death certificate: un-clipped window, whole-window n.
-    assert fourteen.baseline_window == hrv_trend.baseline_window(D)
-    assert fourteen.baseline_n == 31
+    # T153: the 14 side is clipped at the same day by the strap's own hole
+    # (shipped: baseline_window(D), n 31).
+    assert fourteen.baseline_window == (ago(29), ago(7))
+    assert fourteen.baseline_n == 23
+    # The survivor's death certificate, re-pointed at T153: which mechanism
+    # listed the trial days inside the window tells the two apart.
+    thirteen_reasons = excluded_reasons(build(with_trial(13)))
+    fourteen_reasons = excluded_reasons(build(with_trial(14)))
+    assert {thirteen_reasons[f"strap-trial-{day}"] for day in span(ago(66), ago(60))} == {"before_reset: tier_change"}
+    assert {fourteen_reasons[f"strap-trial-{day}"] for day in span(ago(66), ago(59))} == {"before_reset: coverage_gap"}
+    assert "before_reset: tier_change" not in fourteen_reasons.values()
 
     assert thirteen.band_lo == pytest.approx(flat_band_lo(25.0))
     assert fourteen.band_lo == pytest.approx(flat_band_lo(25.0))
@@ -2658,14 +2689,27 @@ def test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption() -> 
     assert {reasons[session_id] for session_id in trial_ids} == {"before_reset: coverage_gap"}
 
     # The control: the same rows with the silence filled report no reset at
-    # all, keep the trial in the band, and read normal on the same week mean.
+    # all. Shipped through 785f89c it kept the trial in the band -- window
+    # (2026-07-03, 2026-08-31), n 32, band.lo 3.4542, hrv_normal, the
+    # "without it" numbers in the docstring. Re-derived at T153 (2026-09-19,
+    # F006 AC17): the filled silence is the *snapshot's*; the strap's own
+    # 23 silent days between the trial and the resumption are an internal
+    # hole of its dataset, so its band is clipped at the resumption,
+    # unreported -- the same window, n and band.lo as the gapped side, the
+    # trial listed ``before_reset: coverage_gap`` on both, and the verdict
+    # hrv_suppressed on both (down-regulation, the direction §1.7 tolerates).
+    # Only the report now tells the two series apart.
     assert judged_control.report == (STRAP, None, None)
-    assert judged_control.baseline_window == (ago(66, GAP_MAKES_ERA_D), ago(7, GAP_MAKES_ERA_D))
-    assert judged_control.baseline_n == 32
+    assert judged_control.baseline_window == (GAP_MAKES_ERA_RESUMPTION, ago(7, GAP_MAKES_ERA_D))
+    assert judged_control.baseline_n == 22
+    control = build(gap_makes_era(with_gap=False), target=GAP_MAKES_ERA_D)
+    control_reasons = excluded_reasons(control)
+    assert {control_reasons[session_id] for session_id in trial_ids} == {"before_reset: coverage_gap"}
+    assert kept <= {r.session_id for r in control.series}
     assert judged_gapped.band_lo == pytest.approx(3.6805, abs=5e-5)
-    assert judged_control.band_lo == pytest.approx(3.4542, abs=5e-5)
+    assert judged_control.band_lo == pytest.approx(3.6805, abs=5e-5)
     assert judged_gapped.verdict == hrv_trend.VERDICT_SUPPRESSED
-    assert judged_control.verdict == hrv_trend.VERDICT_NORMAL
+    assert judged_control.verdict == hrv_trend.VERDICT_SUPPRESSED
     means = [
         hrv_trend.judge(build(gap_makes_era(with_gap=flag), target=GAP_MAKES_ERA_D)).ln_rmssd_7d_mean
         for flag in (True, False)

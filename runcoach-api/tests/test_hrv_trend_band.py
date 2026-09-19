@@ -996,6 +996,32 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
             expected_baseline_n = len([day for day in era_a + return_days if first <= day <= last])
             assert expected_baseline_n == (21 if r == RETURN_DAYS else 28 - r), r
 
+        if r == RETURN_DAYS:
+            # Re-derived at T153 (2026-09-19, F006 AC17). Shipped through
+            # 785f89c: home tier, baseline_n 21 (20 era-A days plus the
+            # return's first morning), established, hrv_suppressed /
+            # hrv_normal -- the values derived above. On this morning the
+            # return's first day (RETURN_FIRST) enters the baseline window
+            # 39 silent days after era A's last, so the home dataset's own
+            # internal hole is inside its window and its band is clipped to
+            # that one reading: n 1, no band, not established, not
+            # judgeable, nothing reported. The carrier holds no week day
+            # either, so nothing is judgeable and the presentation fallback
+            # shows the carrier (established, read last: n 39) with
+            # hrv_unavailable / week_too_thin. The return is therefore not
+            # free across a layoff longer than GAP_RESET_DAYS: the band is
+            # rebuilt from the post-layoff mornings from here (IDEA-084).
+            (home,) = [d for d in series.datasets if d.tier == home_tier]
+            assert home.baseline_window == (RETURN_FIRST, RETURN_FIRST), r
+            assert (home.n, home.established, home.band) == (1, False, None), r
+            assert (home.reset_on, home.reset_reason) == (None, None), r
+            assert series.selection is not None and series.selection.selected is None, r
+            expected_tier = carrier_tier
+            fed = []
+            expected_baseline_n = 39
+            expected_verdict = UNAVAILABLE
+            assert verdict.unavailable_reason == "week_too_thin", r
+
         assert series.tier == expected_tier, r
         assert [reading.date for reading in series.window] == fed, r
         assert verdict.readings_in_window == len(fed), r

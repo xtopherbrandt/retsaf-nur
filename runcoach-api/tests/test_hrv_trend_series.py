@@ -1696,14 +1696,25 @@ def test_the_coverage_gap_is_global_and_clips_every_dataset_identically() -> Non
     carries the series is **no** gap: both datasets keep ``[D-66, D-7]``.
     Every tier silent for more than ``GAP_RESET_DAYS`` is one gap, found
     before the partition, and both datasets are clipped at the same
-    resumption with the same ``coverage_gap`` report."""
+    resumption with the same ``coverage_gap`` report.
+
+    **Re-derived at T153 (2026-09-19, AC17).** Shipped 785f89c asserted that
+    both datasets of the bridged series keep ``[D-66, D-7]``. The strap's own
+    30-day hole (``D-40`` to ``D-9``) lies inside its window, so the
+    per-dataset clip now opens its window on ``D-9`` (``n`` 3) -- with no
+    global gap and no report, which is the orthogonality this guard exists to
+    protect: the gap stays global, and the clip that fires is not it. The
+    snapshot's window is unchanged."""
     strap_silent = readings(SNAPSHOT, days_between(D - timedelta(days=66), D), 40.0, hh=7)
     strap_silent += readings(STRAP, days_between(D - timedelta(days=66), D - timedelta(days=40)), 60.0)
     strap_silent += readings(STRAP, days_between(D - timedelta(days=9), D), 60.0)
     bridged = hrv_trend.build_series(strap_silent, AUCKLAND, D)
     assert bridged.gap_reset_on is None
-    assert {d.baseline_window for d in bridged.datasets} == {(D - timedelta(days=66), D - timedelta(days=7))}
-    assert all(d.reset_reason is None for d in bridged.datasets)
+    by_tier = {d.tier: d for d in bridged.datasets}
+    assert by_tier[SNAPSHOT].baseline_window == (D - timedelta(days=66), D - timedelta(days=7))
+    assert by_tier[STRAP].baseline_window == (D - timedelta(days=9), D - timedelta(days=7)), "T153: its own hole"
+    assert by_tier[STRAP].n == 3 and by_tier[SNAPSHOT].n == 60
+    assert all((d.reset_on, d.reset_reason) == (None, None) for d in bridged.datasets)
 
     resumed_on = D - timedelta(days=30)
     everyone_silent = readings(SNAPSHOT, days_between(D - timedelta(days=66), D - timedelta(days=55)), 40.0, hh=7)

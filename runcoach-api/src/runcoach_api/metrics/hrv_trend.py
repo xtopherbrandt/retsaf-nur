@@ -312,9 +312,12 @@ class HrvDataset:
     #: ``no_tier_sustains_a_trend`` cause is the empty ``SingleDatasetView``
     #: ``selected_view`` manufactures when the series holds no dataset.
     tier: str | None
-    #: ``[max(D-66, <the gap resumption>, <this tier's era first day>), D-7]``
-    #: (T092/T098/T107 composed): the gap term is global and identical on
-    #: every dataset; the era term is this dataset's own.
+    #: ``[max(D-66, <the gap resumption>, <this tier's era first day>,
+    #: <this tier's last internal-hole resumption>), D-7]`` (T092/T098/T107
+    #: composed; the hole term since T153, F006 AC17): the gap term is
+    #: global and identical on every dataset; the era and hole terms are
+    #: this dataset's own. The hole term is **unreported** -- it never sets
+    #: ``reset_on`` / ``reset_reason`` (``_internal_hole_resumption``).
     baseline_window: tuple[date, date]
     series: tuple[Reading, ...]
     baseline: tuple[Reading, ...]
@@ -987,6 +990,17 @@ def build_series(
     fire, since a narrower read leaves the previous window empty, which
     reads as "thin" and never as a change. See ``coverage_gap_reset`` and
     ``tier_change_reset``.
+
+    **A third clip, per dataset and unreported** (F006 AC17, T153). After
+    the two above, each dataset's own baseline-window days are scanned for
+    an internal capture hole of more than ``GAP_RESET_DAYS`` silent local
+    days -- one tier's silence while another tier bridged it, which the
+    global gap cannot see (AC16) and ``_era_boundary`` cannot either. The
+    window is clipped at the last such resumption, the pre-hole readings are
+    listed ``before_reset: coverage_gap``, and nothing is reported for it:
+    ``reset_on`` / ``reset_reason`` remain the gap's or the era rule's.
+    A hole of exactly ``GAP_RESET_DAYS`` silent days is not clipped, as it
+    is not a gap (``_internal_hole_resumption``).
     """
     baseline = baseline_window(target_date)
     judged = judged_window(target_date)
@@ -1130,6 +1144,31 @@ def build_series(
             if boundary.reported and gap_reset_on is None:
                 dataset_reset_on = boundary.first_day
                 dataset_reset_reason = REASON_TIER_CHANGE
+
+        # F006 AC17, T153: the **unreported per-dataset band clip** at an
+        # internal capture hole. Neither rule above can see one tier's own
+        # silence while another tier bridges it -- the gap is global by
+        # design (AC16) and ``_era_boundary`` needs an old-tier reading
+        # followed by a new-tier one, so on one dataset it returns ``None``
+        # (measured at planning). Scanned over **this dataset's** days
+        # inside the window the two clips above left it, so a hole before
+        # an era boundary or a resumption is already gone and is not
+        # counted twice, and the three clips compose as the latest first
+        # day. Counted exactly as ``coverage_gap_reset`` counts (more than
+        # ``GAP_RESET_DAYS`` silent days; ``_internal_hole_resumption``).
+        # The pre-hole readings leave the series for ``excluded`` as
+        # ``before_reset: coverage_gap`` -- the dataset's own coverage gap,
+        # an already-published reason -- so the band, ``n`` and
+        # ``established`` are the post-hole era's (AC8 counts established
+        # post-clip) and every row is still listed once (§1.6). Nothing is
+        # **reported**: ``reset_on`` / ``reset_reason`` stay whatever the
+        # global gap or ``tier_change_reset`` decided, which can leave
+        # ``window[0]`` after ``reset_on`` (a state T107 already allows).
+        hole_resumption = _internal_hole_resumption([r.date for r in _within(series, dataset_window)])
+        if hole_resumption is not None:
+            dataset_window = (hole_resumption, dataset_window[1])
+            kept, excluded = _exclude_before_reset(list(series), excluded, hole_resumption, REASON_COVERAGE_GAP)
+            series = tuple(kept)
 
         dataset_baseline = _within(series, dataset_window)
         datasets.append(
@@ -1911,6 +1950,36 @@ def coverage_gap_reset(
 def _silence_between(earlier: date, later: date) -> int:
     """The number of whole local days strictly between two reading days."""
     return (later - earlier).days - 1
+
+
+def _internal_hole_resumption(days: Sequence[date]) -> date | None:
+    """The day one dataset's baseline resumed on after the **last** internal
+    capture hole of more than ``GAP_RESET_DAYS`` silent local days, or
+    ``None`` when its readings hold no such hole (F006 AC17, T153).
+
+    ``days`` are the sorted distinct local days of **one dataset's** readings
+    inside its own (gap- and era-clipped) baseline window -- never the
+    judged week's, and never another tier's. A hole is counted exactly as
+    ``coverage_gap_reset`` counts a gap: ``_silence_between`` (the days
+    strictly between two readings) **greater than** ``GAP_RESET_DAYS``, so
+    22 silent days clip and 21 do not -- one constant, one meaning, and the
+    per-dataset clip can never call a break the global rule would not. The
+    scan runs backwards from the latest day, as the gap's does, so of two
+    holes the later resumption wins (the younger era, the cautious reading).
+
+    This is the loop inside ``coverage_gap_reset`` restated over one
+    dataset, deliberately not shared with it: the global rule also reads
+    the readings *before* the window and the store's earliest reading, and
+    stays global (AC16); this one reads nothing outside the dataset. A
+    leading silence -- the window's first day to the dataset's first
+    reading -- is not a hole: nothing precedes it that the band could mix.
+    ``build_series`` moves ``baseline_window[0]`` to the day returned and
+    reports nothing for it (no ``reset_on``, no ``reset_reason``).
+    """
+    for i in range(len(days) - 1, 0, -1):
+        if _silence_between(days[i - 1], days[i]) > GAP_RESET_DAYS:
+            return days[i]
+    return None
 
 
 def _exclude_before_reset(
