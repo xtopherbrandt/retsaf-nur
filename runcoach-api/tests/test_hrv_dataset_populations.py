@@ -275,8 +275,8 @@ def test_the_abandoned_trial_is_judged_on_the_carrier_and_never_withheld_on_ship
     """The ``FP`` = 0 column at one era length, with its rows: the abandoned-trial mode
     keeps the carrier daily through ``D`` and puts the strap on ``D-6, D-4, D-2`` (the
     July trial's shape). Shipped judges the carrier's week -- ``hrv_normal`` -- and the
-    three 25 ms strap days are excluded as ``off_baseline_tier``, at ``c`` = 0 and at
-    ``c`` = 5 alike (``c`` does not reach the abandoned mode's carrier, which already runs
+    three 25 ms strap days are the strap's own dataset, in no excluded list (shipped
+    F005 excluded them ``off_baseline_tier``; T152), at ``c`` = 0 and at ``c`` = 5 alike (``c`` does not reach the abandoned mode's carrier, which already runs
     to ``D``).
 
     Held constant: era length 30, mode ``abandoned``. Varied: ``c`` at its two ends."""
@@ -288,8 +288,9 @@ def test_the_abandoned_trial_is_judged_on_the_carrier_and_never_withheld_on_ship
         assert series.tier == SNAPSHOT, slice_
         assert verdict.verdict == hrv_trend.VERDICT_NORMAL, slice_
         assert all(r.tier == SNAPSHOT for r in series.window), slice_
-        strap_week = {e.session_id: e.reason for e in series.excluded if e.session_id.startswith("W-")}
-        assert set(strap_week.values()) == {f"{hrv_trend.REASON_OFF_BASELINE_TIER}: {STRAP}"}, slice_
+        assert not any(e.session_id.startswith("W-") for e in series.excluded), slice_
+        (strap,) = [d for d in series.datasets if d.tier == STRAP]
+        strap_week = {r.session_id for r in strap.window if r.session_id.startswith("W-")}
         assert len(strap_week) == 3, slice_
 
 

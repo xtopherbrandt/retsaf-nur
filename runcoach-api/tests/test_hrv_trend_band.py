@@ -872,8 +872,9 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
       stopped on ``CARRIER_END``.
     * **What fed the mean.** The carrier stopped on ``CARRIER_END``, so while
       it owns the baseline the judged week holds ``7 - r`` of its days and the
-      athlete's own ``r`` return mornings are excluded as
-      ``off_baseline_tier``. **That is the defect this walk was written to make
+      athlete's own ``r`` return mornings are in the returning tier's own
+      dataset, not in the window (shipped F005 excluded them as
+      ``off_baseline_tier``; T152). **That is the defect this walk was written to make
       visible**: at ``r = 4`` -- [[T125]]'s reproduced day, ``2026-09-12`` --
       the mean is computed from ``09-06``, ``09-07`` and ``09-08``, three
       mornings that all predate his return. The tier, the band and the
@@ -1006,15 +1007,15 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
 
     # The athlete's own four mornings are excluded, by name, on the day
     # [[T125]] reproduces -- every judged-week day of 2026-09-12 that is not
-    # one of the three the verdict was computed from.
+    # one of the three the verdict was computed from. Under F006 (T152) they
+    # are the returning tier's own dataset's week, excluded nowhere; shipped
+    # F005 listed the four ``off_baseline_tier``.
     reproduction = build_series(rows, AUCKLAND, date(2026, 9, 12))
     week = set(window_days(7, date(2026, 9, 12)))
-    off_tier = {
-        entry.date
-        for entry in reproduction.excluded
-        if entry.reason.startswith("off_baseline_tier") and entry.date in week
-    }
+    (home,) = [d for d in reproduction.datasets if d.tier == home_tier]
+    off_tier = {reading.date for reading in home.window if reading.date in week}
     assert off_tier == {RETURN_FIRST + timedelta(days=i) for i in range(4)}
+    assert not any(entry.date in off_tier for entry in reproduction.excluded)
 
 
 # ---------------------------------------------------------------------------

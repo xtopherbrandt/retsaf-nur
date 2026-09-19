@@ -36,7 +36,7 @@ openapi: 3.1.0
 
 info:
   title: Run Coaching System — UI↔Engine API
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   description: >
     Target contract for the athlete-facing web + mobile UI. Read/write surface
     over the deterministic coaching engine. The engine is the single source of
@@ -1429,8 +1429,8 @@ components:
             two baseline readings, so no band exists to judge the week against)
             whenever band is null; then week_too_thin (fewer than
             min_window_readings (3) readings of baseline.tier in the judged week;
-            readings of other tiers are listed in excluded[] as off_baseline_tier
-            and do not count toward readings_in_window); then
+            readings of other tiers feed their own datasets and do not count
+            toward readings_in_window); then
             week_not_representative (the judged week is not a fair sample of the
             resolved tier, baseline.tier -- T125/T132: a returning or brand-new
             device's week entirely predates the tier being judged); then
@@ -1550,7 +1550,7 @@ components:
                 type: string
                 description: >
                   One of pre_amendment_window, null_tier, unknown_tier: <tier>,
-                  unusable_value: <value>, off_baseline_tier: <tier>,
+                  unusable_value: <value>,
                   same_day_later_capture, before_reset: <coverage_gap|tier_change>.
         thresholds:
           type: object

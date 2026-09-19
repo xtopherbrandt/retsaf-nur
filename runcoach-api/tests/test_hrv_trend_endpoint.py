@@ -273,12 +273,15 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
         "swc_factor": 0.5,
     }
     reasons = {entry["session_id"]: entry["reason"] for entry in body["excluded"]}
+    # F006 (T152): the strap capture feeds the strap's own dataset and is in
+    # no excluded list; shipped F005 listed it ``off_baseline_tier: <tier>``.
+    # T159 renders that dataset in ``datasets[]``.
     assert reasons == {
         later.session_id: "same_day_later_capture",
-        strap.session_id: f"off_baseline_tier: {STRAP}",
         run.session_id: "null_tier",
         legacy.session_id: "pre_amendment_window",
     }
+    assert strap.session_id not in reasons
     assert all(entry["reason"] for entry in body["excluded"])
     assert all(entry["date"] for entry in body["excluded"])
     # The per-day ``points[]`` beside these blocks is T091's (test_hrv_trend_points.py).
@@ -452,8 +455,11 @@ def test_below_by_is_lo_minus_mean_when_suppressed_and_null_otherwise(configure,
 def test_included_covers_the_window_only_and_excluded_spans_the_baseline_too(configure, seeder) -> None:
     """``included[]`` is the readings that fed the 7-day mean and nothing
     else -- the baseline is summarised by ``baseline.n`` -- while
-    ``excluded[]`` lists every non-contributing row across ``[to-66, to]``,
-    including an off-tier strap capture deep inside the baseline."""
+    ``excluded[]`` lists every non-contributing row across ``[to-66, to]``.
+    A strap capture deep inside the baseline is the strap's own dataset,
+    not a non-contributing row: shipped F005 listed it
+    ``off_baseline_tier: <tier>`` and F006 (T152) lists it nowhere, so the
+    list is empty here."""
     configure("UTC")
     seeder.snapshots(BASELINE_20, baseline_values(20))
     seeder.snapshots(days(D - timedelta(days=6), D - timedelta(days=3)), repeat(41.0))
@@ -468,9 +474,8 @@ def test_included_covers_the_window_only_and_excluded_spans_the_baseline_too(con
     assert body["baseline"]["n"] == 20
     assert len(body["included"]) == 4
     assert all(date.fromisoformat(r["date"]) >= D - timedelta(days=6) for r in body["included"])
-    assert body["excluded"] == [
-        {"date": "2026-08-19", "session_id": deep.session_id, "reason": f"off_baseline_tier: {STRAP}"}
-    ]
+    assert body["excluded"] == []
+    assert deep.session_id not in {r["session_id"] for r in body["included"]}
 
 
 # ---------------------------------------------------------------------------
@@ -707,9 +712,10 @@ def test_a_trial_then_abandoned_strap_does_not_blank_the_verdict_through_the_end
     assert on_suppressed_day["baseline"]["established"] is True
     assert on_suppressed_day["baseline"]["reset_reason"] is None
     assert on_suppressed_day["readings_in_window"] == 7
-    strap_rows = [e for e in on_suppressed_day["excluded"] if e["reason"].startswith("off_baseline_tier")]
-    assert len(strap_rows) == 14
-    assert {e["reason"] for e in strap_rows} == {"off_baseline_tier: chest_strap_raw"}
+    # F006 (T152): the 14 July strap mornings are the strap's own dataset
+    # and nothing is excluded; shipped F005 listed all 14
+    # ``off_baseline_tier: chest_strap_raw``.
+    assert on_suppressed_day["excluded"] == []
 
     assert body["baseline"]["tier"] == SNAPSHOT
     assert body["baseline"]["reset_reason"] is None
@@ -840,12 +846,18 @@ def test_the_schema_names_every_exclusion_reason_and_the_verdict_enum() -> None:
         hrv_trend.REASON_NULL_TIER,
         hrv_trend.REASON_UNKNOWN_TIER,
         hrv_trend.REASON_UNUSABLE_VALUE,
-        hrv_trend.REASON_OFF_BASELINE_TIER,
         hrv_trend.REASON_SAME_DAY_LATER_CAPTURE,
         hrv_trend.REASON_OUTSIDE_WINDOWS,
         hrv_trend.REASON_BEFORE_RESET,
     ):
         assert constant in reason, constant
+    # F006 (T152) retired F005's ``off_baseline_tier`` -- a reading of another
+    # tier is in its own dataset -- and the schema, the module and the
+    # checked-in contract drop it together (the three-valued pin's F006
+    # leg; the removal is the sprint's one breaking contract change).
+    assert "off_baseline_tier" not in reason
+    assert not hasattr(hrv_trend, "REASON_OFF_BASELINE_TIER")
+    assert "off_baseline_tier" not in CONTRACT.read_text(encoding="utf-8")
     assert set(schemas["HrvTrendResponse"]["properties"]["verdict"]["enum"]) == {
         "hrv_normal",
         "hrv_suppressed",
@@ -1092,7 +1104,19 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 438  # re-measured 2026-09-19 (T155), as the last action before the
+SCOPED_SUITE_COLLECTED = 440  # re-measured 2026-09-19 (T152), as the last action before the
+#                              # commit: +2. Two pins added to
+#                              # test_hrv_trend_series.py on F006's per-dataset
+#                              # partition (the dual-capture morning feeding
+#                              # both datasets with neither excluded anywhere,
+#                              # and every span row accounted for exactly once
+#                              # across the datasets and ``excluded``). No
+#                              # identity elsewhere changed: the pins that
+#                              # observed ``off_baseline_tier`` were re-pointed
+#                              # in place, not added or deleted. Nothing
+#                              # publishes this number; the previous value was
+#                              # T155's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 438  # re-measured 2026-09-19 (T155), as the last action before the
 #                              # commit: +15. Fifteen pins added to
 #                              # test_hrv_trend_series.py on F006's selection
 #                              # (highest-fidelity judgeable dataset, the
@@ -2744,7 +2768,6 @@ PUBLISHED_REASONS = {
     "null_tier",
     "unknown_tier: wrist_ppg_guess",
     "unusable_value: 0.0",
-    f"off_baseline_tier: {SNAPSHOT}",
     "same_day_later_capture",
     "before_reset: tier_change",
     "before_reset: coverage_gap",
@@ -2770,8 +2793,11 @@ def test_every_published_exclusion_reason_is_observed_in_a_rendered_response() -
 
     * a snapshot era with a ten-day strap trial inside it and a genuine
       switch to a daily strap, plus one row for each screen of the exclusion
-      chain -- seven of the eight;
-    * a snapshot era, a 27-day silence and a resumption -- the eighth.
+      chain -- six of the seven (the snapshot era's rows, which shipped F005
+      listed ``off_baseline_tier`` here, are the snapshot's own dataset
+      under F006 and appear in no list; T152 retired the reason and its
+      published value with it);
+    * a snapshot era, a 27-day silence and a resumption -- the seventh.
 
     Their union is asserted **equal** to the published set, so the diff is
     pinned both ways: a published member no series can produce fails here,

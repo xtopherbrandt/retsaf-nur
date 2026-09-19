@@ -144,6 +144,21 @@ def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
     return {entry.session_id: entry.reason for entry in result.excluded}
 
 
+def in_dataset(result: hrv_trend.SingleDatasetView, tier: str) -> set[str]:
+    """The session ids of ``tier``'s own dataset's series -- where a reading
+    of a tier other than the presented one lives under F006's per-dataset
+    partition (T152, AC15), instead of in ``excluded``."""
+    return {r.session_id for d in result.datasets if d.tier == tier for r in d.series}
+
+
+def every_listed(result: hrv_trend.SingleDatasetView) -> list[str]:
+    """``research/00`` 1.6's one list, under F006: every dataset's series
+    plus the exclusions. Under F005 it was the one resolved series plus the
+    exclusions, the other tiers' rows being ``off_baseline_tier`` members
+    of the latter (T152 re-pointed the exhaustiveness pins here)."""
+    return [r.session_id for d in result.datasets for r in d.series] + [e.session_id for e in result.excluded]
+
+
 def gapped_history(gap_days: int, resume_on: date, tier: str = STRAP, target: date = D) -> list[dict]:
     """Readings on every local day from ``target-90`` up to the day before a
     ``gap_days``-day silence that ends the day before ``resume_on``, then on
@@ -293,7 +308,8 @@ def test_week_coverage_is_judged_on_the_gap_clipped_window_and_the_gap_is_the_on
     nothing in the week, so rule 2 hands the baseline to the snapshot -- the
     candidate that covers it. The one reset is the gap, landing on the
     resumption; the strap the week rejected is no ``tier_change``, and every
-    strap reading is off-tier. Perturbation: resolving the tier on baseline
+    strap reading is in the strap's own dataset (shipped F005 listed each
+    ``off_baseline_tier``; T152). Perturbation: resolving the tier on baseline
     counts alone gives the strap with an empty week and turns this red."""
     resume_on = ago(22)
     before = readings(SNAPSHOT, span(ago(126), resume_on - timedelta(days=23)), 60.0, "snap-before")
@@ -311,7 +327,8 @@ def test_week_coverage_is_judged_on_the_gap_clipped_window_and_the_gap_is_the_on
     assert all(r.tier == SNAPSHOT for r in result.baseline)
     assert len(result.window) == 7
     reasons = excluded_reasons(result)
-    assert {reasons[r["session_id"]] for r in strap} == {"off_baseline_tier: chest_strap_raw"}
+    assert not {r["session_id"] for r in strap} & set(reasons)
+    assert {r["session_id"] for r in strap} <= in_dataset(result, STRAP)
     assert {reasons[r["session_id"]] for r in before if r["session_id"] >= f"snap-before-{ago(66)}"} == {
         "before_reset: coverage_gap"
     }
@@ -391,7 +408,8 @@ def test_the_gap_rule_over_length_and_position(length: int, position: str, reset
 def test_a_single_off_tier_capture_is_corroboration_not_a_reset() -> None:
     """45 snapshot readings in the baseline (and a snapshot previous window)
     plus one chest-strap capture: the baseline stays on the snapshot, the
-    strap reading is off-tier corroboration, and nothing resets."""
+    strap reading is a one-reading strap dataset (shipped F005 listed it
+    ``off_baseline_tier``; T152), and nothing resets."""
     previous = readings(SNAPSHOT, span(ago(126), ago(67), 2), 40.0, "prev")
     current = readings(SNAPSHOT, span(ago(51), ago(7)), 40.0, "snap")  # 45 days
     borrowed = [row(local(ago(30), 6, 30), STRAP, 55.0, "borrowed-strap")]
@@ -403,7 +421,8 @@ def test_a_single_off_tier_capture_is_corroboration_not_a_reset() -> None:
     assert len(result.baseline) == 45
     assert result.reset_on is None
     assert result.reset_reason is None
-    assert excluded_reasons(result)["borrowed-strap"] == "off_baseline_tier: chest_strap_raw"
+    assert "borrowed-strap" not in excluded_reasons(result)
+    assert in_dataset(result, STRAP) == {"borrowed-strap"}
 
 
 def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppression_until_established() -> None:
@@ -464,13 +483,14 @@ def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppressi
     assert transition.reset_reason is None
     assert transition.window == (), "no strap reading may be judged against the snapshot band"
     assert all(r.tier == SNAPSHOT for r in transition.baseline)
-    strap_in_windows = {
-        entry.session_id: entry.reason
-        for entry in transition.excluded
-        if entry.session_id.startswith("strap-") and entry.date <= ago(20)
-    }
+    # F006 (T152): the ten strap days D-29..D-20 are the strap's own dataset
+    # (n 3 in its window, unestablished), not exclusions; shipped F005
+    # listed all ten ``off_baseline_tier``.
+    assert not any(
+        entry.session_id.startswith("strap-") and entry.date <= ago(20) for entry in transition.excluded
+    ), "the strap rows after the target are outside_windows; none inside [t-66, t] is excluded"
+    strap_in_windows = {sid for sid in in_dataset(transition, STRAP) if sid <= f"strap-{ago(20)}"}
     assert len(strap_in_windows) == 10  # D-29 .. D-20
-    assert set(strap_in_windows.values()) == {"off_baseline_tier: chest_strap_raw"}
 
     established = build(rows, target=D)
     assert established.tier == STRAP
@@ -609,7 +629,8 @@ def test_a_trial_then_abandoned_strap_never_reports_a_tier_change() -> None:
     no reading in any judged week and never owns the baseline. A reset here
     would clip a snapshot baseline at a strap day and name an event the
     athlete never made; none is reported, on any day, and the strap rows
-    are listed as off-tier."""
+    are in the strap's own dataset, never excluded (shipped F005 listed them
+    ``off_baseline_tier``; T152)."""
     rows = trial_then_abandon()
 
     for target in span(date(2026, 7, 23), D):
@@ -618,7 +639,9 @@ def test_a_trial_then_abandoned_strap_never_reports_a_tier_change() -> None:
         assert result.reset_on is None and result.reset_reason is None, target
         assert result.baseline_window == (ago(66, target), ago(7, target)), target
         strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if sid.startswith("strap-")}
-        assert set(strap_reasons.values()) <= {"off_baseline_tier: chest_strap_raw", "outside_windows"}, target
+        assert set(strap_reasons.values()) <= {"outside_windows"}, target
+        in_span = {r["session_id"] for r in rows if r["session_id"].startswith("strap-")} - set(strap_reasons)
+        assert in_span <= in_dataset(result, STRAP), target
 
 
 def test_a_week_driven_fallback_is_not_a_tier_change() -> None:
@@ -1351,8 +1374,9 @@ def test_a_stray_old_tier_capture_after_a_genuine_switch_does_not_hide_the_switc
     and ``D+42``.
 
     **What the tolerance controls here** (T099). The stray is on the *old*
-    tier, so it is excluded from the series as ``off_baseline_tier`` either
-    way and cannot reach the band by contributing a reading; the only route
+    tier, so it is in the snapshot's own dataset either way (shipped F005
+    excluded it ``off_baseline_tier``; T152) and cannot reach the strap's
+    band by contributing a reading; the only route
     it has to the band is the clip, and this pin closes it: the window,
     ``n``, band and verdict are identical on the two series, day for day,
     and the stray changes nothing at all. *If the rule were wrong* -- if
@@ -1738,10 +1762,12 @@ def test_the_clipped_readings_are_listed_before_reset_tier_change(strays: tuple[
     what ``contracts/openapi.yaml`` publishes as a value clients may
     receive and what ``_exclude_before_reset``'s disjoint-and-exhaustive
     invariant requires. Exhaustiveness is asserted over ``[D-66, D]``:
-    every stored row there is in the series or in ``excluded``, exactly
-    once. Parameterised over both sides of the pair above, because the
-    listing is a property of the clip and not of the report -- at ccf44ef
-    the ten trial readings were in neither list on either side."""
+    every stored row there is in some dataset's series or in ``excluded``,
+    exactly once (per dataset since T152; under F005 the other tier's rows
+    were ``off_baseline_tier`` exclusions). Parameterised over both sides
+    of the pair above, because the listing is a property of the clip and
+    not of the report -- at ccf44ef the ten trial readings were in neither
+    list on either side."""
     base = date(2026, 9, 7)
     rows = trial_then_switch(base, strays)
     result = build(rows, target=base)
@@ -1755,7 +1781,7 @@ def test_the_clipped_readings_are_listed_before_reset_tier_change(strays: tuple[
         for r in rows
         if ago(66, base) <= datetime.fromisoformat(r["start_time"]).astimezone(AUCKLAND).date() <= base
     }
-    listed = [r.session_id for r in result.series] + [entry.session_id for entry in result.excluded]
+    listed = every_listed(result)
     assert sorted(session_id for session_id in listed if session_id in in_windows) == sorted(in_windows)
     assert len(listed) == len(set(listed))
 
@@ -2269,7 +2295,7 @@ def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
         <= datetime.fromisoformat(r["start_time"]).astimezone(AUCKLAND).date()
         <= GAP_AND_SWITCH_D
     }
-    listed = [r.session_id for r in result.series] + [entry.session_id for entry in result.excluded]
+    listed = every_listed(result)
     assert sorted(session_id for session_id in listed if session_id in in_windows) == sorted(in_windows)
     assert len(listed) == len(set(listed))
 

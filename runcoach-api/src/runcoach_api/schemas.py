@@ -34,7 +34,6 @@ _EXCLUSION_REASONS = ", ".join(
         f"`{hrv_trend.REASON_NULL_TIER}`",
         f"`{hrv_trend.REASON_UNKNOWN_TIER}: <tier>`",
         f"`{hrv_trend.REASON_UNUSABLE_VALUE}: <value>`",
-        f"`{hrv_trend.REASON_OFF_BASELINE_TIER}: <tier>`",
         f"`{hrv_trend.REASON_SAME_DAY_LATER_CAPTURE}`",
         f"`{hrv_trend.REASON_BEFORE_RESET}: <{hrv_trend.REASON_COVERAGE_GAP}|{hrv_trend.REASON_TIER_CHANGE}>`",
         f"`{hrv_trend.REASON_OUTSIDE_WINDOWS}`",
@@ -279,8 +278,8 @@ class HrvTrendResponse(BaseModel):
             "build_band answers null on fewer than two baseline readings, so no band exists to judge "
             f"the week against) whenever `band` is null; then `{hrv_trend.REASON_WEEK_TOO_THIN}` "
             "(fewer than min_window_readings (3) readings of `baseline.tier` in the judged week; "
-            "readings of other tiers are listed in `excluded[]` as off_baseline_tier and do not count "
-            f"toward `readings_in_window`); then `{hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE}` (the "
+            "readings of other tiers feed their own datasets and do not count toward "
+            f"`readings_in_window`); then `{hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE}` (the "
             "judged week is not a fair sample of the resolved tier, `baseline.tier` -- T125/T132: a "
             "returning or brand-new device's week entirely predates the tier being judged); then "
             f"`{hrv_trend.REASON_BASELINE_UNESTABLISHED}` (a baseline below min_baseline_readings "

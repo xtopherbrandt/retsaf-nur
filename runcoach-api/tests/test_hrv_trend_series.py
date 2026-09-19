@@ -106,6 +106,13 @@ def excluded_reasons(result: hrv_trend.SingleDatasetView) -> dict[str, str]:
     return {entry.session_id: entry.reason for entry in result.excluded}
 
 
+def in_dataset(result: hrv_trend.SingleDatasetView, tier: str) -> set[str]:
+    """The session ids of ``tier``'s own dataset's series -- where a reading
+    of a tier other than the presented one lives under F006's per-dataset
+    partition (T152, AC15), instead of in ``excluded``."""
+    return {r.session_id for d in result.datasets if d.tier == tier for r in d.series}
+
+
 # ---------------------------------------------------------------------------
 # the first failing test: filter, THEN collapse
 # ---------------------------------------------------------------------------
@@ -134,7 +141,10 @@ def test_the_series_is_filtered_to_the_baseline_tier_before_days_are_collapsed()
     assert day in by_day, "the day must not be dropped merely because its best capture is off-tier"
     assert by_day[day].session_id == "snapshot-later"
     assert by_day[day].rmssd_ms == 38.0
-    assert excluded_reasons(result)["strap-first"] == "off_baseline_tier: chest_strap_raw"
+    # F006 (T152): the strap capture feeds the strap's own dataset; shipped
+    # F005 listed it ``off_baseline_tier: chest_strap_raw``.
+    assert "strap-first" not in excluded_reasons(result)
+    assert "strap-first" in in_dataset(result, STRAP)
 
 
 # ---------------------------------------------------------------------------
@@ -142,13 +152,21 @@ def test_the_series_is_filtered_to_the_baseline_tier_before_days_are_collapsed()
 #
 # Authored before the implementation from the spec's rule. Each row is
 # (baseline tier, captures in time order, index of the chosen capture or
-# None, {index: exclusion reason} for every other capture). Capture times
-# are 06:05, 06:12, 07:40 in list order, so "earliest" is list order.
+# None, {index: disposition} for every other capture). Capture times are
+# 06:05, 06:12, 07:40 in list order, so "earliest" is list order.
+#
+# Re-derived under F006's per-dataset partition (T152, AC3/AC4/AC15). A
+# capture of another tier is no longer *excluded* from anything: it feeds
+# that tier's own dataset (the ``FEEDS_*`` dispositions, asserted as
+# membership of that dataset's series and absence from ``excluded``), and
+# a second capture of that other tier on the same day is that dataset's
+# own ``same_day_later_capture``. Shipped F005 listed every such capture
+# ``off_baseline_tier: <tier>``; the chosen index is unchanged on every row.
 # ---------------------------------------------------------------------------
 
-OFF_STRAP = "off_baseline_tier: chest_strap_raw"
-OFF_OVERNIGHT = "off_baseline_tier: health_api_overnight"
-OFF_SNAPSHOT = "off_baseline_tier: health_snapshot"
+FEEDS_STRAP = "feeds: chest_strap_raw"
+FEEDS_OVERNIGHT = "feeds: health_api_overnight"
+FEEDS_SNAPSHOT = "feeds: health_snapshot"
 LATER = "same_day_later_capture"
 
 CAPTURE_TIMES = ((6, 5), (6, 12), (7, 40))
@@ -156,45 +174,45 @@ CAPTURE_TIMES = ((6, 5), (6, 12), (7, 40))
 CONTRACT_TABLE = [
     # -- baseline on chest_strap_raw ---------------------------------------
     (STRAP, [STRAP], 0, {}),
-    (STRAP, [OVERNIGHT], None, {0: OFF_OVERNIGHT}),
-    (STRAP, [SNAPSHOT], None, {0: OFF_SNAPSHOT}),
-    (STRAP, [STRAP, OVERNIGHT], 0, {1: OFF_OVERNIGHT}),
-    (STRAP, [OVERNIGHT, STRAP], 1, {0: OFF_OVERNIGHT}),
-    (STRAP, [STRAP, SNAPSHOT], 0, {1: OFF_SNAPSHOT}),  # F005 outline row 2
-    (STRAP, [SNAPSHOT, STRAP], 1, {0: OFF_SNAPSHOT}),
-    (STRAP, [OVERNIGHT, SNAPSHOT], None, {0: OFF_OVERNIGHT, 1: OFF_SNAPSHOT}),
-    (STRAP, [SNAPSHOT, OVERNIGHT], None, {0: OFF_SNAPSHOT, 1: OFF_OVERNIGHT}),
-    (STRAP, [STRAP, OVERNIGHT, SNAPSHOT], 0, {1: OFF_OVERNIGHT, 2: OFF_SNAPSHOT}),
+    (STRAP, [OVERNIGHT], None, {0: FEEDS_OVERNIGHT}),
+    (STRAP, [SNAPSHOT], None, {0: FEEDS_SNAPSHOT}),
+    (STRAP, [STRAP, OVERNIGHT], 0, {1: FEEDS_OVERNIGHT}),
+    (STRAP, [OVERNIGHT, STRAP], 1, {0: FEEDS_OVERNIGHT}),
+    (STRAP, [STRAP, SNAPSHOT], 0, {1: FEEDS_SNAPSHOT}),  # F005 outline row 2
+    (STRAP, [SNAPSHOT, STRAP], 1, {0: FEEDS_SNAPSHOT}),
+    (STRAP, [OVERNIGHT, SNAPSHOT], None, {0: FEEDS_OVERNIGHT, 1: FEEDS_SNAPSHOT}),
+    (STRAP, [SNAPSHOT, OVERNIGHT], None, {0: FEEDS_SNAPSHOT, 1: FEEDS_OVERNIGHT}),
+    (STRAP, [STRAP, OVERNIGHT, SNAPSHOT], 0, {1: FEEDS_OVERNIGHT, 2: FEEDS_SNAPSHOT}),
     (STRAP, [STRAP, STRAP], 0, {1: LATER}),  # F005 outline row 1
-    (STRAP, [OVERNIGHT, OVERNIGHT], None, {0: OFF_OVERNIGHT, 1: OFF_OVERNIGHT}),
-    (STRAP, [SNAPSHOT, SNAPSHOT], None, {0: OFF_SNAPSHOT, 1: OFF_SNAPSHOT}),
+    (STRAP, [OVERNIGHT, OVERNIGHT], None, {0: FEEDS_OVERNIGHT, 1: LATER}),
+    (STRAP, [SNAPSHOT, SNAPSHOT], None, {0: FEEDS_SNAPSHOT, 1: LATER}),
     # -- baseline on health_api_overnight ----------------------------------
-    (OVERNIGHT, [STRAP], None, {0: OFF_STRAP}),
+    (OVERNIGHT, [STRAP], None, {0: FEEDS_STRAP}),
     (OVERNIGHT, [OVERNIGHT], 0, {}),
-    (OVERNIGHT, [SNAPSHOT], None, {0: OFF_SNAPSHOT}),
-    (OVERNIGHT, [STRAP, OVERNIGHT], 1, {0: OFF_STRAP}),
-    (OVERNIGHT, [OVERNIGHT, STRAP], 0, {1: OFF_STRAP}),
-    (OVERNIGHT, [STRAP, SNAPSHOT], None, {0: OFF_STRAP, 1: OFF_SNAPSHOT}),
-    (OVERNIGHT, [SNAPSHOT, STRAP], None, {0: OFF_SNAPSHOT, 1: OFF_STRAP}),
-    (OVERNIGHT, [OVERNIGHT, SNAPSHOT], 0, {1: OFF_SNAPSHOT}),
-    (OVERNIGHT, [SNAPSHOT, OVERNIGHT], 1, {0: OFF_SNAPSHOT}),
-    (OVERNIGHT, [STRAP, OVERNIGHT, SNAPSHOT], 1, {0: OFF_STRAP, 2: OFF_SNAPSHOT}),
-    (OVERNIGHT, [STRAP, STRAP], None, {0: OFF_STRAP, 1: OFF_STRAP}),
+    (OVERNIGHT, [SNAPSHOT], None, {0: FEEDS_SNAPSHOT}),
+    (OVERNIGHT, [STRAP, OVERNIGHT], 1, {0: FEEDS_STRAP}),
+    (OVERNIGHT, [OVERNIGHT, STRAP], 0, {1: FEEDS_STRAP}),
+    (OVERNIGHT, [STRAP, SNAPSHOT], None, {0: FEEDS_STRAP, 1: FEEDS_SNAPSHOT}),
+    (OVERNIGHT, [SNAPSHOT, STRAP], None, {0: FEEDS_SNAPSHOT, 1: FEEDS_STRAP}),
+    (OVERNIGHT, [OVERNIGHT, SNAPSHOT], 0, {1: FEEDS_SNAPSHOT}),
+    (OVERNIGHT, [SNAPSHOT, OVERNIGHT], 1, {0: FEEDS_SNAPSHOT}),
+    (OVERNIGHT, [STRAP, OVERNIGHT, SNAPSHOT], 1, {0: FEEDS_STRAP, 2: FEEDS_SNAPSHOT}),
+    (OVERNIGHT, [STRAP, STRAP], None, {0: FEEDS_STRAP, 1: LATER}),
     (OVERNIGHT, [OVERNIGHT, OVERNIGHT], 0, {1: LATER}),
-    (OVERNIGHT, [SNAPSHOT, SNAPSHOT], None, {0: OFF_SNAPSHOT, 1: OFF_SNAPSHOT}),
+    (OVERNIGHT, [SNAPSHOT, SNAPSHOT], None, {0: FEEDS_SNAPSHOT, 1: LATER}),
     # -- baseline on health_snapshot ---------------------------------------
-    (SNAPSHOT, [STRAP], None, {0: OFF_STRAP}),
-    (SNAPSHOT, [OVERNIGHT], None, {0: OFF_OVERNIGHT}),
+    (SNAPSHOT, [STRAP], None, {0: FEEDS_STRAP}),
+    (SNAPSHOT, [OVERNIGHT], None, {0: FEEDS_OVERNIGHT}),
     (SNAPSHOT, [SNAPSHOT], 0, {}),
-    (SNAPSHOT, [STRAP, OVERNIGHT], None, {0: OFF_STRAP, 1: OFF_OVERNIGHT}),
-    (SNAPSHOT, [OVERNIGHT, STRAP], None, {0: OFF_OVERNIGHT, 1: OFF_STRAP}),
-    (SNAPSHOT, [STRAP, SNAPSHOT], 1, {0: OFF_STRAP}),  # F005 outline row 3
-    (SNAPSHOT, [SNAPSHOT, STRAP], 0, {1: OFF_STRAP}),
-    (SNAPSHOT, [OVERNIGHT, SNAPSHOT], 1, {0: OFF_OVERNIGHT}),
-    (SNAPSHOT, [SNAPSHOT, OVERNIGHT], 0, {1: OFF_OVERNIGHT}),
-    (SNAPSHOT, [STRAP, OVERNIGHT, SNAPSHOT], 2, {0: OFF_STRAP, 1: OFF_OVERNIGHT}),
-    (SNAPSHOT, [STRAP, STRAP], None, {0: OFF_STRAP, 1: OFF_STRAP}),
-    (SNAPSHOT, [OVERNIGHT, OVERNIGHT], None, {0: OFF_OVERNIGHT, 1: OFF_OVERNIGHT}),
+    (SNAPSHOT, [STRAP, OVERNIGHT], None, {0: FEEDS_STRAP, 1: FEEDS_OVERNIGHT}),
+    (SNAPSHOT, [OVERNIGHT, STRAP], None, {0: FEEDS_OVERNIGHT, 1: FEEDS_STRAP}),
+    (SNAPSHOT, [STRAP, SNAPSHOT], 1, {0: FEEDS_STRAP}),  # F005 outline row 3
+    (SNAPSHOT, [SNAPSHOT, STRAP], 0, {1: FEEDS_STRAP}),
+    (SNAPSHOT, [OVERNIGHT, SNAPSHOT], 1, {0: FEEDS_OVERNIGHT}),
+    (SNAPSHOT, [SNAPSHOT, OVERNIGHT], 0, {1: FEEDS_OVERNIGHT}),
+    (SNAPSHOT, [STRAP, OVERNIGHT, SNAPSHOT], 2, {0: FEEDS_STRAP, 1: FEEDS_OVERNIGHT}),
+    (SNAPSHOT, [STRAP, STRAP], None, {0: FEEDS_STRAP, 1: LATER}),
+    (SNAPSHOT, [OVERNIGHT, OVERNIGHT], None, {0: FEEDS_OVERNIGHT, 1: LATER}),
     (SNAPSHOT, [SNAPSHOT, SNAPSHOT], 0, {1: LATER}),
 ]
 
@@ -221,8 +239,11 @@ def test_one_reading_per_local_day_chosen_within_the_baseline_tier_by_time(entry
         assert day not in by_day
     else:
         assert by_day[day].session_id == f"capture-{chosen}"
+    fed = {f"capture-{i}": reason for i, reason in reasons.items() if reason.startswith("feeds: ")}
+    for session_id, disposition in fed.items():
+        assert session_id in in_dataset(result, disposition.removeprefix("feeds: ")), (session_id, disposition)
     actual = {sid: reason for sid, reason in excluded_reasons(result).items() if sid.startswith("capture-")}
-    assert actual == {f"capture-{i}": reason for i, reason in reasons.items()}
+    assert actual == {f"capture-{i}": reason for i, reason in reasons.items() if not reason.startswith("feeds: ")}
 
 
 # ---------------------------------------------------------------------------
@@ -525,9 +546,10 @@ def test_thirteen_strap_readings_are_not_a_candidate_even_when_the_strap_covers_
     assert result.tier == SNAPSHOT
     assert len(result.baseline) == 45
     assert len(result.window) == 7
-    strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if STRAP in sid}
-    assert len(strap_reasons) == 16
-    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+    # F006 (T152): the 16 strap readings are the strap's own dataset, not
+    # exclusions; shipped F005 listed all 16 ``off_baseline_tier``.
+    assert not any(STRAP in sid for sid in excluded_reasons(result))
+    assert len(in_dataset(result, STRAP)) == 16
 
 
 def test_an_occasional_higher_tier_capture_does_not_demote_an_established_baseline() -> None:
@@ -540,7 +562,10 @@ def test_an_occasional_higher_tier_capture_does_not_demote_an_established_baseli
 
     assert result.tier == SNAPSHOT
     assert len(result.baseline) == 45
-    assert excluded_reasons(result)["borrowed-strap"] == "off_baseline_tier: chest_strap_raw"
+    # F006 (T152): the borrowed strap reading is a one-reading strap dataset
+    # (n 1, no band), not an exclusion; shipped F005 listed it off-tier.
+    assert "borrowed-strap" not in excluded_reasons(result)
+    assert in_dataset(result, STRAP) == {"borrowed-strap"}
 
 
 def test_below_14_everywhere_the_tier_with_the_most_readings_wins_not_the_highest_present() -> None:
@@ -676,7 +701,8 @@ def test_a_two_day_a_week_strap_is_corroboration_not_the_baseline() -> None:
     """A daily-snapshot athlete who keeps a strap on Tuesdays and Saturdays:
     the strap sustains a baseline by count (>= 14 in 60 days) but holds only
     two readings in any week, so it can never judge one. The snapshot owns
-    the baseline and every strap reading is ``off_baseline_tier``."""
+    the baseline and every strap reading is in the strap's own dataset
+    (shipped F005 listed each ``off_baseline_tier``; T152)."""
     every_day = baseline_days(60) + days_between(D - timedelta(days=6), D)
     strap_days = [day for day in every_day if day.weekday() in (1, 5)]  # Tue, Sat
     in_baseline = [day for day in strap_days if day <= D - timedelta(days=7)]
@@ -689,9 +715,11 @@ def test_a_two_day_a_week_strap_is_corroboration_not_the_baseline() -> None:
     assert result.tier == SNAPSHOT
     assert len(result.baseline) == 60
     assert len(result.window) == 7
-    strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if STRAP in sid}
-    assert len(strap_reasons) == len(strap_days)
-    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+    # F006 (T152): every strap reading is in the strap's own dataset --
+    # established, but never judgeable on two week days -- and none is
+    # excluded; shipped F005 listed them all ``off_baseline_tier``.
+    assert not any(STRAP in sid for sid in excluded_reasons(result))
+    assert len(in_dataset(result, STRAP)) == len(strap_days)
     assert hrv_trend.judge(result).verdict == "hrv_normal"
 
 
@@ -722,7 +750,8 @@ def test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline() -> 
     candidate, the strap, keeps the baseline (recency and density agree
     here); the week is
     ``hrv_unavailable`` with ``readings_in_window`` 0, nothing resets, and
-    every snapshot reading is ``off_baseline_tier``. Perturbation: letting
+    every snapshot reading is in the snapshot's own dataset (shipped F005
+    listed each ``off_baseline_tier``; T152). Perturbation: letting
     any week-covering tier win without candidacy hands the baseline to the
     snapshot on five readings and turns this red."""
     week = days_between(D - timedelta(days=6), D)
@@ -735,9 +764,11 @@ def test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline() -> 
     assert len(result.baseline) == 60
     assert result.window == ()
     assert result.reset_reason is None
-    snapshot_reasons = {sid: why for sid, why in excluded_reasons(result).items() if SNAPSHOT in sid}
-    assert len(snapshot_reasons) == 12
-    assert set(snapshot_reasons.values()) == {"off_baseline_tier: health_snapshot"}
+    # F006 (T152): the twelve snapshot readings are the snapshot's own
+    # dataset (n 5, unestablished), none excluded; shipped F005 listed all
+    # twelve ``off_baseline_tier``.
+    assert not any(SNAPSHOT in sid for sid in excluded_reasons(result))
+    assert len(in_dataset(result, SNAPSHOT)) == 12
     verdict = hrv_trend.judge(result)
     assert verdict.verdict == "hrv_unavailable"
     assert verdict.readings_in_window == 0
@@ -1335,10 +1366,10 @@ def test_a_re_taken_strap_morning_does_not_hand_the_week_to_the_strap() -> None:
     listed off-tier -- cell 1 of F005's cost table, presented as prevented.
     Rules 1-3 now count distinct local days, so both series read
     ``hrv_suppressed`` on the snapshot identically and the re-take changes
-    nothing but its own ``excluded[]`` entry (``off_baseline_tier``: the
-    re-take is a strap capture on a snapshot baseline; it would be
-    ``same_day_later_capture`` only on the strap baseline it no longer
-    earns). Perturbation (``_tier_counts`` back to captures): the re-taken
+    nothing but its own ``excluded[]`` entry (shipped F005:
+    ``off_baseline_tier``, a strap capture on a snapshot baseline; F006/T152:
+    ``same_day_later_capture`` within the strap's own dataset, which the
+    re-taken morning is a second capture of). Perturbation (``_tier_counts`` back to captures): the re-taken
     series flips to the strap -- red."""
     snapshot = suppressed_snapshot()
     strap_days = [day for day in days_between(D - timedelta(days=66), D) if day.weekday() in (1, 5)]
@@ -1363,7 +1394,10 @@ def test_a_re_taken_strap_morning_does_not_hand_the_week_to_the_strap() -> None:
     assert hrv_trend.judge(once) == hrv_trend.judge(re_taken)
     assert [r.session_id for r in once.series] == [r.session_id for r in re_taken.series]
     assert set(excluded_reasons(re_taken)) - set(excluded_reasons(once)) == {"strap-re-take"}
-    assert excluded_reasons(re_taken)["strap-re-take"] == "off_baseline_tier: chest_strap_raw"
+    # F006 (T152): the re-take is the strap dataset's own
+    # ``same_day_later_capture``; shipped F005 listed it ``off_baseline_tier``.
+    assert excluded_reasons(re_taken)["strap-re-take"] == "same_day_later_capture"
+    assert "strap-re-take" not in in_dataset(re_taken, STRAP)
 
 
 def test_fourteen_strap_captures_on_seven_days_are_not_a_candidate() -> None:
@@ -1398,9 +1432,13 @@ def test_fourteen_strap_captures_on_seven_days_are_not_a_candidate() -> None:
         60,
         7,
     )
+    # F006 (T152): the 7 re-takes are the strap dataset's own
+    # ``same_day_later_capture``; its 10 first captures are its series.
+    # Shipped F005 listed all 17 ``off_baseline_tier``.
     strap_reasons = {sid: why for sid, why in excluded_reasons(result).items() if "strap" in sid}
-    assert len(strap_reasons) == 17
-    assert set(strap_reasons.values()) == {"off_baseline_tier: chest_strap_raw"}
+    assert len(strap_reasons) == 7
+    assert set(strap_reasons.values()) == {"same_day_later_capture"}
+    assert len(in_dataset(result, STRAP)) == 10
 
 
 def test_rule_3_recency_is_keyed_on_the_local_day_not_the_instant() -> None:
@@ -1685,9 +1723,10 @@ def test_the_selected_view_hands_judge_the_dataset_the_selection_picks() -> None
     the single-dataset view is the dataset ``select_dataset`` selects, and
     ``judge`` on it reports that dataset's own band, ``n`` and
     ``established`` -- the same values the dataset carries, not a second
-    computation. The other tier's readings are listed ``off_baseline_tier``
-    on the view alone, as F005 listed them (T152's compatibility shim), so
-    every pin on that behaviour is reachable until T152 retires the reason."""
+    computation. The other tier's readings are in its own dataset, carried
+    on the view's ``datasets``, and the view's ``excluded`` is the series'
+    own (T152; the shim that re-listed them ``off_baseline_tier`` on the
+    view, as F005 had, is retired)."""
     series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
     view = hrv_trend.selected_view(series)
 
@@ -1700,10 +1739,97 @@ def test_the_selected_view_hands_judge_the_dataset_the_selection_picks() -> None
     assert (verdict.baseline_n, verdict.established) == (view.selected.n, view.selected.established)
     assert verdict.verdict == "hrv_normal"
 
-    off_tier = {e.session_id for e in view.excluded if e.reason == f"off_baseline_tier: {SNAPSHOT}"}
-    assert off_tier == {r.session_id for r in series.readings if r.tier == SNAPSHOT}
-    assert not any(e.reason.startswith("off_baseline_tier") for e in series.excluded)
+    assert in_dataset(view, SNAPSHOT) == {r.session_id for r in series.readings if r.tier == SNAPSHOT}
+    assert view.excluded == series.excluded and view.datasets == series.datasets
+    assert not any(e.reason.startswith("off_baseline_tier") for e in view.excluded)
     assert view.readings == series.readings and view.target_date == D
+
+
+# ---------------------------------------------------------------------------
+# F006 / T152 -- the included/excluded partition is per dataset (AC3, AC15)
+# ---------------------------------------------------------------------------
+
+
+def test_a_dual_capture_morning_feeds_both_datasets_and_neither_is_excluded_anywhere() -> None:
+    """The first failing test of T152 (AC3). A local day carrying a
+    ``chest_strap_raw`` capture at 07:00 and a ``health_snapshot`` at 07:05
+    contributes one reading to **each** dataset, and neither appears in any
+    ``excluded`` list -- not the series' and not the selected view's, which
+    is what the route renders. Shipped F005 excluded whichever of the two
+    was off the resolved tier as ``off_baseline_tier: <tier>``, and T151/T155
+    kept that listing alive on the view alone as a compatibility shim; this
+    pin is what retires it. Perturbation: re-listing the non-selected
+    dataset's readings on the view reds the ``view.excluded`` assertion."""
+    both = D - timedelta(days=30)  # outside the twenty baseline days D-26..D-7, so neither is a re-take
+    rows = readings(STRAP, baseline_days(20), 60.0) + readings(SNAPSHOT, baseline_days(20), 40.0, hh=7)
+    rows += [row(local(both, 7, 0), STRAP, 61.0, "strap-0700"), row(local(both, 7, 5), SNAPSHOT, 41.0, "snap-0705")]
+    rows += readings(STRAP, days_between(D - timedelta(days=6), D - timedelta(days=4)), 60.0)
+
+    series = hrv_trend.build_series(rows, AUCKLAND, D)
+    view = hrv_trend.selected_view(series)
+    by_tier = {dataset.tier: dataset for dataset in view.datasets}
+
+    assert view.tier == STRAP, "the strap is judgeable and highest fidelity; the snapshot is the other dataset"
+    assert by_tier[STRAP].series[[r.date for r in by_tier[STRAP].series].index(both)].session_id == "strap-0700"
+    assert by_tier[SNAPSHOT].series[[r.date for r in by_tier[SNAPSHOT].series].index(both)].session_id == "snap-0705"
+    for excluded in (series.excluded, view.excluded):
+        assert not {"strap-0700", "snap-0705"} & {e.session_id for e in excluded}, excluded
+    assert view.excluded == series.excluded, "the view presents the series' own partition, re-listing nothing"
+    assert view.datasets == series.datasets
+
+
+def _every_screen_history() -> list[dict]:
+    """A history that exercises every member of the exclusion chain beside a
+    two-dataset partition: a snapshot era from ``D-126``, a ten-day strap
+    trial, a genuine switch to a daily strap at ``D-39``, one row per screen
+    (null tier, unknown tier, unusable value, pre-amendment), a re-taken
+    strap morning, and a snapshot capture the era clip drops."""
+    rows = readings(SNAPSHOT, days_between(D - timedelta(days=126), D - timedelta(days=40)), 40.0, hh=6)
+    rows += readings(STRAP, days_between(D - timedelta(days=60), D - timedelta(days=51)), 25.0)
+    rows += readings(STRAP, days_between(D - timedelta(days=39), D), 40.0)
+    rows += [
+        row(local(D - timedelta(days=20), 9), None, 40.0, "no-tier"),
+        row(local(D - timedelta(days=19), 9), "wrist_ppg_guess", 40.0, "odd-tier"),
+        row(local(D - timedelta(days=18), 9), STRAP, 0.0, "bad-value"),
+        row(local(D - timedelta(days=17), 9), STRAP, None, "pre-amendment"),
+        row(local(D - timedelta(days=10), 9), STRAP, 41.0, "later-same-day"),
+        row(local(D - timedelta(days=70), 9), SNAPSHOT, 40.0, "before-the-span"),
+    ]
+    return rows
+
+
+def test_every_stored_row_in_the_span_is_accounted_for_exactly_once_across_datasets_and_excluded() -> None:
+    """AC15 (``research/00`` §1.6): every stored row inside ``[D-66, D]`` is
+    in exactly one place -- some dataset's ``series`` or the ``excluded``
+    list -- and nothing is in two. Under F005 the rows of every non-resolved
+    tier were the ``off_baseline_tier`` members of that list; under the
+    per-dataset partition they are in their own dataset, so the union of the
+    datasets' series and the exclusions is the span's stored rows, once
+    each, and the selected view (what the route renders) carries that same
+    list unchanged. The witness prints the partition it compared."""
+    rows = _every_screen_history()
+    series = hrv_trend.build_series(rows, AUCKLAND, D)
+    view = hrv_trend.selected_view(series)
+    first, _ = hrv_trend.baseline_window(D)
+
+    in_span = {r["session_id"] for r in rows if first <= date.fromisoformat(local_day_of(r)) <= D}
+    in_datasets = [r.session_id for d in series.datasets for r in d.series]
+    listed = [e.session_id for e in series.excluded if first <= e.date <= D]
+    print(f"[slice compared] datasets={len(in_datasets)} excluded={len(listed)} span_rows={len(in_span)}")
+    print(f"[slice compared] reasons={sorted({e.reason for e in series.excluded if first <= e.date <= D})}")
+
+    assert len(in_datasets) == len(set(in_datasets)), "a row is in two datasets"
+    assert len(listed) == len(set(listed)), "a row is excluded twice"
+    assert not set(in_datasets) & set(listed), "a row is both in a dataset and excluded"
+    assert set(in_datasets) | set(listed) == in_span, "a row in the span is in neither"
+    assert not any(e.reason.startswith("off_baseline_tier") for e in series.excluded)
+    assert view.excluded == series.excluded
+    assert "before-the-span" not in set(in_datasets) | set(listed)
+
+
+def local_day_of(stored_row: dict) -> str:
+    """The Auckland local day of a stored row's ``start_time``, ISO-spelled."""
+    return datetime.fromisoformat(stored_row["start_time"]).astimezone(AUCKLAND).date().isoformat()
 
 
 # ---------------------------------------------------------------------------

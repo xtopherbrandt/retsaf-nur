@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-09-18 through (unreleased) — Sprint 006: Per-Tier Resting-HRV Datasets
+
+F006: each resting-HRV source tier keeps its own baseline, band, `n` and `established`, and the
+verdict is computed against the dataset selected for the day rather than against the one tier that
+won a single arbitration. The migration note below was written at the point the break landed
+(T152), so a consumer that pulls mid-sprint has the instruction beside the change; the release
+notes follow at release.
+
+### Migration required
+
+**`excluded[].reason` no longer carries `off_baseline_tier: <tier>`, and `contracts/openapi.yaml`
+moves from `0.1.0-draft` to `0.2.0-draft`** — the sprint's one breaking change to an
+`implemented` operation, `GET /metrics/hrv` (`getHrvTrend`). An enum value published as receivable
+has been removed, so a client generated from the previous contract that switches on the reason
+string, or that validates the response against the old enum, must drop the member.
+
+Why the value is gone rather than merely unemitted: under F005 one tier owned the only baseline,
+and every stored row of any other tier inside `[date-66, date]` was listed in `excluded[]` as
+`off_baseline_tier: <tier>` — discarded for the verdict. Under F006 a reading of another tier is
+**not excluded from anything**: it feeds that tier's own dataset, with its own band. A morning
+carrying both a chest-strap capture and a watch snapshot now contributes one reading to *each*
+dataset. `research/00` §1.6 requires every stored row in the span to be accounted for exactly once,
+so the `included`/`excluded` partition is now **per dataset**: a row is in exactly one dataset's
+series or in `excluded[]` with one of the remaining reasons, never both and never neither.
+
+What a consumer sees:
+
+- **`excluded[]` shrinks.** Rows that were `off_baseline_tier` simply disappear from the list; on a
+  two-tier history the list can be empty where it held dozens of entries. The remaining reasons —
+  `pre_amendment_window`, `null_tier`, `unknown_tier: <tier>`, `unusable_value: <value>`,
+  `same_day_later_capture`, `before_reset: <coverage_gap|tier_change>` — are unchanged in meaning.
+- **`same_day_later_capture` is now per dataset.** A second capture of tier X on a day is X's own
+  re-take whether or not X is the tier reported in `baseline.tier`; under F005 it would have been
+  `off_baseline_tier` when X was not the resolved tier.
+- **Where the rows went** is not yet visible on the wire: `datasets[]`, which renders every
+  dataset with its readings, band and `n`, lands additively later in this sprint (T159). Until
+  then `baseline`/`band`/`included` describe the selected dataset only, exactly as before.
+- **Nothing else on the response moves** in this change: `baseline.tier`, `verdict`,
+  `unavailable_reason`, `points[]`, `thresholds` and every non-nullable field keep their shape.
+
+To upgrade a generated client: regenerate from the `0.2.0-draft` contract, or remove the
+`off_baseline_tier` member from any hand-maintained enum and treat its absence from `excluded[]` as
+"the row is in another tier's dataset", not as "the row was dropped".
+
 ## 2026-09-09 through 2026-09-18 — Sprint 005: Resting-HRV Trend
 
 F005: the resting-HRV trend verdict on the contract's `GET /metrics/hrv`, computed from F004's

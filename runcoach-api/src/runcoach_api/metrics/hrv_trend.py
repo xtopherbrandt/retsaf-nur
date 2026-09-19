@@ -240,7 +240,10 @@ REASON_PRE_AMENDMENT_WINDOW = "pre_amendment_window"
 REASON_NULL_TIER = "null_tier"
 REASON_UNKNOWN_TIER = "unknown_tier"
 REASON_UNUSABLE_VALUE = "unusable_value"
-REASON_OFF_BASELINE_TIER = "off_baseline_tier"
+#: There is no "off the baseline tier" reason any more (F006, T152; AC3,
+#: AC15): a reading of another tier is in that tier's own dataset, not in
+#: this list. The partition is per dataset -- every stored row in
+#: ``[D-66, D]`` is in exactly one dataset's ``series`` or in ``excluded``.
 REASON_SAME_DAY_LATER_CAPTURE = "same_day_later_capture"
 #: A reading inside ``[D-66, D]`` that predates the day the current
 #: baseline era began (T092): it contributed to neither the baseline nor
@@ -411,11 +414,11 @@ class SingleDatasetView:
     ``target_date``, ``timezone``, ``judged_window`` and ``readings`` are
     the series'; ``selection`` is the decision the view presents, with the
     judgeable and skipped datasets it can be reproduced from. ``excluded``
-    is the series' list with every other dataset's readings listed
-    ``off_baseline_tier: <tier>`` in place of their own dataset's
-    exclusions, as F005 listed them -- **T152's compatibility shim**: the
-    reason retires with the per-dataset partition, and the re-listing is
-    kept here only so its pins stay reachable until then.
+    is the series' own list, unchanged (AC15, T152): the other datasets'
+    readings are in ``datasets``, each in its own, and are not re-listed
+    here as anything. (Shipped F005 listed them ``off_baseline_tier:
+    <tier>``, and T151/T155 kept that re-listing on this view as a shim
+    until T152 retired the reason.)
     """
 
     target_date: date
@@ -437,6 +440,11 @@ class SingleDatasetView:
     #: The selection this view presents (``select_dataset``); ``None`` only
     #: on a view built without one.
     selection: Selection | None = None
+    #: Every dataset of the series, in fidelity order (``HrvSeries.datasets``),
+    #: so what the view does not present is still reachable from it: the
+    #: readings of a non-selected tier are in its own dataset here, not in
+    #: ``excluded`` (T152). T159 renders these.
+    datasets: tuple[HrvDataset, ...] = ()
 
 
 def baseline_window(target_date: date) -> tuple[date, date]:
@@ -1050,9 +1058,10 @@ def build_series(
     # per-day collapse is **within** a tier (AC4): the earliest capture of
     # the day on that tier is kept and every later one is listed
     # ``same_day_later_capture``. A day carrying two tiers' captures feeds
-    # both datasets (AC3); nothing is ``off_baseline_tier`` here, because no
-    # tier is *the* baseline tier any more (``selected_view`` re-lists the
-    # non-selected datasets' readings that way until T152 retires the reason).
+    # both datasets (AC3); no reading is excluded for being off *the*
+    # baseline tier, because no tier is that any more -- the F005 reason
+    # is retired (T152), and the partition is per dataset (AC15): a row is
+    # in exactly one dataset's ``series`` or in ``excluded``, never both.
     datasets: list[HrvDataset] = []
     for tier in TIER_FIDELITY:
         on_tier = _of_tier(readings, tier)
@@ -1410,23 +1419,17 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
     structural ``no_tier_sustains_a_trend`` cause). Replaces T151's bridge
     over the retired resolver (T155); retires with T159.
 
-    **T152's compatibility shim.** Every reading of a non-presented dataset
-    is listed ``off_baseline_tier: <tier>`` in the view's ``excluded``, in
-    place of its own dataset's entries, exactly as F005 listed it -- kept
-    only so the two AC15 pins that observe the reason stay reachable until
-    T152 retires it with the per-dataset partition.
+    ``excluded`` is the series' own list (AC15, T152). A non-presented
+    dataset's readings are in that dataset, carried in ``datasets``, and
+    are not re-listed here: the partition of the span's rows into "in some
+    dataset" and "excluded, with a reason" is made once by ``build_series``
+    and the view presents it as it is.
     """
     selection = select_dataset(series)
     presented = selection.selected
     if presented is None:
         presented = _presentation_fallback(series, selection.last_read)
-    tier = None if presented is None else presented.tier
-
-    off_tier = [r for r in series.readings if r.tier != tier]
-    off_tier_ids = {r.session_id for r in off_tier}
-    excluded = [e for e in series.excluded if e.session_id not in off_tier_ids]
-    excluded += [Exclusion(r.date, r.session_id, f"{REASON_OFF_BASELINE_TIER}: {r.tier}") for r in off_tier]
-    excluded.sort(key=lambda e: (e.date, e.session_id))
+    excluded = series.excluded
 
     if presented is None:
         return SingleDatasetView(
@@ -1439,12 +1442,13 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
             series=(),
             baseline=(),
             window=(),
-            excluded=tuple(excluded),
+            excluded=excluded,
             reset_on=series.gap_reset_on,
             reset_reason=REASON_COVERAGE_GAP if series.gap_reset_on is not None else None,
             withheld=False,
             selected=None,
             selection=selection,
+            datasets=series.datasets,
         )
     return SingleDatasetView(
         target_date=series.target_date,
@@ -1456,12 +1460,13 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
         series=presented.series,
         baseline=presented.baseline,
         window=presented.window,
-        excluded=tuple(excluded),
+        excluded=excluded,
         reset_on=presented.reset_on,
         reset_reason=presented.reset_reason,
         withheld=presented.withheld,
         selected=presented,
         selection=selection,
+        datasets=series.datasets,
     )
 
 
