@@ -4,3 +4,10 @@
 # on add or conversion on checkout would make every checkout differ from the original by
 # platform and fail the gate. `-text` stores and checks out the copies verbatim everywhere.
 spec-mirror/** -text
+
+# runcoach-api/tests/data/T162-no-regression-rows.csv is the AC21 release gate's evidence, written by
+# `t162-gate` with the csv module's CRLF terminator and compared byte-for-byte against the copy in the
+# Shipyard data dir by runcoach-api/tests/test_hrv_no_regression_gate.py (T162). Any line-ending
+# normalisation on add or conversion on checkout would make the tree copy differ from the original on
+# a non-Windows checkout and fail that gate. `-text` stores and checks it out verbatim everywhere.
+runcoach-api/tests/data/T162-no-regression-rows.csv -text
