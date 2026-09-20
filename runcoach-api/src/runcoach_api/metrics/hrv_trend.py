@@ -1917,14 +1917,41 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     evidence -- up-regulating on weak evidence, which ``research/00`` §1.7
     forbids. So the honest verdict is that there is none, and the response
     carries ``baseline_n`` and ``established`` to say why. This is reachable
-    after **every** reset this feature performs: a coverage gap or a tier
-    change collapses the baseline deliberately, and the athlete then
-    traverses 20 unestablished days -- ``R+0 .. R+19``, pinned by
+    after a **coverage-gap** reset, which collapses the baseline
+    deliberately: the athlete then traverses 20 unestablished days --
+    ``R+0 .. R+19``, pinned by
     ``test_the_establishment_delay_after_a_reset_is_twenty_days``. Twelve of
     them changed verdict at T116:
     ``R+8 .. R+19``, previously all of them reading ``hrv_normal``
     unless the week fell below the band. The first eight already read
     ``hrv_unavailable``, because a band needs two readings (T126).
+
+    **It is not reachable after a tier change, and this docstring said it
+    was until 2026-09-19** (T163, correcting what [[T138]] measured false
+    and could not touch: T138 carried ``behaviour_change: false``, whose
+    scope rule forbade any edit under ``runcoach-api/src/``, so the claim
+    was corrected at all three *document* sites and survived here). A
+    clean, gapless, permanent source-tier change collapses **nothing**:
+    the outgoing tier keeps its full 60-day baseline, ``established``
+    stays **true** throughout and ``n`` merely decays 60 -> 47, so the
+    switch traverses **zero** unestablished days and never reaches this
+    gate at all. Its own quiet is **18** days, ``R+2 .. R+19``
+    (``MIN_BASELINE_READINGS + WINDOW_DAYS - MIN_WINDOW_READINGS``), and
+    it is a different mechanism entirely -- week coverage on the tier the
+    athlete has stopped using, which is the ``week_too_thin`` guard above,
+    with ``reset_reason`` null on every one of the 18.
+
+    **The pin cited above cannot speak for the tier change.**
+    ``test_the_establishment_delay_after_a_reset_is_twenty_days`` is a
+    coverage-gap walk -- it asserts ``reset_reason == ["coverage_gap"] *
+    21`` across its own geometry -- and is structurally incapable of
+    producing the tier-change shape, which is why one figure stood for two
+    mechanisms for as long as it did. The tier change is pinned
+    separately, on a walked clean switch, by
+    ``test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_them``
+    in ``test_hrv_trend_reset.py``, and both figures are stated beside
+    each other in ``research/00`` 5.4 and spec 3.7.3 (pinned by
+    ``test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure``).
 
     Pinned by ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``,
     ``test_a_thin_baseline_above_the_band_is_unavailable_too`` and
