@@ -716,14 +716,24 @@ def test_the_reported_reason_is_always_the_presented_datasets_own() -> None:
     the reason can only ever be a statement about the dataset whose
     baseline the response carries; ``presented_by`` is ``selected`` exactly
     when the selection is non-null; and the structural cause fires exactly
-    when the series holds no dataset. A precedence that consulted the
-    other datasets' causes, or a view that nulled the block on a null
-    selection, reds one of the three on some row.
+    when the series holds no dataset; and the ``selection`` block the view
+    carries is the producer's, field for field -- ``main.py`` renders from
+    the **view**, so AC9's "the fallback names no dissenter" has to hold
+    there and not only on a fresh ``select_dataset`` call (T159 puts
+    ``disagreed_with`` on the response, read off this block). A precedence
+    that consulted the other datasets' causes, a view that nulled the block
+    on a null selection, or one that filled ``disagreed_with`` from the
+    dataset the fallback presents, reds one of these on some row. The
+    "fallback reads below" row -- row 4's geometry -- is the only one that
+    can see the last of them: everywhere else the presented fallback's own
+    ``below`` is ``None``, so the predicate returns ``()`` either way.
     """
     geometries = {
         "illness week": _daily(STRAP, 66, 7) + _daily(SNAPSHOT, 50, 11),
         "different causes": _daily(STRAP, 66, 7) + _daily(SNAPSHOT, 11, 7) + _daily(SNAPSHOT, 6, 0),
         "band, no week": _daily(SNAPSHOT, 11, 7) + _daily(STRAP, 7, 7) + _daily(STRAP, 2, 0),
+        "fallback reads below": _daily(STRAP, 66, 7) + _daily(STRAP, 6, 5, 15.0)
+        + _daily(SNAPSHOT, 66, 7) + _daily(SNAPSHOT, 6, 6),
         "one baseline reading": _daily(STRAP, 20, 20) + _daily(SNAPSHOT, 2, 0),
         "no baseline reading": _daily(SNAPSHOT, 2, 0),
         "nothing": [],
@@ -741,6 +751,9 @@ def test_the_reported_reason_is_always_the_presented_datasets_own() -> None:
         verdict = hrv_trend.judge(view)
         assert (view.presented_by == hrv_trend.PRESENTED_SELECTED) is (selection.selected is not None), slice_
         assert (selection.selected_reason is not None) is (selection.selected is not None), slice_
+        assert view.selection.disagreed_with == selection.disagreed_with, slice_
+        if selection.selected is None:
+            assert view.selection.disagreed_with == (), slice_
         if view.selected is None:
             assert series.datasets == () and view.tier is None, slice_
             assert verdict.unavailable_reason == NO_TIER, slice_
