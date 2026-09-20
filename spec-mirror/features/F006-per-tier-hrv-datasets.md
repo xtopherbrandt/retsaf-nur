@@ -94,7 +94,9 @@ datasets satisfy different causes.
 baseline holds at least two readings, so a band exists, and whose judged-week mean reads below that band,
 *then* it is named in `disagreed_with` — **whether or not it is judgeable**. A dataset with fewer than two
 baseline readings has no band, cannot disagree, and is instead visible in `datasets[]` carrying its `n` and
-its judged-week count.
+its judged-week count. Here "reads below" means reads the **other side of its own band from the selected
+dataset** (clarified 2026-09-19, T156, `research/00` §5.4): a dataset below its band beside a selected
+dataset that is also below its own agrees with it and is not named.
 
 **AC11 — disagreement never overrides.** *Given* any number of judgeable datasets disagree with the selected
 one in **either** direction, *then* `hrv_status` is the selected dataset's verdict, unchanged. Both
@@ -272,4 +274,6 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   cannot silently make it per-dataset. **Sensor identity split to F007.**
 - **Planning corrections (§14):** AC17 split into an unreported per-dataset band clip plus the existing
   cross-tier reported reset, after `_era_boundary` was measured to return `None` on one tier; AC9 keeps a
-  presentation fallback; AC10 taken literally.
+  presentation fallback; AC10 taken literally (2026-09-18) — judgeability is never consulted, and that is
+  the sense in which it survives the 2026-09-19 re-scoping of "reads below" to the other-side reading
+  (`research/00` §5.4, T156).
