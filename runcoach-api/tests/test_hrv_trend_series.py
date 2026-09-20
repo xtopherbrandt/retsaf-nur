@@ -587,6 +587,21 @@ def test_among_candidates_read_last_on_the_same_day_the_tie_falls_to_count_then_
     """Rule 3's tie order among candidates (T094: recency, then count in the
     window, then fidelity), pinned on ``resolve_baseline_tier`` directly
     with an explicit ``last_read`` so the term order itself is under test.
+
+    **Re-pointed, not deleted (T160, F006 AC18).** What F006 retires is this
+    function's *role* -- "one tier owns the only band", the cross-tier
+    arbitration ``build_series`` no longer asks it for at all
+    (``test_hrv_tier_change_per_dataset.py::test_the_one_call_site_is_inside_the_per_dataset_loop_and_hands_it_the_loops_tier``
+    pins the absent call; the three-valued pin for the retirement is
+    ``test_hrv_three_valued_retirements.py``). The *tie order asserted here*
+    is retained and redeployed: ``_presentation_fallback`` (AC9, T156) is
+    F005's rule 3 restated over datasets -- the established dataset read last,
+    ties by n then fidelity -- and it is pinned term by term at dataset scope
+    by ``test_the_fallback_presents_the_established_dataset_read_last_ties_by_n_then_fidelity``
+    below. This pin stays because it is the only one that drives the three
+    terms through an explicit ``last_read`` dict rather than through a
+    corpus, and because a deleted pin is indistinguishable from a pin that
+    never existed.
     Two candidates, neither covering the week, both read last on the same
     day: the denser one wins even though it is the lower-fidelity tier, and
     an equal count falls to fidelity. Recency outranks both: the candidate
