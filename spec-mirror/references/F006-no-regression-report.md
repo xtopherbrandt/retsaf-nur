@@ -2,6 +2,9 @@
 task_id: T162
 re_measured_by: T164
 re_measured_at: 2026-09-20T18:30:00Z
+reproduced_by: T159
+reproduced_at: 2026-09-21T04:27:00Z
+reproduced_result: "byte-identical rows; no figure in this report moved"
 completed_at: 2026-09-19T23:55:00Z
 sources_consulted:
   - spec/tasks/T162-the-no-regression-gate-against-shipped-f005.md (including "Added in planning")
@@ -22,6 +25,18 @@ reproduce: "cd C:/xtopher/code/retsaf-nur && H=.shipyard/spec/references/T130-ov
 
 # T162 — every T161 sweep on shipped F005 as well as F006, and the §1.7 rates that decide release
 
+> **Reproduced 2026-09-21 by [[T159]], and no figure below moved.** T159 renders the
+> `datasets[]` block and in doing so edited `metrics/hrv_trend.py` — docstrings only, including the
+> one the wave-7 review withheld — which moved the module's blob and so invalidated these rows by
+> the release gate's own provenance rule. The whole `t162-gate` cross-product was re-run rather
+> than the recorded sha edited (~11 min at `--procs 16`, 1,353,000 judgings, both modules × both
+> overlap variants), and the regenerated CSV came back **byte-identical** to T164's: 1,681,725
+> bytes, 17,070 rows, 8,696 gated, **64 worsened and all 64 the deferred exception, 0 unexcused**;
+> `normal_stale_band` still 1,896 → 1,896 and 96 → 96, the deferred marginals still
+> (22,217 → 22,232), (7,479 → 7,494) and (1,104 → 1,108). A rendering change *should* move no
+> verdict; the re-measurement is what proves it did not, and that is its whole value. The
+> provenance record beside the committed rows carries the new blob sha and its introducing commit.
+>
 > **Re-measured 2026-09-20 by [[T164]], after the fix this report recommended.** AC7's recency
 > reference is now taken over every **established** dataset rather than the judgeable ones alone
 > (`research/00` §5.4 amended first, then spec §3.7.3/§3.7.4, then AC6/AC7). Every table below was
@@ -690,7 +705,10 @@ stand.*
 
 Deterministic throughout. The rows in the tree and in the data dir are **T164's run of 2026-09-20**,
 against the installed module after the AC7 reference-set change and the same shipped F005 at `42f7705`;
-the command and every axis are T162's, unchanged. A row is identified by
+the command and every axis are T162's, unchanged. **T159 re-ran the same command on 2026-09-21** over
+its docstring-only edits to the module and the file came back byte for byte the same, which is the
+determinism claim above exercised rather than asserted — two runs, two modules apart by comments
+alone, one file. A row is identified by
 `(sweep, module, overlap, ret_density, car_density, c, s, q | r | era_len+mode | era_len+strays, suppressed)`
 and two runs produce identical files.
 
