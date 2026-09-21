@@ -34,9 +34,16 @@ What a consumer sees:
 - **`same_day_later_capture` is now per dataset.** A second capture of tier X on a day is X's own
   re-take whether or not X is the tier reported in `baseline.tier`; under F005 it would have been
   `off_baseline_tier` when X was not the resolved tier.
-- **Where the rows went** is not yet visible on the wire: `datasets[]`, which renders every
-  dataset with its readings, band and `n`, lands additively later in this sprint (T159). Until
-  then `baseline`/`band`/`included` describe the selected dataset only, exactly as before.
+- **Where the rows went is now visible on the wire** (T159, 2026-09-21, additive; `info.version`
+  stays `0.2.0-draft`). `datasets[]` carries one entry per source tier present in the span, each
+  with its own `band`, `n`, `established`, `fidelity_rank`, `last_read`, `week_days`, `week_mean`,
+  `below` and its own `reset_on`/`reset_reason`; `selected_dataset` and `selected_reason` name the
+  dataset `baseline`/`band`/`verdict` describe and why it was promoted; `disagreed_with` names any
+  dataset whose judged week reads the other side of its own band, with the judged-week count that
+  weighs the name; and `points[].dataset` names the dataset each day's band came from, since
+  selection runs per local day. `baseline`/`band`/`included` still describe the selected dataset
+  only, exactly as before, and no field that was non-nullable became nullable — a consumer that
+  ignores the new fields needs no change.
 - **Nothing else on the response moves** in this change: `baseline.tier`, `verdict`,
   `unavailable_reason`, `points[]`, `thresholds` and every non-nullable field keep their shape.
 

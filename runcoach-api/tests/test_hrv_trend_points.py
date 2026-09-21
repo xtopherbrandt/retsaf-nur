@@ -264,6 +264,11 @@ def test_no_parameters_yields_one_point(configure, monkeypatch) -> None:
         "baseline": None,
         "swc_low": None,
         "swc_high": None,
+        # F006 T159 (AC14): no reading of any tier exists in [d-66, d] on an
+        # empty store, so there is no dataset for the day to name. The
+        # comparison stays exact -- a field added to the point shape without a
+        # decision about its empty-store value reds here.
+        "dataset": None,
     }
 
 
@@ -378,12 +383,74 @@ def test_the_contract_promises_nothing_stricter_than_the_route_enforces() -> Non
 
     trend = contract["components"]["schemas"]["HrvTrend"]["properties"]
     built_trend = built["components"]["schemas"]["HrvTrendResponse"]["properties"]
-    point_fields = {"date", "ln_rmssd", "baseline", "swc_low", "swc_high"}
+    # ``dataset`` joined the UI's point shape in F006 T159 (AC14): selection
+    # runs per local day, so a point that does not name its dataset lets a
+    # chart switch instrument between adjacent days. The set is still exact --
+    # both copies gain the field or this reds.
+    point_fields = {"date", "ln_rmssd", "baseline", "swc_low", "swc_high", "dataset"}
     assert set(trend["points"]["items"]["properties"]) == point_fields
     assert set(built["components"]["schemas"]["HrvPoint"]["properties"]) == point_fields
     for block in ("date", "from", "verdict", "ln_rmssd_7d_mean", "band", "baseline", "window",
-                  "readings_in_window", "included", "excluded", "thresholds"):
+                  "readings_in_window", "included", "excluded", "thresholds",
+                  "datasets", "selected_dataset", "selected_reason", "disagreed_with"):
         assert block in trend, f"the contract's HrvTrend lacks the verdict block `{block}`"
     undeclared = sorted(set(trend) - set(built_trend))
     assert not undeclared, f"the contract names response fields the route does not serve: {undeclared}"
     assert set(trend["verdict"]["enum"]) == set(built_trend["verdict"]["enum"])
+
+
+# ---------------------------------------------------------------------------
+# F006 T159 (AC14): every point names the dataset its band came from
+# ---------------------------------------------------------------------------
+
+
+def test_every_point_names_the_dataset_its_band_came_from(configure, seed) -> None:
+    """The band on a point is a property of that day's own baseline, and since
+    F006 it is a property of one **dataset's** baseline -- the dataset
+    selected for that day, or the one the presentation fallback presented. The
+    point now names it (AC14).
+
+    A single-tier series makes the field's *null* case exact, which is the
+    part a reader is most likely to get wrong. ``dataset`` is null only when
+    no reading of any tier exists in that day's ``[d-66, d]`` -- the
+    structural ``no_tier_sustains_a_trend`` shape -- and that is **narrower**
+    than the band being null: on the very first seeded day the snapshot
+    dataset exists, holds no baseline-window reading and therefore no band, so
+    ``dataset`` is non-null beside three nulls. A renderer that derived the
+    name from the band would answer null there, and a renderer that answered
+    the response's own ``selected_dataset`` for every day would answer
+    ``health_snapshot`` on the days before any capture.
+
+    The switching case -- two tiers, adjacent days drawn against different
+    instruments -- needs a declared chest-strap capture and is pinned in
+    ``test_hrv_trend_endpoint.py`` beside the seeder that can produce one."""
+    first, last = D - timedelta(days=80), D
+    readings = drifting_series(first, last)
+    body = get_points(configure, seed, readings, D - timedelta(days=90), D)
+    points = {p["date"]: p for p in body["points"]}
+    print("named:", [(p["date"], p["dataset"]) for p in body["points"][:12]])
+
+    # Before the first capture there is no dataset of any tier in [d-66, d].
+    for day in days_between(D - timedelta(days=90), first - timedelta(days=1)):
+        point = points[day.isoformat()]
+        assert point["dataset"] is None, point
+        assert point["baseline"] is None and point["swc_low"] is None, point
+
+    # On the first capture the dataset exists and has no band: one field
+    # non-null, three null.
+    opening = points[first.isoformat()]
+    assert opening["dataset"] == SNAPSHOT, opening
+    assert opening["baseline"] is None and opening["swc_low"] is None, opening
+    assert opening["ln_rmssd"] is not None, opening
+
+    # From the day the baseline window holds two readings onward, the name
+    # sits beside a band, and the last point is ``to``'s own.
+    for day in days_between(first + timedelta(days=68), last):
+        point = points[day.isoformat()]
+        assert point["dataset"] == SNAPSHOT, point
+        assert point["baseline"] is not None, point
+    assert body["points"][-1]["dataset"] == body["selected_dataset"] == SNAPSHOT
+
+
+def days_between(first: date, last: date) -> list[date]:
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]

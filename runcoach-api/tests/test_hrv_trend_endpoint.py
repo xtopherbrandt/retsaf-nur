@@ -230,6 +230,7 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     seeder.snapshots(days(D - timedelta(days=6), D - timedelta(days=3)), week)
     later = seeder.snapshot(at(D - timedelta(days=3), hh=9), 30.0)
     strap = seeder.strap(at(D - timedelta(days=2)))
+    strap_reading_ms = strap.resting_rmssd_ms
     run = seeder.run(at(D - timedelta(days=1)))
     legacy = seeder.pre_amendment(at(D))
     seeder.persist()
@@ -275,7 +276,6 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     reasons = {entry["session_id"]: entry["reason"] for entry in body["excluded"]}
     # F006 (T152): the strap capture feeds the strap's own dataset and is in
     # no excluded list; shipped F005 listed it ``off_baseline_tier: <tier>``.
-    # T159 renders that dataset in ``datasets[]``.
     assert reasons == {
         later.session_id: "same_day_later_capture",
         run.session_id: "null_tier",
@@ -284,6 +284,32 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     assert strap.session_id not in reasons
     assert all(entry["reason"] for entry in body["excluded"])
     assert all(entry["date"] for entry in body["excluded"])
+    # T159, re-pointing this pin off absence: "in neither list" was all T152
+    # could say, and it is satisfied by a row that fell out of the response
+    # entirely. The strap capture is now asserted **present**, in its own
+    # dataset, with the shape AC10's second sentence requires of a dataset
+    # that has no band -- its ``n`` and its judged-week count (wave-4 review;
+    # AC15's "accounted for exactly once" needs the positive half to mean
+    # anything).
+    datasets = _by_tier(body)
+    assert set(datasets) == {SNAPSHOT, STRAP}, body["datasets"]
+    assert datasets[STRAP] | {"tier": STRAP} == {
+        "tier": STRAP,
+        "n": 0,
+        "established": False,
+        "band": None,
+        "fidelity_rank": 0,
+        "last_read": None,
+        "week_days": 1,
+        "week_mean": pytest.approx(math.log(strap_reading_ms)),
+        "below": None,
+        "reset_on": None,
+        "reset_reason": None,
+    }, datasets[STRAP]
+    assert datasets[SNAPSHOT]["n"] == 20 and datasets[SNAPSHOT]["week_days"] == 4
+    assert body["selected_dataset"] == SNAPSHOT
+    assert body["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+    assert body["disagreed_with"] == []
     # The per-day ``points[]`` beside these blocks is T091's (test_hrv_trend_points.py).
 
 
@@ -476,6 +502,20 @@ def test_included_covers_the_window_only_and_excluded_spans_the_baseline_too(con
     assert all(date.fromisoformat(r["date"]) >= D - timedelta(days=6) for r in body["included"])
     assert body["excluded"] == []
     assert deep.session_id not in {r["session_id"] for r in body["included"]}
+    # T159, re-pointing this pin off absence (wave-4 review): "in neither
+    # ``included[]`` nor ``excluded[]``" is also what a dropped row looks
+    # like. The deep strap capture is asserted **present** in the strap's own
+    # dataset -- one baseline-window day, no band, no judged-week reading --
+    # which is the claim T152 was actually making.
+    datasets = _by_tier(body)
+    assert set(datasets) == {SNAPSHOT, STRAP}, body["datasets"]
+    assert datasets[STRAP]["n"] == 1
+    assert datasets[STRAP]["band"] is None and datasets[STRAP]["below"] is None
+    assert datasets[STRAP]["week_days"] == 0 and datasets[STRAP]["week_mean"] is None
+    assert datasets[STRAP]["last_read"] == (D - timedelta(days=20)).isoformat()
+    assert datasets[STRAP]["established"] is False
+    assert datasets[SNAPSHOT]["n"] == 20 and datasets[SNAPSHOT]["band"] is not None
+    assert body["selected_dataset"] == SNAPSHOT
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +756,25 @@ def test_a_trial_then_abandoned_strap_does_not_blank_the_verdict_through_the_end
     # and nothing is excluded; shipped F005 listed all 14
     # ``off_baseline_tier: chest_strap_raw``.
     assert on_suppressed_day["excluded"] == []
+    # T159, re-pointing this pin off absence (wave-4 review): an empty
+    # ``excluded[]`` is equally what losing all 14 rows would produce. They
+    # are asserted **present** in the strap's own dataset, all 14 of them, on
+    # the very day the snapshot is judged suppressed -- the abandoned trial
+    # keeps its own baseline and its own band, and is simply not the dataset
+    # the verdict came from.
+    trial = _by_tier(on_suppressed_day)
+    assert set(trial) == {SNAPSHOT, STRAP}, on_suppressed_day["datasets"]
+    assert trial[STRAP]["n"] == 14
+    assert trial[STRAP]["established"] is True
+    assert trial[STRAP]["band"] is not None
+    assert trial[STRAP]["week_days"] == 0 and trial[STRAP]["week_mean"] is None
+    assert trial[STRAP]["last_read"] == "2026-07-16"
+    assert trial[STRAP]["band"]["mean"] != trial[SNAPSHOT]["band"]["mean"]
+    # It is established but not judgeable (no judged-week day), so it is not a
+    # candidate at all (AC8) and the snapshot is selected with nothing skipped.
+    assert on_suppressed_day["selected_dataset"] == SNAPSHOT
+    assert on_suppressed_day["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+    assert on_suppressed_day["disagreed_with"] == []
 
     assert body["baseline"]["tier"] == SNAPSHOT
     assert body["baseline"]["reset_reason"] is None
@@ -1114,7 +1173,32 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 459  # re-measured 2026-09-19 (T156), as the last action before the
+SCOPED_SUITE_COLLECTED = 469  # re-measured 2026-09-21 (T159), as the last action before the
+#                              # commit: +10. Two of the five suites moved.
+#                              # Nine identities added to this file on F006's
+#                              # response block (datasets[], selected_dataset,
+#                              # selected_reason, disagreed_with and the
+#                              # dataset each point's band came from): both
+#                              # tiers rendered with their own band, the
+#                              # no-band dataset carrying n and its week count,
+#                              # the null-selection pair with the fallback
+#                              # still populating baseline/band, the fall to a
+#                              # lower tier with the recency gate recomputed
+#                              # from the response, the dissenter named with
+#                              # its week count (2 cases), the per-dataset
+#                              # reported reset, the per-point identity across
+#                              # a selection switch, and the two-copy schema/
+#                              # contract pin. One added to
+#                              # test_hrv_trend_points.py (every point names
+#                              # the dataset its band came from, including the
+#                              # day that has a dataset and no band). No
+#                              # identity elsewhere changed: the three
+#                              # endpoint pins the wave-4 review flagged as
+#                              # weakened to absence-only were re-pointed in
+#                              # place at datasets[] membership, not added.
+#                              # Nothing publishes this number; the previous
+#                              # value was T156's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 459  # re-measured 2026-09-19 (T156), as the last action before the
 #                              # commit: +7. Seven pins added to
 #                              # test_hrv_trend_series.py on the presentation
 #                              # fallback formalised (AC9; F005's rule 3 over
@@ -1621,6 +1705,12 @@ def _all_scanned_files() -> tuple[Path, ...]:
 #: the two runs"), which then sat at 91% of the flattened text and no longer proved
 #: the tail was read. An anchor names its file's **last** live line by construction,
 #: so appending to a scanned file means re-anchoring it in the same commit.
+#: Re-anchored again on 2026-09-21 (T159) for ``schemas.py`` and for **this** file,
+#: both of which gained a tail: the per-dataset response block and its field
+#: descriptions, and the endpoint section that pins them. Their old anchors then
+#: sat at 87.3% and 87.6% -- the same failure T138 hit, in the same way, two files
+#: over -- and each was moved to the last live sentence of its file's new tail.
+#: The 98% floor is what noticed both times; neither was found by reading.
 WITHDRAWN_SCAN_ANCHORS = _DECLARATIONS.WITHDRAWN_SCAN_ANCHORS
 
 
@@ -3091,3 +3181,492 @@ def test_a_to_inside_the_calendars_first_126_days_is_a_422_not_a_500(configure) 
 
     assert response.status_code == 422, response.text
     assert "to" in str(response.json()["detail"]) and "0001-01-31" in str(response.json()["detail"])
+
+
+# ---------------------------------------------------------------------------
+# F006 T159: datasets[], selected_dataset, selected_reason, disagreed_with,
+# and the dataset each point's band came from
+#
+# AC10, AC12, AC13, AC14, AC15. ``baseline`` and ``band`` keep their names and
+# now mean *the selected dataset's*; four fields are added beside them, and
+# ``points[]`` gains the dataset its band came from because selection runs per
+# local day.
+#
+# What these pins are for, stated once. Every row of F006's Negative Class
+# that names who notices a residual answers "nobody from the response" and
+# then names ``datasets[]`` as the thing that would show it: the non-selected
+# dataset's reported reset (AC17/T154), the covering dataset's ``n`` and week
+# count under the presentation fallback (T156), the returning dataset's latest
+# baseline-window day behind a stale band (AC17's second residual), and the
+# per-dataset side against its own band that IDEA-087's sign-agreement rate
+# would be estimated from. This section is where those become reachable, so
+# each pin asserts the *presence and value* of a field, never merely that
+# something is absent.
+# ---------------------------------------------------------------------------
+
+
+def _by_tier(body: dict) -> dict[str, dict]:
+    """``datasets[]`` keyed by tier, having first asserted the list's order.
+
+    The key is the tier (F006 reference §1: the dataset key is the tier, not
+    the device), so keying cannot collide -- ``select_dataset`` refuses a
+    series carrying two datasets of one tier rather than resolving it by
+    position. The order is fidelity order, highest first, which is the order
+    ``selected_reason`` is decided in and the order ``disagreed_with`` is
+    reported in, so it is asserted here rather than left to each caller."""
+    datasets = body["datasets"]
+    ranks = [d["fidelity_rank"] for d in datasets]
+    assert ranks == sorted(ranks), datasets
+    assert [d["tier"] for d in datasets] == [
+        hrv_trend.TIER_FIDELITY[rank] for rank in ranks
+    ], datasets
+    return {d["tier"]: d for d in datasets}
+
+
+def straps_at(seeder: Seeder, dates: Iterable[date], hh: int = 7) -> list[Session]:
+    """One declared strap capture per local day at ``hh``:00 UTC.
+
+    07:00 rather than ``Seeder.straps``'s 06:00 because every synthetic file
+    shares one ``source_device``, so a strap capture at the snapshot's own
+    instant derives the same session id and is the same session."""
+    return [seeder.strap(at(day, hh=hh)) for day in dates]
+
+
+def test_both_tiers_are_rendered_with_their_own_band_and_n_and_a_selected_reason(configure, seeder) -> None:
+    """**T159's first failing test.** A response body carries ``datasets[]``
+    with a band and ``n`` for *both* tiers and a non-null ``selected_reason``
+    -- red before this task, where the schema has neither field.
+
+    A daily strap and a daily snapshot over the same 67 local days: both
+    datasets are established and judgeable, the strap is selected on fidelity
+    (AC5), and the snapshot -- the loser -- still reports its own band, its
+    own ``n`` and its own ``established`` (AC2). Under shipped F005 one tier
+    owned the only band and the other tier's 61 readings were listed
+    ``off_baseline_tier``; there was no field of the response they could be
+    read from, which is what this block is.
+
+    The two bands are asserted **different**: the point of per-tier baselining
+    is that the loser keeps its own yardstick, and a renderer that copied the
+    presented band onto every dataset would pass every other assertion here.
+    """
+    configure("UTC")
+    span = days(D - timedelta(days=66), D)
+    seeder.snapshots(span, baseline_values(len(span)))
+    straps_at(seeder, span)
+    seeder.persist()
+
+    with TestClient(app) as client:
+        response = get(client, to=D.isoformat())
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    datasets = _by_tier(body)
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("selected:", body["selected_dataset"], body["selected_reason"], body["disagreed_with"])
+
+    assert set(datasets) == {STRAP, SNAPSHOT}
+    assert [d["tier"] for d in body["datasets"]] == [STRAP, SNAPSHOT]
+    for tier, rank in ((STRAP, 0), (SNAPSHOT, 1)):
+        entry = datasets[tier]
+        assert entry["n"] == 60, entry
+        assert entry["established"] is True, entry
+        assert entry["week_days"] == 7, entry
+        assert entry["last_read"] == (D - timedelta(days=7)).isoformat(), entry
+        assert entry["fidelity_rank"] == rank, entry
+        assert entry["reset_on"] is None and entry["reset_reason"] is None, entry
+        assert set(entry["band"]) == {"mean", "half_width", "lo", "hi", "floored"}, entry
+        assert entry["below"] is False, entry
+        assert entry["week_mean"] is not None, entry
+
+    assert body["selected_dataset"] == STRAP
+    assert body["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+    assert body["verdict"] == "hrv_normal"
+    assert body["disagreed_with"] == []
+
+    # ``baseline``/``band`` are the selected dataset's, and the loser's band is
+    # its own, not a copy.
+    assert body["baseline"]["tier"] == STRAP
+    assert body["baseline"]["n"] == datasets[STRAP]["n"]
+    assert body["baseline"]["established"] == datasets[STRAP]["established"]
+    assert body["band"] == datasets[STRAP]["band"]
+    assert body["ln_rmssd_7d_mean"] == pytest.approx(datasets[STRAP]["week_mean"])
+    assert body["readings_in_window"] == datasets[STRAP]["week_days"]
+    assert datasets[SNAPSHOT]["band"]["mean"] != datasets[STRAP]["band"]["mean"]
+    assert abs(datasets[SNAPSHOT]["band"]["mean"] - datasets[STRAP]["band"]["mean"]) > 0.5
+
+
+def test_a_dataset_with_no_band_is_visible_carrying_its_n_and_its_judged_week_count(
+    configure, seeder
+) -> None:
+    """AC10's second sentence, which nothing else in the response provides: a
+    dataset holding fewer than two baseline readings has no band, cannot
+    disagree with anything, and is instead visible in ``datasets[]`` carrying
+    its ``n`` **and its judged-week count**.
+
+    The judged-week count is the field T157 exposes as ``BandReading.week_days``
+    and the only place it reaches a consumer. A strap read once inside the
+    baseline window and on the last three mornings: ``n`` 1, ``band`` null,
+    ``below`` null (it cannot be on either side of a band it does not have),
+    ``week_days`` 3 -- and it is *not* named in ``disagreed_with``, which is
+    the half of AC10's sentence a renderer could get wrong by treating a null
+    ``below`` as "not below"."""
+    configure("UTC")
+    seeder.snapshots(days(D - timedelta(days=66), D), baseline_values(67))
+    straps_at(seeder, [D - timedelta(days=20)])
+    straps_at(seeder, days(D - timedelta(days=2), D))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    datasets = _by_tier(body)
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    assert datasets[STRAP]["n"] == 1
+    assert datasets[STRAP]["band"] is None
+    assert datasets[STRAP]["below"] is None
+    assert datasets[STRAP]["week_days"] == 3
+    assert datasets[STRAP]["week_mean"] is not None
+    assert datasets[STRAP]["established"] is False
+    assert datasets[STRAP]["last_read"] == (D - timedelta(days=20)).isoformat()
+    assert body["disagreed_with"] == []
+
+    assert datasets[SNAPSHOT]["n"] == 60
+    assert datasets[SNAPSHOT]["band"] is not None
+    assert datasets[SNAPSHOT]["week_days"] == 7
+    assert body["selected_dataset"] == SNAPSHOT
+    assert body["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+
+
+def test_selected_reason_is_null_exactly_when_selected_dataset_is_and_the_fallback_still_populates(
+    configure, seeder
+) -> None:
+    """AC13's null half and AC12's whole claim, on one seeding read on two
+    days. A daily snapshot ending at ``D-7``: judged from ``D-7`` the week is
+    full and the dataset is selected; judged from ``D`` the judged week
+    ``[D-6, D]`` is empty, nothing is judgeable, and **no dataset is
+    selected**.
+
+    On that day the pair is null together -- which is T144's shape, kept
+    closed: ``selected_reason`` is derived from the selection rather than
+    stored beside it, so it cannot be non-null beside a null
+    ``selected_dataset``. And every field that was non-nullable in the
+    contract before F006 still carries a value, because AC9's presentation
+    fallback populates ``baseline`` and ``band`` from the dataset the athlete
+    was read on last: ``baseline.n`` 60, ``established`` true, a band, and
+    ``week_too_thin`` computed on that dataset's own ``n``. That is what makes
+    this addition additive rather than a breaking change.
+
+    ``disagreed_with`` is empty here **by rule, not by accident**: the
+    fallback presents and never judges, so there is no verdict to disagree
+    with (IDEA-082, settled by T156). ``datasets[]`` still shows the dataset's
+    own side, which is the only reason that state is legible at all."""
+    configure("UTC")
+    seeder.snapshots(days(D - timedelta(days=66), D - timedelta(days=7)), baseline_values(60))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        unselected = get(client, to=D.isoformat()).json()
+        selected = get(client, to=(D - timedelta(days=7)).isoformat()).json()
+
+    for body in (unselected, selected):
+        assert (body["selected_dataset"] is None) == (body["selected_reason"] is None), body
+
+    print("no selection:", unselected["selected_dataset"], unselected["selected_reason"])
+    print("datasets:", json.dumps(unselected["datasets"], indent=1))
+    assert unselected["selected_dataset"] is None
+    assert unselected["selected_reason"] is None
+    assert unselected["disagreed_with"] == []
+    assert unselected["verdict"] == "hrv_unavailable"
+    assert unselected["unavailable_reason"] == "week_too_thin"
+    # AC12: nothing non-nullable before F006 became nullable.
+    assert unselected["baseline"]["tier"] == SNAPSHOT
+    assert unselected["baseline"]["n"] == 60
+    assert unselected["baseline"]["established"] is True
+    assert unselected["baseline"]["window"] == [
+        (D - timedelta(days=66)).isoformat(),
+        (D - timedelta(days=7)).isoformat(),
+    ]
+    assert unselected["band"] is not None
+    datasets = _by_tier(unselected)
+    assert set(datasets) == {SNAPSHOT}
+    assert datasets[SNAPSHOT]["n"] == 60
+    assert datasets[SNAPSHOT]["week_days"] == 0
+    assert datasets[SNAPSHOT]["week_mean"] is None
+    assert datasets[SNAPSHOT]["below"] is None
+    assert datasets[SNAPSHOT]["band"] == unselected["band"]
+
+    assert selected["selected_dataset"] == SNAPSHOT
+    assert selected["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+    assert _by_tier(selected)[SNAPSHOT]["week_days"] == 7
+
+
+def test_the_response_says_the_verdict_fell_to_a_lower_tier_and_the_gate_is_reproducible(
+    configure, seeder
+) -> None:
+    """AC13's second member, and the only field in the response that says a
+    fall happened. A strap established over ``[D-66, D-40]`` and read again on
+    the last three mornings, beside a daily snapshot: the strap is judgeable
+    and the highest fidelity, and the recency gate skips it because its latest
+    reading **inside the baseline window** is ``D-40``, 33 days behind the
+    snapshot's ``D-7`` and more than ``recency_tolerance_days`` (28).
+
+    ``selected_reason`` is therefore ``higher_fidelity_skipped_stale`` rather
+    than ``highest_fidelity_judgeable``: the verdict is being taken from the
+    lower-fidelity instrument and the response says so. Without this member
+    the two cases are indistinguishable from outside, and the athlete judged
+    against the watch while wearing the strap has no way to see it.
+
+    The gate itself is recomputed here from the rendered fields alone --
+    ``last_read`` per dataset, ``established``, ``week_days`` -- which is the
+    ``research/00`` §1.6 obligation the response carries for every other rule
+    it applies. The response does not echo ``recency_tolerance_days``
+    (IDEA-070), so the constant is read from the module."""
+    configure("UTC")
+    straps_at(seeder, days(D - timedelta(days=66), D - timedelta(days=40)))
+    straps_at(seeder, days(D - timedelta(days=2), D))
+    seeder.snapshots(days(D - timedelta(days=66), D), baseline_values(67))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    datasets = _by_tier(body)
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("selected:", body["selected_dataset"], body["selected_reason"])
+
+    assert body["selected_dataset"] == SNAPSHOT
+    assert body["selected_reason"] == hrv_trend.SELECTED_HIGHER_FIDELITY_STALE
+    assert body["baseline"]["tier"] == SNAPSHOT
+
+    strap, snapshot = datasets[STRAP], datasets[SNAPSHOT]
+    assert strap["established"] is True and strap["week_days"] >= hrv_trend.MIN_WINDOW_READINGS
+    assert strap["last_read"] == (D - timedelta(days=40)).isoformat()
+    assert snapshot["last_read"] == (D - timedelta(days=7)).isoformat()
+    # The gate, recomputed from the response: the reference is the greatest
+    # ``last_read`` over the ESTABLISHED datasets (T164), strictly greater than
+    # the tolerance is skipped.
+    reference = max(date.fromisoformat(d["last_read"]) for d in body["datasets"] if d["established"])
+    behind = (reference - date.fromisoformat(strap["last_read"])).days
+    assert behind == 33
+    assert behind > hrv_trend.RECENCY_TOLERANCE_DAYS
+    assert (reference - date.fromisoformat(snapshot["last_read"])).days == 0
+
+
+@pytest.mark.parametrize(
+    ("week", "expected_week_days"),
+    [(7, 7), (1, 1)],
+    ids=["a_full_dissenting_week", "a_one_morning_dissenting_week"],
+)
+def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weighs_it(
+    configure, seeder, week: int, expected_week_days: int
+) -> None:
+    """AC10 and AC11 through the response, with T157's own finding rendered:
+    a judged week of **one** morning can name a dissenter, so the count is
+    reported beside the name and the consumer can weigh it.
+
+    A daily strap is selected and reads within its own band; a snapshot with a
+    20-day baseline reads 25 ms across its judged week, well below its own
+    band's ``lo``. It is named in ``disagreed_with`` in both parametrised
+    cases -- with a full week, where it is judgeable, and with a single
+    morning, where it is not -- because judgeability is never consulted for
+    the naming (AC10, taken literally).
+
+    ``verdict`` is ``hrv_normal`` in both: **disagreement never overrides**
+    (AC11). This is F006's accepted §1.7 exposure rendered rather than denied
+    -- up-regulation while contrary evidence exists -- and ``disagreed_with``
+    is the whole of what the response says about it, which is why the count
+    matters: one 25 ms morning and seven of them are very different evidence
+    behind the same name.
+
+    The dissent is recomputable by hand from the block (``research/00`` §1.6):
+    the snapshot's ``week_mean`` is strictly below its own ``band.lo`` while
+    the strap's is not below its own."""
+    configure("UTC")
+    straps_at(seeder, days(D - timedelta(days=66), D))
+    seeder.snapshots(days(D - timedelta(days=26), D - timedelta(days=7)), baseline_values(20))
+    seeder.snapshots(days(D - timedelta(days=week - 1), D), repeat(25.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    datasets = _by_tier(body)
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("disagreed_with:", body["disagreed_with"], "verdict:", body["verdict"])
+
+    assert body["selected_dataset"] == STRAP
+    assert body["verdict"] == "hrv_normal"
+    assert body["disagreed_with"] == [{"dataset": SNAPSHOT, "week_days": expected_week_days}]
+
+    assert datasets[SNAPSHOT]["week_days"] == expected_week_days
+    assert datasets[SNAPSHOT]["below"] is True
+    assert datasets[SNAPSHOT]["week_mean"] < datasets[SNAPSHOT]["band"]["lo"]
+    assert datasets[STRAP]["below"] is False
+    assert datasets[STRAP]["week_mean"] >= datasets[STRAP]["band"]["lo"]
+    # The named dataset's count is the one the block reports for it, not a
+    # second derivation: a renderer pairing the name with the wrong dataset's
+    # week would pass the membership assertion alone.
+    assert body["disagreed_with"][0]["week_days"] == datasets[SNAPSHOT]["week_days"]
+    assert body["disagreed_with"][0]["week_days"] != datasets[STRAP]["week_days"] or expected_week_days == 7
+
+
+def test_each_dataset_carries_its_own_reported_reset_and_only_the_selected_ones_is_presented(
+    configure, seeder
+) -> None:
+    """AC17's second half (T154) rendered: ``tier_change_reset`` is asked once
+    **per dataset**, with that dataset's own tier, so the two datasets of one
+    series can report different things -- and ``baseline.reset_on`` /
+    ``baseline.reset_reason`` are the **selected** dataset's alone.
+
+    A daily strap to ``D-61`` then a daily snapshot from ``D-60``: the
+    snapshot's era cleanly follows the strap's, so the snapshot reports
+    ``(D-60, tier_change)`` and its window is clipped there, while the strap
+    -- which *is* the previous window's tier, so clause (b) short-circuits --
+    reports nothing at all. A renderer that copied the presented reset onto
+    every entry, or nulled every entry, passes neither half.
+
+    **What this geometry cannot show, and where it is shown instead.** T154
+    measured the mirror case -- a *non-selected* dataset carrying a reported
+    ``tier_change`` the rest of the response never shows -- and it needs three
+    tiers: clause (c) refuses a boundary whose other tier is dense after it,
+    and a judgeable dataset holds at least ``min_window_readings`` judged-week
+    days by definition, so at N = 2 the two cannot both hold. The classifier
+    never writes ``health_api_overnight`` (reference §10: N is 3 in the enum
+    and 2 in every real corpus), so no endpoint seeding can reach it. It is
+    pinned at module scope instead, by
+    ``test_hrv_tier_change_per_dataset.py::test_the_view_presents_the_selected_datasets_own_report_and_carries_the_others``.
+    """
+    configure("UTC")
+    straps_at(seeder, days(D - timedelta(days=126), D - timedelta(days=61)))
+    seeder.snapshots(days(D - timedelta(days=60), D), baseline_values(61))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    datasets = _by_tier(body)
+    era = (D - timedelta(days=60)).isoformat()
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("baseline:", json.dumps(body["baseline"], indent=1))
+
+    assert body["selected_dataset"] == SNAPSHOT
+    assert body["baseline"]["reset_reason"] == "tier_change"
+    assert body["baseline"]["reset_on"] == era
+    assert datasets[SNAPSHOT]["reset_on"] == era
+    assert datasets[SNAPSHOT]["reset_reason"] == "tier_change"
+    assert datasets[STRAP]["reset_on"] is None
+    assert datasets[STRAP]["reset_reason"] is None
+    # AC15: the strap's six in-span mornings are in its own dataset and in no
+    # excluded list -- accounted for exactly once, positively.
+    assert datasets[STRAP]["n"] == 6
+    assert datasets[STRAP]["established"] is False
+    assert body["excluded"] == []
+
+
+def test_the_points_name_the_dataset_each_days_band_came_from_across_a_switch(
+    configure, seeder
+) -> None:
+    """AC14, and the defect it exists for (``CRITIC-F005`` priority 3).
+
+    Selection runs per **local day** and reads nothing from yesterday, so a
+    chart's adjacent points can be drawn against two different instruments. A
+    daily snapshot over 200 days with a daily strap starting at ``D-30``: the
+    strap reaches ``min_baseline_readings`` days inside ``[d-66, d-7]`` on
+    ``d = D-10`` exactly, and from that day it is judgeable, outranks the
+    snapshot and is selected. Every earlier point in the range is the
+    snapshot's.
+
+    The band **steps** at that boundary by about 0.66 in log space -- the
+    systematic bias between a chest-strap RR capture and a device-computed
+    numeric rMSSD, not a change in the athlete -- and before this field there
+    was nothing in the response that said which instrument drew which day. The
+    step is asserted here, beside the names, because it is the reason the
+    names are needed."""
+    configure("UTC")
+    seeder.snapshots(days(D - timedelta(days=200), D), baseline_values(201))
+    straps_at(seeder, days(D - timedelta(days=30), D))
+    seeder.persist()
+
+    first = D - timedelta(days=20)
+    with TestClient(app) as client:
+        body = get(client, **{"from": first.isoformat(), "to": D.isoformat()}).json()
+
+    points = body["points"]
+    named = {p["date"]: p["dataset"] for p in points}
+    print("points:", [(p["date"], p["dataset"]) for p in points])
+
+    assert [p["date"] for p in points] == [d.isoformat() for d in days(first, D)]
+    switch = D - timedelta(days=10)
+    for day in days(first, switch - timedelta(days=1)):
+        assert named[day.isoformat()] == SNAPSHOT, day
+    for day in days(switch, D):
+        assert named[day.isoformat()] == STRAP, day
+
+    # The last point is ``to``'s, so it names what ``selected_dataset`` names
+    # and carries the response's own band.
+    assert points[-1]["dataset"] == body["selected_dataset"] == STRAP
+    assert points[-1]["swc_low"] == pytest.approx(body["band"]["lo"])
+
+    # The step the name explains.
+    by_date = {p["date"]: p for p in points}
+    before = by_date[(switch - timedelta(days=1)).isoformat()]
+    after = by_date[switch.isoformat()]
+    assert abs(after["baseline"] - before["baseline"]) > 0.5, (before, after)
+    others = [
+        abs(b["baseline"] - a["baseline"])
+        for a, b in pairwise(points)
+        if b["date"] != switch.isoformat()
+    ]
+    assert max(others) < 0.05, max(others)
+
+
+def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:
+    """The contract and the as-built schema move in one change set (the
+    project's API-contract rule), so the four added fields are asserted in
+    **both** copies and against each other -- the two-copy shape T140 exists
+    for, one field family over.
+
+    ``selected_reason``'s enum is the module's own ``SELECTED_REASONS`` tuple
+    **in order**, in both copies. T156 pins that tuple by exact equality;
+    ``schemas.py`` subscripts ``Literal`` with the tuple itself rather than
+    transcribing its members, so a member added to the module appears here
+    without a hand edit and a member cannot come to exist in one copy alone --
+    which is the hole T144 closed on ``unavailable_reason`` and this task was
+    told not to re-open."""
+    served = app.openapi()["components"]["schemas"]
+    trend = served["HrvTrendResponse"]["properties"]
+    contract = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    published = contract["components"]["schemas"]["HrvTrend"]["properties"]
+
+    for field in ("datasets", "selected_dataset", "selected_reason", "disagreed_with"):
+        assert field in trend, field
+        assert field in published, field
+
+    dataset_fields = {
+        "tier",
+        "n",
+        "established",
+        "band",
+        "fidelity_rank",
+        "last_read",
+        "week_days",
+        "week_mean",
+        "below",
+        "reset_on",
+        "reset_reason",
+    }
+    assert set(served["DatasetSummary"]["properties"]) == dataset_fields
+    assert set(published["datasets"]["items"]["properties"]) == dataset_fields
+    assert set(served["Disagreement"]["properties"]) == {"dataset", "week_days"}
+    assert set(published["disagreed_with"]["items"]["properties"]) == {"dataset", "week_days"}
+
+    enum = next(part["enum"] for part in trend["selected_reason"]["anyOf"] if "enum" in part)
+    assert tuple(enum) == hrv_trend.SELECTED_REASONS
+    assert tuple(published["selected_reason"]["enum"]) == hrv_trend.SELECTED_REASONS
+    assert {"type": "null"} in trend["selected_reason"]["anyOf"]
+    assert published["selected_reason"]["nullable"] is True
+    assert published["selected_dataset"]["nullable"] is True
+
+    # T152's breaking change took the contract to 0.2.0-draft; this one is
+    # additive and does not move it (AC12).
+    assert contract["info"]["version"] == "0.2.0-draft"

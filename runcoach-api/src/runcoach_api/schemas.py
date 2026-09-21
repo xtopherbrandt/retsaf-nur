@@ -225,6 +225,162 @@ class HrvPoint(BaseModel):
     )
     swc_low: float | None = Field(description="That day's band.lo; null iff `baseline` is null.")
     swc_high: float | None = Field(description="That day's band.hi; null iff `baseline` is null.")
+    dataset: str | None = Field(
+        description=(
+            "The source tier of the dataset this day's band came from -- the dataset selected for "
+            "**this** day, or the one the presentation fallback presented when none was selected "
+            "(F006 AC14, T159). Selection runs per local day, so two adjacent points can be drawn "
+            "against two different instruments, whose bands differ by the systematic bias between "
+            "the tiers; without this field a chart switches instrument between adjacent days and "
+            "says nothing about it. Null **only** when no reading of any tier exists in that day's "
+            "[date-66, date] -- the structural no_tier_sustains_a_trend case -- which is narrower "
+            "than `baseline` being null: a dataset holding one baseline reading has a tier and no "
+            "band, so this is non-null while the other three are null. On the response's own day "
+            "this is `selected_dataset` when one was selected, and `datasets[]` describes it in "
+            "full."
+        )
+    )
+
+
+class DatasetSummary(BaseModel):
+    """One source tier's dataset for `date`: its own baseline, its own band and
+    its own reading of the judged week against that band (F006 AC1/AC2/AC10,
+    T159).
+
+    Each tier keeps its own dataset -- no reading of one contributes to
+    another's baseline (spec 03 3.7.3's anti-mixing rule, honoured by
+    construction) -- and every dataset is reported here whether or not it is
+    the one the verdict was taken from. Under F005 one tier owned the only band
+    and every other tier's readings were listed as discarded rows; the losers
+    are retained now, and this is where they are legible.
+
+    The block is **additive**: `baseline`, `band` and `verdict` still describe
+    the selected dataset, and no field that was non-nullable became nullable
+    (AC12).
+    """
+
+    tier: str = Field(
+        description=(
+            "The source tier, which **is** the dataset's key (F006 reference 1: the stored "
+            "source_device is the watch, so per-unit identity is a later feature). One entry per "
+            "tier present in [date-66, date]; the list is in fidelity order, highest first."
+        )
+    )
+    n: int = Field(
+        description=(
+            "Baseline readings of this tier, one per local day, over **this dataset's own** "
+            "post-clip baseline window. It is `baseline.n` only for the selected dataset, and each "
+            "dataset's window can be clipped at a different day: the coverage gap is global, the "
+            "era boundary and the internal capture hole are this dataset's own."
+        )
+    )
+    established: bool = Field(
+        description=(
+            "n >= min_baseline_readings, for this dataset alone. A dataset must be established "
+            "**and** hold at least min_window_readings judged-week days to be a candidate for "
+            "selection at all (F006 AC8); `week_days` is the other half of that test, so a reader "
+            "can tell a dataset that could not have been selected from one that could."
+        )
+    )
+    band: Band | None = Field(
+        description=(
+            "This dataset's **own** SWC band over its own baseline -- the yardstick its own week "
+            "is read against here. Null only when this dataset holds fewer than two baseline "
+            "readings, in which case it cannot disagree with anything and is visible carrying `n` "
+            "and `week_days` instead (AC10). The selected dataset's band is the response's `band`."
+        )
+    )
+    fidelity_rank: int = Field(
+        description=(
+            "This tier's ordinal in the source hierarchy spec 03 3.7.1 ratifies, 0 being the "
+            "highest: a chest-strap RR capture this system reduces to rMSSD itself, degrading -- "
+            "at reduced confidence -- to a device-computed numeric resting rMSSD. **This is the "
+            "sense of quality that arbitrates**: selection promotes the lowest rank among the "
+            "judgeable datasets, so `selected_reason` is recomputable by hand from this field "
+            "beside `established`, `week_days` and `last_read` (research/00 1.6). The *other* "
+            "sense -- the numeric per-tier **confidence weight** at which 3.7.1 admits the numeric "
+            "tiers -- is deliberately **not** here: 3.7.4 computes no confidence weight in this "
+            "section and defers the weighting to the readiness fusion of Section 6, so emitting "
+            "one would mint a constant Section 3 does not own. Keeping the two apart is what "
+            "prevents a recency-against-quality exchange rate from existing."
+        )
+    )
+    last_read: datetime.date | None = Field(
+        description=(
+            "The latest local day this tier was read on **inside the baseline window** "
+            "[date-66, date-7] -- the slice the recency gate is normative over (F006 AC6), not the "
+            "latest reading overall. Null when this tier has no reading in that window at all, "
+            "which a dataset whose readings all sit in the judged week has. The gate is "
+            "reproducible from this field: a **judgeable** dataset more than recency_tolerance_days "
+            "behind the greatest `last_read` among the **established** datasets is skipped, "
+            "strictly greater than, so a dataset exactly at the tolerance is kept. The response "
+            "does not echo recency_tolerance_days (IDEA-070)."
+        )
+    )
+    week_days: int = Field(
+        description=(
+            "Distinct local days of the judged week [date-6, date] this tier was read on -- this "
+            "dataset's share of the week, which is `readings_in_window` only for the selected "
+            "dataset. It is the count half of judgeability (at least min_window_readings, 3) and "
+            "it is what weighs a name in `disagreed_with`: a dataset whose judged week is a single "
+            "morning can disagree, and a consumer needs to know that before acting on it."
+        )
+    )
+    week_mean: float | None = Field(
+        description=(
+            "Mean of ln rMSSD over this dataset's own judged-week readings; null when it has none. "
+            "It is `ln_rmssd_7d_mean` for the selected dataset and is computed the same way for "
+            "every other, so `below` can be recomputed by hand from this and `band` (research/00 "
+            "1.6)."
+        )
+    )
+    below: bool | None = Field(
+        description=(
+            "week_mean < band.lo, **strictly less** -- the same comparison the verdict makes for "
+            "hrv_suppressed, made here against this dataset's own band whether or not it is "
+            "judgeable and whether or not its own verdict would be withheld (AC10, taken "
+            "literally). Null when either side is missing, and a dataset whose `below` is null "
+            "cannot appear in `disagreed_with`. Which side each dataset falls on is the statistic "
+            "the disagreement rules rest on, and it is reported for every dataset -- including "
+            "when nothing is selected, where `disagreed_with` is empty by construction."
+        )
+    )
+    reset_on: datetime.date | None = Field(
+        description=(
+            "This dataset's **own** reported re-establishment day, decided per dataset (F006 AC17, "
+            "T154): the global coverage gap's resumption when one fired -- the same on every "
+            "dataset, since a gap measures the silence of the series as a whole -- else this "
+            "dataset's own era boundary when that is reported, else null. `baseline.reset_on` is "
+            "the **selected** dataset's, so a dataset that is not selected can carry a report the "
+            "rest of the response never shows."
+        )
+    )
+    reset_reason: Literal["coverage_gap", "tier_change"] | None = Field(
+        description=(
+            "Why this dataset's re-establishment is reported, with the same meanings as "
+            "`baseline.reset_reason` and the same caveat: the report is not the clip. A dataset's "
+            "baseline window is clipped by its era boundary whether or not the change is reported, "
+            "and by an internal capture hole of more than gap_reset_days silent local days, which "
+            "is never reported at all -- so a null here can sit beside an `n` far below what the "
+            "60 days of [date-66, date-7] would hold."
+        )
+    )
+
+
+class Disagreement(BaseModel):
+    """One dataset reading the other side of its own band from the selected
+    dataset, with the judged-week count that weighs it (F006 AC10/AC11, T159).
+    """
+
+    dataset: str = Field(description="The disagreeing dataset's source tier.")
+    week_days: int = Field(
+        description=(
+            "That dataset's `week_days`, repeated here so the name can be weighed where it is "
+            "read: a judged week of one morning can disagree, and the count is the difference "
+            "between a second instrument contradicting the verdict all week and a single stray "
+            "capture."
+        )
+    )
 
 
 class HrvTrendResponse(BaseModel):
@@ -335,3 +491,60 @@ class HrvTrendResponse(BaseModel):
         description="Every stored row inside [date-66, date] that fed neither the baseline nor the window."
     )
     thresholds: Thresholds
+    datasets: list[DatasetSummary] = Field(
+        description=(
+            "One entry per source tier present in [date-66, date], in fidelity order, each with "
+            "its own baseline, its own band and its own reading of the judged week against that "
+            "band (F006 AC1/AC2/AC10). Every reading inside the span is in exactly one dataset "
+            "here or in `excluded` with a reason -- never in neither, never in both (AC15, "
+            "research/00 1.6): a reading of a tier the verdict was not taken from is corroboration "
+            "in its own dataset, not a discarded row. Empty only when no reading of any tier "
+            "exists in the span."
+        )
+    )
+    selected_dataset: str | None = Field(
+        description=(
+            "The source tier of the dataset `baseline`, `band`, `verdict` and `below_by` describe "
+            "-- the highest-fidelity **judgeable** dataset the recency gate did not skip (F006 "
+            "AC5-AC8). Null when no dataset was selected, which is *either* that no dataset is "
+            "judgeable *or* that every judgeable one was skipped as stale. In that case the "
+            "verdict is hrv_unavailable and `baseline`/`band` are still populated, from the "
+            "dataset the athlete was read on last (AC9's presentation fallback, F005's rule 3 "
+            "retained), so every field non-nullable before F006 still carries a value and this "
+            "addition stays additive (AC12). **The fallback presents; it never judges** -- no "
+            "verdict is conferred by it, and `disagreed_with` is empty there even when the "
+            "presented dataset's own week reads below its band, because a disagreement is with a "
+            "verdict and there is none to disagree with. `datasets[]` still shows every dataset's "
+            "side, so that state stays legible."
+        )
+    )
+    selected_reason: Literal[hrv_trend.SELECTED_REASONS] | None = Field(
+        description=(
+            "Why `selected_dataset` is the one, drawn from a closed enum: "
+            f"`{hrv_trend.SELECTED_HIGHEST_FIDELITY}` -- no judgeable dataset outranks it; "
+            f"`{hrv_trend.SELECTED_HIGHER_FIDELITY_STALE}` -- one did, and the recency gate "
+            "skipped it as stale, so the verdict is being taken from a lower-fidelity instrument "
+            "and the response says so rather than leaving that fall invisible. Non-null **exactly "
+            "when** `selected_dataset` is non-null, null with null: it is derived from the "
+            "selection rather than stored beside it, so it cannot disagree with which datasets "
+            "were skipped. The enum is the module's own tuple, rendered rather than transcribed, "
+            "so a member cannot come to exist in one copy alone."
+        )
+    )
+    disagreed_with: list[Disagreement] = Field(
+        description=(
+            "The datasets whose judged week reads the **other side of their own band** from the "
+            "selected dataset, in fidelity order, each with the judged-week count that weighs it "
+            "(F006 AC10/AC11). Both directions are reported: a dataset below its band while the "
+            "selected one reads within, and one within while the selected one reads below. A "
+            "dataset below its band beside a selected dataset also below its own **agrees** with "
+            "the verdict and is not named. Judgeability is never consulted -- a band from two "
+            "baseline readings and a week of one can name a dataset here -- so `week_days` is what "
+            "a consumer weighs the name by. **Disagreement never overrides**: `verdict` is the "
+            "selected dataset's, unchanged, whatever is listed here. Empty when `selected_dataset` "
+            "is null. This is the response's one report of the exposure F006 accepts: hrv_normal "
+            "can be promoted from the best available instrument while another dataset reads below "
+            "its own band, and a consumer reading `verdict` alone is not told (research/00 1.7's "
+            "forbidden direction, accepted, measured against shipped F005 rather than denied)."
+        )
+    )

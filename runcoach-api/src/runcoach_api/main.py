@@ -21,6 +21,8 @@ from runcoach_api.metrics import hrv_trend
 from runcoach_api.schemas import (
     Band,
     Baseline,
+    DatasetSummary,
+    Disagreement,
     ExcludedReading,
     HealthResponse,
     HrvPoint,
@@ -359,9 +361,11 @@ def _judge_days(
     dataset handed to it and rendered is the one ``hrv_trend.select_dataset``
     selects for that day -- the highest-fidelity judgeable dataset, skipped
     past on baseline-window staleness -- or the presentation fallback when
-    none is judgeable (AC9), flattened onto the F005 series shape by
-    ``hrv_trend.selected_view`` until T159 renders the datasets themselves.
-    Nothing else here is a function of which dataset was chosen.
+    none was selected (AC9), flattened onto the F005 series shape by
+    ``hrv_trend.selected_view``. Nothing else here is a function of which
+    dataset was chosen, and **that is why every point names its own**
+    (T159, ``_point``): two adjacent days of one chart can be drawn against
+    two different instruments, and the view alone cannot say so.
 
     Raises ``OverflowError`` where a day's windows reach past the calendar's
     origin; the route names that as the parameters' problem."""
@@ -374,12 +378,34 @@ def _judge_days(
     return judged
 
 
+def _band(band: hrv_trend.Band | None) -> Band | None:
+    """The contract's ``Band`` from the module's, or null. One renderer, so
+    the response's ``band`` and every ``datasets[].band`` are built the same
+    way rather than twice."""
+    if band is None:
+        return None
+    return Band(mean=band.mean, half_width=band.half_width, lo=band.lo, hi=band.hi, floored=band.floored)
+
+
 def _point(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -> HrvPoint:
     """One day of the contract's ``points[]``: the reading the day's own
-    series holds for it (null when none) and the band the day's own baseline
-    asserts (all three null together when it cannot build one). The band
-    comes from ``judge`` -- the same call that decides ``to``'s verdict -- so
-    the last point and ``band`` are the same floats, not two computations."""
+    series holds for it (null when none), the band the day's own baseline
+    asserts (all three null together when it cannot build one), and **the
+    dataset that band came from** (F006 AC14, T159). The band comes from
+    ``judge`` -- the same call that decides ``to``'s verdict -- so the last
+    point and ``band`` are the same floats, not two computations.
+
+    ``dataset`` is ``series.tier``: the tier of the dataset ``selected_view``
+    presented for **this** day, which is the selection's when there is one
+    and the presentation fallback's when there is not. Selection is run per
+    judged day and reads nothing from yesterday, so the name can change
+    between adjacent points -- and when it does the band steps by the
+    systematic bias between the two tiers, which is exactly the reading a
+    chart would otherwise draw as a change in the athlete (``CRITIC-F005``
+    priority 3). It is null only on the empty view, where no reading of any
+    tier exists in ``[d-66, d]``; a dataset with one baseline reading has a
+    tier and no band, so ``dataset`` is non-null there while the other three
+    are null."""
     reading = next((r for r in series.series if r.date == series.target_date), None)
     band = verdict.band
     return HrvPoint(
@@ -388,7 +414,78 @@ def _point(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -
         baseline=None if band is None else band.mean,
         swc_low=None if band is None else band.lo,
         swc_high=None if band is None else band.hi,
+        dataset=series.tier,
     )
+
+
+def _datasets(series: hrv_trend.SingleDatasetView) -> list[DatasetSummary]:
+    """Every dataset of the day's series, in fidelity order (F006 AC1/AC2/
+    AC10, T159) -- the block that makes the retained losers legible.
+
+    Nothing is recomputed here. ``tier``, ``n``, ``band``, ``established``
+    and the per-dataset ``reset_on``/``reset_reason`` are the dataset's own
+    fields (``build_series``); ``week_days``, ``week_mean`` and ``below``
+    are ``Selection.band_readings`` (``read_against_band``, T157), which
+    asks ``judge`` for each dataset's band and week mean so there is **one**
+    arithmetic rather than a second derivation of it; ``last_read`` is the
+    selection's own ``_last_read`` over the baseline-window slice, the same
+    mapping the recency gate was applied to. ``fidelity_rank`` is the tier's
+    index in ``hrv_trend.TIER_FIDELITY`` -- the ordinal that arbitrates
+    selection, not a confidence weight, which spec 03 3.7.4 computes none of
+    in this section (see ``DatasetSummary.fidelity_rank``).
+
+    A dataset with no baseline-window reading has no ``last_read`` entry and
+    renders null; one with no judged-week reading has ``week_days`` 0 and a
+    null ``week_mean``. ``selection`` is set by ``selected_view`` on every
+    view it builds, the empty one included, so the band readings are always
+    present for the datasets that exist.
+    """
+    selection = series.selection
+    readings = {r.tier: r for r in (selection.band_readings if selection is not None else ())}
+    last_read = selection.last_read if selection is not None else {}
+    summaries = []
+    for dataset in series.datasets:
+        tier = dataset.tier or ""
+        reading = readings.get(tier)
+        summaries.append(
+            DatasetSummary(
+                tier=tier,
+                n=dataset.n,
+                established=dataset.established,
+                band=_band(dataset.band),
+                fidelity_rank=hrv_trend.TIER_FIDELITY.index(tier),
+                last_read=last_read.get(tier),
+                week_days=0 if reading is None else reading.week_days,
+                week_mean=None if reading is None else reading.week_mean,
+                below=None if reading is None else reading.below,
+                reset_on=dataset.reset_on,
+                reset_reason=dataset.reset_reason,
+            )
+        )
+    return summaries
+
+
+def _disagreed_with(series: hrv_trend.SingleDatasetView) -> list[Disagreement]:
+    """The datasets on the other side of their own band from the selected
+    one, each with the judged-week count that weighs it (F006 AC10/AC11,
+    T159; the count is T157's own finding -- a one-reading judged week can
+    name a dissenter, and the consumer needs to weigh it).
+
+    The list is the selection's, rendered rather than re-derived: order,
+    membership and the "empty when nothing is selected" rule are all
+    ``Selection.disagreed_with``'s, so this cannot disagree with the rule
+    the module pins."""
+    selection = series.selection
+    if selection is None:
+        return []
+    readings = {r.tier: r for r in selection.band_readings}
+    return [
+        Disagreement(
+            dataset=tier,
+            week_days=0 if tier not in readings else readings[tier].week_days,
+        )
+        for tier in selection.disagreed_with
+    ]
 
 
 def _trend_response(
@@ -405,9 +502,21 @@ def _trend_response(
     ``outside_windows``, and they are trimmed here so the list is exactly
     the population it claims to be. The *unclipped* window is the span, so a
     reset does not shrink it.
+
+    **F006 (T159).** ``baseline``, ``band``, ``verdict`` and ``below_by``
+    keep their names and now mean *the selected dataset's*; ``datasets[]``,
+    ``selected_dataset``, ``selected_reason`` and ``disagreed_with`` are
+    added beside them. ``selected_dataset`` and ``selected_reason`` are null
+    together and only together -- ``Selection.selected_reason`` is derived
+    from the selection rather than stored beside it, so the pair cannot come
+    apart here -- and on that null the presentation fallback still populates
+    ``baseline``/``band``, which is what keeps this addition additive:
+    nothing non-nullable before F006 became nullable (AC12), and the one
+    breaking change of this sprint was T152's removal of ``off_baseline_tier``.
     """
     span_first = hrv_trend.baseline_window(series.target_date)[0]
-    band = verdict.band
+    selection = series.selection
+    selected = None if selection is None else selection.selected
     return HrvTrendResponse(
         date=series.target_date,
         from_=from_,
@@ -417,9 +526,7 @@ def _trend_response(
         unavailable_reason=verdict.unavailable_reason,
         ln_rmssd_7d_mean=verdict.ln_rmssd_7d_mean,
         below_by=verdict.below_by,
-        band=None
-        if band is None
-        else Band(mean=band.mean, half_width=band.half_width, lo=band.lo, hi=band.hi, floored=band.floored),
+        band=_band(verdict.band),
         baseline=Baseline(
             window=series.baseline_window,
             n=verdict.baseline_n,
@@ -447,6 +554,10 @@ def _trend_response(
             band_floor=hrv_trend.BAND_FLOOR,
             swc_factor=hrv_trend.SWC_FACTOR,
         ),
+        datasets=_datasets(series),
+        selected_dataset=None if selected is None else selected.tier,
+        selected_reason=None if selection is None else selection.selected_reason,
+        disagreed_with=_disagreed_with(series),
     )
 
 

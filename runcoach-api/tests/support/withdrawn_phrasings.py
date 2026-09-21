@@ -64,7 +64,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "that fed neither the baseline nor the window",
+        "accepted, measured against shipped F005 rather than denied",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
@@ -72,7 +72,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
-        "which is the parameter's problem and is named as such",
+        "took the contract to 0.2.0-draft",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_reset.py",

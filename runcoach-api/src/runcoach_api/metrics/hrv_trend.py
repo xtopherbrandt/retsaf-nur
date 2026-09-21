@@ -416,9 +416,14 @@ class SingleDatasetView:
     a single resolved tier read exactly what they read before the
     partition. Constructed only by ``selected_view`` (T155; T151's bridge
     built it over the retired resolver), which flattens the dataset
-    ``select_dataset`` selects -- or, when nothing is judgeable, the
-    presentation fallback (AC9; T156 formalises it) -- and retires with
-    T159, which renders the datasets themselves.
+    ``select_dataset`` selects -- or, when nothing is **selected**, the
+    presentation fallback (AC9; T156 formalises it).
+
+    T159 **keeps** this view rather than retiring it: ``baseline``, ``band``
+    and ``verdict`` still describe the presented dataset and this is what
+    carries them, while ``datasets``, ``selection.selected``,
+    ``selection.selected_reason`` and ``selection.disagreed_with`` are
+    rendered beside them.
 
     ``tier``, ``baseline_window``, ``series``, ``baseline``, ``window``,
     ``withheld``, ``reset_on`` and ``reset_reason`` are ``selected``'s;
@@ -1365,9 +1370,15 @@ def select_dataset(series: HrvSeries) -> Selection:
        condition, stated once.
     2. **The highest fidelity rank wins** (AC5; ``_FIDELITY_RANK``, §3.7.1's
        ratified hierarchy preserved: chest-strap raw RR over the numeric
-       tiers). The numeric confidence weight §3.7.1 defines is reported per
-       dataset and **never** consulted here (reference §3, the two senses of
-       quality split), so no recency-against-quality exchange rate exists.
+       tiers). The numeric confidence weight §3.7.1 defines is **never**
+       consulted here (reference §3, the two senses of quality split), so no
+       recency-against-quality exchange rate exists -- and T159 does not
+       render it either: §3.7.4 defers it to Section 6's readiness fusion and
+       states that no confidence weight is computed in this section today, so
+       emitting one would mint a constant Section 3 does not own. What
+       ``datasets[]`` reports is this **rank** (``fidelity_rank``), the
+       quantity that actually arbitrates, which is what makes
+       ``selected_reason`` recomputable by hand (``research/00`` §1.6).
     3. **A candidate is skipped** (AC6/AC7) when its latest reading **within
        the baseline window** ``[D-66, D-7]`` falls more than
        ``RECENCY_TOLERANCE_DAYS`` behind the latest baseline-window reading
@@ -1541,11 +1552,26 @@ class Presentation:
 
 
 def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> Presentation | None:
-    """The dataset ``baseline``/``band`` are populated from when **no**
-    dataset is judgeable -- F005's rule 3, retained for presentation only
+    """The dataset ``baseline``/``band`` are populated from when **no
+    dataset is selected** -- F005's rule 3, retained for presentation only
     (F006 AC9; ``research/00`` §5.4 (iii): "the dataset the athlete was
     read on last"; formalised by T156, keeping the clause order T155 built
-    provisionally). No verdict is conferred by it and no dissenter is named
+    provisionally).
+
+    **The precondition is ``selection.selected is None``**, which is wider
+    than "no dataset is judgeable" and has been since T164. That wording,
+    written 2026-09-18, was a true description of the rule only while the
+    recency gate's reference population and its candidate population were
+    the same set; T164 widened the reference to every **established**
+    dataset, so an established but weekless dataset read later can strike
+    every candidate at once and "judgeable non-empty, all skipped" reaches
+    here too. AC9's *given* was restated on 2026-09-21 to say "no dataset
+    is **selected**" (``research/00`` §5.4 (iii) amended first). The code
+    never changed -- ``selected_view`` has only ever asked this when
+    ``selected`` is ``None`` -- and the newly reachable state is pinned by
+    ``test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164``.
+
+    No verdict is conferred by it and no dissenter is named
     against it: ``judge`` on the presented dataset answers with that
     dataset's own first-firing guard (``week_too_thin`` on an established
     dataset with a thin week, ``baseline_unestablished`` or ``no_band`` on a
@@ -1599,10 +1625,12 @@ def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> 
 def selected_view(series: HrvSeries) -> SingleDatasetView:
     """The one dataset ``judge`` and the route are handed, on the F005
     series shape: the dataset ``select_dataset`` selects, or the
-    presentation fallback when nothing is judgeable, or an empty view with
-    ``tier`` ``None`` when the series holds no dataset at all (the
+    presentation fallback when nothing is **selected**, or an empty view
+    with ``tier`` ``None`` when the series holds no dataset at all (the
     structural ``no_tier_sustains_a_trend`` cause). Replaces T151's bridge
-    over the retired resolver (T155); retires with T159.
+    over the retired resolver (T155) and is **kept** by T159, which renders
+    ``datasets``, ``selection.selected``, ``selection.selected_reason`` and
+    ``selection.disagreed_with`` from this view.
 
     ``excluded`` is the series' own list (AC15, T152). A non-presented
     dataset's readings are in that dataset, carried in ``datasets``, and

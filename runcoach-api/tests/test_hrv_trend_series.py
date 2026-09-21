@@ -2073,8 +2073,19 @@ def test_the_reference_maximum_is_taken_once_over_every_established_dataset() ->
 
 def test_the_numeric_confidence_weight_never_participates_in_selection() -> None:
     """Deliverable 6 (reference section 3, "the two senses of quality,
-    split"): the **fidelity rank** arbitrates; the numeric per-tier
-    confidence weight section 3.7.1 defines is reported, never consulted.
+    split"): the **fidelity rank** arbitrates and is never confused with the
+    numeric per-tier confidence weight section 3.7.1 defines.
+
+    Corrected 2026-09-21 (T159), which is the task that had to decide it: this
+    docstring and the message below said the confidence weight "is reported on
+    datasets[]", following reference section 3's table. Section 3.7.4 is the
+    authority above that table and says no confidence weight is computed in
+    Section 3 at all -- the weighting is deferred to Section 6's readiness
+    fusion -- so emitting one would have minted a constant, which the same
+    reference note forbids in the same breath ("no new constant"). What
+    datasets[] renders is `fidelity_rank`, the ordinal asserted below, and the
+    split this pin protects is unchanged: the rank arbitrates, and nothing
+    that names a weight reaches the choice.
     Pinned two ways. Behaviourally: a sparse, noisy strap (three baseline
     days a week, values swinging 30..90 ms) beside a dense, metronomic
     watch (daily, 40 ms exactly) selects the strap, and swapping which tier
@@ -2107,7 +2118,9 @@ def test_the_numeric_confidence_weight_never_participates_in_selection() -> None
     offending = {n for n in names if "weight" in n.lower() or "confidence" in n.lower()}
     assert not offending, offending
     assert not any(k for k in vars(hrv_trend) if "confidence" in k.lower() and "weight" in k.lower()), (
-        "a confidence weight now exists in the module; it is reported on datasets[], never selected on"
+        "a confidence weight now exists in the module; spec 03 section 3.7.4 computes none in "
+        "Section 3 and defers the weighting to Section 6, and datasets[] renders the fidelity "
+        "rank instead (T159) -- so this is a new constant, not a rendering"
     )
 
 
