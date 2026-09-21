@@ -31,6 +31,30 @@ the committed copy on every machine, and where the data dir *is* reachable a
 second test compares the two byte for byte, so a re-run of the sweep that
 moved a number cannot leave a stale copy behind it.
 
+**What this gate proves, and what it does not.** It is a **ratchet on
+measured evidence**, not a live invariant over the rule. Every assertion
+below is over rows in a committed CSV, and that file changes only when
+someone re-runs the ~13-minute ``t162-gate`` harness and re-commits its
+output. So "no §1.7 rate worsens" is proved of the rule **as it stood when
+the sweep last ran** -- and of nothing else. A change to
+``metrics/hrv_trend.py`` that reintroduces a regression does not redden a
+single row here, because no row is recomputed: the wave-7 mutation pass
+reverted T164's recency-reference widening -- exactly the stale-band
+regression T164 had just paid -- and this module passed 7/7.
+
+**The provenance pin is what keeps that evidence honest.**
+``tests/data/T162-no-regression-rows.provenance.json`` records the git blob
+sha of the module the rows were measured against, the commit that introduced
+it, the shipped-F005 ref the comparison used, the harness, the row count and
+the date; ``test_the_rows_were_measured_against_this_checkouts_rule`` recomputes
+that blob sha from the module in this checkout and **fails** when it differs.
+It is not a skip and not a warning: a stale ratchet that still reports green
+is worse than no gate, because it is read as a release decision. What the pin
+converts is the failure mode -- from "the gate silently proves a claim about
+a rule that no longer exists" into "the gate says the evidence is out of date
+and names the command that renews it". It still cannot tell you whether the
+new rule is *better*; only the re-measurement can, and that is the point.
+
 **Axes.** This module asserts nothing about geometry; the rows carry their
 own axes (``sweep``, ``overlap``, ``ret_density``, ``car_density``, ``c``,
 ``orientation``, ``value_level``) and the harness prints the full
@@ -64,6 +88,8 @@ reds if its own row count moves **in either direction**. It is not a
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -74,6 +100,26 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The committed copy of the comparison rows: what this gate reads, on every
 #: machine, data dir or not.
 TREE_ROWS = _REPO_ROOT / "runcoach-api" / "tests" / "data" / "T162-no-regression-rows.csv"
+
+#: The rows' provenance: the state of the tree they were measured against.
+#: Written beside them rather than inside them because it is a fact about the
+#: *measurement*, not a row of it, and because the CSV is regenerated verbatim
+#: by the harness and must stay byte-equal to the data-dir original.
+ROWS_PROVENANCE = _REPO_ROOT / "runcoach-api" / "tests" / "data" / "T162-no-regression-rows.provenance.json"
+
+#: The module whose behaviour the rows are a measurement of. If this file's
+#: contents change, the rows describe a rule that is no longer in the tree.
+MEASURED_MODULE = _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "metrics" / "hrv_trend.py"
+
+#: The re-measure command, named in the failure message rather than left for
+#: the reader to reconstruct -- a gate that says "this is stale" without
+#: saying how to renew it is a gate people learn to edit rather than obey.
+REMEASURE_COMMAND = (
+    "uv run --package runcoach-api python "
+    ".shipyard/spec/references/T130-overlap-sweep-harness.py t162-gate "
+    "--f005 <git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py> "
+    "--rows .shipyard/spec/references/T162-no-regression-rows.csv --procs <n>   (~13 min at --procs 16)"
+)
 
 #: The same file's path inside the Shipyard data dir, where ``t162-gate``
 #: writes it and where a re-run would move it.
@@ -247,6 +293,133 @@ def unexcused(rows: list[dict[str, str]]) -> list[str]:
     """**The gate's predicate**: every worsened gated row the exception does
     not cover, named. Non-empty blocks release."""
     return [name(row) for row in worse_rows(rows) if not is_deferred_exception(row)]
+
+
+def git_blob_sha(path: Path) -> str:
+    """``git hash-object`` for one file, computed here rather than shelled out.
+
+    The gate must work in a bare checkout with no git binary on PATH and with
+    the file uncommitted or dirty, so the sha is taken over the **bytes on
+    disk** -- which is also what makes it a statement about the rule this run
+    would execute, rather than about the rule some commit holds.
+
+    ``\\r\\n`` is folded to ``\\n`` first, which is what git's own clean filter
+    does to a text file on the way into the object store (this repository is
+    checked out CRLF on Windows and the committed blob is LF). Without the
+    fold the pin would compare a platform against a sha and red on every
+    Windows checkout -- a gate that fails for a reason that is not the rule
+    changing is a gate that gets deleted.
+    """
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    # sha1 because that is git's own object hash, not because anything here is a secret.
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def provenance() -> dict:
+    assert ROWS_PROVENANCE.is_file(), (
+        f"{ROWS_PROVENANCE} is missing: the rows below are a snapshot of a measurement and "
+        f"nothing records what they were measured against, so every assertion over them is a "
+        f"claim about an unknown rule. Restore it, or re-measure: {REMEASURE_COMMAND}"
+    )
+    return json.loads(ROWS_PROVENANCE.read_text(encoding="utf-8"))
+
+
+def test_the_rows_were_measured_against_this_checkouts_rule() -> None:
+    """**The provenance pin.** Everything else in this module asserts over a
+    committed CSV that changes only when someone re-runs a ~13-minute sweep.
+    That makes the gate a ratchet on evidence: it proves "no §1.7 rate
+    worsens" of the rule **as it stood when the sweep last ran**, and of
+    nothing else.
+
+    The hole that closes here was measured, not imagined. The wave-7 mutation
+    pass reverted ``select_dataset``'s recency reference from every
+    ``established`` dataset back to ``is_judgeable`` only -- reinstating,
+    exactly, the stale-band regression T164 had just paid -- and this module
+    passed **7/7**, because no row is recomputed from the rule.
+
+    So the rows carry a provenance and this asserts it: the git blob sha of
+    ``metrics/hrv_trend.py`` **in this checkout** must equal the one the rows
+    were measured against. A changed rule reds here and names the command that
+    renews the evidence.
+
+    It is deliberately neither a skip nor a warning. Both were considered and
+    both are what this project has learned to distrust: a gate that degrades
+    to "informational" when its premise fails still reports green, and green
+    is read as a release decision. The failure is the honest state -- the
+    evidence is out of date, and only a re-measurement can say whether the new
+    rule is better or worse.
+
+    The witness prints both shas before it asserts
+    (``a-witness-must-print-the-slice-it-compared``): an exit code is a summary
+    of evidence nobody has seen.
+    """
+    record = provenance()
+    measured = record["measured_module"]
+    recorded_sha = measured["blob_sha"]
+    current_sha = git_blob_sha(MEASURED_MODULE)
+    rel = measured["path"]
+
+    print(f"provenance: {ROWS_PROVENANCE.name}")
+    print(f"  rows      : {TREE_ROWS.name}, {record['rows']['row_count']} rows, "
+          f"measured {record['rows']['measured_on']}, committed {record['rows']['committed_by'][:7]}")
+    print(f"  vs shipped: F005 at {record['compared_against']['ref']}")
+    print(f"  rule       {rel}")
+    print(f"    recorded blob {recorded_sha}  (introduced by {measured['introduced_by'][:7]})")
+    print(f"    current  blob {current_sha}")
+    print(f"    -> {'MATCH' if current_sha == recorded_sha else 'DIFFERS -- the evidence is stale'}")
+
+    assert current_sha == recorded_sha, (
+        f"THE RULE HAS CHANGED SINCE THE EVIDENCE WAS MEASURED, so this gate's rows describe a "
+        f"rule that is not in this checkout and every green below is a claim about the old one.\n"
+        f"  {rel}\n"
+        f"    recorded (measured against): {recorded_sha}\n"
+        f"    current  (in this tree)    : {current_sha}\n"
+        f"Re-measure, then regenerate and re-commit BOTH the rows "
+        f"({TREE_ROWS.relative_to(_REPO_ROOT).as_posix()}, byte-equal to the data-dir original) "
+        f"and the report (spec/references/F006-no-regression-report.md and its mirror), and update "
+        f"{ROWS_PROVENANCE.name} with the new blob sha, its introducing commit and the date:\n"
+        f"    {REMEASURE_COMMAND}\n"
+        f"Do not edit the recorded sha to make this green: the sha is the claim, and moving it "
+        f"without a re-run asserts a measurement nobody performed."
+    )
+
+
+def test_the_provenance_describes_the_rows_it_sits_beside() -> None:
+    """The provenance is only worth asserting on if it is about *these* rows.
+
+    Two ways it could quietly stop being: the row file is regenerated and the
+    record keeps describing the old one, or the record is written against a
+    ref this repository cannot resolve. So the recorded row count is checked
+    against the CSV actually read, and the fields the failure message above
+    depends on are required to be present and non-empty.
+    """
+    record = provenance()
+    rows = _rows()
+    recorded = int(record["rows"]["row_count"])
+    print(f"provenance row_count {recorded} vs {TREE_ROWS.name} {len(rows)} rows")
+    assert recorded == len(rows), (
+        f"the provenance records {recorded} rows and {TREE_ROWS.name} holds {len(rows)}: the rows "
+        f"were regenerated and the record was not, so it describes a measurement that is no longer "
+        f"the one this gate reads. Re-measure and rewrite both: {REMEASURE_COMMAND}"
+    )
+    for section, field in (
+        ("measured_module", "blob_sha"),
+        ("measured_module", "path"),
+        ("measured_module", "introduced_by"),
+        ("compared_against", "ref"),
+        ("harness", "blob_sha"),
+        ("rows", "measured_on"),
+    ):
+        value = record.get(section, {}).get(field)
+        assert isinstance(value, str) and value.strip(), (
+            f"the provenance's {section}.{field} is empty: the pin above and its failure message "
+            f"are built out of these fields, and a blank one is a pin that says nothing"
+        )
+    assert record["measured_module"]["path"] == MEASURED_MODULE.relative_to(_REPO_ROOT).as_posix(), (
+        f"the provenance records a measured module at {record['measured_module']['path']} while "
+        f"the pin checks {MEASURED_MODULE.relative_to(_REPO_ROOT).as_posix()}: the sha compared is "
+        f"not the sha recorded"
+    )
 
 
 def test_the_rows_are_the_population_the_gate_needs() -> None:

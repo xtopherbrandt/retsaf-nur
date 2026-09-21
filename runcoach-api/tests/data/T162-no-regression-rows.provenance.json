@@ -1,0 +1,38 @@
+{
+  "what": "Provenance of T162-no-regression-rows.csv: the state of the tree the AC21 comparison rows were measured against. test_hrv_no_regression_gate.py asserts measured_module.blob_sha against the module in this checkout and FAILS when they differ, because the rows are a snapshot of a measurement and the gate over them proves nothing about a rule that has changed since.",
+  "rows": {
+    "path": "runcoach-api/tests/data/T162-no-regression-rows.csv",
+    "row_count": 17070,
+    "blob_sha": "2c7c469f98704d88b0b66ddf02e8559ac57998ac",
+    "measured_on": "2026-09-20",
+    "committed_by": "23e3177b60a0000e7c364f80e80015b3d74161d0",
+    "committed_by_subject": "test(T164): re-measure the gate and name the deferred forbidden-rate exception"
+  },
+  "measured_module": {
+    "path": "runcoach-api/src/runcoach_api/metrics/hrv_trend.py",
+    "blob_sha": "dfa1fae861cc937f69096abe66cc9e87187912e2",
+    "sha_kind": "git blob sha1 -- sha1(\"blob <bytes>\\0\" + contents) over the file with CRLF folded to LF, which is what `git hash-object` prints and what the object store holds; the fold is what keeps the pin platform-independent on a CRLF checkout",
+    "introduced_by": "b06ec6d0b1f4162386c91061611dc168b7940968",
+    "introduced_by_subject": "fix(T164): widen AC7's recency reference set, closing the stale-band regression",
+    "note": "The rows were re-measured after this commit landed and the same blob is still HEAD's, so this records a fact about the tree as it stands and required no re-measurement to write (verified 2026-09-20: `git rev-parse b06ec6d:<path>`, `git rev-parse HEAD:<path>` and `git hash-object <path>` all print it)."
+  },
+  "compared_against": {
+    "what": "shipped F005 -- the module the comparison's f005 column was produced by",
+    "ref": "42f7705",
+    "ref_subject": "docs(rules): graduate two learnings from F005's tenth review cycle",
+    "how": "git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+  },
+  "harness": {
+    "path": "spec/references/T130-overlap-sweep-harness.py (Shipyard data dir; gitignored, reached through the .shipyard breadcrumb)",
+    "entrypoint": "t162-gate",
+    "blob_sha": "d00241d0d922de809e1b52dc567bfcaa7c6d1ee8",
+    "sha_kind": "git blob sha1 of the working file -- the harness is not committed, so this is `git hash-object` over the data-dir copy and not a sha the repository can resolve",
+    "note": "Recorded for provenance only. The gate does not assert on it: the harness lives where the gate is explicitly built not to require anything (a worktree or a runner has no data dir), so an assertion on it would be a skip, and this project distrusts skips as gates."
+  },
+  "remeasure": {
+    "why": "Any change to the measured module's blob invalidates these rows: the gate would then be comparing shipped F005 against a rule nobody has swept.",
+    "command": "uv run --package runcoach-api python .shipyard/spec/references/T130-overlap-sweep-harness.py t162-gate --f005 <shipped F005 module, `git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py`> --rows .shipyard/spec/references/T162-no-regression-rows.csv --procs <n>",
+    "runtime": "~13 minutes at --procs 16 on an otherwise idle machine (1,353,000 judgings)",
+    "then": "re-commit the regenerated runcoach-api/tests/data/T162-no-regression-rows.csv, the mirrored spec/references/F006-no-regression-report.md, and this file with the new measured_module.blob_sha, its introducing commit and today's date."
+  }
+}
