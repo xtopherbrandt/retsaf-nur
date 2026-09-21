@@ -1995,37 +1995,66 @@ def test_the_gate_boundary_is_strictly_greater_than_the_tolerance(behind: int, e
     assert selection.selected.tier == (SNAPSHOT if expect_skipped else STRAP), slice_
 
 
-def test_the_reference_is_the_latest_judgeable_read_not_the_end_of_the_window() -> None:
-    """AC7's reference set. Two judgeable datasets both stale against the
-    window's end -- the strap last read ``D-45``, the watch last read
-    ``D-52`` and both back for the judged week -- are within 7 days of
-    **each other**, so neither is skipped and the strap is selected. A gate
-    measuring against ``D-7`` (38 and 45 behind) would skip both; the
-    comparison is between the judgeable datasets themselves, and the
-    reference is the later of their two last reads. A third tier
-    (``health_api_overnight``) carries the series daily to ``D-7`` so no
-    coverage gap fires (AC16) -- it holds no judged-week day, so it is not
-    judgeable and its ``D-7`` is **not** the reference: the reference set is
-    the judgeable datasets, not every dataset present."""
-    rows = _carrier(D - timedelta(days=66), D - timedelta(days=52)) + _carrier(D - timedelta(days=6), D)
-    rows += readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
-    rows += _strap(days_between(D - timedelta(days=66), D - timedelta(days=45)))
-    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
-    selection = _select(rows)
-    slice_ = selection.describe()
+def test_the_reference_is_the_latest_established_read_not_the_end_of_the_window() -> None:
+    """AC7's reference set, **re-pointed by T164**: the maximum is taken over
+    every **established** dataset -- not over the judgeable ones alone, and
+    not against the window's end.
 
-    assert selection.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
-    assert selection.judgeable == (STRAP, SNAPSHOT), slice_
-    assert selection.reference == D - timedelta(days=45), slice_
-    assert selection.gap(STRAP) == 0 and selection.gap(SNAPSHOT) == 7, slice_
-    assert selection.skipped == (), slice_
-    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+    Both series below carry a third tier (``health_api_overnight``) daily so
+    no coverage gap fires (AC16). It holds **no** judged-week day, so it is
+    established and never a candidate -- and since T164 it **is** in the
+    reference set.
+
+    (a) The overnight tier is read to ``D-7``, and it is the reference. The
+    strap (last read ``D-45``, 38 behind) and the watch (``D-52``, 45
+    behind) are **both** skipped and nothing is selected. *Shipped F006
+    (T155, the reference over the judgeable datasets alone): reference
+    ``D-45``, ``skipped ()``, ``chest_strap_raw`` selected* -- the two
+    judgeable datasets were within 7 days of **each other**, so the stopped
+    carrier that shipped F005 would have struck them with had left the
+    comparison. That is IDEA-080's mechanism, and this row is it closed.
+
+    (b) The same geometry with the overnight tier stopping at ``D-20`` (47
+    days, still established). The reference is ``D-20``: **neither** the
+    window's end (``D-7``) **nor** the latest judgeable read (``D-45``). So
+    the strap at 25 behind survives, the watch at 32 behind is skipped, and
+    the strap is selected. A gate measuring against ``D-7`` skips both; one
+    taking the reference over the judgeable datasets alone skips neither;
+    only the established population produces this row, which is why it is
+    here.
+    """
+    base = _carrier(D - timedelta(days=66), D - timedelta(days=52)) + _carrier(D - timedelta(days=6), D)
+    base += _strap(days_between(D - timedelta(days=66), D - timedelta(days=45)))
+    base += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+
+    to_d7 = base + readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
+    a = _select(to_d7)
+    slice_ = a.describe()
+    assert a.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
+    assert a.judgeable == (STRAP, SNAPSHOT), slice_
+    assert a.reference == D - timedelta(days=7), slice_  # shipped F006: D-45
+    assert a.gap(STRAP) == 38 and a.gap(SNAPSHOT) == 45, slice_  # shipped F006: 0 and 7
+    assert a.skipped == (STRAP, SNAPSHOT), slice_  # shipped F006: ()
+    assert a.selected is None, slice_  # shipped F006: chest_strap_raw
+
+    to_d20 = base + readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=20)), 40.0, hh=8)
+    b = _select(to_d20)
+    slice_ = b.describe()
+    assert b.last_read[OVERNIGHT] == D - timedelta(days=20), slice_
+    assert b.judgeable == (STRAP, SNAPSHOT), slice_
+    assert b.reference == D - timedelta(days=20), slice_
+    assert b.gap(STRAP) == 25 and b.gap(SNAPSHOT) == 32, slice_
+    assert b.skipped == (SNAPSHOT,), slice_
+    assert b.selected is not None and b.selected.tier == STRAP, slice_
 
 
-def test_the_reference_maximum_is_taken_once_over_every_judgeable_dataset() -> None:
+def test_the_reference_maximum_is_taken_once_over_every_established_dataset() -> None:
     """AC7, "once, simultaneously, never iteratively", pinned on the
     source: ``select_dataset`` calls F005's ``_recency_struck`` exactly
-    once, with the whole judgeable list, and reads ``_last_read`` over the
+    once, with the whole **established** list (T164; the list was the
+    judgeable one under shipped F006, and the *call count* this pin asserts
+    is unchanged by that widening -- which is the point of re-pointing the
+    population without touching the gate), and reads ``_last_read`` over the
     baseline-window slice (AC6 is a reuse of that scope, not a new
     computation -- task technical notes). A loop that re-took the maximum
     after each skip, or a second transcription of the gate, arrives here as
@@ -2101,7 +2130,12 @@ def test_probe_zero_judgeable_datasets_selects_nothing_and_says_so() -> None:
     rows = _carrier(D - timedelta(days=66), D - timedelta(days=7))
     rows += _strap(days_between(D - timedelta(days=66), D - timedelta(days=9)))
     illness = _select(rows)
-    assert (illness.selected, illness.judgeable, illness.skipped, illness.reference) == (None, (), (), None)
+    assert (illness.selected, illness.judgeable, illness.skipped) == (None, (), ())
+    # T164: the reference population is the ESTABLISHED datasets, so it
+    # survives a week in which nothing is judgeable. Shipped F006: ``None``,
+    # because the reference was taken over the (empty) judgeable set. Nothing
+    # downstream moves -- with no candidate there is nothing to strike.
+    assert illness.reference == D - timedelta(days=7), illness.describe()
     assert illness.last_read == {STRAP: D - timedelta(days=9), SNAPSHOT: D - timedelta(days=7)}
 
     view = hrv_trend.selected_view(hrv_trend.build_series(rows, AUCKLAND, D))
@@ -2111,27 +2145,62 @@ def test_probe_zero_judgeable_datasets_selects_nothing_and_says_so() -> None:
     assert verdict.baseline_n == 60 and verdict.established
 
 
-def test_probe_exactly_one_judgeable_dataset_is_its_own_reference() -> None:
-    """Degenerate: a reference set of size one. A lone judgeable strap last
-    read on ``D-50`` -- 43 days before the window's end, well past the
-    tolerance measured against ``D-7`` -- with three week days is its own
-    reference (gap 0), is never skipped and is selected. Anything that
-    compared against the window's end, or took the reference over every
-    dataset *present* rather than every *judgeable* one, would skip the
-    athlete's only judgeable instrument here: an overnight tier read daily
-    to ``D-7`` carries the series (no coverage gap, AC16) and holds no week
-    day, so it is present, established and not a candidate."""
-    rows = _strap(days_between(D - timedelta(days=66), D - timedelta(days=50)))
-    rows += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
-    rows += readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
-    selection = _select(rows)
-    slice_ = selection.describe()
+def test_probe_exactly_one_established_dataset_is_its_own_reference() -> None:
+    """Degenerate: a reference set of size one -- **re-pointed by T164**,
+    which moved the boundary of the set from *judgeable* to *established*.
 
-    assert selection.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
-    assert selection.judgeable == (STRAP,), slice_
-    assert selection.reference == selection.last_read[STRAP] == D - timedelta(days=50), slice_
-    assert selection.gap(STRAP) == 0 and selection.skipped == (), slice_
-    assert selection.selected is not None and selection.selected.tier == STRAP, slice_
+    (a) A lone **judgeable** strap is no longer automatically its own
+    reference. The strap is last read ``D-50`` and holds three week days;
+    an overnight tier read daily to ``D-7`` carries the series (no coverage
+    gap, AC16), holds no week day and so is established and **not** a
+    candidate -- and it is now the reference. The strap is 43 behind, is
+    skipped, and **nothing is selected** although ``judgeable`` is not
+    empty. *Shipped F006 (T155): reference ``D-50``, gap 0, ``skipped ()``,
+    the strap selected -- its docstring said in as many words that taking
+    the reference "over every dataset present rather than every judgeable
+    one would skip the athlete's only judgeable instrument here". That is
+    now the ruled answer: the carrier the athlete is actually being read on
+    is exactly what shipped F005 struck the returning strap with, and the
+    stale-band rate T162 measured is what the narrower reading cost.* The
+    view falls back and confers **no** verdict (AC9), so nothing is promoted
+    on the strap's 36-to-66-day-old band.
+
+    (b) The reference set of size one that remains: the same series with the
+    overnight tier unestablished (ten days, ``D-30..D-21``). The strap is
+    then the only **established** dataset, is its own reference at gap 0 and
+    is selected -- and the overnight tier's ``D-21``, 29 behind, is one day
+    past the tolerance, so a reference taken over every dataset *present*
+    would skip the strap here and this row would red.
+    """
+    strap = _strap(days_between(D - timedelta(days=66), D - timedelta(days=50)))
+    strap += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+
+    carried = strap + readings(
+        OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8
+    )
+    a = _select(carried)
+    slice_ = a.describe()
+    assert a.last_read[OVERNIGHT] == D - timedelta(days=7), slice_
+    assert a.judgeable == (STRAP,), slice_
+    assert a.reference == D - timedelta(days=7), slice_  # shipped F006: D-50
+    assert a.gap(STRAP) == 43 and a.skipped == (STRAP,), slice_  # shipped F006: 0 and ()
+    assert a.selected is None, slice_  # shipped F006: chest_strap_raw
+    view = hrv_trend.selected_view(hrv_trend.build_series(carried, AUCKLAND, D))
+    assert view.selection is not None and view.selection.selected is None, slice_
+    assert hrv_trend.judge(view).verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+
+    sparse = strap + readings(
+        OVERNIGHT, days_between(D - timedelta(days=30), D - timedelta(days=21)), 40.0, hh=8
+    )
+    b = _select(sparse)
+    slice_ = b.describe()
+    (overnight,) = [d for d in hrv_trend.build_series(sparse, AUCKLAND, D).datasets if d.tier == OVERNIGHT]
+    assert overnight.n == 10 and not overnight.established, slice_
+    assert b.last_read[OVERNIGHT] == D - timedelta(days=21), slice_
+    assert b.judgeable == (STRAP,), slice_
+    assert b.reference == b.last_read[STRAP] == D - timedelta(days=50), slice_
+    assert b.gap(STRAP) == 0 and b.skipped == (), slice_
+    assert b.selected is not None and b.selected.tier == STRAP, slice_
 
 
 def test_probe_two_datasets_tied_on_fidelity_rank_is_a_construction_defect() -> None:
@@ -2172,14 +2241,38 @@ def test_probe_a_dataset_whose_only_window_reading_is_the_windows_first_day() ->
     assert outside.selected is not None and outside.selected.tier == SNAPSHOT, outside.describe()
 
 
-def test_probe_every_judgeable_dataset_skipped_at_once_cannot_happen() -> None:
-    """Degenerate: the empty survivor set. It is unreachable by construction
-    -- the dataset holding the reference maximum is 0 days behind itself --
-    so a non-empty judgeable set always selects. Pinned at the gate that is
-    reused (``_recency_struck``, over every last-read assignment of one to
-    three tiers hypothesis can draw) and at the selection on the series
-    that comes closest: strap last read ``D-50`` and watch ``D-7``, both
-    judgeable, the strap 43 behind -- exactly one is skipped, never both."""
+def test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164() -> None:
+    """Degenerate: the empty survivor set -- **re-pointed by T164**, which
+    made it reachable. *Shipped F006 (T155) pinned it as unreachable by
+    construction* ("a non-empty judgeable set always selects"), and that was
+    true only while the reference population and the candidate population
+    were the same set: the dataset holding the maximum is 0 days behind
+    itself and so is never struck. With the reference taken over every
+    **established** dataset the holder of the maximum need not be a
+    candidate at all, and then every candidate can be skipped.
+
+    Three pins, in the order the argument runs.
+
+    1. **The gate itself is unchanged.** Over every last-read assignment of
+    one to three tiers hypothesis can draw, ``_recency_struck`` never
+    strikes its whole input and never strikes the holder of the maximum.
+    That is a property of the gate -- reused verbatim, T155 deliverable 3 --
+    and it is why the survivor set can only empty when the maximum is held
+    by a dataset that is **not a candidate**.
+
+    2. **The near-miss, unmoved.** Strap last read ``D-50``, daily watch to
+    ``D-7``, both judgeable: the watch holds the reference, the strap is 43
+    behind, exactly one is skipped and the watch is selected. Unchanged from
+    shipped F006, because here the reference holder *is* a candidate.
+
+    3. **The reachable case.** The same strap beside an overnight tier that
+    is established and holds no judged-week day: the overnight tier holds
+    the reference at ``D-7``, the strap -- the only candidate -- is 43
+    behind and skipped, and ``selected`` is ``None`` with ``judgeable``
+    non-empty. This is the geometry AC6 exists for: the returning strap is
+    not promoted on a band 36 to 66 days old, and the AC9 fallback presents
+    a dataset verdict-free instead.
+    """
 
     @given(
         st.dictionaries(
@@ -2190,10 +2283,10 @@ def test_probe_every_judgeable_dataset_skipped_at_once_cannot_happen() -> None:
         )
     )
     def never_all(last_read: dict[str, date]) -> None:
-        candidates = [t for t in hrv_trend.TIER_FIDELITY if t in last_read]
-        struck = hrv_trend._recency_struck(candidates, last_read)
-        assert struck != set(candidates)
-        assert max(candidates, key=lambda t: last_read[t]) not in struck
+        reference_population = [t for t in hrv_trend.TIER_FIDELITY if t in last_read]
+        struck = hrv_trend._recency_struck(reference_population, last_read)
+        assert struck != set(reference_population)
+        assert max(reference_population, key=lambda t: last_read[t]) not in struck
 
     never_all()
 
@@ -2206,17 +2299,36 @@ def test_probe_every_judgeable_dataset_skipped_at_once_cannot_happen() -> None:
     assert len(selection.skipped) < len(selection.judgeable), slice_
     assert selection.selected is not None and selection.selected.tier == SNAPSHOT, slice_
 
+    emptied = _strap(days_between(D - timedelta(days=66), D - timedelta(days=50)))
+    emptied += _strap([D - timedelta(days=4), D - timedelta(days=2), D])
+    emptied += readings(OVERNIGHT, days_between(D - timedelta(days=66), D - timedelta(days=7)), 40.0, hh=8)
+    all_skipped = _select(emptied)
+    slice_ = all_skipped.describe()
+    assert all_skipped.judgeable == (STRAP,), slice_
+    assert all_skipped.skipped == (STRAP,), slice_
+    assert set(all_skipped.skipped) == set(all_skipped.judgeable), slice_  # shipped F006: a proper subset
+    assert all_skipped.selected is None, slice_  # shipped F006: chest_strap_raw selected
+    view = hrv_trend.selected_view(hrv_trend.build_series(emptied, AUCKLAND, D))
+    assert view.selection is not None and view.selection.selected is None, slice_
+    assert view.presented_by != hrv_trend.PRESENTED_SELECTED, f"{view.presented_by} | {slice_}"
+    assert hrv_trend.judge(view).verdict == hrv_trend.VERDICT_UNAVAILABLE, slice_
+
 
 def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> None:
     """The contract as a property over hand-built datasets (any tier
     present or not, 0..20 post-clip baseline days, 0..7 week days, any
     last-read day inside the window): ``selected`` is ``None`` exactly when
-    nothing is judgeable; otherwise it is the lowest fidelity rank among
-    the judgeable datasets not skipped; ``skipped`` is a proper subset of
-    ``judgeable``; and ``reference`` is the latest last-read over the
-    judgeable datasets, skipped ones included. Hand-built rather than
-    through ``build_series`` so the property reaches geometries the row
-    builders above do not draw; the probes above are the real path."""
+    nothing is judgeable **or every candidate is skipped**; otherwise it is
+    the lowest fidelity rank among the judgeable datasets not skipped;
+    ``skipped`` is a subset of ``judgeable``; and ``reference`` is the
+    latest last-read over the **established** datasets, non-candidates and
+    skipped ones included, ``None`` only when none is established.
+    Re-pointed by T164: under shipped F006 the reference was the maximum
+    over ``selection.judgeable`` alone, ``skipped`` was a **proper** subset
+    of it, and ``selected`` was non-``None`` whenever anything was
+    judgeable. Hand-built rather than through ``build_series`` so the
+    property reaches geometries the row builders above do not draw; the
+    probes above are the real path."""
     first, last = D - timedelta(days=66), D - timedelta(days=7)
 
     def dataset(tier: str, n: int, week: int, last_read: date) -> hrv_trend.HrvDataset:
@@ -2251,14 +2363,21 @@ def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> 
         selection = hrv_trend.select_dataset(series)
 
         judgeable = [d for d in datasets if d.established and len({r.date for r in d.window}) >= 3]
+        established = [d for d in datasets if d.established]
         assert selection.judgeable == tuple(d.tier for d in judgeable)
-        assert set(selection.skipped) < set(selection.judgeable) or not judgeable
+        assert set(selection.skipped) <= set(selection.judgeable)
+        if not established:
+            assert selection.reference is None
+        else:
+            assert selection.reference == max(shapes[d.tier][2] for d in established)
         if not judgeable:
-            assert selection.selected is None and selection.reference is None
+            assert selection.selected is None
             return
-        assert selection.reference == max(shapes[t][2] for t in selection.judgeable)
         survivors = [t for t in selection.judgeable if t not in selection.skipped]
-        assert selection.selected is not None and selection.selected.tier == survivors[0]
+        if not survivors:
+            assert selection.selected is None
+        else:
+            assert selection.selected is not None and selection.selected.tier == survivors[0]
         for t in selection.judgeable:
             assert (t in selection.skipped) == ((selection.reference - shapes[t][2]).days > 28)
 

@@ -56,7 +56,8 @@ T117's recency gate, rule 2's week coverage, rule 3's last-used candidate;
 T093/T094/T095/T117). F006 selects among the datasets instead: the
 highest-fidelity **judgeable** one -- established and holding a judged
 week -- skipped past when its latest baseline-window reading is more than
-``RECENCY_TOLERANCE_DAYS`` behind any judgeable dataset's. ``selected_view``
+``RECENCY_TOLERANCE_DAYS`` behind any **established** dataset's (T164; the
+reference population is wider than the candidates). ``selected_view``
 hands ``judge`` and the route the selected dataset on the F005 series shape
 (``SingleDatasetView``) until T159 renders the datasets themselves;
 ``resolve_baseline_tier`` is no longer on the verdict's path.
@@ -216,7 +217,12 @@ GAP_RESET_DAYS = 21
 #: **Since F006 (T155) this same constant, through the same
 #: ``_recency_struck``, is the selection gate** (``select_dataset``; AC6/
 #: AC7): a judgeable dataset whose latest baseline-window reading falls
-#: more than this many days behind any judgeable dataset's is skipped. The
+#: more than this many days behind any **established** dataset's is skipped
+#: (T164, 2026-09-20: the reference population was the judgeable datasets
+#: from T155 until then, and narrowing it nearly doubled ``hrv_normal`` on
+#: an entirely pre-layoff band against shipped F005 -- 1,896 -> 3,705 of
+#: 307,500 -- because a stopped or weekless carrier left the reference set;
+#: shipped F005's own rule-1 reference was every established tier). The
 #: constant is inherited, not re-justified: the ``[18, 44]`` band above
 #: was measured against the *fused* band, and its upper end no longer
 #: binds because a stale trial is not judgeable -- do not cite it as if it
@@ -654,7 +660,8 @@ def verdict_withheld(
     the *candidates* (``>= MIN_BASELINE_READINGS`` raw baseline-window days)
     and, from T132, the tiers with **zero** baseline-window days and a full
     week. ``struck`` is ``skipped`` here -- the same ``_recency_struck``
-    over the same baseline-window ``_last_read``, taken once by
+    over the same baseline-window ``_last_read``, over the same
+    **established** reference population (T164), taken once by
     ``build_series`` for every dataset and once by ``select_dataset`` (T125:
     the set must be *the* set, pinned equal in
     ``test_the_withhold_reads_the_skipped_set_selection_reads_and_is_asked_of_every_dataset``).
@@ -1211,8 +1218,9 @@ def build_series(
     # only: an empty window has nothing judgeable, nothing skipped and no
     # band anyway, so F005 answered it ``False`` through its fallback and
     # this does the same.
-    judgeable = [dataset.tier for dataset in datasets if is_judgeable(dataset)]
-    skipped = _recency_struck(judgeable, baseline_last_read)
+    judgeable = {dataset.tier for dataset in datasets if is_judgeable(dataset)}
+    established = [dataset.tier for dataset in datasets if dataset.established]
+    skipped = _recency_struck(established, baseline_last_read) & judgeable
     datasets = [
         replace(dataset, withheld=bool(baseline_readings) and verdict_withheld(dataset, datasets, skipped))
         for dataset in datasets
@@ -1271,9 +1279,12 @@ class Selection:
     order; ``last_read`` the latest baseline-window local day of **every**
     tier present (``_last_read`` over the baseline-window slice, AC6's
     normative scope), whether judgeable or not; ``reference`` the latest of
-    those over the judgeable tiers alone, ``None`` when nothing is
-    judgeable. ``selected`` is the first judgeable tier's dataset not
-    skipped, or ``None``. Everything a witness needs to print the slice the
+    those over the **established** tiers -- the gate's reference
+    population, wider than its candidates since T164 -- and ``None`` only
+    when no dataset is established. ``selected`` is the first judgeable
+    tier's dataset not skipped, or ``None``; with an established but not
+    judgeable dataset holding the reference, every candidate can be
+    skipped and ``selected`` is ``None`` with ``judgeable`` non-empty. Everything a witness needs to print the slice the
     decision compared is here (``describe``), so a pin can say which
     datasets were candidates, which were skipped and by how many days.
 
@@ -1360,14 +1371,33 @@ def select_dataset(series: HrvSeries) -> Selection:
     3. **A candidate is skipped** (AC6/AC7) when its latest reading **within
        the baseline window** ``[D-66, D-7]`` falls more than
        ``RECENCY_TOLERANCE_DAYS`` behind the latest baseline-window reading
-       of any judgeable dataset -- strictly greater than. The gate is F005's
-       ``_recency_struck`` reused verbatim, over ``_last_read`` of the
+       of any **established** dataset -- strictly greater than. The gate is
+       F005's ``_recency_struck`` reused verbatim, over ``_last_read`` of the
        baseline-window slice, which is exactly the scope AC6 makes normative
        (task technical notes: a reuse, not a new computation; no window is
        computed here). The reference maximum is taken **once,
-       simultaneously**, over every judgeable dataset including the ones
-       about to be skipped, so a lone dataset is its own reference and is
-       never skipped, and the dataset holding the maximum can never be.
+       simultaneously**, over every **established** dataset -- the ones that
+       are not judgeable and the ones about to be skipped alike -- while the
+       *candidates* struck from it stay the judgeable datasets, so a lone
+       established dataset is its own reference and the dataset holding the
+       maximum can never be skipped.
+
+       **Why the population is the established datasets** (T164, 2026-09-20;
+       ``research/00`` 5.4 amended first, then spec 3.7.3/3.7.4, then AC6/
+       AC7). T155 took the reference over the judgeable datasets alone.
+       Shipped F005's rule 1 took its equivalent over every **established**
+       tier, so a carrier that had stopped -- or whose judged week was too
+       thin to be judgeable -- still struck a returning dataset whose band is
+       entirely pre-layoff. T162 measured the narrowing over 307,500 rectangle
+       rows and 24,000 walk rows, on both modules and under both overlap
+       variants: ``hrv_normal`` on an entirely pre-layoff band rose **1,896 ->
+       3,705** (x1.95) and **96 -> 254** (x2.65), worse at every ``c``, on 82
+       of 150 cells -- 1.7's forbidden direction on the population AC6 exists
+       to close, reopened at AC7 (IDEA-080). Widening the population restores
+       F005's rate. The cost, knowingly re-imported: a **lone judgeable**
+       dataset is no longer automatically its own reference -- an established
+       but weekless dataset read later strikes it -- so every candidate can be
+       skipped at once and the AC9 fallback presents one verdict-free.
 
     **Why the window is normative** (reference §9, the defect a first draft
     got wrong). A strap established on ``D-66..D-36``, silent to ``D-5``
@@ -1402,8 +1432,13 @@ def select_dataset(series: HrvSeries) -> Selection:
     judgeable = [d for d in by_rank if is_judgeable(d)]
     last_read = _last_read(_within(series.readings, series.baseline_window))
     candidates = [d.tier for d in judgeable]
-    skipped = _recency_struck(candidates, last_read)
-    reference = max((last_read[tier] for tier in candidates), default=None)
+    # T164: the reference population is every **established** dataset, the
+    # candidates struck from it are still the judgeable ones. One call, so
+    # the maximum is still taken once and simultaneously (AC7).
+    established = [d.tier for d in by_rank if d.established]
+    struck = _recency_struck(established, last_read)
+    skipped = {tier for tier in candidates if tier in struck}
+    reference = max((last_read[tier] for tier in established if tier in last_read), default=None)
     selected = next((d for d in judgeable if d.tier not in skipped), None)
     against_band = tuple(read_against_band(d) for d in by_rank)
     return Selection(

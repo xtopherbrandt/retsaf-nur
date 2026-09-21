@@ -967,6 +967,28 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     (``hrv_unavailable``, tier carrier, ``readings_in_window`` ``7 - r``).
     This is T125's own population, and it is why the set is not "not
     judgeable" alone (IDEA-083).
+
+    **Re-pointed at T164 (F006 AC7, 2026-09-20): ``r = 5``, ``6`` and ``7``
+    move back to shipped F005's answer, and the walk now reads the same on
+    every morning but ``r = 8``.** The recency reference is taken over every
+    **established** dataset rather than the judgeable ones alone, and the
+    carrier is established on all of ``32 + r`` baseline-window days however
+    thin its judged week has become. It therefore holds the reference at
+    ``CARRIER_END`` (or the window's end, whichever is earlier) at every
+    ``r``, and the returning tier's era-A days sit 37 or more behind it, so
+    the returning tier is **skipped** from ``r = 5`` exactly as it was from
+    ``r = 3`` -- nothing is judgeable, and the AC9 fallback presents the
+    carrier, read last. *Shipped F006 (T155): tier home, ``fed`` the ``r``
+    return mornings, ``readings_in_window`` ``r``, ``baseline_n`` ``28 - r``
+    (23 / 22 / 21), ``hrv_suppressed`` on a suppressed return and
+    ``hrv_normal`` on a healthy one from the fifth morning back.* That last
+    value is the row T162 priced: ``hrv_normal`` on a band every reading of
+    which is 36 to 66 days old, §1.7's forbidden direction, and it is the
+    walk's own contribution to the 96 -> 254 stale-band regression AC21
+    blocked release on. ``research/00`` §5.4 (iv)'s "a return is free" is
+    unchanged in itself -- the return's band was never destroyed -- but it is
+    not free *of the recency gate* while a dataset the athlete is still being
+    read on is established.
     """
     rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
     era_a = [ERA_A_END - timedelta(days=i) for i in range(80)]
@@ -979,11 +1001,22 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
         fed_by_carrier = [day for day in window_days(7, target) if day <= CARRIER_END]
         returned = [day for day in window_days(7, target) if day > CARRIER_END]
 
-        if len(fed_by_carrier) >= hrv_trend.MIN_WINDOW_READINGS:
-            # r = 1..4: the carrier is judgeable and, from r = 3, the
-            # returning tier is judgeable too and 33+ days behind it in the
-            # baseline window, so it is skipped (F006 AC6; F005's gate struck
-            # it for the same reason). Unchanged from shipped.
+        if r < RETURN_DAYS:
+            # r = 1..7 (re-pointed at T164; r = 1..4 before it). The carrier
+            # is established at every r, so it holds the recency reference at
+            # every r, and the returning tier -- judgeable from r = 3 -- is
+            # 37+ days behind it in the baseline window and skipped (F006
+            # AC6/AC7; F005's own rule-1 gate struck it for the same reason
+            # over the same population). Through r = 4 the carrier is
+            # judgeable and selected; from r = 5 it holds fewer than
+            # MIN_WINDOW_READINGS week days, nothing is judgeable, and the AC9
+            # fallback presents it -- the established dataset read last.
+            # Either way the answer is the carrier's, which is what shipped
+            # F005 said on all seven mornings.
+            #
+            # Shipped F006 (T155), r = 5..7 only: tier home, fed the r return
+            # mornings, readings_in_window r, baseline_n 28 - r, and
+            # hrv_suppressed / hrv_normal rather than hrv_unavailable.
             expected_tier = carrier_tier
             fed = fed_by_carrier
             # [[T125]] form 2. The athlete's own mornings inside the judged
@@ -996,18 +1029,19 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
             expected_verdict = NORMAL if not withheld else UNAVAILABLE
             expected_baseline_n = 32 + r
         else:
-            # r = 5..8: the carrier is not judgeable; the returning tier is
-            # the only judgeable dataset and is selected (F006, T155). Shipped
-            # F005 said, on r = 5..7: tier carrier, readings_in_window 7 - r,
-            # baseline_n 32 + r, hrv_unavailable (week_too_thin); r = 8 is
-            # unchanged. The baseline is its era-A days inside the window plus
-            # any return morning that has entered it (one, at r = 8).
+            # r = 8. The derivation the returning tier would have here if it
+            # were selected -- its era-A days inside the window plus the one
+            # return morning that has entered it -- is kept and asserted,
+            # because the r == RETURN_DAYS block below turns on that dataset's
+            # shape. Under T164 r = 5..7 no longer reach this branch: the
+            # carrier holds the reference and the returning tier is skipped
+            # there (shipped F006 selected it, with baseline_n 28 - r).
             first, last = hrv_trend.baseline_window(target)
             expected_tier = home_tier
             fed = returned
             expected_verdict = SUPPRESSED if suppressed else NORMAL
             expected_baseline_n = len([day for day in era_a + return_days if first <= day <= last])
-            assert expected_baseline_n == (21 if r == RETURN_DAYS else 28 - r), r
+            assert expected_baseline_n == 21 and r == RETURN_DAYS, r
 
         if r == RETURN_DAYS:
             # Re-derived at T153 (2026-09-19, F006 AC17). Shipped through
@@ -1163,11 +1197,17 @@ def test_the_return_residual_turns_on_capture_spacing_not_weekly_count(seed_hrv_
 
     * the carrier owns the baseline through ``k = 3`` under every pattern, so
       both counts are read off the same phase and the walk is not silently
-      comparing different stretches; from ``k = 4`` (re-derived at F006,
-      T155, 2026-09-19) the strap is selected wherever it holds
-      ``MIN_WINDOW_READINGS`` judged-week days and the carrier is presented
-      by the fallback where it does not (2/wk) -- shipped F005 kept the
-      carrier at every ``k``;
+      comparing different stretches; **the carrier owns it at every ``k`` and
+      under every pattern** (re-pointed at T164, 2026-09-20), because it is
+      established throughout and so holds the recency reference, which leaves
+      the returning strap skipped wherever it is a candidate at all -- *shipped
+      F006 (T155) selected the STRAP from ``k = 4`` under every pattern
+      holding ``MIN_WINDOW_READINGS`` judged-week days (daily, 4/wk
+      clustered, 4/wk spread, 3/wk) and presented the carrier by the fallback
+      at 2/wk*; shipped F005 kept the carrier at every ``k``, which is where
+      this is again. The strap's candidacy and the strike are both asserted
+      below, so "the carrier owns it" cannot pass by the strap merely being
+      absent;
     * ``retired_band_mornings`` -- ``hrv_normal`` from a week fed entirely by
       days at or before ``CARRIER_END`` -- equals the table **and** equals
       ``min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)``, with ``k3`` derived
@@ -1205,13 +1245,27 @@ def test_the_return_residual_turns_on_capture_spacing_not_weekly_count(seed_hrv_
 
             strap_week = [day for day in captured if target - timedelta(days=6) <= day <= target]
             carrier_week = [day for day in window_days(7, target) if day <= CARRIER_END]
-            if len(carrier_week) >= hrv_trend.MIN_WINDOW_READINGS:
-                expected_tier = SNAPSHOT  # judgeable carrier; the strap is skipped or not judgeable
-            elif len(strap_week) >= hrv_trend.MIN_WINDOW_READINGS:
-                expected_tier = STRAP  # F006 (T155): the only judgeable dataset; shipped F005 said SNAPSHOT
-            else:
-                expected_tier = SNAPSHOT  # nothing judgeable: the presentation fallback, read last
+            # T164: the carrier is presented at every k under every pattern
+            # -- selected while it is judgeable, and by the AC9 fallback once
+            # its week thins -- because it is established throughout and holds
+            # the recency reference. Shipped F006 read STRAP wherever the
+            # elif below fires.
+            expected_tier = SNAPSHOT
+            selection = series.selection
+            assert selection is not None, (name, k)
             assert series.tier == expected_tier, (name, k)
+            if len(carrier_week) >= hrv_trend.MIN_WINDOW_READINGS:
+                assert selection.selected is not None, (name, k, selection.describe())
+                assert selection.selected.tier == SNAPSHOT, (name, k, selection.describe())
+            else:
+                # Nothing is judgeable here, and the strap is not merely
+                # absent from the candidates: it IS one wherever it holds
+                # MIN_WINDOW_READINGS week days, and it is SKIPPED. Shipped
+                # F006 selected it on exactly these rows.
+                assert selection.selected is None, (name, k, selection.describe())
+                a_candidate = len(strap_week) >= hrv_trend.MIN_WINDOW_READINGS
+                assert (STRAP in selection.judgeable) is a_candidate, (name, k, selection.describe())
+                assert (STRAP in selection.skipped) is a_candidate, (name, k, selection.describe())
             assert k >= 4 or expected_tier == SNAPSHOT, (name, k)
             fed = [reading.date for reading in series.window]
             if verdict.verdict == NORMAL and fed and max(fed) <= CARRIER_END:
