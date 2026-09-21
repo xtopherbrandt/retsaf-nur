@@ -282,8 +282,9 @@ change set, `check_drift.py` must pass, and `test_hrv_unavailable_causes.py` —
 **Read `spec/references/F006-dataset-model.md` §9, §10 and §13 before implementing.** §13 holds the four
 notes that change what you build: the dataset key and why it is the tier; N is 3 in the enum and 2 in every
 real corpus; `RECENCY_TOLERANCE_DAYS` is inherited but **not** re-justified in this frame; and fidelity rank
-arbitrates while the confidence weight never does — pinned by nothing today. `research/00` §5.4 is amended
-**first**, then swept tree-wide.
+arbitrates while the confidence weight never does — pinned since 2026-09-19 by T156, and no weight is
+emitted at all: `datasets[]` carries `fidelity_rank` (`spec/03` §3.7.4; reference §3, corrected
+2026-09-21, T159). `research/00` §5.4 is amended **first**, then swept tree-wide.
 
 ## Negative Class
 

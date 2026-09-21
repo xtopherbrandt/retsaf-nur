@@ -82,10 +82,30 @@ had to patch it.
 | sense | what it is | role |
 |---|---|---|
 | **Fidelity rank** | the ordinal in `TIER_FIDELITY` / `_FIDELITY_RANK`; already shipped, ratified by §3.7.1 | **arbitrates selection** |
-| **Confidence weight** | the numeric per-tier weight §3.7.1 defines and §3.7.4 defers to Section 6 | **reported on `datasets[]`, never arbitrates** |
+| **Confidence weight** | the numeric per-tier weight §3.7.1 defines and §3.7.4 defers to Section 6 | **not emitted at all, and it never arbitrates** |
 
 IDEA-071's cost 1 — a new recency × quality exchange rate — therefore never arises, which was the
 point of splitting them.
+
+**Corrected 2026-09-21 (T159).** The second row's role cell read "reported on `datasets[]`,
+never arbitrates" from 2026-09-18 until then, and its first half was already false when the
+response block shipped. `spec/03` §3.7.4 is the authority above this reference and states that
+**no confidence weight is computed in Section 3 at all** — weighting by tier confidence is
+deferred to Section 6's readiness fusion — so putting one on the wire would mint a constant
+Section 3 does not own, which §10's "no new constant" refuses in the same breath. What
+`datasets[]` carries instead is **`fidelity_rank`**, the ordinal the first row names, beside each
+dataset's `tier`, `n`, `established`, `band`, `last_read`, `week_days`, `week_mean`, `below`,
+`reset_on` and `reset_reason` — the rank being what makes `selected_reason` recomputable by hand
+from the response. The split this table draws is unchanged, and since 2026-09-19 it is pinned:
+`test_the_numeric_confidence_weight_never_participates_in_selection` (T156) swaps which tier
+carries the noisy readings and watches the selection stay where it was, and its AST half reds if
+any name mentioning a weight or a confidence reaches `select_dataset`, or the module at all.
+
+**One divergence is left standing rather than picked over**, as `project-domain-and-spec-fidelity`
+requires of a research-corpus conflict. `research/00` §5.4 (ii) still says of the confidence weight
+that "it is reported per dataset and left to Section 6". That document is the decision authority
+above `spec/03`, so this reference, which sits below both, does not amend it; the conflict is
+recorded here for the next reader instead of being resolved from underneath.
 
 ### Forms considered and rejected, with the reason
 
@@ -287,6 +307,8 @@ feature it re-derives.
   causes. Any reshaping of `judge` reds it — budget for it.
 - **The fidelity-rank / confidence-weight split is pinned by no AC.** It is the decision that keeps
   IDEA-071's cost 1 from arising; pin it during task decomposition, along with "no new constant".
+  *Done, 2026-09-19 (T156): `test_the_numeric_confidence_weight_never_participates_in_selection`;
+  and no weight is emitted, `datasets[]` carrying `fidelity_rank` — §3.*
 - **`research/00` §5.4 must be amended first.** §3.7.3's main clause states that adopting or
   abandoning the strap **is** a baseline re-establishment withholding any verdict; making a return
   free contradicts it. The authority is amended before `spec/03` (project rule: `research_00`
@@ -352,7 +374,10 @@ Full detail in `spec/references/F006-dataset-model.md` — **read §9 and §10 b
   real corpus**, and the 3-dataset shape is untested by construction.
 - **`RECENCY_TOLERANCE_DAYS` (28) is inherited, not re-justified** — the `[18, 44]` band was measured
   against the *fused* band. Do **not** cite it as transferring; AC19/AC21 re-measure it.
-- **Fidelity rank arbitrates; the confidence weight never does** — no test pins this today; pin it.
+- **Fidelity rank arbitrates; the confidence weight never does** — pinned since 2026-09-19 by
+  `test_the_numeric_confidence_weight_never_participates_in_selection` (T156), behaviourally and
+  structurally at once. No weight is emitted either: `datasets[]` carries `fidelity_rank`
+  (`spec/03` §3.7.4; §3's table above, corrected 2026-09-21, T159).
 - **`research/00` §5.4 is amended FIRST** — §3.7.3's main clause makes adopting or abandoning the
   strap a re-establishment, which a free return contradicts. Sweep the claim tree-wide.
 
