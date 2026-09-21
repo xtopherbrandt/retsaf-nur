@@ -418,6 +418,16 @@ def _point(series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict) -
     )
 
 
+def _band_readings(selection: hrv_trend.Selection | None) -> dict[str, hrv_trend.BandReading]:
+    """``Selection.band_readings`` keyed by tier, empty when there is no
+    selection. One builder, so ``_datasets`` and ``_disagreed_with`` read the
+    same mapping instead of each constructing it -- a dataset's ``week_days``
+    is one number wherever it is rendered, not two derivations that agree."""
+    if selection is None:
+        return {}
+    return {r.tier: r for r in selection.band_readings}
+
+
 def _datasets(series: hrv_trend.SingleDatasetView) -> list[DatasetSummary]:
     """Every dataset of the day's series, in fidelity order (F006 AC1/AC2/
     AC10, T159) -- the block that makes the retained losers legible.
@@ -441,7 +451,7 @@ def _datasets(series: hrv_trend.SingleDatasetView) -> list[DatasetSummary]:
     present for the datasets that exist.
     """
     selection = series.selection
-    readings = {r.tier: r for r in (selection.band_readings if selection is not None else ())}
+    readings = _band_readings(selection)
     last_read = selection.last_read if selection is not None else {}
     summaries = []
     for dataset in series.datasets:
@@ -478,11 +488,11 @@ def _disagreed_with(series: hrv_trend.SingleDatasetView) -> list[Disagreement]:
     selection = series.selection
     if selection is None:
         return []
-    readings = {r.tier: r for r in selection.band_readings}
+    readings = _band_readings(selection)
     return [
         Disagreement(
             dataset=tier,
-            week_days=0 if tier not in readings else readings[tier].week_days,
+            week_days=0 if readings.get(tier) is None else readings[tier].week_days,
         )
         for tier in selection.disagreed_with
     ]
