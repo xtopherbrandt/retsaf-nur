@@ -37,6 +37,19 @@ SILENCE_RATE_WITHDRAWN = (
     "129 of 365 days -- 35% of the calendar",
 )
 
+RESET_COMPOSITION_WITHDRAWN = (
+    "a coverage gap or a tier change collapses the baseline",
+    "a coverage gap **or a tier change** collapses the baseline deliberately",
+    "a tier change or a coverage gap collapses the baseline",
+    "gap resets and tier changes collapse the baseline",
+    "coverage-gap or tier-change reset",
+    "tier-change or coverage-gap reset",
+    "every reset collapses the baseline",
+    "either reset collapses the baseline",
+    "any reset collapses the baseline",
+    "both resets collapse the baseline",
+)
+
 THRESHOLDS_WITHDRAWN = (
     "the heuristic constants the verdict was computed with (spec 03",
     "the heuristic constants the verdict was computed with (spec/03",

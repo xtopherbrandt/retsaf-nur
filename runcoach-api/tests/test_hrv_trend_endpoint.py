@@ -1077,6 +1077,16 @@ WITHDRAWN_ORDER = (
     ("THRESHOLDS_WITHDRAWN", 2, "285bbbe3b570", "IDEA-070's retracted promise, YAML idiom"),
     ("SILENCE_RATE_WITHDRAWN", 1, "394adbef2936", "T138's composed-silence scenario, the event the rule cannot detect"),
     ("SILENCE_RATE_WITHDRAWN", 2, "02e9956b8dc3", "T138's composed-silence headline, the rate and its share of the year"),
+    ("RESET_COMPOSITION_WITHDRAWN", 1, "1a4863e860cf", "T163's false composition, the sentence removed from judge"),
+    ("RESET_COMPOSITION_WITHDRAWN", 2, "0d63463e6a26", "the same claim in the documents' markup spelling"),
+    ("RESET_COMPOSITION_WITHDRAWN", 3, "7432e919d018", "the same claim with the two reset kinds reordered"),
+    ("RESET_COMPOSITION_WITHDRAWN", 4, "aef736c5caa9", "T142's plural spelling of the composition"),
+    ("RESET_COMPOSITION_WITHDRAWN", 5, "9556095e259a", "the hyphenated adjectival idiom, spec/06's order"),
+    ("RESET_COMPOSITION_WITHDRAWN", 6, "27778a76f89a", "the hyphenated adjectival idiom, reordered"),
+    ("RESET_COMPOSITION_WITHDRAWN", 7, "e9406060395a", "the every-reset quantifier composition"),
+    ("RESET_COMPOSITION_WITHDRAWN", 8, "3a2100b7e86f", "the either-reset quantifier composition"),
+    ("RESET_COMPOSITION_WITHDRAWN", 9, "0a8bd6644939", "the any-reset quantifier composition"),
+    ("RESET_COMPOSITION_WITHDRAWN", 10, "17628c8c2129", "the both-resets quantifier composition"),
 )
 
 
@@ -1347,8 +1357,8 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
             f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
             f"every entry is pinned by exactly one row, and every row pins an entry"
         )
-    assert len(WITHDRAWN_ORDER) == 19, (
-        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 19: a row and its "
+    assert len(WITHDRAWN_ORDER) == 29, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 29: a row and its"
         f"tuple entry dropped together leave every remaining digest correct"
     )
 
@@ -2351,6 +2361,61 @@ THRESHOLDS_SHARED_ANCHOR = "they are not all of tier resolution"
 SILENCE_RATE_WITHDRAWN = _DECLARATIONS.SILENCE_RATE_WITHDRAWN
 
 
+#: Withdrawn by [[T163]] (2026-09-19) and put under the walk 2026-09-20
+#: (sprint-006 wave-7 mutation pass, finding 1). The claim is that the 20-day
+#: unestablished traverse ``judge``'s establishment gate opens onto is reached
+#: after **either** reset this feature performs. It is true of a coverage gap,
+#: which collapses the baseline deliberately, and false of a sustained tier
+#: change, which collapses **nothing**: the outgoing tier keeps its 60-day
+#: baseline, ``established`` stays true, ``n`` decays 60 -> 47, and the switch
+#: traverses zero unestablished days. Its own quiet is 18 days by week
+#: coverage, a different mechanism with ``reset_reason`` null throughout.
+#:
+#: Why it is here rather than in a probe. T138 measured the composition false
+#: and corrected it at its three *document* sites, but carried
+#: ``behaviour_change: false``, whose scope rule forbade any edit under
+#: ``runcoach-api/src/`` -- so the sentence survived in the file the correction
+#: was about. T163 corrected it there. Both tasks guarded it with a one-shot
+#: ``! grep`` inside their own acceptance probe, and T163's had to be
+#: whitespace-flattened to fire at all, because the live sentence wrapped
+#: mid-phrase across two source lines ("...or a tier" / "change collapses...")
+#: and the line-oriented form passed vacuously against the unfixed file. A
+#: probe that runs once at acceptance is exactly how the claim survived T138;
+#: the wave-7 mutant put the sentence back into ``judge`` and 95 tests passed.
+#: These entries are what runs every time, over a flattened read, so neither
+#: the wrap nor the one-shot matters again.
+#:
+#: The family, not one literal (entries in declaration order): 1 is the
+#: sentence T163 removed; 2 is the same claim in the markup spelling the
+#: document sites use, scoped by ``deliberately`` because the F005 mirror
+#: carries the asterisked form followed by ``until now`` as T142's dated
+#: retraction; 3 is it reordered; 4 is T142's plural spelling; 5-6 are the
+#: hyphenated adjectival idiom in both orders -- entry 5 is the spelling
+#: ``spec/06`` 6.2.4 cause (4) carried until T163, where the two kinds are
+#: joined into one composed reset that the 20 days are said to follow; 7-10
+#: are the quantifier compositions the claim is restated as when the two reset
+#: kinds are not named at all.
+#:
+#: What they must not match, checked by running the walk: the corrected
+#: sentences now live in ``judge``, ``research/00`` §5.4 and ``spec/03``
+#: §3.7.3; the module docstring's *true* line 7, which joins the two reset
+#: rules as the two things this module implements ("a baseline after a
+#: coverage gap or a sustained tier change") and is why no entry here is the
+#: bare conjunction; and the records that quote the claim as the thing being
+#: withdrawn, each under its own dated correction -- the F005 mirror,
+#: ``F005-decision-log.md``, ``spec/06``, ``test_hrv_trend_band.py`` and
+#: ``test_hrv_unavailable_causes.py`` (``CHANGELOG.md`` is held out by
+#: ``SCAN_EXCLUDED_HISTORY`` and needs no scoping). Every one of those quotes
+#: carries the markup asterisks or a different subject, which is what the
+#: entries are shaped around.
+#:
+#: None of them is positional (see ``POSITIONAL_WITHDRAWN``): each is anchored
+#: on the *predicate* the claim is false about -- the baseline collapsing, the
+#: reset being followed by the traverse -- rather than on a clause that only
+#: one sentence's position supplies, so all ten sweep the whole walk.
+RESET_COMPOSITION_WITHDRAWN = _DECLARATIONS.RESET_COMPOSITION_WITHDRAWN
+
+
 #: Every withdrawn phrasing the walk reads, in one name so a declared tuple
 #: cannot be left out of the sweep -- which is the shape ``VERDICT_WITHDRAWN``
 #: was in until T122, ``WINDOW_WITHDRAWN`` until ``acfebae``, and the same shape T115
@@ -2367,6 +2432,7 @@ WITHDRAWN_SWEPT = (
     + ESTABLISHED_WITHDRAWN
     + THRESHOLDS_WITHDRAWN
     + SILENCE_RATE_WITHDRAWN
+    + RESET_COMPOSITION_WITHDRAWN
 )
 
 #: Being in ``WITHDRAWN_SWEPT`` is not the same as reaching the whole walk.
