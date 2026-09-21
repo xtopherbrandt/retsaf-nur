@@ -45,6 +45,20 @@ which by the feature's own text triggers the deferred **hysteresis
 decision** rather than blocking release; the flip rows are asserted
 *present* here so the number cannot be quietly dropped, and their comparison
 is the report's.
+
+**The one exception, and why it is here rather than in a comment.** T164
+paid the stale-band regression -- the recency reference is now taken over
+every established dataset, and ``normal_stale_band`` is back to shipped
+F005's count exactly. The **other** regression T162 measured is deliberately
+**not** paid, by user decision of 2026-09-20: it exists only under the
+independent-instruments fixture and reverses under the correlated one, and
+T162 established that the recorded corpus cannot settle which of the two
+worlds this is (IDEA-087). An unpaid regression that nobody can see is how a
+gate rots, so it is carried here **by name, by row count and by condition**
+(``DEFERRED_EXCEPTION*`` below), it is printed by the gate on every run, and
+``test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names``
+reds if its own row count moves **in either direction**. It is not a
+"warn": every other gated rate still blocks release outright.
 """
 
 from __future__ import annotations
@@ -71,6 +85,86 @@ DATA_DIR_ENV = "SHIPYARD_DATA_DIR"
 #: The count columns that must be integers on every row.
 _COUNTS = ("f005", "f006", "denom")
 
+#: -------------------------------------------------------------------------
+#: The one measured regression this gate does **not** block release on, named.
+#:
+#: **What it is.** The §1.7-forbidden rate -- the athlete's own return is
+#: suppressed (25 ms) and ``hrv_normal`` is promoted from the overlapping
+#: carrier's week -- is worse on F006 than on shipped F005 at ``c = 4`` and
+#: ``c = 5`` only: rectangle 22,217 -> 22,232 in total (+15 of 307,500,
+#: +0.07% relative), on 17 of 150 cells, and **better** at ``c <= 2``
+#: (1,713 -> 1,614 at ``c = 0``); the walk 1,104 -> 1,108 of 24,000 on three
+#: cells. Counted three ways over the same rows (``forbidden``, its
+#: ``via carrier_week`` decomposition, and the ``ret_week >= 3`` subset) plus
+#: the walk's own metric, that is the 64 rows below.
+#:
+#: **Its condition, which is the whole reason it is deferred.** It exists
+#: **only** under ``T161_OVERLAP=healthy`` -- T130's fixture, in which the
+#: carrier keeps reading 38/44 on a morning the athlete's strap reads 25, i.e.
+#: the two datasets are *independent instruments*. Under
+#: ``T161_OVERLAP=suppressed`` -- one athlete, one physiology, two devices --
+#: F006 is better at every ``c`` (3,625 -> 3,497; the T130-comparable subset
+#: 128 -> 0) and the walk is equal (78 -> 78). Every excepted row is therefore
+#: an ``overlap == "healthy"`` row, and that is asserted, not assumed.
+#:
+#: **What must be answered before it is re-priced: IDEA-087.** The
+#: sign-agreement rate -- how often the two datasets fall on the same side of
+#: their own bands -- is the statistic every one of these counts depends on,
+#: and T162 established that the recorded corpus cannot supply it (no
+#: simultaneous pair exists or can exist on one watch; n = 2). T162's two
+#: overlap variants bracket the answer at 0% and 100%, and this rate's sign
+#: changes across that bracket. Spending a rule change on it while its sign
+#: is unknown is the parameter-before-measurement mistake the dataset model's
+#: §10 names.
+#:
+#: **Mechanism, so the exception is not a shrug.** T153's hole clip leaves
+#: the returning dataset unestablished from the eighth morning back while the
+#: overlapping carrier stays judgeable, so F006 keeps promoting from the
+#: carrier where shipped F005 re-admitted the strap at ``r = 8`` on a band
+#: mixing era A with the return -- a verdict the dataset model's §9 calls
+#: worse than its successor, which on this population happens to land on the
+#: right answer.
+DEFERRED_EXCEPTION = (
+    "the §1.7-forbidden rate (a suppressed return promoted hrv_normal from the carrier's week) "
+    "at c = 4 and c = 5, under the independent-instruments fixture only -- deferred pending IDEA-087"
+)
+
+#: Exactly how many gated rows the exception covers. Re-measured by T164 on
+#: 2026-09-20 over the regenerated rows; T162 measured the same regression at
+#: the same counts before the reference-set change, which is the evidence that
+#: T164 moved the stale-band rate and left this one untouched.
+DEFERRED_EXCEPTION_ROWS = 64
+
+#: The exception's shape, as a predicate rather than a list of row ids: the
+#: forbidden-rate family, on the healthy-overlap side only.
+DEFERRED_EXCEPTION_CRITERION = "AC21"
+DEFERRED_EXCEPTION_OVERLAP = "healthy"
+DEFERRED_EXCEPTION_METRICS = frozenset(
+    {"forbidden", "forbidden_carrier_week", "forbidden_ret_week_ge3", "walk_forbidden"}
+)
+
+#: The marginal totals the exception is allowed to be, quoted so that a change
+#: in the regression's *size* reds even if its row count happens not to move.
+#: ``(sweep, overlap, metric) -> (f005, f006)``.
+DEFERRED_EXCEPTION_TOTALS = {
+    ("rect", "healthy", "forbidden"): (22217, 22232),
+    ("rect", "healthy", "forbidden_carrier_week"): (22217, 22232),
+    ("rect", "healthy", "forbidden_ret_week_ge3"): (7479, 7494),
+    ("walk", "healthy", "walk_forbidden"): (1104, 1108),
+}
+
+#: The metric T164 paid, and its shipped-F005 figures, pinned here so the
+#: payment cannot silently un-happen: ``hrv_normal`` on an entirely pre-layoff
+#: band was 3,705 of 307,500 rectangle rows and 254 of 24,000 walk rows under
+#: shipped F006 (T155's judgeable-only reference), and is back to F005's exact
+#: 1,896 and 96 under T164's established reference.
+PAID_BY_T164 = {
+    ("rect", "healthy", "normal_stale_band"): (1896, 1896),
+    ("rect", "suppressed", "normal_stale_band"): (1896, 1896),
+    ("walk", "healthy", "walk_stale_normal"): (96, 96),
+    ("walk", "suppressed", "walk_stale_normal"): (96, 96),
+}
+
 
 def _data_dir() -> Path | None:
     named = os.environ.get(DATA_DIR_ENV)
@@ -95,8 +189,10 @@ def _rows() -> list[dict[str, str]]:
     return _read(TREE_ROWS)
 
 
-def worsened(rows: list[dict[str, str]]) -> list[str]:
-    """Every gated rate row on which F006 is worse than shipped F005, named.
+def worse_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Every gated rate row on which F006 is worse than shipped F005 --
+    **including** the deferred exception, which is partitioned out separately
+    and never filtered away here.
 
     The comparison is **recomputed** from ``f005``/``f006`` rather than read
     off the ``worse`` column: a gate that trusts a column the same script
@@ -104,19 +200,53 @@ def worsened(rows: list[dict[str, str]]) -> list[str]:
     column is checked against this separately, so a disagreement is itself a
     failure.
     """
-    out: list[str] = []
-    for row in rows:
-        if row["gated"] != "1":
-            continue
-        f005, f006 = float(row["f005"]), float(row["f006"])
-        if f006 > f005:
-            out.append(
-                f"{row['criterion']} {row['sweep']}/{row['overlap']} {row['scope']} "
-                f"{row['metric']} [ret={row['ret_density'] or '-'} car={row['car_density'] or '-'} "
-                f"c={row['c'] or '-'} {row['orientation'] or '-'} {row['value_level'] or '-'}]: "
-                f"F005 {row['f005']} -> F006 {row['f006']} of {row['denom']}"
-            )
-    return out
+    return [
+        row
+        for row in rows
+        if row["gated"] == "1" and float(row["f006"]) > float(row["f005"])
+    ]
+
+
+def name(row: dict[str, str]) -> str:
+    """One worsened row, with every axis that identifies it."""
+    return (
+        f"{row['criterion']} {row['sweep']}/{row['overlap']} {row['scope']} "
+        f"{row['metric']} [ret={row['ret_density'] or '-'} car={row['car_density'] or '-'} "
+        f"c={row['c'] or '-'} {row['orientation'] or '-'} {row['value_level'] or '-'}]: "
+        f"F005 {row['f005']} -> F006 {row['f006']} of {row['denom']}"
+    )
+
+
+def worsened(rows: list[dict[str, str]]) -> list[str]:
+    """Every worsened gated row, named -- the raw §1.7 direction, exception
+    included. The *gate* asserts on ``unexcused`` below; this is what the
+    three-valued perturbation pin exercises, and what the exception is
+    partitioned out of."""
+    return [name(row) for row in worse_rows(rows)]
+
+
+def is_deferred_exception(row: dict[str, str]) -> bool:
+    """Whether a worsened row is the one regression T164 deliberately leaves
+    unpaid (``DEFERRED_EXCEPTION``). Structural, so a row that drifts out of
+    the exception's shape -- a different criterion, a different metric, or the
+    *suppressed*-overlap side where the regression does not exist at all --
+    is not silently covered by it."""
+    return (
+        row["criterion"] == DEFERRED_EXCEPTION_CRITERION
+        and row["overlap"] == DEFERRED_EXCEPTION_OVERLAP
+        and row["metric"] in DEFERRED_EXCEPTION_METRICS
+    )
+
+
+def deferred(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """The worsened rows the exception covers."""
+    return [row for row in worse_rows(rows) if is_deferred_exception(row)]
+
+
+def unexcused(rows: list[dict[str, str]]) -> list[str]:
+    """**The gate's predicate**: every worsened gated row the exception does
+    not cover, named. Non-empty blocks release."""
+    return [name(row) for row in worse_rows(rows) if not is_deferred_exception(row)]
 
 
 def test_the_rows_are_the_population_the_gate_needs() -> None:
@@ -194,9 +324,15 @@ def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
     reads the other side of its own band (AC22) -- that is higher on F006
     than on shipped F005, on any swept cell, blocks release.
 
+    **Except** the one regression named in ``DEFERRED_EXCEPTION`` at the top
+    of this module, which is partitioned out here and asserted *exactly*, row
+    count and marginal totals alike, by the test below. This assertion is on
+    everything else, undiluted: one unexcused worsened cell reds it.
+
     The witness prints the slice it compared before it asserts
     (``a-witness-must-print-the-slice-it-compared``): an exit code is a
-    summary of evidence nobody has seen.
+    summary of evidence nobody has seen. The deferred exception is printed
+    with it, on every run, so it can never become invisible.
     """
     rows = _rows()
     gated = [row for row in rows if row["gated"] == "1"]
@@ -211,11 +347,107 @@ def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
         print(f"  TOTAL {row['sweep']}/{row['overlap']} {row['metric']}: "
               f"F005 {row['f005']} -> F006 {row['f006']} of {row['denom']} "
               f"({'worse' if float(row['f006']) > float(row['f005']) else 'no worse'})")
-    regressions = worsened(rows)
+
+    excepted = deferred(rows)
+    print(f"  DEFERRED EXCEPTION ({len(excepted)} of {len(worse_rows(rows))} worsened rows, "
+          f"NOT blocking release by user decision 2026-09-20): {DEFERRED_EXCEPTION}")
+    for row in [r for r in excepted if r["scope"] == "total"]:
+        print(f"    excepted TOTAL {row['sweep']}/{row['overlap']} {row['metric']}: "
+              f"F005 {row['f005']} -> F006 {row['f006']} of {row['denom']}")
+
+    regressions = unexcused(rows)
     assert not regressions, (
-        f"{len(regressions)} §1.7 rate(s) are worse on F006 than on shipped F005, so AC21 blocks "
-        f"release: " + "; ".join(regressions[:40])
+        f"{len(regressions)} §1.7 rate(s) are worse on F006 than on shipped F005 and are NOT "
+        f"covered by the deferred exception, so AC21 blocks release: " + "; ".join(regressions[:40])
     )
+
+
+def test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names() -> None:
+    """The exception, pinned so it cannot grow, shrink or wander.
+
+    An exception nobody can see is how a gate rots, and the two ways it rots
+    are (a) quietly widening to cover a *new* regression and (b) quietly
+    outliving the regression it was written for. Both are closed here: the
+    worsened rows the exception covers must number **exactly**
+    ``DEFERRED_EXCEPTION_ROWS``, their marginal totals must be exactly
+    ``DEFERRED_EXCEPTION_TOTALS``, and the unexcused set must be empty (which
+    together means the exception is neither too small nor too large for the
+    rows as measured).
+
+    Its **condition** is asserted too, because the condition is the whole
+    justification: the regression exists only where the two datasets are
+    modelled as independent instruments. So every excepted row is an
+    ``overlap == "healthy"`` row, and on the ``suppressed`` side **no** row of
+    the same metrics is worse at all -- F006 is better or equal there at every
+    ``c``. If that ever stops being true, the deferral's premise has changed
+    and this reds.
+
+    And what T164 **did** pay is pinned beside it (``PAID_BY_T164``), because
+    the argument for deferring the second regression is partly that the first
+    one was paid in full: ``hrv_normal`` on an entirely pre-layoff band is
+    back to shipped F005's exact count, in both overlap variants.
+
+    **Before this exception may be re-priced, IDEA-087 must be answered**:
+    the strap/snapshot sign-agreement rate, which T162 showed the recorded
+    corpus cannot settle and which T159's ``datasets[]`` could estimate from
+    ordinary use at no capture cost.
+    """
+    rows = _rows()
+    excepted = deferred(rows)
+    for row in excepted[:10]:
+        print(f"excepted: {name(row)}")
+    print(f"deferred exception: {len(excepted)} rows (pinned {DEFERRED_EXCEPTION_ROWS}) -- "
+          f"{DEFERRED_EXCEPTION}")
+
+    assert len(excepted) == DEFERRED_EXCEPTION_ROWS, (
+        f"the deferred exception now covers {len(excepted)} worsened rows, not the "
+        f"{DEFERRED_EXCEPTION_ROWS} it was measured and justified at. A regression that grew is a "
+        f"new regression and is not covered by this deferral; one that shrank means the deferral "
+        f"is out of date. Re-measure (t162-gate), re-read IDEA-087, and re-decide -- do not move "
+        f"this number to make the suite green. Rows now excepted: "
+        + "; ".join(name(row) for row in excepted[:20])
+    )
+    assert all(row["overlap"] == DEFERRED_EXCEPTION_OVERLAP for row in excepted), (
+        "an excepted row is on the suppressed-overlap side, where this regression does not exist: "
+        "the deferral's premise is that it is conditional on the independence assumption"
+    )
+    assert {row["metric"] for row in excepted} == set(DEFERRED_EXCEPTION_METRICS), (
+        f"the excepted metrics are {sorted({row['metric'] for row in excepted})}, not "
+        f"{sorted(DEFERRED_EXCEPTION_METRICS)}: the exception covers the forbidden-rate family and "
+        f"nothing else"
+    )
+
+    wanted = set(DEFERRED_EXCEPTION_TOTALS) | set(PAID_BY_T164)
+    totals = {
+        (row["sweep"], row["overlap"], row["metric"]): (int(row["f005"]), int(row["f006"]))
+        for row in rows
+        if row["scope"] == "total" and (row["sweep"], row["overlap"], row["metric"]) in wanted
+    }
+    assert set(totals) == wanted, f"marginal total rows missing from the sweep: {sorted(wanted - set(totals))}"
+    for key, expected in DEFERRED_EXCEPTION_TOTALS.items():
+        assert totals.get(key) == expected, (
+            f"the excepted regression's marginal total moved: {key} is {totals.get(key)}, pinned "
+            f"at {expected} (F005 -> F006). Its size is part of what was deferred."
+        )
+    for key, expected in PAID_BY_T164.items():
+        assert totals.get(key) == expected, (
+            f"T164 paid the stale-band regression and this says so: {key} is {totals.get(key)}, "
+            f"pinned at {expected}. F006 must meet shipped F005 exactly here."
+        )
+
+    # The condition, on the other side of the bracket: no forbidden-rate row
+    # is worse under the suppressed-overlap fixture, at any scope.
+    correlated = [
+        name(row)
+        for row in worse_rows(rows)
+        if row["overlap"] == "suppressed" and row["metric"] in DEFERRED_EXCEPTION_METRICS
+    ]
+    assert not correlated, (
+        "the forbidden rate is worse under T161_OVERLAP=suppressed too, so it is no longer "
+        "conditional on the two datasets being independent instruments and IDEA-087 no longer "
+        "gates it: " + "; ".join(correlated[:20])
+    )
+    assert not unexcused(rows), "the gate's own assertion; repeated here so this pin cannot be read alone"
 
 
 def test_the_worse_column_agrees_with_the_recomputed_comparison() -> None:
@@ -233,37 +465,56 @@ def test_the_worse_column_agrees_with_the_recomputed_comparison() -> None:
 
 
 def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
-    """The predicate the gate asserts on, pinned in three states, so that
+    """The predicate the gate asserts on, pinned in five states, so that
     neither its green nor its red can be an accident of the rows it happened
-    to be handed.
+    to be handed -- and so that the deferred exception cannot swallow a
+    regression it was not written for.
 
-    On the rows as measured the gate above is **red**: T162 found 548 gated
-    rate rows worse on F006 than on shipped F005, which is the release block
-    itself, not a defect of this module. A perturbation test that only added
-    a 549th would prove nothing about the predicate, so the three values are
-    taken over a *clamped* copy instead:
+    On the rows as measured the **raw** §1.7 comparison is still red: T164's
+    re-measurement leaves 64 worsened gated rows, every one of them the
+    deferred exception (T162 found 548 before the reference-set change). The
+    *gate* is green on them, because ``unexcused`` partitions those 64 out.
+    A perturbation test that only added a 65th would prove nothing about the
+    predicate, so states 1 to 3 are taken over a *clamped* copy:
 
     1. **green** -- every gated row clamped to ``f006 = f005`` (a build that
        is exactly as good as shipped F005 on every swept cell) names no
        regression;
-    2. **red** -- that same copy with **one** gated row raised by one names
-       **exactly** that row;
-    3. **green again** -- that same copy with one gated row *lowered* by one
-       (an improvement, the tolerated direction) names none, so the predicate
-       is on the §1.7 direction and not on any difference.
+    2. **red** -- that same copy with **one** gated row raised by one, chosen
+       **outside** the exception's shape (``rect``/``suppressed``, where the
+       forbidden rate is better on F006 and the deferral does not reach),
+       names **exactly** that row, on the gate's own predicate;
+    3. **green again** -- that same copy with that row *lowered* by one (an
+       improvement, the tolerated direction) names none, so the predicate is
+       on the §1.7 direction and not on any difference.
+
+    Then the two states the exception itself needs:
+
+    4. **the exception does not leak** -- raising a row that *is* inside the
+       exception's shape leaves the gate green (that is what the deferral
+       means) while the raw comparison sees it, so the two predicates are
+       genuinely different and the gate is not simply ignoring everything;
+    5. **and it cannot absorb a new regression silently** -- that same
+       raised row moves the exception's **row count** off its pin, which is
+       what ``test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names``
+       reds on. State 4 without state 5 would be a hole.
 
     And, because the clamp is where the first green comes from, the real rows
-    are asserted to be red -- if a future run makes them green the clamp step
-    would silently become the only thing under test, and this says so.
+    are asserted to still contain the deferred 64 -- if a future run makes the
+    raw comparison empty, the clamp step would silently become the only thing
+    under test, and the exception should be retired rather than left standing.
     """
     rows = _rows()
     real = worsened(rows)
     assert real, (
-        "the measured rows name no regression, so the clamped copy below is no longer a distinct "
-        "state from them: re-point state 1 of this pin at the real rows and delete the clamp"
+        "the measured rows name no regression at all, so the clamped copy below is no longer a "
+        "distinct state from them AND the deferred exception no longer has anything to except: "
+        "re-point state 1 of this pin at the real rows, delete the clamp, and delete the exception"
     )
-    print(f"state 0 (rows as measured): {len(real)} regressions -- the gate is red, which is the "
-          f"release block T162 reports. First three: {real[:3]}")
+    assert not unexcused(rows), "the gate itself is red; see its own assertion"
+    print(f"state 0 (rows as measured): {len(real)} worsened rows, {len(deferred(rows))} of them "
+          f"the deferred exception, {len(unexcused(rows))} unexcused -- the gate is GREEN. "
+          f"First three worsened: {real[:3]}")
 
     clamped = []
     for row in rows:
@@ -273,18 +524,23 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
             copy["worse"] = "0"
         clamped.append(copy)
     assert not worsened(clamped), "state 1: a build equal to F005 on every gated cell must be green"
-    print(f"state 1 (every gated row clamped to f006 = f005): 0 regressions")
+    assert not deferred(clamped), "state 1: nothing is worse, so nothing is excepted either"
+    print("state 1 (every gated row clamped to f006 = f005): 0 regressions, 0 excepted")
 
     victim_index = next(
         i for i, row in enumerate(clamped)
         if row["gated"] == "1" and row["scope"] == "total" and row["metric"] == "forbidden"
-        and row["sweep"] == "rect" and row["overlap"] == "healthy"
+        and row["sweep"] == "rect" and row["overlap"] == "suppressed"
     )
     victim = clamped[victim_index]
+    assert not is_deferred_exception(victim), (
+        "state 2's victim is inside the deferred exception, so the perturbation would be excused "
+        "and this pin would prove nothing about the gate"
+    )
 
     worse_copy = [dict(row) for row in clamped]
     worse_copy[victim_index]["f006"] = str(float(victim["f005"]) + 1)
-    found = worsened(worse_copy)
+    found = unexcused(worse_copy)
     print(f"state 2 (that copy, {victim['sweep']}/{victim['overlap']}/{victim['metric']} raised "
           f"{victim['f005']} -> {worse_copy[victim_index]['f006']}): {len(found)} regressions: {found}")
     assert len(found) == 1, f"state 2 named {len(found)} regressions, expected exactly 1: {found[:10]}"
@@ -292,11 +548,37 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
 
     better_copy = [dict(row) for row in clamped]
     better_copy[victim_index]["f006"] = str(max(0.0, float(victim["f005"]) - 1))
-    assert not worsened(better_copy), (
+    assert not unexcused(better_copy), (
         "state 3: a rate that IMPROVES was reported as a regression -- the gate is on the §1.7 "
         "direction, not on any difference"
     )
-    print(f"state 3 (that copy, the same rate LOWERED by one): 0 regressions")
+    print("state 3 (that copy, the same rate LOWERED by one): 0 regressions")
+
+    excepted_index = next(
+        i for i, row in enumerate(clamped)
+        if row["gated"] == "1" and row["scope"] == "total" and row["metric"] == "forbidden"
+        and row["sweep"] == "rect" and row["overlap"] == "healthy"
+    )
+    excepted_victim = clamped[excepted_index]
+    assert is_deferred_exception(excepted_victim), excepted_victim
+
+    inside_copy = [dict(row) for row in clamped]
+    inside_copy[excepted_index]["f006"] = str(float(excepted_victim["f005"]) + 1)
+    assert worsened(inside_copy), "state 4: the raw §1.7 comparison must still see the excepted row"
+    assert not unexcused(inside_copy), (
+        "state 4: a worsened row inside the exception's shape reached the gate, so the deferral is "
+        "not actually partitioned out"
+    )
+    print(f"state 4 (that copy, {excepted_victim['sweep']}/{excepted_victim['overlap']}/"
+          f"{excepted_victim['metric']} raised by one): {len(worsened(inside_copy))} worsened, "
+          f"0 unexcused -- the exception holds")
+
+    assert len(deferred(inside_copy)) == 1 != DEFERRED_EXCEPTION_ROWS, (
+        "state 5: raising a row inside the exception did not move the exception's own row count, "
+        "so the exception could absorb a new regression without any pin noticing"
+    )
+    print(f"state 5 (the same copy): the exception's row count is {len(deferred(inside_copy))}, "
+          f"not its pinned {DEFERRED_EXCEPTION_ROWS} -- the exception pin would red")
 
 
 def test_the_committed_rows_are_the_rows_the_sweep_wrote() -> None:
