@@ -161,13 +161,15 @@ the new mechanism, never deleted**.
 | T093 | rule 1's week-coverage half | a tier with count but no week | **subsumed** — judgeability (AC8) is the same condition, stated once |
 | T094 | rule 4(c) interleaving, both windows | a finished trial aged into the previous window | **re-derive at DATASET scope — not retired** (AC17) |
 | T095 | the density tolerance | one stray capture silencing a whole era | **re-derive at DATASET scope — not retired** (AC17) |
-| T106 | the week half as first ordering term | which admitted boundary is chosen | **subsumed** — the three-term ordering key has nothing left to order |
+| T106 | the week half as first ordering term | which admitted boundary is chosen | ~~**subsumed** — the three-term ordering key has nothing left to order~~ — **wrong, and measured so: KEPT** (see below) |
 | T107 | the clip survives a coverage gap | a gap cancelling the era clip | **retain** — coverage-gap semantics are untouched by this feature |
 | T116 | symmetric establishment gate | `hrv_normal` on a thin baseline | **retain** — per-dataset, unchanged and still required |
 | T117 | relative recency tolerance | the abandoned July trial owning a week | **redeployed** — becomes the AC6 gate, same constant, now safe |
 | T125 | the order clause at the verdict | the week predating the athlete's return | **NOT subsumed — see §9.** Restated as AC6's baseline-window gate |
 | T129 | unclipped stray counting | a gap *creating* an era boundary | **re-derive at DATASET scope** with T094/T095 (AC17); `coverage_gap_reset` itself stays global (AC16) |
 | T132 | the withhold widened to a brand-new device | adoption | **out of scope** — adoption is excluded from this feature |
+
+**What was measured, against the expectations above (T160, 2026-09-19; corrected here 2026-09-21).** This table is the *planning-time* expectation and is left standing as that. T160 produced the honest list, and it is shorter: **two** mechanisms are retired — `resolve_baseline_tier`'s role as the cross-tier arbitration, and the `off_baseline_tier` exclusion (T152), retired — each with its three-valued pin in `runcoach-api/tests/test_hrv_three_valued_retirements.py`. The **T106 row above was wrong**: the three-term era-boundary ordering key is **kept**, as a sub-mechanism of the per-dataset era clip (§6 rows T094/T095/T129), and judgeability cannot subsume it — judgeability decides *which dataset is selected*, the key decides *which of several admitted era boundaries a dataset's own band is clipped at*, and no value of the first determines the second. It is live in the shipped module, reached from `tier_change_reset`, and covered by `test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of` with `test_the_era_boundary_ordering_key_keeps_its_three_terms` per dataset — it carries no task-labelled pin, so a grep-based retirement audit reports it unpinned and is wrong. `research/00` §5.4 carried the same error in its clause (vi) and was corrected first, on 2026-09-21 ([[IDEA-086]]); this note follows it, per precedence.
 
 **IDEA-071's own evidence that at least one is near-vacuous:** T117's form 1 strikes only tiers with
 `week_counts < MIN_WINDOW_READINGS`, while the selection loop directly below returns only tiers with
