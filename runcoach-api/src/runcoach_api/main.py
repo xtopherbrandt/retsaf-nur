@@ -475,7 +475,9 @@ def _datasets(series: hrv_trend.SingleDatasetView) -> list[DatasetSummary]:
     return summaries
 
 
-def _disagreed_with(series: hrv_trend.SingleDatasetView) -> list[Disagreement]:
+def _disagreed_with(
+    series: hrv_trend.SingleDatasetView, verdict: hrv_trend.HrvVerdict
+) -> list[Disagreement]:
     """The datasets on the other side of their own band from the selected
     one, each with the judged-week count that weighs it (F006 AC10/AC11,
     T159; the count is T157's own finding -- a one-reading judged week can
@@ -484,9 +486,33 @@ def _disagreed_with(series: hrv_trend.SingleDatasetView) -> list[Disagreement]:
     The list is the selection's, rendered rather than re-derived: order,
     membership and the "empty when nothing is selected" rule are all
     ``Selection.disagreed_with``'s, so this cannot disagree with the rule
-    the module pins."""
+    the module pins.
+
+    **Empty on a day that has not happened** (sprint-006 review iteration 1).
+    ``_withhold_future`` is the one place a verdict is replaced *after*
+    ``judge`` has spoken, and the selection never sees the clock, so left
+    alone this named a dissenter beside ``verdict: hrv_unavailable`` /
+    ``day_not_happened`` -- a disagreement with a verdict that was withheld.
+    ``hrv_trend.disagreed_with`` already decided this question for the AC9
+    presentation fallback, in its own words: "a disagreement is with a
+    verdict, and the presentation fallback confers none; naming a dissenter
+    against ``hrv_unavailable`` would report a contradiction of a claim never
+    made". A withheld future day confers no verdict either, so the same
+    argument reaches it and the list is empty there.
+
+    Only the *claim* is withheld. ``selected_dataset`` and ``selected_reason``
+    are kept as computed, for ``_withhold_future``'s own stated reason:
+    everything that **produced** the verdict is left alone so the response
+    stays reproducible by hand (``research/00`` 1.6), and those two identify
+    which dataset the retained ``baseline``/``band`` came from. They are
+    producers, not claims. ``datasets[]`` is kept for the same reason and
+    keeps the day's state legible: every dataset's own ``below`` is still
+    reported, so a consumer can still see that the snapshot read the other
+    side of its band -- what is not reported is that this *contradicts*
+    anything, because nothing was asserted to contradict.
+    """
     selection = series.selection
-    if selection is None:
+    if selection is None or verdict.unavailable_reason == hrv_trend.REASON_DAY_NOT_HAPPENED:
         return []
     readings = _band_readings(selection)
     return [
@@ -519,7 +545,12 @@ def _trend_response(
     added beside them. ``selected_dataset`` and ``selected_reason`` are null
     together and only together -- ``Selection.selected_reason`` is derived
     from the selection rather than stored beside it, so the pair cannot come
-    apart here -- and on that null the presentation fallback still populates
+    apart here. ``verdict`` is the one of the four that ``_withhold_future``
+    may already have replaced, and the split that follows is
+    ``_disagreed_with``'s: the dissent list is a claim *about* a verdict and
+    is withheld with it, while ``selected_dataset``, ``selected_reason`` and
+    ``datasets[]`` produced the retained ``baseline``/``band`` and are kept as
+    computed. On that null the presentation fallback still populates
     ``baseline``/``band``, which is what keeps this addition additive:
     nothing non-nullable before F006 became nullable (AC12), and the one
     breaking change of this sprint was T152's removal of ``off_baseline_tier``.
@@ -567,7 +598,7 @@ def _trend_response(
         datasets=_datasets(series),
         selected_dataset=None if selected is None else selected.tier,
         selected_reason=None if selection is None else selection.selected_reason,
-        disagreed_with=_disagreed_with(series),
+        disagreed_with=_disagreed_with(series, verdict),
     )
 
 

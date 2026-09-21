@@ -403,7 +403,20 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
     happened. F005: a future date asserts no verdict. The ``D + 400`` row
     above cannot see this -- every reading is ``outside_windows`` there and
     the verdict is unavailable for an unrelated reason (review M1: the tests
-    exercised the branch beside the bug). Red: ``hrv_suppressed``."""
+    exercised the branch beside the bug). Red: ``hrv_suppressed``.
+
+    **The four F006 fields are asserted here too** (sprint-006 review
+    iteration 1, M2): this case said nothing about them, so which of them
+    ``_withhold_future`` reaches was incidental rather than decided.
+    ``disagreed_with`` is withheld with the verdict it is a claim about, and
+    ``datasets[]``/``selected_dataset``/``selected_reason`` are kept as
+    computed because they are what produced the retained ``baseline``/``band``
+    (``research/00`` 1.6, reproducible by hand). On this single-tier fixture
+    the dissent list is empty on every day including ``D``, so the
+    ``disagreed_with`` clause below is a *consistency* check only; the one
+    that can tell the rule from the fixture is
+    ``test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred``,
+    which seeds a dataset that really does dissent."""
     configure("UTC")
     monkeypatch.setattr(main_module, "_utcnow", lambda: datetime(D.year, D.month, D.day, 12, 0, tzinfo=UTC))
     seeder.snapshots(BASELINE_20, baseline_values(20))
@@ -416,6 +429,12 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
 
     assert today["verdict"] == "hrv_suppressed" and today["below_by"] > 0
     assert today["unavailable_reason"] is None
+    print("today:", today["selected_dataset"], today["selected_reason"],
+          [d["tier"] for d in today["datasets"]], today["disagreed_with"])
+    for k, body in ahead.items():
+        print(f"D+{k}:", body["verdict"], body["unavailable_reason"], body["selected_dataset"],
+              body["selected_reason"], [d["tier"] for d in body["datasets"]],
+              body["disagreed_with"])
     for k, body in ahead.items():
         assert body["date"] == (D + timedelta(days=k)).isoformat()
         # The window is full and the baseline established: the guard is the
@@ -427,6 +446,11 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
         # say once the day is in the future.
         assert body["unavailable_reason"] == "day_not_happened", (k, body["unavailable_reason"])
         assert body["below_by"] is None
+        # F006 (M2): the claim is withheld, its producers are not.
+        assert body["disagreed_with"] == [], (k, body["disagreed_with"])
+        assert body["selected_dataset"] == today["selected_dataset"], (k, body["selected_dataset"])
+        assert body["selected_reason"] == today["selected_reason"], (k, body["selected_reason"])
+        assert [d["tier"] for d in body["datasets"]] == [d["tier"] for d in today["datasets"]], k
 
 
 def test_the_zone_is_read_from_config_per_request(configure, seeder) -> None:
@@ -1173,7 +1197,20 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 470  # re-measured 2026-09-21 (sprint-006 final spec review, finding
+SCOPED_SUITE_COLLECTED = 472  # re-measured 2026-09-21 (sprint-006 code review, iteration 1),
+#                              # as the last action before the commit: +2. Two pins added to this
+#                              # file, both review findings: M2's future-day dissent pin (a
+#                              # withheld day names no dissenter, with the day that HAS happened
+#                              # as its control) and S2's reset_reason derivation pin (the fourth
+#                              # hand-typed copy of a module-owned enum, now read off the
+#                              # annotation's AST because a values-only check cannot tell a
+#                              # derived Literal from a transcribed one). The review's other two
+#                              # findings landed outside the five suites --
+#                              # test_hrv_no_regression_gate.py (M1) and
+#                              # test_source_change_rule_sweep.py (S1) -- so they do not reach
+#                              # this number. Nothing publishes it; the previous value was the
+#                              # final spec review's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 470  # re-measured 2026-09-21 (sprint-006 final spec review, finding
 #                              # 1), as the last action before the commit: +1. One pin added to
 #                              # this file, in the T159 rendering block: a tier read only
 #                              # before a global coverage gap is absent from datasets[] and
@@ -3522,6 +3559,88 @@ def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weigh
     assert body["disagreed_with"][0]["week_days"] != datasets[STRAP]["week_days"] or expected_week_days == 7
 
 
+def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
+    configure, seeder, monkeypatch
+) -> None:
+    """F006 x ``_withhold_future`` (sprint-006 review iteration 1, M2).
+
+    ``_withhold_future`` replaces the verdict with ``hrv_unavailable`` /
+    ``day_not_happened`` for a day after the athlete's local today, but
+    ``datasets[]``, ``selected_dataset``, ``selected_reason`` and
+    ``disagreed_with`` are built from ``series.selection``, **which never
+    sees the clock**. Left alone, a response for ``to = today + 1`` carried
+    ``verdict: hrv_unavailable`` and ``below_by: null`` and, beside them,
+    ``disagreed_with: [{dataset: health_snapshot, ...}]`` -- a dissenter
+    named against a verdict that was withheld.
+
+    That contradicts two published statements and F006's own reasoning in a
+    third: ``schemas.disagreed_with`` says "**Disagreement never overrides**:
+    ``verdict`` is the selected dataset's, unchanged" (here it was the
+    clock's), and ``hrv_trend.disagreed_with`` decided the AC9 presentation
+    fallback the other way -- "a disagreement is with a verdict, and the
+    presentation fallback confers none; naming a dissenter against
+    ``hrv_unavailable`` would report a contradiction of a claim never made".
+    ``_withhold_future`` confers no verdict either, so the same argument
+    applies, and the split it implies is what this pins:
+
+    * ``disagreed_with`` is **empty** on a withheld future day -- it is a
+      claim *about* a verdict and none was conferred;
+    * ``selected_dataset`` and ``selected_reason`` are **kept as computed** --
+      ``_withhold_future``'s own justification is that everything which
+      *produced* the verdict (band, baseline, ``readings_in_window``, week
+      mean) is left alone so the response stays reproducible by hand
+      (``research/00`` 1.6), and these two identify which dataset the retained
+      ``baseline``/``band`` came from. They are producers, not claims.
+
+    The fixture is the dissent fixture, not a thin one: on ``to = D`` the
+    snapshot **is** named, and the same rows one, two and four days ahead
+    name nobody. Without that control the empty list would be the empty list
+    of a day on which nothing disagreed anyway -- the branch-beside-the-bug
+    shape the D + 400 row was already caught by.
+    """
+    configure("UTC")
+    monkeypatch.setattr(main_module, "_utcnow", lambda: datetime(D.year, D.month, D.day, 12, 0, tzinfo=UTC))
+    straps_at(seeder, days(D - timedelta(days=66), D))
+    seeder.snapshots(days(D - timedelta(days=26), D - timedelta(days=7)), baseline_values(20))
+    seeder.snapshots(days(D - timedelta(days=6), D), repeat(25.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        today = get(client, to=D.isoformat()).json()
+        ahead = {k: get(client, to=(D + timedelta(days=k)).isoformat()).json() for k in (1, 2, 4)}
+
+    print("today:", today["verdict"], today["selected_dataset"], today["selected_reason"],
+          today["disagreed_with"])
+    for k, body in ahead.items():
+        print(f"D+{k}:", body["verdict"], body["unavailable_reason"], body["selected_dataset"],
+              body["selected_reason"], body["disagreed_with"],
+              "datasets:", [d["tier"] for d in body["datasets"]])
+
+    # The control: on the day that has happened, the dissenter IS named, so
+    # the empty lists below are the rule and not the fixture.
+    assert today["verdict"] == "hrv_normal"
+    assert today["selected_dataset"] == STRAP
+    assert today["disagreed_with"] == [{"dataset": SNAPSHOT, "week_days": 7}]
+
+    for k, body in ahead.items():
+        assert body["verdict"] == "hrv_unavailable", (k, body["verdict"])
+        assert body["unavailable_reason"] == "day_not_happened", (k, body["unavailable_reason"])
+        assert body["below_by"] is None, k
+        # The claim about a verdict: withheld with it.
+        assert body["disagreed_with"] == [], (k, body["disagreed_with"])
+        # The producers of the retained baseline/band: kept as computed.
+        assert body["selected_dataset"] == STRAP, (k, body["selected_dataset"])
+        assert body["selected_reason"] == today["selected_reason"], (k, body["selected_reason"])
+        assert [d["tier"] for d in body["datasets"]] == [d["tier"] for d in today["datasets"]], k
+        # And the state that makes the empty list a decision rather than an
+        # absence: the snapshot still reads the other side of its own band on
+        # this day, and the block still says so.
+        datasets = _by_tier(body)
+        assert datasets[SNAPSHOT]["below"] is True, (k, datasets[SNAPSHOT])
+        assert datasets[STRAP]["below"] is False, (k, datasets[STRAP])
+        assert body["baseline"]["established"] is True and body["band"] is not None, k
+
+
 def test_each_dataset_carries_its_own_reported_reset_and_only_the_selected_ones_is_presented(
     configure, seeder
 ) -> None:
@@ -3740,6 +3859,139 @@ def test_a_tier_read_only_before_a_coverage_gap_is_absent_from_datasets_and_whol
     # "Empty only when no reading of any tier exists in the span" still holds:
     # a clip always leaves its own resumption reading behind.
     assert body["datasets"], body
+
+
+#: The two schema classes that declare ``reset_reason``, and the path to the
+#: same field in ``contracts/openapi.yaml``. Both copies are new as a pair in
+#: sprint-006: ``Baseline.reset_reason`` is F005's, ``DatasetSummary``'s is
+#: T159's, and the second is what took a hand-typed enum from one site to four.
+RESET_REASON_SCHEMA_CLASSES = ("Baseline", "DatasetSummary")
+
+#: The source of the two schema copies, read as text because only the text
+#: distinguishes a derived Literal from a transcribed one.
+SCHEMAS_SOURCE = Path(__file__).resolve().parents[1] / "src" / "runcoach_api" / "schemas.py"
+
+
+def _reset_reason_annotation(class_name: str) -> ast.expr:
+    """The ``reset_reason`` annotation of one schema class, from the source
+    rather than from the resolved type: ``Literal["coverage_gap", ...]`` and
+    ``Literal[hrv_trend.REASON_COVERAGE_GAP, ...]`` resolve to the *same*
+    object, so only the source says which of the two was written."""
+    source = SCHEMAS_SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    classes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == class_name]
+    assert len(classes) == 1, f"{len(classes)} class {class_name} in {SCHEMAS_SOURCE.name}, not 1"
+    fields = [
+        node
+        for node in classes[0].body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "reset_reason"
+    ]
+    assert len(fields) == 1, f"{len(fields)} reset_reason fields on {class_name}, not 1"
+    return fields[0].annotation
+
+
+def test_reset_reason_is_derived_from_the_module_in_both_schema_copies_and_the_contract() -> None:
+    """``reset_reason`` was the **fourth** hand-typed copy of a two-member
+    enum the module owns (sprint-006 review iteration 1, S2).
+
+    ``hrv_trend`` owns ``REASON_COVERAGE_GAP`` and ``REASON_TIER_CHANGE``,
+    and both sibling enums in this same response are already held to it:
+    ``selected_reason`` subscripts ``Literal`` with the module's own
+    ``SELECTED_REASONS`` tuple and is pinned module<->schema<->contract by the
+    test above, and ``unavailable_reason`` has
+    ``test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_schema_and_the_contract``.
+    ``reset_reason`` had neither, while this sprint **doubled** its
+    hand-typed sites: ``schemas.Baseline``, ``schemas.DatasetSummary`` and
+    two places in ``contracts/openapi.yaml``. Renaming a module constant
+    would have left all four declaring the old name, silently.
+
+    Both halves of the fix are asserted, because either alone leaves a hole:
+
+    * **The values agree**, module to both schema copies to both contract
+      copies. A structural drift check does not read enum members, so this is
+      the only thing that sees a contract left behind.
+    * **The schema copies are *derived*, not transcribed.** This is the half
+      that needs the source: ``Literal["coverage_gap", "tier_change"]`` and
+      ``Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE]``
+      resolve to the same annotation object, so a values-only pin stays green
+      over a hand-typed copy and would simply move with a rename made in two
+      places out of four. Reading the annotation's AST is what tells them
+      apart, and it is the same oracle style ``test_hrv_unavailable_causes``
+      uses on ``judge``.
+
+    The contract copies stay literal by necessity -- YAML cannot import the
+    module -- which is exactly why the values half is asserted against them.
+
+    The witness prints the annotation source of both schema copies and both
+    published enums before asserting
+    (``a-witness-must-print-the-slice-it-compared``).
+    """
+    module_names = (hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE)
+    assert len(set(module_names)) == 2, module_names
+
+    served = app.openapi()["components"]["schemas"]
+    contract = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    published = contract["components"]["schemas"]["HrvTrend"]["properties"]
+    contract_enums = {
+        "Baseline": published["baseline"]["properties"]["reset_reason"]["enum"],
+        "DatasetSummary": published["datasets"]["items"]["properties"]["reset_reason"]["enum"],
+    }
+
+    print(f"module: hrv_trend reset reasons {module_names}")
+    for class_name in RESET_REASON_SCHEMA_CLASSES:
+        annotation = _reset_reason_annotation(class_name)
+        print(f"  {SCHEMAS_SOURCE.name}:{annotation.lineno} {class_name}.reset_reason: "
+              f"{ast.unparse(annotation)}")
+        print(f"  openapi.yaml {class_name}.reset_reason enum: {contract_enums[class_name]}")
+
+    for class_name in RESET_REASON_SCHEMA_CLASSES:
+        annotation = _reset_reason_annotation(class_name)
+        literal = next(
+            (
+                node
+                for node in ast.walk(annotation)
+                if isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "Literal"
+            ),
+            None,
+        )
+        assert literal is not None, (
+            f"{class_name}.reset_reason is not a Literal enum at all: {ast.unparse(annotation)}"
+        )
+        members = literal.slice.elts if isinstance(literal.slice, ast.Tuple) else [literal.slice]
+        transcribed = [ast.unparse(member) for member in members if isinstance(member, ast.Constant)]
+        assert not transcribed, (
+            f"{class_name}.reset_reason hand-types its enum members {transcribed} instead of "
+            f"naming the module constants that own them. Renaming REASON_COVERAGE_GAP or "
+            f"REASON_TIER_CHANGE would leave this copy declaring the old name and nothing would "
+            f"red -- the hole selected_reason does not have. Write "
+            f"Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE], as "
+            f"selected_reason does with SELECTED_REASONS: {ast.unparse(annotation)}"
+        )
+        qualified = [
+            ast.unparse(member)
+            for member in members
+            if isinstance(member, ast.Attribute)
+            and isinstance(member.value, ast.Name)
+            and member.value.id == "hrv_trend"
+        ]
+        assert len(qualified) == len(members) == 2, (
+            f"{class_name}.reset_reason names {qualified} of {len(members)} members through "
+            f"hrv_trend: every member must come from the module that owns it"
+        )
+
+        served_enum = served[class_name]["properties"]["reset_reason"]
+        enum = next(part["enum"] for part in served_enum["anyOf"] if "enum" in part)
+        assert tuple(enum) == module_names, (class_name, enum, module_names)
+        assert {"type": "null"} in served_enum["anyOf"], class_name
+        assert tuple(contract_enums[class_name]) == module_names, (
+            f"contracts/openapi.yaml publishes {contract_enums[class_name]} for "
+            f"{class_name}.reset_reason while the module owns {list(module_names)}: the YAML "
+            f"cannot import the module, which is why its copy is pinned here"
+        )
 
 
 def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:

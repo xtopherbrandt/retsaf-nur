@@ -211,6 +211,96 @@ PAID_BY_T164 = {
     ("walk", "suppressed", "walk_stale_normal"): (96, 96),
 }
 
+#: -------------------------------------------------------------------------
+#: AC23's worsened cells -- 2026-09-21, an OPEN QUESTION and NOT an accepted cost.
+#:
+#: **What this pin is.** AC23 says the dataset-flip rate "is measured across
+#: the AC19 sweeps and compared against F005 per AC21; a worse rate triggers
+#: the deferred hysteresis decision". "Per AC21" is load-bearing: AC21's
+#: comparison is per cell as well as marginal, and
+#: ``test_the_rows_are_the_population_the_gate_needs`` asserts exactly that,
+#: on the stated reasoning that "any rate that worsens" cannot be checked on
+#: a marginal that a worsened cell can hide inside. Until sprint-006 review
+#: iteration 1 the *only* AC23 assertion pinned ``gated == "0"`` -- that the
+#: rows exist and do not block release. **Nothing asserted the direction of
+#: the comparison at any scope**, so a re-measurement that tripled the flip
+#: rate at the cells below would have left every test in this module green.
+#:
+#: **What the rows hold.** On the committed evidence 80 of the 1,200
+#: ``walk_flips`` cells are worse on F006 than on shipped F005, every one of
+#: them 0 flips per 40-morning walk -> 2, and every one of them at
+#: ``car_density = 2wk`` -- the sub-daily carrier, i.e. the whole worsened
+#: population sits on one value of one axis. The marginal that was reported
+#: beside them improved (18.4684 -> 9.359 flips per athlete-year), which is
+#: precisely how 80 worsened cells stayed invisible:
+#: ``.claude/rules/learnings/a-sweep-must-name-the-axes-it-holds-constant.md``.
+#:
+#: **What this pin is NOT.** It is not a deferral and not an exception, and
+#: it is deliberately unlike ``DEFERRED_EXCEPTION`` above, which records a
+#: cost a user priced and accepted on 2026-09-20. On AC23's own text these 80
+#: cells **trigger** the deferred hysteresis decision; the sprint's execute
+#: handoff records that it was not triggered, reading the marginal alone.
+#: Which of those is right is a user decision and is filed, undecided, as
+#: **IDEA-089** ("AC23's flip rate worsens on 80 cells at the 2wk carrier
+#: density, and the marginal that was reported conceals them"). Nothing here
+#: accepts these cells. This pin exists so that the open question cannot
+#: change size, shape or location without a test naming what moved -- growth,
+#: shrinkage and a shift in *which* cells worsen all red here.
+AC23_METRIC = "walk_flips"
+
+#: The worsened set, as the three products the rows actually form. Each row is
+#: ``(ret_density, car_density, orientations, carrier overlaps c)`` and is
+#: taken over both ``overlap`` variants and both ``value_level`` values, which
+#: every worsened cell spans in full. Note the asymmetry the product records:
+#: at the daily retirement density **both** walk orientations worsen, at the
+#: two 4wk densities only the strap-returns orientation does, and only out to
+#: ``c = 3``.
+AC23_WORSENED_PRODUCTS = (
+    ("daily", "2wk", ("snapshot-returns", "strap-returns"), (0, 1, 2, 3, 4, 5)),
+    ("4wk-clustered", "2wk", ("strap-returns",), (0, 1, 2, 3)),
+    ("4wk-spread", "2wk", ("strap-returns",), (0, 1, 2, 3)),
+)
+
+#: Both overlap variants and both value levels, spanned in full by every
+#: product above -- named rather than inlined, because "the worsening is
+#: indifferent to the fixture's independence assumption" is itself a finding:
+#: unlike ``DEFERRED_EXCEPTION``, this one does **not** reverse under the
+#: correlated-instrument variant, so IDEA-087's open question does not cover it.
+AC23_WORSENED_OVERLAPS = ("healthy", "suppressed")
+AC23_WORSENED_VALUE_LEVELS = ("healthy", "suppressed")
+
+
+def _ac23_worsened_cells() -> frozenset[tuple[str, str, str, str, str, str]]:
+    """The 80 pinned cell keys, expanded from ``AC23_WORSENED_PRODUCTS``.
+
+    ``(overlap, ret_density, car_density, c, orientation, value_level)`` --
+    every axis a ``walk_flips`` cell row carries, so two different cells can
+    never collapse onto one key (asserted below against the row count)."""
+    return frozenset(
+        (overlap, ret_density, car_density, str(c), orientation, value_level)
+        for ret_density, car_density, orientations, carriers in AC23_WORSENED_PRODUCTS
+        for orientation in orientations
+        for c in carriers
+        for overlap in AC23_WORSENED_OVERLAPS
+        for value_level in AC23_WORSENED_VALUE_LEVELS
+    )
+
+
+#: Every pinned cell worsens by exactly this much: 0 flips of a 40-morning
+#: walk on shipped F005, 2 on F006. Pinned beside the membership because a set
+#: that kept its shape while each cell's worsening tripled is the
+#: re-measurement this module was blind to, and membership alone would not see it.
+AC23_WORSENED_CELL_VALUES = (0.0, 2.0)
+AC23_WORSENED_CELL_DENOM = 40.0
+
+#: The marginal that concealed them, quoted so the concealment is part of the
+#: record rather than a sentence in an idea file: the same rows, summed, read
+#: as a halving. ``(sweep, overlap) -> (f005, f006)`` per athlete-year.
+AC23_MARGINAL = {
+    ("walk", "healthy"): (18.4684, 9.359),
+    ("walk", "suppressed"): (18.4684, 9.359),
+}
+
 
 def _data_dir() -> Path | None:
     named = os.environ.get(DATA_DIR_ENV)
@@ -623,18 +713,195 @@ def test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names() ->
     assert not unexcused(rows), "the gate's own assertion; repeated here so this pin cannot be read alone"
 
 
+def _ac23_cells(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Every per-cell AC23 flip-rate row. ``scope == "cell"`` excludes the two
+    marginal rows, which are the thing the per-cell comparison exists to see
+    past."""
+    return [row for row in rows if row["metric"] == AC23_METRIC and row["scope"] == "cell"]
+
+
+def _ac23_key(row: dict[str, str]) -> tuple[str, str, str, str, str, str]:
+    return (
+        row["overlap"],
+        row["ret_density"],
+        row["car_density"],
+        row["c"],
+        row["orientation"],
+        row["value_level"],
+    )
+
+
+def test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned() -> None:
+    """**AC23's comparison, asserted** (sprint-006 review iteration 1, M1).
+
+    Before this test the only AC23 assertion in the module pinned
+    ``gated == "0"``: that the flip rows exist and do not block release.
+    Nothing asserted the *direction* of the comparison AC23 is written around
+    -- "compared against F005 per AC21; a worse rate triggers the deferred
+    hysteresis decision" -- at any scope, so the 80 cells on which F006 flips
+    more than shipped F005 were carried by the evidence and read by nothing.
+
+    So the worsened set is pinned **exactly**, by the axes that identify each
+    cell and by the size of the worsening, and this names what moved when it
+    moves: cells that stop worsening, cells that start, and cells that worsen
+    by more than the pinned 0 -> 2 all red here.
+
+    **These 80 cells are an open question, not an accepted cost.** That
+    distinction is why this pin is not written like ``DEFERRED_EXCEPTION``,
+    which records a regression a user priced and accepted on 2026-09-20. On
+    AC23's own text a worse rate **triggers** the deferred hysteresis
+    decision, and this evidence is a worse rate over an entire
+    sub-population: every worsened cell sits at ``car_density = 2wk``, the
+    sub-daily carrier. The sprint's execute handoff records the opposite,
+    drawn from the marginal alone (18.4684 -> 9.359 per athlete-year, a
+    halving). Which reading governs is a **user decision**, filed undecided
+    as **IDEA-089**; nothing here decides it, softens AC23 or prices these
+    cells. This test only makes them impossible to lose again.
+
+    The marginal is printed beside the per-cell result on every run, because
+    the two together are the finding: a rate can improve overall and worsen
+    on one whole value of one axis, and a sweep that reports only the
+    marginal cannot say so
+    (``.claude/rules/learnings/a-sweep-must-name-the-axes-it-holds-constant.md``).
+
+    The witness prints the slice it compared before it asserts
+    (``a-witness-must-print-the-slice-it-compared``): an exit code is a
+    summary of evidence nobody has seen.
+    """
+    rows = _rows()
+    cells = _ac23_cells(rows)
+    assert cells, (
+        f"no per-cell {AC23_METRIC} rows are in {TREE_ROWS.name}: AC23's comparison has no "
+        f"population, so every assertion below would pass vacuously. Re-measure: {REMEASURE_COMMAND}"
+    )
+    worse = [row for row in cells if float(row["f006"]) > float(row["f005"])]
+    better = [row for row in cells if float(row["f006"]) < float(row["f005"])]
+    found = {_ac23_key(row) for row in worse}
+    pinned = _ac23_worsened_cells()
+
+    print(f"AC23 ({AC23_METRIC}) over {TREE_ROWS.name}: {len(cells)} cells, "
+          f"{len(worse)} worse on F006, {len(better)} better, "
+          f"{len(cells) - len(worse) - len(better)} equal")
+    for row in worse[:8]:
+        print(f"  worsened cell: {name(row)}")
+    if len(worse) > 8:
+        print(f"  ... and {len(worse) - 8} more worsened cells, every one of them pinned below")
+    by_group: dict[tuple[str, str, str], int] = {}
+    for row in worse:
+        key = (row["ret_density"], row["car_density"], row["orientation"])
+        by_group[key] = by_group.get(key, 0) + 1
+    for key, count in sorted(by_group.items()):
+        print(f"  grouping ret={key[0]} car={key[1]} {key[2]}: {count} cells")
+    for row in [r for r in rows if r["metric"] == "walk_flips_per_athlete_year"]:
+        direction = "worse" if float(row["f006"]) > float(row["f005"]) else "improved"
+        print(f"  MARGINAL {row['sweep']}/{row['overlap']}: F005 {row['f005']} -> F006 "
+              f"{row['f006']} per athlete-year -- {direction}, and it is what concealed the "
+              f"{len(worse)} worsened cells above (IDEA-089, OPEN)")
+
+    assert len(found) == len(worse), (
+        f"{len(worse)} worsened cell rows collapse onto {len(found)} keys, so two cells share one "
+        f"identity and the pin below cannot tell them apart: the row axes have changed"
+    )
+    missing = sorted(pinned - found)
+    appeared = sorted(found - pinned)
+    assert found == pinned, (
+        f"AC23's worsened cell set has moved. It is an OPEN QUESTION recorded in IDEA-089, not an "
+        f"accepted cost, and it is pinned so that it cannot change unseen.\n"
+        f"  no longer worse ({len(missing)}): {missing[:20]}\n"
+        f"  newly worse ({len(appeared)}): {appeared[:20]}\n"
+        f"Do not edit the pin to make this green: re-measure (t162-gate), then re-read IDEA-089 "
+        f"and take the decision it names -- a set that grew is a larger open question, one that "
+        f"emptied means AC23's trigger no longer fires and IDEA-089 can be closed."
+    )
+
+    off_axis = [name(row) for row in worse if row["car_density"] != "2wk"]
+    assert not off_axis, (
+        "a worsened AC23 cell sits off the 2wk carrier density, so the worsening is no longer "
+        "confined to the sub-daily carrier and IDEA-089's account of the axis is out of date: "
+        + "; ".join(off_axis[:20])
+    )
+
+    mis_sized = [
+        f"{name(row)} (pinned {AC23_WORSENED_CELL_VALUES[0]} -> {AC23_WORSENED_CELL_VALUES[1]} "
+        f"of {AC23_WORSENED_CELL_DENOM})"
+        for row in worse
+        if (float(row["f005"]), float(row["f006"])) != AC23_WORSENED_CELL_VALUES
+        or float(row["denom"]) != AC23_WORSENED_CELL_DENOM
+    ]
+    assert not mis_sized, (
+        "the size of AC23's worsening moved while its cell set did not -- exactly the "
+        "re-measurement this module was blind to before the set was pinned: "
+        + "; ".join(mis_sized[:20])
+    )
+
+    marginal = {
+        (row["sweep"], row["overlap"]): (float(row["f005"]), float(row["f006"]))
+        for row in rows
+        if row["metric"] == "walk_flips_per_athlete_year"
+    }
+    assert marginal == AC23_MARGINAL, (
+        f"AC23's marginal flip rate moved: {marginal}, pinned at {AC23_MARGINAL}. The marginal is "
+        f"quoted here because it is the half of the evidence that was read, and the per-cell set "
+        f"above is the half that was not (IDEA-089)."
+    )
+
+
 def test_the_worse_column_agrees_with_the_recomputed_comparison() -> None:
     """The rows carry a ``worse`` column; the gate above does not read it.
     They must nevertheless agree, or the emitted evidence and the assertion
-    over it are two different claims."""
+    over it are two different claims.
+
+    **Widened past ``gated == "1"``** (sprint-006 review iteration 1, M1).
+    The filter used to be ``gated == "1"``, which left the column unchecked on
+    every ungated row -- and the column is not written as ``f006 > f005`` at
+    all: the harness writes it as ``gated AND worse``, so all 1,644 ungated
+    rows on which F006 is worse carry ``worse = 0``, AC23's 80 flip cells
+    among them. A reader taking the column at its name reads those rows as
+    "not worse", which is one of the three reasons the AC23 comparison stayed
+    invisible (IDEA-089).
+
+    Of the review's two options -- widen this, or rename the column to
+    ``gated_and_worse`` -- widening is taken, because the rename cannot be
+    made honestly here: the name lives in a **measured** CSV whose provenance
+    is pinned to a git blob sha of ``metrics/hrv_trend.py``
+    (``test_the_rows_were_measured_against_this_checkouts_rule``), and the
+    only legitimate way to rewrite that file is a ~13-minute re-run of
+    ``t162-gate``. Editing a header in place would assert a measurement
+    nobody performed. So the column keeps the name the sweep gave it, and this
+    test pins **what the name actually means**, over every row rather than
+    over the gated quarter of them, with the trap stated in the failure
+    message instead of left in the header.
+    """
+    rows = _rows()
+    gated_worse = [r for r in rows if r["gated"] == "1" and float(r["f006"]) > float(r["f005"])]
+    ungated_worse = [r for r in rows if r["gated"] == "0" and float(r["f006"]) > float(r["f005"])]
+    flagged = [row for row in rows if row["worse"] == "1"]
+    print(f"worse column over {TREE_ROWS.name}: {len(rows)} rows, {len(flagged)} carry worse=1")
+    print(f"  gated and worse   : {len(gated_worse)} rows")
+    print(f"  UNGATED and worse : {len(ungated_worse)} rows, of which "
+          f"{len([r for r in ungated_worse if r['worse'] == '1'])} carry worse=1 -- the column is "
+          f"'gated AND worse', not 'worse'")
+    print(f"  of those, AC23 {AC23_METRIC} cells: "
+          f"{len([r for r in ungated_worse if r['metric'] == AC23_METRIC])} (IDEA-089, OPEN)")
+
+    assert ungated_worse, (
+        "no ungated row is worse on F006, so the clause below distinguishing 'gated AND worse' "
+        "from 'worse' compares nothing and this test would pass whatever the column meant"
+    )
     disagreed = [
-        f"{row['sweep']}/{row['metric']}/{row['scope']}: column worse={row['worse']} but "
-        f"F005 {row['f005']} -> F006 {row['f006']}"
-        for row in _rows()
-        if row["gated"] == "1"
-        and (row["worse"] == "1") != (float(row["f006"]) > float(row["f005"]))
+        f"{row['sweep']}/{row['overlap']}/{row['metric']}/{row['scope']} "
+        f"[ret={row['ret_density'] or '-'} car={row['car_density'] or '-'} c={row['c'] or '-'}]: "
+        f"column worse={row['worse']} but gated={row['gated']} and F005 {row['f005']} -> "
+        f"F006 {row['f006']}"
+        for row in rows
+        if (row["worse"] == "1")
+        != (row["gated"] == "1" and float(row["f006"]) > float(row["f005"]))
     ]
-    assert not disagreed, "; ".join(disagreed[:20])
+    assert not disagreed, (
+        "the worse column is not 'gated AND f006 > f005' on every row, so neither reading of it is "
+        "safe and the rows and the assertions over them are two different claims: "
+        + "; ".join(disagreed[:20])
+    )
 
 
 def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:

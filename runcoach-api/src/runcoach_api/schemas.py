@@ -118,7 +118,7 @@ class Baseline(BaseModel):
             "two clips compose as the later of their first days and only the *report* is the gap's."
         )
     )
-    reset_reason: Literal["coverage_gap", "tier_change"] | None = Field(
+    reset_reason: Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE] | None = Field(
         description=(
             "Why the baseline was re-established: more than gap_reset_days consecutive local days with no "
             "entry in the post-exclusion series (`coverage_gap`), or a sustained source-tier change "
@@ -356,7 +356,7 @@ class DatasetSummary(BaseModel):
             "rest of the response never shows."
         )
     )
-    reset_reason: Literal["coverage_gap", "tier_change"] | None = Field(
+    reset_reason: Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE] | None = Field(
         description=(
             "Why this dataset's re-establishment is reported, with the same meanings as "
             "`baseline.reset_reason` and the same caveat: the report is not the clip. A dataset's "
@@ -511,9 +511,15 @@ class HrvTrendResponse(BaseModel):
     )
     selected_dataset: str | None = Field(
         description=(
-            "The source tier of the dataset `baseline`, `band`, `verdict` and `below_by` describe "
-            "-- the highest-fidelity **judgeable** dataset the recency gate did not skip (F006 "
-            "AC5-AC8). Null when no dataset was selected, which is *either* that no dataset is "
+            "The source tier of the dataset `baseline` and `band` describe, and of the one "
+            "`verdict` and `below_by` describe **wherever a verdict was asserted** -- the "
+            "highest-fidelity **judgeable** dataset the recency gate did not skip (F006 "
+            "AC5-AC8). The scope on that second half is the withheld future day: for a `to` "
+            "after the athlete's local today the verdict is replaced with hrv_unavailable / "
+            "`day_not_happened` and `below_by` is null, so those two describe no dataset, while "
+            "this field still names the one the retained `baseline`/`band` were computed from -- "
+            "a producer of the response, not a claim about it. `disagreed_with` is empty there "
+            "for the converse reason. Null when no dataset was selected, which is *either* that no dataset is "
             "judgeable *or* that every judgeable one was skipped as stale. In that case the "
             "verdict is hrv_unavailable and `baseline`/`band` are still populated, from the "
             "dataset the athlete was read on last (AC9's presentation fallback, F005's rule 3 "
@@ -549,7 +555,12 @@ class HrvTrendResponse(BaseModel):
             "baseline readings and a week of one can name a dataset here -- so `week_days` is what "
             "a consumer weighs the name by. **Disagreement never overrides**: `verdict` is the "
             "selected dataset's, unchanged, whatever is listed here. Empty when `selected_dataset` "
-            "is null. This is the response's one report of the exposure F006 accepts: hrv_normal "
+            "is null, and empty on a day that has not happened (`day_not_happened`), where the "
+            "verdict is withheld after selection has run: a disagreement is a claim *about* a "
+            "verdict and none was conferred, so naming a dissenter would report a contradiction "
+            "of a claim never made. `datasets[]` still carries every dataset's own `below` on "
+            "those days, so the state stays legible without being called a disagreement. "
+            "This is the response's one report of the exposure F006 accepts: hrv_normal "
             "can be promoted from the best available instrument while another dataset reads below "
             "its own band, and a consumer reading `verdict` alone is not told (research/00 1.7's "
             "forbidden direction, accepted, measured against shipped F005 rather than denied)."
