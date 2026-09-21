@@ -231,13 +231,36 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   T161/T162; T125's `min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)` opening-mornings residual; a
   judgeable, unskipped lower-fidelity dataset never withholds (it could have been selected; the
   selected dataset decides and it is named in `disagreed_with`).
-- **The honest retirement count (task Technical Notes).** What this feature retires is
-  `resolve_baseline_tier`'s role as "one tier owns the only band" and the `off_baseline_tier`
-  exclusion (T152), i.e. the cross-tier *arbitration*. Everything else on IDEA-071's list is kept or
-  redeployed: T094/T095/T129 re-derived at dataset scope (AC17), T106 kept as a sub-mechanism of the
-  era clip, T107 and T116 retained, T093's fallback retained as AC9's presentation fallback (T156),
-  T117 redeployed as AC6's gate, **T125 and T132 retained here**. "Ten qualifiers retired" is not
-  the number; two mechanisms are.
+- **The honest retirement count, and every retirement's three-valued pin (T160, AC18).** What this
+  feature retires is **two mechanisms**, not ten qualifiers: `resolve_baseline_tier`'s role as "one
+  tier owns the only band" — the cross-tier *arbitration*, which `build_series` no longer asks for
+  at all, though the function itself survives with its tie-order pin — and the `off_baseline_tier`
+  exclusion (T152). Each carries the pin the rule requires, in
+  `runcoach-api/tests/test_hrv_three_valued_retirements.py`, which loads `git show
+  42f7705:.../hrv_trend.py` into a temporary copy, deletes the one qualifier there and drives the
+  same pin against all three states. **State 2 is the deliverable and it is observed, not argued:**
+  deleting the arbitration reds "the band mixes tiers: readings of ['chest_strap_raw',
+  'health_snapshot'] are all in one baseline of 60 days" and moves the band's mean from 4.093974
+  (the strap's own) to 3.746843 (the pooled value) with the half-width 0.0137 → 0.1764; deleting the
+  exclusion reds "67 stored rows are in neither the series nor excluded". Because the exclusion is
+  the arbitration's own bookkeeping and no smaller edit exists, a 2×2 cross-check measures that each
+  red is its own qualifier's — both off-diagonals are green. Everything else on IDEA-071's list is
+  kept or redeployed and therefore has **no** three-valued pin, deliberately: T094/T095/T129
+  re-derived at dataset scope (AC17, T154), T106 kept as a sub-mechanism of the era clip, T107 and
+  T116 retained, T093's week-coverage half subsumed by judgeability (AC8) with its rule-3 half
+  retained as AC9's presentation fallback (T156), T117 redeployed as AC6's gate, T125 and T132
+  retained (AC24, T158). **Two audit traps, priced because an auditor will hit them:** T106 carries
+  no task-labelled pin, so a grep-based retirement audit reports it unpinned and is wrong — its
+  cover is `test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of`
+  (`test_hrv_trend_reset.py:1827`, the pin `research/00`:219 names) with
+  `test_the_era_boundary_ordering_key_keeps_its_three_terms`
+  (`test_hrv_tier_change_per_dataset.py:482`) covering it per dataset; and
+  `test_a_gap_and_a_switch_compose_as_the_later_first_day`, cited at `reset.py:2558`, **does not
+  exist** — the only occurrence of that name in the tree is a docstring mention at `reset.py:2665`,
+  and the real cover is `test_the_gap_keeps_the_report_while_the_era_keeps_the_clip` at
+  `reset.py:2281`. Who notices: nobody from the response — both are defects of the audit trail, and
+  the cost is a future retirement pass deleting a live mechanism's pins or writing a pin that tests
+  something else, which is the failure mode AC18 exists to prevent.
 - **The reported reset is per dataset, and only the selected dataset's is presented (AC17, T154).**
   `tier_change_reset` is asked once per dataset with that dataset's own tier over the same cross-tier
   populations (every tier's unclipped readings in `[D-66, D]` for the stray count, T129 kept global),
@@ -265,6 +288,96 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   week beside a silent established strap is told `week_too_thin` on the strap's `n`, the T138 18-day
   adoption silence, unchanged and still carried above. Who notices: nobody from `hrv_status`;
   `datasets[]` (T159) shows the covering dataset with its `n` and week count.
+- **A claim can hide from its own sweep by wrapping (T163).** The false "reachable after every reset
+  ... a coverage gap **or a tier change**" composition was corrected at three document sites by T138
+  and T142 and left standing in two places: `judge`'s docstring, which T138's `behaviour_change:
+  false` scope rule forbade it from touching, and `spec/06` 6.2.4 cause (4), which nobody's sweep
+  reached. The second is the one worth pricing. It was not protected by a scope rule and was not on
+  IDEA-073's list of three sites — it survived because every sweep for it was **line-oriented
+  grep**, and in `hrv_trend.py` the sentence wrapped mid-phrase across two lines. T163's own
+  acceptance probe inherited the flaw: `! grep -rn "or a tier change" runcoach-api/src/` exited 0
+  against the *unfixed* file, so a builder who trusted the probe would have shipped the claim intact
+  and reported the sweep green. Accepted cost, named 2026-09-19: the project's sweep probes are
+  written as line greps and will keep passing vacuously on wrapped prose. What is done instead:
+  every claim sweep in this feature is run whitespace-flattened before the probe is believed
+  (`sweep-the-claim-not-the-diff` already says this — "a wrapped sentence hides from it" — and the
+  rule was right and the probe was written anyway). Who notices: nobody at runtime; the reader of
+  `judge` and the next task that writes a `! grep` sweep clause.
+- **The §1.7 promotion exposure, measured against shipped F005 and re-measured after the fix
+  (T162/T164, AC21/AC22/AC23).** Over 1,353,000 judgings — T125's return rectangle × 25
+  capture-density pairs × carrier overlap `c = 0..5`, the 40-morning device-return walk in both
+  orientations, and T150's two populations, each run on F006 and on shipped F005 at `42f7705` under
+  both overlap variants — the exposure is priced in three numbers rather than one. **AC22's rate,
+  and its direction:** `hrv_normal` promoted while another dataset reads the *other side* of its own
+  band is **7.97% → 7.84%** taken literally (24,510 → 24,099 of 307,500), **1.76% → 1.72%**
+  conditioned on the dissenter holding `>= MIN_WINDOW_READINGS` judged-week days (5,415 → 5,287),
+  and **0.597% → 0.597%, identical**, conditioned on the dissenter being *judgeable*, which is
+  AC22's own word. The literal figure is thirteen times the judgeable one and most of it is a
+  dissenter holding one or two readings, whose 38 ms lands 0.07 below its own band because the
+  fixture alternates 38/44 — an artefact of the fixture, not of the rule. The direction in every
+  counted row is the forbidden one: up-regulation while contrary evidence exists, and a consumer
+  reading `hrv_status` alone is not told. **Not worse than F005 on any of the three readings, and
+  better at every `c` on the literal one.**
+- **`hrv_normal` on an entirely pre-layoff band: measured as a regression, and PAID (T162 → T164).**
+  F006 as first built took AC7's recency reference over the *judgeable* datasets, where shipped F005
+  took its equivalent over every *established* tier. A carrier that had stopped, or whose judged
+  week was too thin to be judgeable, therefore left the reference set, the returning dataset became
+  its own reference, and it was selected on a band 36-66 days old: **1,896 → 3,705 of 307,500**
+  rectangle rows and **96 → 254 of 24,000** walk rows, worse at every `c`, on 82 of 150 cells,
+  identically under both overlap variants. Who noticed: nobody from `hrv_status` — the athlete was
+  told he was normal on evidence up to 66 days old with no dissenter to name, since under the AC9
+  fallback `disagreed_with` names nobody (IDEA-082). **T164 widened the reference population to
+  every established dataset (`research/00` §5.4 amended first) and the rate returned to shipped
+  F005's exactly: 1,896 and 96, flat at 316 per `c`, cell for cell across all 25 density pairs, in
+  both overlap variants.** What it costs, and it is a real cost: a **lone judgeable** dataset is no
+  longer automatically its own reference — an established but weekless dataset read later strikes it
+  — so every candidate can now be skipped at once and the AC9 fallback presents one verdict-free.
+  The athlete pays for the closed exposure in **silence**: rectangle `hrv_unavailable` 243,326 →
+  246,944 of 307,500 and walk 15,996 → 16,312 of 24,000, and the returning dataset is selected on
+  21,520 rectangle rows against F005's 59,468. This also re-imports the shape T125 was written
+  against — the gate striking the tier the athlete is currently using — at F005's own rate.
+- **One §1.7 rate is still worse than shipped F005, and it is DEFERRED rather than paid, by user
+  decision of 2026-09-20 (T162 Finding 2, T164).** A suppressed return promoted `hrv_normal` from
+  the overlapping carrier's week is worse at `c = 4` and `c = 5` on 17 of 150 cells — **22,217 →
+  22,232 of 307,500** in total (+15, +0.07% relative) and **1,104 → 1,108 of 24,000** on the walk —
+  and **better** at `c <= 2` (1,713 → 1,614 at `c = 0`). It exists **only** with the carrier's
+  overlap mornings healthy, i.e. only if the two datasets are independent instruments; with them
+  suppressed F006 is better at every `c` (3,625 → 3,497) and the T130-comparable subset goes **128 →
+  0**. Whether they are independent is unmeasured and, from the recorded corpus, unmeasurable
+  (IDEA-087), so this regression's *sign* is unknown and it is not repriced on an assumption. It is
+  carried as the release gate's one named, counted and conditioned exception — 64 gated rows, pinned
+  by row count, by marginal total and by the requirement that the correlated side stay no worse — in
+  `runcoach-api/tests/test_hrv_no_regression_gate.py`, which reds if any of those move. Mechanism:
+  T153's hole clip leaves the returning dataset unestablished past the seventh morning back while
+  the overlapping carrier stays the only judgeable dataset, where shipped F005 re-admitted the strap
+  at `r = 8` on a band mixing era A with the return — a verdict reference §9 calls worse than its
+  successor, which on this population happens to land right.
+- **T130's carrier-overlap disarm, closed with numbers on both rules and unmoved by T164 (T162
+  deliverable 7).** T158's retained order clause is decisive on **6 of 25 density pairs** on both
+  F005 and F006 — a `daily` or `4wk-clustered` return against a `daily`, `4wk-clustered` or
+  `4wk-spread` carrier — and **one captured carrier morning disarms 100% of it on both**: 226 armed
+  rows on F005 and 424 on F006 (T158's widening to dataset scope, measured), disarmed 170 / 212 /
+  226 / 226 / 226 and 320 / 400 / 424 / 424 / 424 at `c = 1..5`, and 100% at `c_cap = 1` read in
+  mornings captured rather than days elapsed. T158 doubled the clause's reach without moving its
+  disarm rate by one row, and T164 moved neither. Its value is therefore not those rows but AC24's
+  brand-new-device population, which no overlap can disarm.
+- **AC23 was scored against a criterion it could have failed, and did not (T162, re-measured
+  T164).** The dataset-flip rate is **18.47 → 9.36 per athlete-year** (600 against 1,184 selection
+  changes over 23,400 day-to-day transitions), so the deferred hysteresis decision is **not**
+  triggered. What paid for it: **2,984 more `hrv_unavailable` mornings** over the same 24,000 walk
+  rows — IDEA-084's second silence, now larger. F006 trades flips for silence at roughly one for
+  five; whether an athlete prefers a changing answer to no answer is not measured and is not
+  measurable from fixtures.
+- **Whether `disagreed_with` measures two instruments at all is still unmeasured, and it now gates a
+  deferred regression rather than a release (T162, IDEA-087).** The recorded corpus establishes that
+  on a strap morning the watch reads the strap over ANT+ (every strap-morning Health Snapshot names
+  the HRM-Pro-Plus by serial), that the Health Snapshot stores **no beats**, that the two numbers
+  differ by ×2.17 and ×1.38 on the two same-morning pairs that exist, and that a snapshot needs no
+  strap at all. It **cannot** establish whether they are the same beats post-processed: no
+  simultaneous pair exists or can exist on one watch, and n = 2. The statistic the rules depend on
+  is not the correlation but the **sign-agreement rate** — how often the two datasets fall on the
+  same side of their own bands — which T162's two overlap variants bracket at 0% and 100%, and which
+  T159's `datasets[]` could estimate from ordinary use at no capture cost.
 
 ## Decision Log
 
