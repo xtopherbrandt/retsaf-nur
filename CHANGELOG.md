@@ -35,7 +35,9 @@ What a consumer sees:
   re-take whether or not X is the tier reported in `baseline.tier`; under F005 it would have been
   `off_baseline_tier` when X was not the resolved tier.
 - **Where the rows went is now visible on the wire** (T159, 2026-09-21, additive; `info.version`
-  stays `0.2.0-draft`). `datasets[]` carries one entry per source tier present in the span, each
+  stays `0.2.0-draft`). `datasets[]` carries one entry per source tier present in the
+  **gap-clipped** span — a tier read only before a coverage-gap resumption has no entry at all,
+  and its rows are in `excluded` as `before_reset: coverage_gap` — each
   with its own `band`, `n`, `established`, `fidelity_rank`, `last_read`, `week_days`, `week_mean`,
   `below` and its own `reset_on`/`reset_reason`; `selected_dataset` and `selected_reason` name the
   dataset `baseline`/`band`/`verdict` describe and why it was promoted; `disagreed_with` names any

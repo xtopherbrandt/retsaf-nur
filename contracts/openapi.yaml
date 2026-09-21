@@ -1608,10 +1608,17 @@ components:
         datasets:
           type: array
           description: >
-            One entry per source tier present in [date-66, date], in fidelity
+            One entry per source tier present in the gap-clipped span —
+            [date-66, date], or [baseline.reset_on, date] when a global
+            coverage gap clipped the series — in fidelity
             order, each with its own baseline, its own band and its own reading
             of the judged week against that band (F006 AC1/AC2/AC10, added
-            2026-09-21 by T159). Each tier keeps its own dataset and no reading
+            2026-09-21 by T159; the span corrected from [date-66, date] by
+            sprint-006 spec review, 2026-09-21). A tier read only before such a
+            resumption has no entry here at all: its readings are listed in
+            `excluded` as `before_reset: coverage_gap`, so a consumer counting
+            tiers reads them there rather than finding them nowhere.
+            Each tier keeps its own dataset and no reading
             of one contributes to another's baseline (spec/03 §3.7.3's
             anti-mixing rule, honoured by construction), so the datasets the
             verdict was NOT taken from are retained rather than discarded:
@@ -1629,7 +1636,8 @@ components:
                 description: >
                   The source tier, which IS the dataset's key: the stored
                   source_device is the watch, so per-unit device identity is a
-                  later feature.
+                  later feature. One entry per tier present in the gap-clipped
+                  span, in fidelity order, highest first.
               n:
                 type: integer
                 description: >

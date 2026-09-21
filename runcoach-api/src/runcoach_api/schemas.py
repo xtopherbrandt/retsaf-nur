@@ -263,7 +263,8 @@ class DatasetSummary(BaseModel):
         description=(
             "The source tier, which **is** the dataset's key (F006 reference 1: the stored "
             "source_device is the watch, so per-unit identity is a later feature). One entry per "
-            "tier present in [date-66, date]; the list is in fidelity order, highest first."
+            "tier present in the **gap-clipped** span; the list is in fidelity order, highest "
+            "first."
         )
     )
     n: int = Field(
@@ -493,9 +494,15 @@ class HrvTrendResponse(BaseModel):
     thresholds: Thresholds
     datasets: list[DatasetSummary] = Field(
         description=(
-            "One entry per source tier present in [date-66, date], in fidelity order, each with "
-            "its own baseline, its own band and its own reading of the judged week against that "
-            "band (F006 AC1/AC2/AC10). Every reading inside the span is in exactly one dataset "
+            "One entry per source tier present in the **gap-clipped** span -- [date-66, date], "
+            "or [baseline.reset_on, date] when a global coverage gap clipped the series -- in "
+            "fidelity order, each with its own baseline, its own band and its own reading of "
+            "the judged week against that band (F006 AC1/AC2/AC10). A tier read only before "
+            "such a resumption therefore has no entry here at all: its readings are listed in "
+            "`excluded` as `before_reset: coverage_gap`, so a consumer counting tiers reads "
+            "them there rather than finding them nowhere (the span corrected from [date-66, "
+            "date] by sprint-006 spec review, 2026-09-21). Every reading inside the span is in "
+            "exactly one dataset "
             "here or in `excluded` with a reason -- never in neither, never in both (AC15, "
             "research/00 1.6): a reading of a tier the verdict was not taken from is corroboration "
             "in its own dataset, not a discarded row. Empty only when no reading of any tier "

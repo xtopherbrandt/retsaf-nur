@@ -1173,7 +1173,19 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 469  # re-measured 2026-09-21 (T159), as the last action before the
+SCOPED_SUITE_COLLECTED = 470  # re-measured 2026-09-21 (sprint-006 final spec review, finding
+#                              # 1), as the last action before the commit: +1. One pin added to
+#                              # this file, in the T159 rendering block: a tier read only
+#                              # before a global coverage gap is absent from datasets[] and
+#                              # wholly in excluded as before_reset: coverage_gap -- the claim
+#                              # both published copies of the datasets[] description got wrong
+#                              # ("one entry per source tier present in [date-66, date]"), and
+#                              # which nothing could break, the two-copy oracle comparing field
+#                              # sets rather than a description against the code. No identity
+#                              # elsewhere changed: the two schema copies and the contract were
+#                              # reworded, not re-pinned. Nothing publishes this number; the
+#                              # previous value was T159's, whose own note follows.
+# SCOPED_SUITE_COLLECTED = 469  # re-measured 2026-09-21 (T159), as the last action before the
 #                              # commit: +10. Two of the five suites moved.
 #                              # Nine identities added to this file on F006's
 #                              # response block (datasets[], selected_dataset,
@@ -3618,6 +3630,116 @@ def test_the_points_name_the_dataset_each_days_band_came_from_across_a_switch(
         if b["date"] != switch.isoformat()
     ]
     assert max(others) < 0.05, max(others)
+
+
+def test_a_tier_read_only_before_a_coverage_gap_is_absent_from_datasets_and_wholly_excluded(
+    configure, seeder
+) -> None:
+    """``datasets[]`` holds one entry per tier present in the **gap-clipped**
+    span, not per tier present in ``[D-66, D]`` (sprint-006 spec review,
+    finding 1).
+
+    Both published copies said "one entry per source tier present in
+    [date-66, date]", and that sentence is false whenever a global coverage
+    gap clips the series: ``build_series`` applies the **global** clip before
+    the per-tier partition, so a tier read only on the far side of the silence
+    has no reading left for a dataset to be built from. ``build_series``'s own
+    docstring was already right ("every tier present in the gap-clipped
+    readings"); the wire copies were not, and a consumer counting
+    ``datasets[]`` against the tiers it knows it captured on was counting
+    against a claim nothing could break.
+
+    Nothing caught it because nothing could:
+    ``test_the_schema_and_the_contract_both_publish_the_dataset_block`` compares
+    the two copies' **field sets** and never a description against the code,
+    and no mutant in T159's 7/7 table encodes dataset membership under a clip.
+
+    The geometry is the reviewer's. 27 declared chest-strap captures on
+    ``[D-66, D-40]``; the whole series silent across the 25 local days
+    ``D-39..D-15``, which is more than ``GAP_RESET_DAYS``; then a daily Health
+    Snapshot from ``D-14`` to ``D``. So ``gap_reset_on`` is ``D-14``,
+    ``datasets[]`` renders ``health_snapshot`` alone, and all 27 strap rows
+    are in ``excluded`` as ``before_reset: coverage_gap`` -- present, named,
+    and in no dataset.
+
+    **Three-valued** (``retiring-a-ratified-behaviour-needs-a-three-valued-pin``
+    one altitude up: the claim being retired is the published span). Green as
+    built. Against a mutant that partitions ``unclipped_readings`` instead of
+    the gap-clipped ``readings`` -- which is the response the withdrawn
+    sentence describes -- the first assertion below fails with
+    ``assert ['chest_strap_raw', 'health_snapshot'] == ['health_snapshot']``,
+    because the pre-gap tier is rendered as a dataset of its own (``n`` 0,
+    ``band`` null). Green again on restore.
+
+    The §1.6 / AC15 partition is asserted over the rendered body rather than
+    assumed, because that is the half the correction is asking a consumer to
+    rely on: the 27 excluded strap rows, plus the surviving dataset's own
+    ``n`` and ``week_days``, account for all 42 stored rows inside the span,
+    once each and in exactly one place.
+    """
+    configure("UTC")
+    strap_span = days(D - timedelta(days=66), D - timedelta(days=40))
+    snapshot_span = days(D - timedelta(days=14), D)
+    silence = (D - timedelta(days=39), D - timedelta(days=15))
+    strap_sessions = straps_at(seeder, strap_span)
+    snapshot_sessions = seeder.snapshots(snapshot_span, baseline_values(len(snapshot_span)))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        response = get(client, to=D.isoformat())
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    # The slice compared, printed: an exit code is a summary of evidence
+    # nobody has seen (``a-witness-must-print-the-slice-it-compared``).
+    silent_days = (silence[1] - silence[0]).days + 1
+    print(
+        f"strap {strap_span[0]}..{strap_span[-1]} ({len(strap_sessions)} rows) | "
+        f"silence {silence[0]}..{silence[1]} ({silent_days} local days > "
+        f"GAP_RESET_DAYS {hrv_trend.GAP_RESET_DAYS}) | "
+        f"snapshot {snapshot_span[0]}..{snapshot_span[-1]} ({len(snapshot_sessions)} rows)"
+    )
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("reset:", body["baseline"]["reset_reason"], body["baseline"]["reset_on"])
+    print("excluded:", json.dumps(sorted(f"{e['date']} {e['reason']}" for e in body["excluded"]), indent=1))
+
+    # The corrected sentence. The clip is what decides membership, so the
+    # pre-gap tier is not here at all -- not here carrying an empty baseline,
+    # which is the shape a tier read only in the judged week has.
+    assert [d["tier"] for d in body["datasets"]] == [SNAPSHOT], body["datasets"]
+    datasets = _by_tier(body)
+    assert STRAP not in datasets, body["datasets"]
+    assert body["baseline"]["reset_reason"] == "coverage_gap"
+    assert body["baseline"]["reset_on"] == (D - timedelta(days=14)).isoformat()
+
+    # Where the clipped-away tier's rows went -- all of them, with the reason
+    # the corrected sentence now names.
+    excluded = {entry["session_id"]: entry["reason"] for entry in body["excluded"]}
+    strap_ids = [s.session_id for s in strap_sessions]
+    snapshot_ids = [s.session_id for s in snapshot_sessions]
+    assert len(strap_ids) == 27 and len(snapshot_ids) == 15
+    assert sorted(excluded) == sorted(strap_ids), excluded
+    assert {excluded[session_id] for session_id in strap_ids} == {"before_reset: coverage_gap"}
+
+    # research/00 §1.6 / AC15 across ``datasets[]`` u ``excluded``: the
+    # surviving dataset's own counts cover the whole snapshot era (8 baseline
+    # days [D-14, D-7] and 7 judged-week days), none of it is excluded, and
+    # the two lists together are the 42 stored rows exactly once each.
+    survivor = datasets[SNAPSHOT]
+    assert not set(snapshot_ids) & set(excluded), sorted(set(snapshot_ids) & set(excluded))
+    assert survivor["n"] == 8 and survivor["week_days"] == 7, survivor
+    assert survivor["established"] is False, survivor
+    accounted = survivor["n"] + survivor["week_days"] + len(excluded)
+    assert accounted == len(strap_ids) + len(snapshot_ids) == 42, (
+        f"{accounted} rows accounted for against {len(strap_ids) + len(snapshot_ids)} stored: "
+        f"research/00 §1.6's partition is broken over datasets[] u excluded"
+    )
+    assert len(body["excluded"]) == len({entry["session_id"] for entry in body["excluded"]})
+
+    # "Empty only when no reading of any tier exists in the span" still holds:
+    # a clip always leaves its own resumption reading behind.
+    assert body["datasets"], body
 
 
 def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:
