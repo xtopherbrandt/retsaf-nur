@@ -28,18 +28,35 @@ demo_probe: |
   # and the route renders datasets[], selected_dataset, selected_reason, disagreed_with and
   # the dataset each point's band came from. Every assertion is on the served body, and the
   # slice each one compares is printed before it.
-  PORT=8131
   export RUNCOACH_DATA_DIR=$(mktemp -d)
   export RUNCOACH_RESTING_HRV_PROFILE_NAMES='["HRV Snapshot"]'
   export RUNCOACH_ATHLETE_TIMEZONE=UTC
   trap "rm -rf $RUNCOACH_DATA_DIR" EXIT
-  uv run --package runcoach-api uvicorn runcoach_api.main:app --host 127.0.0.1 --port $PORT --app-dir runcoach-api/src &
-  PID=$!
-  trap "kill $PID 2>/dev/null; rm -rf $RUNCOACH_DATA_DIR" EXIT
-  for i in $(seq 1 40); do
-    curl -fsS "http://127.0.0.1:$PORT/health" -o /dev/null 2>/dev/null && break
-    sleep 0.5
+  # The port is taken from the OS, not hardcoded (sprint-006 final spec review). A fixed
+  # 8131 fails this feature's smoke test whenever something else holds that port -- a
+  # failure about the machine, not about the feature. Each candidate is one the kernel
+  # just handed out (bind :0, read the number, release it) and a candidate whose server
+  # never answers /health is killed and the next tried, which also covers the race
+  # between releasing the probe socket and uvicorn binding it. Every request below reads
+  # $PORT, so nothing this probe asserts changes.
+  PORT=""
+  for attempt in 1 2 3 4 5; do
+    CANDIDATE=$(uv run --package runcoach-api python -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()")
+    uv run --package runcoach-api uvicorn runcoach_api.main:app --host 127.0.0.1 --port $CANDIDATE --app-dir runcoach-api/src &
+    PID=$!
+    trap "kill $PID 2>/dev/null; rm -rf $RUNCOACH_DATA_DIR" EXIT
+    for i in $(seq 1 40); do
+      curl -fsS "http://127.0.0.1:$CANDIDATE/health" -o /dev/null 2>/dev/null && PORT=$CANDIDATE && break
+      kill -0 $PID 2>/dev/null || break
+      sleep 0.5
+    done
+    if [ -n "$PORT" ]; then break; fi
+    echo "port $CANDIDATE did not come up, trying another (attempt $attempt)"
+    kill $PID 2>/dev/null || true
+    wait $PID 2>/dev/null || true
   done
+  if [ -z "$PORT" ]; then echo "no usable port after 5 attempts"; exit 2; fi
+  echo "serving on 127.0.0.1:$PORT"
   # The history is seeded through the suite's own generator -- the real
   # mapping -> classify -> db.persist chain, never raw SQL -- so the probe drives the same
   # seam test_hrv_trend_endpoint.py drives. The script prints the RESOLVED data dir and
