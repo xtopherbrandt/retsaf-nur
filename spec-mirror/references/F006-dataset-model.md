@@ -351,7 +351,21 @@ feature it re-derives.
   AC3's "one reading to each dataset" would then be a *correlated* pair biasing both bands toward the
   same mornings. **Measure this before trusting AC22.**
 
-## 11. Negative Class (full table, moved from the feature file)
+## 11. Negative Class — the costs table (the feature file keeps its priced bullets)
+
+This section holds the **table** of accepted costs — all seven rows, moved out of the feature file
+so the feature stays inside its 200-line cap. It is **not** the whole Negative Class, and a reader
+who stops here has not read it. The feature file (`spec/features/F006-per-tier-hrv-datasets.md`,
+§ Negative Class) keeps the governing row beside **eleven further priced bullets that are not
+reproduced here** — among them the one §1.7 rate this release **deferred rather than paid** (a
+suppressed return promoted `hrv_normal` from an overlapping carrier’s week, worse at `c = 4` and
+`c = 5`, existing only if the two datasets are independent instruments; user decision 2026-09-20,
+T162 Finding 2 / T164), the honest retirement count and its three-valued pins, T093’s two halves,
+the per-dataset reported reset, T130’s carrier-overlap disarm, AC23’s flip-rate score, and
+IDEA-087’s unmeasured independent-instrument question. The two documents are complements, not a
+copy and an original (heading corrected 2026-09-21, sprint-006 final spec review, finding 3: it
+read “full table, moved from the feature file”, which a reader following the pointer took to mean
+the Negative Class had moved in full).
 
 
 | cost | direction and why it is accepted |
