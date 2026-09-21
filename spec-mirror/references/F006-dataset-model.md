@@ -59,16 +59,41 @@ directly.** The reframe does not add a tenth qualifier; it removes the question 
 
 Among datasets that are **judgeable** — established (≥ `MIN_BASELINE_READINGS`) **and** holding
 ≥ `MIN_WINDOW_READINGS` distinct judged-week days — promote the **highest-fidelity** one, unless its
-latest reading falls **more than** `RECENCY_TOLERANCE_DAYS` behind the latest reading of any
-judgeable dataset, in which case it is skipped.
+latest **baseline-window** reading falls **more than** `RECENCY_TOLERANCE_DAYS` behind the latest
+baseline-window reading of any **established** dataset, in which case it is skipped.
 
 Three properties carried over from the shipped `_recency_struck`, deliberately and not by accident:
 
-- the comparison is **between candidates**, not against `D` — so a lone judgeable dataset is its own
-  reference and is never skipped;
+- the comparison is **between datasets**, not against `D` — the reference maximum is taken once,
+  simultaneously, over every **established** dataset, those that are not judgeable and those about to
+  be skipped alike, while the **candidates** it strikes from are the judgeable ones, so a lone
+  **established** dataset is its own reference and is never skipped (AC7);
 - the bound is **strictly greater than** (AC7);
 - `RECENCY_TOLERANCE_DAYS` = 28 is **reused, not minted** — already measured with a justified band of
   [18, 44] and already reasoned against `gap_reset_days`.
+
+**Amended 2026-09-21 (T164, following `research/00` §5.4 (ii)'s amendment of 2026-09-20, then
+`spec/03` §3.7.3/§3.7.4, then AC6/AC7 — this reference was missed in that sweep).** The rule and
+the first property above read, from 2026-09-18 until now: *"unless its latest reading falls **more
+than** `RECENCY_TOLERANCE_DAYS` behind the latest reading of any judgeable dataset, in which case it
+is skipped"*, and *"the comparison is **between candidates**, not against `D` — so a lone judgeable
+dataset is its own reference and is never skipped"*. Both halves are superseded, for two separate
+reasons. **(a) The window was never named here**, which is §9's defect: AC6 named it normatively on
+2026-09-18, matching `_last_read`'s scope, and this section kept the unqualified phrasing §9 is
+written to refute. **(b) The reference population is every established dataset**, not the judgeable
+ones; the candidates the gate strikes from remain the judgeable datasets, so nothing in AC8, in "the
+selected dataset decides" or in the retained withhold moves. [[T162]] measured the narrowing this
+section described: `hrv_normal` promoted on an entirely pre-layoff band rose from shipped F005's
+**1,896 to 3,705 of 307,500** return-rectangle rows (×1.95) and **96 to 254 of 24,000**
+device-return-walk rows (×2.65), worse at every `c`, on 82 of 150 cells, identically under both
+overlap variants — §1.7's forbidden direction, and AC21's blocking one. [[T164]] widened the
+population and the rate returned to shipped F005's **exactly**: **1,896** and **96**, flat at 316 per
+`c`, cell for cell across all 25 capture-density pairs. **What it cost**, priced in §11: a **lone
+judgeable** dataset is no longer automatically its own reference — an established but *weekless*
+dataset read later strikes it — so **every judgeable candidate can be skipped at once**, a state
+this reference's own pins had held unreachable, and AC9's fallback then presents one verdict-free;
+the athlete pays in silence, roughly **3,600 more silent rectangle mornings** (`hrv_unavailable`
+243,326 → 246,944 of 307,500) and 316 more on the walk (15,996 → 16,312 of 24,000).
 
 **This is §3.7.1's ratified hierarchy preserved, not a new precedence.** §3.7.1: *"the system prefers
 a chest-strap RR capture it reduces to rMSSD itself, and degrades — at reduced confidence — to a
@@ -147,7 +172,7 @@ be computed at all. AC20 requires it swept and priced before release.
 
 | # | trigger | speed |
 |---|---|---|
-| 1 | the fidelity leader goes unread beyond `RECENCY_TOLERANCE_DAYS` | slow, rare |
+| 1 | the fidelity leader's latest baseline-window reading falls more than `RECENCY_TOLERANCE_DAYS` behind the latest-read **established** dataset (§3) | slow, rare — but reachable more often since T164 widened the reference population from the judgeable datasets to the established ones, which is what the ~3,600 extra silent rectangle mornings in §3 are |
 | 2 | its judged-week days fall below `MIN_WINDOW_READINGS` | **fast, common** |
 
 Trigger 2 dominates, and **every candidate form inherits it identically**, because judgeability is a
@@ -285,7 +310,7 @@ feature it re-derives.
 ### The fix, as specced
 
 - **AC6** names the baseline window normatively, matching `_last_read`'s scope.
-- **AC7** fixes the reference set as simultaneous, not iterative.
+- **AC7** fixes the reference set as simultaneous, not iterative — and, since T164 (2026-09-20, `research/00` §5.4 (ii) amended first), as every **established** dataset rather than the judgeable ones, the candidates it strikes from staying the judgeable ones; see §3.
 - **AC17** keeps the era clip (T094/T095/T129) at **dataset** scope rather than retiring it — it is
   the only mechanism that ever removed a stale era from a band.
 - **AC16** keeps `coverage_gap_reset` **global**, preserving the ratified *"not a race but a
@@ -305,8 +330,8 @@ feature it re-derives.
   which under F006 harms nothing because a stale trial is not judgeable. **Do not cite `[18, 44]` as
   if it transferred** — AC19/AC21 must re-measure it. This is the same trap as the 2026-09-15
   parameter-free measurement in §3.
-- **Pipeline order is verdict-determining.** Per-dataset clips → establishment → judgeability → the
-  simultaneous recency reference set → selection → promotion. `judge` resolves `unavailable_reason`
+- **Pipeline order is verdict-determining.** Per-dataset clips → establishment → the simultaneous recency reference set, taken over the **established** datasets → judgeability, which fixes the
+  candidates that reference strikes from → selection → promotion. (*Amended 2026-09-21 with §3: this read "establishment → judgeability → the simultaneous recency reference set" while the reference population was the judgeable datasets. Since T164 the reference does not depend on judgeability at all — `select_dataset` takes it over every established dataset and intersects the struck set with the judgeable ones.*) `judge` resolves `unavailable_reason`
   from a fixed guard order over **one** series (`:1246`); N datasets need a defined order *across*
   datasets (AC9). T145 happened because a fixed order was treated as incidental.
 - **`test_hrv_unavailable_causes.py` is an AST oracle over `judge`'s source**, and §3.7.4 asserts six
@@ -336,7 +361,8 @@ feature it re-derives.
 | **§3.7.3's device/firmware re-establishment clause stays unimplemented** | The column it points at carries the **watch's** firmware, so honouring it would re-establish a *strap* dataset when the *watch* updates — the wrong event. F007 persists the identity that would close it |
 | **The 18-day adoption silence, and `week_too_thin` on 16 of those days** | Out of scope by user decision, 2026-09-18. A never-used device holds no baseline under any scheme. Priced by [[T137]]/[[T138]], unchanged here |
 | **A 3×/week wearer's dataset flips for seven days on one missed session** | Pre-existing (`CRITIC-F005` priority 3), inherited identically by every form, un-fixable without re-opening §3.7.4's count rule. AC14 makes it visible in `points[]`; AC23 gates it against F005 |
-| **A hole of at most `GAP_RESET_DAYS` silent days, or one whose resumption is after `D-7`, is not clipped** (AC17, T153) | The first still mixes the eras either side of it — bounded by three weeks of silence, either direction, unreported; the second leaves the pre-layoff band in place, unreported, and hands the question to AC6, which does not skip a dataset fewer than 29 days behind another. Accepted because the constant has one meaning (`coverage_gap_reset`'s) and a per-dataset clip firing earlier than the global gap would make two rules disagree about the same number of days (the 28 > 21 partition); the straddling case is AC6's population by AC17's own text. Who notices: nobody from `hrv_status`; `baseline.window` shows the first, `datasets[]` (T159) will show the second |
+| **A hole of at most `GAP_RESET_DAYS` silent days, or one whose resumption is after `D-7`, is not clipped** (AC17, T153) | The first still mixes the eras either side of it — bounded by three weeks of silence, either direction, unreported; the second leaves the pre-layoff band in place, unreported, and hands the question to AC6, which does not skip a dataset fewer than 29 days behind the latest-read **established** dataset (the reference population as widened by T164, 2026-09-20; §3). Accepted because the constant has one meaning (`coverage_gap_reset`'s) and a per-dataset clip firing earlier than the global gap would make two rules disagree about the same number of days (the 28 > 21 partition); the straddling case is AC6's population by AC17's own text. Who notices: nobody from `hrv_status`; `baseline.window` shows the first, `datasets[]` (T159) will show the second |
+| **A lone judgeable dataset is no longer its own reference, and every judgeable candidate can be skipped at once** (AC6/AC7 as widened by T164, 2026-09-20; §3) | The price paid for restoring shipped F005's stale-band promotion rate **exactly** — `hrv_normal` on an entirely pre-layoff band, 3,705 → 1,896 of 307,500 rectangle rows and 254 → 96 of 24,000 walk rows. An established but **weekless** dataset read later now strikes the returning one, so the athlete pays in **silence**: ~3,600 more silent rectangle mornings (`hrv_unavailable` 243,326 → 246,944) and 316 more on the walk (15,996 → 16,312). The state this reference once held unreachable — every judgeable dataset skipped at once — is now reachable, and AC9's presentation fallback handles it, conferring no verdict. Accepted because the alternative is §1.7's forbidden direction at roughly twice shipped F005's rate, which AC21 blocks on. Who notices: nobody from `hrv_status` — the athlete is told nothing rather than told something stale. Full measurement in the feature file's Negative Class and `spec/references/F006-no-regression-report.md` |
 
 
 ## 12. Decision log (full text, moved from the feature file)

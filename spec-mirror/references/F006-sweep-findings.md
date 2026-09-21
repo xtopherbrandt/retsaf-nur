@@ -260,7 +260,7 @@ The `s` ceiling is where era A drops below 14 captured days inside the window (`
 
 **Confidence.** High.
 
-**Tradeoff.** The `2wk`/stray shape is IDEA-080's mechanism on T130's third population: a lone judgeable dataset is its own reference, and three stray captures of a device the athlete left are a judgeable week. Nothing pins it; the T150 pins are all at `daily`.
+**Tradeoff.** The `2wk`/stray shape is IDEA-080's mechanism on T130's third population: a lone judgeable dataset is its own reference, and three stray captures of a device the athlete left are a judgeable week. Nothing pins it; the T150 pins are all at `daily`. *(Superseded 2026-09-21, and left standing as the record of what was measured. This finding was taken on the module at `5b3415c`, where the recency reference was taken over the **judgeable** datasets. The open question it raises below became [[IDEA-080]], and [[T164]] answered it on 2026-09-20: the reference population is every **established** dataset, so a lone judgeable dataset is no longer automatically its own reference — the abandoned watch, established and weekless, now holds the reference and strikes the three stray captures. `research/00` §5.4 (ii), `spec/03` §3.7.3, F006 AC6/AC7, and `F006-dataset-model.md` §3 carry the widened rule; the measured effect is in `F006-no-regression-report.md`.)*
 
 ### Finding 8: the harness reproduces T130/T150 byte for byte at `daily`, and runs unchanged on the shipped-F005 module
 
