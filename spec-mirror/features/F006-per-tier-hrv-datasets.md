@@ -16,10 +16,94 @@ feasibility: 0.8
 dependencies: ["F004", "F005"]
 references: ["spec/references/F006-dataset-model.md", "spec/references/T125-fix-form-measurements.md", "spec/references/T130-overlap-sweep-harness.py"]
 children: []
-tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163"]
+tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163", "T164"]
 created: 2026-09-18
-updated: 2026-09-18
+updated: 2026-09-21
 source_idea: "IDEA-071"
+demo_probe: |
+  set -e
+  # The cross-task flow, end to end through the endpoint: a two-tier resting-HRV history is
+  # ingested, build_series gives each tier its own dataset with its own baseline and band,
+  # select_dataset promotes the highest-fidelity judgeable one, judge returns the verdict,
+  # and the route renders datasets[], selected_dataset, selected_reason, disagreed_with and
+  # the dataset each point's band came from. Every assertion is on the served body, and the
+  # slice each one compares is printed before it.
+  PORT=8131
+  export RUNCOACH_DATA_DIR=$(mktemp -d)
+  export RUNCOACH_RESTING_HRV_PROFILE_NAMES='["HRV Snapshot"]'
+  export RUNCOACH_ATHLETE_TIMEZONE=UTC
+  trap "rm -rf $RUNCOACH_DATA_DIR" EXIT
+  uv run --package runcoach-api uvicorn runcoach_api.main:app --host 127.0.0.1 --port $PORT --app-dir runcoach-api/src &
+  PID=$!
+  trap "kill $PID 2>/dev/null; rm -rf $RUNCOACH_DATA_DIR" EXIT
+  for i in $(seq 1 40); do
+    curl -fsS "http://127.0.0.1:$PORT/health" -o /dev/null 2>/dev/null && break
+    sleep 0.5
+  done
+  # The history is seeded through the suite's own generator -- the real
+  # mapping -> classify -> db.persist chain, never raw SQL -- so the probe drives the same
+  # seam test_hrv_trend_endpoint.py drives. The script prints the RESOLVED data dir and
+  # exits 2 before its first write if it is not the one asked for.
+  #   health_snapshot  daily 2026-05-11..2026-09-07, none suppressed
+  #   chest_strap_raw  daily 2026-08-09..2026-09-07 at another wall-clock hour, so two tiers
+  #                    captured on one morning do not share a session_id, last five suppressed
+  # The snapshot holds 60 distinct local days of [D-66, D-7] and the strap 23, so neither
+  # dataset can be a copy of the other. --print-expected states each band from the
+  # generator's own values with sample SD, before the request, and it is never read back
+  # from the response (IDEA-057).
+  EXPECTED="$RUNCOACH_DATA_DIR/expected.json"
+  uv run --package runcoach-api python runcoach-api/tests/support/seed_hrv_series.py \
+    --data-dir "$RUNCOACH_DATA_DIR" --print-expected \
+    --era health_snapshot:2026-09-07:120:0:7 --era chest_strap_raw:2026-09-07:30:5:6 > "$EXPECTED"
+  jq -c '.eras[] | {tier, n, first_day, band_lo, band_hi}' "$EXPECTED"
+  BODY=$(curl -fsS "http://127.0.0.1:$PORT/metrics/hrv?to=2026-09-07")
+  # 1. Both tiers are in datasets[] in fidelity order, each carrying its own n, its own
+  #    established and its own band -- and each band is the one computed for that era alone.
+  echo "$BODY" | jq -c '.datasets[] | {tier, n, established, fidelity_rank, last_read, week_days, below, band_lo: .band.lo}'
+  echo "$BODY" | jq -e --slurpfile e "$EXPECTED" '
+    ([.datasets[].tier] == ["chest_strap_raw", "health_snapshot"])
+    and (.datasets[0] | .n == 23 and .established == true and .fidelity_rank == 0
+         and .week_days == 7 and .below == true
+         and (.band.lo - $e[0].eras[1].band_lo | fabs) < 0.000001)
+    and (.datasets[1] | .n == 60 and .established == true and .fidelity_rank == 1
+         and .week_days == 7 and .below == false
+         and (.band.lo - $e[0].eras[0].band_lo | fabs) < 0.000001)'
+  # 2. The selection, its reason, the verdict, and who dissented. The snapshot reads within
+  #    its own band while the selected strap reads below its own, so it is named -- and the
+  #    naming changes nothing: hrv_status is the selected dataset's verdict (AC11).
+  echo "$BODY" | jq -c '{verdict, unavailable_reason, selected_dataset, selected_reason, disagreed_with, baseline, band_lo: .band.lo}'
+  echo "$BODY" | jq -e '
+    .selected_dataset == "chest_strap_raw" and .selected_reason == "highest_fidelity_judgeable"
+    and .verdict == "hrv_suppressed" and .unavailable_reason == null
+    and .disagreed_with == [{"dataset": "health_snapshot", "week_days": 7}]
+    and .baseline.tier == .selected_dataset and .baseline.n == .datasets[0].n
+    and .band == .datasets[0].band
+    and .datasets[1].band.lo != .datasets[0].band.lo
+    and ([.excluded[] | select(.reason == null)] | length) == 0'
+  # 3. Per-point dataset identity (AC14). Over 2026-08-25..2026-09-07 the strap crosses
+  #    MIN_BASELINE_READINGS inside [d-66, d-7] on 2026-08-29 exactly, so every earlier day
+  #    names the snapshot and every later day names the strap -- the instrument switch a
+  #    chart would otherwise make silently. The last point agrees with the verdict's own
+  #    dataset and its own band.
+  RANGE=$(curl -fsS "http://127.0.0.1:$PORT/metrics/hrv?from=2026-08-25&to=2026-09-07")
+  echo "$RANGE" | jq -c '[.points[] | {date, dataset}]'
+  echo "$RANGE" | jq -e '
+    (.points | length) == 14
+    and ([.points[] | select(.dataset == null)] | length) == 0
+    and ([.points[] | select(.date < "2026-08-29") | .dataset] | unique) == ["health_snapshot"]
+    and ([.points[] | select(.date >= "2026-08-29") | .dataset] | unique) == ["chest_strap_raw"]
+    and .points[-1].dataset == .selected_dataset and .points[-1].swc_low == .band.lo'
+  # 4. The same response block asserted by the suite, so the flow above is not its only
+  #    witness. A -k that selects nothing exits 0, so a non-zero passed count is required
+  #    rather than an exit code, and a failed or errored count is required to be absent from
+  #    the whole captured run rather than from any one line of it.
+  K='both_tiers_are_rendered or dataset_with_no_band_is_visible or selected_reason_is_null_exactly or disagreed_with_names_the_dissenter or carries_its_own_reported_reset or points_name_the_dataset_each_days_band or schema_and_the_contract_both_publish'
+  OUT="$RUNCOACH_DATA_DIR/pytest.out"
+  uv run --package runcoach-api pytest runcoach-api/tests/test_hrv_trend_endpoint.py -q -p no:cacheprovider -k "$K" >"$OUT" 2>&1
+  tail -n 1 "$OUT"
+  grep -qE "[1-9][0-9]* passed" "$OUT"
+  ! grep -qE "[0-9]+ (failed|error)" "$OUT"
+  echo "F006 demo probe: OK"
 ---
 
 # Per-Tier Resting-HRV Datasets
