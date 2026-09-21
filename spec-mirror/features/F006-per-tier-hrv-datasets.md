@@ -91,11 +91,21 @@ one verdict-free.
 distinct judged-week days, *when* selection runs, *then* it is not a candidate. `established` is counted
 over the **post-clip** baseline window (AC17).
 
-**AC9 — no judgeable dataset, and the presentation fallback.** *Given* no dataset is judgeable, *then*
-`hrv_status` is `hrv_unavailable` and `selected_dataset` is `null`, **but `baseline` and `band` are still
-populated from the dataset the athlete used last** (F005's rule 3, retained) so the non-nullable
-`baseline.n`/`window`/`established` carry a value and no contract break occurs. No verdict is conferred by
-the fallback. `unavailable_reason` is resolved by a **defined precedence across datasets** and must remain
+**AC9 — no dataset *selected*, and the presentation fallback.** *Given* no dataset is selected —
+*which is* "no dataset is judgeable" **or** "every judgeable dataset was skipped" (*amended 2026-09-21,
+`research/00` §5.4 (iii) amended first; the *given* read "no dataset is judgeable" from 2026-09-18 until
+then, which AC7's 2026-09-20 widening made a strict subset: the fallback fires on `selection.selected is
+None`, and since the recency reference may be held by an established dataset that is not judgeable, every
+judgeable candidate can now be skipped at once*) — *then* `hrv_status` is `hrv_unavailable` and
+`selected_dataset` is `null`, **but `baseline` and `band` are still populated from the dataset the athlete
+used last** (F005's rule 3, retained) so the non-nullable `baseline.n`/`window`/`established` carry a value
+and no contract break occurs. **No verdict is conferred by the fallback, and it cannot be:** clause 1
+presents the **established** dataset read last, which holds the recency reference maximum and is therefore
+never struck by the gate — so had it been judgeable it would have survived as a candidate and been
+selected, and clauses 2 and 3 run only when nothing is established, which judgeability requires. The
+presented dataset is never judgeable; the invariant is stated in full in `research/00` §5.4 (iii) and
+pinned by `test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164`.
+`unavailable_reason` is resolved by a **defined precedence across datasets** and must remain
 `week_too_thin` on the illness/holiday week — `judge`'s existing single-series order is undefined when N
 datasets satisfy different causes.
 
