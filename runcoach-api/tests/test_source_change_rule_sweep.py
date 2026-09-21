@@ -268,11 +268,18 @@ def _flat_text(path: Path) -> str:
 
     Unlike ``_flat`` there, quote characters are **kept**: the guard that
     tells a live claim from research/00's historical reproduction of it is
-    built out of them. Measured 2026-09-21 over both roots, whole-file
-    flattening leaves at most 9.13% of a file inside a quoted span and the
-    longest single span at 207 characters, so no runaway span swallows a
-    document -- and ``test_the_scan_of_every_file_can_still_see_a_claim``
-    asserts that per file rather than trusting the measurement.
+    built out of them. How much of a file that guard may suppress is **not**
+    published here as prose. It is asserted, per file, by
+    ``test_no_quoted_span_can_swallow_a_document`` against
+    ``QUOTED_SHARE_CEILING`` and ``LONGEST_QUOTED_SPAN_CEILING``, which carry
+    the re-measurement, the roots it spans and the margin above it.
+
+    This docstring previously published "at most 9.13% of a file inside a
+    quoted span ... measured over both roots". The figure was measured over
+    ``specification/`` alone -- the true maximum over both roots is 13.11%,
+    and all five widest files are under ``.claude/rules/**`` -- and nothing
+    in the tree checked either number (sprint-006 review iteration 2, M4).
+    A number in a docstring that nothing checks is a claim, not a measurement.
     """
     return _normalize(path.read_text(encoding="utf-8"))
 
@@ -435,36 +442,356 @@ def test_the_flattened_paragraphs_reconstruct_the_flattened_file() -> None:
     print(f"[slice compared] {len(files)} files reconstruct from their own paragraphs")
 
 
-def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
-    """The non-vacuity guard the flattening needs.
+# ---------------------------------------------------------------------------
+# What the quotation guard is allowed to hide
+# ---------------------------------------------------------------------------
 
-    Flattening a whole file widens the reach of the quotation guard's spans: a
-    stray quote or backtick pairing with a distant one could in principle
-    swallow a live claim and turn this module's all-clear into a report over
-    nothing -- the shape the fence in ``test_hrv_trend_endpoint._scannable``
-    failed at twice, which is why there is no fence there now.
+#: Ceilings on the quotation guard's reach over a whole-file flattening,
+#: asserted per file by ``test_no_quoted_span_can_swallow_a_document``.
+#:
+#: **Re-measured 2026-09-21 over both scan roots** -- ``specification/`` and
+#: ``.claude/rules/``, the two entries of ``SCAN_ROOTS``, every ``*.md`` under
+#: each, 34 files -- with this module's own ``_QUOTE_SPAN`` and ``_flat_text``.
+#: Those are the axes the measurement ranges over; nothing else is held fixed
+#: (``a-sweep-must-name-the-axes-it-holds-constant``). Observed maxima: share
+#: **13.11%** (``.claude/rules/project-api-contract.md``) and longest single
+#: span **207** characters (``specification/research/00-design-decisions.md``).
+#:
+#: The 9.13% this module published before, as "over both roots", was measured
+#: over ``specification/`` alone: all five widest files are under
+#: ``.claude/rules/**`` (sprint-006 review iteration 2, M4).
+#:
+#: **The margin, and why there is one.** ~1.5x the measured share and ~2x the
+#: measured longest span, deliberately not the measured values. The widest
+#: files are 1.5-3 kB rules documents, where adding one quoted sentence or code
+#: span moves the share by a point or two and the longest span by a few dozen
+#: characters; a ceiling pinned at 13.11% reds on the next ordinary prose edit
+#: and is then raised without anyone thinking about it, which is how a ceiling
+#: stops being a guard. What these exist to catch is not incremental: one
+#: unpairable delimiter pairs with a distant one and the span grows by
+#: kilobytes, clearing both ceilings by an order of magnitude.
+QUOTED_SHARE_CEILING = 0.20
+LONGEST_QUOTED_SPAN_CEILING = 400
 
-    So rather than resting on the 2026-09-21 measurement in ``_flat_text``,
-    every swept file is probed: a superseded form appended to its flattened
-    text must be flagged. A file whose scan ends inside an open span fails
-    here instead of passing silently."""
+
+def _quoted_spans(text: str) -> list[tuple[int, int]]:
+    """The spans ``_live_superseded_hits`` treats as quotation, over text that
+    has already been flattened by ``_flat_text``."""
+    return [match.span() for match in _QUOTE_SPAN.finditer(text)]
+
+
+def _delimiter_imbalance(text: str) -> list[str]:
+    """Every quote delimiter in ``text`` whose occurrences cannot pair off.
+
+    This names the **cause** whose effect the ceilings measure. An unpairable
+    delimiter does not open a span by itself -- every ``_QUOTE_SPAN``
+    alternative needs a closing one -- it makes the *next* delimiter close the
+    wrong span, so a pair that should have covered a short quotation instead
+    covers everything between the stray and the next one, and a live claim in
+    between is silently read as a quotation.
+    """
+    imbalance: list[str] = []
+    for delimiter in ('"', "`"):
+        count = text.count(delimiter)
+        if count % 2:
+            imbalance.append(f"{delimiter} x{count} (odd)")
+    opened, closed = text.count("“"), text.count("”")
+    if opened != closed:
+        imbalance.append(f"“ x{opened} vs ” x{closed}")
+    return imbalance
+
+
+def _spliced_claim_is_visible(text: str, at: int) -> bool:
+    """Whether a superseded form spliced into ``text`` at character offset
+    ``at`` is still visible to ``_live_superseded_hits``.
+
+    **Exactly one more** live hit than ``text`` already yields, so the answer
+    is about the spliced form rather than about whatever the text already said
+    -- which matters for the synthetic control, whose text carries a claim of
+    its own. The spliced form contains no quote or backtick, so splicing never
+    moves a span boundary: it only decides whether ``at`` is inside one.
+
+    This is the corrected form of the probe M3 found vacuous. That one
+    *appended* the form at the tail, and text past the last delimiter can never
+    be inside a span, so it reported not-blind on every input -- including the
+    stray-unclosed-quote file its own docstring named.
+    """
     probe = SUPERSEDED_FORMS[0]
-    blind = [
-        _rel(path)
-        for path in _swept_files()
-        if not _live_superseded_claims(_flat_text(path) + " " + probe)
+    before = len(_live_superseded_hits(text))
+    after = len(_live_superseded_hits(f"{text[:at]} {probe} {text[at:]}"))
+    return after == before + 1
+
+
+@dataclass(frozen=True)
+class SpanProfile:
+    """One file's answer to: what can the quotation guard hide here?"""
+
+    rel: str
+    chars: int
+    share: float
+    longest: int
+    imbalance: tuple[str, ...]
+    #: Spans that reach across a blank-line paragraph boundary. A quotation
+    #: does not span paragraphs; a runaway span does, and this is the shape it
+    #: has while it is still too small to trip either ceiling.
+    crossings: tuple[str, ...]
+    #: A claim spliced at the first paragraph boundary at or after the longest
+    #: span's start must be seen; one spliced in that span's middle must not.
+    #: Both offsets are carried so a failure names where it looked.
+    boundary_at: int
+    boundary_visible: bool
+    inside_at: int
+    inside_visible: bool
+
+
+def _span_profile(path: Path) -> SpanProfile:
+    """Measure one file, through the helpers the tree walk itself uses.
+
+    Shared by the corpus sweep and by
+    ``test_the_span_guards_fire_on_text_that_defeats_the_sweep``, so the
+    synthetic red cases are produced by the same code that reads the tree
+    rather than by a parallel reimplementation of it.
+    """
+    text = _flat_text(path)
+    spans = _quoted_spans(text)
+    boundaries = [offset for offset, _block in _flat_paragraphs(path)][1:]
+    quoted = sum(end - start for start, end in spans)
+    longest_span = max(spans, key=lambda span: span[1] - span[0], default=(0, 0))
+    crossings = tuple(
+        f"[{start},{end}) reaches across the paragraph starting at {boundary}"
+        for start, end in spans
+        for boundary in boundaries
+        if start < boundary < end
+    )
+    boundary_at = next((b for b in boundaries if b >= longest_span[0]), len(text))
+    inside_at = (longest_span[0] + longest_span[1]) // 2
+    return SpanProfile(
+        rel=_rel(path),
+        chars=len(text),
+        share=quoted / max(len(text), 1),
+        longest=longest_span[1] - longest_span[0],
+        imbalance=tuple(_delimiter_imbalance(text)),
+        crossings=crossings,
+        boundary_at=boundary_at,
+        boundary_visible=_spliced_claim_is_visible(text, boundary_at),
+        inside_at=inside_at,
+        inside_visible=bool(spans) and _spliced_claim_is_visible(text, inside_at),
+    )
+
+
+def test_no_quoted_span_can_swallow_a_document() -> None:
+    r"""The measurement ``_flat_text`` used to publish as prose, asserted.
+
+    Flattening a whole file widens the quotation guard's reach: an unpairable
+    quote or backtick makes the next one close the wrong span, and everything
+    between is suppressed wholesale -- the shape the fence in
+    ``test_hrv_trend_endpoint._scannable`` failed at twice, which is why there
+    is no fence there now. Three arms, one per way it shows up:
+
+    * **delimiter parity**, so the cause reds before the effect does;
+    * **no span reaches across a paragraph boundary** -- a quotation does not
+      span paragraphs, and this catches a runaway while it is still small;
+    * the **share** of a file and the **longest single span**, against
+      ``QUOTED_SHARE_CEILING`` and ``LONGEST_QUOTED_SPAN_CEILING``.
+
+    The arms assert in that order, so **one mutation per arm**, each chosen to
+    leave the earlier arms green, each run on a scratch copy of both roots
+    (sprint-006 review iteration 2) rather than asserted to work:
+
+    * **parity** -- delete the closing ``"`` of the quoted phrase
+      ``"always > 0 when set"`` in
+      ``.claude/rules/learnings/a-published-invariant-needs-a-test-that-can-break-it.md``.
+      Observed: ``... cannot pair off ...: a-published-invariant-...md: " x11
+      (odd)``.
+    * **crossing** -- widen ``_QUOTE_SPAN``'s straight-quote alternative to the
+      newline-crossing ``r'"[\s\S]*"'``. Parity still holds; 29 files report a
+      span reaching across a paragraph boundary, e.g. ``research/00``'s
+      ``[4817,130241)``.
+    * **longest span** -- add one *balanced* 661-character quotation inside a
+      single paragraph of ``.claude/rules/project-commit-format.md``. Parity
+      holds, no boundary is crossed, and the arm reds with ``longest span
+      661``.
+    * **share** -- add six balanced 91-character quotations to one paragraph of
+      the same file. The longest span stays at 91, under its ceiling, and the
+      share arm reds with ``51.94% of 1109 chars``.
+
+    ``test_the_span_guards_fire_on_text_that_defeats_the_sweep`` holds the same
+    arms on synthetic text, so their red branches run in the suite rather than
+    only by hand.
+    """
+    profiles = [_span_profile(path) for path in _swept_files()]
+    for profile in sorted(profiles, key=lambda p: -p.share)[:5]:
+        print(
+            f"[slice compared] {profile.rel}: {profile.share:.2%} of {profile.chars} chars "
+            f"quoted (ceiling {QUOTED_SHARE_CEILING:.0%}), longest span {profile.longest} "
+            f"(ceiling {LONGEST_QUOTED_SPAN_CEILING}), "
+            f"delimiters {profile.imbalance or 'paired'}"
+        )
+    print(
+        f"[slice compared] {len(profiles)} files over "
+        f"{[_rel(root) for root in SCAN_ROOTS]}: max share "
+        f"{max(p.share for p in profiles):.2%}, max span "
+        f"{max(p.longest for p in profiles)}, "
+        f"{sum(len(p.crossings) for p in profiles)} paragraph-crossing spans"
+    )
+
+    unbalanced = [f"{p.rel}: {', '.join(p.imbalance)}" for p in profiles if p.imbalance]
+    assert not unbalanced, (
+        "a quote delimiter in these files cannot pair off, so the next one closes the wrong "
+        "span and every live claim in between is read as a quotation -- balance it or write "
+        "it as a code span: " + "; ".join(unbalanced)
+    )
+
+    crossing = [f"{p.rel} {c}" for p in profiles for c in p.crossings[:3]]
+    assert not crossing, (
+        "a quoted span reaches across a paragraph boundary in these files: a quotation does "
+        "not span paragraphs, so this is a stray delimiter pairing with a distant one, and "
+        "the sweep's all-clear over the swallowed text is a report over nothing: "
+        + "; ".join(crossing)
+    )
+
+    over_span = [
+        f"{p.rel} longest span {p.longest}"
+        for p in profiles
+        if p.longest > LONGEST_QUOTED_SPAN_CEILING
     ]
-    shares = []
-    for path in _swept_files():
-        text = _flat_text(path)
-        quoted = sum(m.end() - m.start() for m in _QUOTE_SPAN.finditer(text))
-        shares.append((quoted / max(len(text), 1), _rel(path)))
-    print("[slice compared] widest quoted spans: "
-          + ", ".join(f"{rel} {share:.2%}" for share, rel in sorted(shares, reverse=True)[:3]))
+    assert not over_span, (
+        f"a single quoted span runs longer than {LONGEST_QUOTED_SPAN_CEILING} characters, the "
+        f"ceiling set with margin over the 207 measured 2026-09-21 across both roots. Either a "
+        f"delimiter is straddling text it does not quote, or the ceiling needs re-measuring and "
+        f"re-arguing -- not raising: " + "; ".join(over_span)
+    )
+
+    over_share = [
+        f"{p.rel} {p.share:.2%} of {p.chars} chars"
+        for p in profiles
+        if p.share > QUOTED_SHARE_CEILING
+    ]
+    assert not over_share, (
+        f"more than {QUOTED_SHARE_CEILING:.0%} of these files is inside a quoted span, over the "
+        f"ceiling set with margin above the 13.11% measured 2026-09-21 across both roots. The "
+        f"quotation guard is suppressing a document rather than a quotation, and the absence "
+        f"sweep below reads only what is left: " + "; ".join(over_share)
+    )
+
+
+def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
+    """The non-vacuity guard the flattening needs, probed **where a claim can
+    actually be hidden** -- the defect M3 named.
+
+    The probe this replaces appended a superseded form to the end of each
+    flattened file and asserted it was seen. Every ``_QUOTE_SPAN`` alternative
+    requires a closing delimiter and the form carries none, so appended text
+    can never be inside a span: it reported not-blind on every input, including
+    the stray-unclosed-quote file its own docstring named. A guard that cannot
+    fire is what
+    ``a-published-invariant-needs-a-test-that-can-break-it`` is about.
+
+    Two-sided instead, per file, through ``_live_superseded_hits`` -- the
+    function the tree walk itself calls:
+
+    * a form spliced at the first **paragraph boundary** at or after the
+      longest span's start **must be seen**. If that span ran past the
+      boundary, the claim is swallowed and this reds.
+    * a form spliced into the **middle of that same span must not be seen**.
+      This is what makes the first arm mean anything: it shows the quotation
+      guard really is suppressing on this very file, so "seen at the boundary"
+      is a fact about position rather than about a guard suppressing nothing.
+
+    **Mutations that turn these red**, both run on a scratch copy of both roots
+    (sprint-006 review iteration 2):
+
+    * **boundary arm** -- delete the closing ``"`` of ``"always > 0 when set"``
+      in
+      ``.claude/rules/learnings/a-published-invariant-needs-a-test-that-can-break-it.md``,
+      so the stray pairs with a distant one and the span covers the next
+      paragraph boundary. Observed: that file prints ``boundary splice ->
+      SWALLOWED`` and the arm reds with ``...a-published-invariant-...md@1512``.
+      The probe this replaces reported not-blind on that same file.
+    * **inside arm** -- replace ``_is_quoted``'s body in
+      ``_live_superseded_hits`` with ``return False``. Observed: all 32 files
+      with a span report ``LEAKED`` and the arm names every one of them.
+    """
+    profiles = [_span_profile(path) for path in _swept_files()]
+    for profile in profiles:
+        print(
+            f"[slice compared] {profile.rel}@{profile.boundary_at} boundary splice -> "
+            f"{'seen' if profile.boundary_visible else 'SWALLOWED'}; "
+            f"@{profile.inside_at} in-span splice -> "
+            f"{'LEAKED' if profile.inside_visible else 'suppressed'}"
+        )
+
+    blind = [f"{p.rel}@{p.boundary_at}" for p in profiles if not p.boundary_visible]
     assert not blind, (
-        "the flattened scan of these files cannot see a claim appended to them, so their "
-        "all-clear below is a report over nothing -- an unbalanced quote or backtick has opened "
-        "a span running to end of file: " + "; ".join(blind)
+        "the flattened scan of these files cannot see a claim spliced at a paragraph "
+        "boundary, so their all-clear below is a report over nothing -- a quoted span has "
+        "grown past the paragraph it quotes: " + "; ".join(blind)
+    )
+
+    leaked = [f"{p.rel}@{p.inside_at}" for p in profiles if p.inside_visible]
+    assert not leaked, (
+        "a claim spliced into the middle of a quoted span was reported as live in these "
+        "files, so the quotation guard is suppressing nothing and the arm above is vacuous "
+        "-- research/00 Sec 5.4's historical reproductions would be flagged next: "
+        + "; ".join(leaked)
+    )
+
+
+def test_the_span_guards_fire_on_text_that_defeats_the_sweep(tmp_path) -> None:
+    """Every arm of the two tests above, shown red on synthetic text.
+
+    The corpus is clean -- 34 files, no unpairable delimiter, no
+    paragraph-crossing span, 13.11% and 207 at the maxima -- so the corpus
+    alone can never show any of those arms failing, and an arm never seen
+    failing is indistinguishable from the arm M3 found. Synthetic files supply
+    the case the tree does not, measured through ``_span_profile``: the same
+    function the sweep runs, not a reimplementation of it.
+    """
+    filler = "ordinary prose about nothing in particular. " * 30
+    clean = tmp_path / "clean.md"
+    clean.write_text(
+        f'A document quoting "a short phrase" once.\n\n{filler}\n\nA final paragraph.\n',
+        encoding="utf-8",
+    )
+    runaway = tmp_path / "runaway.md"
+    runaway.write_text(
+        f'A document with a stray opener " here.\n\n{filler}\n\nAnd "a real quotation" later.\n',
+        encoding="utf-8",
+    )
+
+    for path in (clean, runaway):
+        profile = _span_profile(path)
+        print(
+            f"[slice compared] {profile.rel}: share {profile.share:.2%}, longest "
+            f"{profile.longest}, imbalance {profile.imbalance or 'paired'}, crossings "
+            f"{len(profile.crossings)}, boundary@{profile.boundary_at} "
+            f"{'seen' if profile.boundary_visible else 'SWALLOWED'}, "
+            f"inside@{profile.inside_at} "
+            f"{'LEAKED' if profile.inside_visible else 'suppressed'}"
+        )
+
+    good = _span_profile(clean)
+    assert not good.imbalance, "the parity arm reports an imbalance on balanced text"
+    assert not good.crossings, "the crossing arm reports a crossing on a one-paragraph quotation"
+    assert good.share <= QUOTED_SHARE_CEILING, "ordinary text is over the share ceiling"
+    assert good.longest <= LONGEST_QUOTED_SPAN_CEILING, "a short quotation is over the span ceiling"
+    assert good.boundary_visible, "a claim at a paragraph boundary of ordinary text was not seen"
+    assert not good.inside_visible, "a claim inside a real quotation was reported as live"
+
+    bad = _span_profile(runaway)
+    assert bad.imbalance, "an odd number of straight quotes was not reported as unpairable"
+    assert bad.crossings, "a span reaching across two paragraph boundaries was not reported"
+    assert bad.longest > LONGEST_QUOTED_SPAN_CEILING, (
+        f"the runaway span is {bad.longest} characters and the ceiling of "
+        f"{LONGEST_QUOTED_SPAN_CEILING} did not catch it"
+    )
+    assert bad.share > QUOTED_SHARE_CEILING, (
+        f"the runaway span covers {bad.share:.2%} of the file and the ceiling of "
+        f"{QUOTED_SHARE_CEILING:.0%} did not catch it"
+    )
+    assert not bad.boundary_visible, (
+        "a claim spliced at the paragraph boundary the runaway span swallowed was still "
+        "reported as live, so the boundary arm cannot fire"
     )
 
 
