@@ -68,15 +68,24 @@ and last read 2 days ago and `health_snapshot` is judgeable, *when* selection ru
 
 **AC6 — the tolerance gate reads the BASELINE WINDOW.** *Given* a judgeable dataset whose latest reading
 **within `[D-66, D-7]`** falls more than `RECENCY_TOLERANCE_DAYS` behind the latest baseline-window reading
-of any judgeable dataset, *when* selection runs, *then* it is skipped. **The window is normative**: a strap
+of any **established** dataset (AC7's reference set; *amended T164 — it read "any judgeable dataset" until
+2026-09-20*), *when* selection runs, *then* it is skipped. **The window is normative**: a strap
 established on `D-66…D-36`, silent `D-35…D-5` and back on `D-4/D-2/D-0` **must** be skipped — its baseline
 is entirely pre-layoff, and the unqualified reading selects it. Reproducing series and the §1.7 argument:
 reference §9.
 
 **AC7 — the gate boundary and its reference set.** *Given* a dataset exactly `RECENCY_TOLERANCE_DAYS`
 behind, *then* it is **not** skipped (strictly greater than). The reference maximum is taken **once,
-simultaneously, over all judgeable datasets including those about to be skipped** — never iteratively — so a
-lone dataset is its own reference and is never skipped.
+simultaneously, over every ESTABLISHED dataset — the ones that are not judgeable and the ones about to be
+skipped alike** — never iteratively; the **candidates** it strikes from remain the judgeable datasets, so a
+lone **established** dataset is its own reference and is never skipped. *Amended 2026-09-20 (T164,
+[[IDEA-080]] option 2, `research/00` §5.4 amended first): the reference was the judgeable datasets from
+2026-09-18, and T162 measured that narrowing at `hrv_normal` on an entirely pre-layoff band 1,896 → 3,705 of
+307,500 rectangle rows (×1.95) and 96 → 254 of 24,000 walk rows (×2.65) against shipped F005, whose own
+rule-1 reference was every established tier — AC21's blocking direction, so it is restored.* **A lone
+JUDGEABLE dataset is no longer automatically its own reference**: an established but weekless dataset read
+later strikes it, every judgeable dataset can therefore be skipped at once, and AC9's fallback then presents
+one verdict-free.
 
 **AC8 — judgeability is a precondition of candidacy.** *Given* a dataset established but holding only 2
 distinct judged-week days, *when* selection runs, *then* it is not a candidate. `established` is counted
