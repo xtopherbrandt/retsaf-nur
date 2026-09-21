@@ -101,11 +101,17 @@ from the response. The split this table draws is unchanged, and since 2026-09-19
 carries the noisy readings and watches the selection stay where it was, and its AST half reds if
 any name mentioning a weight or a confidence reaches `select_dataset`, or the module at all.
 
-**One divergence is left standing rather than picked over**, as `project-domain-and-spec-fidelity`
-requires of a research-corpus conflict. `research/00` §5.4 (ii) still says of the confidence weight
-that "it is reported per dataset and left to Section 6". That document is the decision authority
-above `spec/03`, so this reference, which sits below both, does not amend it; the conflict is
-recorded here for the next reader instead of being resolved from underneath.
+**The divergence this section recorded is closed, and the authority was corrected last
+(2026-09-21).** From 2026-09-18 until then `research/00` §5.4 (ii) still said of the confidence
+weight that "it is reported per dataset and left to Section 6". That document is the decision
+authority above `spec/03`, so this reference, which sits below both, did not amend it; the conflict
+was recorded here for the next reader instead of being resolved from underneath, as
+`project-domain-and-spec-fidelity` requires of a research-corpus conflict. §5.4 (ii) now states what
+shipped — the fidelity rank arbitrates and is what `datasets[]` carries, **no** confidence weight is
+emitted or computed in Section 3, and the weighting is deferred to Section 6's readiness fusion
+(§3.7.4) — so the exchange rate still never arises, and now for the stronger reason that there is
+no weight to trade recency against. The authority preserves the superseded half in place and in a
+dated correction bullet of its own; nothing in the code or in any pin moved.
 
 ### Forms considered and rejected, with the reason
 
