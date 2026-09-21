@@ -13,7 +13,7 @@ sources_consulted:
   - spec/ideas/IDEA-080-a-stopped-carrier-leaves-the-recency-gate-with-no-reference.md; IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md; IDEA-082 (dissent under the fallback)
   - .claude/rules/learnings/a-published-invariant-needs-a-test-that-can-break-it.md, a-sweep-must-name-the-axes-it-holds-constant.md, sweep-the-claim-not-the-diff.md, retiring-a-ratified-behaviour-needs-a-three-valued-pin.md; memory: a-witness-must-print-the-slice-it-compared, measurement-sweeps-silently-fix-an-axis, pytest-k-deselection-exits-zero
   - runcoach-api/tests/test_hrv_dataset_populations.py (T150's shipped-F005 pins), test_hrv_trend_band.py (RETURN_DENSITIES, _seed_return_series), test_normative_mirror.py
-  - runcoach-api/src/runcoach_api/metrics/hrv_trend.py at 99a5755 (F006); git show 42f7705:.../hrv_trend.py (shipped F005)
+  - runcoach-api/src/runcoach_api/metrics/hrv_trend.py at b06ec6d (F006, the module the re-measured rows were produced by -- T164; it was 99a5755 when T162 first measured); git show 42f7705:.../hrv_trend.py (shipped F005)
   - runcoach-api/tests/test_fixture_corpus.py and the six recorded FIT fixtures (the independence question)
 harness: spec/references/T130-overlap-sweep-harness.py (T162 section, `t162-check` / `t162-gate`; additive -- T130's and T161's functions and signatures are untouched; unchanged by T164, which re-ran it verbatim)
 rows: spec/references/T162-no-regression-rows.csv (17,070 paired comparison rows; committed copy at runcoach-api/tests/data/T162-no-regression-rows.csv)
@@ -130,8 +130,8 @@ populations.
 
 | axis | value |
 |---|---|
-| modules | **F006** = the installed `runcoach_api.metrics.hrv_trend` at `99a5755`; **F005** = `git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py`, loaded as a copy through the harness's `load_copy`/`_module_from_path` |
-| module drift since T161 | none behavioural: `5b3415c..99a5755` touches `hrv_trend.py` once (`0ec5e21`, T163) and only inside a docstring; every F006 number below that T161 also reports reproduces exactly |
+| modules | **F006** = the installed `runcoach_api.metrics.hrv_trend` at `b06ec6d`; **F005** = `git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py`, loaded as a copy through the harness's `load_copy`/`_module_from_path` |
+| module drift since T161 | **one behavioural change, and these rows are measured after it**: `5b3415c..b06ec6d` touches `hrv_trend.py` twice -- `0ec5e21` (T163), inside a docstring only, and `b06ec6d` (T164), which widens AC7's recency reference set in `select_dataset` and `build_series`. Every figure in this report is the **re-measurement against `b06ec6d`** unless the line carrying it says otherwise; the T161 F006 numbers reproduce only where a line marks the figure *(T162, not re-derived)*. The committed provenance (`runcoach-api/tests/data/T162-no-regression-rows.provenance.json`) records the same module blob, `dfa1fae`, `introduced_by: b06ec6d` |
 | `RECENCY_TOLERANCE_DAYS` | 28 on both modules, each module's own value, unmodified |
 | `MIN_BASELINE_READINGS` / `MIN_WINDOW_READINGS` / `WINDOW_DAYS` / `GAP_RESET_DAYS` | 14 / 3 / 7 / 21 on both modules |
 | overlap variants | `healthy` (T130's fixture: the carrier keeps its 38/44 alternation on a morning the athlete's strap reads 25) and `suppressed` (the overlap mornings read 25 ms too) — **both run in full** |
@@ -495,7 +495,7 @@ return.)*
 Where the improvement comes from is legible in the sequences: the `4wk-clustered` home dataset against a
 `daily` carrier oscillates **seven** times on F005 (`CCCCCCCCHHHHCCCHHHHCCCHHHHCCCHHHHHHHHHHH` — the 3×/week
 wearer's week-by-week flip the Negative Class carries from `CRITIC-F005`) and **three** times on F006
-(`CCCCHCCCCCCCCCCCCCCCCCCCCCCCCHHHHHHHHHHH`). F006 buys that stability with silence: 2,668 more
+(`CCCCHCCCCCCCCCCCCCCCCCCCCCCCCHHHHHHHHHHH`). F006 buys that stability with silence: 2,984 more
 `hrv_unavailable` mornings over the same 24,000 rows, which is IDEA-084's second silence (the hole clip
 leaves the returning dataset unestablished from `r = 8` until 14 captured mornings are inside the window:
 `r = 21` at `daily`, 30 / 31 / 38 / never at the sparser patterns).
@@ -504,7 +504,7 @@ The sequence tables above are T162's, measured on `99a5755` *(not re-derived)*; 
 beside them are T164's.
 
 **Confidence.** High on the count. Medium on the *per athlete-year* framing: the denominator is 600 walks of
-a **device return**, not 600 ordinary athlete-years, so 13.10 is "flips per 365 consecutive mornings of the
+a **device return**, not 600 ordinary athlete-years, so 9.36 is "flips per 365 consecutive mornings of the
 return geometry", which is a worst case, not a population mean. It is nevertheless the same denominator on
 both sides, which is what AC23 asks for.
 
