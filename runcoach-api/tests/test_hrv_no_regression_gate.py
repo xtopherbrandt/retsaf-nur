@@ -212,7 +212,7 @@ PAID_BY_T164 = {
 }
 
 #: -------------------------------------------------------------------------
-#: AC23's worsened cells -- 2026-09-21, an OPEN QUESTION and NOT an accepted cost.
+#: AC23's worsened cells -- decided 2026-09-21, and the decision is CONDITIONAL.
 #:
 #: **What this pin is.** AC23 says the dataset-flip rate "is measured across
 #: the AC19 sweeps and compared against F005 per AC21; a worse rate triggers
@@ -235,17 +235,49 @@ PAID_BY_T164 = {
 #: precisely how 80 worsened cells stayed invisible:
 #: ``.claude/rules/learnings/a-sweep-must-name-the-axes-it-holds-constant.md``.
 #:
-#: **What this pin is NOT.** It is not a deferral and not an exception, and
-#: it is deliberately unlike ``DEFERRED_EXCEPTION`` above, which records a
-#: cost a user priced and accepted on 2026-09-20. On AC23's own text these 80
-#: cells **trigger** the deferred hysteresis decision; the sprint's execute
-#: handoff records that it was not triggered, reading the marginal alone.
-#: Which of those is right is a user decision and is filed, undecided, as
-#: **IDEA-089** ("AC23's flip rate worsens on 80 cells at the 2wk carrier
-#: density, and the marginal that was reported conceals them"). Nothing here
-#: accepts these cells. This pin exists so that the open question cannot
-#: change size, shape or location without a test naming what moved -- growth,
-#: shrinkage and a shift in *which* cells worsen all red here.
+#: **The decision was taken on 2026-09-21, and it is CONDITIONAL.** On AC23's
+#: own text these 80 cells **trigger** the deferred hysteresis decision --
+#: they oblige it to be *taken*, not hysteresis to be *built*. It was taken,
+#: by the user, and the answer is **no hysteresis** (**IDEA-089**, which is
+#: ``status: conditional``, not ``resolved``). So this is no longer an open
+#: question; neither is it a closed one.
+#:
+#: **What it was decided on.** Measured at ``car_density = 2wk`` -- the exact
+#: axis value every worsened cell sits on -- not one §1.7 forbidden family
+#: moved: all nine of them are equal across all 850 cells. AC22 promotion
+#: exposure *improved* there, 52 better and 0 worse (``ac22_below`` 18,
+#: ``ac22_literal`` 18, ``walk_ac22_below`` 16; an earlier record said 34,
+#: which silently dropped ``ac22_literal`` -- 52 is the figure the stated
+#: filter produces). The marginal halved, 18.4684 -> 9.359. The reasoning: a
+#: flip is a **proxy**, and what §1.7 forbids is a **harm** -- a wrong
+#: verdict in the up-regulating direction. Here the flips buy withheld days,
+#: the cautious direction, while every forbidden family is byte-identical to
+#: shipped F005.
+#:
+#: **The decision is against the set as measured on 2026-09-21, and it is not
+#: a licence for that set to grow.** That is why this pin keeps its exact
+#: behaviour: growth, shrinkage and a shift in *which* cells worsen all still
+#: red here, and name what moved.
+#:
+#: **The two conditions that are not met**, and which is why IDEA-089 is
+#: conditional rather than resolved (sprint-006 review, Stage 4.6 critic):
+#:
+#: 1. **The authority is silent.** ``specification/research/00-design-decisions.md``
+#:    still reads "a worse rate **reopens** the deferred hysteresis decision",
+#:    and does not record the decision being taken. §5.4's precedence clause
+#:    says the authority is amended first; that amendment is queued, not done.
+#: 2. **The corpus cannot express the harm.** ``spec/references/T130-overlap-sweep-harness.py``'s
+#:    ``era()`` gives every tier the same value generator -- its own docstring:
+#:    "the band's dispersion is the same at every density" -- so both tiers
+#:    carry statistically identical bands. "No §1.7 rate moved where the flips
+#:    worsened" is therefore true **by construction**: a property of the
+#:    fixtures, not a finding about the rule. Under a real dispersion gap
+#:    (§3.3: 2.16% strap vs 17.49% PPG) the snapshot band is wider, so a flip
+#:    makes ``hrv_normal`` strictly more likely -- §1.7's forbidden direction.
+#:    No row of the CSV can show that, because SD is pinned equal across tiers.
+#:
+#: Until both are met AC23 is **PARTIAL, not MET**, and this pin is what keeps
+#: the conditional decision honest.
 AC23_METRIC = "walk_flips"
 
 #: The worsened set, as the three products the rows actually form. Each row is
@@ -746,17 +778,17 @@ def test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pi
     moves: cells that stop worsening, cells that start, and cells that worsen
     by more than the pinned 0 -> 2 all red here.
 
-    **These 80 cells are an open question, not an accepted cost.** That
-    distinction is why this pin is not written like ``DEFERRED_EXCEPTION``,
-    which records a regression a user priced and accepted on 2026-09-20. On
-    AC23's own text a worse rate **triggers** the deferred hysteresis
-    decision, and this evidence is a worse rate over an entire
-    sub-population: every worsened cell sits at ``car_density = 2wk``, the
-    sub-daily carrier. The sprint's execute handoff records the opposite,
-    drawn from the marginal alone (18.4684 -> 9.359 per athlete-year, a
-    halving). Which reading governs is a **user decision**, filed undecided
-    as **IDEA-089**; nothing here decides it, softens AC23 or prices these
-    cells. This test only makes them impossible to lose again.
+    **These 80 cells were decided on 2026-09-21, conditionally.** On AC23's
+    own text a worse rate **triggers** the deferred hysteresis decision, and
+    this evidence is a worse rate over an entire sub-population: every
+    worsened cell sits at ``car_density = 2wk``, the sub-daily carrier. The
+    decision that trigger obliges was taken -- **no hysteresis** -- and it is
+    **conditional**, because the decision authority does not yet carry it and
+    the corpus pins tier dispersion equal so it cannot express the harm a flip
+    would cause. See the ``AC23_WORSENED_*`` block above and **IDEA-089**
+    (``status: conditional``). The decision is against the set *as measured on
+    2026-09-21*; it is not a licence for that set to grow, which is what this
+    test exists to detect.
 
     The marginal is printed beside the per-cell result on every run, because
     the two together are the finding: a rate can improve overall and worsen
@@ -796,7 +828,7 @@ def test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pi
         direction = "worse" if float(row["f006"]) > float(row["f005"]) else "improved"
         print(f"  MARGINAL {row['sweep']}/{row['overlap']}: F005 {row['f005']} -> F006 "
               f"{row['f006']} per athlete-year -- {direction}, and it is what concealed the "
-              f"{len(worse)} worsened cells above (IDEA-089, OPEN)")
+              f"{len(worse)} worsened cells above (IDEA-089, CONDITIONAL)")
 
     assert len(found) == len(worse), (
         f"{len(worse)} worsened cell rows collapse onto {len(found)} keys, so two cells share one "
@@ -805,13 +837,14 @@ def test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pi
     missing = sorted(pinned - found)
     appeared = sorted(found - pinned)
     assert found == pinned, (
-        f"AC23's worsened cell set has moved. It is an OPEN QUESTION recorded in IDEA-089, not an "
-        f"accepted cost, and it is pinned so that it cannot change unseen.\n"
+        f"AC23's worsened cell set has moved. The hysteresis decision recorded in IDEA-089 -- no "
+        f"hysteresis, 2026-09-21 -- is CONDITIONAL and was taken against this set exactly as "
+        f"measured on that date, not against whatever it becomes.\n"
         f"  no longer worse ({len(missing)}): {missing[:20]}\n"
         f"  newly worse ({len(appeared)}): {appeared[:20]}\n"
-        f"Do not edit the pin to make this green: re-measure (t162-gate), then re-read IDEA-089 "
-        f"and take the decision it names -- a set that grew is a larger open question, one that "
-        f"emptied means AC23's trigger no longer fires and IDEA-089 can be closed."
+        f"Do not edit the pin to make this green: re-measure (t162-gate), then re-open IDEA-089 "
+        f"and re-take the decision on the new evidence -- a set that grew is a decision made on a "
+        f"set that no longer exists, one that emptied means AC23's trigger no longer fires."
     )
 
     off_axis = [name(row) for row in worse if row["car_density"] != "2wk"]
@@ -882,7 +915,7 @@ def test_the_worse_column_agrees_with_the_recomputed_comparison() -> None:
           f"{len([r for r in ungated_worse if r['worse'] == '1'])} carry worse=1 -- the column is "
           f"'gated AND worse', not 'worse'")
     print(f"  of those, AC23 {AC23_METRIC} cells: "
-          f"{len([r for r in ungated_worse if r['metric'] == AC23_METRIC])} (IDEA-089, OPEN)")
+          f"{len([r for r in ungated_worse if r['metric'] == AC23_METRIC])} (IDEA-089, CONDITIONAL)")
 
     assert ungated_worse, (
         "no ungated row is worse on F006, so the clause below distinguishing 'gated AND worse' "
