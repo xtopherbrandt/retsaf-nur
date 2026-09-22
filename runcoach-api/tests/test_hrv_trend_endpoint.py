@@ -3564,6 +3564,16 @@ def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
 ) -> None:
     """F006 x ``_withhold_future`` (sprint-006 review iteration 1, M2).
 
+    **One of three, not the rule itself (T167, ``B-CR-002``, 2026-09-21).** The
+    served list is empty wherever ``verdict`` is ``hrv_unavailable``, for any
+    cause -- ``research/00`` §5.4 (iii) as amended, restated in ``spec/03``
+    §3.7.4. M2 guarded this state alone and left the neighbouring one, a
+    **selected** dataset whose verdict is withheld (``week_not_representative``),
+    naming a dissenter; that state is pinned by
+    ``test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does``.
+    What follows is this day's case and its argument, which the general rule
+    subsumes rather than replaces.
+
     ``_withhold_future`` replaces the verdict with ``hrv_unavailable`` /
     ``day_not_happened`` for a day after the athlete's local today, but
     ``datasets[]``, ``selected_dataset``, ``selected_reason`` and

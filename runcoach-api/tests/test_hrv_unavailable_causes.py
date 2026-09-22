@@ -146,16 +146,39 @@ def _judge_guards() -> tuple[str, ...]:
 def _endpoint_withholders() -> tuple[str, ...]:
     """Every function in ``main.py`` that puts ``VERDICT_UNAVAILABLE`` on a
     verdict the pure rule already decided -- the causes that exist outside
-    ``judge`` because they need the route's clock or the route's store."""
+    ``judge`` because they need the route's clock or the route's store.
+
+    **Mentions inside a comparison are not withholds (T167, 2026-09-21).**
+    Until then this matched *any* mention of the attribute, which conflated
+    writing the value with reading it. ``main._disagreed_with`` now asks
+    ``verdict.verdict == VERDICT_UNAVAILABLE`` -- the one condition
+    ``research/00`` §5.4 (iii) states for the dissent list, which **empties a
+    report** on a verdict something else already withheld and confers no
+    cause of its own. Counted as a withholder it put a cause in this oracle
+    that no spec block can enumerate, because there is none.
+
+    The oracle keeps its teeth: a genuine second endpoint withhold has to
+    *construct* the unavailable verdict -- a keyword argument, an assignment,
+    a ``replace`` call, a return -- and none of those is an ``ast.Compare``,
+    so it is still caught here and still red until the table and the spec
+    blocks name it. Only the read-to-test position is exempt.
+    """
     tree = _module_tree(main_module)
-    found = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef)
-        and any(
-            isinstance(sub, ast.Attribute) and sub.attr == _VERDICT_UNAVAILABLE for sub in ast.walk(node)
-        )
-    }
+    found = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        compared = {
+            id(sub)
+            for comparison in ast.walk(node)
+            if isinstance(comparison, ast.Compare)
+            for sub in ast.walk(comparison)
+        }
+        if any(
+            isinstance(sub, ast.Attribute) and sub.attr == _VERDICT_UNAVAILABLE and id(sub) not in compared
+            for sub in ast.walk(node)
+        ):
+            found.add(node.name)
     return tuple(sorted(found))
 
 

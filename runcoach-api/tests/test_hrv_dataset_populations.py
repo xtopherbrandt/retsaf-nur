@@ -394,3 +394,142 @@ def test_the_3_2_1_switch_away_row_reads_the_same_through_the_endpoint(
     assert body["readings_in_window"] == 7, body
     assert [tier for _, tier, _ in included] == [STRAP] * 7, included
     assert all(value == pytest.approx(33.0) for _, _, value in included), included
+
+
+# ---------------------------------------------------------------------------
+# T167 (B-CR-002) -- the third verdict-free state, through the route
+# ---------------------------------------------------------------------------
+
+
+def _hrv_body(client: TestClient, target: date) -> dict:
+    response = client.get("/metrics/hrv", params={"to": target.isoformat()})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _row_keys(rows: Iterable[dict]) -> list[tuple]:
+    return sorted((r["start_time"], r["hrv_source_tier"], r["resting_rmssd_ms"]) for r in rows)
+
+
+def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
+    isolated_data_dir, monkeypatch, synthetic, classified, persist_sessions
+) -> None:
+    """T167, fixing ``B-CR-002``: ``disagreed_with`` is empty in **every** state in
+    which no verdict is conferred, not only the two the code happened to guard.
+
+    ``research/00`` §5.4 (iii) as amended 2026-09-21 (T167): "whenever the served
+    verdict is ``hrv_unavailable``, for any cause whatever, nothing is named as
+    disagreeing ... because a disagreement is a claim *about* a verdict and a
+    withheld verdict makes no claim to contradict". Before this task the endpoint
+    guarded a null selection (in ``hrv_trend.disagreed_with``) and
+    ``day_not_happened`` (in ``main._disagreed_with``) and left the third state --
+    a **selected** dataset whose verdict is withheld under (v),
+    ``week_not_representative`` -- naming a dissenter beside
+    ``verdict: hrv_unavailable``. That state is the returning athlete, T125's
+    population and the reason F006 exists, so it is the one this pins.
+
+    **The fixture is the matched pair, and ``c`` is the whole of what differs.**
+    ``inter_rows(30, "resumed", c)`` is the harness's device return: a snapshot
+    carrier at 38/44 ms, a chest-strap era at 79 ms ending ``D-43``, and the strap
+    back on the judged week's last three mornings at 25 ms.
+
+    * ``c`` = 0 -- the carrier stops on ``D-3``, so every strap week day is later
+      than every carrier week day, the withhold of (v) fires, and the served
+      verdict is ``hrv_unavailable`` / ``week_not_representative``.
+    * ``c`` = 1 -- **the control.** The carrier also captures ``D-2``, the order
+      clause is false, nothing is withheld, and the served verdict is
+      ``hrv_normal``.
+
+    In *both* rows the strap holds a computable band and a judged week that reads
+    the other side of it from the selected snapshot, so ``hrv_trend.disagreed_with``
+    names it in both (asserted below on ``datasets[]``, which reports each
+    dataset's own ``below`` in both rows alike). The control is therefore not a
+    different fixture that happens to dissent: it is the *same* rows one carrier
+    morning apart, and it shows the empty list at ``c`` = 0 is the rule rather than
+    a week on which nobody disagreed. Without it this assertion could pass on a
+    fixture that never exercised the axis -- the shape that shipped ``B-CR-002``
+    itself, whose killing mutation tested the branch beside the bug.
+
+    Read at the seam a consumer reads: persisted through ``mapping.to_canonical``
+    -> ``hrv_classification.classify`` -> ``db.persist`` and served by
+    ``GET /metrics/hrv`` (N = 2; the classifier writes these two tiers only).
+
+    **Axes held constant:** era length 30, mode ``resumed``, target ``D``, zone
+    ``Pacific/Auckland``, daily density on both datasets, the harness's values.
+    **Varied:** ``c``, 0 -> 1, and nothing else."""
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[PROFILE],
+        athlete_timezone="Pacific/Auckland",
+    )
+    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+    db_module._load_config_cached.cache_clear()
+    assert Path(db_module._load_config_cached().data_dir) == Path(isolated_data_dir)
+
+    withheld_rows = pop.inter_rows(30, "resumed", 0)
+    conferred_rows = pop.inter_rows(30, "resumed", 1)
+    # The two row sets differ by exactly one carrier morning -- stated, not assumed,
+    # so "the control is the same fixture" is a fact of the rows and not of the prose.
+    withheld_keys, conferred_keys = _row_keys(withheld_rows), _row_keys(conferred_rows)
+    extra = [k for k in conferred_keys if k not in withheld_keys]
+    print("the one row that differs:", extra)
+    assert len(extra) == 1, extra
+    assert withheld_keys == [k for k in conferred_keys if k not in extra]
+
+    persisted = _persist_rows(withheld_rows, synthetic, classified, persist_sessions)
+    assert len(persisted) == len(withheld_rows) == len(set(persisted))
+    with TestClient(app) as client:
+        withheld = _hrv_body(client, pop.D)
+
+    # The slice compared, printed before it is asserted
+    # (``a-witness-must-print-the-slice-it-compared``).
+    print(
+        "withheld  verdict=", withheld["verdict"], "reason=", withheld["unavailable_reason"],
+        "selected=", withheld["selected_dataset"], "/", withheld["selected_reason"],
+        "disagreed_with=", withheld["disagreed_with"],
+        "datasets=", [(d["tier"], d["week_days"], d["below"]) for d in withheld["datasets"]],
+    )
+
+    assert withheld["verdict"] == hrv_trend.VERDICT_UNAVAILABLE, withheld["verdict"]
+    assert withheld["unavailable_reason"] == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE, withheld
+    # A dataset **is** selected here -- this is not the AC9 fallback, and that is
+    # what made the state reachable past both existing guards.
+    assert withheld["selected_dataset"] == SNAPSHOT, withheld["selected_dataset"]
+    assert withheld["selected_reason"] is not None, withheld["selected_reason"]
+    # The claim about a verdict: withheld with it.
+    assert withheld["disagreed_with"] == [], withheld["disagreed_with"]
+    # And the state that makes the empty list a decision rather than an absence:
+    # the strap still reads the other side of its own band, and the block says so.
+    withheld_by_tier = {d["tier"]: d for d in withheld["datasets"]}
+    assert withheld_by_tier[STRAP]["below"] is True, withheld_by_tier[STRAP]
+    assert withheld_by_tier[SNAPSHOT]["below"] is False, withheld_by_tier[SNAPSHOT]
+
+    # -- the control: one carrier morning later, a verdict IS conferred --
+    for path in sorted(Path(isolated_data_dir).rglob("*")):
+        if path.is_file():
+            path.unlink()
+    db_module._load_config_cached.cache_clear()
+    _persist_rows(conferred_rows, synthetic, classified, persist_sessions)
+    with TestClient(app) as client:
+        conferred = _hrv_body(client, pop.D)
+
+    print(
+        "conferred verdict=", conferred["verdict"], "reason=", conferred["unavailable_reason"],
+        "selected=", conferred["selected_dataset"], "/", conferred["selected_reason"],
+        "disagreed_with=", conferred["disagreed_with"],
+        "datasets=", [(d["tier"], d["week_days"], d["below"]) for d in conferred["datasets"]],
+    )
+
+    assert conferred["verdict"] == hrv_trend.VERDICT_NORMAL, conferred["verdict"]
+    assert conferred["unavailable_reason"] is None, conferred["unavailable_reason"]
+    assert conferred["selected_dataset"] == SNAPSHOT, conferred["selected_dataset"]
+    assert [d["dataset"] for d in conferred["disagreed_with"]] == [STRAP], conferred["disagreed_with"]
+    conferred_by_tier = {d["tier"]: d for d in conferred["datasets"]}
+    assert conferred_by_tier[STRAP]["below"] is True, conferred_by_tier[STRAP]
+    assert conferred_by_tier[SNAPSHOT]["below"] is False, conferred_by_tier[SNAPSHOT]
+    # The dissent the withheld row does not report is the same dissent the control
+    # does: same dataset, same judged-week count, same side of its own band.
+    assert conferred_by_tier[STRAP]["week_days"] == withheld_by_tier[STRAP]["week_days"]
+    assert conferred["disagreed_with"][0]["week_days"] == withheld_by_tier[STRAP]["week_days"]

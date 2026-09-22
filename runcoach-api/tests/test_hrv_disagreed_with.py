@@ -10,8 +10,23 @@ baseline (``build_band``, ``None`` under two readings) and the judged-week mean
 (``fmean`` of ``ln rMSSD`` over its week, ``None`` on an empty week) -- and calls the
 dataset *below* when the mean is **strictly less** than ``band.lo``, the same comparison
 ``judge`` makes for ``hrv_suppressed``. A dataset disagrees when its own ``below`` differs
-from the selected dataset's. Nothing here consults judgeability: ``established``,
-``MIN_WINDOW_READINGS`` and ``withheld`` gate the *verdict*, not the report.
+from the selected dataset's. Nothing **in this predicate** consults judgeability:
+``established`` and ``MIN_WINDOW_READINGS`` decide which datasets are *candidates* for
+selection, never which are named here, so an unjudgeable dataset with a band is named like
+any other -- AC10 taken literally.
+
+**``withheld`` is a different matter, and the rule changed (T167, ``B-CR-002``, 2026-09-21).**
+This docstring read "``established``, ``MIN_WINDOW_READINGS`` **and ``withheld``** gate the
+verdict, not the report", and that is no longer true of the *served* report.
+``research/00`` §5.4 (iii) as amended now states one condition for the whole of
+``disagreed_with``: wherever the served ``verdict`` is ``hrv_unavailable``, for any cause,
+nothing is named, because a disagreement is a claim *about* a verdict and a withheld verdict
+makes no claim to contradict. A withheld dataset's verdict **is** ``hrv_unavailable``
+(``week_not_representative``), so the served list is empty there. That rule lives at the
+rendering seam (``main._disagreed_with``) and is pinned at the served body by
+``test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does``;
+the module-layer predicate this file tests is unchanged and still consults none of the three,
+which is why every pin below still reads ``Selection.disagreed_with`` and not the endpoint.
 
 **Not rendered until T159.** Every pin reads the ``hrv_trend`` layer directly
 (``build_series`` -> ``select_dataset``), never the endpoint. T159 carries the rendering

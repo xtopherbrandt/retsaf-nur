@@ -488,17 +488,28 @@ def _disagreed_with(
     ``Selection.disagreed_with``'s, so this cannot disagree with the rule
     the module pins.
 
-    **Empty on a day that has not happened** (sprint-006 review iteration 1).
-    ``_withhold_future`` is the one place a verdict is replaced *after*
-    ``judge`` has spoken, and the selection never sees the clock, so left
-    alone this named a dissenter beside ``verdict: hrv_unavailable`` /
-    ``day_not_happened`` -- a disagreement with a verdict that was withheld.
-    ``hrv_trend.disagreed_with`` already decided this question for the AC9
-    presentation fallback, in its own words: "a disagreement is with a
-    verdict, and the presentation fallback confers none; naming a dissenter
-    against ``hrv_unavailable`` would report a contradiction of a claim never
-    made". A withheld future day confers no verdict either, so the same
-    argument reaches it and the list is empty there.
+    **Empty wherever no verdict was conferred** -- ``research/00`` §5.4 (iii)
+    as amended 2026-09-21 (T167, ``B-CR-002``), restated in ``spec/03``
+    §3.7.4. The predicate is one condition, ``verdict == VERDICT_UNAVAILABLE``,
+    and it subsumes all **three** states in which no claim is made:
+
+    * nothing selected -- the AC9 presentation fallback, already decided in
+      ``hrv_trend.disagreed_with``'s own words: "a disagreement is with a
+      verdict, and the presentation fallback confers none; naming a dissenter
+      against ``hrv_unavailable`` would report a contradiction of a claim
+      never made";
+    * a dataset that **is** selected whose verdict is **withheld** under §5.4
+      (v) because a returning dataset's judged week is entirely later than
+      its own -- served as ``week_not_representative``. This is T125's
+      returning athlete, the population F006 exists for, and it is the state
+      ``B-CR-002`` found uncovered: ``withheld`` is computed per dataset
+      independent of judgeability, so a selected dataset can be withheld and
+      the response carried a named dissenter beside the withheld verdict;
+    * a day that has not happened -- ``day_not_happened``. ``_withhold_future``
+      is the one place a verdict is replaced *after* ``judge`` has spoken, and
+      the selection never sees the clock, so left alone this named a dissenter
+      there too (sprint-006 review iteration 1, M2, which guarded this state
+      alone and is what T167 generalises).
 
     Only the *claim* is withheld. ``selected_dataset`` and ``selected_reason``
     are kept as computed, for ``_withhold_future``'s own stated reason:
@@ -512,7 +523,7 @@ def _disagreed_with(
     anything, because nothing was asserted to contradict.
     """
     selection = series.selection
-    if selection is None or verdict.unavailable_reason == hrv_trend.REASON_DAY_NOT_HAPPENED:
+    if selection is None or verdict.verdict == hrv_trend.VERDICT_UNAVAILABLE:
         return []
     readings = _band_readings(selection)
     return [

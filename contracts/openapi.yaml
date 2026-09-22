@@ -1802,8 +1802,18 @@ components:
             consulted — a band from two baseline readings and a week of one can
             name a dataset here — so `week_days` is what a consumer weighs the
             name by. Disagreement NEVER OVERRIDES: `verdict` is the selected
-            dataset's, unchanged, whatever is listed here. Empty when
-            `selected_dataset` is null. This is the response's one report of the
+            dataset's, unchanged, whatever is listed here. EMPTY WHENEVER
+            `verdict` is `hrv_unavailable`, for any cause (research/00 §5.4
+            (iii), amended 2026-09-21): a disagreement is a claim ABOUT a
+            verdict and none was conferred. One condition over all three
+            verdict-free states — `selected_dataset` null, where the
+            presentation fallback speaks; a dataset that IS selected whose
+            verdict is withheld because a returning dataset's judged week is
+            entirely later than its own (`week_not_representative`); and a day
+            that has not happened (`day_not_happened`). `datasets[]` still
+            carries every dataset's own `below` on those days, and
+            `selected_dataset`, `selected_reason` and the retained
+            `baseline`/`band` are kept as computed. This is the response's one report of the
             exposure F006 accepts: hrv_normal can be promoted from the best
             available instrument while another dataset reads below its own band,
             and a consumer reading `verdict` alone is not told (research/00

@@ -3,7 +3,7 @@ id: "F006"
 title: "Per-Tier Resting-HRV Datasets"
 type: feature
 epic: "E003"
-status: in-progress
+status: approved
 story_points: 15
 complexity: "high"
 token_estimate: 38000
@@ -502,6 +502,16 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   coverage-first (the last two invert §3.7.1 precedence).
 - **Hysteresis deferred** with a trigger it can fire (AC23); **retirement needs a three-valued pin**;
   **adoption silence out of scope**.
+- **Hysteresis decision TAKEN 2026-09-21: no hysteresis (CONDITIONAL)** (`/ship-discuss --idea IDEA-089`). AC23's trigger
+  did fire — 80 of 1,202 `walk_flips` cells are worse under F006, every one at `car_density = 2wk` — so the
+  sprint-006 handoff's "NOT triggered" (read off the halved marginal, 18.47 → 9.36) was wrong about the
+  antecedent. The consequent is discharged rather than deferred: at that same density **no §1.7 forbidden
+  family moved at all** (850 cells equal) and **AC22 promotion exposure improved** (52 better, 0 worse), so
+  the flips buy withheld days, not wrong verdicts. A flip is a proxy; §1.7 forbids a harm. Damping it would
+  add state and a tunable to a selection form nine F005 cycles already accreted qualifiers onto, against an
+  instability with no measured cost. The 80-cell pin stays and reds if the set grows, shrinks or shifts —
+  the decision is against the set **as measured on 2026-09-21**, not a licence for it to grow. The separate
+  cost this surfaced — more withheld mornings at sparse capture — is [[IDEA-092]], undecided.
 - **Critic finding, fixed: AC6 had no window and re-created T125** — worse than shipped F005 on a reproduced
   series. AC6 names the baseline window (§9).
 - **`coverage_gap_reset` stays global** (AC16) — already true of shipped code; stated so the N-way partition
@@ -511,3 +521,17 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   presentation fallback; AC10 taken literally (2026-09-18) — judgeability is never consulted, and that is
   the sense in which it survives the 2026-09-19 re-scoping of "reads below" to the other-side reading
   (`research/00` §5.4, T156).
+- **Rule TAKEN 2026-09-21 for `disagreed_with` in every verdict-free state (T167, fixes [[B-CR-002]]):**
+  **one condition — `verdict == hrv_unavailable` — names nobody**, for any cause. A disagreement is a
+  claim *about* a verdict and a withheld verdict makes no claim to contradict, so the list is empty in all
+  three states alike: nothing selected (AC9's fallback), a **selected** dataset whose verdict is withheld
+  under `research/00` §5.4 (v) (`week_not_representative` — T125's returning athlete), and a day that has
+  not happened (`day_not_happened`). The alternative considered and rejected was reverting the sprint-006
+  M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
+  `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
+  MET to PARTIAL as of `2e4230f` and back to MET here** — its unconditional *then* now has an authority-
+  carried exception that is one sentence, states all three states, and is pinned at the served seam by
+  `test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does`,
+  whose control is the same rows one carrier morning apart, where the verdict *is* conferred and the
+  dissenter *is* named. Judgeability is still never consulted for the naming (AC10 taken literally, above);
+  what gates the served list is the verdict, not the candidate set.
