@@ -119,7 +119,7 @@ demo_probe: |
   uv run --package runcoach-api pytest runcoach-api/tests/test_hrv_trend_endpoint.py -q -p no:cacheprovider -k "$K" >"$OUT" 2>&1
   tail -n 1 "$OUT"
   grep -qE "[1-9][0-9]* passed" "$OUT"
-  ! grep -qE "[0-9]+ (failed|error)" "$OUT"
+  if grep -qE "[0-9]+ (failed|error)" "$OUT"; then echo "F006 demo probe: suite red"; exit 1; fi
   echo "F006 demo probe: OK"
 ---
 
@@ -344,7 +344,8 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   the clause is false; `0 of 17` at every `c >= 1`), pinned as the current fact and swept by
   T161/T162; T125's `min(WINDOW_DAYS - MIN_WINDOW_READINGS, k3)` opening-mornings residual; a
   judgeable, unskipped lower-fidelity dataset never withholds (it could have been selected; the
-  selected dataset decides and it is named in `disagreed_with`).
+  selected dataset decides, and it is named in `disagreed_with` only where it reads the other side of
+  its own band and a verdict is conferred — `research/00` §5.4 (iii)).
 - **The honest retirement count, and every retirement's three-valued pin (T160, AC18).** What this
   feature retires is **two mechanisms**, not ten qualifiers: `resolve_baseline_tier`'s role as "one
   tier owns the only band" — the cross-tier *arbitration*, which `build_series` no longer asks for
@@ -513,13 +514,15 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
 - **Hysteresis decision TAKEN 2026-09-21: no hysteresis (CONDITIONAL)** (`/ship-discuss --idea IDEA-089`). AC23's trigger
   did fire — 80 of the 1,200 per-cell `walk_flips` rows are worse under F006, every one at `car_density = 2wk` — so the
   sprint-006 handoff's "NOT triggered" (read off the halved marginal, 18.47 → 9.36) was wrong about the
-  antecedent. The consequent is discharged rather than deferred: at that same density **no §1.7 forbidden
-  family moved at all** — all 850 family×cell rows (370 cells) equal — and **AC22 promotion exposure improved** (52 better, 0 worse), so
-  the flips buy withheld days, not wrong verdicts. A flip is a proxy; §1.7 forbids a harm. Damping it would
-  add state and a tunable to a selection form nine F005 cycles already accreted qualifiers onto, against an
-  instability with no measured cost. The 80-cell pin stays and reds if the set grows, shrinks or shifts —
-  the decision is against the set **as measured on 2026-09-21**, not a licence for it to grow. The separate
-  cost this surfaced — more withheld mornings at sparse capture — is [[IDEA-092]], undecided.
+  antecedent. The decision is taken but **not a discharge — AC23 is PARTIAL**: at that same density **no
+  §1.7 forbidden family moved** — all 850 family×cell rows (370 cells) equal — and **AC22 promotion exposure
+  improved** (52 better, 0 worse), so *under the sweep's equal-dispersion corpus* the flips buy withheld days,
+  not wrong verdicts. Two conditions are unmet: (a) `research/00` still says a worse rate *reopens* the
+  decision and does not carry it; (b) the sweep's `era()` gives every tier the same dispersion, so "no §1.7
+  rate moved" is true by construction. No hysteresis is built on this evidence: it would add state and a
+  tunable to a form nine F005 cycles accreted qualifiers onto. The 80-cell pin reds if the set grows, shrinks
+  or shifts — the decision is against the set **as measured on 2026-09-21**. The withheld-mornings cost is
+  [[IDEA-092]], undecided.
 - **Critic finding, fixed: AC6 had no window and re-created T125** — worse than shipped F005 on a reproduced
   series. AC6 names the baseline window (§9).
 - **`coverage_gap_reset` stays global** (AC16) — already true of shipped code; stated so the N-way partition
@@ -537,8 +540,9 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   not happened (`day_not_happened`). The alternative considered and rejected was reverting the sprint-006
   M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
   `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
-  MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now has an authority-
-  carried exception, recorded on the AC text itself, that is one sentence, states all three states, and is pinned at the served seam by
+  MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now carries an
+  exception, marked on the AC text as `hrv_unavailable` "for any cause"; `research/00` §5.4 (iii) states it
+  in one sentence and names all three states; it is pinned at the served seam by
   `test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does`,
   whose control is the same rows one carrier morning apart, where the verdict *is* conferred and the
   dissenter *is* named. Judgeability is still never consulted for the naming (AC10 taken literally, above);

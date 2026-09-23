@@ -153,6 +153,7 @@ populations.
 | `MIN_BASELINE_READINGS` / `MIN_WINDOW_READINGS` / `WINDOW_DAYS` / `GAP_RESET_DAYS` | 14 / 3 / 7 / 21 on both modules |
 | overlap variants | `healthy` (T130's fixture: the carrier keeps its 38/44 alternation on a morning the athlete's strap reads 25) and `suppressed` (the overlap mornings read 25 ms too) — **both run in full** |
 | zone | `Pacific/Auckland` |
+| tier dispersion | **equal on every tier**: `T130-overlap-sweep-harness.py`'s `era()` draws every era of both tiers from the same value generator (38/44 alternation or a constant), so the two bands are statistically identical and AC23's "no §1.7 rate moved at `2wk`" is true **by construction**, not measured ([[IDEA-089]]) |
 | seed | none; every generator is a deterministic function of its named parameters, so two runs produce identical rows |
 | N | 2 (`chest_strap_raw` + `health_snapshot`). The 3-dataset shape is untested by construction (reference §10) and this sweep does not reach it |
 | judging seam | `build_series → selected_view → judge` on F006; `build_series → judge` on F005, whose `build_series` already returns the one resolved-tier series |
@@ -197,8 +198,8 @@ populations.
 `RECENCY_TOLERANCE_DAYS` (T161 swept 14..44 and left it at 28; here it is fixed at the module value on both
 sides, so nothing below prices it); the era-A **length** (80 days in the rectangle, 10..90 in the matched
 pairs only); the 38/44 alternation itself, which is what gives a one- or two-reading judged week a mean
-below its own band and so dominates AC22's literal rate (Finding 4); the number of datasets (N = 2); and the
-zone. A real corpus is not swept at all — the fixtures are synthetic, which is the whole of Finding 6.
+below its own band and so dominates AC22's literal rate (Finding 4); the number of datasets (N = 2); the
+zone; and **tier dispersion** — `era()` gives both tiers the same values, so a flip moves selection between two identical bands and cannot show a §1.7 harm, which makes the AC23 decision's "no §1.7 rate moved" (Finding 5's `2wk` cells) true by construction ([[IDEA-089]]). A real corpus is not swept at all — the fixtures are synthetic, which is the whole of Finding 6.
 
 ## The three rates, side by side
 

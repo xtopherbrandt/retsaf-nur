@@ -157,17 +157,22 @@ def _endpoint_withholders() -> tuple[str, ...]:
     cause of its own. Counted as a withholder it put a cause in this oracle
     that no spec block can enumerate, because there is none.
 
-    The oracle keeps its teeth: a genuine second endpoint withhold has to
-    *construct* the unavailable verdict -- a keyword argument, an assignment,
-    a ``replace`` call, a return -- and the exemption covers only an
-    attribute that is **itself a direct operand** of an ``ast.Compare``
-    (its ``left`` or one of its ``comparators``), never a node nested deeper
-    inside one. So a withhold constructed *inside* a comparison -- e.g. a
-    walrus ``(w := dataclasses.replace(verdict, verdict=VERDICT_UNAVAILABLE))
-    != verdict`` -- is still caught here and still red until the table and
+    What the oracle checks, and no more: it walks **synchronous** ``def``
+    functions only (``ast.FunctionDef``, not ``ast.AsyncFunctionDef``) and
+    matches only the **attribute spelling** ``<module>.VERDICT_UNAVAILABLE``
+    (an ``ast.Attribute``), not a bare name or a string literal. Within that
+    scope, a withhold that *constructs* the unavailable verdict -- a keyword
+    argument, an assignment, a ``replace`` call, a return -- is found, and
+    the exemption covers only an attribute that is **itself a direct
+    operand** of an ``ast.Compare`` (its ``left`` or one of its
+    ``comparators``), never a node nested deeper inside one. So a withhold
+    constructed *inside* a comparison -- e.g. a walrus
+    ``(w := dataclasses.replace(verdict, verdict=VERDICT_UNAVAILABLE))
+    != verdict`` in a sync ``def`` -- is caught and red until the table and
     the spec blocks name it (cycle-2 review, S2: the exemption previously
     covered every node under a ``Compare`` and that mutant stayed green).
-    Only the bare read-to-test position is exempt.
+    An ``async def`` withholder, or one spelling the value as a string
+    literal, is **not** caught here.
     """
     tree = _module_tree(main_module)
     found = set()
