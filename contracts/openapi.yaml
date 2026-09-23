@@ -1764,9 +1764,12 @@ components:
             The source tier of the dataset `baseline` and `band` describe, and
             of the one `verdict` and `below_by` describe WHEREVER A VERDICT WAS
             ASSERTED — the highest-fidelity JUDGEABLE dataset the recency gate
-            did not skip (F006 AC5–AC8). The scope on that second half is the
-            withheld future day: for a `to` after the athlete's local today the
-            verdict is replaced with hrv_unavailable / `day_not_happened` and
+            did not skip (F006 AC5–AC8). The scope on that second half is every
+            verdict-free state on a selected dataset: its judged week withheld as
+            unrepresentative (`week_not_representative`, research/00 §5.4 (v)),
+            and the withheld future day, where for a `to` after the athlete's
+            local today the verdict is replaced with hrv_unavailable /
+            `day_not_happened`. In both the verdict is hrv_unavailable and
             `below_by` is null, so those two describe no dataset, while this
             field still names the one the retained `baseline`/`band` were
             computed from — a producer of the response, not a claim about it.
@@ -1825,11 +1828,14 @@ components:
             presentation fallback speaks; a dataset that IS selected whose
             verdict is withheld because a returning dataset's judged week is
             entirely later than its own (`week_not_representative`); and a day
-            that has not happened (`day_not_happened`). The states are told
-            apart by `selected_dataset`, never by `unavailable_reason`:
-            `week_not_representative` is also served with `selected_dataset`
-            null, when the dataset the fallback presents is itself withheld, so
-            the reason does not imply a selection (T168). `datasets[]` still
+            that has not happened (`day_not_happened`). `unavailable_reason`
+            does not imply a selection: `week_not_representative` is also
+            served with `selected_dataset` null, when the dataset the fallback
+            presents is itself withheld, and `day_not_happened` is served on a
+            future day with `selected_dataset` null or not. `selected_dataset`
+            separates the second state from the first; the third is identified
+            by `unavailable_reason` alone and can coincide with either (T168,
+            corrected by F006 review cycle 3). `datasets[]` still
             carries every dataset's own `below` on those days, and
             `selected_dataset`, `selected_reason` and the retained
             `baseline`/`band` are kept as computed. This is the response's one report of the

@@ -538,7 +538,7 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   claim *about* a verdict and a withheld verdict makes no claim to contradict, so the list is empty in all
   three states alike: nothing selected (AC9's fallback), a **selected** dataset whose verdict is withheld
   under `research/00` §5.4 (v) (`week_not_representative` — T125's returning athlete), and a day that has
-  not happened (`day_not_happened`) — told apart by selection, not cause: `week_not_representative` is served with nothing selected too, when the fallback's presented dataset is itself withheld (T168). The alternative considered and rejected was reverting the sprint-006
+  not happened (`day_not_happened`) — the cause implies no selection: `week_not_representative` is served with nothing selected too, when the fallback's presented dataset is itself withheld (T168), and `day_not_happened` with or without one; selection separates the first two states, the third is named by its cause. The alternative considered and rejected was reverting the sprint-006
   M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
   `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
   MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now carries an

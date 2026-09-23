@@ -41,7 +41,7 @@ What a consumer sees:
   with its own `band`, `n`, `established`, `fidelity_rank`, `last_read`, `week_days`, `week_mean`,
   `below` and its own `reset_on`/`reset_reason`; `selected_dataset` and `selected_reason` name the
   dataset `baseline`/`band` describe — and `verdict`/`below_by` wherever a verdict was asserted, not
-  on a withheld future day — and why it was promoted (both null when nothing is selected, which
+  on a selected dataset whose verdict is withheld (`week_not_representative`, or a future day) — and why it was promoted (both null when nothing is selected, which
   `unavailable_reason` does not imply: `week_not_representative` is served with nothing selected
   too, T168); `disagreed_with` names any
   dataset whose judged week reads the other side of its own band, with the judged-week count that

@@ -611,6 +611,43 @@ def test_the_false_universal_about_unavailable_causes_is_gone_from_every_block(s
     )
 
 
+#: F006 review cycle 3, S4. T168's defect was a **direction**, not a missing
+#: cause: both contract copies said "a returning or brand-new device's week
+#: entirely predates the tier being judged", the order ``verdict_withheld``
+#: reverses (it withholds when the *other* dataset's week days are all later
+#: than every judged-week day of the dataset being judged). The cause phrase
+#: above, old or shortened, names the unfair sample and is silent on which
+#: week comes first, so the inverted text satisfied it. The pin below requires
+#: the judged dataset's own readings as the subject that predates the return,
+#: and the absence check forbids the inverted sentence. Both are flattened
+#: the way the blocks are.
+WEEK_NOT_REPRESENTATIVE_DIRECTION = re.compile(
+    r"not a fair sample of the dataset being judged, (baseline\.tier -- t125/t132: )?"
+    r"its (judged-week )?readings all predat(e|ing) (the athletes return|a returning)"
+)
+WEEK_NOT_REPRESENTATIVE_INVERTED = (
+    _flat("entirely predates the tier being judged"),
+    _flat("device's week entirely predates"),
+)
+
+
+@pytest.mark.parametrize("site", CONTRACT_SITES, ids=[site.label for site in CONTRACT_SITES])
+def test_each_contract_block_states_week_not_representative_in_the_codes_direction(site: Site) -> None:
+    """The judged dataset's week predates the returning device's, never the
+    reverse. Red on T168's inverted wording in either contract copy."""
+    _resolve(site)
+    block = _block(site)
+    inverted = [phrase for phrase in WEEK_NOT_REPRESENTATIVE_INVERTED if phrase in block]
+    assert not inverted, (
+        f"{site.label}: states week_not_representative backwards ({inverted}); verdict_withheld "
+        f"withholds when another dataset's judged-week days are all LATER than the judged one's"
+    )
+    assert WEEK_NOT_REPRESENTATIVE_DIRECTION.search(block), (
+        f"{site.label}: does not say that the judged dataset's own readings all predate the "
+        f"returning or newly adopted device's -- the direction verdict_withheld asks"
+    )
+
+
 def test_the_false_universal_is_gone_from_every_spec_document() -> None:
     """The site list is an allowlist, and an allowlist passes as soon as the
     sentence moves file (T119's lesson, one feature over). The committed

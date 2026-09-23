@@ -114,7 +114,7 @@ decision falls on different sides of that assumption for rate 2. That question i
 ## Context
 
 AC21: "*Given* every sweep in AC19, *then* it runs against **both** shipped F005 and F006 with both rates
-reported side by side, and **any §1.7 rate that worsens blocks release**." T161 measured F006 alone and
+reported side by side, and **any §1.7 rate that worsens blocks release**." (AC21 amended 2026-09-22, T168: one named, counted exception, `DEFERRED_EXCEPTION`, 64 rows) T161 measured F006 alone and
 closed with one walk against F005, rating its own confidence "medium on the F005 comparison, which is one
 walk and not the rectangle (T162)". This document is the rectangle, on both modules, under both overlap
 variants, with the comparison emitted as rows a test can fail on.
@@ -729,7 +729,7 @@ and two runs produce identical files.
 - The comparison rows' columns: `sweep, overlap, scope, ret_density, car_density, c, orientation,
   value_level, metric, criterion, gated, denom, f005, f006, f005_rate, f006_rate, delta, worse`. `scope` is
   `cell` (one density pair × `c`), `by_c` (all pairs at one `c`) or `total`. `gated = 1` marks the rates
-  AC21 blocks release on; AC23's flip rate is `gated = 0`, `criterion = AC23`.
+  AC21 blocks release on (AC21 amended 2026-09-22, T168: one named, counted exception, `DEFERRED_EXCEPTION`, 64 rows); AC23's flip rate is `gated = 0`, `criterion = AC23`.
 
 ## Open questions this report leaves
 
