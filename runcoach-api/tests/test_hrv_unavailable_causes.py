@@ -648,6 +648,39 @@ def test_each_contract_block_states_week_not_representative_in_the_codes_directi
     )
 
 
+#: F006 review cycle 3, CR-C3-INLINE-1 G1. The two ``unavailable_reason``
+#: blocks state the direction a second time, **formally**: the other dataset's
+#: judged-week days are "every one later than every judged-week day of the
+#: dataset being judged". The prose pin above is satisfied by the sentence
+#: before it, so flipping ``later`` to ``earlier`` in both copies left this
+#: module green (measured 2026-09-22). Only the two sites that carry the
+#: formal clause are held to it; the ``verdict`` descriptions never stated it.
+UNAVAILABLE_REASON_SITES = tuple(site for site in CONTRACT_SITES if "unavailable_reason" in site.label)
+WEEK_NOT_REPRESENTATIVE_FORMAL = _flat(
+    "every one later than every judged-week day of the dataset being judged"
+)
+WEEK_NOT_REPRESENTATIVE_FORMAL_INVERTED = _flat("earlier than every judged-week day")
+
+
+@pytest.mark.parametrize(
+    "site", UNAVAILABLE_REASON_SITES, ids=[site.label for site in UNAVAILABLE_REASON_SITES]
+)
+def test_each_unavailable_reason_block_states_the_formal_withhold_direction(site: Site) -> None:
+    """The other dataset's judged-week days all come **later** than the judged
+    dataset's, never earlier. Red on ``later`` flipped to ``earlier``."""
+    assert len(UNAVAILABLE_REASON_SITES) == 2, [site.label for site in UNAVAILABLE_REASON_SITES]
+    _resolve(site)
+    block = _block(site)
+    assert WEEK_NOT_REPRESENTATIVE_FORMAL_INVERTED not in block, (
+        f"{site.label}: states the formal week_not_representative clause backwards; "
+        f"verdict_withheld withholds when another dataset's judged-week days are all LATER"
+    )
+    assert WEEK_NOT_REPRESENTATIVE_FORMAL in block, (
+        f"{site.label}: no longer says the other dataset's judged-week days are every one later "
+        f"than every judged-week day of the dataset being judged"
+    )
+
+
 def test_the_false_universal_is_gone_from_every_spec_document() -> None:
     """The site list is an allowlist, and an allowlist passes as soon as the
     sentence moves file (T119's lesson, one feature over). The committed
@@ -856,4 +889,3 @@ def test_the_tier_change_delay_is_named_and_accepted_in_the_negative_class() -> 
         "the acceptance must carry its reason: clause (a) accumulates, so an earlier report would "
         "be a prediction and would have to be withdrawn on every abandoned trial"
     )
-
