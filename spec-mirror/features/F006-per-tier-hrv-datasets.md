@@ -16,9 +16,9 @@ feasibility: 0.8
 dependencies: ["F004", "F005"]
 references: ["spec/references/F006-dataset-model.md", "spec/references/T125-fix-form-measurements.md", "spec/references/T130-overlap-sweep-harness.py"]
 children: []
-tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163", "T164"]
+tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163", "T164", "T165", "T166", "T167", "T168"]
 created: 2026-09-18
-updated: 2026-09-21
+updated: 2026-09-22
 source_idea: "IDEA-071"
 demo_probe: |
   set -e
@@ -288,6 +288,9 @@ dataset, *then* `hrv_status` is `hrv_unavailable` and no verdict is promoted. Th
 `verdict_withheld`, kept rather than retired: without it a brand-new device (zero baseline days, so never
 judgeable) leaves the outgoing dataset selected and promotes `hrv_normal` on its stale week — the sixth
 §1.7-forbidden population, which shipped F005 closes and AC21 therefore forbids regressing.
+*(Note, 2026-09-22, non-deciding: `verdict_withheld` as built asks this of every dataset that is not judgeable **or**
+was skipped by the recency gate; T125's own returning strap is judgeable and skipped, so "not judgeable" alone is
+narrower than the code. The criterion stands as written pending [[IDEA-083]]; this note chooses none of its options.)*
 
 ## Interface
 
@@ -538,7 +541,7 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   claim *about* a verdict and a withheld verdict makes no claim to contradict, so the list is empty in all
   three states alike: nothing selected (AC9's fallback), a **selected** dataset whose verdict is withheld
   under `research/00` §5.4 (v) (`week_not_representative` — T125's returning athlete), and a day that has
-  not happened (`day_not_happened`) — the cause implies no selection: `week_not_representative` is served with nothing selected too, when the fallback's presented dataset is itself withheld (T168), and `day_not_happened` with or without one; selection separates the first two states, the third is named by its cause. The alternative considered and rejected was reverting the sprint-006
+  not happened (`day_not_happened`) — the cause does not imply a selection: `week_not_representative` is served with nothing selected too, when the fallback's presented dataset is itself withheld (T168), and `day_not_happened` with or without one; selection separates the first two states, the third is named by its cause. The alternative considered and rejected was reverting the sprint-006
   M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
   `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
   MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now carries an
