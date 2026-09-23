@@ -483,10 +483,12 @@ def _disagreed_with(
     T159; the count is T157's own finding -- a one-reading judged week can
     name a dissenter, and the consumer needs to weigh it).
 
-    The list is the selection's, rendered rather than re-derived: order,
-    membership and the "empty when nothing is selected" rule are all
-    ``Selection.disagreed_with``'s, so this cannot disagree with the rule
-    the module pins.
+    Order and candidate membership are the selection's, rendered rather than
+    re-derived from ``Selection.disagreed_with``. Emptiness is not the
+    selection's alone: it **also depends on the served verdict**
+    (``research/00`` §5.4 (iii)), so the served list is empty on a withheld
+    selected dataset and on ``day_not_happened`` even where
+    ``Selection.disagreed_with`` still names a dataset.
 
     **Empty wherever no verdict was conferred** -- ``research/00`` §5.4 (iii)
     as amended 2026-09-21 (T167, ``B-CR-002``), restated in ``spec/03``

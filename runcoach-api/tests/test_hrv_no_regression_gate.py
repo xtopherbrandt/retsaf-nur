@@ -244,8 +244,9 @@ PAID_BY_T164 = {
 #:
 #: **What it was decided on.** Measured at ``car_density = 2wk`` -- the exact
 #: axis value every worsened cell sits on -- not one §1.7 forbidden family
-#: moved: all nine of them are equal across all 850 cells. AC22 promotion
-#: exposure *improved* there, 52 better and 0 worse (``ac22_below`` 18,
+#: moved: all nine of them are equal across all 850 family×cell rows
+#: (370 cells). AC22 promotion exposure *improved* there, 52 better and
+#: 0 worse (``ac22_below`` 18,
 #: ``ac22_literal`` 18, ``walk_ac22_below`` 16; an earlier record said 34,
 #: which silently dropped ``ac22_literal`` -- 52 is the figure the stated
 #: filter produces). The marginal halved, 18.4684 -> 9.359. The reasoning: a

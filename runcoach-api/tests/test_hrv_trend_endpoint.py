@@ -107,6 +107,17 @@ def _strap_beats() -> list[RRInterval]:
     ]
 
 
+def _strap_beats_reading(rmssd_ms: float) -> list[RRInterval]:
+    """An alternating beat series whose rMSSD is exactly ``rmssd_ms`` -- the
+    ``_seed_beats`` construction in ``conftest.py``: every successive
+    difference is ``rmssd_ms`` in magnitude."""
+    values = (900.0, 900.0 + rmssd_ms)
+    return [
+        RRInterval(seq=i, rr_ms=values[i % 2], rr_source="chest_strap_ecg", is_artefact=False)
+        for i in range(160)
+    ]
+
+
 class Seeder:
     """Builds sessions through the real classifier and persists them."""
 
@@ -115,6 +126,7 @@ class Seeder:
         self._classified = classified
         self._persist_sessions = persist_sessions
         self.sessions: list[Session] = []
+        self._beats: dict[str, list[RRInterval]] = {}
 
     def snapshot(self, when: datetime, rmssd: float) -> Session:
         """A Health Snapshot capture carrying exactly ``rmssd`` (Tier 2)."""
@@ -127,13 +139,20 @@ class Seeder:
         ``values`` as ``zip`` does -- ``repeat(v)`` seeds a flat series."""
         return [self.snapshot(at(day), value) for day, value in zip(dates, values)]
 
-    def strap(self, when: datetime) -> Session:
-        """A declared chest-strap capture whose reading is computed from beats (Tier 1)."""
+    def strap(self, when: datetime, rmssd: float | None = None) -> Session:
+        """A declared chest-strap capture whose reading is computed from beats (Tier 1).
+
+        ``rmssd`` engineers the beats to that exact reading; left ``None`` the
+        capture carries ``_strap_beats``, as every strap here did before it."""
+        beats = _strap_beats() if rmssd is None else _strap_beats_reading(rmssd)
         messages = self._synthetic(
             total_timer_time=150.0, avg_heart_rate=60, sport_profile_name=PROFILE, start_time=when
         )
-        session = self._classified(messages, _strap_beats(), 1.0, [PROFILE])
+        session = self._classified(messages, beats, 1.0, [PROFILE])
         assert session.hrv_source_tier == STRAP and session.resting_rmssd_ms > 0
+        if rmssd is not None:
+            assert session.resting_rmssd_ms == pytest.approx(rmssd), (session.resting_rmssd_ms, rmssd)
+        self._beats[session.session_id] = beats
         return self._keep(session)
 
     def straps(self, dates: Iterable[date]) -> list[Session]:
@@ -171,7 +190,7 @@ class Seeder:
         """Write every kept session to the isolated store; a strap capture
         that resolved a reading carries its beats, nothing else does."""
         beats_by_id = {
-            s.session_id: _strap_beats()
+            s.session_id: self._beats.get(s.session_id, _strap_beats())
             for s in self.sessions
             if s.hrv_source_tier == STRAP and s.resting_rmssd_ms
         }
@@ -1197,7 +1216,15 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 472  # re-measured 2026-09-21 (sprint-006 code review, iteration 1),
+SCOPED_SUITE_COLLECTED = 473  # re-measured 2026-09-22 (sprint-006 code review cycle 2,
+#                              # iteration 1), as the last action before the commit: +1. One pin
+#                              # added to this file, S4's conferred-suppressed dissent pin (a
+#                              # ``verdict != VERDICT_NORMAL`` predicate emptied the list on a
+#                              # conferred hrv_suppressed and every other pin stayed green). The
+#                              # cycle's other test change (S2) is in test_hrv_unavailable_causes.py,
+#                              # not one of the five suites. Nothing publishes this literal; the
+#                              # previous value's own note follows.
+# SCOPED_SUITE_COLLECTED = 472  # re-measured 2026-09-21 (sprint-006 code review, iteration 1),
 #                              # as the last action before the commit: +2. Two pins added to this
 #                              # file, both review findings: M2's future-day dissent pin (a
 #                              # withheld day names no dissenter, with the day that HAS happened
@@ -3557,6 +3584,48 @@ def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weigh
     # week would pass the membership assertion alone.
     assert body["disagreed_with"][0]["week_days"] == datasets[SNAPSHOT]["week_days"]
     assert body["disagreed_with"][0]["week_days"] != datasets[STRAP]["week_days"] or expected_week_days == 7
+
+
+def test_a_conferred_suppressed_verdict_names_a_dissenter_too(configure, seeder) -> None:
+    """Cycle-2 review, S4: the served dissent rule is keyed on **no verdict
+    conferred** (``research/00`` §5.4 (iii) as amended 2026-09-21, T167), not
+    on the verdict being ``hrv_normal``. Every other served non-empty
+    ``disagreed_with`` pin sits on an ``hrv_normal`` day, so a predicate
+    over-broadened to ``verdict != VERDICT_NORMAL`` -- which also empties the
+    list on a conferred ``hrv_suppressed`` -- passed all of them.
+
+    The dissent fixture mirrored: the daily strap is selected and this time
+    reads **below** its own band (a 38/44 ms baseline over ``[D-66, D-7]``,
+    25 ms across the judged week), so the verdict is conferred and is
+    ``hrv_suppressed``; the snapshot's 20-day 38/44 baseline is read against a
+    41 ms week, **within** its own band -- the other side from the selected
+    dataset -- so it is named, with its seven-morning count (AC10, AC11)."""
+    configure("UTC")
+    strap_baseline = days(D - timedelta(days=66), D - timedelta(days=7))
+    for day, value in zip(strap_baseline, baseline_values(len(strap_baseline))):
+        seeder.strap(at(day, hh=7), rmssd=value)
+    for day in days(D - timedelta(days=6), D):
+        seeder.strap(at(day, hh=7), rmssd=25.0)
+    seeder.snapshots(BASELINE_20, baseline_values(20))
+    seeder.snapshots(days(D - timedelta(days=6), D), repeat(41.0))
+    seeder.persist()
+
+    with TestClient(app) as client:
+        body = get(client, to=D.isoformat()).json()
+
+    datasets = _by_tier(body)
+    print("datasets:", json.dumps(body["datasets"], indent=1))
+    print("disagreed_with:", body["disagreed_with"], "verdict:", body["verdict"])
+
+    assert body["selected_dataset"] == STRAP
+    assert body["verdict"] == "hrv_suppressed"
+    assert body["unavailable_reason"] is None
+    assert body["disagreed_with"] == [{"dataset": SNAPSHOT, "week_days": 7}]
+
+    assert datasets[STRAP]["below"] is True
+    assert datasets[STRAP]["week_mean"] < datasets[STRAP]["band"]["lo"]
+    assert datasets[SNAPSHOT]["below"] is False
+    assert datasets[SNAPSHOT]["week_mean"] >= datasets[SNAPSHOT]["band"]["lo"]
 
 
 def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(

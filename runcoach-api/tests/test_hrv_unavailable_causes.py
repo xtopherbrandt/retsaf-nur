@@ -159,9 +159,15 @@ def _endpoint_withholders() -> tuple[str, ...]:
 
     The oracle keeps its teeth: a genuine second endpoint withhold has to
     *construct* the unavailable verdict -- a keyword argument, an assignment,
-    a ``replace`` call, a return -- and none of those is an ``ast.Compare``,
-    so it is still caught here and still red until the table and the spec
-    blocks name it. Only the read-to-test position is exempt.
+    a ``replace`` call, a return -- and the exemption covers only an
+    attribute that is **itself a direct operand** of an ``ast.Compare``
+    (its ``left`` or one of its ``comparators``), never a node nested deeper
+    inside one. So a withhold constructed *inside* a comparison -- e.g. a
+    walrus ``(w := dataclasses.replace(verdict, verdict=VERDICT_UNAVAILABLE))
+    != verdict`` -- is still caught here and still red until the table and
+    the spec blocks name it (cycle-2 review, S2: the exemption previously
+    covered every node under a ``Compare`` and that mutant stayed green).
+    Only the bare read-to-test position is exempt.
     """
     tree = _module_tree(main_module)
     found = set()
@@ -169,10 +175,10 @@ def _endpoint_withholders() -> tuple[str, ...]:
         if not isinstance(node, ast.FunctionDef):
             continue
         compared = {
-            id(sub)
+            id(operand)
             for comparison in ast.walk(node)
             if isinstance(comparison, ast.Compare)
-            for sub in ast.walk(comparison)
+            for operand in (comparison.left, *comparison.comparators)
         }
         if any(
             isinstance(sub, ast.Attribute) and sub.attr == _VERDICT_UNAVAILABLE and id(sub) not in compared

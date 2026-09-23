@@ -212,7 +212,9 @@ datasets satisfy different causes.
 
 **AC10 — disagreement is reported from any dataset with a computable band.** *Given* a dataset whose
 baseline holds at least two readings, so a band exists, and whose judged-week mean reads below that band,
-*then* it is named in `disagreed_with` — **whether or not it is judgeable**. A dataset with fewer than two
+*then* — wherever a verdict is conferred (*amended 2026-09-21, T167; `research/00` §5.4 (iii) amended
+first: where the served verdict is `hrv_unavailable`, for any cause, nobody is named*) — it is named in
+`disagreed_with` — **whether or not it is judgeable**. A dataset with fewer than two
 baseline readings has no band, cannot disagree, and is instead visible in `datasets[]` carrying its `n` and
 its judged-week count. Here "reads below" means reads the **other side of its own band from the selected
 dataset** (clarified 2026-09-19, T156, `research/00` §5.4): a dataset below its band beside a selected
@@ -509,10 +511,10 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
 - **Hysteresis deferred** with a trigger it can fire (AC23); **retirement needs a three-valued pin**;
   **adoption silence out of scope**.
 - **Hysteresis decision TAKEN 2026-09-21: no hysteresis (CONDITIONAL)** (`/ship-discuss --idea IDEA-089`). AC23's trigger
-  did fire — 80 of 1,202 `walk_flips` cells are worse under F006, every one at `car_density = 2wk` — so the
+  did fire — 80 of the 1,200 per-cell `walk_flips` rows are worse under F006, every one at `car_density = 2wk` — so the
   sprint-006 handoff's "NOT triggered" (read off the halved marginal, 18.47 → 9.36) was wrong about the
   antecedent. The consequent is discharged rather than deferred: at that same density **no §1.7 forbidden
-  family moved at all** (850 cells equal) and **AC22 promotion exposure improved** (52 better, 0 worse), so
+  family moved at all** — all 850 family×cell rows (370 cells) equal — and **AC22 promotion exposure improved** (52 better, 0 worse), so
   the flips buy withheld days, not wrong verdicts. A flip is a proxy; §1.7 forbids a harm. Damping it would
   add state and a tunable to a selection form nine F005 cycles already accreted qualifiers onto, against an
   instability with no measured cost. The 80-cell pin stays and reds if the set grows, shrinks or shifts —
@@ -535,8 +537,8 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   not happened (`day_not_happened`). The alternative considered and rejected was reverting the sprint-006
   M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
   `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
-  MET to PARTIAL as of `2e4230f` and back to MET here** — its unconditional *then* now has an authority-
-  carried exception that is one sentence, states all three states, and is pinned at the served seam by
+  MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now has an authority-
+  carried exception, recorded on the AC text itself, that is one sentence, states all three states, and is pinned at the served seam by
   `test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does`,
   whose control is the same rows one carrier morning apart, where the verdict *is* conferred and the
   dissenter *is* named. Judgeability is still never consulted for the naming (AC10 taken literally, above);

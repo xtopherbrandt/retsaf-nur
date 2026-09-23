@@ -42,7 +42,8 @@ What a consumer sees:
   `below` and its own `reset_on`/`reset_reason`; `selected_dataset` and `selected_reason` name the
   dataset `baseline`/`band`/`verdict` describe and why it was promoted; `disagreed_with` names any
   dataset whose judged week reads the other side of its own band, with the judged-week count that
-  weighs the name; and `points[].dataset` names the dataset each day's band came from, since
+  weighs the name — and is empty whenever `verdict` is `hrv_unavailable`, for any cause (T167,
+  `research/00` §5.4 (iii): a disagreement is with a conferred verdict); and `points[].dataset` names the dataset each day's band came from, since
   selection runs per local day. `baseline`/`band`/`included` still describe the selected dataset
   only, exactly as before, and no field that was non-nullable became nullable — a consumer that
   ignores the new fields needs no change.
