@@ -3,7 +3,7 @@ id: "F006"
 title: "Per-Tier Resting-HRV Datasets"
 type: feature
 epic: "E003"
-status: approved
+status: done
 story_points: 15
 complexity: "high"
 token_estimate: 38000
@@ -18,7 +18,7 @@ references: ["spec/references/F006-dataset-model.md", "spec/references/T125-fix-
 children: []
 tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163", "T164", "T165", "T166", "T167", "T168"]
 created: 2026-09-18
-updated: 2026-09-22
+updated: 2026-09-23
 source_idea: "IDEA-071"
 demo_probe: |
   set -e
