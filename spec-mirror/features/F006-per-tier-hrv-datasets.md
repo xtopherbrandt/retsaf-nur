@@ -473,10 +473,16 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   mornings captured rather than days elapsed. T158 doubled the clause's reach without moving its
   disarm rate by one row, and T164 moved neither. Its value is therefore not those rows but AC24's
   brand-new-device population, which no overlap can disarm.
-- **AC23 was scored against a criterion it could have failed, and did not (T162, re-measured
-  T164).** The dataset-flip rate is **18.47 → 9.36 per athlete-year** (600 against 1,184 selection
-  changes over 23,400 day-to-day transitions), so the deferred hysteresis decision is **not**
-  triggered. What paid for it: **2,984 more `hrv_unavailable` mornings** over the same 24,000 walk
+- **AC23's criterion fired, and the decision it obliges is conditional — AC23 is PARTIAL, not MET
+  (T162, re-measured T164; corrected T166).** **80 worsened cells** of the 1,200 per-cell `walk_flips`
+  rows, every one at `car_density = 2wk`, each 0 → 2 flips per 40-morning walk; AC21 compares per
+  cell as well as marginally. The marginal, **18.47 → 9.36 per athlete-year** (600 against 1,184
+  selection changes over 23,400 day-to-day transitions), is what **concealed** them, not what settles
+  it. Decided 2026-09-21, **no hysteresis**, and **conditional** ([[IDEA-089]], `status: conditional`):
+  `research/00` still says a worse rate *reopens* the decision and does not carry it, and
+  `T130-overlap-sweep-harness.py`'s `era()` gives every tier the same value generator ("the band's
+  dispersion is the same at every density"), so "no §1.7 rate moved" is true **by construction**.
+  What the flips were traded for: **2,984 more `hrv_unavailable` mornings** over the same 24,000 walk
   rows — IDEA-084's second silence, now larger. F006 trades flips for silence at roughly one for
   five; whether an athlete prefers a changing answer to no answer is not measured and is not
   measurable from fixtures.

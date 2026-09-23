@@ -16,7 +16,7 @@ sources_consulted:
   - spec/ideas/IDEA-080-a-stopped-carrier-leaves-the-recency-gate-with-no-reference.md; IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md; IDEA-082 (dissent under the fallback)
   - .claude/rules/learnings/a-published-invariant-needs-a-test-that-can-break-it.md, a-sweep-must-name-the-axes-it-holds-constant.md, sweep-the-claim-not-the-diff.md, retiring-a-ratified-behaviour-needs-a-three-valued-pin.md; memory: a-witness-must-print-the-slice-it-compared, measurement-sweeps-silently-fix-an-axis, pytest-k-deselection-exits-zero
   - runcoach-api/tests/test_hrv_dataset_populations.py (T150's shipped-F005 pins), test_hrv_trend_band.py (RETURN_DENSITIES, _seed_return_series), test_normative_mirror.py
-  - runcoach-api/src/runcoach_api/metrics/hrv_trend.py at b06ec6d (F006, the module the re-measured rows were produced by -- T164; it was 99a5755 when T162 first measured); git show 42f7705:.../hrv_trend.py (shipped F005)
+  - runcoach-api/src/runcoach_api/metrics/hrv_trend.py at 65dd711 (F006, the module the rows were re-measured against -- T164's behavioural fix, then T159's docstring-only edits, reproduced byte-identical; it was 99a5755 when T162 first measured); git show 42f7705:.../hrv_trend.py (shipped F005)
   - runcoach-api/tests/test_fixture_corpus.py and the six recorded FIT fixtures (the independence question)
 harness: spec/references/T130-overlap-sweep-harness.py (T162 section, `t162-check` / `t162-gate`; additive -- T130's and T161's functions and signatures are untouched; unchanged by T164, which re-ran it verbatim)
 rows: spec/references/T162-no-regression-rows.csv (17,070 paired comparison rows; committed copy at runcoach-api/tests/data/T162-no-regression-rows.csv)
@@ -92,11 +92,13 @@ worse on F006. Two families carry them.
    everywhere**: 3,625 → 3,497, and the T130-comparable subset (the athlete holds ≥ 3 suppressed mornings
    of his own) goes 128 → **0**.
 
-**The two rates that are not worse.** AC22's §1.7 promotion rate — `hrv_normal` promoted while another
+**The two rates that are not worse in total.** AC22's §1.7 promotion rate — `hrv_normal` promoted while another
 dataset reads the other side of its own band — is **better** in total (24,510 → **24,099** of 307,500
 literal; 5,415 → 5,287 conditioned on the dissenter holding ≥ `MIN_WINDOW_READINGS` judged-week days;
 1,837 → 1,837 conditioned on the dissenter being judgeable). AC23's dataset-flip rate is **better by
-49%**: **18.47 → 9.36 flips per athlete-year**, so the deferred hysteresis decision is **not** triggered.
+49%** on the marginal, **18.47 → 9.36 flips per athlete-year**, which conceals **80 worsened cells**, all at
+`car_density = 2wk`, 0 → 2 per 40-morning walk: AC23's criterion **fired** (corrected T166; the no-hysteresis
+decision taken on them is conditional, IDEA-089).
 *(Both figures are T164's re-measurement; T162 measured 24,422 and 13.10 on the same rows before the
 reference-set change. Both moved in the improving direction, and neither is gated in the worsening one.)*
 
@@ -145,8 +147,8 @@ populations.
 
 | axis | value |
 |---|---|
-| modules | **F006** = the installed `runcoach_api.metrics.hrv_trend` at `b06ec6d`; **F005** = `git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py`, loaded as a copy through the harness's `load_copy`/`_module_from_path` |
-| module drift since T161 | **one behavioural change, and these rows are measured after it**: `5b3415c..b06ec6d` touches `hrv_trend.py` twice -- `0ec5e21` (T163), inside a docstring only, and `b06ec6d` (T164), which widens AC7's recency reference set in `select_dataset` and `build_series`. Every figure in this report is the **re-measurement against `b06ec6d`** unless the line carrying it says otherwise; the T161 F006 numbers reproduce only where a line marks the figure *(T162, not re-derived)*. The committed provenance (`runcoach-api/tests/data/T162-no-regression-rows.provenance.json`) records the same module blob, `dfa1fae`, `introduced_by: b06ec6d` |
+| modules | **F006** = the installed `runcoach_api.metrics.hrv_trend` at `65dd711`; **F005** = `git show 42f7705:runcoach-api/src/runcoach_api/metrics/hrv_trend.py`, loaded as a copy through the harness's `load_copy`/`_module_from_path` |
+| module drift since T161 | **one behavioural change, and these rows are measured after it**: `5b3415c..65dd711` touches `hrv_trend.py` three times -- `0ec5e21` (T163) and `65dd711` (T159), inside docstrings only, and T164's fix, which widens AC7's recency reference set in `select_dataset` and `build_series`. Every figure in this report is **T164's re-measurement after that fix**, reproduced byte-identical by **T159's re-measurement** against `65dd711`, unless the line carrying it says otherwise; the T161 F006 numbers reproduce only where a line marks the figure *(T162, not re-derived)*. The committed provenance (`runcoach-api/tests/data/T162-no-regression-rows.provenance.json`) records the module blob `c99e1ea`, `introduced_by: 65dd711` -- T159's re-measurement, which moved the blob by docstrings alone; `git hash-object` on the file at HEAD prints `c99e1ea` and no later commit touches it |
 | `RECENCY_TOLERANCE_DAYS` | 28 on both modules, each module's own value, unmodified |
 | `MIN_BASELINE_READINGS` / `MIN_WINDOW_READINGS` / `WINDOW_DAYS` / `GAP_RESET_DAYS` | 14 / 3 / 7 / 21 on both modules |
 | overlap variants | `healthy` (T130's fixture: the carrier keeps its 38/44 alternation on a morning the athlete's strap reads 25) and `suppressed` (the overlap mornings read 25 ms too) — **both run in full** |
@@ -218,7 +220,7 @@ Rates are over the whole swept population of each sweep; `worse` marks a rate on
 | **AC22 exposure, conditioned** (dissenter holds ≥ `MIN_WINDOW_READINGS` judged-week days) | rect | healthy | 5,415 / 307,500 = **1.761%** | 5,287 / 307,500 = **1.719%** | better |
 | | rect | suppressed | 189 / 307,500 = **0.061%** | 61 / 307,500 = **0.020%** | better |
 | **AC22 exposure, conditioned** (dissenter *judgeable* — AC22's own word) | rect | healthy | 1,837 / 307,500 = **0.597%** | 1,837 / 307,500 = **0.597%** | identical |
-| **AC23 dataset-flip rate** | walk | both | **18.47 per athlete-year** | **9.36 per athlete-year** | better (−49%) |
+| **AC23 dataset-flip rate** | walk | both | **18.47 per athlete-year** | **9.36 per athlete-year** | better (−49%) in total; **80 cells worse** at `car_density = 2wk` (T166) |
 
 **Every F006 column above is T164's re-measurement of 2026-09-20.** For comparison, the pre-T164 F006
 column read: stale band 3,705 / 3,705 / 254; AC22 literal 24,422 / 10,246; flip rate 13.10. The
@@ -487,12 +489,14 @@ difference is entirely the dissenter's week size. The Negative Class should carr
 since that is AC22's own word, and say that the literal figure is thirteen times larger and mostly a
 one-reading week.
 
-### Finding 5 (deliverable 5): the dataset-flip rate per athlete-year is better, so hysteresis is not triggered
+### Finding 5 (deliverable 5): the dataset-flip rate per athlete-year is better in total and worse on 80 cells
 
 **Claim.** F006 flips the selected dataset **less** than shipped F005: **600** against 1,184 changes over
 23,400 day-to-day transitions (600 forty-morning walks), i.e. **9.36 against 18.47 flips per
 athlete-year**, a 49% improvement. AC23's trigger ("a worse rate triggers the deferred hysteresis
-decision") does **not** fire. *(Re-measured 2026-09-20; T162 measured 840 changes and 13.10 per
+decision") does not fire on the marginal and **does** fire per cell: 80 cells at `car_density = 2wk` go
+0 → 2 per 40-morning walk (corrected T166; the decision taken, no hysteresis, is conditional, IDEA-089).
+*(Re-measured 2026-09-20; T162 measured 840 changes and 13.10 per
 athlete-year before the reference-set change. T164 improved it further: a dataset that loses the recency
 comparison stays lost while the carrier keeps reading, so the selection stops oscillating across the
 return.)*
@@ -692,11 +696,11 @@ stand.*
 4. **Record in the Negative Class** the AC22 exposure with its direction and all three readings (literal
    7.97% → **7.84%**; dissenter ≥ `MIN_WINDOW_READINGS` 1.76% → 1.72%; dissenter judgeable 0.597% →
    0.597%, identical), the **closed** stale-band regression, the **deferred** forbidden-rate one with its
-   condition, and the flip rate improvement. Text is in T164's `NEGATIVE_CLASS_ENTRY` return, which
+   condition, and the flip rate's marginal improvement. Text is in T164's `NEGATIVE_CLASS_ENTRY` return, which
    supersedes T162's.
-5. **AC23 needs no action.** 18.47 → **9.36** flips per athlete-year; the deferred hysteresis decision is
-   not triggered. Note in the decision log that it was scored against a criterion it could have failed and
-   did not, and that the **2,984** extra `hrv_unavailable` mornings are what paid for it.
+5. **AC23's criterion fired (corrected T166).** The 18.47 → **9.36** marginal conceals 80 worsened cells at
+   `car_density = 2wk`; the decision taken on them, no hysteresis, is conditional (IDEA-089). Note in the
+   decision log that the **2,984** extra `hrv_unavailable` mornings are what paid for the marginal.
 6. **Close T130's question in the Negative Class with Finding 7's numbers** rather than with T130's
    `54 / 72 / 90`: the disarm is 100% per captured carrier morning on **both** rules, the clause is decisive
    on 6 of 25 density pairs, and T158 doubled its reach (226 → 424 rows) without moving its disarm rate.
