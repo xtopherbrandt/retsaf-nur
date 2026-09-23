@@ -274,8 +274,14 @@ CAUSES = (
     Cause(
         key="the judged week is not the athlete's",
         guards=("not series.withheld",),
-        phrase="the judged week is not a fair sample of the resolved tier",
-        note="T125: computed in build_series (verdict_withheld), read here",
+        phrase="the judged week is not a fair sample of",
+        note=(
+            "T125: computed in build_series (verdict_withheld), read here. The phrase lost its "
+            "object in T168 (2026-09-22): the two contract copies now say 'of the dataset being "
+            "judged', retiring F005's 'resolved tier', while the markdown sites -- F005's Negative "
+            "Class among them, a record of the rule as shipped -- keep it. The claim that names "
+            "the cause is the unfair sample; the object is vocabulary."
+        ),
     ),
     Cause(
         key="the baseline is unestablished",

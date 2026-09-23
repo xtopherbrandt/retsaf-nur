@@ -533,3 +533,120 @@ def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
     # does: same dataset, same judged-week count, same side of its own band.
     assert conferred_by_tier[STRAP]["week_days"] == withheld_by_tier[STRAP]["week_days"]
     assert conferred["disagreed_with"][0]["week_days"] == withheld_by_tier[STRAP]["week_days"]
+
+
+# ---------------------------------------------------------------------------
+# T168 -- week_not_representative does not imply a selected dataset
+# ---------------------------------------------------------------------------
+
+
+def _fallback_withheld_rows(strap_week: int) -> list[dict]:
+    """The sprint-006 cycle-2 critic's shape, at ``pop.D``: a ``health_snapshot`` of ten
+    baseline days (``D-20..D-11``, alternating 38/44 ms) and three judged-week mornings
+    ``D-6..D-4`` at 25 ms, far below its band; a ``chest_strap_raw`` of two baseline days
+    (``D-15``, ``D-14``, 38/44 ms -- a band, but no establishment) and ``strap_week``
+    judged-week mornings ending on ``D`` at 40 ms, inside its band. Neither dataset is
+    established, so neither is judgeable and nothing is selected; the fallback presents the
+    snapshot, densest by ``n`` (clause 2)."""
+    snap_base = pop.span(pop.D - timedelta(days=20), pop.D - timedelta(days=11))
+    strap_base = [pop.D - timedelta(days=15), pop.D - timedelta(days=14)]
+    snap_week = pop.span(pop.D - timedelta(days=6), pop.D - timedelta(days=4))
+    strap_days = pop.span(pop.D - timedelta(days=strap_week - 1), pop.D)
+    rows = []
+    for day, value in zip(snap_base, pop._alt(snap_base), strict=True):
+        rows.append(pop._row(f"S-{day}", day, 6, value, SNAPSHOT))
+    for day in snap_week:
+        rows.append(pop._row(f"S-{day}", day, 6, 25.0, SNAPSHOT))
+    for day, value in zip(strap_base, pop._alt(strap_base), strict=True):
+        rows.append(pop._row(f"C-{day}", day, 7, value, STRAP))
+    for day in strap_days:
+        rows.append(pop._row(f"C-{day}", day, 7, 40.0, STRAP))
+    return rows
+
+
+def test_week_not_representative_is_served_with_nothing_selected_and_names_no_dissenter(
+    isolated_data_dir, monkeypatch, synthetic, classified, persist_sessions
+) -> None:
+    """T168, section 4: ``week_not_representative`` is **not** a sign that a dataset is
+    selected. The contract used to pair that reason with "a dataset that IS selected";
+    it is also served when **nothing** is selected and the dataset the AC9 fallback
+    presents is itself withheld under ``research/00`` §5.4 (v) -- ``unavailable_reason``
+    is the *presented* dataset's first-firing guard (T156), and ``verdict_withheld`` is
+    asked of every dataset, selected or not.
+
+    Nothing pinned the pairing before this: the T167 pin above serves
+    ``week_not_representative`` on a **selected** snapshot, and the fallback's own pins
+    serve ``week_too_thin`` / ``baseline_unestablished``. So a consumer inferring
+    selection from the reason, or a renderer computing ``disagreed_with`` against the
+    presented dataset as though it had been selected, was unseen by every gate.
+
+    **Why the empty list is a decision, not an absence.** The two datasets read opposite
+    sides of their own bands (snapshot below, strap within), asserted on ``datasets[]``,
+    so a dissent computed against the presented snapshot *would* name the strap.
+
+    **The control** is the same rows with the strap's judged week cut from four mornings
+    to two: fewer than ``MIN_WINDOW_READINGS``, the withhold cannot fire, and the reason
+    moves to ``baseline_unestablished`` while ``selected_dataset`` stays null and
+    ``disagreed_with`` stays empty -- the reason varies, the selection does not.
+
+    **Axes held constant:** target ``pop.D``, zone ``Pacific/Auckland``, daily density,
+    the values above, N = 2 (the classifier writes these two tiers only). **Varied:** the
+    strap's judged-week length, 4 -> 2, and nothing else."""
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[PROFILE],
+        athlete_timezone="Pacific/Auckland",
+    )
+    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+    db_module._load_config_cached.cache_clear()
+    assert Path(db_module._load_config_cached().data_dir) == Path(isolated_data_dir)
+
+    def served(rows: list[dict]) -> tuple[dict, hrv_trend.SingleDatasetView]:
+        for path in sorted(Path(isolated_data_dir).rglob("*")):
+            if path.is_file():
+                path.unlink()
+        db_module._load_config_cached.cache_clear()
+        persisted = _persist_rows(rows, synthetic, classified, persist_sessions)
+        assert len(persisted) == len(rows) == len(set(persisted))
+        with TestClient(app) as client:
+            body = _hrv_body(client, pop.D)
+        view, _ = _judged(rows, pop.D)
+        print(
+            f"strap_week={len([r for r in rows if r['hrv_source_tier'] == STRAP]) - 2}",
+            "verdict=", body["verdict"], "reason=", body["unavailable_reason"],
+            "selected=", body["selected_dataset"], "/", body["selected_reason"],
+            "presented=", body["baseline"]["tier"], view.presented_by,
+            "disagreed_with=", body["disagreed_with"],
+            "datasets=", [(d["tier"], d["n"], d["week_days"], d["below"]) for d in body["datasets"]],
+        )
+        return body, view
+
+    withheld, withheld_view = served(_fallback_withheld_rows(strap_week=4))
+
+    assert withheld["verdict"] == hrv_trend.VERDICT_UNAVAILABLE, withheld["verdict"]
+    assert withheld["unavailable_reason"] == hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE, withheld
+    # Nothing is selected: the reason came from the fallback's presented dataset.
+    assert withheld["selected_dataset"] is None, withheld["selected_dataset"]
+    assert withheld["selected_reason"] is None, withheld["selected_reason"]
+    assert withheld["baseline"]["tier"] == SNAPSHOT, withheld["baseline"]
+    assert withheld_view.presented_by == hrv_trend.FALLBACK_DENSEST_BASELINE, withheld_view.presented_by
+    assert withheld_view.withheld is True
+    assert withheld["disagreed_with"] == [], withheld["disagreed_with"]
+    by_tier = {d["tier"]: d for d in withheld["datasets"]}
+    assert by_tier[SNAPSHOT]["below"] is True, by_tier[SNAPSHOT]
+    assert by_tier[STRAP]["below"] is False, by_tier[STRAP]
+    assert by_tier[STRAP]["week_days"] == 4, by_tier[STRAP]
+
+    control, control_view = served(_fallback_withheld_rows(strap_week=2))
+
+    assert control["verdict"] == hrv_trend.VERDICT_UNAVAILABLE, control["verdict"]
+    assert control["unavailable_reason"] == hrv_trend.REASON_BASELINE_UNESTABLISHED, control
+    assert control["selected_dataset"] is None, control["selected_dataset"]
+    assert control_view.presented_by == hrv_trend.FALLBACK_DENSEST_BASELINE, control_view.presented_by
+    assert control_view.withheld is False
+    assert control["disagreed_with"] == [], control["disagreed_with"]
+    control_by_tier = {d["tier"]: d for d in control["datasets"]}
+    assert control_by_tier[SNAPSHOT]["below"] is True, control_by_tier[SNAPSHOT]
+    assert control_by_tier[STRAP]["below"] is False, control_by_tier[STRAP]

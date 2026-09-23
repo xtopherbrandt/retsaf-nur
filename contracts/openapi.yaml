@@ -1416,7 +1416,7 @@ components:
             all"; when there are fewer than two baseline readings, so no band
             exists; when there are fewer than min_window_readings (3) readings of
             baseline.tier in the judged week; when the judged week is not a fair
-            sample of the resolved tier, its readings all predating the athlete's
+            sample of the dataset being judged, its readings all predating the athlete's
             return to, or first adoption of, another device (T125/T132); when
             there is a baseline below min_baseline_readings (14), reported as
             established: false -- any week judged against an unestablished
@@ -1457,8 +1457,11 @@ components:
             readings of other tiers feed their own datasets and do not count
             toward readings_in_window); then
             week_not_representative (the judged week is not a fair sample of the
-            resolved tier, baseline.tier -- T125/T132: a returning or brand-new
-            device's week entirely predates the tier being judged); then
+            dataset being judged, baseline.tier -- T125/T132: its judged-week
+            readings all predate a returning or brand-new device's, another dataset
+            that could not be selected holding at least min_window_readings (3)
+            judged-week days, every one later than every judged-week day of the
+            dataset being judged); then
             baseline_unestablished (a baseline below min_baseline_readings (14),
             reported as established: false -- baseline.n below the threshold the
             response echoes, T116). day_not_happened (the judged day is after the
@@ -1546,10 +1549,10 @@ components:
                 stretch is conditional, not promised: a reported `tier_change` sits beside
                 an un-clipped `window` only once date-66 has reached R, and then only on
                 the days the report is still live. Liveness is rule 4's three conditions
-                together, not any one of them alone: the resolved tier still holds
-                min_baseline_readings distinct days in the baseline window, the previous
-                window [date-126, date-67] is still sustained by a tier other than the
-                resolved one, and the two eras still do not interleave -- the era
+                together, not any one of them alone: the presented dataset's tier still
+                holds min_baseline_readings distinct days in the baseline window, the
+                previous window [date-126, date-67] is still sustained by a tier other
+                than that one, and the two eras still do not interleave -- the era
                 boundary's stray readings fewer than min_baseline_readings days in all and
                 fewer than min_window_readings days inside the judged week [date-6, date]
                 (`tier_change_reset` clauses (a), (b) and (c)). Any one can lapse while
@@ -1758,9 +1761,16 @@ components:
           type: string
           nullable: true
           description: >
-            The source tier of the dataset `baseline`, `band`, `verdict` and
-            `below_by` describe — the highest-fidelity JUDGEABLE dataset the
-            recency gate did not skip (F006 AC5–AC8). Null when no dataset was
+            The source tier of the dataset `baseline` and `band` describe, and
+            of the one `verdict` and `below_by` describe WHEREVER A VERDICT WAS
+            ASSERTED — the highest-fidelity JUDGEABLE dataset the recency gate
+            did not skip (F006 AC5–AC8). The scope on that second half is the
+            withheld future day: for a `to` after the athlete's local today the
+            verdict is replaced with hrv_unavailable / `day_not_happened` and
+            `below_by` is null, so those two describe no dataset, while this
+            field still names the one the retained `baseline`/`band` were
+            computed from — a producer of the response, not a claim about it.
+            `disagreed_with` is empty there for the converse reason. Null when no dataset was
             selected, which is EITHER that no dataset is judgeable OR that every
             judgeable one was skipped as stale. In that case the verdict is
             hrv_unavailable and `baseline`/`band` are still populated, from the
@@ -1782,9 +1792,14 @@ components:
             Why `selected_dataset` is the one, drawn from a closed enum:
             `highest_fidelity_judgeable` — no judgeable dataset outranks it;
             `higher_fidelity_skipped_stale` — one did, and the recency gate
-            skipped it as stale, so the verdict is being taken from a
-            lower-fidelity instrument and the response says so rather than
-            leaving that fall invisible. Non-null EXACTLY WHEN
+            skipped it as stale, so `baseline`/`band` come from a
+            lower-fidelity instrument — and, wherever a verdict is conferred, so
+            does the verdict — and the response says so rather than leaving that
+            fall invisible. Where `verdict` is hrv_unavailable (T125's returning
+            athlete is served this value beside week_not_representative) no
+            verdict is taken from any dataset: the value still says which
+            dataset was presented and why, kept as computed (research/00 §5.4
+            (iii)), and makes no claim about a verdict. Non-null EXACTLY WHEN
             `selected_dataset` is non-null, null with null (AC13; the same
             shape `unavailable_reason` carries). It is derived from the
             selection rather than stored beside it, so it cannot disagree with
@@ -1810,7 +1825,11 @@ components:
             presentation fallback speaks; a dataset that IS selected whose
             verdict is withheld because a returning dataset's judged week is
             entirely later than its own (`week_not_representative`); and a day
-            that has not happened (`day_not_happened`). `datasets[]` still
+            that has not happened (`day_not_happened`). The states are told
+            apart by `selected_dataset`, never by `unavailable_reason`:
+            `week_not_representative` is also served with `selected_dataset`
+            null, when the dataset the fallback presents is itself withheld, so
+            the reason does not imply a selection (T168). `datasets[]` still
             carries every dataset's own `below` on those days, and
             `selected_dataset`, `selected_reason` and the retained
             `baseline`/`band` are kept as computed. This is the response's one report of the

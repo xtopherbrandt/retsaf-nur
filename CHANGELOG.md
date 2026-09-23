@@ -40,7 +40,10 @@ What a consumer sees:
   and its rows are in `excluded` as `before_reset: coverage_gap` — each
   with its own `band`, `n`, `established`, `fidelity_rank`, `last_read`, `week_days`, `week_mean`,
   `below` and its own `reset_on`/`reset_reason`; `selected_dataset` and `selected_reason` name the
-  dataset `baseline`/`band`/`verdict` describe and why it was promoted; `disagreed_with` names any
+  dataset `baseline`/`band` describe — and `verdict`/`below_by` wherever a verdict was asserted, not
+  on a withheld future day — and why it was promoted (both null when nothing is selected, which
+  `unavailable_reason` does not imply: `week_not_representative` is served with nothing selected
+  too, T168); `disagreed_with` names any
   dataset whose judged week reads the other side of its own band, with the judged-week count that
   weighs the name — and is empty whenever `verdict` is `hrv_unavailable`, for any cause (T167,
   `research/00` §5.4 (iii): a disagreement is with a conferred verdict); and `points[].dataset` names the dataset each day's band came from, since

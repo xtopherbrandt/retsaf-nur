@@ -271,7 +271,8 @@ return" states whether it means **days elapsed or mornings captured**.
 
 **AC21 — no regression against shipped F005.** *Given* every sweep in AC19, *then* it runs against **both**
 shipped F005 and F006 with both rates reported side by side, and **any §1.7 rate that worsens blocks
-release**.
+release** (*amended 2026-09-22, T168; `research/00` §5.4 amended first*: except the one deferred rate
+carried as a named, counted exception — `DEFERRED_EXCEPTION`, 64 rows — pending [[IDEA-087]]).
 
 **AC22 — the §1.7 promotion exposure is measured and priced.** *Given* the AC19 sweeps, *then* the rate at
 which `hrv_normal` is promoted while another judgeable dataset reads below its own band is measured,
@@ -311,7 +312,7 @@ Full table in reference §11; the governing row:
 
 | cost | direction and why it is accepted |
 |---|---|
-| **The §1.7 promotion exposure** — the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band, and a consumer reading `hrv_status` alone (every consumer today, and Section 6 as specified) is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** Accepted because quality-first promotes the *best available* instrument (~8× lower rMSSD error), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release |
+| **The §1.7 promotion exposure** — the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band, and a consumer reading `hrv_status` alone (every consumer today, and Section 6 as specified) is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** Accepted because quality-first promotes the *best available* instrument (~8× lower rMSSD error), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save AC21's one counted exception (`DEFERRED_EXCEPTION`, [[IDEA-087]]) |
 
 Carried forward (§11): same-tier replacement invisible; §3.7.3's device/firmware clause
 unimplemented; the 18-day adoption silence and its wrong `week_too_thin` reason; the 3×/week
@@ -537,7 +538,7 @@ All 2026-09-18 (`/ship-discuss IDEA-071`, then sprint-006 planning); full text i
   claim *about* a verdict and a withheld verdict makes no claim to contradict, so the list is empty in all
   three states alike: nothing selected (AC9's fallback), a **selected** dataset whose verdict is withheld
   under `research/00` §5.4 (v) (`week_not_representative` — T125's returning athlete), and a day that has
-  not happened (`day_not_happened`). The alternative considered and rejected was reverting the sprint-006
+  not happened (`day_not_happened`) — told apart by selection, not cause: `week_not_representative` is served with nothing selected too, when the fallback's presented dataset is itself withheld (T168). The alternative considered and rejected was reverting the sprint-006
   M2 fix and reading `disagreed_with` as a report of *band readings* rather than of claims. Authority first:
   `research/00` §5.4 (iii) amended, `spec/03` §3.7.4 restated, then the predicate. **AC10 is re-scored from
   MET to PARTIAL as of `2e4230f` and back to MET here** — its once-unconditional *then* now carries an
