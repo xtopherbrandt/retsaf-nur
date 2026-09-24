@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-18 through (unreleased) — Sprint 006: Per-Tier Resting-HRV Datasets
+## 2026-09-18 through 2026-09-23 — Sprint 006: Per-Tier Resting-HRV Datasets
 
 F006: each resting-HRV source tier keeps its own baseline, band, `n` and `established`, and the
 verdict is computed against the dataset selected for the day rather than against the one tier that
@@ -56,6 +56,48 @@ What a consumer sees:
 To upgrade a generated client: regenerate from the `0.2.0-draft` contract, or remove the
 `off_baseline_tier` member from any hand-maintained enum and treat its absence from `excluded[]` as
 "the row is in another tier's dataset", not as "the row was dropped".
+
+### Added
+
+- **A no-regression release gate against shipped F005** (T162, T164). The §1.7 rates are measured
+  for both rules over a committed row set: 17,070 rows, of which 8,696 are gated. The provenance of
+  that set is pinned to the module's git blob. Every gated rate blocks release, except one named,
+  counted exception (below).
+- **Three-valued retirement pins** (T160) for every F005 qualifier that per-tier datasets retired:
+  - green on shipped F005;
+  - red with the qualifier alone deleted;
+  - green on F006.
+- **Measured sweeps that name their axes** (T161), with capture density crossed on both datasets.
+
+### Changed in review — cycles 1 to 3
+
+- **`disagreed_with` is empty whenever `verdict` is `hrv_unavailable`, for any cause** (T167,
+  `B-CR-002`). Before this, a returning athlete's withheld verdict could be served beside a named
+  dissenter.
+- **The contract's descriptions of the verdict-free responses were corrected** (T168 and review
+  fixes):
+  - `week_not_representative` had been described in the wrong direction;
+  - `selected_reason` claimed a verdict source where none is served;
+  - the served cause does not imply a selection: `week_not_representative` can be served with
+    nothing selected.
+  Only description text changed; `info.version` stays `0.2.0-draft`.
+- **AC21 carries its exception** (user decision): the release gate blocks on any worsened §1.7 rate
+  save one named, counted exception. `research/00` was amended first.
+- Review-cycle record: 3 cycles; 1659 tests passing, 0 skipped; demo probe passing.
+  `verify/F006-verdict.md` holds the full gap table.
+
+### Known limitations, carried
+
+- **`DEFERRED_EXCEPTION`**: 64 gated rows where F006 is worse than F005 on the forbidden-direction
+  rate (25 rows at `c = 4`, 35 at `c = 5`, and 4 totals) under the independent-instruments
+  fixture. It is pinned and may not grow. Owned by IDEA-087.
+- **AC22 and AC23 hold only under the sweep's equal-dispersion corpus** (IDEA-089 (b)). The
+  no-hysteresis decision (2026-09-21) stands, and the 80 worsened flip cells are a closed set.
+- **7 of 24 acceptance criteria are partial.** Each is routed in the verdict. Most are settled by
+  the planned research/00 rewrite (F008 → F011 → F010 → F009), which also publishes
+  `recency_tolerance_days` (F010).
+- Commit `502bb84` is typed `refactor` but changed response behaviour. It is named here because the
+  history cannot be retyped.
 
 ## 2026-09-09 through 2026-09-18 — Sprint 005: Resting-HRV Trend
 
