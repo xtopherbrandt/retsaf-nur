@@ -1,0 +1,33 @@
+- **T-01 judgeable** IS said of a dataset that is established (T-03) and holds at least `min_window_readings` distinct local days in the judged week, as `is_judgeable` in `hrv_trend.py` tests it.
+- **T-02 selected** IS said of the dataset `select_dataset(...).selected` returns, the first judgeable dataset in fidelity order that the recency gate did not skip; the dataset a response shows when nothing is selected is presented (`presented_by`), not selected.
+- **T-03 established** IS said of a dataset whose own clipped baseline holds `n >= min_baseline_readings` distinct local days (`HrvDataset.established`).
+- **T-04 skipped / struck / stale** IS the recency gate's vocabulary: struck names the set `_recency_struck` returns over its candidates, skipped names a judgeable dataset in that set, and stale survives only in the enum value `higher_fidelity_skipped_stale` and in a stale HRV band, one whose readings all predate the judged period by more than 28 days.
+- **T-05 tier** IS a value of `hrv_source_tier`: `chest_strap_raw`, `health_snapshot` or `health_api_overnight` (`TIER_FIDELITY`); HRV Status is a quarantined sidecar metric and not a tier, and a device is not a tier.
+- **T-06 dataset** IS one tier's readings for one target date, with its own clipped baseline window, HRV SWC band, `n`, `established`, reset fields and `withheld` flag (`HrvDataset`).
+- **T-07 band** IS the HRV SWC band only, `Band(mean, half_width, lo, hi, floored)` over a dataset's ln rMSSD baseline with `half_width = max(0.5 · SD(ln rMSSD), 0.01)`, and the other quantities once given this HRV term are the ACWR range, the TSB target range, the CTL-rise range and the tolerance bracket.
+- **T-08 baseline** IS the HRV term for a dataset's readings inside its dataset baseline window (`HrvDataset.baseline`), and the centre of its HRV SWC band is the baseline mean.
+- **T-09 baseline window** IS one of three named HRV windows: the nominal baseline window `[D-66, D-7]` (`baseline_window`); the series baseline window `[max(D-66, gap resumption), D-7]` (`HrvSeries.baseline_window`), which the recency gate reads; and the dataset baseline window (`HrvDataset.baseline_window`), which establishment reads.
+- **T-10 judged week** IS the local days `[D-6, D]` (`judged_window`), and the bare word window is never used for it.
+- **T-11 withhold** IS the verdict withholding `verdict_withheld` decides and sets as `HrvDataset.withheld`, served as `week_not_representative`; every other absent verdict is unavailable (T-33), with its `unavailable_reason`.
+- **T-12 silence / coverage gap / hole / days behind** IS the count of whole local days strictly between two readings (`_silence_between`); a coverage gap is a series silence of more than 21 days, a hole is one dataset's silence of more than 21 days inside its window, and g days behind in `last_read` is a silence of g−1.
+- **T-13 sustains** IS the property `sustained_tier` tests, the highest-fidelity tier with at least 14 distinct days in a window, and it is used only by clause (b) of the era rule; clause (a) is the count in the series baseline window.
+- **T-14 candidate** IS a judgeable dataset the recency gate may skip; the era rule's count-below-14 half is named the boundary-existence half, not candidacy.
+- **T-15 era boundary** IS the `EraBoundary(first_day, reported)` that `_era_boundary` returns for a dataset.
+- **T-16 reset** IS a reported `reset_reason` in {`coverage_gap`, `tier_change`} together with its `reset_on`, and re-establishment names only the reset after a coverage gap.
+- **T-17 clip** IS moving the first day of a dataset's window and excluding every earlier reading as `before_reset: <reason>` (`_exclude_before_reset`), in three kinds (gap, era and hole) that compose as the latest first day.
+- **T-18 reported** IS said of a reset whose `reset_reason` and `reset_on` are non-null for that dataset.
+- **T-19 strays** IS the readings `_isolated` tests and the stray set `_era_boundary` counts.
+- **T-20 return / carrier** IS a return, a dataset receiving judged-week readings after a silence while another dataset carried the series, and the carrier is that other dataset; `c` is the number of carrier readings inside the return week, a sweep axis.
+- **T-21 fidelity** IS the ordinal rank in `TIER_FIDELITY`, the only quality term Section 3 applies; a confidence weight is a Section 6 quantity that Section 3 does not compute.
+- **T-22 disagree** IS what `disagreed_with` reports, a dataset whose judged-week mean reads on the other side of its own HRV SWC band from the selected dataset's, served only when a verdict is conferred.
+- **T-23 count** IS a number of distinct local days in the athlete's time zone, so a reading is one day's kept capture and a capture is a stored row.
+- **T-24 forbidden direction** IS asserting `hrv_normal` on evidence the system reports as insufficient, or while any dataset reported in the same response reads below its own HRV SWC band, whether or not that dataset is judgeable; up-regulation names only this direction.
+- **T-25 rate** IS OPEN (IDEA-088).
+- **T-26 input tiers** IS the three tiers of T-05 that feed the trend, stated as three input tiers plus the quarantined HRV Status classification rather than as four tiers.
+- **T-27 rung / loop** IS a rung, a position on the arbitration ladder (ARB-01), and a loop or timescale, one of ARCH-03's five; the ladder arbitrates between loops, but its rungs are not the loops.
+- **T-28 single-ecosystem** IS one vendor ecosystem per athlete's data at a time, and multi-vendor ingestion is not multi-device coordination.
+- **T-29 goal contract** IS the three athlete-owned fields {`goal_pace_target`, `race_date`, `distance_m`}.
+- **T-30 safety override / safety pathway** IS the override, the system's deterministic stop-or-escalate (ARB-02), and the pathway, the athlete-facing instructions that override issues (AUT-02).
+- **T-31 D, R, R+k, k₃** IS D, the target local date; R, the first reading of the new era after a tier change or of the resumption after a coverage gap; R+k, the k-th local day after R; and k₃, the offset of the returning dataset's third day, as HRV-33 uses it.
+- **T-32 resolved tier / rule 1–4** IS retired vocabulary (HRV-44), replaced by the selected or presented dataset, with rule 4 surviving only as the name of the era rule (HRV-38).
+- **T-33 unavailable** IS the verdict value `hrv_unavailable`, always served with an `unavailable_reason` (HRV-28).
