@@ -295,9 +295,15 @@ def _flat_paragraphs(path: Path) -> tuple[tuple[int, str], ...]:
     the offsets real rather than approximate, and which
     ``test_the_flattened_paragraphs_reconstruct_the_flattened_file`` asserts.
     """
+    return _paragraphs_of(path.read_text(encoding="utf-8"))
+
+
+def _paragraphs_of(source: str) -> tuple[tuple[int, str], ...]:
+    """``_flat_paragraphs`` over a string already read, so ``_span_profile``
+    can cut the fence-stripped text on the same rule the tree walk uses."""
     blocks: list[tuple[int, str]] = []
     offset = 0
-    for raw in _PARAGRAPH_BREAK.split(path.read_text(encoding="utf-8")):
+    for raw in _PARAGRAPH_BREAK.split(source):
         block = _normalize(raw)
         if not block:
             continue
@@ -457,15 +463,25 @@ def test_the_flattened_paragraphs_reconstruct_the_flattened_file() -> None:
 #: **13.11%** (``.claude/rules/project-api-contract.md``) and longest single
 #: span **207** characters (``specification/research/00-design-decisions.md``).
 #:
+#: **Re-measured 2026-09-25 (sprint-007 T169) after the fence strip**, which
+#: ``_span_profile`` now applies before measuring (``_FENCED_BLOCK``; B-CR-001
+#: Sec 3). Same roots, same 34 files, same ``_QUOTE_SPAN``, over the
+#: fence-stripped flattening rather than ``_flat_text``. The one fenced file,
+#: ``project-api-contract.md``, falls from 13.11% to **10.53%**, so the maximum
+#: share is now **11.51%**
+#: (``.claude/rules/learnings/a-sweep-must-name-the-axes-it-holds-constant.md``)
+#: and the longest span is still **207** (research/00).
+#:
 #: The 9.13% this module published before, as "over both roots", was measured
 #: over ``specification/`` alone: all five widest files are under
 #: ``.claude/rules/**`` (sprint-006 review iteration 2, M4).
 #:
-#: **The margin, and why there is one.** ~1.5x the measured share and ~2x the
-#: measured longest span, deliberately not the measured values. The widest
+#: **The margin, and why there is one.** Set at ~1.5x the 13.11% share and
+#: ~2x the measured longest span, deliberately not the measured values, and
+#: left unchanged by the re-measurement (now ~1.7x the 11.51% share). The widest
 #: files are 1.5-3 kB rules documents, where adding one quoted sentence or code
 #: span moves the share by a point or two and the longest span by a few dozen
-#: characters; a ceiling pinned at 13.11% reds on the next ordinary prose edit
+#: characters; a ceiling pinned at the measured share reds on the next ordinary prose edit
 #: and is then raised without anyone thinking about it, which is how a ceiling
 #: stops being a guard. What these exist to catch is not incremental: one
 #: unpairable delimiter pairs with a distant one and the span grows by
@@ -505,21 +521,37 @@ def _spliced_claim_is_visible(text: str, at: int) -> bool:
     """Whether a superseded form spliced into ``text`` at character offset
     ``at`` is still visible to ``_live_superseded_hits``.
 
-    **Exactly one more** live hit than ``text`` already yields, so the answer
-    is about the spliced form rather than about whatever the text already said
-    -- which matters for the synthetic control, whose text carries a claim of
-    its own. The spliced form contains no quote or backtick, so splicing never
-    moves a span boundary: it only decides whether ``at`` is inside one.
+    **Positional**: a live hit must sit at the offset the splice put the form
+    at, so the answer is about the spliced form rather than about whatever the
+    text already said -- which matters for the synthetic control, whose text
+    carries a claim of its own. The spliced form contains no quote or
+    backtick, so splicing never moves a span boundary: it only decides whether
+    ``at`` is inside one.
 
-    This is the corrected form of the probe M3 found vacuous. That one
+    The offset is ``len(_normalize(text[:at])) + 1``, not ``at + 1``:
+    ``_normalize`` collapses a space the prefix ends on into the one the splice
+    adds, which moves the form to ``at``. Measured (sprint-007 T169): at every
+    paragraph boundary, whose offset follows the joining space, and at the
+    in-span midpoint of research/06 and spec/06. ``at + 1`` would have read
+    all 33 boundary splices as swallowed and those two in-span splices as
+    suppressed whatever the guard did.
+
+    It replaces a *cardinal* check, "exactly one more live hit than ``text``
+    already yields" (B-CR-001 Sec 2). On spec/02 and spec/03 the longest span
+    **is** a quoted ``SUPERSEDED_FORMS`` entry, so a splice at its midpoint cut
+    that occurrence in half: under ``_is_quoted -> return False`` one hit was
+    destroyed and one added, the count did not move, and the ``leaked`` arm
+    could not fire on either file.
+
+    This is also the corrected form of the probe M3 found vacuous. That one
     *appended* the form at the tail, and text past the last delimiter can never
     be inside a span, so it reported not-blind on every input -- including the
     stray-unclosed-quote file its own docstring named.
     """
     probe = SUPERSEDED_FORMS[0]
-    before = len(_live_superseded_hits(text))
-    after = len(_live_superseded_hits(f"{text[:at]} {probe} {text[at:]}"))
-    return after == before + 1
+    expected = len(_normalize(text[:at])) + 1
+    hits = _live_superseded_hits(f"{text[:at]} {probe} {text[at:]}")
+    return any(off == expected for off, _ in hits)
 
 
 @dataclass(frozen=True)
@@ -537,11 +569,32 @@ class SpanProfile:
     crossings: tuple[str, ...]
     #: A claim spliced at the first paragraph boundary at or after the longest
     #: span's start must be seen; one spliced in that span's middle must not.
-    #: Both offsets are carried so a failure names where it looked.
-    boundary_at: int
-    boundary_visible: bool
+    #: Both offsets are carried so a failure names where it looked. The two
+    #: arms read the **same** span, because the inside arm is what shows the
+    #: guard suppressing on the span whose reach the boundary arm bounds.
+    #:
+    #: ``None`` when no paragraph boundary follows the longest span's start --
+    #: it sits in the final paragraph, or the file is one paragraph, or has no
+    #: span. The file then **abstains** by name (``_abstentions``). It does not
+    #: fall back to ``len(text)``: that is the one position no span can reach,
+    #: so the probe there could not fail and read as ``seen`` (B-CR-001 Sec 1;
+    #: spec/04, whose longest span is in its final paragraph, read
+    #: ``@41762 boundary splice -> seen`` with ``len(text)`` 41762).
+    boundary_at: int | None
+    boundary_visible: bool | None
     inside_at: int
     inside_visible: bool
+
+
+#: A fenced code block, opening to closing fence. Read by ``_span_profile``
+#: only: ``_QUOTE_SPAN``'s backtick alternative pairs an opening fence's third
+#: backtick with the closing fence's first, so a code body holding a blank line
+#: reads as a span crossing a paragraph boundary (B-CR-001 Sec 3). A fence is
+#: code, which ``_live_superseded_hits`` already treats as quotation.
+_FENCED_BLOCK = re.compile(
+    r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?^[ \t]{0,3}\1[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 def _span_profile(path: Path) -> SpanProfile:
@@ -551,10 +604,16 @@ def _span_profile(path: Path) -> SpanProfile:
     ``test_the_span_guards_fire_on_text_that_defeats_the_sweep``, so the
     synthetic red cases are produced by the same code that reads the tree
     rather than by a parallel reimplementation of it.
+
+    Fenced code blocks are stripped **here and nowhere else** before the text
+    is flattened and cut into paragraphs. ``_flat_text`` keeps them, because
+    stripping there would change what the absence sweep and the presence rows
+    read.
     """
-    text = _flat_text(path)
+    source = _FENCED_BLOCK.sub("", path.read_text(encoding="utf-8"))
+    text = _normalize(source)
     spans = _quoted_spans(text)
-    boundaries = [offset for offset, _block in _flat_paragraphs(path)][1:]
+    boundaries = [offset for offset, _block in _paragraphs_of(source)][1:]
     quoted = sum(end - start for start, end in spans)
     longest_span = max(spans, key=lambda span: span[1] - span[0], default=(0, 0))
     crossings = tuple(
@@ -563,7 +622,7 @@ def _span_profile(path: Path) -> SpanProfile:
         for boundary in boundaries
         if start < boundary < end
     )
-    boundary_at = next((b for b in boundaries if b >= longest_span[0]), len(text))
+    boundary_at = next((b for b in boundaries if spans and b >= longest_span[0]), None)
     inside_at = (longest_span[0] + longest_span[1]) // 2
     return SpanProfile(
         rel=_rel(path),
@@ -573,10 +632,24 @@ def _span_profile(path: Path) -> SpanProfile:
         imbalance=tuple(_delimiter_imbalance(text)),
         crossings=crossings,
         boundary_at=boundary_at,
-        boundary_visible=_spliced_claim_is_visible(text, boundary_at),
+        boundary_visible=(
+            None if boundary_at is None else _spliced_claim_is_visible(text, boundary_at)
+        ),
         inside_at=inside_at,
         inside_visible=bool(spans) and _spliced_claim_is_visible(text, inside_at),
     )
+
+
+def _abstentions(profiles: list[SpanProfile]) -> list[str]:
+    """One named line per file the boundary arm could not probe -- no
+    paragraph boundary follows its longest span's start. Reported,
+    never passed silently: an exemption nobody can see is the shape
+    ``test_hrv_trend_endpoint``'s "shelters something" discipline refuses."""
+    return [
+        f"ABSTAIN {p.rel}: no span precedes a paragraph boundary"
+        for p in profiles
+        if p.boundary_at is None
+    ]
 
 
 def test_no_quoted_span_can_swallow_a_document() -> None:
@@ -657,7 +730,8 @@ def test_no_quoted_span_can_swallow_a_document() -> None:
     ]
     assert not over_span, (
         f"a single quoted span runs longer than {LONGEST_QUOTED_SPAN_CEILING} characters, the "
-        f"ceiling set with margin over the 207 measured 2026-09-21 across both roots. Either a "
+        f"ceiling set with margin over the 207 measured 2026-09-21 across both roots (207 again "
+        f"2026-09-25, fences stripped). Either a "
         f"delimiter is straddling text it does not quote, or the ceiling needs re-measuring and "
         f"re-arguing -- not raising: " + "; ".join(over_span)
     )
@@ -669,7 +743,8 @@ def test_no_quoted_span_can_swallow_a_document() -> None:
     ]
     assert not over_share, (
         f"more than {QUOTED_SHARE_CEILING:.0%} of these files is inside a quoted span, over the "
-        f"ceiling set with margin above the 13.11% measured 2026-09-21 across both roots. The "
+        f"ceiling set with margin above the 13.11% measured 2026-09-21 across both roots (11.51% "
+        f"re-measured 2026-09-25, fences stripped). The "
         f"quotation guard is suppressing a document rather than a quotation, and the absence "
         f"sweep below reads only what is left: " + "; ".join(over_share)
     )
@@ -698,8 +773,14 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
       guard really is suppressing on this very file, so "seen at the boundary"
       is a fact about position rather than about a guard suppressing nothing.
 
-    **Mutations that turn these red**, both run on a scratch copy of both roots
-    (sprint-006 review iteration 2):
+    A file where no paragraph boundary follows the longest span's start has
+    nowhere to splice the first arm, and **abstains by name**: an ``ABSTAIN``
+    line is printed and counted, and it carries no boundary verdict. Today
+    that is spec/04, whose longest span is in its final paragraph -- until
+    sprint-007 T169 it was silently probed at ``len(text)``, where nothing can
+    be swallowed (B-CR-001 Sec 1). The test reds if every file abstains.
+
+    **Mutations that turn these red**, each run on a scratch copy:
 
     * **boundary arm** -- delete the closing ``"`` of ``"always > 0 when set"``
       in
@@ -707,21 +788,43 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
       so the stray pairs with a distant one and the span covers the next
       paragraph boundary. Observed: that file prints ``boundary splice ->
       SWALLOWED`` and the arm reds with ``...a-published-invariant-...md@1512``.
-      The probe this replaces reported not-blind on that same file.
+      The probe this replaces reported not-blind on that same file
+      (sprint-006 review iteration 2).
     * **inside arm** -- replace ``_is_quoted``'s body in
-      ``_live_superseded_hits`` with ``return False``. Observed: all 32 files
-      with a span report ``LEAKED`` and the arm names every one of them.
+      ``_live_superseded_hits`` with ``return False``, in a scratch copy of
+      this module (sprint-007 T169). Observed: **34 of 34** files report
+      ``LEAKED``, spec/02 and spec/03 included, and the arm names every one of
+      them. Every swept file has a span. The sprint-006 log recorded this run
+      as 32 files, which read as though two had none: those two were spec/02
+      and spec/03, whose longest span is a quoted ``SUPERSEDED_FORMS`` entry,
+      and the cardinal check then in ``_spliced_claim_is_visible`` could not
+      fire on them (B-CR-001 Sec 2). The check is positional now.
     """
     profiles = [_span_profile(path) for path in _swept_files()]
+    abstaining = _abstentions(profiles)
+    for line in abstaining:
+        print(line)
     for profile in profiles:
+        boundary = (
+            "no boundary to splice at (abstains)"
+            if profile.boundary_at is None
+            else f"@{profile.boundary_at} boundary splice -> "
+            f"{'seen' if profile.boundary_visible else 'SWALLOWED'}"
+        )
         print(
-            f"[slice compared] {profile.rel}@{profile.boundary_at} boundary splice -> "
-            f"{'seen' if profile.boundary_visible else 'SWALLOWED'}; "
+            f"[slice compared] {profile.rel} {boundary}; "
             f"@{profile.inside_at} in-span splice -> "
             f"{'LEAKED' if profile.inside_visible else 'suppressed'}"
         )
+    print(
+        f"[slice compared] boundary arm: {len(profiles) - len(abstaining)} of {len(profiles)} "
+        f"files probed, {len(abstaining)} abstaining by name"
+    )
+    assert len(abstaining) < len(profiles), (
+        "every swept file abstains from the boundary arm, so it is a report over nothing"
+    )
 
-    blind = [f"{p.rel}@{p.boundary_at}" for p in profiles if not p.boundary_visible]
+    blind = [f"{p.rel}@{p.boundary_at}" for p in profiles if p.boundary_visible is False]
     assert not blind, (
         "the flattened scan of these files cannot see a claim spliced at a paragraph "
         "boundary, so their all-clear below is a report over nothing -- a quoted span has "
@@ -738,14 +841,23 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
 
 
 def test_the_span_guards_fire_on_text_that_defeats_the_sweep(tmp_path) -> None:
-    """Every arm of the two tests above, shown red on synthetic text.
+    """Every arm of the two tests above **except ``leaked``**, shown red on
+    synthetic text.
 
     The corpus is clean -- 34 files, no unpairable delimiter, no
-    paragraph-crossing span, 13.11% and 207 at the maxima -- so the corpus
-    alone can never show any of those arms failing, and an arm never seen
-    failing is indistinguishable from the arm M3 found. Synthetic files supply
-    the case the tree does not, measured through ``_span_profile``: the same
-    function the sweep runs, not a reimplementation of it.
+    paragraph-crossing span, 11.51% and 207 at the maxima (fences stripped,
+    2026-09-25) -- so the corpus alone can never show any of those arms
+    failing, and an arm never seen failing is indistinguishable from the arm
+    M3 found. Synthetic files supply the case the tree does not, measured
+    through ``_span_profile``: the same function the sweep runs, not a
+    reimplementation of it.
+
+    ``leaked`` is the exception, and no synthetic text can remove it:
+    ``inside_at`` is the midpoint of the longest span by construction, so
+    ``inside_visible`` turns ``True`` only if the guard itself is broken. Its
+    red branch needs ``_is_quoted`` mutated, and is recorded in
+    ``test_the_scan_of_every_file_can_still_see_a_claim``'s mutation log
+    instead of being run here.
     """
     filler = "ordinary prose about nothing in particular. " * 30
     clean = tmp_path / "clean.md"
@@ -792,6 +904,109 @@ def test_the_span_guards_fire_on_text_that_defeats_the_sweep(tmp_path) -> None:
     assert not bad.boundary_visible, (
         "a claim spliced at the paragraph boundary the runaway span swallowed was still "
         "reported as live, so the boundary arm cannot fire"
+    )
+
+
+def test_a_file_whose_spans_all_sit_in_its_final_paragraph_abstains_by_name(tmp_path) -> None:
+    """The boundary arm's silent fallback (B-CR-001 Sec 1), pinned on the shape
+    that triggered it.
+
+    When every span starts after the file's last paragraph boundary there is no
+    boundary to splice at. The arm used to fall back to ``len(text)``, the
+    one position no span can reach, so it reported ``seen`` over a probe that
+    could not fail -- spec/04 read ``@41762 boundary splice -> seen`` with
+    ``len(text)`` 41762. Such a file must instead carry no boundary offset,
+    no boundary verdict, and a named ``ABSTAIN`` line in the report.
+
+    Three files. ``last-only.md`` has every span in its final paragraph.
+    ``longest-last.md`` has a short span before a boundary and its longest in
+    the final paragraph -- spec/04's shape -- and abstains too, because the
+    boundary arm bounds the span the inside arm shows suppressed, and that
+    span has no boundary after it. ``longest-first.md`` is probed, at a real
+    boundary short of ``len(text)``.
+    """
+    filler = "ordinary prose about nothing in particular. " * 10
+    last_only = tmp_path / "last-only.md"
+    last_only.write_text(
+        f"{filler}\n\n{filler}\n\nThe table: `one code span` and \"a quotation here\".\n",
+        encoding="utf-8",
+    )
+    longest_last = tmp_path / "longest-last.md"
+    longest_last.write_text(
+        f'A "short" quotation.\n\n{filler}\n\nAnd "a much longer quotation that sits last".\n',
+        encoding="utf-8",
+    )
+    longest_first = tmp_path / "longest-first.md"
+    longest_first.write_text(
+        f'A "much longer quotation that sits first".\n\n{filler}\n\nAnd a "short" one.\n',
+        encoding="utf-8",
+    )
+
+    abstaining = [_span_profile(last_only), _span_profile(longest_last)]
+    probed = _span_profile(longest_first)
+    report = _abstentions([*abstaining, probed])
+    for profile in (*abstaining, probed):
+        print(
+            f"[slice compared] {profile.rel}: {profile.chars} chars, "
+            f"boundary@{profile.boundary_at} -> {profile.boundary_visible}"
+        )
+    print(f"[slice compared] report: {report}")
+
+    for profile in abstaining:
+        assert profile.boundary_at is None, (
+            f"{profile.rel}: no boundary follows the longest span, yet the arm probed at "
+            f"{profile.boundary_at} (len {profile.chars}): the silent tail fallback is back"
+        )
+        assert profile.boundary_visible is None, f"{profile.rel} abstains but carries a verdict"
+    assert report == [
+        f"ABSTAIN {p.rel}: no span precedes a paragraph boundary" for p in abstaining
+    ], f"the abstaining files are not each named, or a probed file is: {report}"
+    assert probed.boundary_at is not None and probed.boundary_at < probed.chars, (
+        f"a file with a span before a paragraph boundary was not probed at one: "
+        f"{probed.boundary_at} of {probed.chars}"
+    )
+    assert probed.boundary_visible is True, "a claim at an ordinary paragraph boundary was not seen"
+
+
+def test_a_fenced_code_block_with_a_blank_line_is_not_a_crossing_span(tmp_path) -> None:
+    """B-CR-001 Sec 3: ``_QUOTE_SPAN``'s backtick alternative pairs the third
+    backtick of an opening fence with the first of the closing one, so a code
+    body holding a blank line read as a span reaching across a paragraph
+    boundary, and the crossing arm blamed a stray delimiter that did not exist.
+
+    Fences are stripped inside ``_span_profile`` only. ``_flat_text`` still
+    reads the fenced body, so the absence sweep and the presence rows see
+    exactly what they saw before -- asserted here, since stripping there too
+    would be the easy wrong fix.
+    """
+    fenced = tmp_path / "fenced.md"
+    fenced.write_text(
+        'A rules file quoting "a phrase" once.\n\n'
+        "```python\n"
+        "def first():\n"
+        "    return 1\n"
+        "\n"
+        "def second():\n"
+        "    return 2\n"
+        "```\n\n"
+        "A closing paragraph.\n",
+        encoding="utf-8",
+    )
+    profile = _span_profile(fenced)
+    print(
+        f"[slice compared] {profile.rel}: imbalance {profile.imbalance or 'paired'}, "
+        f"crossings {list(profile.crossings)}, longest {profile.longest}, "
+        f"boundary@{profile.boundary_at} -> {profile.boundary_visible}"
+    )
+
+    assert not profile.imbalance, "a balanced fence was reported as an unpairable delimiter"
+    assert not profile.crossings, (
+        f"a fenced code block with a blank line was read as a paragraph-crossing span: "
+        f"{list(profile.crossings)}"
+    )
+    assert profile.boundary_visible is True, "a claim at a boundary beside a fence was not seen"
+    assert "def second():" in _flat_text(fenced), (
+        "_flat_text dropped the fenced body: the fence strip belongs to _span_profile alone"
     )
 
 
