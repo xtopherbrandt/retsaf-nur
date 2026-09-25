@@ -1,0 +1,440 @@
+## Part 3 — Decision register
+
+**HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
+Scope: every per-tier dataset's SWC band, as `build_band` builds it.
+Not: a coefficient of variation (CV) of rMSSD or of ln rMSSD, which is never the SWC band's statistic.
+Pinned: runcoach-api/tests/test_hrv_trend_band.py::test_the_floor_fires_for_a_degenerate_baseline
+Why: decision C32 states the 0.01 floor that `build_band` applies, so research/00 states the SWC band the code computes on a degenerate rMSSD series.
+
+### 3.3 Resting-HRV source tiering (resolved, amends the data-quality-gating and HRV-gate register rows)
+
+**HRV-01.** Resting HRV MUST come through a four-tier source hierarchy: (1) chest-strap resting RR, reduced to rMSSD by the system's own artefact filter; (2) Health Snapshot `RmssdAvgValue`; (3) Health API `lastNightAvg`; (4) the HRV Status classification, which stays quarantined and MUST never be a trend input.
+Scope: every resting-HRV reading the HRV trend consumes; the rule applies per per-tier dataset (T-06).
+Not: the order in which datasets are selected, which HRV-14 (selection) sets.
+Pinned: none
+
+**HRV-02.** The chest strap IS the preferred, highest-fidelity resting-HRV source, and the system MUST NOT make it a prerequisite.
+Scope: the choice of resting-HRV source on any day.
+Not: the reduced fidelity of the numeric tiers, which HRV-04 (numeric tiers) states.
+Pinned: none
+
+**HRV-03.** Ingestion MUST accept a pre-computed resting rMSSD (a numeric value with a source-tier tag) distinct from a raw RR series.
+Scope: the ingestion layer, for tiers 2 and 3 of HRV-01 (the hierarchy), which supply a scalar rather than beats.
+Not: a confidence value carried with the reading, since Section 3 computes no confidence weight (HRV-54).
+Pinned: none
+
+**HRV-04.** The numeric tiers (2–3) MUST be admitted at reduced fidelity, an ordinal rank that selection reads (HRV-19), and never at a numeric per-tier confidence weight, which is deferred to Section 6's readiness fusion.
+Scope: Health Snapshot and Health API readings, each in its own per-tier dataset.
+Not: the HRV Status classification, which stays quarantined under HRV-01 (the hierarchy).
+Pinned: none
+Why: decision C19 words the admission as fidelity, because Section 3 holds no confidence weight (HRV-54).
+
+**HRV-05.** HRV MUST never be computed from in-run wrist PPG, and in-activity HRV MUST NOT be computed in v1 or for any readiness input, so adopting DFA-α1 of the in-run RR series for LT1 (LT1-02) MUST first amend this rule explicitly.
+Scope: every HRV computation in v1, and every readiness input in any version.
+Not: resting HRV from the source hierarchy of HRV-01 (the hierarchy).
+Pinned: none
+Why: decision C27 scopes the prohibition so that it no longer contradicts the recommended future LT1 path.
+
+**HRV-06.** Because different sources carry different systematic biases, a reading of one tier MUST NOT ever enter another tier's baseline or SWC band, and a source switch MUST never be read as a physiological HRV shift.
+Scope: every resting-HRV reading of every tier; the rule applies per per-tier dataset (T-06).
+Not: a device replaced within the same tier, which HRV-84 (same-tier replacement) governs.
+Pinned: none
+
+**HRV-47.** Health Snapshot IS the preferred default resting-HRV source where no chest strap is in use.
+Scope: an athlete who is not using a chest strap.
+Not: Health API `lastNightAvg`, which ranks below Health Snapshot in HRV-01 (the hierarchy).
+Pinned: none
+
+### 5.4 Reconciliations and amendments
+
+**HRV-08.** For a target local date D, the judged week IS the local days `[D-6, D]`, the nominal baseline window IS `[D-66, D-7]` (60 days) and the previous window IS `[D-126, D-67]`.
+Scope: every per-tier dataset and every target date D.
+Not: an overlap, since the judged week and the nominal baseline window are disjoint.
+Pinned: none
+
+**HRV-09.** Every count in the HRV rule MUST be in distinct local days, with `min_baseline_readings` = 14 and `min_window_readings` = 3.
+Scope: every count HRV-08 to HRV-46 take, in every per-tier dataset.
+Not: a count of captures, since a second capture on one local day adds no day.
+Pinned: none
+
+**HRV-10.** Every resting-HRV reading MUST feed the dataset of its own tier, and a morning with both a strap capture and a Health Snapshot MUST feed both.
+Scope: every resting-HRV reading; the rule applies per per-tier dataset (T-06).
+Not: the HRV Status classification, which is no tier and feeds no dataset.
+Pinned: none
+
+**HRV-11.** Within a per-tier dataset, each local day MUST keep its earliest capture.
+Scope: every local day in the athlete's own zone, in every per-tier dataset.
+Not: a collapse across tiers, since each dataset collapses only its own readings.
+Pinned: none
+Why: the critique-round call adopts "earliest", on which the code and IDEA-079 agree.
+
+**HRV-12.** A per-tier dataset IS established when its dataset baseline window (T-09), the nominal `[D-66, D-7]` clipped at the latest of the coverage-gap resumption (HRV-73), its era boundary (HRV-38) and its last internal-hole resumption (HRV-37), holds at least `min_baseline_readings` distinct local days.
+Scope: every per-tier dataset, counted after all three clips.
+Not: the unclipped nominal baseline window, which a clipped dataset does not count in.
+Pinned: none
+Why: decision C12 counts establishment in the window the code reads, since the nominal window is shared by every dataset only before clipping.
+
+**HRV-13.** A per-tier dataset IS judgeable when it is established (HRV-12) and holds at least `min_window_readings` distinct days of the judged week.
+Scope: every per-tier dataset, on every judged day.
+Not: selection itself, which HRV-14 (selection) makes among the judgeable datasets.
+Pinned: none
+
+**HRV-14.** The HRV verdict MUST be taken from the highest-fidelity judgeable per-tier dataset that the recency gate did not skip, whose reference is every established dataset (HRV-15), with chest-strap raw RR ranked over the numeric tiers.
+Scope: selection on every judged day.
+Not: a confidence weight, which never arbitrates (HRV-19).
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_promoted_verdict_is_the_selected_datasets_unchanged_whatever_the_others_read
+
+**HRV-15.** A judgeable per-tier dataset MUST be skipped when its latest reading in the series baseline window (T-09) falls strictly more than `recency_tolerance_days` (28) days behind the latest series-baseline-window reading of any established dataset.
+Scope: the judgeable per-tier datasets on each judged day, which are the recency gate's candidates.
+Not: an established dataset that is not judgeable, which the gate never skips but which can hold the reference maximum.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band
+Why: decision C10 takes the reference over every established dataset, so an established dataset without a judgeable week, read later, can strike a lone judgeable one.
+
+**HRV-16.** `recency_tolerance_days` MUST be 28, four judged weeks (4 × `window_days`), chosen greater than `gap_reset_days` (21) so that the recency gate and the coverage-gap reset do not disagree about the same number of silent days.
+Scope: the recency gate of HRV-15 (the skip).
+Not: the silence of the whole series, which the coverage-gap reset of HRV-73 (the global gap) measures.
+Pinned: none
+
+**HRV-17.** The response's `thresholds` block MUST publish `recency_tolerance_days`.
+Scope: every HRV trend response.
+Not: the other verdict-affecting constants, which PRIN-12 (the served constants) names.
+Pinned: none (F010)
+Why: decision C33 reads §1.6 at the response level, so the constant that decides `selected_reason` is served, and F010 publishes it.
+
+**HRV-18.** Selection MUST run per judged day and read nothing from earlier days, and every point of the series MUST name the per-tier dataset its SWC band came from.
+Scope: every judged day of a requested HRV series.
+Not: a selection carried over from a previous judged day.
+Pinned: none
+
+**HRV-19.** The fidelity rank (`TIER_FIDELITY`) alone MUST arbitrate selection among the judgeable datasets.
+Scope: selection on every judged day.
+Not: recency, which only skips a candidate (HRV-15) and never ranks one.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_the_numeric_confidence_weight_never_participates_in_selection
+
+**HRV-20.** The selected per-tier dataset MUST supply the HRV verdict, `baseline` and `band`.
+Scope: every judged day on which a dataset is selected.
+Not: a day on which nothing is selected, which HRV-24 (the fallback) governs.
+Pinned: none
+
+**HRV-21.** A per-tier dataset IS disagreeing (`disagreed_with`) when its judged-week mean reads on the other side of its own SWC band from the selected dataset's, in either direction.
+Scope: every reported per-tier dataset other than the selected one.
+Not: a veto, since a disagreeing dataset is named and never overrides the selected one.
+Pinned: none
+
+**HRV-22.** Whenever the served HRV verdict is `hrv_unavailable`, for any cause, the dissent list (`disagreed_with`) MUST be empty.
+Scope: every response, whichever of the three no-verdict states of HRV-23 (no-verdict states) holds.
+Not: the reporting of each dataset against its own SWC band, which HRV-57 keeps.
+Pinned: runcoach-api/tests/test_hrv_dataset_populations.py::test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does
+
+**HRV-23.** A no-verdict state IS exactly one of three: nothing selected; a selected dataset withheld under HRV-31 (the withhold); a day that has not happened.
+Scope: every judged day on which the HRV verdict is `hrv_unavailable`.
+Not: which `unavailable_reason` is served, which HRV-28 (the causes) sets.
+Pinned: none
+
+**HRV-24.** When nothing is selected, the HRV verdict MUST be unavailable and `baseline`/`band` MUST be populated for presentation only.
+Scope: every judged day on which no per-tier dataset is selected.
+Not: a conferred verdict, which the presented dataset never carries (HRV-60).
+Pinned: none
+
+**HRV-25.** The selected per-tier dataset MAY serve `hrv_normal` while another reported dataset reads below its own SWC band only as the named §1.7 exception that PRIN-15 (the §1.7 exceptions) lists, owned by IDEA-099, and that population MUST NOT grow.
+Scope: every response whose selected dataset serves `hrv_normal` beside a dataset that reads below its own SWC band.
+Not: a veto by the dataset that reads below, which selection never grants (HRV-14).
+Pinned: none (F009)
+Why: decision C06 makes §1.7 absolute, so this population ships only as a named exception whose count and pin F009 produces.
+
+**HRV-26.** `judge` MUST judge one per-tier dataset in this fixed order: no SWC band (fewer than two baseline readings) → `week_too_thin` (fewer than `min_window_readings` in the judged week) → `week_not_representative` (withheld, HRV-31) → `baseline_unestablished` → otherwise `hrv_suppressed` iff the 7-day mean is strictly below `band.lo`, else `hrv_normal` (inside or above).
+Scope: the dataset that speaks on a judged day, selected or presented.
+Not: the choice of which dataset speaks, which HRV-14 (selection) and HRV-59 (the fallback order) make.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_reports_the_withheld_week_before_an_unestablished_baseline
+
+**HRV-27.** The system MUST NOT assert an HRV verdict of either kind on an unestablished baseline (the establishment gate is symmetric), and the SWC band MUST still be reported.
+Scope: every per-tier dataset that speaks on a judged day.
+Not: a dataset with fewer than two baseline readings, which has no SWC band to report (HRV-26).
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_baseline_unestablished_alone
+
+**HRV-28.** `unavailable_reason` IS exactly one of `no_tier_sustains_a_trend`, `no_band`, `week_too_thin`, `week_not_representative`, `baseline_unestablished`, `day_not_happened`, and it IS null exactly when the verdict is not `hrv_unavailable`.
+Scope: every served HRV verdict.
+Not: a seventh cause, which the response never names.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_schema_and_the_contract
+
+**HRV-29.** `day_not_happened` MUST be decided at the route (`main._withhold_future`) for any day after the athlete's local today.
+Scope: every requested day after the athlete's local today.
+Not: the pure rule's own causes, which HRV-26 (the guard order) orders.
+Pinned: none
+
+**HRV-30.** `no_tier_sustains_a_trend` MUST fire only when the series holds no per-tier dataset, that is, no reading of any tier in `[D-66, D]` after the gap clip.
+Scope: the structural cause, asked before any dataset's own guard order (HRV-26).
+Not: a tier with fewer than two baseline readings, which reports `no_band`.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_no_tier_when_the_store_holds_no_reading_at_all
+Why: the enum value is contract-bound, so its name is kept although it overstates the condition.
+
+**HRV-31.** A per-tier dataset's verdict MUST be withheld (`week_not_representative`) when another dataset that could not have been selected: not judgeable, or skipped by the recency gate (HRV-15), holds at least `min_window_readings` distinct judged-week days, every one later than every judged-week day of the dataset being judged.
+Scope: every per-tier dataset on every judged day.
+Not: a dataset that could have been selected, which never withholds another's verdict.
+Pinned: runcoach-api/tests/test_hrv_trend_band.py::test_the_withhold_reaches_a_never_used_tier_bought_this_week
+Why: decisions C01 and C02 state the withhold as built, which IDEA-083 option 1 chose.
+
+**HRV-32.** The withhold predicate MUST be over day sets and their order, not counts.
+Scope: the withhold of HRV-31 (the withhold).
+Not: a comparison of how many days each dataset holds.
+Pinned: none
+
+**HRV-33.** The residual (mornings on which a return is still judged on pre-return readings) IS `min(window_days − min_window_readings, k₃)`: four at spread sub-daily capture, two at daily or clustered capture.
+Scope: a returning per-tier dataset while it holds fewer than `min_window_readings` judged-week days.
+Not: the silent mornings after the residual, which other guards decide (HRV-26).
+Pinned: none
+
+**HRV-34.** A source change MUST NOT trigger any rule-level re-establishment, and a source-tier change MUST NOT collapse any SWC band.
+Scope: every source change between tiers; the rule applies per per-tier dataset (T-06).
+Not: the coverage-gap reset of HRV-73 (the global gap), the only reset that re-establishes.
+Pinned: none
+Why: decisions C03, C14 and C15 state what a source change does, and reserve re-establishment for the coverage gap.
+
+**HRV-35.** The coverage-gap reset (`coverage_gap_reset`) MUST be global, measured over the whole series.
+Scope: the series of every tier together.
+Not: one tier's silence while another tier carries the series, which HRV-52 (the partition) assigns elsewhere.
+Pinned: none
+
+**HRV-36.** The coverage gap MUST take precedence over the reset report only.
+Scope: a judged day on which both a coverage gap and an era boundary would be reported.
+Not: the clipped baseline window, which HRV-74 (clip composition) composes.
+Pinned: none
+
+**HRV-37.** A per-tier dataset's SWC band MUST also be clipped, unreported, at an internal capture hole in its own baseline window, meaning more than `gap_reset_days` (21) silent local days of its tier, so 21 does not clip and 22 does.
+Scope: every per-tier dataset, over the silent local days of its own tier inside its dataset baseline window.
+Not: a silence of the whole series, which the coverage gap of HRV-73 (the global gap) resets.
+Pinned: runcoach-api/tests/test_hrv_internal_hole_clip.py::test_a_bridged_internal_hole_clips_the_band_to_the_post_hole_readings
+
+**HRV-38.** The era boundary (`tier_change_reset`) MUST be asked once per per-tier dataset over shared cross-tier facts: (a) the dataset's tier has ≥14 days in the gap-clipped baseline window; (b) it differs from the highest-fidelity tier with ≥14 days in `[D-126, D-67]`; (c) the two eras do not interleave over both windows and the judged week, within the stray tolerance of HRV-39 (strays).
+Scope: every per-tier dataset on every judged day.
+Not: the per-dataset hole clip, which HRV-37 (the hole clip) states separately.
+Pinned: runcoach-api/tests/test_hrv_tier_change_per_dataset.py::test_the_era_boundary_ordering_key_keeps_its_three_terms
+Why: decision C13 states the era clip and the hole clip as two clips, since the code runs both.
+
+**HRV-39.** A stray IS a new-tier capture from the old era's first local day up to its last reading, or an old-tier capture after the new era's first, and strays MUST be pooled across both tiers.
+Scope: every candidate era boundary of HRV-38 (the era boundary).
+Not: a capture simultaneous with the old era's last reading (HRV-79).
+Pinned: none
+
+**HRV-40.** The now-sustaining tier's pre-boundary readings MUST never be in its SWC band (the clip is unconditional).
+Scope: every per-tier dataset with an era boundary.
+Not: the reset report, which HRV-80 (the report condition) conditions.
+Pinned: none
+
+**HRV-41.** Clause (c)'s strays MUST be counted over every reading of every tier in `[D-66, D]`, gap-clipped or not, plus the previous window.
+Scope: the stray count of HRV-38 (the era boundary).
+Not: clause (a)'s count, which HRV-81 (clause a) keeps in the gap-clipped window.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary
+
+**HRV-42.** An empty judged week MUST begin no reset, and a reset already in force MUST persist through it.
+Scope: a judged week holding no reading of any tier.
+Not: the verdict on that week, which reads unavailable under HRV-26 (the guard order).
+Pinned: none
+
+**HRV-43.** `reset_on` IS the era's true first day.
+Scope: every reported reset of every per-tier dataset.
+Not: the day the report first appears, which HRV-82 (the report lag) sets.
+Pinned: none
+
+**HRV-44.** Exactly two mechanisms of the single-baseline rule MUST stay retired: `resolve_baseline_tier`'s role as cross-tier arbitration, and the `off_baseline_tier` exclusion.
+Scope: the mechanisms IDEA-071 listed for the per-tier dataset model.
+Not: the function `resolve_baseline_tier` itself, which survives with its tie-order pin.
+Pinned: runcoach-api/tests/test_hrv_three_valued_retirements.py::test_each_pin_is_red_only_on_its_own_qualifiers_deletion
+
+**HRV-45.** Two recency notions MUST be kept apart as different rules: the presentation fallback's tie-break by last read, and the admission gate of HRV-15 (the skip).
+Scope: every use of recency in the HRV rule.
+Not: the order of the fallback's clauses, which HRV-59 (the fallback order) sets.
+Pinned: none
+
+**HRV-46.** The HRV rule MUST key on `hrv_source_tier` alone and has no notion of device identity.
+Scope: every reset and every selection in the HRV rule.
+Not: per-unit sensor identity (F007), which is ingestion data only, so a device-change rule requires amending this rule.
+Pinned: none
+
+**HRV-48.** Each per-tier dataset MUST carry its own baseline mean, SD, `n`, `established` and SWC band, built from its own readings alone.
+Scope: every per-tier dataset.
+Not: an SWC band pooled across tiers, which HRV-06 (anti-mixing) forbids.
+Pinned: none
+
+**HRV-49.** Every capture later than the earliest on the same local day MUST be excluded from its per-tier dataset as `same_day_later_capture`.
+Scope: every local day on which one tier holds more than one capture.
+Not: a capture of another tier on that day, which feeds its own dataset (HRV-10).
+Pinned: none
+
+**HRV-50.** A per-tier dataset's SWC band MUST still be built and reported from two baseline readings up, established or not.
+Scope: every per-tier dataset with at least two baseline readings.
+Not: a verdict, which HRV-27 (the symmetric gate) withholds on an unestablished baseline.
+Pinned: none
+
+**HRV-51.** The reference maximum MUST be taken once, simultaneously, over every established dataset, while the candidates the recency gate strikes from MUST stay the judgeable datasets.
+Scope: the recency gate of HRV-15 (the skip), on every judged day.
+Not: a lone judgeable dataset exempt from the gate, since an established dataset read later can strike it.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164
+
+**HRV-52.** Silence MUST be partitioned by scope: the coverage-gap reset (HRV-35) covers the silence of the whole series, and the hole clip (HRV-37) and then the recency gate (HRV-15) cover one per-tier dataset's silence while another dataset carries the series.
+Scope: every silence of one tier or of the whole series.
+Not: the trailing-silence regime that HRV-53 (IDEA-093) leaves OPEN.
+Pinned: none
+Why: decision C10 scopes the partition, since the hole clip also acts on one tier's silence.
+
+**HRV-53.** The 22–28-day trailing-silence regime of one per-tier dataset, which neither the coverage-gap reset nor the hole clip reaches, IS OPEN, owned by IDEA-093.
+Scope: one tier falling silent at the end of its baseline window while another tier carries the series.
+Not: an internal hole of more than 21 silent local days, which HRV-37 (the hole clip) clips.
+Pinned: none
+
+**HRV-54.** Section 3 MUST NOT compute or emit a confidence weight (weighting is deferred to Section 6's readiness fusion), and `datasets[]` MUST carry `fidelity_rank`.
+Scope: every HRV trend response and every selection.
+Not: Section 6's readiness fusion, which may weight the HRV input later.
+Pinned: none
+
+**HRV-55.** Every other dataset's SWC band, `n` and `established` MUST still be computed and reported.
+Scope: every per-tier dataset other than the selected one.
+Not: the verdict, which only the selected dataset supplies (HRV-20).
+Pinned: none
+
+**HRV-56.** Judgeability MUST never be consulted for disagreement, and a dataset with no SWC band or no week mean MUST NOT be named as disagreeing.
+Scope: every reported per-tier dataset other than the selected one.
+Not: the selected dataset itself, which cannot disagree with its own verdict.
+Pinned: none
+
+**HRV-57.** `datasets[]`, `selected_dataset`, `selected_reason`, `baseline` and `band` MUST still be reported as computed when the HRV verdict is `hrv_unavailable`.
+Scope: every response whose HRV verdict is `hrv_unavailable`.
+Not: the dissent list, which HRV-22 (empty dissent) empties.
+Pinned: runcoach-api/tests/test_hrv_dataset_populations.py::test_week_not_representative_is_served_with_nothing_selected_and_names_no_dissenter
+
+**HRV-58.** The cause alone MUST identify the third no-verdict state, a day that has not happened, and that state MAY coincide with either of the other two.
+Scope: the three no-verdict states of HRV-23 (no-verdict states).
+Not: the first two states, which whether a dataset is selected separates.
+Pinned: none
+
+**HRV-59.** The presented dataset MUST be, in order: the established dataset read last in the baseline window (ties by `n`, then fidelity); with none established, the densest by `n`; with no baseline reading of any tier, the densest in the judged week (ties to fidelity throughout).
+Scope: every judged day on which no per-tier dataset is selected.
+Not: the selected dataset, which HRV-14 (selection) chooses.
+Pinned: none
+
+**HRV-60.** The presented dataset IS never judgeable, so a verdict MUST NOT be conferred on it.
+Scope: the presentation fallback of HRV-24 (the fallback).
+Not: the presented dataset's own reading against its SWC band, which is still reported.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_fallback_confers_no_verdict_and_names_no_dissenter_even_when_its_own_week_reads_below
+
+**HRV-61.** The first cause to fire MUST be the one reported as `unavailable_reason`.
+Scope: every HRV verdict that is `hrv_unavailable`.
+Not: `day_not_happened`, which overrides the pure rule's cause (HRV-62).
+Pinned: none
+
+**HRV-62.** `day_not_happened` MUST override whichever cause the pure rule reported, and MUST leave the selection and everything that produced it as computed.
+Scope: every requested day after the athlete's local today.
+Not: a day on or before the athlete's local today, which the pure rule alone decides.
+Pinned: none
+
+**HRV-63.** The withhold MUST be asked of every per-tier dataset as if it were the selected one.
+Scope: every per-tier dataset on every judged day, selected, presented or neither.
+Not: a withhold asked of the selected dataset alone.
+Pinned: none
+
+**HRV-64.** The returning dataset MUST hold at least `min_window_readings` of those later judged-week days for the withhold to fire.
+Scope: the withhold of HRV-31 (the withhold).
+Not: a dataset with fewer such days, which withholds nothing.
+Pinned: none
+
+**HRV-65.** The residual MUST be left unchanged, by the user decision recorded at H-18.
+Scope: the residual mornings of HRV-33 (the residual).
+Not: the question whether to close it, which HRV-66 (IDEA-092) leaves OPEN.
+Pinned: none
+
+**HRV-66.** Whether the residual's mornings should be closed IS OPEN, owned by IDEA-092.
+Scope: the residual mornings of HRV-33 (the residual).
+Not: the residual's formula, which HRV-33 (the residual) states.
+Pinned: none
+Why: decision C09 homes the question with an open owner, since the sprint it was carried to has shipped.
+
+**HRV-67.** Adopting a never-used tier MUST start that tier's dataset from nothing, subject to the withhold (HRV-31), and abandoning a tier MUST let its dataset age out of the window.
+Scope: every source change between tiers.
+Not: a return to a previously established dataset, which HRV-68 (the return) governs.
+Pinned: none
+
+**HRV-68.** A returning per-tier dataset MUST be selected, by the fidelity order of HRV-14 (selection), once it is judgeable and not skipped by the recency gate.
+Scope: a per-tier dataset whose tier resumes after a silence while another dataset carried the series.
+Not: a never-used tier, which HRV-67 (adoption) governs.
+Pinned: none
+
+**HRV-69.** Until a returning per-tier dataset is selected, the recency gate MAY skip it, and its later judged-week days MAY withhold another dataset's verdict (HRV-31).
+Scope: a returning per-tier dataset that is not yet selected.
+Not: a returning dataset that is judgeable and not skipped, which HRV-68 (the return) selects.
+Pinned: none
+
+**HRV-70.** Once more than `gap_reset_days` (21) silent local days of its tier lie inside a returning dataset's own baseline window, its pre-silence readings MUST be clipped by the hole clip (HRV-37), while a trailing silence clips nothing (IDEA-093).
+Scope: a returning per-tier dataset.
+Not: a silence of the whole series, which the coverage-gap reset (HRV-73) clips.
+Pinned: none
+
+**HRV-71.** A return to a previously established per-tier dataset IS free, meaning nothing is re-established on its account, only when it follows 21 or fewer silent local days of its tier and the recency gate does not skip it.
+Scope: a returning per-tier dataset.
+Not: a return the recency gate skips, or one after more than 21 silent local days, which HRV-69 and HRV-70 (the return costs) govern.
+Pinned: none
+
+**HRV-72.** A `tier_change` reset IS an era boundary on one per-tier dataset: its pre-boundary readings are clipped from its own SWC band (HRV-40), and it is reported with the lag of HRV-82 (the report lag).
+Scope: every reported `tier_change` of every per-tier dataset.
+Not: the coverage-gap reset, the only re-establishment (HRV-34).
+Pinned: none
+
+**HRV-73.** When the whole series (every tier together) is silent for more than `gap_reset_days` (21) silent local days (21 does not reset; 22 does), the baseline window of every per-tier dataset MUST be clipped at the resumption and `coverage_gap` MUST be reported.
+Scope: the series of every tier together.
+Not: one tier's internal hole, which HRV-37 (the hole clip) clips unreported.
+Pinned: none
+
+**HRV-74.** The gap clip and the era clip MUST compose as the later first day.
+Scope: every per-tier dataset with both a gap clip and an era clip.
+Not: the reset report, over which the coverage gap takes precedence (HRV-36).
+Pinned: none
+
+**HRV-75.** The recency gate MUST apply to neither clause (a) nor clause (b) of the era boundary.
+Scope: the era boundary of HRV-38 (the era boundary).
+Not: selection, where the recency gate of HRV-15 (the skip) applies.
+Pinned: none
+
+**HRV-76.** The cross-tier era clip (HRV-40) and the per-dataset hole clip (HRV-37) MUST be applied as two separate clips, composed with the gap clip (HRV-73) as the latest first day.
+Scope: every per-tier dataset's baseline window.
+Not: the reset report, which only the era clip and the coverage gap produce.
+Pinned: runcoach-api/tests/test_hrv_internal_hole_clip.py::test_probe_the_hole_is_scanned_on_the_era_clipped_window_and_the_tier_change_report_stays
+Why: decision C13 separates the two clips, since the code runs both and composes them.
+
+**HRV-77.** The boundary-existence half of the stray tolerance (fewer than 14 distinct days of strays) MUST decide whether an era boundary exists.
+Scope: every candidate era boundary of HRV-38 (the era boundary).
+Not: the report, which the week half decides (HRV-78).
+Pinned: none
+
+**HRV-78.** The week half (fewer than 3 stray days in the judged week) MUST decide the report and MUST be the first ordering term of `_era_boundary`'s key, then the fewest stray days, then the later boundary.
+Scope: every admitted era boundary of HRV-38 (the era boundary).
+Not: whether a boundary exists, which the boundary-existence half decides (HRV-77).
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of
+
+**HRV-79.** Simultaneous captures MUST NOT count as strays.
+Scope: a capture at the very instant of the old era's last reading.
+Not: a capture at any other instant inside the stray span of HRV-39 (strays).
+Pinned: none
+
+**HRV-80.** The reset report (`reset_reason`/`reset_on`) MUST additionally require that the other tier was not in use in the judged week.
+Scope: every era boundary of every per-tier dataset.
+Not: the clip, which HRV-40 (the unconditional clip) applies regardless.
+Pinned: none
+
+**HRV-81.** Clause (a) MUST still read the gap-clipped window.
+Scope: clause (a) of HRV-38 (the era boundary).
+Not: clause (c)'s stray count, which HRV-41 (unclipped strays) widens.
+Pinned: none
+
+**HRV-82.** The reset report's lag behind the reset IS `min_baseline_readings + 7 − 1` = 20 days, accepted as latency rather than inaccuracy because an earlier report would be a prediction.
+Scope: every reported reset of every per-tier dataset.
+Not: the reported date itself, which HRV-43 (reset_on) makes the era's true first day.
+Pinned: none
+
+**HRV-83.** Everything else on IDEA-071's list MUST be kept, re-derived or redeployed, apart from T093's week-coverage half, which judgeability subsumes.
+Scope: the mechanisms IDEA-071 listed for the per-tier dataset model.
+Not: the two retired mechanisms of HRV-44 (retirements).
+Pinned: none
+
+**HRV-84.** Replacing a device within the same tier MUST fire no reset and cost no silent days.
+Scope: every device replacement within one `hrv_source_tier`.
+Not: a change of tier, which HRV-72 (tier_change) governs.
+Pinned: none
