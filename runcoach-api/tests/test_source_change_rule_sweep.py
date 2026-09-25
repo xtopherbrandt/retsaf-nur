@@ -567,19 +567,23 @@ class SpanProfile:
     #: does not span paragraphs; a runaway span does, and this is the shape it
     #: has while it is still too small to trip either ceiling.
     crossings: tuple[str, ...]
-    #: A claim spliced at the first paragraph boundary at or after the longest
-    #: span's start must be seen; one spliced in that span's middle must not.
-    #: Both offsets are carried so a failure names where it looked. The two
-    #: arms read the **same** span, because the inside arm is what shows the
-    #: guard suppressing on the span whose reach the boundary arm bounds.
+    #: The probed span is the **longest span that has a paragraph boundary
+    #: after its start** (sprint-007 T182). A claim spliced at the first
+    #: boundary at or after that span's start must be seen; one spliced in
+    #: that span's middle must not. Both offsets are carried so a failure names
+    #: where it looked. The two arms read the **same** span, because the inside
+    #: arm is what shows the guard suppressing on the span whose reach the
+    #: boundary arm bounds.
     #:
-    #: ``None`` when no paragraph boundary follows the longest span's start --
-    #: it sits in the final paragraph, or the file is one paragraph, or has no
-    #: span. The file then **abstains** by name (``_abstentions``). It does not
-    #: fall back to ``len(text)``: that is the one position no span can reach,
-    #: so the probe there could not fail and read as ``seen`` (B-CR-001 Sec 1;
-    #: spec/04, whose longest span is in its final paragraph, read
-    #: ``@41762 boundary splice -> seen`` with ``len(text)`` 41762).
+    #: ``None`` only when **no** span has a paragraph boundary after it -- all
+    #: sit in the final paragraph, or the file is one paragraph, or has no
+    #: span. The file then **abstains** by name (``_abstentions``), and the
+    #: inside arm reads the longest span. It does not fall back to
+    #: ``len(text)``: that is the one position no span can reach, so the probe
+    #: there could not fail and read as ``seen`` (B-CR-001 Sec 1; spec/04 read
+    #: ``@41762 boundary splice -> seen`` with ``len(text)`` 41762). spec/04's
+    #: longest span is in its final paragraph, but shorter spans precede
+    #: boundaries, so it is probed at ``@19624`` (2026-09-25).
     boundary_at: int | None
     boundary_visible: bool | None
     inside_at: int
@@ -622,8 +626,13 @@ def _span_profile(path: Path) -> SpanProfile:
         for boundary in boundaries
         if start < boundary < end
     )
-    boundary_at = next((b for b in boundaries if spans and b >= longest_span[0]), None)
-    inside_at = (longest_span[0] + longest_span[1]) // 2
+    # The span both splice arms read: the longest one that has a paragraph
+    # boundary after its start (sprint-007 T182). Only when no span has one
+    # does the file abstain, and the inside arm then reads the longest span.
+    bounded = [span for span in spans if boundaries and boundaries[-1] >= span[0]]
+    probed_span = max(bounded, key=lambda span: span[1] - span[0], default=longest_span)
+    boundary_at = next((b for b in boundaries if bounded and b >= probed_span[0]), None)
+    inside_at = (probed_span[0] + probed_span[1]) // 2
     return SpanProfile(
         rel=_rel(path),
         chars=len(text),
@@ -642,7 +651,7 @@ def _span_profile(path: Path) -> SpanProfile:
 
 def _abstentions(profiles: list[SpanProfile]) -> list[str]:
     """One named line per file the boundary arm could not probe -- no
-    paragraph boundary follows its longest span's start. Reported,
+    paragraph boundary follows any span's start. Reported,
     never passed silently: an exemption nobody can see is the shape
     ``test_hrv_trend_endpoint``'s "shelters something" discipline refuses."""
     return [
@@ -765,20 +774,22 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
     Two-sided instead, per file, through ``_live_superseded_hits`` -- the
     function the tree walk itself calls:
 
-    * a form spliced at the first **paragraph boundary** at or after the
-      longest span's start **must be seen**. If that span ran past the
-      boundary, the claim is swallowed and this reds.
+    * a form spliced at the first **paragraph boundary** at or after the start
+      of the **longest span that has such a boundary** **must be seen**. If
+      that span ran past the boundary, the claim is swallowed and this reds.
     * a form spliced into the **middle of that same span must not be seen**.
       This is what makes the first arm mean anything: it shows the quotation
       guard really is suppressing on this very file, so "seen at the boundary"
       is a fact about position rather than about a guard suppressing nothing.
 
-    A file where no paragraph boundary follows the longest span's start has
-    nowhere to splice the first arm, and **abstains by name**: an ``ABSTAIN``
-    line is printed and counted, and it carries no boundary verdict. Today
-    that is spec/04, whose longest span is in its final paragraph -- until
-    sprint-007 T169 it was silently probed at ``len(text)``, where nothing can
-    be swallowed (B-CR-001 Sec 1). The test reds if every file abstains.
+    A file where **no** span has a paragraph boundary after it has nowhere to
+    splice the first arm, and **abstains by name**: an ``ABSTAIN`` line is
+    printed and counted, and it carries no boundary verdict. Today no swept
+    file abstains (34 of 34 probed, 2026-09-25). spec/04, whose longest span
+    is in its final paragraph, was silently probed at ``len(text)`` until
+    sprint-007 T169, where nothing can be swallowed (B-CR-001 Sec 1), and
+    abstained under T169; since T182 it is probed at the longest of its spans
+    that a boundary follows, ``@19624``. The test reds if every file abstains.
 
     **Mutations that turn these red**, each run on a scratch copy:
 
@@ -799,6 +810,10 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
       and spec/03, whose longest span is a quoted ``SUPERSEDED_FORMS`` entry,
       and the cardinal check then in ``_spliced_claim_is_visible`` could not
       fire on them (B-CR-001 Sec 2). The check is positional now.
+      **Re-run 2026-09-25 (sprint-007 T182)** after the arms moved to the
+      longest span that has a following boundary: again **34 of 34**
+      ``LEAKED``, 0 abstaining, spec/04 now among them at ``@19178`` (its
+      boundary splice ``@19624`` still ``seen``).
     """
     profiles = [_span_profile(path) for path in _swept_files()]
     abstaining = _abstentions(profiles)
@@ -918,22 +933,17 @@ def test_a_file_whose_spans_all_sit_in_its_final_paragraph_abstains_by_name(tmp_
     ``len(text)`` 41762. Such a file must instead carry no boundary offset,
     no boundary verdict, and a named ``ABSTAIN`` line in the report.
 
-    Three files. ``last-only.md`` has every span in its final paragraph.
-    ``longest-last.md`` has a short span before a boundary and its longest in
-    the final paragraph -- spec/04's shape -- and abstains too, because the
-    boundary arm bounds the span the inside arm shows suppressed, and that
-    span has no boundary after it. ``longest-first.md`` is probed, at a real
-    boundary short of ``len(text)``.
+    Two files. ``last-only.md`` has every span in its final paragraph, so no
+    span has a boundary after it and it abstains. ``longest-first.md`` is
+    probed, at a real boundary short of ``len(text)``. The shape between them
+    -- longest span last, a shorter one before a boundary, spec/04's shape --
+    is probed at the shorter span, not abstained
+    (``test_a_file_whose_longest_span_is_last_is_probed_at_an_earlier_span``).
     """
     filler = "ordinary prose about nothing in particular. " * 10
     last_only = tmp_path / "last-only.md"
     last_only.write_text(
         f"{filler}\n\n{filler}\n\nThe table: `one code span` and \"a quotation here\".\n",
-        encoding="utf-8",
-    )
-    longest_last = tmp_path / "longest-last.md"
-    longest_last.write_text(
-        f'A "short" quotation.\n\n{filler}\n\nAnd "a much longer quotation that sits last".\n',
         encoding="utf-8",
     )
     longest_first = tmp_path / "longest-first.md"
@@ -942,7 +952,7 @@ def test_a_file_whose_spans_all_sit_in_its_final_paragraph_abstains_by_name(tmp_
         encoding="utf-8",
     )
 
-    abstaining = [_span_profile(last_only), _span_profile(longest_last)]
+    abstaining = [_span_profile(last_only)]
     probed = _span_profile(longest_first)
     report = _abstentions([*abstaining, probed])
     for profile in (*abstaining, probed):
@@ -966,6 +976,53 @@ def test_a_file_whose_spans_all_sit_in_its_final_paragraph_abstains_by_name(tmp_
         f"{probed.boundary_at} of {probed.chars}"
     )
     assert probed.boundary_visible is True, "a claim at an ordinary paragraph boundary was not seen"
+
+
+def test_a_file_whose_longest_span_is_last_is_probed_at_an_earlier_span(tmp_path) -> None:
+    """spec/04's shape (sprint-007 T182): the longest span sits in the final
+    paragraph, and a shorter one sits before a paragraph boundary.
+
+    The arms probe the **longest span that has a following paragraph
+    boundary**, so this file is probed at the shorter span -- boundary arm at
+    the first boundary after it, inside arm at its midpoint -- and does not
+    abstain. A file abstains only when **no** span has a boundary after it.
+    T169 abstained this shape, because it took the longest span first and then
+    looked for a boundary; that left spec/04 unprobed although it has spans a
+    boundary follows.
+    """
+    filler = "ordinary prose about nothing in particular. " * 10
+    earlier = tmp_path / "longest-last.md"
+    earlier.write_text(
+        f'A "short" quotation.\n\n{filler}\n\nAnd "a much longer quotation that sits last".\n',
+        encoding="utf-8",
+    )
+    profile = _span_profile(earlier)
+    text = _flat_text(earlier)
+    short_start = text.index('"short"')
+    short_mid = (short_start + short_start + len('"short"')) // 2
+    first_boundary = len(_normalize("A \"short\" quotation.")) + 1
+    print(
+        f"[slice compared] {profile.rel}: {profile.chars} chars, longest {profile.longest}, "
+        f"boundary@{profile.boundary_at} -> {profile.boundary_visible} (expected "
+        f"@{first_boundary}), inside@{profile.inside_at} -> "
+        f"{'LEAKED' if profile.inside_visible else 'suppressed'} (expected @{short_mid}), "
+        f"report {_abstentions([profile])}"
+    )
+
+    assert profile.longest == len('"a much longer quotation that sits last"'), (
+        "the longest-span measurement must still read the file's longest span, probed or not"
+    )
+    assert profile.boundary_at == first_boundary, (
+        f"the earlier span has a paragraph boundary after it at {first_boundary}, yet the arm "
+        f"probed at {profile.boundary_at}: it is not taking the longest span that has one"
+    )
+    assert profile.boundary_visible is True, "a claim at the boundary after the earlier span was not seen"
+    assert profile.inside_at == short_mid, (
+        f"the inside arm splices at {profile.inside_at}, not the midpoint {short_mid} of the span "
+        f"the boundary arm bounds: the two arms read different spans"
+    )
+    assert profile.inside_visible is False, "a claim inside the earlier quotation was reported as live"
+    assert _abstentions([profile]) == [], "a file with a probeable span was reported as abstaining"
 
 
 def test_a_fenced_code_block_with_a_blank_line_is_not_a_crossing_span(tmp_path) -> None:
