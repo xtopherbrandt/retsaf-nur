@@ -1671,7 +1671,7 @@ SCAN_EXCLUDED_HISTORY = (
     (1, "verify/", "a review verdict quotes the phrasing it found, at the date it found it"),
 )
 
-#: The one exclusion that is not history. ``withdrawn_phrasings.py`` holds the
+#: One of the two exclusions that are not history. ``withdrawn_phrasings.py`` holds the
 #: literals the scan searches for, so reading it would match every one of them
 #: by construction. It is kept honest by
 #: ``test_the_unscanned_declaration_module_stays_a_declaration_table`` rather
@@ -1680,6 +1680,21 @@ SCAN_EXCLUDED_DECLARATIONS = (
     0,
     "runcoach-api/tests/support/withdrawn_phrasings.py",
     "it declares the phrasings the scan searches for; every literal in it is a declaration",
+)
+
+#: The other (F008, R4). ``research00_old_meanings.py`` holds research/00's
+#: superseded wordings as literals for F011's sweep to search for, on the same
+#: ground as ``withdrawn_phrasings.py``: it is a file of literals, not history.
+#: It cannot sit in ``SCAN_EXCLUDED_DECLARATIONS``, whose AST rule allows
+#: declarations only, and it holds a dataclass and ``normalize()``. What keeps
+#: it from being a hiding place is
+#: ``test_the_old_meanings_module_exposes_exactly_its_four_public_names`` in
+#: ``test_research00_traceability.py``, which lives there so that no test is
+#: added here (``SCOPED_SUITE_COLLECTED``).
+SCAN_EXCLUDED_LITERALS = (
+    0,
+    "runcoach-api/tests/support/research00_old_meanings.py",
+    "it holds research/00's old meanings as literals the sweeps search for; nothing in it is live prose",
 )
 
 
@@ -1723,12 +1738,15 @@ def _scanned_files(root_index: int) -> tuple[Path, ...]:
     """The files the scan actually reads under one root."""
     root = SCAN_ROOTS[root_index]
     declaring_root, declaring_rel, _why = SCAN_EXCLUDED_DECLARATIONS
+    literals_root, literals_rel, _literals_why = SCAN_EXCLUDED_LITERALS
     kept: list[Path] = []
     for path in _candidate_files(root_index):
         rel = path.relative_to(root).as_posix()
         if _history_exclusion(root_index, rel) is not None:
             continue
         if root_index == declaring_root and rel == declaring_rel:
+            continue
+        if root_index == literals_root and rel == literals_rel:
             continue
         kept.append(path)
     return tuple(kept)
@@ -1917,8 +1935,10 @@ def test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing()
 
 
 def test_the_unscanned_declaration_module_stays_a_declaration_table() -> None:
-    """The declaration module is the only file held out for a non-historical
-    reason, so it is the only place prose could sit unread -- which is exactly
+    """The declaration module is one of the two files held out for a
+    non-historical reason (the other, ``SCAN_EXCLUDED_LITERALS``, is held to
+    its four public names by ``test_research00_traceability.py``), so it is a
+    place prose could sit unread -- which is exactly
     what T115 was closing when it moved seventy lines of gloss out of it, and
     gloss is what has twice on this feature drifted into a literal copy of a
     withdrawn phrasing.
