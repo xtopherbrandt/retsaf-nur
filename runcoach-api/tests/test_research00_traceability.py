@@ -365,14 +365,6 @@ def _new_rule_ids(row: dict[str, str]) -> list[str]:
     return _RULE_ID.findall(row["new ID(s)"])
 
 
-def _row_group(row: dict[str, str]) -> str | None:
-    inv = row["inventory ID"]
-    if not _is_blank(inv):
-        return _GROUP_OF.get(_prefix(inv)) if _RULE_ID.fullmatch(inv) else None
-    new = _new_rule_ids(row)
-    return _GROUP_OF.get(_prefix(new[0])) if new else None
-
-
 def retired_ids(rows: list[dict[str, str]]) -> dict[str, str | None]:
     """``{inventory ID: H-NN}`` for every ID that no longer names a rule (AC3, R6, R11):
     - a row whose new-ID cell does not name its own ID retires with the first ``H-NN`` in that cell;
@@ -607,11 +599,14 @@ def traceability_errors(rows: list[dict[str, str]], research_text: str, history_
 
 
 def decision_column_errors(rows: list[dict[str, str]], complete: bool) -> list[str]:
-    """R3 over the decision and meaning columns. Always: ``meaning changed`` is yes or no; every
-    C-number is one of ``DECISIONS`` (a further one is a stop-and-ask); the NO_ONLY C-numbers sit only
-    on ``no`` rows; an addition row cites a decision. With ``complete``, every decision appears and
-    every decision outside NO_ONLY backs at least one ``yes`` row. Without it only the rows given are
-    checked, and each ``yes`` row's C-numbers must belong to the row's group in ``YES_ROW_OWNER``."""
+    """R3 over the decision, meaning and key columns. Always: ``meaning changed`` is yes or no; every
+    C-number is one of ``DECISIONS`` (a further one is a stop-and-ask); a ``yes`` row is authorized by
+    at least one C-number outside NO_ONLY -- a no-only C-number never justifies a meaning change on its
+    own, but may share an authorized cell (R3 "A shared cell", e.g. PRIN-08's "C24, C25"); every
+    ``yes`` row names an old-meaning key (F008 AC6); an addition row cites a decision. With
+    ``complete``, every decision appears and every decision outside NO_ONLY backs at least one ``yes``
+    row. Group ownership is coverage, not exclusivity (R3), so a ``yes`` row may cite a C-number another
+    group owns; the owner's duty is ``group_coverage_errors``."""
     errors = []
     for row in rows:
         label = row["inventory ID"] if not _is_blank(row["inventory ID"]) else f"addition {row['new ID(s)']}"
@@ -621,15 +616,14 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool) -> list[s
         errors += [f"[decision] {label}: {c} is not a decision in the decisions reference (R3: stop and ask)"
                    for c in cs if c not in YES_ROW_OWNER]
         if meaning == "yes":
-            errors += [f"[decision] {label}: {c} appears only on no rows (R3)" for c in cs if c in NO_ONLY]
+            no_only = [c for c in cs if c in NO_ONLY]
+            if no_only and not any(c in YES_ROW_OWNER and c not in NO_ONLY for c in cs):
+                errors.append(f"[decision] {label}: {', '.join(no_only)} never authorizes a yes on its own; "
+                              "cite the C-number that changes the meaning, or mark the row no (R3)")
+            if _is_blank(row["old-meaning key"]):
+                errors.append(f"[decision] {label}: a yes row must name an old-meaning key (F008 AC6)")
         if _is_blank(row["inventory ID"]) and _is_blank(row["decision"]):
             errors.append(f"[decision] {label}: an addition row must cite a decision")
-        if not complete and meaning == "yes":
-            group = _row_group(row)
-            for c in cs:
-                if c in YES_ROW_OWNER and c not in NO_ONLY and YES_ROW_OWNER[c] != group:
-                    errors.append(f"[decision] {label}: a yes row for {c} in group {group}, but YES_ROW_OWNER "
-                                  f"gives {c}'s yes row to {YES_ROW_OWNER[c]} (R11)")
     if complete:
         cited = {c for r in rows for c in _C_ID.findall(r["decision"])}
         yes = {c for r in rows if r["meaning changed"] == "yes" for c in _C_ID.findall(r["decision"])}
@@ -637,6 +631,16 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool) -> list[s
         errors += [f"[decision] {c} backs no yes row (R3; YES_ROW_OWNER gives it to {YES_ROW_OWNER[c]})"
                    for c in DECISIONS if c not in NO_ONLY and c in cited and c not in yes]
     return errors
+
+
+def group_coverage_errors(rows: list[dict[str, str]], group: str) -> list[str]:
+    """R3 "Ownership is coverage, not exclusivity" (user, 2026-09-25): for every C-number
+    ``YES_ROW_OWNER`` gives to ``group``, some row in ``rows`` is ``yes`` and cites it. ``yes`` rows
+    citing C-numbers other groups own are allowed. NO_ONLY C-numbers never authorize a ``yes``, so
+    no group owes one for them."""
+    yes = {c for r in rows if r["meaning changed"] == "yes" for c in _C_ID.findall(r["decision"])}
+    return [f"[coverage] group {group} owns {c} (YES_ROW_OWNER) and writes no yes row citing it (R3)"
+            for c in DECISIONS if YES_ROW_OWNER[c] == group and c not in NO_ONLY and c not in yes]
 
 
 def operative_string_errors(research_text: str, rows: list[dict[str, str]], meanings=None,
@@ -919,8 +923,9 @@ def _git_show(path: str) -> str:
 
 def fragment_text_errors(rules: str, trace: str, meanings_text: str, group: str, sentences: dict[str, str],
                          show: Callable[[str], str] | None = None, coverage: bool = True) -> list[str]:
-    """``fragment_errors`` over text already read. ``coverage=False`` skips the whole-group ID coverage,
-    so a single real block can be checked (T170 AC4); ``show=None`` skips the verbatim check."""
+    """``fragment_errors`` over text already read. ``coverage=False`` skips the whole-group coverage --
+    the group's inventory IDs and ``group_coverage_errors`` (a ``yes`` row for each C-number the group
+    owns) -- so a single real block can be checked (T170 AC4); ``show=None`` skips the verbatim check."""
     errors = rule_grammar_errors(rules) + band_errors(rules)
     try:
         rows = parse_traceability(trace)
@@ -965,6 +970,8 @@ def fragment_text_errors(rules: str, trace: str, meanings_text: str, group: str,
             errors.append(f"[trace] {inv}: not in the inventory")
     errors += [f"[trace] rule {i} is not named by any {group} row" for i in sorted(here - named, key=_order_key)]
     errors += decision_column_errors(rows, False)
+    if coverage:
+        errors += group_coverage_errors(rows, group)
     errors += operative_string_errors(rules, rows, meanings=meanings, group=group)
     errors += _proxy_rows(rows, rules, only_within=here)
     errors += old_meaning_errors(meanings, rules)
@@ -983,7 +990,7 @@ def fragment_errors(drafts_dir, group: str, inventory_path, show: Callable[[str]
     """What the T172-T174 probes run over ``<group>.rules.txt``, ``.trace.txt`` and ``.meanings.txt``:
     grammar and band; the group's inventory IDs, each once; new IDs resolving within the group's
     prefixes or to an H-NN (cross-group IDs are left to ``assemble_check``); each inventory-sentence
-    cell equal to ``inventory_sentences()``; R3 per group; AC7 for the group's decisions; the AC9 proxy
+    cell equal to ``inventory_sentences()``; R3 per group, including a ``yes`` row for each C-number the group owns; AC7 for the group's decisions; the AC9 proxy
     on every ``no`` row; R4 against the group's rules; and each example verbatim in
     ``git show 4e47d0e:<source>``."""
     drafts, errors = Path(drafts_dir), []
@@ -1298,14 +1305,14 @@ def test_rule_blocks_and_ids_parse_each_block_with_its_lines() -> None:
 # A complete synthetic world: every draft, all 149 rows, every decision
 # ---------------------------------------------------------------------------
 
-#: The row each decision sits on in the synthetic world. C25 is moved off PRIN-08 (its only real
-#: row) onto a ``no`` row, because one row cannot be both C24's ``yes`` and C25's ``no``.
+#: The row each decision sits on in the synthetic world. PRIN-08 holds the shared cell "C24, C25"
+#: (R3 "A shared cell"): C24 authorizes its ``yes``, and C25, no-only, rides along.
 _WORLD_DECISION_ROWS = {
     "C01": "HRV-31", "C02": "HRV-31", "C03": "HRV-34", "C04": "HRV-37", "C05": "GATE-02", "C06": "PRIN-15",
     "C07": "PRIN-14", "C08": "ARCH-08", "C09": "HRV-33", "C10": "HRV-15", "C11": "HRV-14", "C12": "HRV-12",
     "C13": "HRV-38", "C14": "HRV-34", "C15": "HRV-34", "C16": "HRV-21", "C17": "HRV-24", "C18": "HRV-30",
     "C19": "PRIN-10", "C20": "AUT-04", "C21": "DEC-01", "C22": "GOAL-02", "C23": "ARB-02", "C24": "PRIN-08",
-    "C25": "PRIN-09", "C26": "COLD-01", "C27": "HRV-05", "C28": "LT1-01", "C29": "FTO-06", "C30": "REG-19",
+    "C25": "PRIN-08", "C26": "COLD-01", "C27": "HRV-05", "C28": "LT1-01", "C29": "FTO-06", "C30": "REG-19",
     "C31": "DOC-06", "C32": "HRV-07", "C33": "PRIN-12", "C37": "GATE-03", "C38": "DOC-09",
 }
 
@@ -1332,6 +1339,16 @@ _WORLD_HEADINGS = {"doc-goal": HEADINGS[2], "arch-dec": HEADINGS[11], "hrv": HEA
 _WORLD_C05 = {"key": "C05-reopens", "pattern": "worse rate reopens",
               "example": "a worse rate reopens the deferred hysteresis decision",
               "source": "specification/research/00-design-decisions.md:230@4e47d0e", "decision": "C05"}
+#: F008 AC6: every ``yes`` row names an old-meaning key. Each group's ``yes`` rows share one key; the
+#: arch-dec rows share C05's, and the other two quote ``_old_show``'s text so the verbatim check holds.
+_WORLD_OLD = {
+    "doc-goal": {"key": "doc-goal-old", "pattern": "flip rate is measured", "example": "the flip rate is measured",
+                 "source": "specification/research/00-design-decisions.md:230@4e47d0e", "decision": "C24"},
+    "arch-dec": _WORLD_C05,
+    "hrv": {"key": "hrv-old", "pattern": "deferred hysteresis decision [(]f006[)]",
+            "example": "the deferred hysteresis decision (F006)",
+            "source": "specification/research/00-design-decisions.md:230@4e47d0e", "decision": "C01"},
+}
 #: DOC-15 retires to its history entry; FTO-06 merges into FTO-05 under C29 (Group A, so H-38).
 _WORLD_NEW_ID = {"DOC-15": "H-01 (moved to history)", "FTO-06": "FTO-05"}
 _WORLD_SENTENCE = {"FTO-06": "The rule holds every day."}
@@ -1361,10 +1378,9 @@ def _world_files() -> dict[str, str]:
                 blocks.append(_block(inv, _WORLD_BODIES.get(inv), scope=scope, pinned=pinned))
             cs = decisions.get(inv, [])
             meaning = "yes" if any(c not in NO_ONLY for c in cs) else "no"
-            key = _WORLD_C05["key"] if inv == "GATE-02" else ADDITION
+            key = _WORLD_OLD[group]["key"] if meaning == "yes" else ADDITION
             rows.append(_row(inv, _world_sentence(inv), new, ", ".join(cs) or ADDITION, meaning, key))
-        if group == "arch-dec":
-            meanings.append(json.dumps(_WORLD_C05, ensure_ascii=False))
+        meanings.append(json.dumps(_WORLD_OLD[group], ensure_ascii=False))
         files[f"{group}.rules.txt"] = "\n\n".join(blocks) + "\n"
         files[f"{group}.trace.txt"] = "\n".join(rows) + "\n"
         files[f"{group}.meanings.txt"] = "\n".join(meanings) + ("\n" if meanings else "")
@@ -1527,19 +1543,66 @@ def test_decision_column_errors_is_green_on_the_world_complete_and_per_group(tmp
 @pytest.mark.parametrize(
     ("rows", "complete", "fragment"),
     [
-        pytest.param([_row("HRV-14", "s", "HRV-14", "C11", "yes")], False, "only on no rows", id="no-only-on-yes"),
-        pytest.param([_row("PRIN-08", "s", "PRIN-08", "C24, C25", "yes")], False, "only on no rows", id="no-only-in-a-list"),
-        pytest.param([_row(ADDITION, ADDITION, "HRV-47", ADDITION, "yes")], False, "cite a decision", id="addition-without-decision"),
-        pytest.param([_row("HRV-14", "s", "HRV-14", "C34", "yes")], False, "not a decision", id="further-c-number"),
+        pytest.param([_row("HRV-14", "s", "HRV-14", "C11", "yes", "k")], False, "never authorizes", id="no-only-on-yes"),
+        pytest.param([_row("PRIN-08", "s", "PRIN-08", "C25", "yes", "k")], False, "never authorizes", id="no-only-alone-on-yes"),
+        pytest.param([_row("PRIN-08", "s", "PRIN-08", "C19, C25", "yes", "k")], False, "never authorizes", id="no-only-pair-on-yes"),
+        pytest.param([_row(ADDITION, ADDITION, "HRV-47", ADDITION, "yes", "k")], False, "cite a decision", id="addition-without-decision"),
+        pytest.param([_row("HRV-14", "s", "HRV-14", "C34", "yes", "k")], False, "not a decision", id="further-c-number"),
         pytest.param([_row("HRV-14", "s", "HRV-14", "C11", "maybe")], False, "yes or no", id="bad-meaning"),
-        pytest.param([_row("HRV-25", "s", "HRV-25", "C06", "yes")], False, "YES_ROW_OWNER", id="yes-row-outside-owner-group"),
-        pytest.param([_row("HRV-31", "s", "HRV-31", "C01, C02", "yes")], True, "C03", id="complete-missing-decision"),
+        pytest.param([_row("HRV-11", "s", "HRV-11", "C01", "yes")], False, "old-meaning key", id="yes-row-without-key"),
+        pytest.param([_row("HRV-11", "s", "HRV-11", "C01", "yes", "")], False, "old-meaning key", id="yes-row-with-empty-key"),
+        pytest.param([_row("HRV-31", "s", "HRV-31", "C01, C02", "yes", "k")], True, "C03", id="complete-missing-decision"),
     ],
 )
 def test_decision_column_errors_turns_red(rows: list[str], complete: bool, fragment: str) -> None:
     errors = decision_column_errors([_as_row(r) for r in rows], complete)
     print(f"[slice compared] {errors}")
     assert any(fragment in e for e in errors), errors
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        # R3 "A shared cell": C24 authorizes the yes, and C25 rides along with its key for F011.
+        pytest.param(_row("PRIN-08", "s", "PRIN-08", "C24, C25", "yes", "C25-quarantine-list"), id="shared-cell-prin-08"),
+        # R3 "Ownership is coverage, not exclusivity": C06's owner is doc-goal, and GATE-01 is arch-dec.
+        pytest.param(_row("GATE-01", "s", "GATE-01", "C06", "yes", "C06-one-exception"), id="cross-group-gate-01"),
+        pytest.param(_row("HRV-25", "s", "HRV-25", "C06", "yes", "C06-hrv-25"), id="cross-group-hrv-25"),
+        pytest.param(_row("HRV-14", "s", "HRV-14", "C11", "no"), id="no-only-on-a-no-row-without-key"),
+        pytest.param(_row("PRIN-10", "s", "PRIN-10", "C19", "no", "C19-schemas"), id="no-row-with-key"),
+    ],
+)
+def test_decision_column_errors_is_green_on_shared_cells_cross_group_yes_rows_and_keyed_rows(row: str) -> None:
+    errors = decision_column_errors([_as_row(row)], False)
+    print(f"[slice compared] {row} -> {errors}")
+    assert errors == []
+
+
+def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> None:
+    """R3 (user, 2026-09-25): the owner group writes at least one ``yes`` row per C-number it owns;
+    other groups' ``yes`` rows for it are allowed. NO_ONLY C-numbers never back a ``yes``, so no
+    group owes one."""
+    owned = sorted(c for c, g in YES_ROW_OWNER.items() if g == "doc-goal" and c not in NO_ONLY)
+    only_c24 = group_coverage_errors([_as_row(_row("PRIN-08", "s", "PRIN-08", "C24, C25", "yes", "k"))], "doc-goal")
+    print(f"[slice compared] doc-goal owns {owned}; with only PRIN-08 yes C24, C25 -> {only_c24}")
+    for c in owned:
+        assert any(c in e for e in only_c24) == (c != "C24"), (c, only_c24)
+    assert not any("C25" in e or "C19" in e for e in only_c24), only_c24
+    # a no row, or a yes row in the wrong group only, does not cover
+    as_no = group_coverage_errors([_as_row(_row("PRIN-15", "s", "PRIN-15", "C06", "no"))], "doc-goal")
+    assert any("C06" in e for e in as_no), as_no
+    elsewhere = group_coverage_errors([_as_row(_row("GATE-01", "s", "GATE-01", "C06", "yes", "k"))], "arch-dec")
+    assert not any("C06" in e for e in elsewhere), elsewhere
+    covered = group_coverage_errors([_as_row(_row("PRIN-15", "s", "PRIN-15", "C06", "yes", "k"))], "doc-goal")
+    assert not any("C06" in e for e in covered), covered
+    every = [_as_row(_row(f"DOC-{i:02d}", "s", f"DOC-{i:02d}", c, "yes", "k")) for i, c in enumerate(owned, 1)]
+    assert group_coverage_errors(every, "doc-goal") == []
+
+
+def test_decision_column_errors_no_longer_checks_ownership() -> None:
+    """Mutation witness for Q1: the old exclusivity check named YES_ROW_OWNER on a cross-group row."""
+    errors = decision_column_errors([_as_row(_row("GATE-01", "s", "GATE-01", "C06", "yes", "k"))], False)
+    assert not any("YES_ROW_OWNER" in e for e in errors), errors
 
 
 def test_decision_column_errors_needs_a_yes_row_for_every_other_decision(tmp_path) -> None:
@@ -1747,7 +1810,9 @@ def _drop_first_row(files: dict[str, str]) -> None:
         pytest.param("hrv", _sub("hrv.trace.txt", "| Rule HRV-09 holds every day. |", "| Rule HRV-09 holds 40 days. |"), "40", id="proxy-no-row"),
         pytest.param("arch-dec", _put("arch-dec.meanings.txt", _C05_LINE.replace("worse rate reopens", "every day") + "\n"), "research/00", id="r4-negative-over-group"),
         pytest.param("arch-dec", _put("arch-dec.meanings.txt", _C05_LINE.replace("hysteresis decision\"", "hysteresis decision, invented\"") + "\n"), "4e47d0e", id="example-not-verbatim"),
-        pytest.param("hrv", _sub("hrv.trace.txt", "| C11 | no |", "| C11 | yes |"), "only on no rows", id="decision-column"),
+        pytest.param("hrv", _sub("hrv.trace.txt", "| C11 | no |", "| C11 | yes |"), "never authorizes", id="decision-column"),
+        pytest.param("hrv", _sub("hrv.trace.txt", "| C01, C02 | yes |", "| C01, C02 | no |"), "owns C01", id="group-coverage"),
+        pytest.param("doc-goal", _sub("doc-goal.trace.txt", "| C24, C25 | yes | doc-goal-old |", "| C24, C25 | yes | — |"), "old-meaning key", id="yes-row-without-key"),
         pytest.param("hrv", _sub("hrv.rules.txt", "Rule HRV-02 MUST", "The band MUST"), "band", id="band"),
         pytest.param("hrv", _drop_file("hrv.meanings.txt"), "hrv.meanings.txt", id="missing-draft"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| no | — |", "| no | k9 |", 1), "no such old-meaning key", id="key-not-in-group-meanings"),
