@@ -88,10 +88,10 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-23 | same | Every stored row inside the windows is in exactly one dataset or excluded with exactly one reason, unchanged from the inventory. |
 | PRIN-23/Scope | same | The windows are the baseline window and judged week, D-66 through D, as the code's partition comment states. |
 | PRIN-23/Not | same | Rows before D-66 are read for the era rule and trimmed from the response's excluded list, as the route does. |
-| PRIN-24 | same | window_days sets the judged week and is absent from the served Thresholds fields, so naming it an OPEN exception is what C33 requires; the value 7 matches the in-force constant. |
-| PRIN-24/Scope | same | The unserved verdict-affecting constants are the set C33 names as exceptions. |
-| PRIN-24/Not | same | recency_tolerance_days becomes served under F010, per C33. |
-| PRIN-24/Why | same | States C33's requirement to name each unserved verdict-affecting constant as an OPEN exception, and no more. |
+| PRIN-24 | same | Round 4: states what R13 M3 rules and no more: window_days (7, the WINDOW_DAYS of hrv_trend.py) stays the first OPEN exception, and the withhold of HRV-31 is the second, owned by IDEA-102, fired or not, since verdict_withheld compares the order of the judged-week days of another dataset and the response serves only DatasetSummary.week_days, a count; one sentence holds both and PRIN-12 is unchanged, as R13 requires. |
+| PRIN-24/Scope | same | Round 4: the unserved constants of C33 plus the judged-week day order the withhold compares, asked of every dataset by HRV-63 as verdict_withheld is, which is the unserved fact R13 names and nothing wider. |
+| PRIN-24/Not | same | Round 4: recency_tolerance_days stays excluded as served once F010 lands, per C33, and the per-dataset judged-week count is excluded because DatasetSummary.week_days serves it, which is the half R13 says is served. |
+| PRIN-24/Why | same | Round 4: cites C33 for the constant exception and the R13 review rulings, recorded at H-41, for the withhold, with the ground R13 gives, that no served field carries the day order. |
 | PRIN-13 | same | Reduce freely, never manufacture hard work, no easy day made hard on a green day, placement with the weekly plan; dropping the in-force words on impulse changes nothing, since placement stays with the plan. |
 | PRIN-13/Scope | same | Section 1.7 is about the daily gate's effect on the planned session. |
 | PRIN-13/Not | same | The project rule calls this a design invariant, not a tunable default. |
@@ -103,7 +103,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-15/Scope | same | Every population the forbidden direction reaches is the set C06 governs. |
 | PRIN-15/Not | same | The rule governs which populations may ship, not the verdict logic, which the HRV rules state. |
 | PRIN-15/Why | same | States C06's absolute-but-for-named-exceptions and R5's count of three rather than two. |
-| PRIN-25 | same | Resolves round 1: DEFERRED_EXCEPTION is now attributed to GATE-05, which names it at c 4 and 5 with 64 rows; the counts 22,232 of 307,500, 1,108 of 24,000 and 64 worsened rows are unchanged and match R5 and the gate test. |
+| PRIN-25 | same | Round 4: R13 S9 corrects the F005-parity counts to 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, the F005 column of DEFERRED_EXCEPTION_TOTALS in the gate test, so the two IDEA-087 exceptions no longer overlap; the 64 worsened rows at c 4 and 5 named by GATE-05 are unchanged. |
 | PRIN-25/Scope | same | The two IDEA-087 exceptions as T162 measured them, which R5 states. |
 | PRIN-25/Not | same | R5 leaves HRV-25's count to F009. |
 | PRIN-26 | same | Rule line unchanged: naming before counting only while a feature owns the count, with F009 owning HRV-25's count and pin and the count OPEN, per C06's note and R5. |
@@ -173,9 +173,9 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | DOC-05 | same | The spec references research/00 for conflict-resolution, parameter-default and freedom-to-operate questions and the mechanism docs for derivations, as section 5.1 says. |
 | DOC-05/Scope | same | Every section of the Phase-2 specification. |
 | DOC-05/Not | same | Derivations belong to the mechanism docs, per section 5.1. |
-| DOC-04 | same | The mechanism docs are the evidence, elevated and prioritised, changed only at the two recorded exceptions, the research/05 section 3.2 cold start and the section 2.4 and 6 band restatement; the date becomes H-09 as R6 requires. |
+| DOC-04 | same | Round 4: the same two exceptions, the research/05 section 3.2 cold start and the section 2.4 and 6 SWC band restatement, now cited by COLD-07 and H-09, where they are recorded (S8); H-09 does record research/05 sections 2.4 and 6 restated, and the evidence and elevation clauses are unchanged. |
 | DOC-04/Scope | same | The mechanism docs section 5.2 lists. |
-| DOC-04/Not | same | The spec and the decision records conform to research/00, per the preamble and section 5.3. |
+| DOC-04/Not | same | Round 4: adds that no section 5.4 rule changes a mechanism doc, which follows from the rule line limiting changes to the two exceptions, neither of which is a section 5.4 rule, and no rule under section 5.4 names a mechanism doc; the section 5.4 number the AC9 proxy needs is kept. |
 | DOC-03 | same | Decision records conform to Parts 1 to 4 and research/00 governs a conflict until the record is reconciled, as section 5.3 says. |
 | DOC-03/Scope | same | Every record under decisions. |
 | DOC-03/Not | same | The mechanism docs are governed separately by section 5.1 and 5.2. |
@@ -498,14 +498,14 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | GATE-08/Scope | same | Strap versus Health Snapshot disagreement rates are the caveat population |
 | GATE-08/Not | same | Claiming independence is what the caveat forbids |
 | FIG-01 | same | 20 days beneath min_baseline_readings, R+0 to R+19, after a coverage-gap re-establishment, with the published-figure obligation of the target shape |
-| FIG-01/Scope | same | Coverage gap only, not a tier change, as in-force L220 and L227 correct it |
+| FIG-01/Scope | same | Round 4: R13 S10 scope restoration: the 20 days after a coverage gap need daily capture from the resumption to reach min_baseline_readings by R+20, as the in-force density generalisation shows; the coverage-gap-only limit is kept. |
 | FIG-01/Not | same | The tier-change cost is FIG-02 |
 | FIG-02 | same | 18 silent days R+2 to R+19, closed form min_baseline_readings plus 7 minus min_window_readings equals 18, established true throughout, as in-force L227; the 29, the causes and the old-device clause are in FIG-06 to FIG-08 |
 | FIG-02/Scope | same | In-force L227 gives 18 at daily capture on a clean, gapless switch |
 | FIG-02/Not | same | The 20 days belong to the coverage gap of FIG-01 |
 | FIG-02/Why | same | R11 as decided: end of the quiet at R plus min_baseline_readings minus 1 plus 7 equals R+20, and the 20-day figure true of a coverage gap and false of a tier change, both from in-force L227 |
 | FIG-03 | same | Layoff longer than 21 days: days 1 to 4 judged, days 5 to 22 silent, 18, as in-force L229 |
-| FIG-03/Scope | same | A whole-series layoff past gap_reset_days is the in-force case |
+| FIG-03/Scope | same | Round 4: R13 S10 scope restoration: days 1 to 4 are judged only because the week still holds 7 minus k pre-layoff readings, which the in-force layoff derivation reads off daily capture up to the first layoff day. |
 | FIG-03/Not | same | The tier-change silence is FIG-02 |
 | FIG-03/Why | same | In-force L229 says that 18 is a coverage-gap figure and the equal length is a coincidence |
 | FIG-04 | same | 72 of 2,050 swept geometries move normal to unavailable at a daily-capture return, as in-force L222 |
@@ -525,7 +525,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-08/Scope | same | The overlapping-device case of in-force L227 |
 | FIG-08/Not | same | The clean switch is FIG-02 |
 | FIG-09 | same | Total 38 days: 18 silent plus 20 re-establishment days, as in-force L229 |
-| FIG-09/Scope | same | A whole-series layoff past gap_reset_days |
+| FIG-09/Scope | same | Round 4: R13 S10 scope restoration: the 38 days sum the 18 silent days, which need daily capture before the layoff, and the 20 re-establishment days, which need it from the resumption, so both densities are named. |
 | FIG-09/Not | same | 21 silent days does not reset, as in-force L229 |
 | FIG-10 | same | Five of the first seven mornings back silent at a daily-capture return, as in-force L222 |
 | FIG-10/Scope | same | Daily capture only, per DOC-12 and the inventory note |
@@ -542,7 +542,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-07/Scope | same | Per-tier dataset scope is in force since the per-tier dataset amendment; naming the band builder adds no meaning. |
 | HRV-07/Not | same | Restates the inventory's never-CV sentence and the in-force clarification that the band statistic is SD, not CV. |
 | HRV-07/Why | same | Matches C32 and the inventory resolution: the authority now states the floor the code applies on a degenerate series. |
-| HRV-01 | same | Same four tiers, same order, same quarantine and never-a-trend-input clause as the inventory and in-force section 3.3; note it keeps the four-tier wording that glossary T-26 says to avoid. |
+| HRV-01 | same | Round 4: R13 S11 wording: three input tiers in the in-force order, which match TIER_FIDELITY, and the HRV Status classification beside them, quarantined, not a tier and never a trend input, as T-05 and T-26 say; the four sources, their order and the quarantine are the in-force ones, so the meaning is unchanged, and the rules citing HRV-01 as the hierarchy still read true of an ordered three-tier list. |
 | HRV-01/Scope | same | Per-tier dataset scope is R11 scope, not meaning; the readings covered are the ones the hierarchy already governs. |
 | HRV-01/Not | same | Only points selection order to HRV-14; adds no exclusion beyond the in-force text. |
 | HRV-02 | same | Preferred, highest-fidelity and not a prerequisite, as in the inventory and the in-force preferred, highest-confidence, not a hard prerequisite. |
@@ -670,7 +670,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-39 | same | Statement unchanged: the stray definition and pooling across both tiers match the inventory and in-force 2026-09-12 (ii); only the Scope wording changed. |
 | HRV-39/Scope | same | Possible for candidate era boundary is vocabulary only, following glossary T-14 which reserves candidate for the recency gate; the set of boundaries is the same. |
 | HRV-39/Not | same | A capture at the very instant of the old era's last is simultaneous in force. |
-| HRV-40 | same | Pre-boundary readings never in the band, clip unconditional, as in force. |
+| HRV-40 | same | Round 4: R13 S11 names the tier of clause (a) of HRV-38, the dataset tier that tier_change_reset is asked with, in place of the now-sustaining tier; in the per-dataset model that is the same tier the in-force clip bullet meant, and the clip stays unconditional, so the meaning is unchanged and T-13 keeps sustains for clause (b). |
 | HRV-40/Scope | same | Datasets with an era boundary. |
 | HRV-40/Not | same | The report's extra condition is in force as a separate consequence. |
 | HRV-41 | same | Strays counted over every reading of every tier in D-66 to D, gap-clipped or not, plus the previous window, as in force. |
@@ -681,7 +681,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-42/Not | same | An empty week reads unavailable in force. |
 | HRV-43 | same | Unchanged: reset_on is the era's true first day for both reset kinds, as in-force lag bullet (i) says; only the Not line moved. |
 | HRV-43/Scope | same | For a coverage gap reset_on is the resumption day R, so the statement holds for both kinds. |
-| HRV-43/Not | same | Resolves round 2 as R12 rules: the first report day now points per reset kind, HRV-82 for tier_change and HRV-73 for coverage_gap, and HRV-73 now states that timing, so no reset kind is left without a rule. |
+| HRV-43/Not | differs | Round 4: says HRV-82 sets the first report day for a tier_change report, but HRV-82/Scope now reaches only a clean, gapless switch at daily capture on the new tier, so a tier_change report at other capture spacing or with strays, 33 days at every second day or 20 minus k with k strays per R13 S10, is attributed to a rule that excludes it; HRV-72 carries the daily-capture qualifier and this Not line does not. |
 | HRV-44 | same | Exactly two retired mechanisms, the same two, as the in-force correction states. |
 | HRV-44/Scope | same | IDEA-071's list. |
 | HRV-44/Not | same | The function and its tie-order pin survive in force. |
@@ -765,7 +765,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-71 | same | Resolves round 1: free now means no skip, no hole clip and no withhold on its account, which skipped or long-silent returns do incur (HRV-69, HRV-70), so the only-when limit of C03's corrected paraphrase is no longer empty. |
 | HRV-71/Scope | same | A returning dataset. |
 | HRV-71/Not | same | Skipped returns and returns after more than 21 silent days are the C03 cost cases. |
-| HRV-72 | same | States C15's tier_change definition exactly: an era boundary on that dataset, pre-boundary readings clipped from its own band, reported with the lag. |
+| HRV-72 | same | Round 4: still C15 exactly, an era boundary on one dataset with its own band clipped, and now says the report comes only after a lag whose figure HRV-82 gives for a clean switch at daily capture, as R13 S10 rules; every reported tier_change is lagged, since clause (a) accumulates new-tier days, so the added only is true. |
 | HRV-72/Scope | same | Reported tier_change resets. |
 | HRV-72/Not | same | C15 reserves re-establishment for the coverage gap. |
 | HRV-73 | same | Restores the in-force fact as R12 rules: a coverage_gap reset is reported from the resumption day, R+0, which the R+0 to R+20 walk in test_hrv_trend_reset pins with reset_reason coverage_gap on every day; the 21 and 22 day boundary and the clip are unchanged. |
@@ -797,7 +797,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-81/Scope | same | Clause a. |
 | HRV-81/Not | same | Clause c's widened count is HRV-41. |
 | HRV-82 | same | Resolves round 1: the 20-day lag, min_baseline_readings plus 7 minus 1, is now the tier_change report's only, as the in-force lag bullet's time-accumulating clause (a) reasoning and test_hrv_trend_reset's coverage-gap report from R+0 show. |
-| HRV-82/Scope | same | Resolves round 1: every reported tier_change reset leaves out coverage-gap resets, so no lag is added where in force there is none. |
+| HRV-82/Scope | same | Round 4: R13 S10 scope restoration: the 20-day lag was walked on a clean, gapless switch at daily capture, and the in-force T138 bullet already generalises the report day with capture spacing, so limiting the figure to that case, beside FIG-02 and citing DOC-12, restores the in-force reach rather than narrowing a meaning. |
 | HRV-82/Not | same | The reported date is HRV-43's. |
 | HRV-83 | same | Everything else kept, re-derived or redeployed, T093's week half subsumed, as in force. |
 | HRV-83/Scope | same | IDEA-071's list. |
@@ -815,4 +815,6 @@ Round 3: a fresh critic re-reviewed the 8 rows the rulings changed and returned 
 
 Round 3b: a fresh critic re-reviewed the 3 rows T189 changed, DOC-08, DOC-08/Scope and DOC-18, and returned 0 differs verdicts.
 
-Final: 789 rows, every one same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b.
+Round 4: a fresh critic re-reviewed the 15 rows the code-review fix changed in commit 0949e67 under the R13 rulings, PRIN-24 with its Scope, Not and Why, PRIN-25, HRV-01, HRV-40, HRV-72, HRV-82/Scope, FIG-01/Scope, FIG-03/Scope, FIG-09/Scope, DOC-04 and DOC-04/Not, plus the neighbour HRV-43/Not, which cites HRV-82, and returned 1 differs verdict, HRV-43/Not, which still attributes the first report day of every tier_change report to HRV-82 after HRV-82/Scope was narrowed to a clean switch at daily capture.
+
+Final: 789 rows, 788 same, 1 differs, HRV-43/Not. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4.
