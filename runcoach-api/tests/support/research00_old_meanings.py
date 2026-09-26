@@ -135,6 +135,18 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         source='specification/research/00-design-decisions.md:218@4e47d0e',
         decision='C15',
     ),
+    'C16-hrv21-reads-below-that-band': OldMeaning(
+        pattern='judged-week mean reads below that band',
+        example='whose judged-week mean reads below that band is named as disagreeing, in either direction',
+        source='specification/research/00-design-decisions.md:230@4e47d0e',
+        decision='C16 (downstream: spec-mirror/features/F006-per-tier-hrv-datasets.md AC10)',
+    ),
+    'C17-hrv24-read-on-last': OldMeaning(
+        pattern='the dataset the athlete was read on last',
+        example='from the dataset the athlete was read on last',
+        source='specification/research/00-design-decisions.md:230@4e47d0e',
+        decision='C17 (downstream: runcoach-api/src/runcoach_api/schemas.py:530)',
+    ),
     'C18-no-tier-from-resolver': OldMeaning(
         pattern='resolvebaselinetier answer(?:ing|ed) no tier at all',
         example='(`resolve_baseline_tier` answering "no tier at all"',

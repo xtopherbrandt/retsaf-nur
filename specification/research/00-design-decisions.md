@@ -25,7 +25,7 @@
 - **T-21 fidelity** IS the ordinal rank in `TIER_FIDELITY`, the only quality term Section 3 applies; a confidence weight is a Section 6 quantity that Section 3 does not compute.
 - **T-22 disagree** IS what `disagreed_with` reports, a dataset whose judged-week mean reads on the other side of its own HRV SWC band from the selected dataset's, served only when a verdict is conferred.
 - **T-23 count** IS a number of distinct local days in the athlete's time zone, so a reading is one day's kept capture and a capture is a stored row.
-- **T-24 forbidden direction** IS asserting `hrv_normal` on evidence the system reports as insufficient, or while any dataset reported in the same response reads below its own HRV SWC band, whether or not that dataset is judgeable; up-regulation names only this direction.
+- **T-24 forbidden direction** IS asserting `hrv_normal` on evidence the system reports as insufficient, or while any dataset reported in the same response reads below its own HRV SWC band, whether or not that dataset is judgeable.
 - **T-25 rate** IS OPEN (IDEA-088).
 - **T-26 input tiers** IS the three tiers of T-05 that feed the trend, stated as three input tiers plus the quarantined HRV Status classification rather than as four tiers.
 - **T-27 rung / loop** IS a rung, a position on the arbitration ladder (ARB-01), and a loop or timescale, one of ARCH-03's five; the ladder arbitrates between loops, but its rungs are not the loops.
@@ -125,12 +125,12 @@ Pinned: none
 ### 1.5 Raw over derived
 
 **PRIN-07.** The state model and the load, response, fatigue, readiness and injury-risk metrics MUST be built only from raw measured signals: HR, RR, pace/GPS, cadence, barometric altitude, running dynamics, and power where present.
-Scope: every metric that feeds a decision.
+Scope: the state model and the load, response, fatigue, readiness and injury-risk metrics, wherever the system computes them.
 Not: a vendor-derived estimate, which PRIN-08 quarantines.
 Pinned: none
 
 **PRIN-08.** Vendor black-box metrics MUST be ingested into a quarantined namespace and MUST never feed a decision, whatever any setting or default says.
-Scope: every metric on the quarantine list of PRIN-20, from any vendor.
+Scope: every vendor black-box metric from any vendor, the metrics PRIN-20 names among them.
 Not: a device's numeric resting rMSSD, which PRIN-10 admits as an HRV input.
 Pinned: none
 Why: decision C24 leaves no default or switch under which the coaching logic may read a quarantined metric (H-38).
@@ -146,12 +146,12 @@ Not: a numeric per-tier confidence weight, which is deferred to Section 6's read
 Pinned: none
 
 **PRIN-19.** A quarantined vendor metric MAY be used only for display to the athlete and for divergence surfacing (REG-17).
-Scope: every metric on the quarantine list of PRIN-20 (the named vendor metrics).
+Scope: every vendor black-box metric that PRIN-08 quarantines, the metrics PRIN-20 names among them.
 Not: a corroboration that feeds a decision, a flag or a state change.
 Pinned: none
 
 **PRIN-20.** The quarantine list IS Garmin/Firstbeat VO2max, Training Status, Training Readiness, Body Battery, Performance Condition, and the HRV Status Balanced/Unbalanced/Low classification.
-Scope: the metrics PRIN-08 and PRIN-19 govern, and every restatement of the list downstream.
+Scope: the metrics the quarantine names, which PRIN-08 and PRIN-19 govern together with every other vendor black-box metric, and every restatement of the list downstream.
 Not: a numeric resting rMSSD, which is an HRV input (PRIN-10) and not a listed metric.
 Pinned: none
 Why: decision C25 has the project rule's shorter list swept to this one after the rewrite, per DOC-02 (H-38).
@@ -164,11 +164,11 @@ Pinned: none
 ### 1.6 Transparency and explainability
 
 **PRIN-11.** Every derived metric MUST be defined by a transparent, reproducible formula that the spec states in full.
-Scope: every metric the system derives from raw measured signals.
+Scope: every metric the system derives, including an open method that is itself a derived estimate, such as the cold-start estimator (PRIN-09).
 Not: a vendor black-box metric, which PRIN-08 quarantines.
 Pinned: none
 
-**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so the response's `thresholds` block MUST serve the verdict-affecting constants `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`.
+**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so the response's `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every verdict-affecting constant it does not serve, `window_days` today (PRIN-24), IS an OPEN exception.
 Scope: each response read on its own, including its `selected_reason`.
 Not: the formulas themselves, which the spec states in full under PRIN-11 (transparent formulas).
 Pinned: none (F010)
@@ -197,11 +197,11 @@ Scope: the day-of readiness rung's effect on the planned session.
 Not: a tunable default, since this is a design invariant (DOC-17).
 Pinned: none
 
-**PRIN-14.** The system MUST NOT assert a readiness-intact verdict (`hrv_normal`) in the forbidden direction, and where the evidence it reports is insufficient it MUST withhold the verdict instead.
+**PRIN-14.** The system MUST NOT assert a readiness-intact verdict (`hrv_normal`) in the forbidden direction (T-24) outside the named exceptions of PRIN-15, and where the evidence it reports is insufficient it MUST withhold the verdict instead.
 Scope: every served HRV verdict, whichever dataset and cause produced it.
 Not: the manufacture of hard work on a green day, which PRIN-13 forbids separately.
 Pinned: none
-Why: decision C07 writes into this section the weak-evidence clause that more than 20 citations already read into it, with the forbidden direction defined once in the Glossary as T-24 (H-39).
+Why: decision C07 writes into this section the weak-evidence clause that more than 20 citations already read into it, with the forbidden direction defined once in the Glossary as T-24, and decision C06 makes the whole of that direction absolute but for the named exceptions of PRIN-15 (H-39).
 
 **PRIN-15.** A forbidden-direction population MUST NOT ship on a rarity argument and MAY ship only as a named, counted, test-pinned exception owned by an open IDEA, which may not grow, and the exceptions today are exactly three: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by IDEA-087, and HRV-25's population, owned by IDEA-099.
 Scope: every population that the forbidden direction of PRIN-14 reaches, measured or not.
@@ -210,13 +210,13 @@ Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_for
 Pinned: none (F009)
 Why: decision C06 makes the forbidden direction absolute but for named exceptions, and the refinements count three of them, not two (H-39, H-41).
 
-**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,232 of 307,500 rectangle rows and 1,108 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-01 names.
+**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,232 of 307,500 rectangle rows and 1,108 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-05 names.
 Scope: the two IDEA-087 exceptions of PRIN-15, as T162 measured them.
 Not: HRV-25's population, whose count F009 produces.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
 
 **PRIN-26.** An exception MAY be named before it is counted only while a feature owns its count, as F009 owns the count and pin of HRV-25's population, whose count is OPEN.
-Scope: HRV-25's population, where the selected dataset serves `hrv_normal` while any other reported dataset reads below its own HRV band.
+Scope: every exception PRIN-15 names before it is counted, of which HRV-25's population is the one today.
 Not: an uncounted exception that no feature owns, which may not ship.
 Pinned: none (F009)
 
@@ -291,7 +291,7 @@ Pinned: none
 
 **ARCH-00.** The spec MUST honour all eight Part 2 keystones, stated in rules ARCH-01 to ARCH-13, and a design that violates one is wrong whatever its other merits.
 Scope: every design choice the spec makes.
-Not: a design question no keystone addresses, which the Part 1 principles and the Part 3 register settle.
+Not: the detail of each keystone, which rules ARCH-01 to ARCH-13 state.
 Pinned: none
 
 **ARCH-01.** Post-session adaptation MUST be the primary loop: the core is the four between-session loops, and real-time intra-workout adaptation is an optional on-device stretch module, approximated post hoc when absent.
@@ -356,7 +356,7 @@ Not: a verdict about the athlete's readiness, which `hrv_unavailable` does not a
 Pinned: none
 Why: decision C08 makes a withheld HRV verdict conservative through Section 6's treatment of it, as keystone 8 requires of low confidence.
 
-**ARCH-13.** Until Section 6 exists, the spec MUST state every withheld HRV day as a net cost with no offsetting benefit.
+**ARCH-13.** Until Section 6 exists, a withheld HRV day IS a net cost.
 Scope: every day on which the HRV input reads `hrv_unavailable` before Section 6's readiness fusion is built.
 Not: a withheld day once Section 6 exists, which rule ARCH-12 governs.
 Pinned: none
@@ -370,8 +370,8 @@ Not: a design invariant, which DOC-17 holds untunable.
 Pinned: none
 Why: decision C31 makes the individualization rule govern all per-athlete tuning (H-39).
 
-**DOC-07.** The Part 3 register IS the single place where parameter defaults chosen under uncertainty are reconciled.
-Scope: every parameter default chosen under uncertainty, whether research or the spec introduced it.
+**DOC-07.** The Part 3 register IS the single place where the spec reconciles its choices made under scientific uncertainty or among competing methods, parameter defaults included.
+Scope: every such choice, whether research or the spec introduced it.
 Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
@@ -385,9 +385,9 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the rows marked spec-introduced, whose batch was ratified as H-04 records.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the rows marked spec-introduced, whose batches were ratified as H-04 and H-05 record.
 Scope: every row of the Part 3 register.
-Not: a row that cites no research and is not marked spec-introduced.
+Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
 
 **REG-01.** CTL MUST be a 42-day EWMA and ATL a 7-day EWMA, with TSB = CTL − ATL.
@@ -397,13 +397,13 @@ Pinned: none
 
 **REG-02.** ACWR MUST be advisory context and a spike flag inside injury risk only, with a wide ~0.8–1.5 range, and MUST never be a hard gate.
 Scope: every use of the acute:chronic workload ratio.
-Not: a hard gate on training, which monotony, strain and subjective pain inform instead.
+Not: the TSB target range or the CTL-rise range, which are separate quantities (T-07).
 Pinned: none
 Why: T-07 reserves the word band for the HRV SWC band, so the ACWR's interval is named a range.
 
 **REG-03.** Per-session load MUST use rTSS as primary when a valid GAP stream exists, reconciled against HR-TRIMP and sRPE.
 Scope: every session's load.
-Not: a single internal-load metric trusted alone.
+Not: the fallback when the sources diverge or one is missing, which rule REG-21 states.
 Pinned: none
 
 **REG-04.** The HR-TRIMP sex coefficients MUST be men 0.64·e^(1.92·ΔHR) and women 0.86·e^(1.67·ΔHR).
@@ -432,7 +432,7 @@ Not: a mid-block down week, which rule REG-15 sets.
 Pinned: none
 
 **REG-09.** Data-quality gating MUST require 1 Hz recording, and a chest strap for any at-or-above-threshold HR metric.
-Scope: every HR metric the system derives from an activity.
+Scope: every recording the system ingests, and every at-or-above-threshold HR metric.
 Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs.
 Pinned: none
 
@@ -504,7 +504,7 @@ Scope: every training block's intensity split above easy running.
 Not: the ~80% easy share, which rule REG-07 holds throughout.
 Pinned: none
 
-**REG-23.** PPG input MUST be flagged and carried at reduced fidelity, an ordinal rank below the chest strap, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
+**REG-23.** PPG input MUST be flagged and carried at reduced fidelity, and resting HRV from PPG MUST carry that fidelity as an ordinal rank below the chest strap in selection, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
 Scope: every input the system takes from optical PPG.
 Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes.
 Pinned: none
@@ -669,7 +669,7 @@ Pinned: none
 Why: decision C19 words the admission as fidelity, because Section 3 holds no confidence weight (HRV-54).
 
 **HRV-05.** HRV MUST never be computed from in-run wrist PPG, and in-activity HRV MUST NOT be computed in v1 or for any readiness input, so adopting DFA-α1 of the in-run RR series for LT1 (LT1-02) MUST first amend this rule explicitly.
-Scope: every HRV computation in v1, and every readiness input in any version.
+Scope: every HRV computation the system makes, from any source.
 Not: resting HRV from the source hierarchy of HRV-01 (the hierarchy).
 Pinned: none
 Why: decision C27 scopes the prohibition so that it no longer contradicts the recommended future LT1 path.
@@ -698,7 +698,7 @@ Not: the v1 boundary, which rule LT1-01 sets.
 Pinned: none
 Why: decision C27 keeps the future path consistent with rule HRV-05, which forbids in-activity HRV in v1.
 
-**LT1-03.** Any LT1 surrogate that would move the Z1/Z2 boundary off that fraction IS future work, outside v1.
+**LT1-03.** Any LT1 surrogate IS future work, outside v1.
 Scope: every proposed LT1 surrogate.
 Not: the v1 fraction of threshold, which rule LT1-01 sets.
 Pinned: none
@@ -791,7 +791,7 @@ Pinned: none
 
 **AUT-07.** Every chat-originated change MUST route through the arbitration ladder (ARB-01), and chat MUST never be a second, opaque adaptation path.
 Scope: every change that starts in a chat message.
-Not: a hard flag, which fires deterministically whatever the chat framing (ARB-07).
+Not: a chat message that asks for no change, such as a probe of an applied change (AUT-04).
 Pinned: none
 
 **DEC-01.** `decisions/01` (Conversational Coach Interface) IS a record that conforms to research/00 and is consistent with §1.5, §1.6 and the ladder.
@@ -874,7 +874,7 @@ Not: an overlap, since the judged week and the nominal baseline window are disjo
 Pinned: none
 
 **HRV-09.** Every count in the HRV rule MUST be in distinct local days, with `min_baseline_readings` = 14 and `min_window_readings` = 3.
-Scope: every count HRV-08 to HRV-46 take, in every per-tier dataset.
+Scope: every count the HRV rule takes, in every per-tier dataset.
 Not: a count of captures, since a second capture on one local day adds no day.
 Pinned: none
 
@@ -909,7 +909,7 @@ Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_promoted_ver
 Scope: the judgeable per-tier datasets on each judged day, which are the recency gate's candidates.
 Not: an established dataset that is not judgeable, which the gate never skips but which can hold the reference maximum.
 Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band
-Why: decision C10 takes the reference over every established dataset, so an established dataset without a judgeable week, read later, can strike a lone judgeable one.
+Why: decision C10 drops the wording that a lone candidate is never struck, since the reference taken over every established dataset (H-26), which decision C11 restates, can strike a lone judgeable one.
 
 **HRV-16.** `recency_tolerance_days` MUST be 28, four judged weeks (4 × `window_days`), chosen greater than `gap_reset_days` (21) so that the recency gate and the coverage-gap reset do not disagree about the same number of silent days.
 Scope: the recency gate of HRV-15 (the skip).
@@ -947,7 +947,7 @@ Scope: every response, whichever of the three no-verdict states of HRV-23 (no-ve
 Not: the reporting of each dataset against its own SWC band, which HRV-57 keeps.
 Pinned: runcoach-api/tests/test_hrv_dataset_populations.py::test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does
 
-**HRV-23.** A no-verdict state IS exactly one of three: nothing selected; a selected dataset withheld under HRV-31 (the withhold); a day that has not happened.
+**HRV-23.** The set of no-verdict states IS exactly three: nothing selected; a selected dataset withheld under HRV-31 (the withhold); a day that has not happened, which MAY coincide with either of the other two (HRV-58).
 Scope: every judged day on which the HRV verdict is `hrv_unavailable`.
 Not: which `unavailable_reason` is served, which HRV-28 (the causes) sets.
 Pinned: none
@@ -1033,7 +1033,7 @@ Pinned: runcoach-api/tests/test_hrv_tier_change_per_dataset.py::test_the_era_bou
 Why: decision C13 states the era clip and the hole clip as two clips, since the code runs both.
 
 **HRV-39.** A stray IS a new-tier capture from the old era's first local day up to its last reading, or an old-tier capture after the new era's first, and strays MUST be pooled across both tiers.
-Scope: every candidate era boundary of HRV-38 (the era boundary).
+Scope: every possible era boundary of HRV-38 (the era boundary).
 Not: a capture simultaneous with the old era's last reading (HRV-79).
 Pinned: none
 
@@ -1098,7 +1098,7 @@ Not: the trailing-silence regime that HRV-53 (IDEA-093) leaves OPEN.
 Pinned: none
 Why: decision C10 scopes the partition, since the hole clip also acts on one tier's silence.
 
-**HRV-53.** The 22–28-day trailing-silence regime of one per-tier dataset, which neither the coverage-gap reset nor the hole clip reaches, IS OPEN, owned by IDEA-093.
+**HRV-53.** The 22–28-day trailing-silence regime of one per-tier dataset, which neither the coverage-gap reset, the hole clip nor the recency gate reaches, IS OPEN, owned by IDEA-093.
 Scope: one tier falling silent at the end of its baseline window while another tier carries the series.
 Not: an internal hole of more than 21 silent local days, which HRV-37 (the hole clip) clips.
 Pinned: none
@@ -1189,7 +1189,7 @@ Scope: a returning per-tier dataset.
 Not: a silence of the whole series, which the coverage-gap reset (HRV-73) clips.
 Pinned: none
 
-**HRV-71.** A return to a previously established per-tier dataset IS free, meaning nothing is re-established on its account, only when it follows 21 or fewer silent local days of its tier and the recency gate does not skip it.
+**HRV-71.** A return to a previously established per-tier dataset IS free, meaning it costs neither the skip of HRV-15, the hole clip of HRV-37 nor a withhold on its account under HRV-31, only when it follows 21 or fewer silent local days of its tier and the recency gate does not skip it.
 Scope: a returning per-tier dataset.
 Not: a return the recency gate skips, or one after more than 21 silent local days, which HRV-69 and HRV-70 (the return costs) govern.
 Pinned: none
@@ -1221,7 +1221,7 @@ Pinned: runcoach-api/tests/test_hrv_internal_hole_clip.py::test_probe_the_hole_i
 Why: decision C13 separates the two clips, since the code runs both and composes them.
 
 **HRV-77.** The boundary-existence half of the stray tolerance (fewer than 14 distinct days of strays) MUST decide whether an era boundary exists.
-Scope: every candidate era boundary of HRV-38 (the era boundary).
+Scope: every possible era boundary of HRV-38 (the era boundary).
 Not: the report, which the week half decides (HRV-78).
 Pinned: none
 
@@ -1245,8 +1245,8 @@ Scope: clause (a) of HRV-38 (the era boundary).
 Not: clause (c)'s stray count, which HRV-41 (unclipped strays) widens.
 Pinned: none
 
-**HRV-82.** The reset report's lag behind the reset IS `min_baseline_readings + 7 − 1` = 20 days, accepted as latency rather than inaccuracy because an earlier report would be a prediction.
-Scope: every reported reset of every per-tier dataset.
+**HRV-82.** A `tier_change` reset's report lag behind the reset IS `min_baseline_readings + 7 − 1` = 20 days, accepted as latency rather than inaccuracy because an earlier report would be a prediction.
+Scope: every reported `tier_change` reset of every per-tier dataset.
 Not: the reported date itself, which HRV-43 (reset_on) makes the era's true first day.
 Pinned: none
 
@@ -1260,7 +1260,7 @@ Scope: every device replacement within one `hrv_source_tier`.
 Not: a change of tier, which HRV-72 (tier_change) governs.
 Pinned: none
 
-**GATE-01.** Every §1.7-forbidden rate MUST be measured against shipped F005 on every sweep, with capture density varied on both datasets.
+**GATE-01.** Every §1.7-forbidden rate MUST be measured against shipped F005 on every sweep, with capture density varied on both datasets independently.
 Scope: every rate in the forbidden direction that the release gate computes.
 Not: the dataset-flip rate, which rule GATE-06 measures.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_no_1_7_rate_worsens_against_shipped_f005
@@ -1274,7 +1274,7 @@ Why: the no-hysteresis decision is recorded at H-37 and is revisited only if the
 
 **GATE-03.** The constant `recency_tolerance_days` = 28 MUST rest on the two reasons of rule HRV-16 alone, (i) four judged weeks and (ii) greater than `gap_reset_days` (21), until a re-measurement against per-tier datasets is recorded.
 Scope: every citation of the recency tolerance's basis.
-Not: a measured tolerance range, which rule GATE-07 excludes for per-tier datasets.
+Not: a measured tolerance bracket, which rule GATE-07 excludes for per-tier datasets.
 Pinned: none
 Why: decision C37 records that no re-measurement result exists, and T-07 reserves the word band for the HRV SWC band.
 
@@ -1294,8 +1294,8 @@ Scope: every sweep the release gate runs.
 Not: the decision on hysteresis, which rule GATE-02 states.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned
 
-**GATE-07.** The `[18, 44]` tolerance range MUST NOT be cited for per-tier datasets, because it was measured against the fused single-baseline HRV band.
-Scope: every citation of a measured tolerance range for `recency_tolerance_days`.
+**GATE-07.** The `[18, 44]` tolerance bracket MUST NOT be cited for per-tier datasets, because it was measured against the fused single-baseline HRV band.
+Scope: every citation of a measured tolerance bracket for `recency_tolerance_days`.
 Not: the value 28 itself, which rule GATE-03 grounds.
 Pinned: none
 
