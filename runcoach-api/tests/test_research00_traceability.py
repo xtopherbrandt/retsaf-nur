@@ -330,6 +330,72 @@ NON_C_AUTHORITIES = {
 #: names an old-meaning key (F008 AC6; S5).
 KEYED_NO_ONLY = ("C19", "C25")
 
+#: Each old-meaning key mapped to the inventory row(s) that may name it (sprint-007 review iteration
+#: 3, S1). Checking only that a key's leading decision token is cited let a row borrow any key whose
+#: decision it also cites: DOC-03's "1–4" became "1–3" under ``C38 | yes |
+#: DOC-09-C38-superseded-text-left-standing`` and the suite stayed green, the third route in one
+#: family (iteration 1 M2, iteration 2 M1). Derived 2026-09-26 from the committed table at d8c8275
+#: (54 keys, all 54 of ``OLD_MEANINGS``), then frozen. Every key has one owner row except
+#: ``C19-hrv-04-reduced-confidence``, which REG-09 and HRV-04 both name.
+#: ``test_the_key_owner_map_is_the_committed_tables_key_column`` holds the table to it both ways. Do
+#: not widen a set to fit a row.
+KEY_OWNERS: dict[str, frozenset[str]] = {
+    "AUT-02-C23-override-outside-autonomy": frozenset({"AUT-02"}),
+    "AUT-04-C20-two-purposes-only": frozenset({"AUT-04"}),
+    "C01-withhold-not-judgeable-only": frozenset({"HRV-31"}),
+    "C02-withhold-against-selected": frozenset({"HRV-31"}),
+    "C03-return-is-free": frozenset({"HRV-34"}),
+    "C04-hole-at-least": frozenset({"HRV-37"}),
+    "C05-gate02-worse-rate-reopens": frozenset({"GATE-02"}),
+    "C06-gate01-one-exception": frozenset({"GATE-01"}),
+    "C06-hrv-25-accepted-cost": frozenset({"HRV-25"}),
+    "C08-arch08-silence-tolerated-freely": frozenset({"ARCH-08"}),
+    "C08-reg11-readiness-gate-down-weights": frozenset({"REG-11"}),
+    "C09-fig05-idea071-sprint": frozenset({"FIG-05"}),
+    "C09-residual-carried-to-idea-071": frozenset({"HRV-33"}),
+    "C10-lone-candidate-never-struck": frozenset({"HRV-15"}),
+    "C10-recency-only-rule-that-acts": frozenset({"HRV-16"}),
+    "C12-same-baseline-window": frozenset({"HRV-12"}),
+    "C13-era-clip-becomes-hole-clip": frozenset({"HRV-38"}),
+    "C14-tier-change-collapses-baseline": frozenset({"HRV-34"}),
+    "C15-tier-change-called-re-establishment": frozenset({"HRV-34"}),
+    "C16-hrv21-reads-below-that-band": frozenset({"HRV-21"}),
+    "C17-hrv24-read-on-last": frozenset({"HRV-24"}),
+    "C18-no-tier-from-resolver": frozenset({"HRV-30"}),
+    "C19-hrv-03-tag-and-confidence": frozenset({"HRV-03"}),
+    "C19-hrv-04-reduced-confidence": frozenset({"HRV-04", "REG-09"}),
+    "C21-dec01-bonus-section": frozenset({"DEC-01"}),
+    "C24-arch06-ignores-by-default": frozenset({"ARCH-06"}),
+    "C26-cold01-hrv-input": frozenset({"COLD-01"}),
+    "C27-in-activity-hrv-not-computed-at-all": frozenset({"HRV-05"}),
+    "C27-lt1-picked-up-without-amendment": frozenset({"LT1-02"}),
+    "C28-lt1-surrogate-refinement": frozenset({"LT1-01"}),
+    "C30-ctl-rise-row-deferred": frozenset({"REG-19"}),
+    "C31-ind01-remains-tunable": frozenset({"IND-01"}),
+    "C32-band-without-floor": frozenset({"HRV-07"}),
+    "C33-hrv-17-tolerance-not-published": frozenset({"HRV-17"}),
+    "C37-gate03-remeasured-not-cited": frozenset({"GATE-03"}),
+    "DOC-06-C31-every-number-tunable": frozenset({"DOC-06"}),
+    "DOC-09-C38-superseded-text-left-standing": frozenset({"DOC-09"}),
+    "GOAL-02-C22-goal-contract-two-fields": frozenset({"GOAL-02"}),
+    "HRV-01-R13-four-tier-hierarchy": frozenset({"HRV-01"}),
+    "HRV-11-per-day-collapse-unspecified": frozenset({"HRV-11"}),
+    "HRV-40-R13-now-sustaining-tier": frozenset({"HRV-40"}),
+    "PRIN-05-C06-conservative-wins-unscoped": frozenset({"PRIN-05"}),
+    "PRIN-08-C24-sidecar-ignored-by-default": frozenset({"PRIN-08"}),
+    "PRIN-08-C25-rule-file-short-list": frozenset({"PRIN-08"}),
+    "PRIN-10-C19-reduced-confidence": frozenset({"PRIN-10"}),
+    "PRIN-12-C33-tolerance-not-published": frozenset({"PRIN-12"}),
+    "PRIN-12-R13-withheld-response-stays-reproducible": frozenset({"PRIN-12"}),
+    "PRIN-14-C07-weak-evidence-only": frozenset({"PRIN-14"}),
+    "PRIN-15-C06-accepted-as-priced": frozenset({"PRIN-15"}),
+    "PRIN-16-C08-silence-tolerated-freely": frozenset({"PRIN-16"}),
+    "T07-acwr-band": frozenset({"REG-02"}),
+    "T07-ctl-rise-band": frozenset({"REG-19"}),
+    "T07-tolerance-band": frozenset({"GATE-03"}),
+    "T07-tsb-target-form-band": frozenset({"REG-16"}),
+}
+
 #: The decisions reference's two tables, for the H-NN a merged-away ID retires under (R11).
 GROUP_A = frozenset({
     "C01", "C02", "C03", "C04", "C10", "C11", "C12", "C13", "C14", "C15", "C16", "C17", "C18", "C19",
@@ -863,7 +929,8 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
     is that C-number, and any row citing C25 C25's own key (R3; S5); the decision every key a row
     names records -- its **leading** token (``_lead_decision``), not any token its prose mentions --
     is cited in the row's decision cell, so a key cannot be borrowed from another row's change (M2,
-    M1); an addition row cites a decision. The key checks read ``meanings``
+    M1); and a key in ``KEY_OWNERS`` is named only by a row its frozen set holds, so a row citing the
+    same decision still cannot borrow it (iteration 3, S1); an addition row cites a decision. The key checks read ``meanings``
     (default: the support module's ``OLD_MEANINGS``); a key absent from it is
     ``traceability_errors``' finding. With ``complete``, every decision appears and every decision
     outside NO_ONLY backs at least one ``yes`` row. Group ownership is coverage, not exclusivity (R3),
@@ -909,11 +976,14 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
                   and c not in key_lead.values()):
                 errors.append(f"[decision] {label}: cites {c} and names no old-meaning key whose decision is "
                               f"{c}: {keys} (R3, F008 AC6)")
-        for k, lead in key_lead.items():
-            if lead not in cell_tokens:
-                errors.append(f"[decision] {label}: old-meaning key {k!r} records decision {lead!r}, which "
-                              f"the row's cell {row['decision']!r} does not cite (M2, M1: a key cannot be "
-                              "borrowed)")
+        for k in dict.fromkeys(keys):
+            if k in key_lead and key_lead[k] not in cell_tokens:
+                errors.append(f"[decision] {label}: old-meaning key {k!r} records decision {key_lead[k]!r}, "
+                              f"which the row's cell {row['decision']!r} does not cite (M2, M1: a key "
+                              "cannot be borrowed)")
+            elif k in KEY_OWNERS and row["inventory ID"] not in KEY_OWNERS[k]:
+                errors.append(f"[decision] {label}: old-meaning key {k!r} belongs to {sorted(KEY_OWNERS[k])}, "
+                              f"not to {label} (S1: KEY_OWNERS is frozen; a key cannot be borrowed)")
         if _is_blank(row["inventory ID"]) and _is_blank(row["decision"]):
             errors.append(f"[decision] {label}: an addition row must cite a decision")
     if complete:
@@ -1968,9 +2038,26 @@ def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> 
         # authorizes a yes on PRIN-12 alone, and the key is not borrowed (its decision is R13).
         pytest.param(
             _row("DOC-03", "s", "DOC-03", "R13", "yes", "HRV-01-R13-four-tier-hierarchy"),
+            # Iteration 3, S1: the key records R13, which the cell cites, but it is HRV-01's key.
             [("[decision] DOC-03: R13 authorizes a yes only on ['PRIN-12'], not on DOC-03 (R3, M1: "
-              "NON_C_AUTHORITIES is frozen)")],
+              "NON_C_AUTHORITIES is frozen)"),
+             ("[decision] DOC-03: old-meaning key 'HRV-01-R13-four-tier-hierarchy' belongs to ['HRV-01'], "
+              "not to DOC-03 (S1: KEY_OWNERS is frozen; a key cannot be borrowed)")],
             id="m1-r13-yes-on-a-row-r13-does-not-rule-on"),
+        # Iteration 3, S1: scanner's DOC-03 case. "1–4" -> "1–3" under C38 with DOC-09's key: C38
+        # authorizes the yes and the key's decision is cited, but the key is DOC-09's.
+        pytest.param(
+            _row("DOC-03", "s", "DOC-03", "C38", "yes", "DOC-09-C38-superseded-text-left-standing"),
+            [("[decision] DOC-03: old-meaning key 'DOC-09-C38-superseded-text-left-standing' belongs to "
+              "['DOC-09'], not to DOC-03 (S1: KEY_OWNERS is frozen; a key cannot be borrowed)")],
+            id="s1-c38-row-borrows-doc-09s-key"),
+        # Iteration 3, S1: the shared key is named by its two owners and by no third row.
+        pytest.param(
+            _row("PRIN-10", "s", "PRIN-10", "C19", "no",
+                 "PRIN-10-C19-reduced-confidence, C19-hrv-04-reduced-confidence"),
+            [("[decision] PRIN-10: old-meaning key 'C19-hrv-04-reduced-confidence' belongs to ['HRV-04', "
+              "'REG-09'], not to PRIN-10 (S1: KEY_OWNERS is frozen; a key cannot be borrowed)")],
+            id="s1-shared-key-on-a-third-row"),
         # Iteration 2, M1: T-26 appears only in the HRV-01 key's prose; the key records R13.
         pytest.param(
             _row("DOC-09", "s", "DOC-09", "C38, T-26", "yes",
@@ -2025,18 +2112,58 @@ def test_decision_column_errors_is_green_on_every_non_c_authority() -> None:
                            f"{outside} (R3, M1: NON_C_AUTHORITIES is frozen)")], (token, errors)
 
 
+#: A second copy of ``NON_C_AUTHORITIES``, which the pin test compares the map against (sprint-007
+#: review iteration 3, S2). Checking the map only against the table let the two widen together:
+#: DOC-03 added to T-07's set with a ``T-07 | yes | T07-acwr-band`` row stayed green.
+_NON_C_AUTHORITIES_PIN = {
+    "HRV-11": frozenset({"HRV-11"}),
+    "R13": frozenset({"PRIN-12"}),
+    "T-07": frozenset({"GATE-03", "REG-02", "REG-16", "REG-19"}),
+}
+
+
 def test_the_non_c_authority_map_is_the_committed_tables_yes_rows() -> None:
-    """M1's map, frozen from the table at adcb66d: every committed ``yes`` row a non-C token
-    authorizes is in that token's set, and every ID in a set is a committed ``yes`` row citing the
-    token. A later row cannot enter a set without this test and the map changing together."""
+    """M1's map, frozen from the table at adcb66d: the map equals its pinned copy,
+    ``_NON_C_AUTHORITIES_PIN``, for all three tokens; every committed ``yes`` row a non-C token
+    authorizes is in that token's set; and every ID in a set is a committed ``yes`` row citing the
+    token. A row cannot enter a set without the map, its pinned copy and the table all changing
+    together (iteration 3, S2)."""
     _research, _history, rows = _real()
     cited = {t: {r["inventory ID"] for r in rows if r["meaning changed"] == "yes"
                  and t in _DECISION_TOKEN.findall(r["decision"])} for t in NON_C_AUTHORITIES}
-    print(f"[slice compared] yes rows citing each token: {cited}; map {NON_C_AUTHORITIES}")
+    print(f"[slice compared] yes rows citing each token: {cited}; map {NON_C_AUTHORITIES}; "
+          f"pin {_NON_C_AUTHORITIES_PIN}")
+    drift = {t: sorted(NON_C_AUTHORITIES.get(t, frozenset()) ^ _NON_C_AUTHORITIES_PIN.get(t, frozenset()))
+             for t in sorted(NON_C_AUTHORITIES.keys() | _NON_C_AUTHORITIES_PIN.keys())}
+    assert NON_C_AUTHORITIES == _NON_C_AUTHORITIES_PIN, (
+        f"NON_C_AUTHORITIES differs from its pinned copy (IDs in one and not the other): {drift}")
     assert {t: ids <= cited[t] for t, ids in NON_C_AUTHORITIES.items()} == dict.fromkeys(NON_C_AUTHORITIES, True)
     # PRIN-15 cites R13 for S9's counts and is yes under C06, not R13 (R13, S6).
     assert cited["R13"] - NON_C_AUTHORITIES["R13"] == {"PRIN-15"}
     assert all(cited[t] == ids for t, ids in NON_C_AUTHORITIES.items() if t != "R13")
+
+
+def test_the_key_owner_map_is_the_committed_tables_key_column() -> None:
+    """Iteration 3, S1, both ways: the owners the committed table gives each key equal
+    ``KEY_OWNERS`` -- every key named only by its owners, and every owner naming it -- and the
+    keys are exactly the committed ``OLD_MEANINGS``. One key is shared, by REG-09 and HRV-04; a
+    second shared key is a change to review, not to freeze."""
+    _research, _history, rows = _real()
+    derived: dict[str, set[str]] = {}
+    for r in rows:
+        for k in _keys(r):
+            derived.setdefault(k, set()).add(r["inventory ID"])
+    shared = {k: sorted(v) for k, v in derived.items() if len(v) > 1}
+    print(f"[slice compared] {len(derived)} keys named by the table, {len(KEY_OWNERS)} frozen, "
+          f"{len(_OM.OLD_MEANINGS)} in OLD_MEANINGS; shared {shared}")
+    extra = {k: sorted(v - KEY_OWNERS.get(k, frozenset())) for k, v in derived.items()
+             if v - KEY_OWNERS.get(k, frozenset())}
+    missing = {k: sorted(v - derived.get(k, set())) for k, v in KEY_OWNERS.items() if v - derived.get(k, set())}
+    print(f"[slice compared] rows naming a key they do not own {extra}; owners not naming their key {missing}")
+    assert extra == {} and missing == {}
+    assert {k: frozenset(v) for k, v in derived.items()} == KEY_OWNERS
+    assert set(KEY_OWNERS) == set(_OM.OLD_MEANINGS)
+    assert shared == {"C19-hrv-04-reduced-confidence": ["HRV-04", "REG-09"]}
 
 
 def test_glossary_term_errors_names_a_renamed_term_a_cut_clause_and_a_twice_defined_term() -> None:

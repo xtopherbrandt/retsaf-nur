@@ -655,13 +655,22 @@ class SpanProfile:
 #: runs to the end of the document.
 _MARKDOWN = MarkdownIt("commonmark")
 
+#: One line with its ending, as markdown-it counts lines for a token's map: it
+#: normalizes ``\r\n`` and a lone ``\r`` to ``\n`` and breaks on nothing else.
+#: ``str.splitlines`` also breaks on ``\x0b``, ``\x0c``, ``\x1c``-``\x1e``,
+#: ``\x85``, U+2028 and U+2029, so one such character before a fence shifted
+#: every index after it: the wrong lines were cut and a stray fence was left
+#: (sprint-007 review iteration 3, S3).
+_MARKDOWN_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+\Z")
+
 
 def _strip_fences(source: str) -> str:
     """``source`` with every fenced code block's lines removed, from its
     opening fence line to its closing one. Each block leaves the line break
     that ended its closing line, so the text around it keeps the paragraph
-    break CommonMark gives it."""
-    lines = source.splitlines(keepends=True)
+    break CommonMark gives it. Lines are split as markdown-it splits them
+    (``_MARKDOWN_LINE``), so a token's line map indexes the same lines."""
+    lines = _MARKDOWN_LINE.findall(source)
     kept: list[str] = []
     cursor = 0
     for token in _MARKDOWN.parse(source):
@@ -669,7 +678,7 @@ def _strip_fences(source: str) -> str:
             continue
         start, end = token.map
         kept.extend(lines[cursor:start])
-        kept.append("\n" if end > start and lines[end - 1].endswith("\n") else "")
+        kept.append("\n" if end > start and lines[end - 1].endswith(("\n", "\r")) else "")
         cursor = end
     kept.extend(lines[cursor:])
     return "".join(kept)
@@ -1309,6 +1318,42 @@ def test_a_longer_closing_fence_cannot_hide_a_claim_from_the_sweep(
         f"the span guards did not measure the string the sweep read: chars {profile.chars} vs "
         f"{len(text)}, imbalance {profile.imbalance}"
     )
+
+
+@pytest.mark.parametrize(
+    "separator",
+    [
+        pytest.param(" ", id="u2028-line-separator"),
+        pytest.param(" ", id="u2029-paragraph-separator"),
+        pytest.param("\x0c", id="form-feed"),
+        pytest.param("\x85", id="next-line"),
+    ],
+)
+def test_a_line_separator_markdown_it_does_not_count_cannot_shift_the_fence_strip(
+    tmp_path, separator: str
+) -> None:
+    """Sprint-007 review iteration 3, S3. ``_strip_fences`` cut the lines a
+    fence token's map names, but split them with ``str.splitlines``, which
+    also breaks on characters markdown-it does not count. One such character
+    before a fence moved every index by one: the stripper cut the fence's
+    first two lines (the intro's tail and the opener) and left the closing
+    fence standing as a stray run of backticks. Now the lines are split as
+    markdown-it splits them, so exactly the fence goes."""
+    claim = "When the tier changes the system treats it as a baseline re-establishment."
+    source = f"Intro line.{separator}\n\n```\ncode\n```\n\n{claim}\n"
+    stripped = _strip_fences(source)
+    shifted = tmp_path / "separator-before-fence.md"
+    shifted.write_text(source, encoding="utf-8")
+    text = _flat_text(shifted)
+    offenders = _offenders_in(shifted)
+    print(f"[slice compared] {source!r} -> {stripped!r}; {_slice(shifted.name, 0, text)} -> {offenders}")
+    assert stripped == f"Intro line.{separator}\n\n\n\n{claim}\n", (
+        f"the fence strip cut lines other than the fence's: {stripped!r}"
+    )
+    at = text.index("treats it as a baseline re-establishment")
+    assert "`" not in text and offenders == [
+        f"separator-before-fence.md@{at}: 'treats it as a baseline re-establishment'"
+    ], f"the fence strip left a stray fence or lost the claim: {text!r} -> {offenders}"
 
 
 def test_a_file_with_no_span_abstains_from_the_inside_arm_by_name(tmp_path) -> None:
