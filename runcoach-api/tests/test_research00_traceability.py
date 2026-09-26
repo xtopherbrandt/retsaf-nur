@@ -22,6 +22,7 @@ committed tests: CI has no data dir, so every fact taken from them is frozen her
 """
 
 import ast
+import hashlib
 import importlib.util
 import json
 import re
@@ -84,6 +85,164 @@ INVENTORY_IDS = frozenset(
     + _span("LT1", 1, 2) + _span("FTO", 1, 6) + _span("DEC", 1, 1)
 )
 
+#: The inventory sentence of each of the 149 IDs, frozen as ``sha256(normalize(sentence))`` (sprint-007
+#: review iteration 1, S3). The AC9 proxy reads a row's "inventory sentence" cell, so a cell set to
+#: ``—`` or edited alongside its rule took the row out of the proxy and the suite stayed green.
+#: Computed 2026-09-25 from the inventory's "Current rule" cell (``inventory_sentences()`` over
+#: ``spec/references/research00-rewrite-inventory.md``, the inventory at ``4e47d0e``); the committed
+#: table's 149 cells matched it verbatim. Asserted by ``inventory_sentence_errors``.
+INVENTORY_SENTENCE_SHA256 = {
+    "DOC-01": "9f89fe636c53bf7882fd0ff8747ec6991bff3be196f8d3be16bbb0a1fa4389f8",
+    "DOC-02": "f82a9ae35f231f698a027dcd9e38e101dd057df1051c5ab66bc45ac68881a59d",
+    "DOC-03": "a6ffb669cab1f20642559fd1e5e719bdcf17a58f856f400e84b49e6a9c0c4831",
+    "DOC-04": "9314bfbe6752e6b62b6c440d3a91788653fc2b3c239cfd5bd1ab644571a2b068",
+    "DOC-05": "0a50082f92e7afbdf27be5fe0a3db5df4dbfbd0b248ef41b3a22dd08c0ee824d",
+    "DOC-06": "4109a1fce2ffc74d34ffb54745c44f4e32a2f8e528225fde52bf6a3ed0323f8e",
+    "DOC-07": "ab56a14394636820d151d0db9648b15ee336b1a46dc628ba03bfeb342476dc4c",
+    "DOC-08": "d9ec83c4752d4291395b3422eb36d03b76e66505d3e0190aab66fbd5f7425f6e",
+    "DOC-09": "a4eaf51cace0f5a48ad0e3094526dbe2590f6b66a1d995c19a82f68f77bfcee2",
+    "DOC-10": "07584f971a006d12880a530cfc1bf02185073aa6bb9999a0d37f662ab233d6c5",
+    "DOC-11": "0ba03505b52e1534354593b3033bbe3a321329a9fd90fa542378ac1f50981438",
+    "DOC-12": "0c24e83d0aa697cf5e4093ea53ac8c3894999e69cb60bce927fbef0353c2720f",
+    "DOC-13": "2c40da36d9de5183f0e9a83137ea3f2ebb6ed006bfcb7bf238e5bc5dbdf7efb7",
+    "DOC-14": "0c1a266d620b15ba0fedf66e9da47148917e63722b3f06cc797a75be7f70e937",
+    "DOC-15": "855e1b05c51a5dbd11d4e574d21d65461c8297166023d2f9d6972e7521ad23b0",
+    "PRIN-01": "7c3f6c4531ba53480f8f94af31f5aee52f05dd02034e740c214c938597a810ea",
+    "PRIN-02": "362fd4a41912927f80231cb64343275da10738c874b139e8ef5d97f240b5ebaa",
+    "PRIN-03": "12b8eb803282b27676b2130a1a1866873f9e051bb6f037e9bac29c13a8a9df20",
+    "PRIN-04": "27faf0a14ee7ba2243273823b4d9cb2b799fdb78656450b08f885940d85ca9fa",
+    "PRIN-05": "f76db6ae4946cd28f8d2bfadcab5fa5d2042ecb3f9df54dfc923e19a78ee311f",
+    "PRIN-06": "646dcaa08fc0b1ccb19c06bb8e36edaaaa73d3f149b5d5a6cc29869d47b30f8b",
+    "PRIN-07": "10126d7064f1b29c519ffd539a6b244f275556cd3620d6a002c3a8f8ff8ae153",
+    "PRIN-08": "fc77ea6c2ac1578c52faeb6b1339b71a02b252feed2889ae51fa45d7d0dc7234",
+    "PRIN-09": "13a02323a1de3bf90a9c66b9896f8c5679dc70e817b392dfcd9011cd41f8e8da",
+    "PRIN-10": "f582cb827a203f1c41eb44c9f32fffee9794d30fabaf16ac716b9ac61e2dc501",
+    "PRIN-11": "9899149c9c43c64dd92437d8f308e904a1ceef476caed31991db9b6a51a7831e",
+    "PRIN-12": "34451a7fa93e9a650c3c7749c2cfdc5389493a572ee79208358a82cef2b57e54",
+    "PRIN-13": "d195a9e45f3bd453cb38dcb5a6e54b05c70b9c9659deada9821bcd3e8cdd7197",
+    "PRIN-14": "0558019548563ad4fb4d4d91f2f773a77bba41fd514c445aadf5b945a125994d",
+    "PRIN-15": "90be2081d639d45bb7d26175379861921b45583940b7395fdcc96ef79b880033",
+    "PRIN-16": "a238a153e27b3a4b1400265af1dac0088f1e335261593e942082785a6d2baaf7",
+    "ARB-01": "1a67b00c3738f571f11d94031ef40fba5c54937f0af69b735d56e05660e84eae",
+    "ARB-02": "9e086e3540812c5b7c7efb90471440e46b7ad13b75bb254a3702286c516793b4",
+    "ARB-03": "42b76925883fb556945fa6305a1b96326032feaaabc36369d11245f014c0a707",
+    "ARB-04": "d6bb975a2dcdf2e9f9c56a96fd56e3ffd19ff1dbec463d7c683241adc2aa7992",
+    "ARB-05": "e30d3501155c4f229f3d60de827ca8c8945430c4110a1750f24fc9d3296a7a8c",
+    "ARB-06": "d5663b8ab26e05d1877e9ee157da681106a8530017f7f24eddcc645586eafb6c",
+    "AUT-01": "a2568ec3f935d6bfcdfaac1647f702e7097d680416e5e5ff13cb28d547130b77",
+    "AUT-02": "29d3965653f9ca167a6de42c97581b88da3e3d58ffd4ddc950868104d02223ce",
+    "AUT-03": "2ea69d38e84d3960393007726706a0bd025cb5720fd2c5668f45afdcadf33005",
+    "AUT-04": "5200703bd134cca442b535b6db5cba56326aa3a1b58b74779a3fccb0638b60bd",
+    "AUT-05": "b037e27552607b6b33548f00190c44ff4e1ba66ba92fe386d4129010b68a42c2",
+    "AUT-06": "235ff9d4d9df1a836df896d49ca030bc5f598e5bc73e853bca02b33d5d32c698",
+    "GOAL-01": "a2d7040901f7bd07cdc689e08650aed9f3b41cebf743fc177c4286417a3ff032",
+    "GOAL-02": "f44bb2c9a7bbeb7730219e2de65f6d4e4e86860b5a416e776e4ced3988158863",
+    "GOAL-03": "2acb4772ef6e23fa31165febd88ad9ed1a7764a1b91e1aa2ddc91dfe1eac7e40",
+    "GOAL-04": "d99847eef546af4deeb53c8988bdb610569125202f1f6d1ac47f229310bf31c7",
+    "GOAL-05": "a32f409090f9cc68ec0656992a21bf2bc68ecae303b4c7ee5a185f68eb37252c",
+    "GOAL-06": "8111b20b48cdbd76062204803af177ad76e44d6111851f122604bce44ae8f0e0",
+    "ARCH-00": "db010c82c749eee7a76152d52de8bbbfde078b16416b23a03db3cdc2055aa971",
+    "ARCH-01": "4d7e79b7084627ddba51591af313659931d1388ed6e6bd938d6b44824f26c06c",
+    "ARCH-02": "04f31895e08f8cc55862e10af3d1d7a3881da40b9ede3489d8f875388139f9ce",
+    "ARCH-03": "25f1e4273cc100b4f05c590266f857f5e614f03ebbee00ba15bfc82a4f7cd7a3",
+    "ARCH-04": "3406e5682f587c3ea567b87bfca46e2f19601632b71a7c2e3200015d1650af9f",
+    "ARCH-05": "dc0120f7b5518c8f13c3328694c80f3d01429d87a9a598b466e4cfe7713ddcbd",
+    "ARCH-06": "1d6fb8c491a54d29eb25dc1928d26db2e0240f5cf8e32060d08cacc74042528c",
+    "ARCH-07": "c5030b902ddf9c4ee00e15abe065037dcf4d4bbcf443536984d9c903d49d7c5c",
+    "ARCH-08": "5e990e2ff592f8610b8e7bb9df1255182b011d0c4ba24c746a37765cc0b310be",
+    "REG-01": "ccb435757f009f58efa1100b59ccacbe2e365d287c4c4ff03f43a702f4cac387",
+    "REG-02": "ad6a00f41c0a249b786c002aed2a11e85d5c9230888db2b76361664ab7dc98bd",
+    "REG-03": "421542bb4a221a29c2125b4ebe2283efe94da8cfff70bcc688649cc3544cbbd1",
+    "REG-04": "1bf99e6baa4e8cf5a13c6dcfd77ac414bb7801f7f2eac7209ee676aa2b563d20",
+    "REG-05": "7d95419d2ccf378f11cb04263659070bf98ed344be7c6509c621ee644e56c786",
+    "REG-06": "4035125ab9ee37c0fdacb41260ba16875fbf9a03d593279c54f24fb3240c2cee",
+    "REG-07": "7237c564449737ceee536e8d83e0e0bb61e8ba52e99a97ad700b52afb15679f6",
+    "REG-08": "92bc502e4f17f0608e162cb5cedaa692c723e6b4a550e88f71fb47cded15da05",
+    "REG-09": "dccef305fe5998c7abf4a4b4581be895e42649e9cab8f2f5d8e3a3aae6905afe",
+    "REG-10": "d32c486a9585d73ebd6502d23b192ba29182e66c87e8b6357806b7b02dd6fe0f",
+    "REG-11": "143b8ac76391db6c73c84f173bc41869ba4d9b41e73ee5cccbfcf02c775d0a9a",
+    "REG-12": "750a439952ab96f08c6aa1864e520630101607dbdc9946b8f34aee725b511be5",
+    "REG-13": "823cd2e5d9f3b5a69a0ad0d14a52dcbf3e7789fad651979f10eba4a2604e074e",
+    "REG-14": "9263f98bbfb3e9048bb12ebb51a376a1923cdccc49519d5b2de2a7f43e8c7157",
+    "REG-15": "d82797d9121054d8aa406b510f2aebb774401a936bcaf2c01cacea1f44b50939",
+    "REG-16": "c4e89cfcbb027ebfc9b8eea3b1a772594af8e3bb7ef4e79807b695e4300e3c3c",
+    "REG-17": "36bf688fcbd1291a9e1baa94d5534a2148809629b44689628d8f25b75a698517",
+    "REG-18": "9610a4fb6f1d6f5a3ff175a6d53cd5731ff718c48afaeaf22e186ca519e4f02d",
+    "REG-19": "4838d100b05c1ffacbbf1e9dc50cb9ae9e6ab5bab7d4193c93f080c43b677100",
+    "IND-01": "f2aa9ed30f35944f3466ed62e03dd98e3cdfdb01bd5b8c2ea205a01aa9ad2b90",
+    "IND-02": "20c4bf861fc8c9d61b10491f0dc922b90b722d2e43f895e5a1e0b15a9c1f8759",
+    "COLD-01": "009ebe47d57687877a1b1da87928837476a66a58ad783d47e545cce4fdaa2516",
+    "COLD-02": "6b493f266bbf8482cff2ed1b4ade60c5bf035d185be9b37ac56ba305cf82d8fc",
+    "COLD-03": "3f0eb5694e0d5e535607791ad6f3d36cc6396874a50380510432a3eea2935062",
+    "COLD-04": "c4d6c50b0d09e980c40629bc509e251c6a13d5700d89e5a7a6385a79a07c4ed1",
+    "COLD-05": "bb9adf3c24eb9729a03215c8d04761c9fd669cd320af5d06b115f04de244204b",
+    "COLD-06": "6eb7da4366d6cab8e71787d882d75837b883662f0f4db6e962641acd8660a7f5",
+    "COLD-07": "1cb34d55c6070dcd1bb1b26443429cf705b959deeed5225a573c00e74d53475a",
+    "HRV-01": "486be1292957fb58aa5b8e40487f874e32c2d63144cbbf54d8c2bf01d1e4b00c",
+    "HRV-02": "e52b6e5547888b7288d9b9ed493a423a8cd8b8901f36118f62e351d403576c7f",
+    "HRV-03": "4e8df7572e2707c4a16d6d68ad9f368378ba03e98fbedd3b9b33e0399d6245cc",
+    "HRV-04": "6208dc9dcf3eb26699c70db120f8b91c93e6989444d88a071ffe2abd10245426",
+    "HRV-05": "9e32fc15d0eff8847f4c9555acf3e0efa58dd912329df24de9f060a950f8651d",
+    "HRV-06": "89baa7eacc952289c3a0fd8e1e0b97ba0628070dd918cee743d24cd14cc1ecc7",
+    "HRV-07": "802f09b695a24d7fb94f6a429341cf308748e9ebde1f18e6adadf5bac0dabb28",
+    "HRV-08": "168d5d868a94ab630f77e3ad784603667589fc929324ca9ab12f036667411ef8",
+    "HRV-09": "84d65922659a1ad181b2fc3b7211f8727e477c00d8fed81096dbc563c9506950",
+    "HRV-10": "19a721b519e6cdb7cadbc01b9fb1070daa05c57a105c612637bea451f240ed40",
+    "HRV-11": "c5f1b06b72ffc5d681810e2d174a16430f9ec09d12e84c805c2a8a2d5b557110",
+    "HRV-12": "232aec4c8dd81194cf083d243d1006e368eb600597d43bc1e518421990b8c379",
+    "HRV-13": "420ade1969ee129933da7a48f458beaa9ac3089cb6822098348109a04cd2cc11",
+    "HRV-14": "d08cbf5c9f9688652f2d0b97a44bfadedad890f4f33ba2d87038a9068f153b2d",
+    "HRV-15": "76c68fe4f5656eeb7ba596da897b852c94b100f23b0702ed826ce31ac09e67cc",
+    "HRV-16": "e2b1bd21387a269413e34d4326544335eb48a75d58dffd04ce1f5b99059fc001",
+    "HRV-17": "836242ccfbf4d195f1fb489f7f8d555a1bda6477bf5d34c39b2b9f1ba149e4e1",
+    "HRV-18": "1a77e83fac678e8926191e119d2ab3982d5c6a29e92cb75b2e39bca5a26647c1",
+    "HRV-19": "e9422a5b88ed37178ba14a7f39e900cf333f6b8b5916c65909f4a4170503f2cb",
+    "HRV-20": "04a7096b207e8efa7a2ab0e1c6a978758197fc39731cadb1111c0fa4925da065",
+    "HRV-21": "6279b46c7af3222008859ddbe028d168f8ec1263d39f0228f59986d9e11511f1",
+    "HRV-22": "6425c3dc986c69588b8f6ce8fb2242d695f5d54bab758e56e0e7888bbdb0338c",
+    "HRV-23": "4008ffca252350a90fe1c0737c6fbe6e41a6b6a54ee46042ddea2e2111be3c18",
+    "HRV-24": "e3e6c95a00ce4aa9ba4d47df103cd018df37c9f37157b9698859967604bfe280",
+    "HRV-25": "7599d760f2575bfe1e6894732ddb6f51b8fb082c171c89fddf6be8f368295dcb",
+    "HRV-26": "b664195613dde72ae6b7b755dcd3caedf5a25800405f066010a28d6c7f8df2d2",
+    "HRV-27": "f979cc796f97003fed8d3f333ce42e6ac0c51d215bf07074722f3624f3eab348",
+    "HRV-28": "ab9840be76b2180f1e7ae79db0db0ce271b63024cc33af38bd61a1d2de3cad38",
+    "HRV-29": "8f8caab205c2d90e25eb2c1ec94c3e6a6f98c16fc2dcf6516f2c8ef95b5c5f33",
+    "HRV-30": "30b330540e71737203ad484a762073558af186b5736cb3f3853c25e05164c157",
+    "HRV-31": "587225f6d9f80507099bf098e26f393bea09853255ff6d050a5390c6118dc88b",
+    "HRV-32": "5b3be1f258656e5316650bf291366b7c1cfcf0ffec94e592900ee6b6093f9815",
+    "HRV-33": "0ad2a7cc479f2c4beb78a9ff5729c2173fd3a92c93cb1910d740b33f9d2440bd",
+    "HRV-34": "c07c87cf0250a1c54e10e4812112344de42df12005a00606f2f4bb5c24a42783",
+    "HRV-35": "5d19e18bd666290515975636ed84c3503efd03047881bd198fa31768b30f3215",
+    "HRV-36": "2154aaebbd01ba447ab3dbab979886c3a595f0c399e38681d4a61701821b4f0c",
+    "HRV-37": "736e1cfffc85fcd15d220ae5d589992cb6849fa10129248cf2a6654c722db8b6",
+    "HRV-38": "3d7b0fc1f7255ae28cd8c7b2293ff1ed1bb917dcadf2ed79bf48ab1b09beed22",
+    "HRV-39": "6a25f7f9ec23cbbd61ac332ebecc30c8781605547e2c4fdef4248a6f3be22748",
+    "HRV-40": "4a08571527a20376f753ada1696fad672c57e70cb3601fcafc05f846f07f6f22",
+    "HRV-41": "40f6b95aa248f60866cd277f29e4b5349e881b07110c02b7c008eeb549268072",
+    "HRV-42": "1f949bf4604936fea7eb17a7b35ad1bee6087efd636bd03e391a41fe964f4a72",
+    "HRV-43": "ef2024da40bbec8ed6f204aba828549107356857052954321a436c2fa8974009",
+    "HRV-44": "97106368fd9f2e823e3c26f65c4f4df06f9c549e9e884eb0f727e155cafdbc25",
+    "HRV-45": "acd117273dcbdd5497d86b241566e3f5ec52c68afe8c0141419d11396b101927",
+    "HRV-46": "6d8fcfc7e17b7f011c5ee7c9ed76f6f98025b6efe68626f4ea9539e5d4401f0e",
+    "GATE-01": "2a965a10cbf650c57d83aa8e4a806bea7d7bec14f7581ac40f3d4a92978971be",
+    "GATE-02": "a01cf69806d1c64486825200f9cda3043bd0ffff09d071aa187f8d29fe74ce5c",
+    "GATE-03": "8d247bd888191f4a8619b234948728fd76997254b04922f40662076f1e797609",
+    "FIG-01": "8cdbac6957741ca816a5d8985d4e69d206908923ecbe7e4614fe438ec4ffdabb",
+    "FIG-02": "b524a188a7f7646d347bdc346646289f93946395550944ea4b3c83542c3545b3",
+    "FIG-03": "cd45e40b32d250ec912b1a76d4503c4298a37e3491c82050a11bdc5a239f6357",
+    "FIG-04": "1ce77b01c6f920d5e9fed44fc312bddb8e23a97f3feb4ab244b902308fbeddb1",
+    "FIG-05": "b17de39f087ce861fdbda9f625bda5c18f35cdcc6d9cb91fcc063de5166e6e3b",
+    "LT1-01": "349ba6651fe98e2ed69cdaa782e1e720687a2ab5f80c8fbb25d6f472fe072365",
+    "LT1-02": "571af3e4d17a10a795a629a91d60a47b6b3aa368c6037570c09d53427de62443",
+    "FTO-01": "632ff24a5be6d51ff6a08c26188e7b2cd88c919a0088b6f32cc566b7b1adad63",
+    "FTO-02": "44b5621ae01cfee35376b0d846edaf37b48690fac9b6752d394d3da8f360bdf2",
+    "FTO-03": "964f90eec1491ab9a0ec1ace8358e568bc4b7634a2b85d06ba9bf5610172844e",
+    "FTO-04": "a812615e7d34b95ffa14324044569ee399a674d6ea934c312b370990b7c2fda0",
+    "FTO-05": "f10b95cd6a2ab9bc78e51766a8b551cfdb585d7dbcda30825f1f66971b15bf7a",
+    "FTO-06": "a8e0e2922e2fe687a7cd96f3e746871e0d1c0a559e3f6b2f1aa7299e00040f34",
+    "DEC-01": "926e5c5de04fa555cc83ce2b30a888e7387ab8f9f743f4ffee5eadca1bf97289",
+}
+
 #: The Part and section headings of research/00 at 4e47d0e, in order: every line starting ``#``,
 #: minus any carrying an ISO date (none does). A draft may use only these (R11).
 HEADINGS = (
@@ -116,11 +275,46 @@ HEADINGS = (
 #: first Part (R11), and ``rule_grammar_errors`` leaves its lines to ``glossary_errors``.
 GLOSSARY_HEADING = "## Glossary"
 
+#: F008 AC4: the 33 Glossary terms, by ID, as the committed research/00 names them (sprint-007 review
+#: iteration 1, S4). ``glossary_errors`` checks the IDs only, so renaming a term stayed green.
+#: Asserted by ``glossary_term_errors``.
+GLOSSARY_TERMS = {
+    "T-01": "judgeable", "T-02": "selected", "T-03": "established", "T-04": "skipped / struck / stale",
+    "T-05": "tier", "T-06": "dataset", "T-07": "band", "T-08": "baseline", "T-09": "baseline window",
+    "T-10": "judged week", "T-11": "withhold", "T-12": "silence / coverage gap / hole / days behind",
+    "T-13": "sustains", "T-14": "candidate", "T-15": "era boundary", "T-16": "reset", "T-17": "clip",
+    "T-18": "reported", "T-19": "strays", "T-20": "return / carrier", "T-21": "fidelity", "T-22": "disagree",
+    "T-23": "count", "T-24": "forbidden direction", "T-25": "rate", "T-26": "input tiers",
+    "T-27": "rung / loop", "T-28": "single-ecosystem", "T-29": "goal contract",
+    "T-30": "safety override / safety pathway", "T-31": "D, R, R+k, k₃", "T-32": "resolved tier / rule 1–4",
+    "T-33": "unavailable",
+}
+
+#: F008 AC7 C07: T-24 is the forbidden direction, and its definition carries both disjuncts and the
+#: judgeability clause, each checked after ``normalize()`` (S4).
+FORBIDDEN_DIRECTION_CLAUSES = (
+    "asserting `hrv_normal` on evidence the system reports as insufficient",
+    "or while any dataset reported in the same response reads below its own HRV SWC band",
+    "whether or not that dataset is judgeable",
+)
+
 #: Every decision R3 requires to appear in the decision column.
 DECISIONS = tuple(f"C{n:02d}" for n in range(1, 34)) + ("C37", "C38")
 
 #: R3: these change no meaning, so they appear only on ``no`` rows.
 NO_ONLY = frozenset({"C11", "C16", "C17", "C18", "C19", "C21", "C25", "C29"})
+
+#: The decisions other than a C-number that may authorize a ``yes`` row (sprint-007 review iteration
+#: 1, M2). Read 2026-09-25 from every ``yes`` row's decision cell in the committed table at 9cb592c:
+#: ``HRV-11`` (the critique-round call, H-40) and ``T-07`` (R9's band renames, H-41) are the only
+#: tokens there that are not C-numbers. ``R13`` is the user's 2026-09-25 rulings on this review
+#: (M3, S9-S11), whose rows the next pass adds. Frozen: a ``yes`` row citing nothing in this set and
+#: no C-number outside NO_ONLY is a meaning change no decision authorized. Do not widen it to fit.
+NON_C_AUTHORITIES = frozenset({"HRV-11", "T-07", "R13"})
+
+#: R3: the no-only decisions whose old meaning is still stated downstream, so every row citing one
+#: names an old-meaning key (F008 AC6; S5).
+KEYED_NO_ONLY = ("C19", "C25")
 
 #: The decisions reference's two tables, for the H-NN a merged-away ID retires under (R11).
 GROUP_A = frozenset({
@@ -215,6 +409,9 @@ _RETIRED_HEADING = "## Retired IDs"
 _GROUP_OF = {prefix: group for group, prefixes in GROUPS.items() for prefix in prefixes}
 _SOURCE = re.compile(r"^[^\s:]+:\d+(?:-\d+)?@4e47d0e$")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
+#: A decision token in a decision cell or an ``OldMeaning.decision``: a C-number, the critique-round
+#: ``HRV-11`` call, an R-refinement or a Glossary T-number (as ``_decision_group_entry`` reads them).
+_DECISION_TOKEN = re.compile(r"\bC\d{2}\b|\bHRV-11\b|\bR\d+\b|\bT-\d{2}\b")
 
 
 def _prefix(rule_id: str) -> str:
@@ -512,6 +709,28 @@ def glossary_errors(text: str, complete: bool = True) -> list[str]:
     return errors
 
 
+def glossary_term_errors(text: str) -> list[str]:
+    """AC4 and AC7 C07 over research/00's Glossary (sprint-007 review iteration 1, S4): each ID names
+    its ``GLOSSARY_TERMS`` term, each term is defined once, and T-24's definition carries every
+    ``FORBIDDEN_DIRECTION_CLAUSES`` clause after ``normalize()``."""
+    lines = _lines(text)
+    span = _glossary_span(lines)
+    body = lines[span[0]:span[1]] if span else []
+    found = [(m.group("id"), m.group("term"), m.group("definition"))
+             for line in body if (m := _GLOSSARY_LINE.match(line))]
+    errors = [f"[glossary] {tid} names the term {term!r}, not {GLOSSARY_TERMS.get(tid)!r}"
+              for tid, term, _d in found if GLOSSARY_TERMS.get(tid) != term]
+    errors += [f"[glossary] the term {term!r} is defined {n} times, not once"
+               for term, n in Counter(term for _t, term, _d in found).items() if n > 1]
+    errors += [f"[glossary] {tid} ({term!r}) is not defined" for tid, term in GLOSSARY_TERMS.items()
+               if tid not in {t for t, _term, _d in found}]
+    t24 = [d for tid, _term, d in found if tid == "T-24"]
+    for clause in FORBIDDEN_DIRECTION_CLAUSES:
+        if not any(normalize(clause) in normalize(d) for d in t24):
+            errors.append(f"[glossary] T-24 does not carry {clause!r} (after normalize)")
+    return errors
+
+
 def _sentences(line: str) -> list[str]:
     guarded = _ABBREVIATIONS.sub(lambda m: m.group(0).replace(".", "\0"), line)
     return [s.replace("\0", ".") for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(])", guarded)]
@@ -603,30 +822,61 @@ def traceability_errors(rows: list[dict[str, str]], research_text: str, history_
     return errors
 
 
-def decision_column_errors(rows: list[dict[str, str]], complete: bool) -> list[str]:
+def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=None) -> list[str]:
     """R3 over the decision, meaning and key columns. Always: ``meaning changed`` is yes or no; every
     C-number is one of ``DECISIONS`` (a further one is a stop-and-ask); a ``yes`` row is authorized by
-    at least one C-number outside NO_ONLY -- a no-only C-number never justifies a meaning change on its
-    own, but may share an authorized cell (R3 "A shared cell", e.g. PRIN-08's "C24, C25"); every
-    ``yes`` row names an old-meaning key (F008 AC6); an addition row cites a decision. With
-    ``complete``, every decision appears and every decision outside NO_ONLY backs at least one ``yes``
-    row. Group ownership is coverage, not exclusivity (R3), so a ``yes`` row may cite a C-number another
-    group owns; the owner's duty is ``group_coverage_errors``."""
+    at least one C-number outside NO_ONLY or a token of ``NON_C_AUTHORITIES`` -- a no-only C-number
+    never justifies a meaning change on its own, but may share an authorized cell (R3 "A shared cell",
+    e.g. PRIN-08's "C24, C25"), and a cell of ``—`` authorizes nothing (M2); every ``yes`` row names an
+    old-meaning key (F008 AC6); every row citing C19 or C25 names a key, a ``no`` row one whose decision
+    cites that C-number, and any row citing C25 C25's own key (R3; S5); every key a row names records
+    a decision that shares a token with the row's decision cell, so a key cannot be borrowed from
+    another row's change (M2); an addition row cites a decision. The key checks read ``meanings``
+    (default: the support module's ``OLD_MEANINGS``); a key absent from it is
+    ``traceability_errors``' finding. With ``complete``, every decision appears and every decision
+    outside NO_ONLY backs at least one ``yes`` row. Group ownership is coverage, not exclusivity (R3),
+    so a ``yes`` row may cite a C-number another group owns; the owner's duty is
+    ``group_coverage_errors``."""
+    meanings = _OM.OLD_MEANINGS if meanings is None else meanings
     errors = []
     for row in rows:
         label = row["inventory ID"] if not _is_blank(row["inventory ID"]) else f"addition {row['new ID(s)']}"
         meaning, cs = row["meaning changed"], _C_ID.findall(row["decision"])
+        cell_tokens = set(_DECISION_TOKEN.findall(row["decision"]))
         if meaning not in ("yes", "no"):
             errors.append(f"[decision] {label}: meaning changed must be yes or no, not {meaning!r}")
         errors += [f"[decision] {label}: {c} is not a decision in the decisions reference (R3: stop and ask)"
                    for c in cs if c not in YES_ROW_OWNER]
         if meaning == "yes":
             no_only = [c for c in cs if c in NO_ONLY]
-            if no_only and not any(c in YES_ROW_OWNER and c not in NO_ONLY for c in cs):
+            authorized = any(c in YES_ROW_OWNER and c not in NO_ONLY for c in cs) or bool(
+                cell_tokens & NON_C_AUTHORITIES)
+            if no_only and not authorized:
                 errors.append(f"[decision] {label}: {', '.join(no_only)} never authorizes a yes on its own; "
                               "cite the C-number that changes the meaning, or mark the row no (R3)")
+            elif not authorized:
+                errors.append(f"[decision] {label}: a yes row cites no decision that authorizes a meaning "
+                              f"change ({row['decision']!r}); cite a C-number outside NO_ONLY or one of "
+                              f"{sorted(NON_C_AUTHORITIES)} (R3, M2)")
             if _is_blank(row["old-meaning key"]):
                 errors.append(f"[decision] {label}: a yes row must name an old-meaning key (F008 AC6)")
+        keys = _keys(row)
+        key_tokens = {k: set(_DECISION_TOKEN.findall(meanings[k].decision)) for k in keys if k in meanings}
+        for c in KEYED_NO_ONLY:
+            if c not in cs:
+                continue
+            if not keys:
+                errors.append(f"[decision] {label}: cites {c}, whose old meaning is still stated downstream, "
+                              "and names no old-meaning key (R3, F008 AC6)")
+            elif ((meaning == "no" or c == "C25") and len(key_tokens) == len(keys)
+                  and not any(c in t for t in key_tokens.values())):
+                errors.append(f"[decision] {label}: cites {c} and names no old-meaning key whose decision is "
+                              f"{c}: {keys} (R3, F008 AC6)")
+        for k, tokens in key_tokens.items():
+            if not tokens & cell_tokens:
+                errors.append(f"[decision] {label}: old-meaning key {k!r} records decision "
+                              f"{meanings[k].decision!r}, which shares no decision with the row's cell "
+                              f"{row['decision']!r} (M2: a key cannot be borrowed)")
         if _is_blank(row["inventory ID"]) and _is_blank(row["decision"]):
             errors.append(f"[decision] {label}: an addition row must cite a decision")
     if complete:
@@ -884,6 +1134,25 @@ def _anchor_errors(research_text: str) -> list[str]:
     return errors
 
 
+def inventory_sentence_errors(rows: list[dict[str, str]]) -> list[str]:
+    """AC9's proxy input, frozen (sprint-007 review iteration 1, S3): every non-addition row's
+    "inventory sentence" cell is non-blank and hashes, after ``normalize()``, to
+    ``INVENTORY_SENTENCE_SHA256[ID]``. Without it, a cell set to ``—`` left the proxy, and a cell
+    edited alongside its rule passed it."""
+    errors = []
+    for row in rows:
+        inv = row["inventory ID"]
+        if _is_blank(inv) or inv not in INVENTORY_SENTENCE_SHA256:
+            continue
+        cell = row["inventory sentence"]
+        if _is_blank(cell):
+            errors.append(f"[inventory] {inv}: the inventory sentence cell is blank ({cell!r})")
+        elif hashlib.sha256(normalize(cell).encode("utf-8")).hexdigest() != INVENTORY_SENTENCE_SHA256[inv]:
+            errors.append(f"[inventory] {inv}: the inventory sentence cell is not the frozen inventory "
+                          f"sentence: {cell[:120]!r}")
+    return errors
+
+
 def _proxy_rows(rows: list[dict[str, str]], research_text: str, only_within: set[str] | None = None) -> list[str]:
     """The AC9 proxy on every ``no`` row with an inventory sentence, over the blocks it names. With
     ``only_within``, a row naming a rule outside that set is left to the assembled check."""
@@ -912,7 +1181,7 @@ def assemble_check(drafts_dir) -> list[str]:
     errors += rule_grammar_errors(a.research) + glossary_errors(a.research) + band_errors(a.research)
     errors += history_errors(a.history)
     errors += traceability_errors(rows, a.research, a.history, a.meanings)
-    errors += decision_column_errors(rows, True)
+    errors += decision_column_errors(rows, True, meanings=a.meanings)
     errors += operative_string_errors(a.research, rows, meanings=a.meanings)
     errors += pinned_errors(a.research, _REPO_ROOT)
     errors += old_meaning_errors(a.meanings, a.research)
@@ -978,7 +1247,7 @@ def fragment_text_errors(rules: str, trace: str, meanings_text: str, group: str,
         elif inv not in sentences and _prefix(inv) in prefixes:
             errors.append(f"[trace] {inv}: not in the inventory")
     errors += [f"[trace] rule {i} is not named by any {group} row" for i in sorted(here - named, key=_order_key)]
-    errors += decision_column_errors(rows, False)
+    errors += decision_column_errors(rows, False, meanings=meanings)
     if coverage:
         errors += group_coverage_errors(rows, group)
     errors += operative_string_errors(rules, rows, meanings=meanings, group=group)
@@ -1341,8 +1610,8 @@ _WORLD_BODIES = {
 _WORLD_PINNED = {
     "PRIN-12": ("Pinned: none (F010)",),
     "PRIN-15": ("Pinned: none (F009)",),
-    "GATE-02": ("Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
-                "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned",),
+    "GATE-02": (("Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
+                "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned"),),
 }
 _WORLD_HEADINGS = {"doc-goal": HEADINGS[2], "arch-dec": HEADINGS[11], "hrv": HEADINGS[-1]}
 _WORLD_C05 = {"key": "C05-reopens", "pattern": "worse rate reopens",
@@ -1378,7 +1647,7 @@ def _world_files() -> dict[str, str]:
     files = {"glossary.txt": _glossary(), "history.txt": _history().replace("→ DOC-01", "→ FTO-06", 1)}
     for group, prefixes in GROUPS.items():
         ids = _sorted_ids(i for i in INVENTORY_IDS if i.split("-")[0] in prefixes)
-        blocks, rows, meanings = [_WORLD_HEADINGS[group]], [], []
+        blocks, rows, meanings, keyed = [_WORLD_HEADINGS[group]], [], [], []
         for inv in ids:
             new = _WORLD_NEW_ID.get(inv, inv)
             if new == inv:
@@ -1387,9 +1656,14 @@ def _world_files() -> dict[str, str]:
                 blocks.append(_block(inv, _WORLD_BODIES.get(inv), scope=scope, pinned=pinned))
             cs = decisions.get(inv, [])
             meaning = "yes" if any(c not in NO_ONLY for c in cs) else "no"
-            key = _WORLD_OLD[group]["key"] if meaning == "yes" else ADDITION
+            # AC6 and R3: a yes row, and a row citing C19 or C25, names the group's key (S5).
+            has_key = meaning == "yes" or any(c in KEYED_NO_ONLY for c in cs)
+            keyed += cs if has_key else []
+            key = _WORLD_OLD[group]["key"] if has_key else ADDITION
             rows.append(_row(inv, _world_sentence(inv), new, ", ".join(cs) or ADDITION, meaning, key))
-        meanings.append(json.dumps(_WORLD_OLD[group], ensure_ascii=False))
+        # M2: the shared key records every decision of the rows that name it, so none borrows it.
+        old = dict(_WORLD_OLD[group], decision=", ".join(dict.fromkeys([_WORLD_OLD[group]["decision"], *keyed])))
+        meanings.append(json.dumps(old, ensure_ascii=False))
         files[f"{group}.rules.txt"] = "\n\n".join(blocks) + "\n"
         files[f"{group}.trace.txt"] = "\n".join(rows) + "\n"
         files[f"{group}.meanings.txt"] = "\n".join(meanings) + ("\n" if meanings else "")
@@ -1543,10 +1817,10 @@ def test_traceability_errors_turns_red(tmp_path, mutation: str, fragment: str) -
 
 def test_decision_column_errors_is_green_on_the_world_complete_and_per_group(tmp_path) -> None:
     _a, rows = _world(tmp_path)
-    assert decision_column_errors(rows, True) == []
+    assert decision_column_errors(rows, True, meanings=_a.meanings) == []
     for prefixes in GROUPS.values():
         group_rows = [r for r in rows if r["inventory ID"].split("-")[0] in prefixes]
-        assert decision_column_errors(group_rows, False) == []
+        assert decision_column_errors(group_rows, False, meanings=_a.meanings) == []
 
 
 @pytest.mark.parametrize(
@@ -1608,6 +1882,112 @@ def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> 
     assert group_coverage_errors(every, "doc-goal") == []
 
 
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        # M2: scanner A's DOC-03 case -- a yes row with no decision, and a key borrowed from another row.
+        pytest.param(
+            _row("DOC-03", "s", "DOC-03", ADDITION, "yes", "DOC-06-C31-every-number-tunable"),
+            [("[decision] DOC-03: a yes row cites no decision that authorizes a meaning change ('—'); cite a "
+             "C-number outside NO_ONLY or one of ['HRV-11', 'R13', 'T-07'] (R3, M2)"),
+             ("[decision] DOC-03: old-meaning key 'DOC-06-C31-every-number-tunable' records decision 'C31', "
+             "which shares no decision with the row's cell '—' (M2: a key cannot be borrowed)")],
+            id="m2-yes-without-decision-and-borrowed-key"),
+        # M2: an authorized yes row still may not borrow another decision's key.
+        pytest.param(
+            _row("DOC-03", "s", "DOC-03", "C38", "yes", "C04-hole-at-least"),
+            [("[decision] DOC-03: old-meaning key 'C04-hole-at-least' records decision 'C04', which shares no "
+             "decision with the row's cell 'C38' (M2: a key cannot be borrowed)")],
+            id="m2-borrowed-key-on-an-authorized-row"),
+        # M2: a non-C token outside NON_C_AUTHORITIES authorizes nothing.
+        pytest.param(
+            _row("REG-02", "s", "REG-02", "T-08", "yes", "T07-acwr-band"),
+            [("[decision] REG-02: a yes row cites no decision that authorizes a meaning change ('T-08'); cite a "
+             "C-number outside NO_ONLY or one of ['HRV-11', 'R13', 'T-07'] (R3, M2)"),
+             ("[decision] REG-02: old-meaning key 'T07-acwr-band' records decision 'T-07; downstream reach is "
+             ".claude/rules/ only (R9, F011 S12)', which shares no decision with the row's cell 'T-08' "
+             "(M2: a key cannot be borrowed)")],
+            id="m2-unfrozen-non-c-token"),
+        # S5: a C19 no row with its key blanked.
+        pytest.param(
+            _row("HRV-03", "s", "HRV-03", "C19", "no"),
+            [("[decision] HRV-03: cites C19, whose old meaning is still stated downstream, and names no "
+             "old-meaning key (R3, F008 AC6)")],
+            id="s5-c19-no-row-without-key"),
+        # S5: PRIN-08's shared cell with C25's key dropped, C24's kept.
+        pytest.param(
+            _row("PRIN-08", "s", "PRIN-08", "C24, C25", "yes", "PRIN-08-C24-sidecar-ignored-by-default"),
+            [("[decision] PRIN-08: cites C25 and names no old-meaning key whose decision is C25: "
+             "['PRIN-08-C24-sidecar-ignored-by-default'] (R3, F008 AC6)")],
+            id="s5-prin-08-without-its-c25-key"),
+    ],
+)
+def test_decision_column_errors_names_an_unauthorized_yes_a_borrowed_key_and_a_missing_c19_c25_key(
+        row: str, expected: list[str]) -> None:
+    """Sprint-007 review iteration 1, M2 and S5, against the committed ``OLD_MEANINGS``: each message
+    exactly, so a check that fires for another reason does not pass."""
+    errors = decision_column_errors([_as_row(row)], False, meanings=_OM.OLD_MEANINGS)
+    print(f"[slice compared] {row} -> {errors}")
+    assert errors == expected
+
+
+def test_decision_column_errors_is_green_on_every_non_c_authority() -> None:
+    """The other side of M2: each frozen non-C token authorizes a ``yes`` row by itself."""
+    for token in sorted(NON_C_AUTHORITIES):
+        errors = [e for e in decision_column_errors([_as_row(_row("REG-02", "s", "REG-02", token, "yes", "k"))],
+                                                    False, meanings={}) if "authorizes" in e]
+        print(f"[slice compared] {token} -> {errors}")
+        assert errors == [], (token, errors)
+
+
+def test_glossary_term_errors_names_a_renamed_term_a_cut_clause_and_a_twice_defined_term() -> None:
+    """S4 on synthetic glossaries built from the frozen terms: green on the full glossary, and each
+    mutation scanner B ran on the real file reds with its own message."""
+    t24 = ("- **T-24 forbidden direction** IS asserting `hrv_normal` on evidence the system reports as "
+           "insufficient, or while any dataset reported in the same response reads below its own HRV SWC band, "
+           "whether or not that dataset is judgeable.")
+    lines = {tid: f"- **{tid} {term}** IS a definition." for tid, term in GLOSSARY_TERMS.items()}
+    lines["T-24"] = t24
+
+    def text(**override: str) -> str:
+        return "\n".join([GLOSSARY_HEADING, "", *{**lines, **override}.values(), "", HEADINGS[1]]) + "\n"
+
+    cut = t24.replace(", or while any dataset reported in the same response reads below its own HRV SWC band", "")
+    cases = {
+        "full": (text(), []),
+        "renamed": (text(**{"T-24": t24.replace("forbidden direction", "unsafe direction", 1)}),
+                    ["[glossary] T-24 names the term 'unsafe direction', not 'forbidden direction'"]),
+        "cut-disjunct": (text(**{"T-24": cut}),
+                         [("[glossary] T-24 does not carry 'or while any dataset reported in the same response "
+                          "reads below its own HRV SWC band' (after normalize)")]),
+        "twice": (text(**{"T-23": "- **T-23 forbidden direction** IS a definition."}),
+                  ["[glossary] T-23 names the term 'forbidden direction', not 'count'",
+                   "[glossary] the term 'forbidden direction' is defined 2 times, not once"]),
+    }
+    for name, (glossary, expected) in cases.items():
+        errors = glossary_term_errors(glossary)
+        print(f"[slice compared] {name}: {errors}")
+        assert errors == expected, (name, errors)
+
+
+def test_inventory_sentence_errors_names_a_blank_and_an_edited_cell() -> None:
+    """S3: the frozen hashes, not the table, say what DOC-03's inventory sentence is."""
+    sentence = ("Decision records conform to Parts 1–4. Where a record and research/00 conflict, research/00 "
+                "governs until the record is reconciled here.")
+    rows = [_as_row(_row("DOC-03", cell, "DOC-03")) for cell in
+            (sentence, ADDITION, sentence.replace("Parts 1–4", "Parts 1–3"))]
+    rows.append(_as_row(_row(ADDITION, ADDITION, "DOC-19", "C38", "yes", "k")))
+    errors = [inventory_sentence_errors([row]) for row in rows]
+    print(f"[slice compared] {errors}")
+    assert errors == [
+        [],
+        ["[inventory] DOC-03: the inventory sentence cell is blank ('—')"],
+        [(f"[inventory] DOC-03: the inventory sentence cell is not the frozen inventory sentence: "
+         f"{sentence.replace('Parts 1–4', 'Parts 1–3')[:120]!r}")],
+        [],
+    ]
+
+
 def test_decision_column_errors_no_longer_checks_ownership() -> None:
     """Mutation witness for Q1: the old exclusivity check named YES_ROW_OWNER on a cross-group row."""
     errors = decision_column_errors([_as_row(_row("GATE-01", "s", "GATE-01", "C06", "yes", "k"))], False)
@@ -1617,7 +1997,7 @@ def test_decision_column_errors_no_longer_checks_ownership() -> None:
 def test_decision_column_errors_needs_a_yes_row_for_every_other_decision(tmp_path) -> None:
     _a, rows = _world(tmp_path)
     rows = [dict(r, **{"meaning changed": "no"}) if "C22" in r["decision"] else r for r in rows]
-    errors = decision_column_errors(rows, True)
+    errors = decision_column_errors(rows, True, meanings=_a.meanings)
     print(f"[slice compared] {errors}")
     assert any("C22" in e and "yes row" in e for e in errors), errors
 
@@ -1868,9 +2248,9 @@ REAL_CASES = (
     RealCase(
         "doc-goal", "### 1.9 System ownership: plan versus goal",
         "\n".join([
-            "**GOAL-02.** The goal contract IS the three athlete-owned fields `goal_pace_target`, `race_date` and "
+            ("**GOAL-02.** The goal contract IS the three athlete-owned fields `goal_pace_target`, `race_date` and "
             "`distance_m`, which the system MAY propose to change but MUST never change itself, so a change takes "
-            "effect only as an athlete-supplied input, exactly as at program start.",
+            "effect only as an athlete-supplied input, exactly as at program start."),
             "Scope: every goal-contract field, and every proposal the system makes about one.",
             "Not: the order in which the system proposes remedies, which GOAL-03 sets.",
             "Pinned: none",
@@ -1886,17 +2266,17 @@ REAL_CASES = (
     RealCase(
         "arch-dec", "### 5.4 Reconciliations and amendments",
         "\n".join([
-            "**GATE-02.** The system MUST NOT add hysteresis to dataset selection, and the worsened dataset-flip set "
-            "MUST remain the 80 pinned `walk_flips` cells at `car_density = 2wk`.",
+            ("**GATE-02.** The system MUST NOT add hysteresis to dataset selection, and the worsened dataset-flip set "
+            "MUST remain the 80 pinned `walk_flips` cells at `car_density = 2wk`."),
             "Scope: the dataset-flip rate, measured against shipped F005 on every sweep the same way as GATE-01.",
             "Not: a worsened cell outside that pinned set, which fails the gate.",
-            "Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
-            "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned",
-            "Why: the no-hysteresis decision is recorded at H-37 and is revisited only if the unequal-dispersion "
-            "measurement of IDEA-089 (b) shows harm.",
+            ("Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
+            "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned"),
+            ("Why: the no-hysteresis decision is recorded at H-37 and is revisited only if the unequal-dispersion "
+            "measurement of IDEA-089 (b) shows harm."),
             "",
-            "**FIG-01.** After a coverage-gap re-establishment the athlete traverses 20 days beneath "
-            "`min_baseline_readings` (`R+0 .. R+19`), and the spec MUST publish that figure.",
+            ("**FIG-01.** After a coverage-gap re-establishment the athlete traverses 20 days beneath "
+            "`min_baseline_readings` (`R+0 .. R+19`), and the spec MUST publish that figure."),
             "Scope: a coverage-gap re-establishment of the series (HRV-35), not a source-tier change.",
             "Not: the cost of a source-tier change, which FIG-02 states.",
             "Pinned: none",
@@ -1912,15 +2292,15 @@ REAL_CASES = (
     RealCase(
         "hrv", "### 5.4 Reconciliations and amendments",
         "\n".join([
-            "**HRV-37.** A per-tier dataset's SWC band MUST also be clipped, unreported, at an internal capture hole "
+            ("**HRV-37.** A per-tier dataset's SWC band MUST also be clipped, unreported, at an internal capture hole "
             "in its own baseline window, meaning more than `gap_reset_days` (21) silent local days of its tier, so 21 "
-            "does not clip and 22 does.",
+            "does not clip and 22 does."),
             "Scope: every per-tier dataset, over the silent local days of its own tier inside its dataset baseline window.",
             "Not: a silence of the whole series, which the coverage gap of HRV-35 resets.",
             "Pinned: none",
             "",
-            "**HRV-09.** Every count in the HRV rule MUST be in distinct local days, with `min_baseline_readings` = 14 "
-            "and `min_window_readings` = 3.",
+            ("**HRV-09.** Every count in the HRV rule MUST be in distinct local days, with `min_baseline_readings` = 14 "
+            "and `min_window_readings` = 3."),
             "Scope: every count HRV-08 to HRV-46 take, in every per-tier dataset.",
             "Not: a count of captures, since a second capture on one local day adds no day.",
             "Pinned: none",
@@ -1990,12 +2370,22 @@ def test_real_path_ac1_ac2_ac3_every_line_of_research00_is_grammar() -> None:
     assert errors == []
     assert len(ids) >= 120 and len(set(ids)) == len(ids)
     assert not _ISO_DATE.search(" ".join(research.split()))
+    # AC2 / R8: the Part and section headings are kept, in order, with the Glossary directly before
+    # Part 1 (S6). ``rule_grammar_errors`` checks membership only.
+    heads = [line for line in _lines(research) if line.startswith("#")]
+    want = [HEADINGS[0], GLOSSARY_HEADING, *HEADINGS[1:]]
+    print(f"[slice compared] {len(heads)} headings in order: {heads}")
+    assert heads == want, (
+        f"the headings are not R8's, in order: missing {[h for h in want if h not in heads]}, "
+        f"first difference at {next((i for i, (a, b) in enumerate(zip(heads, want)) if a != b), None)}"
+    )
 
 
 def test_real_path_ac4_glossary_and_band() -> None:
     research, _history, _rows = _real()
-    errors = glossary_errors(research) + band_errors(research)
-    print(f"[slice compared] glossary and band over {_REAL_RESEARCH.name}: {errors[:10]}")
+    errors = glossary_errors(research) + band_errors(research) + glossary_term_errors(research)
+    t24 = next((line for line in _lines(research) if line.startswith("- **T-24 ")), None)
+    print(f"[slice compared] glossary and band over {_REAL_RESEARCH.name}: {errors[:10]}; T-24: {t24!r}")
     assert errors == []
     assert GLOSSARY_HEADING in _lines(research)
 
@@ -2035,8 +2425,9 @@ def test_real_path_ac6_traceability_both_directions_and_pins() -> None:
 
 def test_real_path_decision_column_is_complete() -> None:
     _research, _history, rows = _real()
-    errors = decision_column_errors(rows, True)
-    print(f"[slice compared] R3 over {len(rows)} rows: {errors[:10]}")
+    errors = decision_column_errors(rows, True, meanings=_OM.OLD_MEANINGS)
+    yes = [(r["inventory ID"], r["decision"]) for r in rows if r["meaning changed"] == "yes"]
+    print(f"[slice compared] R3 over {len(rows)} rows, {len(yes)} yes rows {yes}: {errors[:10]}")
     assert errors == []
 
 
@@ -2051,11 +2442,14 @@ def test_real_path_ac7_every_decision_is_stated_in_its_rule() -> None:
 
 def test_real_path_ac9_proxy_on_every_unchanged_row() -> None:
     research, _history, rows = _real()
-    errors = _proxy_rows(rows, research)
+    errors = _proxy_rows(rows, research) + inventory_sentence_errors(rows)
     checked = sum(1 for r in rows if r["meaning changed"] == "no" and not _is_blank(r["inventory sentence"]))
-    print(f"[slice compared] AC9 proxy over {checked} no rows: {errors[:10]}")
+    frozen = sum(1 for r in rows if r["inventory ID"] in INVENTORY_SENTENCE_SHA256)
+    print(f"[slice compared] AC9 proxy over {checked} no rows, {frozen} sentence cells against the frozen "
+          f"hashes: {errors[:10]}")
     assert errors == []
     assert checked > 0
+    assert frozen == len(INVENTORY_SENTENCE_SHA256) == 149
 
 
 def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
@@ -2067,6 +2461,8 @@ def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
     print(f"[slice compared] {len(_OM.OLD_MEANINGS)} keys, {len(named)} named by the table: {errors[:10]}")
     assert errors == []
     assert _OM.OLD_MEANINGS and named <= set(_OM.OLD_MEANINGS)
+    orphans = sorted(set(_OM.OLD_MEANINGS) - named)
+    assert not orphans, f"OLD_MEANINGS keys no traceability row names (S5): {orphans}"
     assert _OM.EXCEPTIONS == ()
 
 
@@ -2195,3 +2591,16 @@ def test_the_endpoint_walk_declares_and_applies_the_literals_exclusion() -> None
     assert value[:2] == (0, "runcoach-api/tests/support/research00_old_meanings.py") and value[2]
     scanned = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_scanned_files")
     assert "SCAN_EXCLUDED_LITERALS" in ast.get_source_segment(source, scanned)
+    # Applied, not only named (sprint-007 review iteration 1, S7): deleting the two exclusion lines in
+    # ``_scanned_files`` left the name in its source and this test green. Run the walk itself.
+    endpoint = _load_module("hrv_trend_endpoint_walk", _ENDPOINT_SUITE)
+    literals = _REPO_ROOT / value[1]
+    candidates, walked = endpoint._candidate_files(value[0]), endpoint._scanned_files(value[0])
+    print(f"[slice compared] {value[1]}: in _candidate_files({value[0]}) {literals in candidates} "
+          f"({len(candidates)} files), in _scanned_files({value[0]}) {literals in walked} ({len(walked)} files)")
+    assert literals in candidates, (
+        f"{value[1]} is not among the walk's candidates, so its exclusion is tested over nothing"
+    )
+    assert literals not in walked, (
+        f"{value[1]} is read by the endpoint scan: SCAN_EXCLUDED_LITERALS is declared but not applied"
+    )
