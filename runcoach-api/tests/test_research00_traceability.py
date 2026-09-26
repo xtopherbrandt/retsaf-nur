@@ -85,162 +85,166 @@ INVENTORY_IDS = frozenset(
     + _span("LT1", 1, 2) + _span("FTO", 1, 6) + _span("DEC", 1, 1)
 )
 
-#: The inventory sentence of each of the 149 IDs, frozen as ``sha256(normalize(sentence))`` (sprint-007
-#: review iteration 1, S3). The AC9 proxy reads a row's "inventory sentence" cell, so a cell set to
-#: ``—`` or edited alongside its rule took the row out of the proxy and the suite stayed green.
-#: Computed 2026-09-25 from the inventory's "Current rule" cell (``inventory_sentences()`` over
-#: ``spec/references/research00-rewrite-inventory.md``, the inventory at ``4e47d0e``); the committed
-#: table's 149 cells matched it verbatim. Asserted by ``inventory_sentence_errors``.
+#: The inventory sentence of each of the 149 IDs, frozen as ``_sentence_digest(sentence)``: the sha256
+#: of the raw cell with whitespace collapsed and nothing else changed (sprint-007 review iteration 1,
+#: S3; iteration 2, S1). The AC9 proxy reads a row's "inventory sentence" cell, so a cell set to ``—``
+#: or edited alongside its rule took the row out of the proxy and the suite stayed green. Iteration 1
+#: hashed ``normalize(sentence)``, which drops backticks, underscores, quotes and case: a cell whose
+#: backticks were removed hashed the same and lost its identifier from the proxy (DOC-13's
+#: ``spec_outline.md``). Regenerated 2026-09-26 from the inventory's "Current rule" cell
+#: (``inventory_sentences()`` over ``spec/references/research00-rewrite-inventory.md``, the inventory at
+#: ``4e47d0e``), not from the table; the committed table's 149 cells matched all 149 digests.
+#: Asserted by ``inventory_sentence_errors``.
 INVENTORY_SENTENCE_SHA256 = {
-    "DOC-01": "9f89fe636c53bf7882fd0ff8747ec6991bff3be196f8d3be16bbb0a1fa4389f8",
-    "DOC-02": "f82a9ae35f231f698a027dcd9e38e101dd057df1051c5ab66bc45ac68881a59d",
-    "DOC-03": "a6ffb669cab1f20642559fd1e5e719bdcf17a58f856f400e84b49e6a9c0c4831",
-    "DOC-04": "9314bfbe6752e6b62b6c440d3a91788653fc2b3c239cfd5bd1ab644571a2b068",
-    "DOC-05": "0a50082f92e7afbdf27be5fe0a3db5df4dbfbd0b248ef41b3a22dd08c0ee824d",
-    "DOC-06": "4109a1fce2ffc74d34ffb54745c44f4e32a2f8e528225fde52bf6a3ed0323f8e",
-    "DOC-07": "ab56a14394636820d151d0db9648b15ee336b1a46dc628ba03bfeb342476dc4c",
-    "DOC-08": "d9ec83c4752d4291395b3422eb36d03b76e66505d3e0190aab66fbd5f7425f6e",
-    "DOC-09": "a4eaf51cace0f5a48ad0e3094526dbe2590f6b66a1d995c19a82f68f77bfcee2",
-    "DOC-10": "07584f971a006d12880a530cfc1bf02185073aa6bb9999a0d37f662ab233d6c5",
-    "DOC-11": "0ba03505b52e1534354593b3033bbe3a321329a9fd90fa542378ac1f50981438",
-    "DOC-12": "0c24e83d0aa697cf5e4093ea53ac8c3894999e69cb60bce927fbef0353c2720f",
-    "DOC-13": "2c40da36d9de5183f0e9a83137ea3f2ebb6ed006bfcb7bf238e5bc5dbdf7efb7",
-    "DOC-14": "0c1a266d620b15ba0fedf66e9da47148917e63722b3f06cc797a75be7f70e937",
-    "DOC-15": "855e1b05c51a5dbd11d4e574d21d65461c8297166023d2f9d6972e7521ad23b0",
-    "PRIN-01": "7c3f6c4531ba53480f8f94af31f5aee52f05dd02034e740c214c938597a810ea",
-    "PRIN-02": "362fd4a41912927f80231cb64343275da10738c874b139e8ef5d97f240b5ebaa",
-    "PRIN-03": "12b8eb803282b27676b2130a1a1866873f9e051bb6f037e9bac29c13a8a9df20",
-    "PRIN-04": "27faf0a14ee7ba2243273823b4d9cb2b799fdb78656450b08f885940d85ca9fa",
-    "PRIN-05": "f76db6ae4946cd28f8d2bfadcab5fa5d2042ecb3f9df54dfc923e19a78ee311f",
-    "PRIN-06": "646dcaa08fc0b1ccb19c06bb8e36edaaaa73d3f149b5d5a6cc29869d47b30f8b",
-    "PRIN-07": "10126d7064f1b29c519ffd539a6b244f275556cd3620d6a002c3a8f8ff8ae153",
-    "PRIN-08": "fc77ea6c2ac1578c52faeb6b1339b71a02b252feed2889ae51fa45d7d0dc7234",
-    "PRIN-09": "13a02323a1de3bf90a9c66b9896f8c5679dc70e817b392dfcd9011cd41f8e8da",
-    "PRIN-10": "f582cb827a203f1c41eb44c9f32fffee9794d30fabaf16ac716b9ac61e2dc501",
-    "PRIN-11": "9899149c9c43c64dd92437d8f308e904a1ceef476caed31991db9b6a51a7831e",
-    "PRIN-12": "34451a7fa93e9a650c3c7749c2cfdc5389493a572ee79208358a82cef2b57e54",
-    "PRIN-13": "d195a9e45f3bd453cb38dcb5a6e54b05c70b9c9659deada9821bcd3e8cdd7197",
-    "PRIN-14": "0558019548563ad4fb4d4d91f2f773a77bba41fd514c445aadf5b945a125994d",
-    "PRIN-15": "90be2081d639d45bb7d26175379861921b45583940b7395fdcc96ef79b880033",
-    "PRIN-16": "a238a153e27b3a4b1400265af1dac0088f1e335261593e942082785a6d2baaf7",
-    "ARB-01": "1a67b00c3738f571f11d94031ef40fba5c54937f0af69b735d56e05660e84eae",
-    "ARB-02": "9e086e3540812c5b7c7efb90471440e46b7ad13b75bb254a3702286c516793b4",
-    "ARB-03": "42b76925883fb556945fa6305a1b96326032feaaabc36369d11245f014c0a707",
-    "ARB-04": "d6bb975a2dcdf2e9f9c56a96fd56e3ffd19ff1dbec463d7c683241adc2aa7992",
-    "ARB-05": "e30d3501155c4f229f3d60de827ca8c8945430c4110a1750f24fc9d3296a7a8c",
-    "ARB-06": "d5663b8ab26e05d1877e9ee157da681106a8530017f7f24eddcc645586eafb6c",
-    "AUT-01": "a2568ec3f935d6bfcdfaac1647f702e7097d680416e5e5ff13cb28d547130b77",
-    "AUT-02": "29d3965653f9ca167a6de42c97581b88da3e3d58ffd4ddc950868104d02223ce",
-    "AUT-03": "2ea69d38e84d3960393007726706a0bd025cb5720fd2c5668f45afdcadf33005",
-    "AUT-04": "5200703bd134cca442b535b6db5cba56326aa3a1b58b74779a3fccb0638b60bd",
-    "AUT-05": "b037e27552607b6b33548f00190c44ff4e1ba66ba92fe386d4129010b68a42c2",
-    "AUT-06": "235ff9d4d9df1a836df896d49ca030bc5f598e5bc73e853bca02b33d5d32c698",
-    "GOAL-01": "a2d7040901f7bd07cdc689e08650aed9f3b41cebf743fc177c4286417a3ff032",
-    "GOAL-02": "f44bb2c9a7bbeb7730219e2de65f6d4e4e86860b5a416e776e4ced3988158863",
-    "GOAL-03": "2acb4772ef6e23fa31165febd88ad9ed1a7764a1b91e1aa2ddc91dfe1eac7e40",
-    "GOAL-04": "d99847eef546af4deeb53c8988bdb610569125202f1f6d1ac47f229310bf31c7",
-    "GOAL-05": "a32f409090f9cc68ec0656992a21bf2bc68ecae303b4c7ee5a185f68eb37252c",
-    "GOAL-06": "8111b20b48cdbd76062204803af177ad76e44d6111851f122604bce44ae8f0e0",
-    "ARCH-00": "db010c82c749eee7a76152d52de8bbbfde078b16416b23a03db3cdc2055aa971",
-    "ARCH-01": "4d7e79b7084627ddba51591af313659931d1388ed6e6bd938d6b44824f26c06c",
-    "ARCH-02": "04f31895e08f8cc55862e10af3d1d7a3881da40b9ede3489d8f875388139f9ce",
-    "ARCH-03": "25f1e4273cc100b4f05c590266f857f5e614f03ebbee00ba15bfc82a4f7cd7a3",
-    "ARCH-04": "3406e5682f587c3ea567b87bfca46e2f19601632b71a7c2e3200015d1650af9f",
-    "ARCH-05": "dc0120f7b5518c8f13c3328694c80f3d01429d87a9a598b466e4cfe7713ddcbd",
-    "ARCH-06": "1d6fb8c491a54d29eb25dc1928d26db2e0240f5cf8e32060d08cacc74042528c",
-    "ARCH-07": "c5030b902ddf9c4ee00e15abe065037dcf4d4bbcf443536984d9c903d49d7c5c",
-    "ARCH-08": "5e990e2ff592f8610b8e7bb9df1255182b011d0c4ba24c746a37765cc0b310be",
-    "REG-01": "ccb435757f009f58efa1100b59ccacbe2e365d287c4c4ff03f43a702f4cac387",
-    "REG-02": "ad6a00f41c0a249b786c002aed2a11e85d5c9230888db2b76361664ab7dc98bd",
-    "REG-03": "421542bb4a221a29c2125b4ebe2283efe94da8cfff70bcc688649cc3544cbbd1",
-    "REG-04": "1bf99e6baa4e8cf5a13c6dcfd77ac414bb7801f7f2eac7209ee676aa2b563d20",
-    "REG-05": "7d95419d2ccf378f11cb04263659070bf98ed344be7c6509c621ee644e56c786",
-    "REG-06": "4035125ab9ee37c0fdacb41260ba16875fbf9a03d593279c54f24fb3240c2cee",
-    "REG-07": "7237c564449737ceee536e8d83e0e0bb61e8ba52e99a97ad700b52afb15679f6",
-    "REG-08": "92bc502e4f17f0608e162cb5cedaa692c723e6b4a550e88f71fb47cded15da05",
-    "REG-09": "dccef305fe5998c7abf4a4b4581be895e42649e9cab8f2f5d8e3a3aae6905afe",
-    "REG-10": "d32c486a9585d73ebd6502d23b192ba29182e66c87e8b6357806b7b02dd6fe0f",
-    "REG-11": "143b8ac76391db6c73c84f173bc41869ba4d9b41e73ee5cccbfcf02c775d0a9a",
-    "REG-12": "750a439952ab96f08c6aa1864e520630101607dbdc9946b8f34aee725b511be5",
-    "REG-13": "823cd2e5d9f3b5a69a0ad0d14a52dcbf3e7789fad651979f10eba4a2604e074e",
-    "REG-14": "9263f98bbfb3e9048bb12ebb51a376a1923cdccc49519d5b2de2a7f43e8c7157",
-    "REG-15": "d82797d9121054d8aa406b510f2aebb774401a936bcaf2c01cacea1f44b50939",
-    "REG-16": "c4e89cfcbb027ebfc9b8eea3b1a772594af8e3bb7ef4e79807b695e4300e3c3c",
-    "REG-17": "36bf688fcbd1291a9e1baa94d5534a2148809629b44689628d8f25b75a698517",
-    "REG-18": "9610a4fb6f1d6f5a3ff175a6d53cd5731ff718c48afaeaf22e186ca519e4f02d",
-    "REG-19": "4838d100b05c1ffacbbf1e9dc50cb9ae9e6ab5bab7d4193c93f080c43b677100",
-    "IND-01": "f2aa9ed30f35944f3466ed62e03dd98e3cdfdb01bd5b8c2ea205a01aa9ad2b90",
-    "IND-02": "20c4bf861fc8c9d61b10491f0dc922b90b722d2e43f895e5a1e0b15a9c1f8759",
-    "COLD-01": "009ebe47d57687877a1b1da87928837476a66a58ad783d47e545cce4fdaa2516",
-    "COLD-02": "6b493f266bbf8482cff2ed1b4ade60c5bf035d185be9b37ac56ba305cf82d8fc",
-    "COLD-03": "3f0eb5694e0d5e535607791ad6f3d36cc6396874a50380510432a3eea2935062",
-    "COLD-04": "c4d6c50b0d09e980c40629bc509e251c6a13d5700d89e5a7a6385a79a07c4ed1",
-    "COLD-05": "bb9adf3c24eb9729a03215c8d04761c9fd669cd320af5d06b115f04de244204b",
-    "COLD-06": "6eb7da4366d6cab8e71787d882d75837b883662f0f4db6e962641acd8660a7f5",
-    "COLD-07": "1cb34d55c6070dcd1bb1b26443429cf705b959deeed5225a573c00e74d53475a",
-    "HRV-01": "486be1292957fb58aa5b8e40487f874e32c2d63144cbbf54d8c2bf01d1e4b00c",
-    "HRV-02": "e52b6e5547888b7288d9b9ed493a423a8cd8b8901f36118f62e351d403576c7f",
-    "HRV-03": "4e8df7572e2707c4a16d6d68ad9f368378ba03e98fbedd3b9b33e0399d6245cc",
-    "HRV-04": "6208dc9dcf3eb26699c70db120f8b91c93e6989444d88a071ffe2abd10245426",
-    "HRV-05": "9e32fc15d0eff8847f4c9555acf3e0efa58dd912329df24de9f060a950f8651d",
-    "HRV-06": "89baa7eacc952289c3a0fd8e1e0b97ba0628070dd918cee743d24cd14cc1ecc7",
-    "HRV-07": "802f09b695a24d7fb94f6a429341cf308748e9ebde1f18e6adadf5bac0dabb28",
-    "HRV-08": "168d5d868a94ab630f77e3ad784603667589fc929324ca9ab12f036667411ef8",
-    "HRV-09": "84d65922659a1ad181b2fc3b7211f8727e477c00d8fed81096dbc563c9506950",
-    "HRV-10": "19a721b519e6cdb7cadbc01b9fb1070daa05c57a105c612637bea451f240ed40",
-    "HRV-11": "c5f1b06b72ffc5d681810e2d174a16430f9ec09d12e84c805c2a8a2d5b557110",
-    "HRV-12": "232aec4c8dd81194cf083d243d1006e368eb600597d43bc1e518421990b8c379",
-    "HRV-13": "420ade1969ee129933da7a48f458beaa9ac3089cb6822098348109a04cd2cc11",
-    "HRV-14": "d08cbf5c9f9688652f2d0b97a44bfadedad890f4f33ba2d87038a9068f153b2d",
-    "HRV-15": "76c68fe4f5656eeb7ba596da897b852c94b100f23b0702ed826ce31ac09e67cc",
-    "HRV-16": "e2b1bd21387a269413e34d4326544335eb48a75d58dffd04ce1f5b99059fc001",
-    "HRV-17": "836242ccfbf4d195f1fb489f7f8d555a1bda6477bf5d34c39b2b9f1ba149e4e1",
-    "HRV-18": "1a77e83fac678e8926191e119d2ab3982d5c6a29e92cb75b2e39bca5a26647c1",
-    "HRV-19": "e9422a5b88ed37178ba14a7f39e900cf333f6b8b5916c65909f4a4170503f2cb",
-    "HRV-20": "04a7096b207e8efa7a2ab0e1c6a978758197fc39731cadb1111c0fa4925da065",
-    "HRV-21": "6279b46c7af3222008859ddbe028d168f8ec1263d39f0228f59986d9e11511f1",
-    "HRV-22": "6425c3dc986c69588b8f6ce8fb2242d695f5d54bab758e56e0e7888bbdb0338c",
-    "HRV-23": "4008ffca252350a90fe1c0737c6fbe6e41a6b6a54ee46042ddea2e2111be3c18",
-    "HRV-24": "e3e6c95a00ce4aa9ba4d47df103cd018df37c9f37157b9698859967604bfe280",
-    "HRV-25": "7599d760f2575bfe1e6894732ddb6f51b8fb082c171c89fddf6be8f368295dcb",
-    "HRV-26": "b664195613dde72ae6b7b755dcd3caedf5a25800405f066010a28d6c7f8df2d2",
-    "HRV-27": "f979cc796f97003fed8d3f333ce42e6ac0c51d215bf07074722f3624f3eab348",
-    "HRV-28": "ab9840be76b2180f1e7ae79db0db0ce271b63024cc33af38bd61a1d2de3cad38",
-    "HRV-29": "8f8caab205c2d90e25eb2c1ec94c3e6a6f98c16fc2dcf6516f2c8ef95b5c5f33",
-    "HRV-30": "30b330540e71737203ad484a762073558af186b5736cb3f3853c25e05164c157",
-    "HRV-31": "587225f6d9f80507099bf098e26f393bea09853255ff6d050a5390c6118dc88b",
-    "HRV-32": "5b3be1f258656e5316650bf291366b7c1cfcf0ffec94e592900ee6b6093f9815",
-    "HRV-33": "0ad2a7cc479f2c4beb78a9ff5729c2173fd3a92c93cb1910d740b33f9d2440bd",
-    "HRV-34": "c07c87cf0250a1c54e10e4812112344de42df12005a00606f2f4bb5c24a42783",
-    "HRV-35": "5d19e18bd666290515975636ed84c3503efd03047881bd198fa31768b30f3215",
-    "HRV-36": "2154aaebbd01ba447ab3dbab979886c3a595f0c399e38681d4a61701821b4f0c",
-    "HRV-37": "736e1cfffc85fcd15d220ae5d589992cb6849fa10129248cf2a6654c722db8b6",
-    "HRV-38": "3d7b0fc1f7255ae28cd8c7b2293ff1ed1bb917dcadf2ed79bf48ab1b09beed22",
-    "HRV-39": "6a25f7f9ec23cbbd61ac332ebecc30c8781605547e2c4fdef4248a6f3be22748",
-    "HRV-40": "4a08571527a20376f753ada1696fad672c57e70cb3601fcafc05f846f07f6f22",
-    "HRV-41": "40f6b95aa248f60866cd277f29e4b5349e881b07110c02b7c008eeb549268072",
-    "HRV-42": "1f949bf4604936fea7eb17a7b35ad1bee6087efd636bd03e391a41fe964f4a72",
-    "HRV-43": "ef2024da40bbec8ed6f204aba828549107356857052954321a436c2fa8974009",
-    "HRV-44": "97106368fd9f2e823e3c26f65c4f4df06f9c549e9e884eb0f727e155cafdbc25",
-    "HRV-45": "acd117273dcbdd5497d86b241566e3f5ec52c68afe8c0141419d11396b101927",
-    "HRV-46": "6d8fcfc7e17b7f011c5ee7c9ed76f6f98025b6efe68626f4ea9539e5d4401f0e",
-    "GATE-01": "2a965a10cbf650c57d83aa8e4a806bea7d7bec14f7581ac40f3d4a92978971be",
-    "GATE-02": "a01cf69806d1c64486825200f9cda3043bd0ffff09d071aa187f8d29fe74ce5c",
-    "GATE-03": "8d247bd888191f4a8619b234948728fd76997254b04922f40662076f1e797609",
-    "FIG-01": "8cdbac6957741ca816a5d8985d4e69d206908923ecbe7e4614fe438ec4ffdabb",
-    "FIG-02": "b524a188a7f7646d347bdc346646289f93946395550944ea4b3c83542c3545b3",
-    "FIG-03": "cd45e40b32d250ec912b1a76d4503c4298a37e3491c82050a11bdc5a239f6357",
-    "FIG-04": "1ce77b01c6f920d5e9fed44fc312bddb8e23a97f3feb4ab244b902308fbeddb1",
-    "FIG-05": "b17de39f087ce861fdbda9f625bda5c18f35cdcc6d9cb91fcc063de5166e6e3b",
-    "LT1-01": "349ba6651fe98e2ed69cdaa782e1e720687a2ab5f80c8fbb25d6f472fe072365",
-    "LT1-02": "571af3e4d17a10a795a629a91d60a47b6b3aa368c6037570c09d53427de62443",
-    "FTO-01": "632ff24a5be6d51ff6a08c26188e7b2cd88c919a0088b6f32cc566b7b1adad63",
-    "FTO-02": "44b5621ae01cfee35376b0d846edaf37b48690fac9b6752d394d3da8f360bdf2",
-    "FTO-03": "964f90eec1491ab9a0ec1ace8358e568bc4b7634a2b85d06ba9bf5610172844e",
-    "FTO-04": "a812615e7d34b95ffa14324044569ee399a674d6ea934c312b370990b7c2fda0",
-    "FTO-05": "f10b95cd6a2ab9bc78e51766a8b551cfdb585d7dbcda30825f1f66971b15bf7a",
-    "FTO-06": "a8e0e2922e2fe687a7cd96f3e746871e0d1c0a559e3f6b2f1aa7299e00040f34",
-    "DEC-01": "926e5c5de04fa555cc83ce2b30a888e7387ab8f9f743f4ffee5eadca1bf97289",
+    "DOC-01": "db839f374fe76152c770a0fb6787e039aa52fe8251e6af8e7fbf64b49acd44f1",
+    "DOC-02": "cf0680478c4892e678cc6e22f6640268ce9e1a247d5387e11920437e57b0f181",
+    "DOC-03": "09392b30e7af18907f45b17e3c510683a84a25d4e03dd399f74585ba0a8e3b85",
+    "DOC-04": "5300aacf0fc6fd1cebe79d9d5de4d85c241c2b0d3eab4a7ce339f688fae01814",
+    "DOC-05": "07768412f26c2fa67a0aa540eb1d05db87ae38b0f4b0e5d9c2885fe113331042",
+    "DOC-06": "eb52e3501bae3d81590d863c2a1f0380426f587fca1c23bf31cac5003b33d9bc",
+    "DOC-07": "47985bb08254f418c7c8d48f610230319b5566d02bfce990656522bbd127b086",
+    "DOC-08": "40ad869b6aacf93fdd653feaa7bd5242ee5f18b2c2e5b230dc4d0ce10bf7a8bb",
+    "DOC-09": "b6085b77097c44a8972ee2093f721de645727cde99490780d80cb77b0086a444",
+    "DOC-10": "69f29cf25b55260701768a69bd2f7c50831638a25ddc2520d7a5b57ee09e9860",
+    "DOC-11": "04bb003ee4b30c1d95d711163b34355424b1c725bf028414668430b7d681aa58",
+    "DOC-12": "85f371f6dd4794b20c1bb2feb97a6ce139aa56eb8d043b184c62bba37c0f679b",
+    "DOC-13": "e6fb9c944c22978ad738c389e7472608243569f2f0e195efc2e99c2cae7823aa",
+    "DOC-14": "ae91e23c9b4af6ff8f9d8ac2dd7084daf5d29072588a4128553d06a0d3c09632",
+    "DOC-15": "0be0e79c8015a59a7da97d85fc07b2abeba24c32b49846f59b876c9e6646abe8",
+    "PRIN-01": "9c24c99aead50eaae31d04eeefb5b7daf8e35e84dba1e293ea8ea9a9ef82e3bb",
+    "PRIN-02": "bc4e27f99a8fb668c7390d8470dafba73591e582ecd6768c853e2d1c378b8226",
+    "PRIN-03": "e515ed8fd283a83ddaa256cd050919be77c3f2ef42c3bf5693523e22452ed97c",
+    "PRIN-04": "663644c4b4d266e659b7226865743f60b5b3f0d188453ff751c05d2a99e884bd",
+    "PRIN-05": "910f76e3cda24719f9d914673af6022062eee5fc083629cc1bb379b0d5da368c",
+    "PRIN-06": "51e10f46e03e5ac02e41b692a8d56bf38a53e8f822d6797b27f78bebd7bbf015",
+    "PRIN-07": "e2638a9261f8d330acf27fa8807e6d0eb1ffb167c816786415e1e385f023a280",
+    "PRIN-08": "86f27db532056caae7bde036c02ae040555c9849258dd89d22842c76d2f2c905",
+    "PRIN-09": "36557c69dde9076b516db4ec17c7a1ed08145c5b88434516e30800c9fbe3d015",
+    "PRIN-10": "10b0a06f735945cf38a30f4aa25e53515e714e7bc6d2b46ef987fcb08fe81c4f",
+    "PRIN-11": "6d57e5f11cd9cb42b72d7bc3d87059a55847b0eb591adea58cd003eeb7bbebf0",
+    "PRIN-12": "6cb6ac81454fdf3dee3ef213686169a9f4485768949650f504758ceedd31dcdb",
+    "PRIN-13": "d7c14355883fcd77c402013d44b5546ad86e5a4ba7f7644184c55d4a61e24b30",
+    "PRIN-14": "8d6698e35470081cb61dbfceebdb932b624e35fc5d0b54592a1f5635766e4d72",
+    "PRIN-15": "ac46c591281b1e67fb896caa2e630698bbd77f5b18a3a04156544d14d92f976e",
+    "PRIN-16": "141ac72b92bae73b7e92b1558aeac5d6cd931f20d5385e92050e8a0691d40fb3",
+    "ARB-01": "cc3f97b168189fa8a68d31a59820effdbf9897c7a6d554e17241ecaec1e6b422",
+    "ARB-02": "640b1a4315ff6e0fc3cbaeef87b595fe92ec39a2b02315b225e03cd25a12a834",
+    "ARB-03": "20f0b3c35d786766f09b6228efecff2999cfcaabdd972a1834dff69d5046133c",
+    "ARB-04": "f889d330da56619b42ee047384ed4dd3c56ed7858159c08d6c543a25a297d0dc",
+    "ARB-05": "ee60948c94d77fd56b7a34395d122bbc47903079e34b8278fef63a27fa3a14cb",
+    "ARB-06": "cb71b4fab6753083c4a5e5314839e85d3190055d27fd62b89d4d0fce527e3031",
+    "AUT-01": "c4e4c0c673c26bd05a10d92b8b504d8d6d3d1e64a9e7633df662d6e7dc3da442",
+    "AUT-02": "db401802608a2a1523d1e64e282d10b9dda24830e77dbaf8f4a3543996fc8726",
+    "AUT-03": "45f593b40bbd3eb0084c8b6242fbf0aa4a7928c6de7744bd436a21befad7c011",
+    "AUT-04": "4140bc60705e2010ea598947d0f1990d4f7bb86a69dd0bf0b7515c1d02830a9a",
+    "AUT-05": "e8c9cbdc5f1ced9bed9a2abf3c63736f4b217b28fd068a615fa1952ba02110fa",
+    "AUT-06": "20cca433af29b28296dd542add669dc21556479aa6ea08251f1f793d2d6e94db",
+    "GOAL-01": "32a82d981e2d96a346a2e832db03ff018c7186ea90269a386f1231d70ac074d3",
+    "GOAL-02": "64b6df95acdf71889d48ac7d0f8e16859aeaff92c296cf238f41844427627d03",
+    "GOAL-03": "b4ad8a2781c58da69dbab3a4a90992974a273dfcff1f1f696a202cff96dfffab",
+    "GOAL-04": "fbfbdd8cde73c6a5d29e7727d75c300100d7496bda9c20455bddfd0d51dd3b5c",
+    "GOAL-05": "e88553fb7cca8fcc06b9564ec1404682feeee226bb44efb41cc4ccaea55030e0",
+    "GOAL-06": "2b8b3b5512d6f3f4a5ab57bb10616e91958a35d6c237970c1dff1041aeb6d92c",
+    "ARCH-00": "e8e67f6e2230f9961eb09ab14b1ae05faeb71e0ef50850234a1e2050fc92135d",
+    "ARCH-01": "b8bb673a86b09def5178315e93cbc822c13a600dc98ee2dd3d0c2d8ea5f1db0b",
+    "ARCH-02": "04d06b59bb62e8655d98a02f522debe401d084f4539214e2c8763fec81a7cad3",
+    "ARCH-03": "485ad4f767e34565bc825434741390c6eb1adfe400cbf0580f11fddfbe5a8016",
+    "ARCH-04": "a44d250c76284bea01c491861735d51b7010d0bda82ad32a2aba2a39aa2c8287",
+    "ARCH-05": "0eb9375dfd337b0cc4b722881704ceaedf5add9f4655497fed7859afa8b6b151",
+    "ARCH-06": "3de99579f98a836e9297fc38bb5a6863bbd3f384ffc823f47f5021a9357d0098",
+    "ARCH-07": "a5a07cc2c0af6ba6fb11bcf7d6ce7ab81eafe77d7899f7b37652f7709a428abb",
+    "ARCH-08": "2b98a4971bbb5df99c25f6cf4737c989aa472cfc5b027d380bb0c655efa75bdd",
+    "REG-01": "ee15dadd5fc10de3556f9394e441f06c4510db32a6c8e298592cbb1c6e89c8de",
+    "REG-02": "ee616bc651861c70c444fe6a4c7f1895f172dd64ba6e7333dbef2a6805d7d185",
+    "REG-03": "e6cd4bb9de95a6e3b4385e5d06291a8ef173231d4cee52f08d3d4b760355b876",
+    "REG-04": "8d240f5f740c9508f0000d5850e6fcb1c67c187b69f8c8198be74ab1a84277e6",
+    "REG-05": "82aaa29d1402f52d30ba49e29e79f2ab9df4438f4829aa969c5c72c1cfa121e8",
+    "REG-06": "a2360c8cd0f86760f1386569f5aac2e6a84f590de9467a847ce0bf3ae443b933",
+    "REG-07": "07205c6f25422cb01e4dca49b9b8625ee6cae26930896959d72b64d2706c1c57",
+    "REG-08": "f603aeb013aa8cc87b619df5ba793ac142abb2e7efe88395262505779adf9f1b",
+    "REG-09": "4e1e315a715b69f413412504d7dc156d65ddc759f224d9d648e2737f71a4d541",
+    "REG-10": "9e957995bd437d615b9d97c51c690533aae0d1fc989e37774603601a8132e0df",
+    "REG-11": "82b80437d0970039d535f4658520dd6ddd9759cfc53759c8dd34ecb8f2eb335e",
+    "REG-12": "efb64032acf621e22419bb24faf851bd6707fdc8331dda5b032812740320eb97",
+    "REG-13": "a0be2143099e0aa9820ad187a86f99e637727c98e215b60050afba438f1987eb",
+    "REG-14": "7e31628507076c8335921f5adeeb838d3ec0fa38f5b53164d3f6af2e505e6e12",
+    "REG-15": "d3240a8cee0b388f67b8a088774dea26194fda2f090c7d2c256dfb635892078d",
+    "REG-16": "117368020848fa6c50e909adb13999a4a020ae8c03d995c0e99532cf25e052fa",
+    "REG-17": "cf0a67d461f53a669c7d8bb6f8416d85d529e2888d3df269e657eb4f88d48972",
+    "REG-18": "9ce47b2da463a4df402932f2f046fc58725060fea6264505bb5b454c7651a1fa",
+    "REG-19": "3de0a38757b798e6ef8f216a61d330f18da9234b8d73755cb4832dcb50aea9b8",
+    "IND-01": "9cd5b1ce2b12446877918fcdf8754776ecbb4f3586c686b33f542b0e4dbd6178",
+    "IND-02": "4ae2f8dec412184b5e2f5c43a7b4134f1529810a8887bfa36ec3c6c6d9bd25b7",
+    "COLD-01": "9effcb79c1f9ca9500da64f2d19cc270bfc8d78f4515edd969411b81954c5108",
+    "COLD-02": "8d1f36e9f6cd1a8a0d513856b8ee703b753f6db12d497973f64b85d6c1c430f7",
+    "COLD-03": "96c95a803f87b51ed39e539556213932084948cb3619dfdf82f804a65d51e859",
+    "COLD-04": "8c60ffc82d32f970e5ff2543c8b088f1c8fb6ab93dc4c20b93c043196b5bad40",
+    "COLD-05": "cde718d3f56a78f2cf926997a37a49a30a87ed737003c2ce339ad7dead7ca0dc",
+    "COLD-06": "40ce6d9eafe022e83772462ab115ff096b75a01f7dc781c3c035191c2d933a1d",
+    "COLD-07": "64789b01c94df39aab91062a100e57cf800d58ac2589383dc33dbe6666f55514",
+    "HRV-01": "13a614660b06aaaf4e2dfec7bd8b7170b1b4cb9e1fc534b3c39dcb3f658bdcd6",
+    "HRV-02": "528a4ad85b205777f21ccd45b18c833c52af582f72e6e125a4dca2de2085ad64",
+    "HRV-03": "15d36d43964e6196cc56af1565cbe7e06721d644f87d43086abf5367b078314e",
+    "HRV-04": "b4c4b4ab01f57ca9735b0282deb14b5cb9b142628a0e3211951851fd4a1d538b",
+    "HRV-05": "770b84444be6af9e77b9f54e92f4646b949966441a6fd42afa025f9d7a4e8815",
+    "HRV-06": "d550490e2ad8492514a098e83566c6b6201eb9ba34659e1819125800a7640a8d",
+    "HRV-07": "bbca067bdccdc5b11e6b6eb2fde469aa0d3396e08a4054f28dc02ad5e86be8ed",
+    "HRV-08": "5bb27bbd25e09384b5539051d66d520a0836cfd73bfef6c6df59a6e619b7003f",
+    "HRV-09": "a34d7bfd9ad4cc8915fabc69e4964627f193e988d977b8f4661c5bd6cb24dc1a",
+    "HRV-10": "c631e969ab03a2fa6566d5f4a01f9563a1083e957352f988b0de8653bcd10aed",
+    "HRV-11": "7ed69b047f3fdcc56383188f85706222c729a74ee2c8acd81f8fb8a8d2008781",
+    "HRV-12": "31c3fc916325910ebd6faf3804e87b87289c4a11d6d5f3ecca417065ce176c86",
+    "HRV-13": "9eeaa388dabe82292c7622f96bcc8652b965ae16405fcb4e420a3306bd4910e4",
+    "HRV-14": "2f272c5d6deec9ec849fc64dba327eaebcaaa9db493b7dcc5f608b2142088adf",
+    "HRV-15": "a5f8bab2b1d026d543860ad611320426ddf2eb58a8c4cf4e18cf77caebae9478",
+    "HRV-16": "599b8952be2d24d0a040de0a9680c0f09f65fb2860283af1be4d05ebb9984420",
+    "HRV-17": "568765382f56121d14654cdb0522bb97a25f589d32585500bbf8a9be964fe84e",
+    "HRV-18": "9164c163de0e688152b5502b3e95696bb0b626f217ca0b975a88628e5657f5ae",
+    "HRV-19": "280aa306bc894a1770a52935676daf47d2e65118473425a8a1a3287b4c1701f3",
+    "HRV-20": "b6df2edfb657e7604bed5442707cb3009b7857c16dd1d17a5b27f7e36bc56367",
+    "HRV-21": "901241c6a2ee4c1a4758eeaec26e9210cd369f88c418c4fef27e43029e7dd2f3",
+    "HRV-22": "03a23537a126dc558dc71262618adb8c24f816a67c9c0202f5691ee487ea5dde",
+    "HRV-23": "4ebfdbd0d25a287a5995744cd98897b077b834817daba7a1ba09c91ebb2a8597",
+    "HRV-24": "7b7f1073e65e7ed91b9867f128a6b1017c21dd725fe230627e73e93310d1a788",
+    "HRV-25": "172890d79358a793928f127e35f1237aeda83460ee06d4803813806ccd3709fa",
+    "HRV-26": "0e689db70c8c578d731a7bf1e959d2f8b43e17ff3c7cfd64c36ae62ab15ac442",
+    "HRV-27": "088b43f2148def35d4b74c14e6c7c132e96f1d5e9994542faa7b1ba3cf941aef",
+    "HRV-28": "2690e3e38516e214a12781be5398a171469b169a1e5b3f78cc098cb04d10692e",
+    "HRV-29": "7450e8b6ca90d611969a3ba20b8a2c559603d214f6bd33cef80f1a7672d6f06f",
+    "HRV-30": "e90ce41db4ca6e77e19075e503ca6ff4925d1ea933e9d9baeb9efa79a99a9e64",
+    "HRV-31": "732e7894a8f31efe1cb31f7c928f80ee22428b4fbe3263b5754c5154bfb50cb0",
+    "HRV-32": "6396eb3ddd4807e3b5871c58865233e7ce11b02cc068932df9080d311cce76e9",
+    "HRV-33": "6f71a595c3c7f345eeefa40cfd0108f7b9c5b0ffefcf1b8b09bb2eaf94777d3f",
+    "HRV-34": "0adf15613391bc91a0a6224ab64db34b2977a81abc10a71b59d67b571accd5cd",
+    "HRV-35": "550e3512df10d216d0944b3e3d67c7ae9b623db8373abe0eddfcc3b37e3a186f",
+    "HRV-36": "83aa4a7625d583a23aaa885ee36283908e3c39d2be196d96ed6facf7534eaef3",
+    "HRV-37": "f7cff2c54ef9b8852cfe6f5cbed00533b541ae927a99c0784d6e0ec24f300ebd",
+    "HRV-38": "308982854b970a4c225da2ebd54805c715307a15430acf2beb82dc2e32330b1b",
+    "HRV-39": "c9dbbd781835c043c70710f3bd8e9ff18e7c1a475026518e795b7be0af2ab0d3",
+    "HRV-40": "9f6e3248ce641918edf57ed979318166a91631a1f49330ac3edb28b2a2c3eff0",
+    "HRV-41": "a30eb10ac751673b852dde8354db58682bd440646f3615cb6799049befa0605d",
+    "HRV-42": "4ea3f04e28efc24858a26f5b5cc96fc3d81fd619d636af0f11a436a32ba42b77",
+    "HRV-43": "6c975d1663717bb78d937e8e5e8c60746609c900f82a71e75a0b535941cacd23",
+    "HRV-44": "4dab9c88cf6a989b998e91eea1e5f3317f3f695cb007b33f692d6755e72e8b65",
+    "HRV-45": "9d2c5dda43b986b78ff735c4f72826e834edc4761cc0fdfedf06aac4a761fa26",
+    "HRV-46": "d8b1cb2b89be8ef79160365275787a97331dfe76899340366c083125b209ab98",
+    "GATE-01": "45251b819781e90021e8e26906fbdf0ed66fd022aed3c5981c37ba70dd887be7",
+    "GATE-02": "f8f51b197a29f6ecb0722af8b7926c3fbcf6ca9af0ade285feec99cbcd42f1c5",
+    "GATE-03": "b7acb5f5c82977ca8d2b6186ed9e748b87678a2b3a1416c400bad49e368cb1bf",
+    "FIG-01": "524fccb0f809eedf57a44bd0f39256d06664aedb8f1ce879999dadddb9d32b32",
+    "FIG-02": "49e2eb0c879cba465b27641c66ed8fa3522ef0ac8b4e777ce2730077339e8eaa",
+    "FIG-03": "b749ad48ee2bfdfa75acbf2e0cd4f8d9519bca77cee156263a0aceb8f7339130",
+    "FIG-04": "10d5783676a19105b315bd02f746c78b5d13d31b2577e0f0184da24e385d7014",
+    "FIG-05": "a1e992520364e283a8044ce6f0ddc56a9134e9535a78338d26efb5c522388937",
+    "LT1-01": "0641fd79efe97426c5b87ee87bf16a3d340403a4a52a9b3d5ef096ca538fc746",
+    "LT1-02": "691d7b3d4834ee0fc14126c23374fdf02d28b8e55a3541a92f14abcdc9e8b7de",
+    "FTO-01": "c0ec8cb8fe64fad8906c8f3ef0254dc5474acf0ec636203d11f4607c4799e971",
+    "FTO-02": "fbdce0b431badc9997a8f852cb8ae36793416e44812100e22e3bfc002a4098da",
+    "FTO-03": "911fc1dddb18d1fc4a787aaac6eb36b25dd5b4e03c241252a587fb7aa4693282",
+    "FTO-04": "43224e6cfe9f5c4c849824ea32168dd6492ecb94d8e2b4401d95740c745c6a97",
+    "FTO-05": "a2589d6c6372288df673c352ce654de23c35a0e1c5c41c90c9fee3bc4d74866a",
+    "FTO-06": "a15c73237ab44eaecf922b4e035e6dbe3870267edd6b74a45a51525c4f65e818",
+    "DEC-01": "cd26e8547d8df067745506d794d93fca22ba6f7837ae4c65ab473baaba5b1f2b",
 }
 
 #: The Part and section headings of research/00 at 4e47d0e, in order: every line starting ``#``,
@@ -304,13 +308,23 @@ DECISIONS = tuple(f"C{n:02d}" for n in range(1, 34)) + ("C37", "C38")
 #: R3: these change no meaning, so they appear only on ``no`` rows.
 NO_ONLY = frozenset({"C11", "C16", "C17", "C18", "C19", "C21", "C25", "C29"})
 
-#: The decisions other than a C-number that may authorize a ``yes`` row (sprint-007 review iteration
-#: 1, M2). Read 2026-09-25 from every ``yes`` row's decision cell in the committed table at 9cb592c:
-#: ``HRV-11`` (the critique-round call, H-40) and ``T-07`` (R9's band renames, H-41) are the only
-#: tokens there that are not C-numbers. ``R13`` is the user's 2026-09-25 rulings on this review
-#: (M3, S9-S11), whose rows the next pass adds. Frozen: a ``yes`` row citing nothing in this set and
-#: no C-number outside NO_ONLY is a meaning change no decision authorized. Do not widen it to fit.
-NON_C_AUTHORITIES = frozenset({"HRV-11", "T-07", "R13"})
+#: The decisions other than a C-number that may authorize a ``yes`` row, each mapped to the inventory
+#: IDs it may authorize one on (sprint-007 review iteration 1, M2; iteration 2, M1). A bare set let
+#: any row cite ``R13`` and turn ``yes``: DOC-03's "1–4" became "1–3" under R13 and the suite stayed
+#: green. Derived 2026-09-26 from the committed table at adcb66d and the rulings, then frozen:
+#: - ``HRV-11``: the critique-round call (H-40) rules on HRV-11 alone.
+#: - ``T-07``: R9's band renames (H-41), on the four ``yes`` rows citing it: REG-02, REG-16, REG-19,
+#:   GATE-03 (REG-19 and GATE-03 also cite C30 and C37).
+#: - ``R13``: the review rulings. Only M3 makes a row ``yes`` (the PRIN-12 row, "yes under C33 and
+#:   R13"). S9 corrects PRIN-25's counts, whose PRIN-15 row is ``yes`` under C06; S10 and S11 are
+#:   ``no``-row restorations (HRV-01, HRV-40).
+#: A ``yes`` row authorized by no C-number outside NO_ONLY and by no token whose set holds its ID is
+#: a meaning change no decision authorized. Do not widen a set to fit a row.
+NON_C_AUTHORITIES = {
+    "HRV-11": frozenset({"HRV-11"}),
+    "R13": frozenset({"PRIN-12"}),
+    "T-07": frozenset({"REG-02", "REG-16", "REG-19", "GATE-03"}),
+}
 
 #: R3: the no-only decisions whose old meaning is still stated downstream, so every row citing one
 #: names an old-meaning key (F008 AC6; S5).
@@ -412,6 +426,14 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 #: A decision token in a decision cell or an ``OldMeaning.decision``: a C-number, the critique-round
 #: ``HRV-11`` call, an R-refinement or a Glossary T-number (as ``_decision_group_entry`` reads them).
 _DECISION_TOKEN = re.compile(r"\bC\d{2}\b|\bHRV-11\b|\bR\d+\b|\bT-\d{2}\b")
+
+
+def _lead_decision(decision: str) -> str | None:
+    """The decision an ``OldMeaning.decision`` records: its first ``_DECISION_TOKEN``. The rest is
+    prose (R9's T07 keys mention ``R9``; R13's keys mention ``T-05``, ``T-13``, ``T-26``), and a row
+    citing a token from that prose must not be able to borrow the key (iteration 2, M1)."""
+    m = _DECISION_TOKEN.search(decision)
+    return m.group(0) if m else None
 
 
 def _prefix(rule_id: str) -> str:
@@ -712,7 +734,9 @@ def glossary_errors(text: str, complete: bool = True) -> list[str]:
 def glossary_term_errors(text: str) -> list[str]:
     """AC4 and AC7 C07 over research/00's Glossary (sprint-007 review iteration 1, S4): each ID names
     its ``GLOSSARY_TERMS`` term, each term is defined once, and T-24's definition carries every
-    ``FORBIDDEN_DIRECTION_CLAUSES`` clause after ``normalize()``."""
+    ``FORBIDDEN_DIRECTION_CLAUSES`` clause after ``normalize()``; and each clause occurs exactly once
+    in the whole of ``text`` after ``normalize()``, so no rule restates the direction (iteration 2,
+    S3)."""
     lines = _lines(text)
     span = _glossary_span(lines)
     body = lines[span[0]:span[1]] if span else []
@@ -725,9 +749,15 @@ def glossary_term_errors(text: str) -> list[str]:
     errors += [f"[glossary] {tid} ({term!r}) is not defined" for tid, term in GLOSSARY_TERMS.items()
                if tid not in {t for t, _term, _d in found}]
     t24 = [d for tid, _term, d in found if tid == "T-24"]
+    flat = normalize(text)
     for clause in FORBIDDEN_DIRECTION_CLAUSES:
         if not any(normalize(clause) in normalize(d) for d in t24):
             errors.append(f"[glossary] T-24 does not carry {clause!r} (after normalize)")
+        # C07 "defined once, in the Glossary" is a claim about the whole file, not the Glossary's
+        # lines: a narrower restatement anywhere else is a second definition (iteration 2, S3).
+        if (n := flat.count(normalize(clause))) != 1:
+            errors.append(f"[glossary] {clause!r} occurs {n} times in the whole file after normalize, "
+                          "not once (C07: the forbidden direction is defined once, in the Glossary)")
     return errors
 
 
@@ -825,13 +855,15 @@ def traceability_errors(rows: list[dict[str, str]], research_text: str, history_
 def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=None) -> list[str]:
     """R3 over the decision, meaning and key columns. Always: ``meaning changed`` is yes or no; every
     C-number is one of ``DECISIONS`` (a further one is a stop-and-ask); a ``yes`` row is authorized by
-    at least one C-number outside NO_ONLY or a token of ``NON_C_AUTHORITIES`` -- a no-only C-number
+    at least one C-number outside NO_ONLY or a ``NON_C_AUTHORITIES`` token whose frozen set holds the
+    row's inventory ID (M1) -- a no-only C-number
     never justifies a meaning change on its own, but may share an authorized cell (R3 "A shared cell",
     e.g. PRIN-08's "C24, C25"), and a cell of ``—`` authorizes nothing (M2); every ``yes`` row names an
     old-meaning key (F008 AC6); every row citing C19 or C25 names a key, a ``no`` row one whose decision
-    cites that C-number, and any row citing C25 C25's own key (R3; S5); every key a row names records
-    a decision that shares a token with the row's decision cell, so a key cannot be borrowed from
-    another row's change (M2); an addition row cites a decision. The key checks read ``meanings``
+    is that C-number, and any row citing C25 C25's own key (R3; S5); the decision every key a row
+    names records -- its **leading** token (``_lead_decision``), not any token its prose mentions --
+    is cited in the row's decision cell, so a key cannot be borrowed from another row's change (M2,
+    M1); an addition row cites a decision. The key checks read ``meanings``
     (default: the support module's ``OLD_MEANINGS``); a key absent from it is
     ``traceability_errors``' finding. With ``complete``, every decision appears and every decision
     outside NO_ONLY backs at least one ``yes`` row. Group ownership is coverage, not exclusivity (R3),
@@ -849,11 +881,16 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
                    for c in cs if c not in YES_ROW_OWNER]
         if meaning == "yes":
             no_only = [c for c in cs if c in NO_ONLY]
-            authorized = any(c in YES_ROW_OWNER and c not in NO_ONLY for c in cs) or bool(
-                cell_tokens & NON_C_AUTHORITIES)
+            misplaced = sorted(t for t in cell_tokens & NON_C_AUTHORITIES.keys()
+                               if row["inventory ID"] not in NON_C_AUTHORITIES[t])
+            authorized = any(c in YES_ROW_OWNER and c not in NO_ONLY for c in cs) or any(
+                row["inventory ID"] in NON_C_AUTHORITIES[t] for t in cell_tokens & NON_C_AUTHORITIES.keys())
             if no_only and not authorized:
                 errors.append(f"[decision] {label}: {', '.join(no_only)} never authorizes a yes on its own; "
                               "cite the C-number that changes the meaning, or mark the row no (R3)")
+            elif misplaced and not authorized:
+                errors += [f"[decision] {label}: {t} authorizes a yes only on {sorted(NON_C_AUTHORITIES[t])}, "
+                           f"not on {label} (R3, M1: NON_C_AUTHORITIES is frozen)" for t in misplaced]
             elif not authorized:
                 errors.append(f"[decision] {label}: a yes row cites no decision that authorizes a meaning "
                               f"change ({row['decision']!r}); cite a C-number outside NO_ONLY or one of "
@@ -861,22 +898,22 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
             if _is_blank(row["old-meaning key"]):
                 errors.append(f"[decision] {label}: a yes row must name an old-meaning key (F008 AC6)")
         keys = _keys(row)
-        key_tokens = {k: set(_DECISION_TOKEN.findall(meanings[k].decision)) for k in keys if k in meanings}
+        key_lead = {k: _lead_decision(meanings[k].decision) for k in keys if k in meanings}
         for c in KEYED_NO_ONLY:
             if c not in cs:
                 continue
             if not keys:
                 errors.append(f"[decision] {label}: cites {c}, whose old meaning is still stated downstream, "
                               "and names no old-meaning key (R3, F008 AC6)")
-            elif ((meaning == "no" or c == "C25") and len(key_tokens) == len(keys)
-                  and not any(c in t for t in key_tokens.values())):
+            elif ((meaning == "no" or c == "C25") and len(key_lead) == len(keys)
+                  and c not in key_lead.values()):
                 errors.append(f"[decision] {label}: cites {c} and names no old-meaning key whose decision is "
                               f"{c}: {keys} (R3, F008 AC6)")
-        for k, tokens in key_tokens.items():
-            if not tokens & cell_tokens:
-                errors.append(f"[decision] {label}: old-meaning key {k!r} records decision "
-                              f"{meanings[k].decision!r}, which shares no decision with the row's cell "
-                              f"{row['decision']!r} (M2: a key cannot be borrowed)")
+        for k, lead in key_lead.items():
+            if lead not in cell_tokens:
+                errors.append(f"[decision] {label}: old-meaning key {k!r} records decision {lead!r}, which "
+                              f"the row's cell {row['decision']!r} does not cite (M2, M1: a key cannot be "
+                              "borrowed)")
         if _is_blank(row["inventory ID"]) and _is_blank(row["decision"]):
             errors.append(f"[decision] {label}: an addition row must cite a decision")
     if complete:
@@ -1134,11 +1171,19 @@ def _anchor_errors(research_text: str) -> list[str]:
     return errors
 
 
+def _sentence_digest(cell: str) -> str:
+    """The frozen form of an inventory sentence: sha256 of the cell with every run of whitespace
+    collapsed to one space. Backticks, underscores, digits, quotes and case are kept, since the AC9
+    proxy reads backticked identifiers and numbers exactly (iteration 2, S1)."""
+    return hashlib.sha256(" ".join(cell.split()).encode("utf-8")).hexdigest()
+
+
 def inventory_sentence_errors(rows: list[dict[str, str]]) -> list[str]:
     """AC9's proxy input, frozen (sprint-007 review iteration 1, S3): every non-addition row's
-    "inventory sentence" cell is non-blank and hashes, after ``normalize()``, to
+    "inventory sentence" cell is non-blank and its ``_sentence_digest`` is
     ``INVENTORY_SENTENCE_SHA256[ID]``. Without it, a cell set to ``—`` left the proxy, and a cell
-    edited alongside its rule passed it."""
+    edited alongside its rule passed it. The digest is not taken after ``normalize()``, which let a
+    cell drop its backticks and the proxy its identifier (iteration 2, S1)."""
     errors = []
     for row in rows:
         inv = row["inventory ID"]
@@ -1147,7 +1192,7 @@ def inventory_sentence_errors(rows: list[dict[str, str]]) -> list[str]:
         cell = row["inventory sentence"]
         if _is_blank(cell):
             errors.append(f"[inventory] {inv}: the inventory sentence cell is blank ({cell!r})")
-        elif hashlib.sha256(normalize(cell).encode("utf-8")).hexdigest() != INVENTORY_SENTENCE_SHA256[inv]:
+        elif _sentence_digest(cell) != INVENTORY_SENTENCE_SHA256[inv]:
             errors.append(f"[inventory] {inv}: the inventory sentence cell is not the frozen inventory "
                           f"sentence: {cell[:120]!r}")
     return errors
@@ -1617,8 +1662,9 @@ _WORLD_HEADINGS = {"doc-goal": HEADINGS[2], "arch-dec": HEADINGS[11], "hrv": HEA
 _WORLD_C05 = {"key": "C05-reopens", "pattern": "worse rate reopens",
               "example": "a worse rate reopens the deferred hysteresis decision",
               "source": "specification/research/00-design-decisions.md:230@4e47d0e", "decision": "C05"}
-#: F008 AC6: every ``yes`` row names an old-meaning key. Each group's ``yes`` rows share one key; the
-#: arch-dec rows share C05's, and the other two quote ``_old_show``'s text so the verbatim check holds.
+#: F008 AC6: every ``yes`` row names an old-meaning key. Each group's keys copy one entry, one key per
+#: decision (``_world_key``; M1: a key records one decision); arch-dec's copy C05's, and the other two
+#: quote ``_old_show``'s text so the verbatim check holds.
 _WORLD_OLD = {
     "doc-goal": {"key": "doc-goal-old", "pattern": "flip rate is measured", "example": "the flip rate is measured",
                  "source": "specification/research/00-design-decisions.md:230@4e47d0e", "decision": "C24"},
@@ -1640,6 +1686,13 @@ def _world_sentence(inv: str) -> str:
     return _WORLD_SENTENCE.get(inv, f"Rule {inv} holds every day.")
 
 
+def _world_key(group: str, decision: str) -> str:
+    """The world's old-meaning key for ``decision``: the group's own key for its own decision (so
+    ``C05-reopens`` stays C05's), a suffixed copy for any other."""
+    base = _WORLD_OLD[group]
+    return base["key"] if decision == base["decision"] else f"{base['key']}-{decision.lower()}"
+
+
 def _world_files() -> dict[str, str]:
     decisions: dict[str, list[str]] = {}
     for c, row_id in _WORLD_DECISION_ROWS.items():
@@ -1656,14 +1709,18 @@ def _world_files() -> dict[str, str]:
                 blocks.append(_block(inv, _WORLD_BODIES.get(inv), scope=scope, pinned=pinned))
             cs = decisions.get(inv, [])
             meaning = "yes" if any(c not in NO_ONLY for c in cs) else "no"
-            # AC6 and R3: a yes row, and a row citing C19 or C25, names the group's key (S5).
+            # AC6 and R3: a yes row, and a row citing C19 or C25, names a key (S5).
             has_key = meaning == "yes" or any(c in KEYED_NO_ONLY for c in cs)
-            keyed += cs if has_key else []
-            key = _WORLD_OLD[group]["key"] if has_key else ADDITION
+            # M1: a key records one decision, its leading token, and the row cites it. C25 and C19
+            # rows name that C-number's key (S5); any other row its first decision's.
+            lead = next((c for c in ("C25", "C19") if c in cs), cs[0]) if has_key else None
+            keyed += [lead] if lead else []
+            key = _world_key(group, lead) if lead else ADDITION
             rows.append(_row(inv, _world_sentence(inv), new, ", ".join(cs) or ADDITION, meaning, key))
-        # M2: the shared key records every decision of the rows that name it, so none borrows it.
-        old = dict(_WORLD_OLD[group], decision=", ".join(dict.fromkeys([_WORLD_OLD[group]["decision"], *keyed])))
-        meanings.append(json.dumps(old, ensure_ascii=False))
+        # One old meaning per recorded decision, each quoting the group's verbatim example.
+        for c in dict.fromkeys([_WORLD_OLD[group]["decision"], *keyed]):
+            meanings.append(json.dumps(dict(_WORLD_OLD[group], key=_world_key(group, c), decision=c),
+                                       ensure_ascii=False))
         files[f"{group}.rules.txt"] = "\n\n".join(blocks) + "\n"
         files[f"{group}.trace.txt"] = "\n".join(rows) + "\n"
         files[f"{group}.meanings.txt"] = "\n".join(meanings) + ("\n" if meanings else "")
@@ -1891,23 +1948,43 @@ def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> 
             [("[decision] DOC-03: a yes row cites no decision that authorizes a meaning change ('—'); cite a "
              "C-number outside NO_ONLY or one of ['HRV-11', 'R13', 'T-07'] (R3, M2)"),
              ("[decision] DOC-03: old-meaning key 'DOC-06-C31-every-number-tunable' records decision 'C31', "
-             "which shares no decision with the row's cell '—' (M2: a key cannot be borrowed)")],
+             "which the row's cell '—' does not cite (M2, M1: a key cannot be borrowed)")],
             id="m2-yes-without-decision-and-borrowed-key"),
         # M2: an authorized yes row still may not borrow another decision's key.
         pytest.param(
             _row("DOC-03", "s", "DOC-03", "C38", "yes", "C04-hole-at-least"),
-            [("[decision] DOC-03: old-meaning key 'C04-hole-at-least' records decision 'C04', which shares no "
-             "decision with the row's cell 'C38' (M2: a key cannot be borrowed)")],
+            [("[decision] DOC-03: old-meaning key 'C04-hole-at-least' records decision 'C04', which the row's "
+             "cell 'C38' does not cite (M2, M1: a key cannot be borrowed)")],
             id="m2-borrowed-key-on-an-authorized-row"),
         # M2: a non-C token outside NON_C_AUTHORITIES authorizes nothing.
         pytest.param(
             _row("REG-02", "s", "REG-02", "T-08", "yes", "T07-acwr-band"),
             [("[decision] REG-02: a yes row cites no decision that authorizes a meaning change ('T-08'); cite a "
              "C-number outside NO_ONLY or one of ['HRV-11', 'R13', 'T-07'] (R3, M2)"),
-             ("[decision] REG-02: old-meaning key 'T07-acwr-band' records decision 'T-07; downstream reach is "
-             ".claude/rules/ only (R9, F011 S12)', which shares no decision with the row's cell 'T-08' "
-             "(M2: a key cannot be borrowed)")],
+             ("[decision] REG-02: old-meaning key 'T07-acwr-band' records decision 'T-07', which the row's "
+             "cell 'T-08' does not cite (M2, M1: a key cannot be borrowed)")],
             id="m2-unfrozen-non-c-token"),
+        # Iteration 2, M1: scanner A's DOC-03 case. "1–4" -> "1–3" under R13, with an R13 key: R13
+        # authorizes a yes on PRIN-12 alone, and the key is not borrowed (its decision is R13).
+        pytest.param(
+            _row("DOC-03", "s", "DOC-03", "R13", "yes", "HRV-01-R13-four-tier-hierarchy"),
+            [("[decision] DOC-03: R13 authorizes a yes only on ['PRIN-12'], not on DOC-03 (R3, M1: "
+              "NON_C_AUTHORITIES is frozen)")],
+            id="m1-r13-yes-on-a-row-r13-does-not-rule-on"),
+        # Iteration 2, M1: T-26 appears only in the HRV-01 key's prose; the key records R13.
+        pytest.param(
+            _row("DOC-09", "s", "DOC-09", "C38, T-26", "yes",
+                 "DOC-09-C38-superseded-text-left-standing, HRV-01-R13-four-tier-hierarchy"),
+            [("[decision] DOC-09: old-meaning key 'HRV-01-R13-four-tier-hierarchy' records decision 'R13', "
+             "which the row's cell 'C38, T-26' does not cite (M2, M1: a key cannot be borrowed)")],
+            id="m1-borrow-through-a-token-in-the-hrv-01-keys-prose"),
+        # Iteration 2, M1: R9 appears only in the T07 keys' prose; they record T-07.
+        pytest.param(
+            _row("DOC-09", "s", "DOC-09", "C38, R9", "yes",
+                 "DOC-09-C38-superseded-text-left-standing, T07-acwr-band"),
+            [("[decision] DOC-09: old-meaning key 'T07-acwr-band' records decision 'T-07', which the row's "
+             "cell 'C38, R9' does not cite (M2, M1: a key cannot be borrowed)")],
+            id="m1-borrow-through-r9-in-the-t07-keys-prose"),
         # S5: a C19 no row with its key blanked.
         pytest.param(
             _row("HRV-03", "s", "HRV-03", "C19", "no"),
@@ -1932,12 +2009,34 @@ def test_decision_column_errors_names_an_unauthorized_yes_a_borrowed_key_and_a_m
 
 
 def test_decision_column_errors_is_green_on_every_non_c_authority() -> None:
-    """The other side of M2: each frozen non-C token authorizes a ``yes`` row by itself."""
-    for token in sorted(NON_C_AUTHORITIES):
-        errors = [e for e in decision_column_errors([_as_row(_row("REG-02", "s", "REG-02", token, "yes", "k"))],
-                                                    False, meanings={}) if "authorizes" in e]
-        print(f"[slice compared] {token} -> {errors}")
-        assert errors == [], (token, errors)
+    """The other side of M2 and M1: each frozen non-C token authorizes a ``yes`` row by itself on
+    every inventory ID its set holds, and on no other."""
+    for token, ids in sorted(NON_C_AUTHORITIES.items()):
+        for inv in sorted(ids):
+            errors = [e for e in decision_column_errors([_as_row(_row(inv, "s", inv, token, "yes", "k"))],
+                                                        False, meanings={}) if "authorizes" in e]
+            print(f"[slice compared] {token} on {inv} -> {errors}")
+            assert errors == [], (token, inv, errors)
+        outside = next(i for i in sorted(INVENTORY_IDS, key=_order_key) if i not in ids)
+        errors = decision_column_errors([_as_row(_row(outside, "s", outside, token, "yes", "k"))],
+                                        False, meanings={})
+        print(f"[slice compared] {token} on {outside} -> {errors}")
+        assert errors == [(f"[decision] {outside}: {token} authorizes a yes only on {sorted(ids)}, not on "
+                           f"{outside} (R3, M1: NON_C_AUTHORITIES is frozen)")], (token, errors)
+
+
+def test_the_non_c_authority_map_is_the_committed_tables_yes_rows() -> None:
+    """M1's map, frozen from the table at adcb66d: every committed ``yes`` row a non-C token
+    authorizes is in that token's set, and every ID in a set is a committed ``yes`` row citing the
+    token. A later row cannot enter a set without this test and the map changing together."""
+    _research, _history, rows = _real()
+    cited = {t: {r["inventory ID"] for r in rows if r["meaning changed"] == "yes"
+                 and t in _DECISION_TOKEN.findall(r["decision"])} for t in NON_C_AUTHORITIES}
+    print(f"[slice compared] yes rows citing each token: {cited}; map {NON_C_AUTHORITIES}")
+    assert {t: ids <= cited[t] for t, ids in NON_C_AUTHORITIES.items()} == dict.fromkeys(NON_C_AUTHORITIES, True)
+    # PRIN-15 cites R13 for S9's counts and is yes under C06, not R13 (R13, S6).
+    assert cited["R13"] - NON_C_AUTHORITIES["R13"] == {"PRIN-15"}
+    assert all(cited[t] == ids for t, ids in NON_C_AUTHORITIES.items() if t != "R13")
 
 
 def test_glossary_term_errors_names_a_renamed_term_a_cut_clause_and_a_twice_defined_term() -> None:
@@ -1949,17 +2048,29 @@ def test_glossary_term_errors_names_a_renamed_term_a_cut_clause_and_a_twice_defi
     lines = {tid: f"- **{tid} {term}** IS a definition." for tid, term in GLOSSARY_TERMS.items()}
     lines["T-24"] = t24
 
-    def text(**override: str) -> str:
-        return "\n".join([GLOSSARY_HEADING, "", *{**lines, **override}.values(), "", HEADINGS[1]]) + "\n"
+    def text(*after: str, **override: str) -> str:
+        return "\n".join([GLOSSARY_HEADING, "", *{**lines, **override}.values(), "", HEADINGS[1], *after]) + "\n"
 
     cut = t24.replace(", or while any dataset reported in the same response reads below its own HRV SWC band", "")
+    # Iteration 2, S3: scanner C's narrower restatement of T-24, appended to PRIN-14's Not line.
+    restated = ("Not: the manufacture of hard work on a green day, which PRIN-13 forbids separately, the "
+                "forbidden direction being asserting `hrv_normal` on evidence the system reports as\n"
+                "insufficient.")
     cases = {
         "full": (text(), []),
         "renamed": (text(**{"T-24": t24.replace("forbidden direction", "unsafe direction", 1)}),
                     ["[glossary] T-24 names the term 'unsafe direction', not 'forbidden direction'"]),
         "cut-disjunct": (text(**{"T-24": cut}),
                          [("[glossary] T-24 does not carry 'or while any dataset reported in the same response "
-                          "reads below its own HRV SWC band' (after normalize)")]),
+                          "reads below its own HRV SWC band' (after normalize)"),
+                          ("[glossary] 'or while any dataset reported in the same response reads below its own "
+                          "HRV SWC band' occurs 0 times in the whole file after normalize, not once (C07: the "
+                          "forbidden direction is defined once, in the Glossary)")]),
+        "restated-outside-the-glossary": (
+            text("", restated),
+            [("[glossary] 'asserting `hrv_normal` on evidence the system reports as insufficient' occurs 2 "
+              "times in the whole file after normalize, not once (C07: the forbidden direction is defined "
+              "once, in the Glossary)")]),
         "twice": (text(**{"T-23": "- **T-23 forbidden direction** IS a definition."}),
                   ["[glossary] T-23 names the term 'forbidden direction', not 'count'",
                    "[glossary] the term 'forbidden direction' is defined 2 times, not once"]),
@@ -1984,6 +2095,24 @@ def test_inventory_sentence_errors_names_a_blank_and_an_edited_cell() -> None:
         ["[inventory] DOC-03: the inventory sentence cell is blank ('—')"],
         [(f"[inventory] DOC-03: the inventory sentence cell is not the frozen inventory sentence: "
          f"{sentence.replace('Parts 1–4', 'Parts 1–3')[:120]!r}")],
+        [],
+    ]
+
+
+def test_inventory_sentence_errors_names_a_cell_that_lost_its_backticks() -> None:
+    """Iteration 2, S1, on scanner B's DOC-13 case: the cell with ``spec_outline.md`` un-backticked
+    hashed the same after ``normalize()``, so the AC9 proxy stopped reading the identifier and the
+    rule could drop it. The raw digest keeps backticks, so the cell is red; with them, green."""
+    sentence = ("`spec_outline.md` Section 3 states only the band and the window. It is swept for band "
+                "restatements and exempt from tier-rule sweeps.")
+    bare = sentence.replace("`", "")
+    rows = [_as_row(_row("DOC-13", cell, "DOC-13")) for cell in (sentence, bare, sentence.replace(" ", "  "))]
+    errors = [inventory_sentence_errors([row]) for row in rows]
+    print(f"[slice compared] {_sentence_digest(sentence)} vs {_sentence_digest(bare)}: {errors}")
+    assert normalize(bare) == normalize(sentence), "the case no longer exercises what normalize() drops"
+    assert errors == [
+        [],
+        [f"[inventory] DOC-13: the inventory sentence cell is not the frozen inventory sentence: {bare[:120]!r}"],
         [],
     ]
 
@@ -2201,7 +2330,7 @@ def _drop_first_row(files: dict[str, str]) -> None:
         pytest.param("arch-dec", _put("arch-dec.meanings.txt", _C05_LINE.replace("hysteresis decision\"", "hysteresis decision, invented\"") + "\n"), "4e47d0e", id="example-not-verbatim"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| C11 | no |", "| C11 | yes |"), "never authorizes", id="decision-column"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| C01, C02 | yes |", "| C01, C02 | no |"), "owns C01", id="group-coverage"),
-        pytest.param("doc-goal", _sub("doc-goal.trace.txt", "| C24, C25 | yes | doc-goal-old |", "| C24, C25 | yes | — |"), "old-meaning key", id="yes-row-without-key"),
+        pytest.param("doc-goal", _sub("doc-goal.trace.txt", "| C24, C25 | yes | doc-goal-old-c25 |", "| C24, C25 | yes | — |"), "old-meaning key", id="yes-row-without-key"),
         pytest.param("hrv", _sub("hrv.rules.txt", "Rule HRV-02 MUST", "The band MUST"), "band", id="band"),
         pytest.param("hrv", _drop_file("hrv.meanings.txt"), "hrv.meanings.txt", id="missing-draft"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| no | — |", "| no | k9 |", 1), "no such old-meaning key", id="key-not-in-group-meanings"),

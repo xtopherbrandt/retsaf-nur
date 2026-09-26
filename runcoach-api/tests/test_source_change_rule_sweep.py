@@ -56,6 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from markdown_it import MarkdownIt
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -288,8 +289,18 @@ def _flat_text(path: Path) -> str:
     held an odd number of backticks was invisible to the parity, crossing and
     ceiling arms, while here its stray backtick paired with a later code span
     and a live claim between them read as a quotation -- every guard green
-    over a claim the sweep could not see. Stripping loses nothing the sweep
-    could report: a balanced fence's body was already inside a backtick span.
+    over a claim the sweep could not see.
+
+    Stripping loses nothing the sweep could report **only if each fence ends
+    where CommonMark ends it**: a fence's body is code, and prose between two
+    fences is not. The first stripper was a regex that closed a fence only on
+    a run of exactly the opener's length, so ``~~~`` closed by ``~~~~`` (or
+    a three-backtick fence closed by four backticks) stayed open to the next
+    fence and took the prose between them, claim included (sprint-007 review
+    iteration 2, S2). The fences are now markdown-it's ``fence`` tokens
+    (``_strip_fences``), and
+    ``test_a_longer_closing_fence_cannot_hide_a_claim_from_the_sweep`` holds
+    both red cases.
     """
     return _normalize(_swept_source(path))
 
@@ -297,8 +308,9 @@ def _flat_text(path: Path) -> str:
 def _swept_source(path: Path) -> str:
     """The file's raw text with every fenced code block removed: the one
     string the absence sweep, the presence rows and the span guards all read
-    (sprint-007 review iteration 1, M1)."""
-    return _FENCED_BLOCK.sub("", path.read_text(encoding="utf-8"))
+    (sprint-007 review iteration 1, M1). The fences are markdown-it's
+    ``fence`` tokens (``_strip_fences``; iteration 2, S2)."""
+    return _strip_fences(path.read_text(encoding="utf-8"))
 
 
 def _flat_paragraphs(path: Path) -> tuple[tuple[int, str], ...]:
@@ -481,7 +493,7 @@ def test_the_flattened_paragraphs_reconstruct_the_flattened_file() -> None:
 #: span **207** characters (``specification/research/00-design-decisions.md``).
 #:
 #: **Re-measured 2026-09-25 (sprint-007 T169) after the fence strip**, which
-#: ``_span_profile`` now applies before measuring (``_FENCED_BLOCK``; B-CR-001
+#: ``_span_profile`` now applies before measuring (then a regex, now ``_strip_fences``; B-CR-001
 #: Sec 3). Same roots, same 34 files, same ``_QUOTE_SPAN``, over the
 #: fence-stripped flattening rather than ``_flat_text``. The one fenced file,
 #: ``project-api-contract.md``, falls from 13.11% to **10.53%**, so the maximum
@@ -627,16 +639,40 @@ class SpanProfile:
     inside_visible: bool | None
 
 
-#: A fenced code block, opening to closing fence, stripped by ``_swept_source``
-#: before anything in this module reads a file. ``_QUOTE_SPAN``'s backtick
-#: alternative pairs an opening fence's third backtick with the closing fence's
-#: first, so a code body holding a blank line reads as a span crossing a
-#: paragraph boundary (B-CR-001 Sec 3). A fence is code, which
-#: ``_live_superseded_hits`` already treats as quotation.
-_FENCED_BLOCK = re.compile(
-    r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?^[ \t]{0,3}\1[ \t]*$",
-    re.MULTILINE | re.DOTALL,
-)
+#: The CommonMark parser whose ``fence`` tokens ``_strip_fences`` removes.
+#: ``_QUOTE_SPAN``'s backtick alternative pairs an opening fence's third
+#: backtick with the closing fence's first, so a code body holding a blank line
+#: reads as a span crossing a paragraph boundary (B-CR-001 Sec 3). A fence is
+#: code, which ``_live_superseded_hits`` already treats as quotation.
+#:
+#: The fences were first matched by a regex that demanded a closer of exactly
+#: the opener's run. CommonMark closes a fence on a run of the same character
+#: **at least as long**, so ``~~~`` closed by ``~~~~`` stayed open to the next
+#: fence and stripped the prose between them (sprint-007 review iteration 2,
+#: S2). markdown-it-py (CommonMark) is installed in the test environment; its
+#: ``fence`` tokens carry each block's line map, so the parser the rule is
+#: written in decides where a fence ends, including an unclosed one, which
+#: runs to the end of the document.
+_MARKDOWN = MarkdownIt("commonmark")
+
+
+def _strip_fences(source: str) -> str:
+    """``source`` with every fenced code block's lines removed, from its
+    opening fence line to its closing one. Each block leaves the line break
+    that ended its closing line, so the text around it keeps the paragraph
+    break CommonMark gives it."""
+    lines = source.splitlines(keepends=True)
+    kept: list[str] = []
+    cursor = 0
+    for token in _MARKDOWN.parse(source):
+        if token.type != "fence" or token.map is None:
+            continue
+        start, end = token.map
+        kept.extend(lines[cursor:start])
+        kept.append("\n" if end > start and lines[end - 1].endswith("\n") else "")
+        cursor = end
+    kept.extend(lines[cursor:])
+    return "".join(kept)
 
 
 def _span_profile(path: Path) -> SpanProfile:
@@ -1220,6 +1256,54 @@ def test_a_stray_backtick_in_a_fence_cannot_hide_a_claim_from_the_sweep(tmp_path
     assert offenders == [f"stray-in-fence.md@{at}: 'treats it as a baseline re-establishment'"], (
         f"a live claim after a fence holding a stray backtick is hidden from the absence sweep: "
         f"{offenders}"
+    )
+    assert profile.chars == len(text) and not profile.imbalance, (
+        f"the span guards did not measure the string the sweep read: chars {profile.chars} vs "
+        f"{len(text)}, imbalance {profile.imbalance}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("opener", "closer", "plain"),
+    [
+        pytest.param("~~~bash", "~~~~", "~~~", id="tilde-closer-one-longer"),
+        pytest.param("```bash", "````", "````", id="backtick-closer-one-longer"),
+    ],
+)
+def test_a_longer_closing_fence_cannot_hide_a_claim_from_the_sweep(
+    tmp_path, opener: str, closer: str, plain: str
+) -> None:
+    """Sprint-007 review iteration 2, S2. CommonMark closes a fence on a run
+    of the opener's character **at least as long** as the opener's. The
+    stripper's regex demanded exactly the opener's run, so ``~~~bash`` closed
+    by ``~~~~`` stayed open, ran to the next block's ``~~~`` opener, and
+    stripped the live claim between them as code: every guard green, the
+    claim gone from the sweep (it reported the claim at 9cb592c). Now the
+    fences are markdown-it's ``fence`` tokens, so each block closes where
+    CommonMark closes it and the claim between them is prose, reported at its
+    offset."""
+    claim = "When the tier changes the system treats it as a baseline re-establishment."
+    longer = tmp_path / "longer-closer.md"
+    longer.write_text(
+        f"A rules file.\n\n{opener}\necho hi\n{closer}\n\n{claim}\n\n{plain}\nmore code\n{plain}\n",
+        encoding="utf-8",
+    )
+    text = _flat_text(longer)
+    offenders = _offenders_in(longer)
+    profile = _span_profile(longer)
+    print(
+        f"[slice compared] {_slice(longer.name, 0, text)} -> offenders {offenders}; "
+        f"imbalance {profile.imbalance or 'paired'}, chars {profile.chars}"
+    )
+    assert "treats it as a baseline re-establishment" in text, (
+        f"the claim between two fences was stripped as code: {text!r}"
+    )
+    at = text.index("treats it as a baseline re-establishment")
+    assert offenders == [f"longer-closer.md@{at}: 'treats it as a baseline re-establishment'"], (
+        f"a live claim after a fence closed by a longer run is hidden from the absence sweep: {offenders}"
+    )
+    assert text == "a rules file. when the tier changes the system treats it as a baseline re-establishment.", (
+        f"the fences were not stripped to exactly the prose around them: {text!r}"
     )
     assert profile.chars == len(text) and not profile.imbalance, (
         f"the span guards did not measure the string the sweep read: chars {profile.chars} vs "
