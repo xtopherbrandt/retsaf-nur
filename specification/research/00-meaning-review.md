@@ -103,7 +103,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-15/Scope | same | Every population the forbidden direction reaches is the set C06 governs. |
 | PRIN-15/Not | same | The rule governs which populations may ship, not the verdict logic, which the HRV rules state. |
 | PRIN-15/Why | same | States C06's absolute-but-for-named-exceptions and R5's count of three rather than two. |
-| PRIN-25 | same | Round 4: R13 S9 corrects the F005-parity counts to 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, the F005 column of DEFERRED_EXCEPTION_TOTALS in the gate test, so the two IDEA-087 exceptions no longer overlap; the 64 worsened rows at c 4 and 5 named by GATE-05 are unchanged. |
+| PRIN-25 | same | Round 5: R13 S5 counts DEFERRED_EXCEPTION as the 64 worsened gated rows, the unit GATE-05 uses and DEFERRED_EXCEPTION_ROWS 64 pins in the gate test, where deferred keeps only worse_rows, which are gated rows with f006 above f005; the population is unchanged. Round 4: R13 S9 corrects the F005-parity counts to 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, the F005 column of DEFERRED_EXCEPTION_TOTALS in the gate test, so the two IDEA-087 exceptions no longer overlap; the 64 worsened rows at c 4 and 5 named by GATE-05 are unchanged. |
 | PRIN-25/Scope | same | The two IDEA-087 exceptions as T162 measured them, which R5 states. |
 | PRIN-25/Not | same | R5 leaves HRV-25's count to F009. |
 | PRIN-26 | same | Rule line unchanged: naming before counting only while a feature owns the count, with F009 owning HRV-25's count and pin and the count OPEN, per C06's note and R5. |
@@ -504,8 +504,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-02/Scope | same | In-force L227 gives 18 at daily capture on a clean, gapless switch |
 | FIG-02/Not | same | The 20 days belong to the coverage gap of FIG-01 |
 | FIG-02/Why | same | R11 as decided: end of the quiet at R plus min_baseline_readings minus 1 plus 7 equals R+20, and the 20-day figure true of a coverage gap and false of a tier change, both from in-force L227 |
-| FIG-03 | same | Layoff longer than 21 days: days 1 to 4 judged, days 5 to 22 silent, 18, as in-force L229 |
-| FIG-03/Scope | same | Round 4: R13 S10 scope restoration: days 1 to 4 are judged only because the week still holds 7 minus k pre-layoff readings, which the in-force layoff derivation reads off daily capture up to the first layoff day. |
+| FIG-03 | same | Round 5: the rule now prices the 22-day layoff, the shortest longer than 21 days, which is the layoff in-force L229 priced when it called 22 the length of the shortest resetting layoff and counted days 5 to 22 as its 18 silent days; R13, follow-on to S10, rules this scope. True of the code: GAP_RESET_DAYS is 21 and coverage_gap_reset resets on more than 21 silent days, and on layoff day k the week holds 7 minus k pre-layoff readings, at least MIN_WINDOW_READINGS 3 only for k 1 to 4, so days 5 to 22 are silent. Since a layoff of L days is silent L minus 4 days, the old unscoped wording was false of every longer layoff and the scoped one is not. |
+| FIG-03/Scope | same | Round 5: the shortest layoff of the whole series that resets, gap_reset_days plus 1 equals 22 days, at daily capture up to the layoff, is the case the rule line prices and the one R13 names; the whole-series reach matches coverage_gap_reset, which reads every tier together, and DOC-12 still carries the density. |
 | FIG-03/Not | same | The tier-change silence is FIG-02 |
 | FIG-03/Why | same | In-force L229 says that 18 is a coverage-gap figure and the equal length is a coincidence |
 | FIG-04 | same | 72 of 2,050 swept geometries move normal to unavailable at a daily-capture return, as in-force L222 |
@@ -524,8 +524,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-08 | same | Keeping the old device recording removes the silence and the tier_change report together, as in-force L227 |
 | FIG-08/Scope | same | The overlapping-device case of in-force L227 |
 | FIG-08/Not | same | The clean switch is FIG-02 |
-| FIG-09 | same | Total 38 days: 18 silent plus 20 re-establishment days, as in-force L229 |
-| FIG-09/Scope | same | Round 4: R13 S10 scope restoration: the 38 days sum the 18 silent days, which need daily capture before the layoff, and the 20 re-establishment days, which need it from the resumption, so both densities are named. |
+| FIG-09 | same | Round 5: the total silence of a 22-day layoff is 38 days, its 18 silent days plus the 20 re-establishment days R+0 to R+19 of FIG-01, the 38, not 42, that in-force L229 gives for the shortest resetting layoff, as R13, follow-on to S10, rules. True of the code: the resumption resets the baseline, which needs MIN_BASELINE_READINGS 14 distinct days at or before D-7 and so first holds at R+20 at daily capture. |
+| FIG-09/Scope | same | Round 5: the shortest resetting layoff of the whole series, 22 days, with daily capture before it for the 18 and from the resumption for the 20, is the case R13 names; the Not line, 21 days or fewer resets nothing, stays true beside it, and a longer layoff, whose total is L plus 16, is outside the scope rather than mispriced. |
 | FIG-09/Not | same | 21 silent days does not reset, as in-force L229 |
 | FIG-10 | same | Five of the first seven mornings back silent at a daily-capture return, as in-force L222 |
 | FIG-10/Scope | same | Daily capture only, per DOC-12 and the inventory note |
@@ -819,4 +819,6 @@ Round 4: a fresh critic re-reviewed the 14 rows the code-review fix changed in c
 
 Round 4b: a fresh critic re-reviewed the 1 row commit 395b733 changed, HRV-43/Not, against R12, R13 S10, HRV-72, HRV-73, HRV-82 and tier_change_reset, and returned 0 differs verdicts.
 
-Final: 789 rows, 789 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b.
+Round 5: a fresh critic re-reviewed the 5 rows commit 295adaa changed, FIG-03, FIG-03/Scope, FIG-09, FIG-09/Scope and PRIN-25, against R13 with its follow-on to S10 and S5, in-force L229 at 4e47d0e, GAP_RESET_DAYS, coverage_gap_reset and the gate test, and returned 0 differs verdicts. The neighbours FIG-02 with its Why, FIG-03/Not, FIG-03/Why, FIG-04, FIG-09/Not, FIG-10, GATE-05 and PRIN-15 were read beside the changed blocks and none contradicts them: the 18 of a 22-day layoff, 22 minus 4, and the 18 of FIG-02, 14 plus 7 minus 3, still come from unrelated constants, so the coincidence stands, and FIG-04 and FIG-10 price a per-tier return with the carrier recording through the layoff, not a whole-series reset, so their rows keep their verdicts.
+
+Final: 789 rows, 789 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b, round 5.
