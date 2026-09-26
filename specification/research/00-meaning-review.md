@@ -815,7 +815,7 @@ Round 3: a fresh critic re-reviewed the 8 rows the rulings changed and returned 
 
 Round 3b: a fresh critic re-reviewed the 3 rows T189 changed, DOC-08, DOC-08/Scope and DOC-18, and returned 0 differs verdicts.
 
-Round 4: a fresh critic re-reviewed the 15 rows the code-review fix changed in commit 0949e67 under the R13 rulings, PRIN-24 with its Scope, Not and Why, PRIN-25, HRV-01, HRV-40, HRV-72, HRV-82/Scope, FIG-01/Scope, FIG-03/Scope, FIG-09/Scope, DOC-04 and DOC-04/Not, plus the neighbour HRV-43/Not, which cites HRV-82, and returned 1 differs verdict, HRV-43/Not, which still attributes the first report day of every tier_change report to HRV-82 after HRV-82/Scope was narrowed to a clean switch at daily capture.
+Round 4: a fresh critic re-reviewed the 14 rows the code-review fix changed in commit 0949e67 under the R13 rulings, PRIN-24 with its Scope, Not and Why, PRIN-25, HRV-01, HRV-40, HRV-72, HRV-82/Scope, FIG-01/Scope, FIG-03/Scope, FIG-09/Scope, DOC-04 and DOC-04/Not, plus the neighbour HRV-43/Not, which cites HRV-82, and returned 1 differs verdict, HRV-43/Not, which still attributes the first report day of every tier_change report to HRV-82 after HRV-82/Scope was narrowed to a clean switch at daily capture.
 
 Round 4b: a fresh critic re-reviewed the 1 row commit 395b733 changed, HRV-43/Not, against R12, R13 S10, HRV-72, HRV-73, HRV-82 and tier_change_reset, and returned 0 differs verdicts.
 

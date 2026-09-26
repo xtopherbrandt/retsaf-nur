@@ -210,7 +210,7 @@ Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_for
 Pinned: none (F009)
 Why: decision C06 makes the forbidden direction absolute but for named exceptions, and the refinements count three of them, not two (H-39, H-41).
 
-**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-05 names.
+**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened gated rows at c = 4 and 5 that GATE-05 names.
 Scope: the two IDEA-087 exceptions of PRIN-15, as T162 measured them.
 Not: HRV-25's population, whose count F009 produces.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
@@ -1317,8 +1317,8 @@ Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence
 Pinned: runcoach-api/tests/test_hrv_unavailable_causes.py::test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure
 Why: the quiet ends when the new tier reaches `min_baseline_readings` distinct days at or before D−7, which is `R + (min_baseline_readings − 1) + 7` = R+20, and the 20-day figure of rule FIG-01 is true of a coverage gap and false of a source-tier change.
 
-**FIG-03.** The spec MUST publish that during a layoff longer than 21 days, days 1–4 are judged and days 5–22 are silent (18).
-Scope: a layoff of the whole series longer than `gap_reset_days`, after daily capture up to its first day, since a figure measured at one capture density holds only there (rule DOC-12).
+**FIG-03.** The spec MUST publish that during a layoff of 22 days, the shortest longer than 21 days, days 1–4 are judged and days 5–22 are silent (18).
+Scope: the shortest layoff of the whole series that resets, `gap_reset_days` + 1 = 22 days, after daily capture up to its first day, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: the silence of a source-tier change, which rule FIG-02 states.
 Pinned: none
 Why: that 18 is a coverage-gap figure, and its equality with the tier change's 18 in rule FIG-02 is a coincidence.
@@ -1349,8 +1349,8 @@ Scope: a source-tier change across which the old device keeps recording.
 Not: a clean switch, which rule FIG-02 prices.
 Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_zero_when_the_old_tier_outlasts_candidacy
 
-**FIG-09.** The spec MUST publish the layoff's total silence as 38 days, its 18 silent days plus the 20 re-establishment days after it.
-Scope: a layoff of the whole series longer than `gap_reset_days`, with daily capture before it and from the resumption, since a figure measured at one capture density holds only there (rule DOC-12).
+**FIG-09.** The spec MUST publish the total silence of a 22-day layoff as 38 days, its 18 silent days plus the 20 re-establishment days after it.
+Scope: the shortest layoff of the whole series that resets, `gap_reset_days` + 1 = 22 days, with daily capture before it and from the resumption, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: a layoff of 21 days or fewer, which resets nothing.
 Pinned: none
 
