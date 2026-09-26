@@ -681,7 +681,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-42/Not | same | An empty week reads unavailable in force. |
 | HRV-43 | same | Unchanged: reset_on is the era's true first day for both reset kinds, as in-force lag bullet (i) says; only the Not line moved. |
 | HRV-43/Scope | same | For a coverage gap reset_on is the resumption day R, so the statement holds for both kinds. |
-| HRV-43/Not | differs | Round 4: says HRV-82 sets the first report day for a tier_change report, but HRV-82/Scope now reaches only a clean, gapless switch at daily capture on the new tier, so a tier_change report at other capture spacing or with strays, 33 days at every second day or 20 minus k with k strays per R13 S10, is attributed to a rule that excludes it; HRV-72 carries the daily-capture qualifier and this Not line does not. |
+| HRV-43/Not | same | Round 4b: still points per reset kind as R12 rules, HRV-82 for a tier_change report and HRV-73 for a coverage_gap report, and now credits HRV-82 only with the lag it states for a clean switch at daily capture, the R13 S10 scope HRV-72 already carries; true against tier_change_reset, whose clause (a) needs MIN_BASELINE_READINGS days of the new tier at or before D-7, so every tier_change report lags its reset_on, 20 days at daily capture as in-force bullet (i) measured, while HRV-73 reports coverage_gap from R+0; HRV-82/Not, which cites back to HRV-43, is unaffected. |
 | HRV-44 | same | Exactly two retired mechanisms, the same two, as the in-force correction states. |
 | HRV-44/Scope | same | IDEA-071's list. |
 | HRV-44/Not | same | The function and its tie-order pin survive in force. |
@@ -817,4 +817,6 @@ Round 3b: a fresh critic re-reviewed the 3 rows T189 changed, DOC-08, DOC-08/Sco
 
 Round 4: a fresh critic re-reviewed the 15 rows the code-review fix changed in commit 0949e67 under the R13 rulings, PRIN-24 with its Scope, Not and Why, PRIN-25, HRV-01, HRV-40, HRV-72, HRV-82/Scope, FIG-01/Scope, FIG-03/Scope, FIG-09/Scope, DOC-04 and DOC-04/Not, plus the neighbour HRV-43/Not, which cites HRV-82, and returned 1 differs verdict, HRV-43/Not, which still attributes the first report day of every tier_change report to HRV-82 after HRV-82/Scope was narrowed to a clean switch at daily capture.
 
-Final: 789 rows, 788 same, 1 differs, HRV-43/Not. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4.
+Round 4b: a fresh critic re-reviewed the 1 row commit 395b733 changed, HRV-43/Not, against R12, R13 S10, HRV-72, HRV-73, HRV-82 and tier_change_reset, and returned 0 differs verdicts.
+
+Final: 789 rows, 789 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b.
