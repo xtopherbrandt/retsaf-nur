@@ -376,7 +376,7 @@ Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
 **DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
-Scope: every row of the Part 3 register marked spec-introduced.
+Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15 and REG-17.
 Not: a row ratified from the cited research, which DOC-18 governs.
 Pinned: none
 
@@ -385,7 +385,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the rows marked spec-introduced, whose batches were ratified as H-04 and H-05 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15 and REG-17, whose batches were ratified as H-04 and H-05 record.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -504,11 +504,11 @@ Scope: every training block's intensity split above easy running.
 Not: the ~80% easy share, which rule REG-07 holds throughout.
 Pinned: none
 
-**REG-23.** PPG input MUST be flagged and carried at reduced fidelity, and resting HRV from PPG MUST carry that fidelity as an ordinal rank below the chest strap in selection, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
+**REG-23.** PPG input MUST be flagged, PPG input other than resting HRV (in-run wrist HR, for example) MUST be down-weighted, and resting HRV from PPG MUST carry its reduced fidelity as an ordinal rank below the chest strap in selection, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
 Scope: every input the system takes from optical PPG.
 Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes.
 Pinned: none
-Why: decision C19 changes the wording only, since Section 3 applies fidelity as an ordinal rank and computes no confidence weight.
+Why: decision C19 changes the wording for resting HRV only, since Section 3 applies fidelity as an ordinal rank and computes no confidence weight, and other PPG input keeps its down-weighting.
 
 **REG-24.** The chest-strap signature IS the presence of RR in an activity.
 Scope: every activity the system checks for a chest strap.
@@ -1054,7 +1054,7 @@ Pinned: none
 
 **HRV-43.** `reset_on` IS the era's true first day.
 Scope: every reported reset of every per-tier dataset.
-Not: the day the report first appears, which HRV-82 (the report lag) sets.
+Not: the day the report first appears, which HRV-82 (the report lag) sets for a `tier_change` report and HRV-73 (the global gap) sets for a `coverage_gap` report.
 Pinned: none
 
 **HRV-44.** Exactly two mechanisms of the single-baseline rule MUST stay retired: `resolve_baseline_tier`'s role as cross-tier arbitration, and the `off_baseline_tier` exclusion.
@@ -1199,7 +1199,7 @@ Scope: every reported `tier_change` of every per-tier dataset.
 Not: the coverage-gap reset, the only re-establishment (HRV-34).
 Pinned: none
 
-**HRV-73.** When the whole series (every tier together) is silent for more than `gap_reset_days` (21) silent local days (21 does not reset; 22 does), the baseline window of every per-tier dataset MUST be clipped at the resumption and `coverage_gap` MUST be reported.
+**HRV-73.** When the whole series (every tier together) is silent for more than `gap_reset_days` (21) silent local days (21 does not reset; 22 does), the baseline window of every per-tier dataset MUST be clipped at the resumption and `coverage_gap` MUST be reported from the resumption day, R+0.
 Scope: the series of every tier together.
 Not: one tier's internal hole, which HRV-37 (the hole clip) clips unreported.
 Pinned: none
