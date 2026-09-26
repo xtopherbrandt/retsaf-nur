@@ -1,0 +1,217 @@
+| row | verdict | reason |
+| PRIN-01 | same | Same objective, same goal-race distance, course profile and conditions, and the same terminal-value claim as the inventory and section 1.1. |
+| PRIN-01/Scope | same | Plan, adaptation, taper and recovery are the design choices section 1.1 lists. |
+| PRIN-01/Not | same | Excluding a pace over another distance restates the full-distance condition and adds nothing. |
+| PRIN-02 | same | Justification by expected average pace and resolution of an otherwise unclear trade-off in its favour, as in section 1.1. |
+| PRIN-02/Scope | same | Plan structure, adaptation, taper and recovery are the choices section 1.1 names. |
+| PRIN-02/Not | same | A conflict the ladder decides is not otherwise unclear, which follows from the section 1.2 closing paragraph placing pace lowest. |
+| PRIN-03 | same | Maximized subject to arriving healthy and adapted, with protective constraints able to override the day's ambition, as section 1.2 states. |
+| PRIN-03/Scope | same | Section 1.2 attaches this reasoning to the pace objective sitting on the lowest rung. |
+| PRIN-03/Not | same | Section 1.2 says the low rank is not a contradiction of section 1.1. |
+| ARB-01 | same | Same five rungs in the same strict order, highest first. |
+| ARB-01/Scope | same | Conflicting signals on a given day is the in-force trigger; loops appear in the Part 1 intro. |
+| ARB-01/Not | same | No reordering or skipping follows from a strict order of precedence. |
+| ARB-02 | same | Same trigger, same five named hard flags, stop or escalate regardless of the pace objective; the deterministic half moves to ARB-07. |
+| ARB-02/Scope | same | It is rung 1, the safety override. |
+| ARB-02/Not | same | Leaving clinical action and clearance to the athlete is C23's decision text. |
+| ARB-03 | same | A red gate downgrades the session even when the plan wants a hard day, as rung 2 says. |
+| ARB-03/Scope | same | Rung 2 is day-of readiness in the conservative direction. |
+| ARB-03/Not | same | Section 1.7 forbids turning an easy day hard on a green day. |
+| ARB-04 | same | Ramp-rate caps, monotony limits and recovery weeks bound the long-term ambition, as rung 3 says. |
+| ARB-04/Scope | same | Rung 3 is the short-term guardrails. |
+| ARB-04/Not | same | Rungs 1 and 2 outrank rung 3 under the strict order, so it cannot bound them. |
+| ARB-05 | same | Updates threshold, CS and paces and tweaks the next one to three sessions within the bounds of the rungs above, as rung 4 says. |
+| ARB-05/Scope | same | Rung 4 is recent-workout re-anchoring. |
+| ARB-05/Not | same | Staying within the higher rungs' bounds is the in-force condition. |
+| ARB-06 | same | Drives mesocycle emphasis and intensity distribution and is deliberately lowest priority, as rung 5 says. |
+| ARB-06/Scope | same | Rung 5 is labelled the pace objective in the in-force ladder. |
+| ARB-06/Not | same | Section 1.2 says the low rank does not contradict section 1.1. |
+| ARB-07 | same | Hard flags fire deterministically whatever the chat framing, as section 5.3 and the inventory's ARB-02 second sentence say. |
+| ARB-07/Scope | same | The hard flags are those ARB-02 names; conversation framing is the in-force qualifier. |
+| ARB-07/Not | same | A chat path that suppresses a hard flag is what deterministic firing regardless of framing rules out. |
+| PRIN-04 | same | Faster, conservative, safety-relevant signals may always veto slower ambitious ones, never the reverse; it generates the ladder and covers unnamed conflicts. |
+| PRIN-04/Scope | same | Covering conflicts the ladder names and those it does not is the in-force extension. |
+| PRIN-04/Not | same | The reverse veto is the one section 1.3 forbids. |
+| PRIN-05 | same | Keeps conservative-wins for subjective-objective disagreement and low confidence, and adds only C06's clause that it does not arbitrate between two HRV instruments; the fidelity-rank pointer restates HRV-19. |
+| PRIN-05/Scope | same | The two in-force triggers, axis disagreement and a low-confidence state estimate. |
+| PRIN-05/Not | same | Excluding the choice between two HRV instruments is C06's text; selection by fidelity rank is in-force HRV-14 and HRV-19. |
+| PRIN-05/Why | same | States C06's sentence that section 1.4 does not arbitrate between two HRV instruments, and no more. |
+| PRIN-06 | same | Interpretation on trends rather than single readings, as section 1.4 says of both axes; the rest of the sentence moves to PRIN-18. |
+| PRIN-06/Scope | same | Section 1.4 applies the trend rule to both the subjective and the objective signals. |
+| PRIN-06/Not | same | A gate keyed on one reading is what trends-not-single-readings excludes. |
+| PRIN-17 | same | The subjective axis may veto a hard session on its own, unchanged from section 1.4; C06 does not touch this half. |
+| PRIN-17/Scope | same | Session-RPE, wellness and soreness are section 1.4's subjective signals; the veto is over a hard session. |
+| PRIN-17/Not | same | A veto can only lower a session, which section 1.3 and section 1.7 already require. |
+| PRIN-18 | same | Weak single day, actionable coherent decline, and a single good night not clearing multi-day suppression; the in-force word instantly, already absent from the inventory, adds nothing a single night could change. |
+| PRIN-18/Scope | same | Section 1.4 governs the readiness reading, which is the day-of readiness rung. |
+| PRIN-18/Not | same | The HRV verdict windows and counts are set by in-force HRV-08 and HRV-09; this only marks the boundary. |
+| PRIN-07 | same | The same six metric families built only from the same list of raw measured signals, power where present. |
+| PRIN-07/Scope | differs | Widens the rule from the state model and the load, response, fatigue, readiness and injury-risk metrics to every metric that feeds a decision, which would reach subjective input and the demographic cold-start estimator. |
+| PRIN-07/Not | same | Vendor-derived estimates are the quarantined metrics of section 1.5. |
+| PRIN-08 | same | Quarantined namespace and never feeding a decision, with C24's removal of any default or switch; the only-uses half sits in PRIN-19 and the list in PRIN-20. |
+| PRIN-08/Scope | differs | Limits the quarantine to the six listed metrics, where the in-force rule and ARCH-06 cover every vendor black-box metric, so an unlisted vendor metric would fall outside never-feed-a-decision. |
+| PRIN-08/Not | same | The numeric resting rMSSD is the section 1.5 boundary case admitted as an HRV input. |
+| PRIN-08/Why | same | States C24's point that no default or switch lets the coaching logic read a quarantined metric, and no more. |
+| PRIN-09 | same | An open derived estimate such as the cold-start estimator is owned and transparent and so consistent with raw over derived, as section 1.5 says. |
+| PRIN-09/Scope | same | An open documented method reproduced in the owned namespace, as section 1.5 and section 3.2 describe. |
+| PRIN-09/Not | same | Section 3.2 keeps the vendor construction of the same estimate quarantined. |
+| PRIN-10 | same | Same two numeric sources, standard statistic not a composite, admitted as an HRV input; reduced fidelity as an ordinal rank is the in-force meaning once the section 3 no-confidence-weight correction is read with it, per C19. |
+| PRIN-10/Scope | same | The numeric tiers of the hierarchy are the sources this rule admits. |
+| PRIN-10/Not | same | The numeric per-tier weight deferred to section 6 is C19's resolution and the in-force correction. |
+| PRIN-19 | same | Display and divergence surfacing as the only uses is C24's decision text, which replaces optional corroboration. |
+| PRIN-19/Scope | differs | Equates the quarantined vendor metrics with the six named ones, where the in-force rule quarantines every vendor black-box metric and names examples. |
+| PRIN-19/Not | same | A corroboration that feeds a decision is what C24's never excludes; REG-17 governs surfacing only. |
+| PRIN-20 | same | The same six items, including the HRV Status classification, as the inventory lists them. |
+| PRIN-20/Scope | differs | Makes the six-item list the whole set PRIN-08 and PRIN-19 govern, narrowing the in-force rule on every vendor black-box metric. |
+| PRIN-20/Not | same | The numeric rMSSD is admitted and is not one of the listed metrics. |
+| PRIN-20/Why | same | States C25's resolution, sweeping the rule file's shorter list after the rewrite per DOC-02. |
+| PRIN-21 | same | The HRV Status classification built on the numeric rMSSD stays quarantined, as section 1.5 says. |
+| PRIN-21/Scope | same | It is the Balanced, Unbalanced and Low classification. |
+| PRIN-21/Not | same | The rMSSD beneath it is admitted by the same section 1.5 sentence. |
+| PRIN-11 | same | Every derived metric has a transparent reproducible formula the spec states in full, as section 1.6 says; logging moves to PRIN-22. |
+| PRIN-11/Scope | differs | Narrows every derived metric to those derived from raw measured signals, leaving out derived estimates such as the demographic cold-start estimator that PRIN-09 requires to be transparent. |
+| PRIN-11/Not | same | Vendor black-box metrics are the quarantined ones, not the system's derived metrics. |
+| PRIN-12 | differs | C33 has PRIN-12 itself name each unserved verdict-affecting constant as an OPEN exception; this line omits that, leaving it to PRIN-24, and calls its seven served constants the verdict-affecting constants as if the set were complete while window_days is also one. |
+| PRIN-12/Scope | same | Response-level reading including selected_reason is C33's decision and the inventory's C33 evidence. |
+| PRIN-12/Not | same | The spec stating the formulas in full is the section 1.6 clause kept in PRIN-11. |
+| PRIN-12/Why | same | States C33's response-level reading, recency_tolerance_days made served by F010, and the reversal of the IDEA-070 narrowing recorded at H-17. |
+| PRIN-22 | same | Every applied adaptation or decision logged with its inputs and the rule that fired, as section 1.6 and the Part 1 intro say. |
+| PRIN-22/Scope | same | Every applied adaptation, whatever loop or rung produced it. |
+| PRIN-22/Not | same | Section 5.3 has chat explanation read the decision log. |
+| PRIN-23 | same | Every stored row inside the windows is in exactly one dataset or excluded with exactly one reason, unchanged from the inventory. |
+| PRIN-23/Scope | same | The windows are the baseline window and judged week, D-66 through D, as the code's partition comment states. |
+| PRIN-23/Not | same | Rows before D-66 are read for the era rule and trimmed from the response's excluded list, as the route does. |
+| PRIN-24 | same | window_days sets the judged week and is absent from the served Thresholds fields, so naming it an OPEN exception is what C33 requires; the value 7 matches the in-force constant. |
+| PRIN-24/Scope | same | The unserved verdict-affecting constants are the set C33 names as exceptions. |
+| PRIN-24/Not | same | recency_tolerance_days becomes served under F010, per C33. |
+| PRIN-24/Why | same | States C33's requirement to name each unserved verdict-affecting constant as an OPEN exception, and no more. |
+| PRIN-13 | same | Reduce freely, never manufacture hard work, no easy day made hard on a green day, placement with the weekly plan; dropping the in-force words on impulse changes nothing, since placement stays with the plan. |
+| PRIN-13/Scope | same | Section 1.7 is about the daily gate's effect on the planned session. |
+| PRIN-13/Not | same | The project rule calls this a design invariant, not a tunable default. |
+| PRIN-14 | differs | C07's MUST NOT covers insufficient evidence only, but this line forbids the whole forbidden direction, including the dissent case, with no pointer to PRIN-15's exceptions, so read alone it bars HRV-25's shipped population; that extension rests on C06, not on the C07 cited. The glossary T-24 matches C07 and R5's broad definition, but its closing clause restricting the word up-regulation is a usage rule neither decision states. |
+| PRIN-14/Scope | same | Every served HRV verdict is the population the forbidden direction is judged over. |
+| PRIN-14/Not | same | Manufactured hard work is section 1.7's original clause, kept in PRIN-13. |
+| PRIN-14/Why | same | States C07's purpose, writing the clause the citations rely on into section 1.7, with the definition held once in the glossary as R6 requires; the broad half is carried by the T-24 pointer. |
+| PRIN-15 | same | Never on rarity, only as a named, counted, test-pinned, IDEA-owned exception that may not grow, and exactly three exceptions with their owners, as C06 and R5 state. |
+| PRIN-15/Scope | same | Every population the forbidden direction reaches is the set C06 governs. |
+| PRIN-15/Not | same | The rule governs which populations may ship, not the verdict logic, which the HRV rules state. |
+| PRIN-15/Why | same | States C06's absolute-but-for-named-exceptions and R5's count of three rather than two. |
+| PRIN-25 | differs | The counts 22,232 of 307,500, 1,108 of 24,000 and 64 rows at c 4 and 5 match R5 and the gate test, but it says GATE-01 names DEFERRED_EXCEPTION, while in the rewrite GATE-05 names it and GATE-01 does not. |
+| PRIN-25/Scope | same | The two IDEA-087 exceptions as T162 measured them, which R5 states. |
+| PRIN-25/Not | same | R5 leaves HRV-25's count to F009. |
+| PRIN-26 | same | Naming before counting only while a feature owns the count, with F009 owning HRV-25's count and pin and the count OPEN, as C06's note and R5 state. |
+| PRIN-26/Scope | differs | Scopes a general rule about any not-yet-counted exception to HRV-25's population alone, so a later uncounted exception would fall outside it. |
+| PRIN-26/Not | same | An uncounted exception with no owning feature may not ship, which is the converse C06's note implies. |
+| AUT-01 | same | Applies every plan adaptation autonomously, re-periodizations included, and explains afterwards with no confirmation step, as section 1.8 says. |
+| AUT-01/Scope | same | The plan is what section 1.8 and section 1.9 say the system owns. |
+| AUT-01/Not | same | The two exceptions are the section 1.8 matters the system does not own. |
+| AUT-02 | same | Exactly two exceptions, both unowned; the safety half is narrowed to the athlete's clinical action and clearance, which is C23's text. |
+| AUT-02/Scope | same | Decisions resting with the athlete are the two exceptions. |
+| AUT-02/Not | same | The system applying the override itself is C23's text. |
+| AUT-02/Why | same | States C23: the override sits with the system and the athlete keeps only the clinical action and the clearance. |
+| AUT-03 | same | Not a gate, plan changes never wait on acknowledgment, and the acknowledged-notification step was considered and rejected; confirmation is covered by AUT-01's no confirmation step. |
+| AUT-03/Scope | same | Section 1.8 applies to every plan change, the major ones included. |
+| AUT-03/Not | same | The goal contract takes effect only as athlete input, per section 1.9. |
+| AUT-04 | same | The probe plus the decisions/01 kinds, life constraints, injury, soreness and subjective reports and plan-change requests, is C20's text; the routings are in-force section 5.3 and the ladder. |
+| AUT-04/Scope | same | Every chat message, inbound input and outbound explanation. |
+| AUT-04/Not | same | Chat never being a gate is C20's closing sentence and section 1.8. |
+| AUT-04/Why | same | States C20's addition of the decisions/01 input kinds; never-a-gate sits in the Not line. |
+| AUT-06 | same | Out of v1 scope, a third optional authority that can never disable a safety flag, as the section 1.8 note says. |
+| AUT-06/Scope | same | A qualified human coach who may set or override shipped defaults is the in-force description. |
+| AUT-06/Not | same | The coach authority would sit alongside, not replace, the athlete-owned goal contract and safety pathway. |
+| AUT-08 | same | The system applies the override automatically and deterministically and issues the athlete-facing instructions, which is C23's text and section 1.8's list. |
+| AUT-08/Scope | same | Every hard flag and high injury risk is ARB-02's trigger. |
+| AUT-08/Not | same | Clinical action and clearance stay with the athlete, per C23. |
+| GOAL-01 | same | The system owns how the goal is pursued, with the same plan list, and not what the goal is, as section 1.9 says. |
+| GOAL-01/Scope | same | The plan versus goal-contract split is section 1.9's subject. |
+| GOAL-01/Not | same | Section 1.9 sets the safety pathway beside the goal contract, outside the plan. |
+| GOAL-02 | same | Three athlete-owned fields, proposal allowed, no system change, effective only as athlete input as at program start; this is C22 with the in-force proposal rule. |
+| GOAL-02/Scope | same | Every goal-contract field and proposal about one is the section 1.9 boundary. |
+| GOAL-02/Not | same | The remedy order is section 1.9's separate ordering paragraph. |
+| GOAL-02/Why | same | States C22's three-field bundle; distance-never-proposed sits in GOAL-04. |
+| GOAL-03 | same | Fixed order, revised goal pace first then a later race date, for a critical projection-vs-goal gap. |
+| GOAL-03/Scope | same | Gap-triggered proposals are the ones the ordering governs. |
+| GOAL-03/Not | same | Section 1.9 excludes distance as a remedy. |
+| GOAL-04 | same | Never proposes a distance change as a gap remedy, as section 1.9 says. |
+| GOAL-04/Scope | same | Every gap-triggered proposal. |
+| GOAL-04/Not | same | Section 1.9 lets the athlete enact a distance change. |
+| GOAL-05 | same | The ordering governs only proposals, and the athlete may enact any change, date or distance, whatever the order. |
+| GOAL-05/Scope | same | The athlete's own changes supplied as inputs. |
+| GOAL-05/Not | same | Section 1.9 forbids the system applying a goal change itself. |
+| GOAL-06 | same | Same ordering at spec sections 1.4.6, 6.8, 6.4.4 and 8.5.2. |
+| GOAL-06/Scope | same | The sections that define or surface the proposal. |
+| GOAL-06/Not | same | The order itself is set by GOAL-03 and GOAL-04. |
+| DOC-06 | same | Every number a heuristic default tunable per athlete only under IND-01 is C31's text; invariants are excepted in DOC-17. |
+| DOC-06/Scope | same | Every constant and default research/00 states. |
+| DOC-06/Not | same | Invariants excepted is C31's text. |
+| DOC-06/Why | same | States C31's rule that IND-01 governs all per-athlete tuning. |
+| DOC-07 | differs | The Part 3 intro makes the register the single place for choices made under uncertainty or among competing methods; this line and the inventory keep only parameter defaults chosen under uncertainty, dropping method choices. |
+| DOC-07/Scope | same | Parameter defaults, research- or spec-introduced, is what the inventory sentence covers. |
+| DOC-07/Not | same | The mechanism docs hold the derivations, per section 5.1. |
+| DOC-08 | same | Names a research basis or says it is an engineering default, and ships with graceful degradation; the dropped tunability clause is C31's, now DOC-06. |
+| DOC-08/Scope | same | Every register row marked spec-introduced. |
+| DOC-08/Not | same | Rows ratified from cited research are the other half of the Part 3 intro. |
+| DOC-17 | same | Invariants excepted from tuning is C31's text, with PRIN-13 as the in-force example. |
+| DOC-17/Scope | same | Every rule research/00 names a design invariant. |
+| DOC-17/Not | same | Heuristic defaults are DOC-06's. |
+| DOC-18 | differs | The in-force exception covers every spec-introduced row ratified on 2026-08-31, which includes the Section 9 follow-up rows recorded at H-05; pointing only to H-04 leaves those rows outside the stated batch. |
+| DOC-18/Scope | same | Every register row. |
+| DOC-18/Not | differs | Reads as exempting a row that cites no research and is not marked spec-introduced, a carve-out the inventory and in-force text do not make; such a row breaks the rule rather than falling outside it. |
+| DOC-15 | same | Deferred and future items, coach-in-the-loop, LT1 detail and the human-coach-specification candidates, live in future-directions, as the cited in-force sites say. |
+| DOC-15/Scope | same | Items research/00 defers beyond v1 are the deferred and future items. |
+| DOC-15/Not | same | Current rules stay in research/00. |
+| DOC-01 | same | Single decision authority governing the spec, every decisions record and any apparent difference with research/01 to 06, as the preamble and section 5.1 say. |
+| DOC-01/Scope | same | The rules and the derived documents that restate them are what the authority governs. |
+| DOC-01/Not | same | The preamble says research/00 does not restate physiology or device detail, which the mechanism docs hold. |
+| DOC-05 | same | The spec references research/00 for conflict-resolution, parameter-default and freedom-to-operate questions and the mechanism docs for derivations, as section 5.1 says. |
+| DOC-05/Scope | same | Every section of the Phase-2 specification. |
+| DOC-05/Not | same | Derivations belong to the mechanism docs, per section 5.1. |
+| DOC-04 | same | The mechanism docs are the evidence, elevated and prioritised, changed only at the two recorded exceptions, the research/05 section 3.2 cold start and the section 2.4 and 6 band restatement; the date becomes H-09 as R6 requires. |
+| DOC-04/Scope | same | The mechanism docs section 5.2 lists. |
+| DOC-04/Not | same | The spec and the decision records conform to research/00, per the preamble and section 5.3. |
+| DOC-03 | same | Decision records conform to Parts 1 to 4 and research/00 governs a conflict until the record is reconciled, as section 5.3 says. |
+| DOC-03/Scope | same | Every record under decisions. |
+| DOC-03/Not | same | The mechanism docs are governed separately by section 5.1 and 5.2. |
+| AUT-05 | same | Chat is an I/O layer in which the LLM translates and explains and the engine decides, as section 5.3 says; routing moves to AUT-07. |
+| AUT-05/Scope | same | The Conversational Coach Interface of decisions/01 is section 5.3's subject. |
+| AUT-05/Not | same | The engine decides, so the LLM does not. |
+| AUT-07 | same | Every chat-originated change routes through the ladder and chat is never a second opaque adaptation path, as section 5.3 says. |
+| AUT-07/Scope | same | Every change that starts in chat. |
+| AUT-07/Not | differs | Carves hard flags out of the chat changes that route through the ladder, but section 5.3 routes all chat-originated changes through the ladder, whose first rung is the safety override itself. |
+| DOC-02 | same | Change research/00 first, then restate the same list of derived statements to match, as the precedence clauses say. |
+| DOC-02/Scope | same | Every rule change, whoever makes it. |
+| DOC-02/Not | same | A derived document never resolving a conflict from underneath is the inventory's third sentence, now DOC-16. |
+| DOC-09 | same | Only current rules in research/00 and a dated summary under an H-NN entry in the history file is exactly C38's text. |
+| DOC-09/Scope | same | Every rule change with its date and what changed is what C38 sends to history. |
+| DOC-09/Not | same | Verbatim superseded wording is placed elsewhere by C38. |
+| DOC-09/Why | same | States C38's replacement of left-standing superseded text by a dated history summary. |
+| DOC-10 | same | A retired ratified mechanism keeps its pins, re-pointed at the mechanism that now closes its population, as clause (vi) and its correction say. |
+| DOC-10/Scope | same | Mechanisms a feature retires is the retired set the inventory generalizes. |
+| DOC-10/Not | same | Kept, re-derived or redeployed mechanisms are named as not retired in clause (vi). |
+| DOC-11 | same | No unmeasured figure, and a published number is a measurement or derivation, never an assumption about behaviour, as the withdrawal reasoning says. |
+| DOC-11/Scope | same | Every figure research/00 publishes. |
+| DOC-11/Not | same | A heuristic default is a declared choice, not a figure claimed as measured. |
+| DOC-12 | same | Any new HRV measurement varies capture density on both datasets independently, as the stale-week note and the release-gate sentence say. |
+| DOC-12/Scope | same | New sweeps, harnesses and parameter searches are new measurements. |
+| DOC-12/Not | same | Figures already recorded at one density stay, stated as such, as FIG-04's daily-only note shows. |
+| DOC-13 | same | Section 3 of spec_outline states only the HRV SWC band and window, is swept for band restatements and is exempt from tier-rule sweeps. |
+| DOC-13/Scope | same | Only that section. |
+| DOC-13/Not | same | The rest of the spec is covered by the sweeps the precedence clauses list. |
+| DOC-14 | same | F005's feature file, construction reference and release record describe the rule as shipped and are not swept. |
+| DOC-14/Scope | same | The three named F005 records. |
+| DOC-14/Not | same | The current dataset model is located in the F006 reference, the inventory's second sentence. |
+| DOC-16 | same | A derived document never resolves a conflict from underneath and records it for the next reader, the inventory's third sentence. |
+| DOC-16/Scope | same | The derived statements DOC-02 lists. |
+| DOC-16/Not | same | research/00 is where conflicts are resolved. |
+| DOC-19 | same | The four verbatim homes are C38's list, and keeping none in research/00 follows from its current-rules-only clause; omitting only is right, since R1 keeps one verbatim CV line in the history file. |
+| DOC-19/Scope | same | Every withdrawn or retired phrasing. |
+| DOC-19/Not | same | The dated summary belongs to the history file, per C38. |
+| DOC-20 | same | Green on the shipped code, red with the mechanism alone deleted, green on the replacement, the three states clause (vi) names. |
+| DOC-20/Scope | same | The requirement covers the retired set only, as the correction says. |
+| DOC-20/Not | same | A kept mechanism has no third state to be green on, so it needs no such pin. |
+| DOC-21 | same | A days-since-return walk says whether it means days elapsed or mornings captured, as the stale-week note says. |
+| DOC-21/Scope | same | Figures indexed by time since a return come from such walks, so naming them adds no new duty. |
+| DOC-21/Not | same | A calendar-date walk has no days-since-return ambiguity. |
+| DOC-22 | same | The per-tier dataset model is stated in full in the F006 dataset-model reference. |
+| DOC-22/Scope | same | The per-tier dataset model. |
+| DOC-22/Not | same | F005's single-baseline rule is the shipped record DOC-14 leaves unswept. |
