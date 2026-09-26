@@ -203,9 +203,9 @@ class Site:
 
 SITES = (
     Site(
-        label="research/00 5.4 the authority",
+        label="research/00 5.4 FIG-01 the authority",
         rel="specification/research/00-design-decisions.md",
-        lead="The asymmetry was not a corner case",
+        lead="**FIG-01.** After a coverage-gap re-establishment",
     ),
     Site(
         label="spec/03 3.7.3",

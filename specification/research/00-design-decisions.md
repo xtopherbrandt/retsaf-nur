@@ -1,243 +1,1365 @@
 # Design Decisions & Governing Principles
 
-*Phase-1 synthesis. This document sits above the four mechanism-level research docs and the Phase-2 specification. It does not restate physiology, device, coaching, or adaptation detail — it references `research/01`–`research/05` for that. Its job is threefold: (1) fix the **principle hierarchy and tie-breakers** that govern every adaptation decision; (2) name the **load-bearing findings** the specification must not violate; and (3) record, in one place, the **decisions taken under scientific uncertainty** — the default the system ships and the assumption behind it — so the spec stays internally consistent and settled calls are not re-litigated. Section 4 adds the design and freedom-to-operate constraints that shape how the spec implements these choices. Every number here is a default flagged as a heuristic, tunable per athlete as data accumulates. Where a choice was made against the research's own leaning, that is stated explicitly.*
+## Glossary
 
-*This document is the project's single decision authority. The Phase-2 specification and every decision record under `decisions/` conform to it; it in turn points to the mechanism research in `research/01`–`research/06` for the evidence behind each ruling. The full document map is in Part 5.*
-
-*Reading guide: an implementer building Phase 2 should treat Part 1 as the constitution (it decides conflicts), Part 2 as the non-negotiable architecture, Part 3 as the parameter and method register, and Part 4 as the legal/methodological guardrails. Where this document and a mechanism doc appear to differ, this document governs, and the difference is called out in Part 5.*
-
----
+- **T-01 judgeable** IS said of a dataset that is established (T-03) and holds at least `min_window_readings` distinct local days in the judged week, as `is_judgeable` in `hrv_trend.py` tests it.
+- **T-02 selected** IS said of the dataset `select_dataset(...).selected` returns, the first judgeable dataset in fidelity order that the recency gate did not skip; the dataset a response shows when nothing is selected is presented (`presented_by`), not selected.
+- **T-03 established** IS said of a dataset whose own clipped baseline holds `n >= min_baseline_readings` distinct local days (`HrvDataset.established`).
+- **T-04 skipped / struck / stale** IS the recency gate's vocabulary: struck names the set `_recency_struck` returns over its candidates, skipped names a judgeable dataset in that set, and stale survives only in the enum value `higher_fidelity_skipped_stale` and in a stale HRV band, one whose readings all predate the judged period by more than 28 days.
+- **T-05 tier** IS a value of `hrv_source_tier`: `chest_strap_raw`, `health_snapshot` or `health_api_overnight` (`TIER_FIDELITY`); HRV Status is a quarantined sidecar metric and not a tier, and a device is not a tier.
+- **T-06 dataset** IS one tier's readings for one target date, with its own clipped baseline window, HRV SWC band, `n`, `established`, reset fields and `withheld` flag (`HrvDataset`).
+- **T-07 band** IS the HRV SWC band only, `Band(mean, half_width, lo, hi, floored)` over a dataset's ln rMSSD baseline with `half_width = max(0.5 · SD(ln rMSSD), 0.01)`, and the other quantities once given this HRV term are the ACWR range, the TSB target range, the CTL-rise range and the tolerance bracket.
+- **T-08 baseline** IS the HRV term for a dataset's readings inside its dataset baseline window (`HrvDataset.baseline`), and the centre of its HRV SWC band is the baseline mean.
+- **T-09 baseline window** IS one of three named HRV windows: the nominal baseline window `[D-66, D-7]` (`baseline_window`); the series baseline window `[max(D-66, gap resumption), D-7]` (`HrvSeries.baseline_window`), which the recency gate reads; and the dataset baseline window (`HrvDataset.baseline_window`), which establishment reads.
+- **T-10 judged week** IS the local days `[D-6, D]` (`judged_window`), and the bare word window is never used for it.
+- **T-11 withhold** IS the verdict withholding `verdict_withheld` decides and sets as `HrvDataset.withheld`, served as `week_not_representative`; every other absent verdict is unavailable (T-33), with its `unavailable_reason`.
+- **T-12 silence / coverage gap / hole / days behind** IS the count of whole local days strictly between two readings (`_silence_between`); a coverage gap is a series silence of more than 21 days, a hole is one dataset's silence of more than 21 days inside its window, and g days behind in `last_read` is a silence of g−1.
+- **T-13 sustains** IS the property `sustained_tier` tests, the highest-fidelity tier with at least 14 distinct days in a window, and it is used only by clause (b) of the era rule; clause (a) is the count in the series baseline window.
+- **T-14 candidate** IS a judgeable dataset the recency gate may skip; the era rule's count-below-14 half is named the boundary-existence half, not candidacy.
+- **T-15 era boundary** IS the `EraBoundary(first_day, reported)` that `_era_boundary` returns for a dataset.
+- **T-16 reset** IS a reported `reset_reason` in {`coverage_gap`, `tier_change`} together with its `reset_on`, and re-establishment names only the reset after a coverage gap.
+- **T-17 clip** IS moving the first day of a dataset's window and excluding every earlier reading as `before_reset: <reason>` (`_exclude_before_reset`), in three kinds (gap, era and hole) that compose as the latest first day.
+- **T-18 reported** IS said of a reset whose `reset_reason` and `reset_on` are non-null for that dataset.
+- **T-19 strays** IS the readings `_isolated` tests and the stray set `_era_boundary` counts.
+- **T-20 return / carrier** IS a return, a dataset receiving judged-week readings after a silence while another dataset carried the series, and the carrier is that other dataset; `c` is the number of carrier readings inside the return week, a sweep axis.
+- **T-21 fidelity** IS the ordinal rank in `TIER_FIDELITY`, the only quality term Section 3 applies; a confidence weight is a Section 6 quantity that Section 3 does not compute.
+- **T-22 disagree** IS what `disagreed_with` reports, a dataset whose judged-week mean reads on the other side of its own HRV SWC band from the selected dataset's, served only when a verdict is conferred.
+- **T-23 count** IS a number of distinct local days in the athlete's time zone, so a reading is one day's kept capture and a capture is a stored row.
+- **T-24 forbidden direction** IS asserting `hrv_normal` on evidence the system reports as insufficient, or while any dataset reported in the same response reads below its own HRV SWC band, whether or not that dataset is judgeable; up-regulation names only this direction.
+- **T-25 rate** IS OPEN (IDEA-088).
+- **T-26 input tiers** IS the three tiers of T-05 that feed the trend, stated as three input tiers plus the quarantined HRV Status classification rather than as four tiers.
+- **T-27 rung / loop** IS a rung, a position on the arbitration ladder (ARB-01), and a loop or timescale, one of ARCH-03's five; the ladder arbitrates between loops, but its rungs are not the loops.
+- **T-28 single-ecosystem** IS one vendor ecosystem per athlete's data at a time, and multi-vendor ingestion is not multi-device coordination.
+- **T-29 goal contract** IS the three athlete-owned fields {`goal_pace_target`, `race_date`, `distance_m`}.
+- **T-30 safety override / safety pathway** IS the override, the system's deterministic stop-or-escalate (ARB-02), and the pathway, the athlete-facing instructions that override issues (AUT-02).
+- **T-31 D, R, R+k, k₃** IS D, the target local date; R, the first reading of the new era after a tier change or of the resumption after a coverage gap; R+k, the k-th local day after R; and k₃, the offset of the returning dataset's third day, as HRV-33 uses it.
+- **T-32 resolved tier / rule 1–4** IS retired vocabulary (HRV-44), replaced by the selected or presented dataset, with rule 4 surviving only as the name of the era rule (HRV-38).
+- **T-33 unavailable** IS the verdict value `hrv_unavailable`, always served with an `unavailable_reason` (HRV-28).
 
 ## Part 1 — Principle hierarchy and tie-breakers
 
-The system pursues a single objective and resolves every conflict against a fixed order of precedence. This part is the constitution: when two signals or two loops disagree, the rules below decide the outcome deterministically, and every applied decision is logged with the rule that fired.
-
 ### 1.1 The supreme objective
 
-The system optimizes **expected average running pace over the full distance of the goal race**, under the race's specific course profile and expected conditions. Every design choice — plan structure, adaptation, taper, recovery — is justified by whether it raises this expected average pace. When a trade-off is otherwise unclear, it is resolved in favor of this metric. This is inherited verbatim from the project instructions and is the terminal value against which the lower-priority principles are means.
+**PRIN-01.** The system MUST optimize expected average running pace over the full distance of the goal race, under that race's course profile and expected conditions, and this pace IS its terminal value.
+Scope: every plan, adaptation, taper and recovery choice the system makes.
+Not: a pace over any distance other than the goal race's.
+Pinned: none
+
+**PRIN-02.** Every design choice MUST be justified by whether it raises that expected average pace, and a trade-off that is otherwise unclear MUST be resolved in its favour.
+Scope: plan structure, adaptation, taper and recovery choices alike.
+Not: a conflict the arbitration ladder (ARB-01) already resolves, which is not otherwise unclear.
+Pinned: none
 
 ### 1.2 The arbitration ladder
 
-When adaptation signals conflict on a given day, the system resolves them in this strict order of precedence, highest first (adopted from `research/05` §5.6):
+**PRIN-03.** The pace objective MUST be maximized subject to arriving healthy and adapted, so the constraints that protect health and adaptation MAY override the day's ambition.
+Scope: the placement of the pace objective on the lowest rung of the arbitration ladder (ARB-06).
+Not: a reading of that low rank as a contradiction of PRIN-01 (the terminal value).
+Pinned: none
 
-1. **Safety / injury override.** If injury-risk is high or a hard flag fires (bone-stress-injury pattern, night pain, focal bony tenderness, systemic illness, RED-S indicators), stop or escalate regardless of the pace objective. An injured athlete averages zero pace, so this outranks everything.
-2. **Day-of readiness, in the conservative direction.** A red readiness gate downgrades the session even when the plan wants a hard day.
-3. **Short-term guardrails.** Ramp-rate caps, monotony limits, and mandatory recovery weeks bound what the long-term ambition may demand.
-4. **Recent-workout re-anchoring.** Updates to threshold/CS/paces and tweaks to the next one to three sessions, applied within the bounds above.
-5. **Long-term ambition (the pace objective).** Drives mesocycle emphasis and training-intensity distribution, and is deliberately the **lowest** priority when it conflicts with any of the above.
+**ARB-01.** Conflicting adaptation signals on a day MUST be resolved in this strict order, highest first: (1) safety/injury override, (2) day-of readiness in the conservative direction, (3) short-term guardrails, (4) recent-workout re-anchoring, (5) long-term ambition.
+Scope: every day on which two adaptation signals or loops disagree.
+Not: a reordering of the rungs, or a shortcut past one.
+Pinned: none
 
-That the pace goal sits lowest is intentional and not a contradiction of §1.1: the objective is maximized *subject to* arriving healthy and adapted, so the constraints that protect health and adaptation must be able to override the day's ambition.
+**ARB-02.** If injury risk is high or a hard flag fires (bone-stress-injury pattern, night pain, focal bony tenderness, systemic illness, RED-S indicators), the system MUST stop or escalate regardless of the pace objective.
+Scope: the first rung of the arbitration ladder (ARB-01), the safety override.
+Not: the athlete's clinical action and return-to-run clearance, which AUT-02 leaves to the athlete.
+Pinned: none
+
+**ARB-03.** A red readiness gate MUST downgrade the session even when the plan wants a hard day.
+Scope: the second rung of the arbitration ladder, day-of readiness in the conservative direction.
+Not: turning an easy day into a hard one on a green day, which PRIN-13 forbids.
+Pinned: none
+
+**ARB-04.** Ramp-rate caps, monotony limits and mandatory recovery weeks MUST bound what the long-term ambition may demand.
+Scope: the third rung of the arbitration ladder, the short-term guardrails.
+Not: a bound on the safety override or on day-of readiness, which rank above this rung.
+Pinned: none
+
+**ARB-05.** Recent-workout re-anchoring MAY update threshold, CS and paces and tweak the next one to three sessions, within the bounds that the rungs above it set.
+Scope: the fourth rung of the arbitration ladder.
+Not: a change that exceeds a bound set by a higher rung.
+Pinned: none
+
+**ARB-06.** Long-term ambition MAY drive mesocycle emphasis and training-intensity distribution, and it MUST be deliberately the lowest priority when it conflicts with any rung above it.
+Scope: the fifth rung of the arbitration ladder, the pace objective.
+Not: a reading of this low rank as a contradiction of PRIN-01, which PRIN-03 explains.
+Pinned: none
+
+**ARB-07.** Hard flags MUST fire deterministically, whatever the chat framing.
+Scope: every hard flag that ARB-02 names, however the surrounding conversation is framed.
+Not: a chat-originated path that suppresses a hard flag.
+Pinned: none
 
 ### 1.3 The meta-rule
 
-**Faster, more conservative, safety-relevant signals may always veto slower, more ambitious ones — never the reverse.** This single rule generates the ladder in §1.2 and extends to any conflict the ladder does not name explicitly.
+**PRIN-04.** Faster, more conservative, safety-relevant signals MAY always veto slower, more ambitious ones, never the reverse, and this rule generates the arbitration ladder (ARB-01) and extends to any conflict the ladder does not name.
+Scope: every conflict between two signals or two loops, named by the ladder or not.
+Not: a veto by a slower, more ambitious signal over a faster, more conservative one.
+Pinned: none
 
 ### 1.4 Conflict resolution between subjective and objective signals
 
-When subjective signals (wellness, session-RPE, soreness) and objective signals (HRV, resting HR, pace-at-HR) disagree, or when the state estimate is low-confidence, the **more conservative reading wins**. The subjective axis may veto a hard session on its own, because self-report is frequently the earlier and more responsive warning (Saw et al., `research/03`). Both are interpreted on **trends**, not single readings: one below-baseline day is weak evidence, while a coherent multi-day or multi-item decline is actionable, and a single good night does not instantly clear accumulated multi-day suppression.
+**PRIN-05.** When subjective and objective signals disagree, or the state estimate is low-confidence, the more conservative reading MUST win, but this rule MUST NOT arbitrate between two per-tier HRV datasets, where the fidelity rank of HRV-14 decides.
+Scope: a disagreement between the subjective and the objective axis, or a low-confidence state estimate.
+Not: the choice between two objective HRV instruments, which is selection by fidelity rank (HRV-14).
+Pinned: none
+Why: decision C06 states that this rule does not arbitrate between two HRV instruments (H-39).
 
-*Decision note.* An earlier working choice leaned "balanced" here — hold the planned session when the two axes merely disagree — which would have accepted more overreaching risk in exchange for more stimulus. It was reverted to the conservative default above, because the target athlete is the serious amateur whose recovery capacity is the binding constraint (`research/01`, `research/03`), and because a missed hard session is cheaper than the overtraining or injury it guards against. This keeps §1.4 aligned with the ladder (§1.2) and with §1.7.
+**PRIN-06.** Signals MUST be interpreted on trends, not single readings.
+Scope: the subjective and objective readiness signals that PRIN-05 (conservative reading wins) governs.
+Not: a gate keyed on one reading alone.
+Pinned: none
+
+**PRIN-17.** The subjective axis MAY veto a hard session on its own.
+Scope: session-RPE, wellness and soreness reports, read against a planned hard session.
+Not: a subjective report used to make a session harder.
+Pinned: none
+
+**PRIN-18.** One below-baseline day IS weak evidence, a coherent multi-day or multi-item decline IS actionable, and a single good night MUST NOT clear accumulated multi-day suppression.
+Scope: the weight each trend pattern carries on the day-of readiness rung.
+Not: the HRV verdict's own windows and counts, which HRV-08 and HRV-09 set.
+Pinned: none
 
 ### 1.5 Raw over derived
 
-The state model, load, response, fatigue, readiness, and injury-risk metrics are built **only from raw measured signals** (heart rate, RR intervals, pace/GPS, cadence, barometric altitude, running dynamics, power where present). Vendor-derived black-box metrics (Garmin/Firstbeat VO2max, Training Status, Training Readiness, Body Battery, Performance Condition, **the HRV Status Balanced/Unbalanced/Low classification**) are ingested into a **quarantined namespace**, never feed a decision, and are retained only for optional corroboration and for showing the athlete a familiar number. Where the system reproduces a documented open method that is itself a derived estimate (see the cold-start estimator, §3.2), that method is *owned and transparent*, not a vendor black box, and therefore consistent with this principle. A subtle boundary case, resolved in §3.3: a **numeric** resting rMSSD produced by the device (Garmin's overnight `lastNightAvg`, or Health Snapshot's `RmssdAvgValue`) is a *standard, documented statistic in known units*, not a proprietary composite — so it is admitted as an HRV input at reduced confidence, unlike the HRV Status *classification* built on top of it, which stays quarantined.
+**PRIN-07.** The state model and the load, response, fatigue, readiness and injury-risk metrics MUST be built only from raw measured signals: HR, RR, pace/GPS, cadence, barometric altitude, running dynamics, and power where present.
+Scope: every metric that feeds a decision.
+Not: a vendor-derived estimate, which PRIN-08 quarantines.
+Pinned: none
+
+**PRIN-08.** Vendor black-box metrics MUST be ingested into a quarantined namespace and MUST never feed a decision, whatever any setting or default says.
+Scope: every metric on the quarantine list of PRIN-20, from any vendor.
+Not: a device's numeric resting rMSSD, which PRIN-10 admits as an HRV input.
+Pinned: none
+Why: decision C24 leaves no default or switch under which the coaching logic may read a quarantined metric (H-38).
+
+**PRIN-09.** A documented open method that is itself a derived estimate, the cold-start estimator for example, IS owned and transparent, so it IS consistent with PRIN-07 (raw over derived).
+Scope: an open, cited method that the system reproduces in its owned namespace.
+Not: a vendor's proprietary construction of the same estimate, which stays quarantined (COLD-06).
+Pinned: none
+
+**PRIN-10.** A device's numeric resting rMSSD (Garmin `lastNightAvg`, or Health Snapshot `RmssdAvgValue`) IS a standard statistic in known units, not a proprietary composite, so it MAY be admitted as an HRV input at reduced fidelity, an ordinal rank in selection.
+Scope: the numeric tiers of the resting-HRV hierarchy (HRV-01).
+Not: a numeric per-tier confidence weight, which is deferred to Section 6's readiness fusion (HRV-19).
+Pinned: none
+
+**PRIN-19.** A quarantined vendor metric MAY be used only for display to the athlete and for divergence surfacing (REG-17).
+Scope: every metric on the quarantine list of PRIN-20 (the named vendor metrics).
+Not: a corroboration that feeds a decision, a flag or a state change.
+Pinned: none
+
+**PRIN-20.** The quarantine list IS Garmin/Firstbeat VO2max, Training Status, Training Readiness, Body Battery, Performance Condition, and the HRV Status Balanced/Unbalanced/Low classification.
+Scope: the metrics PRIN-08 and PRIN-19 govern, and every restatement of the list downstream.
+Not: a numeric resting rMSSD, which is an HRV input (PRIN-10) and not a listed metric.
+Pinned: none
+Why: decision C25 has the project rule's shorter list swept to this one after the rewrite, per DOC-02 (H-38).
+
+**PRIN-21.** The HRV Status classification built on that rMSSD MUST stay quarantined.
+Scope: the HRV Status Balanced/Unbalanced/Low classification.
+Not: the numeric resting rMSSD beneath it, which PRIN-10 admits.
+Pinned: none
 
 ### 1.6 Transparency and explainability
 
-Explainability is a first-class constraint, not a feature. Every derived metric is defined by a transparent, reproducible formula the spec states in full, and **every applied adaptation is logged with its inputs and the rule that fired**, so the autonomous system can explain each change. This is also the system's clearest competitive differentiator (`research/06` §8) and its safest freedom-to-operate posture (Part 4).
+**PRIN-11.** Every derived metric MUST be defined by a transparent, reproducible formula that the spec states in full.
+Scope: every metric the system derives from raw measured signals.
+Not: a vendor black-box metric, which PRIN-08 quarantines.
+Pinned: none
+
+**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so the response's `thresholds` block MUST serve the verdict-affecting constants `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`.
+Scope: each response read on its own, including its `selected_reason`.
+Not: the formulas themselves, which the spec states in full under PRIN-11 (transparent formulas).
+Pinned: none (F010)
+Why: decision C33 reads the transparency rule at the response level and makes `recency_tolerance_days` served, which F010 carries out, reversing the narrower promise recorded at H-17.
+
+**PRIN-22.** Every applied adaptation or decision MUST be logged with its inputs and the rule that fired.
+Scope: every adaptation the system applies, whichever loop or rung produced it.
+Not: the explanation that chat gives on demand, which reads this log (AUT-05).
+Pinned: none
+
+**PRIN-23.** Every stored row inside the windows MUST be in exactly one dataset or listed as excluded with exactly one reason.
+Scope: every stored resting-HRV row whose local day lies in `[D-66, D]`.
+Not: a row outside those windows, which the era rule reads but the response does not list.
+Pinned: none
+
+**PRIN-24.** `window_days` (7), which sets the judged week and which the `thresholds` block does not serve, IS an OPEN exception to rule PRIN-12 (reproducible by hand from the response).
+Scope: the verdict-affecting constants that the response does not serve.
+Not: `recency_tolerance_days`, which PRIN-12 names as served once F010 lands.
+Pinned: none
+Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39).
 
 ### 1.7 Down-regulate freely, up-regulate cautiously
 
-The daily gate may **reduce** load freely in response to poor readiness, but may **not** manufacture hard work: a green day does not turn an easy day into a hard one on impulse. Placement of hard sessions stays under the control of the weekly plan. This asymmetry protects against both overreaching and the temptation to chase a single good signal.
+**PRIN-13.** The daily gate MAY reduce load freely in response to poor readiness but MUST NOT manufacture hard work: a green day does not turn an easy day into a hard one, and hard-session placement stays with the weekly plan.
+Scope: the day-of readiness rung's effect on the planned session.
+Not: a tunable default, since this is a design invariant (DOC-17).
+Pinned: none
+
+**PRIN-14.** The system MUST NOT assert a readiness-intact verdict (`hrv_normal`) in the forbidden direction, and where the evidence it reports is insufficient it MUST withhold the verdict instead.
+Scope: every served HRV verdict, whichever dataset and cause produced it.
+Not: the manufacture of hard work on a green day, which PRIN-13 forbids separately.
+Pinned: none
+Why: decision C07 writes into this section the weak-evidence clause that more than 20 citations already read into it, with the forbidden direction defined once in the Glossary as T-24 (H-39).
+
+**PRIN-15.** A forbidden-direction population MUST NOT ship on a rarity argument and MAY ship only as a named, counted, test-pinned exception owned by an open IDEA, which may not grow, and the exceptions today are exactly three: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by IDEA-087, and HRV-25's population, owned by IDEA-099.
+Scope: every population that the forbidden direction of PRIN-14 reaches, measured or not.
+Not: the HRV verdict logic itself, which HRV-14 to HRV-31 state, since this rule governs only which of its populations may ship.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
+Pinned: none (F009)
+Why: decision C06 makes the forbidden direction absolute but for named exceptions, and the refinements count three of them, not two (H-39, H-41).
+
+**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,232 of 307,500 rectangle rows and 1,108 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-01 names.
+Scope: the two IDEA-087 exceptions of PRIN-15, as T162 measured them.
+Not: HRV-25's population, whose count F009 produces.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
+
+**PRIN-26.** An exception MAY be named before it is counted only while a feature owns its count, as F009 owns the count and pin of HRV-25's population, whose count is OPEN.
+Scope: HRV-25's population, where the selected dataset serves `hrv_normal` while any other reported dataset reads below its own HRV band.
+Not: an uncounted exception that no feature owns, which may not ship.
+Pinned: none (F009)
 
 ### 1.8 Autonomy posture
 
-The system runs **fully autonomously**: it applies adaptations — including major re-periodizations after a material state-model shift — and explains them to the athlete after the fact, rather than requesting confirmation first. It has exactly two exceptions, and both are matters the system does not own rather than checkpoints on what it does own: the **safety pathway** (a stop-and-escalate, return-to-run, or "seek clinical assessment" instruction is athlete-facing because the athlete must act on it) and the **goal contract** (§1.9). Everything the system legitimately owns — the plan — applies without a confirmation step.
+**AUT-01.** The system MUST apply every plan adaptation autonomously, including major re-periodizations after a material state-model shift, and MUST explain it afterwards (apply-and-notify) with no confirmation step.
+Scope: every change to the plan, which the system owns (GOAL-01).
+Not: the two matters that AUT-02 names, which the system does not own.
+Pinned: none
 
-The **Conversational Coach Interface is not a gating mechanism.** Plan changes never wait on athlete acknowledgment or confirmation. Chat serves two purposes only (see `decisions/01` and §1.9): it lets the athlete *probe* an applied change to understand why it happened — explanation on demand, not an approval step — and it lets the athlete inform the system of outside scheduling constraints and negotiate schedule changes, which route into the weekly-microcycle loop as inputs. An "acknowledged-notification" step for major changes was considered and deliberately rejected.
+**AUT-02.** The system's autonomy MUST have exactly two exceptions, both matters the system does not own: the athlete's clinical action and return-to-run clearance on the safety pathway, and the goal contract (GOAL-02).
+Scope: every decision that rests with the athlete rather than the system.
+Not: the safety override itself, which the system applies (AUT-08).
+Pinned: none
+Why: decision C23 places the safety override with the system and leaves the athlete only the clinical action and the clearance (H-39).
 
-This is a considered bet that, paired with the explainability of §1.6 and the negotiation channel above, autonomy plus after-the-fact transparency serves the athlete better than any confirmation checkpoint on the plan; the competitive survey notes this is a genuine trust bet (`research/06` §8).
+**AUT-03.** The Conversational Coach Interface IS not a gating mechanism: plan changes never wait on athlete acknowledgment, and an "acknowledged-notification" step for major changes was considered and rejected.
+Scope: every plan change, major or minor.
+Not: the goal contract, where a change takes effect only as athlete input (GOAL-02).
+Pinned: none
 
-*(Future extension, not part of v1: an optional **coach-in-the-loop** authority — a qualified human coach who may set or override selected shipped defaults — is sketched in `future/future-directions.md`. It would add a third, optional authority alongside the athlete-owned goal contract and safety pathway, with the hard constraint that a coach input can never disable a safety flag. Out of scope for the current spec.)*
+**AUT-04.** Chat MAY carry only athlete input and explanation: the probe of an applied change, life and scheduling constraints (routed to the weekly-microcycle loop), injury, soreness and subjective reports (routed to the `research/03` instruments), and plan-change requests (routed through the arbitration ladder).
+Scope: every chat message, in either direction.
+Not: an approval or confirmation of a change, since chat is never a gate (AUT-03).
+Pinned: none
+Why: decision C20 adds the input kinds that `decisions/01`, the more specific conforming record, defines (H-39).
+
+**AUT-06.** A coach-in-the-loop authority IS out of v1 scope, and if one is added it MUST be a third, optional authority that can never disable a safety flag.
+Scope: any qualified human coach who may set or override shipped defaults.
+Not: the two athlete-owned matters that AUT-02 names.
+Pinned: none
+
+**AUT-08.** The system MUST apply the safety override (ARB-02) itself, automatically and deterministically, and MUST issue the stop-and-escalate, return-to-run or "seek clinical assessment" instructions that the athlete must act on.
+Scope: every hard flag and every high injury risk that ARB-02 names.
+Not: the athlete's clinical action or return-to-run clearance, which the athlete owns.
+Pinned: none
 
 ### 1.9 System ownership: plan versus goal
 
-The system owns **how to pursue the goal** and does not own **what the goal is**. The *plan* — workout prescriptions, weekly volume, intensity distribution, taper, and full re-periodization — is the system's to change autonomously (apply-and-notify, §1.8), because these changes are forward-looking, relative-anchored (Part 2, keystone 4), and reversible in a sentence via chat. The *goal contract* — the declared target pace and the race date — is the athlete's. The system may **propose** a goal change (for example, when the race-pace projection has drifted far from the target) but never applies one unilaterally; a goal change takes effect only as an athlete-supplied input, exactly as the goal is set at program start. This is the boundary the safety override and the goal contract share: both sit outside the system's autonomous authority, and everything else — the plan — sits inside it.
+**GOAL-01.** The system IS the owner of how the goal is pursued (the plan: prescriptions, weekly volume, intensity distribution, taper, full re-periodization), and IS not the owner of what the goal is.
+Scope: the split between the plan and the goal contract.
+Not: the safety pathway, which AUT-02 governs.
+Pinned: none
 
-**Ordering of remedies for a critical projection-vs-goal gap.** When the gap between the system's projected race pace and the athlete's declared goal pace grows critically large and the system proposes a goal-contract change to close it, it proposes the contract fields in a **fixed order of remedy, least-disruptive first**:
+**GOAL-02.** The goal contract IS the three athlete-owned fields `goal_pace_target`, `race_date` and `distance_m`, which the system MAY propose to change but MUST never change itself, so a change takes effect only as an athlete-supplied input, exactly as at program start.
+Scope: every goal-contract field, and every proposal the system makes about one.
+Not: the order in which the system proposes remedies, which GOAL-03 sets.
+Pinned: none
+Why: decision C22 bundles the three fields that two of the three sources already bundle (H-39).
 
-1. **Primary — a revised goal pace** that the current projection can support, so the goal becomes achievable on the existing race date. This is the first-line remedy because it disrupts nothing outside the training plan.
-2. **Secondary — a change of the goal race date** (buying more training time), offered as an available-but-costlier alternative for athletes for whom moving the date is feasible. It ranks second because a date change means re-entering and re-paying for a race, rebooking travel, and rearranging life around a new day — one of the hardest things to ask of an athlete, not a co-equal option to a pace adjustment.
+**GOAL-03.** For a critical projection-vs-goal gap, the system MUST propose remedies in a fixed order: first a revised goal pace, then a later race date.
+Scope: every gap-triggered proposal of a goal-contract change.
+Not: a change of race distance, which GOAL-04 excludes.
+Pinned: none
 
-The system does **not** propose changing the race distance (`distance_m`) as a gap remedy; the distance is treated as fixed by the athlete's chosen event. This ordering governs only *what the system proposes and in what priority* — which field the athlete ultimately chooses to move remains entirely theirs, and an athlete may enact any goal-contract change (including a date or distance change) as an input regardless of the order in which the system surfaced its proposals. The same ordering is stated at every point the gap-triggered proposal is defined (spec §1.4.6, and spec §6.8 / §6.4.4 and §8.5.2 where the proposal is surfaced) so the spec stays consistent with this authority.
+**GOAL-04.** The system MUST never propose a change of race distance (`distance_m`) as a gap remedy.
+Scope: every gap-triggered proposal.
+Not: a distance change that the athlete enacts, which GOAL-05 allows.
+Pinned: none
 
----
+**GOAL-05.** The remedy ordering MUST govern only what the system proposes, and the athlete MAY enact any goal-contract change, date or distance included, whatever order the proposals came in.
+Scope: the athlete's own goal-contract changes, supplied as inputs.
+Not: a change the system applies itself, which GOAL-02 forbids.
+Pinned: none
+
+**GOAL-06.** The same ordering MUST be stated at every spec site where the gap proposal is defined or surfaced: spec §1.4.6, §6.8, §6.4.4 and §8.5.2.
+Scope: the spec sections that define or surface the gap-triggered proposal.
+Not: the order itself, which GOAL-03 and GOAL-04 set.
+Pinned: none
 
 ## Part 2 — Load-bearing findings
 
-These eight findings dictate the shape of the system. They are the conclusions from Phase-1 research that most constrain the architecture; the specification must honor all eight, and a design that violates one is wrong regardless of its other merits.
+**ARCH-00.** The spec MUST honour all eight Part 2 keystones, stated in rules ARCH-01 to ARCH-13, and a design that violates one is wrong whatever its other merits.
+Scope: every design choice the spec makes.
+Not: a design question no keystone addresses, which the Part 1 principles and the Part 3 register settle.
+Pinned: none
 
-**1. Post-session adaptation is the primary loop.** Garmin's official Activity/Health APIs deliver data only after an activity finishes and syncs; genuine in-session adaptation is possible only via on-device Connect IQ or ANT+/BLE sensor broadcast (`research/02` §6). The core system is therefore the four between-session loops; real-time intra-workout cutoffs are an optional on-device stretch module, approximated post-hoc when absent.
+**ARCH-01.** Post-session adaptation MUST be the primary loop: the core is the four between-session loops, and real-time intra-workout adaptation is an optional on-device stretch module, approximated post hoc when absent.
+Scope: every adaptation the system makes to an athlete's training.
+Not: an in-session cutoff from the core system, which only the optional on-device module can deliver.
+Pinned: none
 
-**2. The system owns its state model.** Rather than trust a vendor VO2max number, the system maintains its own estimated profile of the determinants of race pace — critical speed and D′, vVO2max, functional threshold pace, an efficiency-factor economy proxy, durability, and the individual endurance exponent — each with a trend and a confidence (`research/05` §3). This is the owned alternative that raw-over-derived (§1.5) requires.
+**ARCH-02.** The system MUST maintain its own determinant profile: CS and D′, vVO2max, functional threshold pace, an EF economy proxy, durability and the individual endurance exponent, each with a trend and a confidence.
+Scope: every determinant of race pace in the state model.
+Not: a vendor-computed VO2max, which rule PRIN-08 quarantines.
+Pinned: none
 
-**3. Adaptation is a five-timescale nested loop composed into one daily decision.** Long-term (mesocycle), short-term (weekly), recent-workout, day-of readiness, and optional intra-workout loops each have defined inputs, triggers, actions, and guardrails; slower loops set the frame, faster loops adjust within it, and the arbitration ladder (§1.2) composes them into a single prescription each day (`research/05` §5).
+**ARCH-03.** Adaptation MUST be a five-timescale nested loop (long-term, short-term, recent-workout, day-of readiness, optional intra-workout).
+Scope: every loop that adjusts the plan.
+Not: the rungs of the arbitration ladder, which are ladder positions and not loops (T-27).
+Pinned: none
 
-**4. All pace targets are anchored *relative* to the current state estimate.** Prescribed paces are stored as relative to the athlete's current estimated threshold/CS/VDOT, so that when the state model updates, every zone pace updates automatically (`research/04` §3). The plan never hard-codes absolute paces.
+**ARCH-04.** All pace targets MUST be stored relative to the current threshold/CS/VDOT estimate.
+Scope: every prescribed pace and zone pace in the plan.
+Not: a race-day goal pace, which the athlete's goal contract holds.
+Pinned: none
 
-**5. Grade-adjusted pace is the universal downstream pace representation.** Every pace feature that feeds a decision is corrected for gradient via the Minetti cost-of-gradient curve, so hills never masquerade as fitness change and the asymmetric uphill/downhill cost is honored (`research/01` §5.4, `research/05` §1.3).
+**ARCH-05.** Every pace feature that feeds a decision MUST be grade-adjusted through the Minetti cost-of-gradient curve.
+Scope: every pace-derived input to a decision.
+Not: a pace shown for display only, which feeds no decision.
+Pinned: none
 
-**6. A vendor-neutral canonical schema, with derived metrics quarantined.** Ingestion maps every vendor into one timestamped raw-stream schema; a Garmin FIT adapter maps first, other vendors later, and vendor-derived metrics live only in a labeled sidecar the coaching logic ignores by default (`research/02` §7, `research/05` §1.1).
+**ARCH-06.** Ingestion MUST map every vendor into one vendor-neutral, timestamped raw-stream schema (Garmin FIT first), and vendor-derived metrics MUST live only in a labelled quarantined sidecar that never feeds a decision.
+Scope: every vendor's data at ingestion, and every vendor-derived metric it carries.
+Not: display of a sidecar metric or the divergence surfacing of rule REG-17, which feed no decision.
+Pinned: none
+Why: decision C24 aligns keystone 6 with §1.5, which admits no setting under which a vendor-derived metric feeds a decision.
 
-**7. Subjective input is first-class.** Self-report (session-RPE, five-item wellness, pain mapping) is a continuous input on equal footing with device data, and is frequently the more responsive early signal (`research/03` §1). The reporting *process* — brevity, consistent timing, closing the loop so the athlete sees their input change the plan — is engineered, not just collected.
+**ARCH-07.** Subjective input (session-RPE, five-item wellness, pain mapping) MUST be a continuous input on equal footing with device data, and its reporting process MUST be engineered, not just collected.
+Scope: every subjective report the athlete gives.
+Not: chat as a gate, which rule AUT-04 excludes.
+Pinned: none
 
-**8. Every determinant carries a confidence, and low confidence widens the guardrails.** Estimates carry a confidence reflecting data recency, quantity, and quality; low-confidence estimates make the adaptation logic more conservative and are surfaced to the athlete rather than presented as false precision (`research/05` §3.3).
+**ARCH-08.** Every determinant MUST carry a confidence reflecting data recency, quantity and quality.
+Scope: every determinant estimate in the state model.
+Not: a numeric per-tier HRV confidence weight, which Section 3 does not compute and which is deferred to Section 6's readiness fusion (decision C19).
+Pinned: none
 
----
+**ARCH-09.** Slower loops MUST set the frame and faster loops adjust within it, and the arbitration ladder MUST compose them into one daily prescription.
+Scope: every daily prescription.
+Not: the precedence between conflicting signals, which the ladder's rungs set (rule ARB-01).
+Pinned: none
+
+**ARCH-10.** The plan MUST never hard-code absolute paces.
+Scope: every pace the plan stores.
+Not: a pace the athlete enters as a goal, which is an input and not a plan target.
+Pinned: none
+
+**ARCH-11.** Low confidence MUST make the adaptation logic more conservative and MUST be surfaced to the athlete.
+Scope: every determinant whose confidence is low.
+Not: false precision, which the athlete is never shown in its place.
+Pinned: none
+
+**ARCH-12.** Section 6 MUST treat `hrv_unavailable` as low confidence that widens its guardrails.
+Scope: every day on which the HRV input reads `hrv_unavailable`, whatever its `unavailable_reason`.
+Not: a verdict about the athlete's readiness, which `hrv_unavailable` does not assert.
+Pinned: none
+Why: decision C08 makes a withheld HRV verdict conservative through Section 6's treatment of it, as keystone 8 requires of low confidence.
+
+**ARCH-13.** Until Section 6 exists, the spec MUST state every withheld HRV day as a net cost with no offsetting benefit.
+Scope: every day on which the HRV input reads `hrv_unavailable` before Section 6's readiness fusion is built.
+Not: a withheld day once Section 6 exists, which rule ARCH-12 governs.
+Pinned: none
+Why: decision C08 prices the withheld days honestly while the fusion that would widen guardrails on them is not built.
 
 ## Part 3 — Decision register
 
-Each row is a choice made under scientific uncertainty or among competing methods. The register is the single place the spec reconciles these, so downstream sections stay consistent and settled calls are not reopened. Entries are ratified from the cited research **except** (a) the resolved open questions detailed in §3.1–§3.4 below the table, and (b) rows marked **spec-introduced** — defaults the Phase-2 spec adopted under uncertainty and this register formally ratifies (the spec-introduced batch was ratified 2026-08-31). Every spec-introduced row names its research basis (or, for a pure engineering default, says so), ships with graceful degradation, and remains tunable per athlete as data accumulates; several are also flagged in `future/future-directions.md` as human-coach-specification candidates.
+**DOC-06.** Every number in research/00 IS a heuristic default that MAY be tuned per athlete only under the individualization rule (IND-01).
+Scope: every constant and default that research/00 states.
+Not: a design invariant, which DOC-17 holds untunable.
+Pinned: none
+Why: decision C31 makes the individualization rule govern all per-athlete tuning (H-39).
 
-| Decision area | Shipped default | Assumption / rationale | Source |
-|---|---|---|---|
-| Fitness/fatigue time constants | CTL 42-day, ATL 7-day EWMA; TSB = CTL − ATL | Documented, interpretable convention; true individual constants are not identifiable from typical field data. Per-athlete fitting deferred (see individualization rule below) | `research/04` §4.2, `research/05` §2.3 |
-| HRV-guided gate | 7-day rolling ln rMSSD vs a **±0.5·SD(ln rMSSD)** smallest-worthwhile-change band — the sample standard deviation of the athlete's own ln rMSSD baseline (**clarified 2026-09-09**: this row originally read "±0.5·CV", which conflated the SWC with a separate Plews stability metric; the intent is unchanged, see §5.4); resting-state RR, with source **tiered** by fidelity — chest-strap raw RR preferred, degrading to a numeric resting rMSSD (Health Snapshot, then Health API overnight) at reduced confidence; source tier held consistent within a baseline; never intra-workout, never in-run wrist PPG | Direction of evidence is consistently favorable; a single low reading is weaker than a multi-day baseline decline; resting/nocturnal PPG rMSSD validates acceptably with longer averaging but carries a bias that must not be mixed across sources within one baseline (see §3.3) | `research/04` §5.1, `research/05` §2.4, `research/02` §4.1 |
-| ACWR | Advisory context/spike flag inside injury-risk only; wide band (~0.8–1.5); never a hard gate | Mathematical coupling and spurious correlation (Lolli) and conceptual pitfalls (Impellizzeri) make any hard threshold indefensible; monotony/strain and subjective pain carry the real risk weight | `research/03` §4.1–4.2, `research/05` §2.5 |
-| Per-session load | rTSS primary when a valid GAP stream exists; reconcile against HR-TRIMP and sRPE; >25% divergence → mean-fallback; degrade gracefully to HR-TRIMP then sRPE | No single internal-load metric is complete; modest divergence is sensor noise, large divergence means no one metric is trustworthy so average. (HR-TRIMP sex coefficients: men 0.64·e^(1.92·ΔHR), women 0.86·e^(1.67·ΔHR) — see `research/05` §2.1 correction) | `research/04` §4.1, `research/05` §2.1 |
-| Endurance exponent | Individual Riegel *b* when confidence adequate, else population 1.06 with widened interval | *b* is individual and trainable; population value is a safe prior when data is thin | `research/01` §4.3, `research/05` §3.1 |
-| Durability | EF/decoupling drift over the back third of long runs; within-athlete trend only; flagged emerging | No standard field metric exists yet; relative drift tracks fatigue resistance even if the absolute scale is uncalibrated | `research/01` §1.6, `research/05` §2.2 |
-| Training-intensity distribution | Pyramidal-leaning in base → polarizing through build/peak; ~80% easy by time held throughout; Z2/Z3 split a phase- and distance-dependent parameter | Established: majority low-intensity, and both polarized and pyramidal beat threshold-dominant; contested: polarized vs pyramidal superiority, so treat the split as a tunable parameter | `research/01` §3.3, `research/04` §2 |
-| Taper | ~2 weeks, ~50% volume cut, exponential decay, intensity maintained, frequency mostly held; then individualized by chronic load and distance | Taper direction, magnitude, and volume-vs-intensity asymmetry are among the most robust findings in the field; individual optimal duration/depth is what the adaptive system personalizes | `research/04` §7 |
-| Data-quality gating | Require 1 Hz recording; chest-strap required for any at-or-above-threshold HR metric; resting HRV **tiered by source** (chest-strap raw RR > numeric resting rMSSD from Health Snapshot / Health API overnight > HRV Status classification, which is quarantined); PPG down-weighted and flagged; never compute HRV from in-run wrist PPG | Optical HR degrades sharply at intensity (cadence-lock, lag), but that is a *motion* failure absent at rest; RR presence in an activity is the chest-strap signature; resting/nocturnal PPG rMSSD is usable at a confidence discount (see §3.3) | `research/02` §2.5, §3.1–3.2, §4.1, `research/05` §1.2 |
-| Real-time adaptation | Optional on-device Connect IQ / sensor-broadcast stretch module; four between-session loops are the core | The between-session loop captures most of the achievable benefit; real-time is additive, not foundational | `research/02` §6, `research/05` §5.5 |
-| Course & environmental-modifier composition **(spec-introduced)** | The four course/environment pace modifiers are combined **multiplicatively**, applied in the order **altitude → heat/humidity → wind → grade** | No research doc addresses combining all four simultaneously. Multiplicative composition preserves each modifier's independent proportional cost; grade (the course-geometry Minetti term) composes last, on the environment-adjusted pace, so environmental costs scale the flat-equivalent pace before the terrain integral is applied. Each modifier is individually cited (`research/01` §5.4, altitude/heat/wind models). Section-local flag promoted to a ratified default | spec §1.4.5; `research/01` §5.4 |
-| Resting-HRV capture cadence **(spec-introduced)** | A **daily morning resting HRV measurement**, sourced through the §3.3 tier hierarchy — a short (2–5 min) chest-strap resting recording preferred; Health Snapshot the preferred no-strap default; passive overnight `lastNightAvg` where available — and **degrading gracefully when skipped** (the readiness gate down-weights, it does not fail) | Morning resting HRV is the most responsive autonomic-readiness signal (readiness gate, `research/05` §2.4), so a daily reading is worth a modest behavioral ask for the target serious-amateur athlete; the four-tier sourcing (§3.3) is what keeps the ask modest by not requiring a chest strap every day. Confirms and ratifies the spec §2.4.5 capture protocol | spec §2.4.5; §3.3 above; `research/02` §4.1 |
-| Course-geometry ingestion resolution **(spec-introduced)** | Course elevation resampled to a **uniform ≤50 m distance grid**; sparser sources **linearly interpolated** and flagged `interpolated`; elevation **smoothed before** gradient is computed | Engineering default, not a scientific-uncertainty one. A ≤50 m grid resolves course grade finely enough for the Minetti cost-of-gradient integration (Part 2, keystone 5) without amplifying GPS/barometric elevation noise into spurious gradient; smoothing-before-differencing is standard practice for the same reason the per-session GAP pipeline smooths altitude (`research/05` §1.2) | spec §2.5 |
-| Determinant-addressability scoring **(spec-introduced)** | A training block's target determinant is ranked by **gap-contribution × trainability × time-to-race × confidence** (multiplicative); degrades safely to aerobic base + phase-appropriate specificity when the score is uninformative | The four ingredients are research-grounded (`research/01` §2 on which determinants are trainable and over what horizon; `research/04` §1 on phase-appropriate emphasis) but no source supplies a combining formula. Multiplicative so that any near-zero factor — no addressable gap, no time to train it, or low confidence in the estimate — drops that determinant as a target, which is the conservative behavior. A classic coaching judgement, hence also a human-coach-specification candidate (`future/future-directions.md`) | spec §5.7.2 |
-| Base/build/peak phase-length split **(spec-introduced)** | **base ≈ 50% / build ≈ 30% / peak ≈ 20%** of the non-taper weeks; terminal ~2-week taper; **base-first compression** on short calendars (a short runway eats the peak and build before the base) | Block *ordering* is research-fixed (`research/04` §1) but the *split* is not. The default reflects common macrocycle practice (a large aerobic-base fraction, a smaller race-specific peak) and the project's never-abandon-aerobic-base guardrail (§1.2 long-term loop). Coaches routinely tailor macrocycle shape, hence a human-coach-specification candidate (`future/future-directions.md`) | spec §5.5.1; `research/04` §1 |
-| Mid-block recovery-week depth **(spec-introduced)** | Mid-block down week cuts **~20–40% of weekly volume**, holding intensity and frequency; cadence **every 3–4 weeks** | The *cadence* is research-grounded (`research/01` §6.3 motivates periodic down weeks; `research/05` §5.2 fixes the 3–4-week interval), but no captured source states the *depth* of a mid-block recovery week. The ~20–40% band is deliberately **shallower than the ~50% taper cut** (a down week refreshes without detraining; the taper sheds fatigue to peak) and holds intensity for the same volume-over-intensity reason the taper does. Strongly individual, hence a human-coach-specification candidate (`future/future-directions.md`) | spec §7.2.2; `research/01` §6.3, `research/05` §5.2 |
-| Race-day target form band (TSB) | The taper drives **TSB into ~+5 to +25** on race day, bounded on **both** sides (under-taper below, over-taper/staleness above); the individual best-form TSB is refined from the athlete's own race/tune-up history under the individualization rule (§3.1) | A practitioner heuristic adopted from `research/04` §4.2; the taper is operated as a TSB *controller* toward this band rather than as a fixed volume recipe. The individual optimum varies, which is exactly what the adaptive system personalizes. Also a human-coach-specification candidate (`future/future-directions.md`) | spec §7.4.1; `research/04` §4.2 |
-| Sidecar-divergence surfacing threshold **(spec-introduced)** | An own-vs-vendor metric divergence is **proactively surfaced** (rather than shown only on request) when it exceeds roughly **one own-estimate confidence interval, or ~10% where no interval is defined**; governs only *surfacing*, never any decision, flag, or state change | `research/02` §2.3.6 flags material own-vs-vendor divergence for corroboration but leaves "materially" unquantified. Tying the threshold to the system's **own** stated confidence interval is principled — a divergence is "material" precisely when it exceeds the uncertainty the system already admits in its own estimate — with ~10% as a transparent fallback where no interval exists. Raw-over-derived (§1.5) is preserved: the vendor number never enters a decision; this default only decides when a labeled comparison is shown to the athlete | spec §9.6; §2.3.6 |
-| Decision-log / raw-stream retention granularity **(spec-introduced, engineering default)** | **All decision, version, and derived-feature records retained indefinitely**; **raw per-sample streams retained for the current program plus a tunable rolling window** | A pure engineering/storage default, not a scientific-uncertainty one, and it affects **no decision the engine makes**. Decision/version/feature records are small and are what make the loop auditable and replayable (spec §9.3.5), so they are kept; the per-sample raw streams are by far the largest store, so their window is the one tunable knob. Included in the register for completeness of the spec-introduced-defaults record | spec §9.3.5 |
+**DOC-07.** The Part 3 register IS the single place where parameter defaults chosen under uncertainty are reconciled.
+Scope: every parameter default chosen under uncertainty, whether research or the spec introduced it.
+Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
+Pinned: none
+
+**DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
+Scope: every row of the Part 3 register marked spec-introduced.
+Not: a row ratified from the cited research, which DOC-18 governs.
+Pinned: none
+
+**DOC-17.** A design invariant, such as PRIN-13 (down-regulate freely, up-regulate cautiously), MUST NOT be tuned per athlete.
+Scope: every rule that research/00 names as a design invariant.
+Not: a heuristic default, which DOC-06 governs.
+Pinned: none
+
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the rows marked spec-introduced, whose batch was ratified as H-04 records.
+Scope: every row of the Part 3 register.
+Not: a row that cites no research and is not marked spec-introduced.
+Pinned: none
+
+**REG-01.** CTL MUST be a 42-day EWMA and ATL a 7-day EWMA, with TSB = CTL − ATL.
+Scope: every fitness, fatigue and form value the system computes.
+Not: an individually fitted time constant, which rule REG-20 defers.
+Pinned: none
+
+**REG-02.** ACWR MUST be advisory context and a spike flag inside injury risk only, with a wide ~0.8–1.5 range, and MUST never be a hard gate.
+Scope: every use of the acute:chronic workload ratio.
+Not: a hard gate on training, which monotony, strain and subjective pain inform instead.
+Pinned: none
+Why: T-07 reserves the word band for the HRV SWC band, so the ACWR's interval is named a range.
+
+**REG-03.** Per-session load MUST use rTSS as primary when a valid GAP stream exists, reconciled against HR-TRIMP and sRPE.
+Scope: every session's load.
+Not: a single internal-load metric trusted alone.
+Pinned: none
+
+**REG-04.** The HR-TRIMP sex coefficients MUST be men 0.64·e^(1.92·ΔHR) and women 0.86·e^(1.67·ΔHR).
+Scope: every HR-TRIMP computation.
+Not: a coefficient pair other than these two sex forms.
+Pinned: none
+
+**REG-05.** The endurance exponent MUST be the individual Riegel *b* when confidence is adequate, else the population 1.06 with a widened interval.
+Scope: every race-time projection that uses the endurance exponent.
+Not: an individual exponent fitted while its confidence is inadequate.
+Pinned: none
+
+**REG-06.** Durability MUST be EF/decoupling drift over the back third of long runs, tracked as a within-athlete trend only and flagged as emerging.
+Scope: every durability estimate.
+Not: a comparison of durability between athletes.
+Pinned: none
+
+**REG-07.** Training-intensity distribution MUST be pyramidal-leaning in base and polarizing through build/peak, with ~80% easy by time throughout.
+Scope: every training block's intensity distribution.
+Not: a threshold-dominant distribution.
+Pinned: none
+
+**REG-08.** The taper MUST be about 2 weeks with a ~50% volume cut and exponential decay, with intensity maintained and frequency mostly held, and it MUST then be individualized by chronic load and distance.
+Scope: every pre-race taper.
+Not: a mid-block down week, which rule REG-15 sets.
+Pinned: none
+
+**REG-09.** Data-quality gating MUST require 1 Hz recording, and a chest strap for any at-or-above-threshold HR metric.
+Scope: every HR metric the system derives from an activity.
+Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs.
+Pinned: none
+
+**REG-10.** The four course/environment pace modifiers MUST compose multiplicatively in the order altitude → heat/humidity → wind → grade.
+Scope: every pace adjusted for course and environment.
+Not: an additive composition of the modifiers.
+Pinned: none
+
+**REG-11.** The system MUST ask for a daily morning resting HRV measurement, sourced through the tier hierarchy (strap preferred, Health Snapshot the no-strap default, `lastNightAvg` where available).
+Scope: every athlete's morning resting HRV capture.
+Not: a chest strap every day, which the tier hierarchy does not require.
+Pinned: none
+
+**REG-12.** Course elevation MUST be resampled to a uniform ≤50 m distance grid, with sparser sources linearly interpolated and flagged `interpolated`, and elevation MUST be smoothed before gradient is computed.
+Scope: every course-geometry ingestion.
+Not: the per-session GAP pipeline, which smooths altitude on its own terms.
+Pinned: none
+
+**REG-13.** A block's target determinant MUST be ranked by gap-contribution × trainability × time-to-race × confidence (multiplicative), degrading to aerobic base plus phase-appropriate specificity when the score is uninformative.
+Scope: every training block's choice of target determinant.
+Not: an additive score, under which a near-zero factor would not drop a determinant.
+Pinned: none
+
+**REG-14.** The non-taper weeks MUST split base ≈50%, build ≈30%, peak ≈20%, followed by a terminal ~2-week taper, with base-first compression on short calendars.
+Scope: every macrocycle the plan lays out.
+Not: the order of the blocks, which the research fixes.
+Pinned: none
+Why: the split follows common macrocycle practice and the never-abandon-aerobic-base guardrail of the long-term loop in `research/05` §5 (decision C29).
+
+**REG-15.** A mid-block down week MUST cut ~20–40% of weekly volume, holding intensity and frequency, every 3–4 weeks.
+Scope: every mid-block recovery week.
+Not: the pre-race taper, which rule REG-08 sets.
+Pinned: none
+
+**REG-16.** The taper MUST drive race-day TSB into a target range of ~+5 to +25, bounded on both sides, as a TSB controller.
+Scope: every pre-race taper.
+Not: a fixed volume recipe that ignores TSB.
+Pinned: none
+Why: T-07 reserves the word band for the HRV SWC band, so the race-day TSB interval is named a target range.
+
+**REG-17.** An own-vs-vendor divergence MUST be proactively surfaced when it exceeds about one own-estimate confidence interval, or ~10% where no interval is defined.
+Scope: every labelled comparison between an own estimate and a vendor metric.
+Not: a divergence below that threshold, which is shown only on request.
+Pinned: none
+
+**REG-18.** Decision, version and derived-feature records MUST be retained indefinitely.
+Scope: every decision, version and derived-feature record.
+Not: raw per-sample streams, which rule REG-29 sets.
+Pinned: none
+
+**REG-19.** The register MUST carry the weekly CTL-rise range as a row marked PROVISIONAL, with a soft ~+5/week in build, a range of +3–7 and a hard ceiling of +8 as ratified in spec §6.2.2, until field data refines it.
+Scope: every week's planned rise in CTL.
+Not: a settled default, which the row becomes only when field data refines it.
+Pinned: none
+Why: decision C30 keeps the register the single place the spec reconciles its defaults, and T-07 reserves the word band for the HRV SWC band.
+
+**REG-20.** The fitness/fatigue time constants MUST stay at 42/7 long-term, and per-athlete fitting of them IS a later enhancement.
+Scope: every CTL and ATL computation.
+Not: a launch feature, which per-athlete fitting of the constants is not.
+Pinned: none
+
+**REG-21.** A divergence above 25% between rTSS, HR-TRIMP and sRPE MUST fall back to their mean, and load MUST degrade to HR-TRIMP, then sRPE.
+Scope: every session whose load sources diverge or are missing.
+Not: a modest divergence, which is sensor noise.
+Pinned: none
+
+**REG-22.** The Z2/Z3 split MUST be a phase- and distance-dependent parameter.
+Scope: every training block's intensity split above easy running.
+Not: the ~80% easy share, which rule REG-07 holds throughout.
+Pinned: none
+
+**REG-23.** PPG input MUST be flagged and carried at reduced fidelity, an ordinal rank below the chest strap, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
+Scope: every input the system takes from optical PPG.
+Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes.
+Pinned: none
+Why: decision C19 changes the wording only, since Section 3 applies fidelity as an ordinal rank and computes no confidence weight.
+
+**REG-24.** The chest-strap signature IS the presence of RR in an activity.
+Scope: every activity the system checks for a chest strap.
+Not: a resting HRV capture, whose source is its declared tier.
+Pinned: none
+
+**REG-25.** A skipped morning reading MUST degrade the readiness gate gracefully and never fail it, and a day it leaves reading `hrv_unavailable` MUST reach Section 6 as low confidence that widens guardrails (rule ARCH-12).
+Scope: every morning on which the athlete takes no resting HRV reading.
+Not: a hold on the plan until a reading arrives.
+Pinned: none
+Why: decision C08 makes a missing reading conservative through Section 6, and until Section 6 exists rule ARCH-13 prices the withheld day.
+
+**REG-26.** The mid-block down-week cut MUST be shallower than the taper's volume cut.
+Scope: every mid-block recovery week.
+Not: a cut deep enough to detrain.
+Pinned: none
+
+**REG-27.** The individual best-form TSB MUST be refined under rule IND-01.
+Scope: every athlete with race or tune-up history.
+Not: a fixed population TSB target held once the athlete's own history identifies one.
+Pinned: none
+
+**REG-28.** The surfacing threshold MUST govern surfacing only, and never a decision, flag or state change.
+Scope: every own-vs-vendor divergence.
+Not: a vendor number entering a decision, which rule PRIN-08 excludes.
+Pinned: none
+
+**REG-29.** Raw per-sample streams MUST be kept for the current program plus a tunable rolling window.
+Scope: every raw per-sample stream.
+Not: decision, version and derived-feature records, which rule REG-18 keeps indefinitely.
+Pinned: none
+
+**REG-30.** Record and stream retention MUST affect no engine decision.
+Scope: every retention setting.
+Not: storage cost, which the rolling window of rule REG-29 tunes.
+Pinned: none
+
+**HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
+Scope: every per-tier dataset's SWC band, as `build_band` builds it.
+Not: a coefficient of variation (CV) of rMSSD or of ln rMSSD, which is never the SWC band's statistic.
+Pinned: runcoach-api/tests/test_hrv_trend_band.py::test_the_floor_fires_for_a_degenerate_baseline
+Why: decision C32 states the 0.01 floor that `build_band` applies, so research/00 states the SWC band the code computes on a degenerate rMSSD series.
 
 ### 3.1 Individualization — the governing rule (resolved)
 
-The system **individualizes a parameter only when that parameter is both identifiable from the athlete's own data and backed by enough quality data to beat the population default**; until then it holds the default with honest confidence bands rather than fitting noise. This resolves the tension between doc 04's warning that per-athlete impulse-response fits are unstable and overfit-prone on thin field data, and doc 06's warning that sophistication which does not pay off in race pace is over-engineering.
+**IND-01.** A parameter MUST be individualized only when it is identifiable from the athlete's own data and backed by enough quality data to beat the population default.
+Scope: every parameter the system could fit per athlete.
+Not: a fit on thin field data that cannot beat the population default.
+Pinned: none
+Why: decision C31 makes this the governing rule for every per-athlete tuning.
 
-In practice the rule stratifies naturally: threshold and zone paces **re-anchor continuously** because they are readily identifiable from ordinary training and racing; the individual endurance exponent and critical-speed profile individualize **once enough qualifying maximal efforts exist**; and the fitness/fatigue time constants **stay at 42/7 long-term**, because they are not reliably identifiable from field data and their per-athlete fitting is a later enhancement, not a launch feature.
+**IND-02.** Threshold and zone paces MUST re-anchor continuously.
+Scope: every threshold and zone pace.
+Not: the fitness/fatigue time constants, which rule IND-06 holds.
+Pinned: none
+
+**IND-03.** Until a parameter is individualized, the population default MUST be held with honest confidence intervals.
+Scope: every parameter not yet individualized.
+Not: a fit to noise.
+Pinned: none
+
+**IND-04.** Every constant in research/00 IS a default, tunable per athlete only under rule IND-01, except an invariant, which is never tuned per athlete.
+Scope: every numeric constant research/00 states.
+Not: a constant tuned per athlete outside rule IND-01.
+Pinned: none
+Why: decision C31 makes the constants defaults while §3.1 governs their tuning, and keeps design invariants such as §1.7 out of it.
+
+**IND-05.** The endurance exponent and the CS profile MUST individualize once enough qualifying maximal efforts exist.
+Scope: every athlete's endurance exponent and CS profile.
+Not: an individual fit before those efforts exist.
+Pinned: none
+
+**IND-06.** The fitness/fatigue constants MUST stay at 42/7.
+Scope: every CTL and ATL computation.
+Not: per-athlete fitting of the constants, which rule REG-20 defers.
+Pinned: none
 
 ### 3.2 Cold-start — establishing day-one state (resolved, amends `research/05` §3.2)
 
-Before enough running history exists to fit a critical-speed curve, the system uses a **non-exercise fitness estimate** in the style of the Polar OwnIndex — VO2max inferred from resting HR, HRV, and demographics via an open, documented, validated method — as a **day-one seed when the required inputs are present**, and **hands that seed off to the raw-data critical-speed estimate** as running history accumulates, blending the two by confidence during the transition. When the non-exercise inputs are absent, the system falls back to population defaults (b = 1.06, fractional-utilization curves) with wide, honestly-flagged confidence intervals, exactly as `research/05` §3.2 originally specified.
+**COLD-01.** Before enough running history exists to fit a CS curve, and when its inputs are present, the system MUST seed day-one state with an owned non-exercise VO2max estimate and MUST hand it off to the raw-data CS estimate as history accumulates, blending the two by confidence during the transition.
+Scope: every athlete without enough running history for a CS fit.
+Not: an athlete with enough running history, whom the raw-data CS estimate serves.
+Pinned: none
+Why: decision C26 bases the seed on the two ratified estimators that rule COLD-08 names.
 
-**The open, cited estimators the seed is built from (research back-fill, 2026-08-31).** `research/05` §3.2 mandated an owned non-exercise seed but did not name a specific published method; the spec (`spec/04` §4.4.2) selected concrete estimators, and those are recorded here as the ratified basis:
+**COLD-02.** The Uth–Sørensen ratio, VO2max ≈ 15.3 × (HR_max / HR_rest), MUST be the primary seed when a credible HR_max and a true resting HR are clean.
+Scope: every cold-start seed whose HR inputs are clean.
+Not: a seed whose HR input is missing or untrustworthy, which rule COLD-03 serves.
+Pinned: none
 
-- **Uth–Sørensen Heart Rate Ratio Method** — VO₂max (mL·kg⁻¹·min⁻¹) ≈ **15.3 × (HR_max / HR_rest)** (Uth, Sørensen, Overgaard & Pedersen, 2004, *Eur. J. Appl. Physiol.* 91:111–115). It needs only a credible HR_max and a true resting HR, both of which the system already tracks, and it was **derived and validated in young, well-trained men** — close to the target serious-amateur athlete, which is why it is the primary seed when its inputs are clean. **Documented caveat, carried at reduced confidence:** it systematically **underestimates as VO₂max rises** and agrees poorly with measured VO₂max in **middle-aged and older adults** (SEE ≈ 5–6% of mean VO₂max; concordance ≤ 0.40 — efficacy study, 2021, *Eur. J. Appl. Physiol.*), so the seed is held low-confidence and widened for older athletes, and is superseded by the raw-data CS estimate as soon as history allows.
-- **Jackson-form non-exercise regression** — VO₂max from **age, sex, a body-composition term (BMI or % body fat), and a self-reported physical-activity rating** (Jackson et al., 1990, *Med. Sci. Sports Exerc.* 22:863–870; refined for 18–65-yr adults by Bradshaw/George et al., 2005). Needs no HR at all, so it is the corroborator/fallback when a resting-HR or HR_max input for the Uth–Sørensen method is missing or untrustworthy.
+**COLD-03.** The Jackson-form non-exercise regression (age, sex, BMI or %BF, self-reported activity rating) MUST be the corroborator, and the fallback when an HR input for Uth–Sørensen is missing or untrustworthy.
+Scope: every cold-start seed.
+Not: a seed with no non-exercise inputs, which rule COLD-05 serves.
+Pinned: none
 
-The two are **blended by confidence** where both are available and both hand off to the CS estimate as running history accumulates. This adopts the white-space opportunity identified in `research/06` §9.1: no surveyed competitor combines a non-exercise cold-start estimate with a raw-data running-derived estimate in a principled hand-off. The Polar OwnIndex itself is proprietary and stays in the quarantine (§1.5); what the system reproduces is the **open** Uth-Sørensen + Jackson math, so the estimator lives in the owned/transparent namespace. This is also a natural **human-coach-specification candidate** — a coach can supply a far better day-one estimate from a recent race or lab test (`future/future-directions.md`). Two consequences the Phase-2 spec carries:
+**COLD-04.** Where both estimators are available they MUST be blended by confidence, and both MUST hand off to the CS estimate.
+Scope: every cold-start seed with both estimators available.
+Not: a seed held after running history supports a CS estimate.
+Pinned: none
 
-- **New requirement (discharged).** The spec defines and validates the owned cold-start estimator (inputs, formula/parameters, validation target) in `spec/04` §4.4.2, built from the estimators above.
-- **Amendment.** This supersedes the "population-defaults-only" cold start of `research/05` §3.2; that section should be read through this decision.
+**COLD-05.** With no non-exercise inputs, the system MUST fall back to population defaults (b = 1.06, fractional-utilization curves) with wide, honestly flagged confidence intervals.
+Scope: every athlete with no non-exercise inputs and too little running history.
+Not: an athlete whose inputs support a seed.
+Pinned: none
+
+**COLD-06.** The Polar OwnIndex MUST stay quarantined.
+Scope: the Polar OwnIndex and every output of it.
+Not: the open math rule COLD-10 allows.
+Pinned: none
+
+**COLD-07.** The cold start of §3.2 MUST supersede the population-defaults-only cold start of `research/05` §3.2, which is read through it.
+Scope: every reading of `research/05` §3.2.
+Not: the population-defaults fallback, which rule COLD-05 keeps.
+Pinned: none
+
+**COLD-08.** The non-exercise estimate MUST take only the inputs of the two ratified estimators: HR_max and resting HR (rule COLD-02), and age, sex, a body-composition term (BMI or %BF) and a self-reported activity rating (rule COLD-03).
+Scope: every non-exercise VO2max estimate.
+Not: an input that neither ratified estimator takes.
+Pinned: none
+Why: decision C26 lists the inputs of the estimators ratified in the research back-fill (H-02).
+
+**COLD-09.** The Uth–Sørensen seed MUST be held low-confidence, widened for older athletes, and superseded by the CS estimate as soon as history allows.
+Scope: every Uth–Sørensen seed.
+Not: a Jackson-form seed, which rule COLD-03 sets.
+Pinned: none
+
+**COLD-10.** The system MAY reproduce only the open Uth–Sørensen and Jackson math, and only in the owned namespace.
+Scope: every non-exercise estimator the system implements.
+Not: a proprietary estimator.
+Pinned: none
+
+**COLD-11.** The owned cold-start estimator IS defined and validated in `spec/04` §4.4.2, a requirement that is discharged.
+Scope: the owned cold-start estimator.
+Not: the ratified estimators themselves, which rules COLD-02 and COLD-03 name.
+Pinned: none
 
 ### 3.3 Resting-HRV source tiering (resolved, amends the data-quality-gating and HRV-gate register rows)
 
-**The question.** Morning/resting HRV is the system's most responsive autonomic-readiness signal, so how it is obtained matters as much as how it is trended. An earlier reading of the device research treated the register's "chest-strap for HRV" rule as a hard mandate and concluded the only wrist-side alternative was Garmin's black-box HRV Status classification — which led the spec (§2.4.5) to require a daily chest-strap resting capture. That premise was incomplete. `research/02` §4.1 establishes two facts that reopen it: (a) the physiological reason wrist PPG fails for HRV is *motion* (cadence-lock, footstrike artefact, transition lag), and that failure mode is largely **absent at rest or overnight**; and (b) a **numeric** resting rMSSD is obtainable from Garmin without the black-box classification — from **Health Snapshot** (a 2-minute held-still activity whose `RmssdAvgValue` rides out in an ordinary FIT file, needing no Developer Program and no chest strap) and from the **Health API HRV Summary** (`lastNightAvg`, a passive overnight rMSSD in ms). The validation literature supports using resting/nocturnal PPG rMSSD *with a confidence discount*: nocturnal PPG rMSSD agrees well with ECG (r and CCC > 0.90) but needs longer averaging windows and carries larger individual error, especially in older adults (Liang et al. 2024, *Sensors*), and resting wrist PPG is reliable overall though weaker for short-window rMSSD than for SDNN (Zuern et al. 2026, *Scientific Reports*).
+**HRV-01.** Resting HRV MUST come through a four-tier source hierarchy: (1) chest-strap resting RR, reduced to rMSSD by the system's own artefact filter; (2) Health Snapshot `RmssdAvgValue`; (3) Health API `lastNightAvg`; (4) the HRV Status classification, which stays quarantined and MUST never be a trend input.
+Scope: every resting-HRV reading the HRV trend consumes; the rule applies per per-tier dataset (T-06).
+Not: the order in which datasets are selected, which HRV-14 (selection) sets.
+Pinned: none
 
-**The resolution — a four-tier resting-HRV source hierarchy with graceful degradation.** The chest strap is the *preferred, highest-confidence* source, not a hard prerequisite. The readiness logic consumes the best tier available on a given day and degrades through the rest at reduced confidence, rather than collapsing to "HRV unavailable" the moment a strap is not worn (**clarified 2026-09-10**, F005 review: "available on a given day" is read at *tier* level — "the baseline is built on the highest tier that sustains one" — "sustains" as clarified 2026-09-10 in §5.4: enough captures in the baseline window *and* in the judged week — and "degradation moves the whole baseline to the next tier that can"; it is not a per-day substitution inside a live baseline, which the anti-mixing constraint below forbids. **Amended 2026-09-18, F006, §5.4:** the single baseline that one tier owned is superseded by **per-tier datasets** — every tier keeps its own baseline and band, built from its own readings alone, and the verdict is taken from the highest-fidelity dataset that is judgeable and not stale relative to the other judgeable ones; "degrades through the rest at reduced confidence" is now a *selection* among datasets that all stay warm, never a move of one baseline from tier to tier — spec §2.4.5 and §3.7.4 carry the rule in that form):
+**HRV-02.** The chest strap IS the preferred, highest-fidelity resting-HRV source, and the system MUST NOT make it a prerequisite.
+Scope: the choice of resting-HRV source on any day.
+Not: the reduced fidelity of the numeric tiers, which HRV-04 (numeric tiers) states.
+Pinned: none
 
-1. **Chest-strap resting RR (raw beats).** The system reduces the raw RR series to rMSSD itself, applying its own artefact filter (spec §2.4.3). Fully owned/transparent, highest confidence, highest behavioral cost. A future validated overnight chest-strap RR feed enters at this tier behind the same interface.
-2. **Health Snapshot (`RmssdAvgValue`).** A numeric resting rMSSD from a 2-minute held-still wrist reading, delivered in the athlete's own FIT export — no chest strap, no Developer Program. The **preferred short-term default** where a chest strap is not in use. Carried at a confidence discount (Garmin-computed pipeline; the raw beats are typically not exposed).
-3. **Health API HRV Summary (`lastNightAvg`).** A passive overnight rMSSD requiring no daily athlete action, but gated behind Connect Developer Program approval. Same confidence-discount treatment as Tier 2.
-4. **HRV Status classification (Balanced/Unbalanced/Low).** Remains **quarantined** (§1.5) — a proprietary composite, corroboration only, never a trend input.
+**HRV-03.** Ingestion MUST accept a pre-computed resting rMSSD (a numeric value with a source-tier tag) distinct from a raw RR series.
+Scope: the ingestion layer, for tiers 2 and 3 of HRV-01 (the hierarchy), which supply a scalar rather than beats.
+Not: a confidence value carried with the reading, since Section 3 computes no confidence weight (HRV-54).
+Pinned: none
 
-**Two constraints the tiering carries.** First, the numeric tiers (2–3) are admitted as HRV inputs *because a numeric rMSSD in known units is a standard statistic, not a black-box composite* (§1.5) — but at a confidence weight below Tier 1, reflecting the validation caveats above; the 7-day rolling mean and the athlete's own SWC band, scaled by the SD of ln rMSSD (the HRV-gate register row as clarified in §5.4; `research/04` §5.1), already supply the longer-averaging smoothing those caveats call for. Second — and this is the load-bearing engineering caution — **different sources carry different systematic biases, so a baseline and SWC band must not mix tiers.** Each source tier therefore keeps its **own dataset** — its own baseline mean, SD, `n`, `established` and band, built from that tier's readings alone (**amended 2026-09-18, F006, §5.4 — the per-tier dataset model**: until then one tier owned the only baseline and a source change — the athlete adopting or abandoning the strap, or a device/firmware change shifting the overnight pipeline — was read as a "baseline re-establishment", not a continuation of the old band, that withheld every verdict until the new tier's baseline was established; under per-tier datasets a source change *selects* a different dataset, whose band is already its own, and a return to a dataset the athlete established before is free). A source switch is still never read as a physiological HRV shift, because no reading of one tier ever enters another tier's band. The uncontested prohibition is retained unchanged from the register: **HRV is never computed from in-run wrist PPG, and in-activity HRV is not computed at all.**
+**HRV-04.** The numeric tiers (2–3) MUST be admitted at reduced fidelity, an ordinal rank that selection reads (HRV-19), and never at a numeric per-tier confidence weight, which is deferred to Section 6's readiness fusion.
+Scope: Health Snapshot and Health API readings, each in its own per-tier dataset.
+Not: the HRV Status classification, which stays quarantined under HRV-01 (the hierarchy).
+Pinned: none
+Why: decision C19 words the admission as fidelity, because Section 3 holds no confidence weight (HRV-54).
 
-The daily-cadence behavioral ask this creates (a morning reading, however sourced, degrading gracefully when skipped) is itself ratified as the *Resting-HRV capture cadence* register row above.
+**HRV-05.** HRV MUST never be computed from in-run wrist PPG, and in-activity HRV MUST NOT be computed in v1 or for any readiness input, so adopting DFA-α1 of the in-run RR series for LT1 (LT1-02) MUST first amend this rule explicitly.
+Scope: every HRV computation in v1, and every readiness input in any version.
+Not: resting HRV from the source hierarchy of HRV-01 (the hierarchy).
+Pinned: none
+Why: decision C27 scopes the prohibition so that it no longer contradicts the recommended future LT1 path.
 
-Two consequences the Phase-2 spec must carry, both now discharged in the spec:
+**HRV-06.** Because different sources carry different systematic biases, a reading of one tier MUST NOT ever enter another tier's baseline or SWC band, and a source switch MUST never be read as a physiological HRV shift.
+Scope: every resting-HRV reading of every tier; the rule applies per per-tier dataset (T-06).
+Not: a device replaced within the same tier, which HRV-84 (same-tier replacement) governs.
+Pinned: none
 
-- **Amendment.** This supersedes the hard chest-strap HRV mandate implied by the pre-amendment data-quality-gating and HRV-gate register rows and by spec §2.4.5's original single-protocol capture. The chest strap is now the top tier of a graceful-degradation hierarchy. The register rows above are restated to match.
-- **New requirement.** The ingestion layer (spec §2) must accept a **pre-computed resting rMSSD** input (a numeric value with a source-tier tag and confidence), distinct from a raw RR series, since Tiers 2–3 supply a scalar rather than beats; and the HRV-trend logic (spec §3.7) must carry the per-source baseline discipline above. Both are specified in spec §2.4.5 / §2.2.3 and spec §3.7.
+**HRV-47.** Health Snapshot IS the preferred default resting-HRV source where no chest strap is in use.
+Scope: an athlete who is not using a chest strap.
+Not: Health API `lastNightAvg`, which ranks below Health Snapshot in HRV-01 (the hierarchy).
+Pinned: none
 
 ### 3.4 Aerobic-threshold (LT1) determination — recommended path (open, deferred to a future determinant)
 
-**The question.** The state model (`research/05` §3.1) publishes threshold pace at the **LT2 / functional-threshold** anchor but no independent **LT1 (aerobic-threshold / first ventilatory threshold)** determinant. The plan therefore needs the Zone-1/Zone-2 boundary — the ceiling of genuinely easy running, which the ~80%-easy intensity distribution depends on — and has no measured LT1 to place it at.
+**LT1-01.** In v1 the Z1/Z2 boundary MUST be a fixed fraction (~80–88%) of functional-threshold velocity, so it cannot move independently of the threshold anchor.
+Scope: every Z1/Z2 boundary the v1 system sets.
+Not: an LT1 determinant, which rule LT1-02 defers.
+Pinned: none
+Why: decision C28 fixes the v1 boundary as a fraction of threshold, and F011 makes the matching design change to spec §5.4.2.
 
-**The v1 default (ratified).** Derive the Z1/Z2 boundary as a **fixed fraction (~80–88%) of functional-threshold velocity**, refined toward an LT1 surrogate where one is identifiable (spec §5.4.2). This is transparent, tunable, and degrades safely; it is the right call for v1 and stands. Its one limitation is that LT1 cannot move independently of the threshold anchor even when an individual's aerobic and threshold ceilings genuinely diverge.
+**LT1-02.** DFA-α1 = 0.75 IS the recommended future LT1 determinant, and it MUST NOT be adopted for v1.
+Scope: every LT1 determination.
+Not: the v1 boundary, which rule LT1-01 sets.
+Pinned: none
+Why: decision C27 keeps the future path consistent with rule HRV-05, which forbids in-activity HRV in v1.
 
-**The recommended path forward (deferred, not adopted for v1).** Promote LT1 to its own estimated determinant in a future iteration, with **DFA-α1 (the detrended-fluctuation-analysis short-term scaling exponent of the RR series) as the leading candidate**: a DFA-α1 of **0.75** corresponds closely to the aerobic threshold, with very strong lab agreement in the originating work (VO₂ at threshold r ≈ 0.99, mean difference ≈ −0.33 mL·kg⁻¹·min⁻¹; HR ≈ −1.9 bpm — Rogers et al., 2020, *Front. Physiol.*; field application 2021, *Front. Sports Act. Living*; runner validation 2023, *J. Sports Sci.*). It is genuinely independent of LT2 and derives from raw RR the system may already capture, fitting raw-over-derived (§1.5).
+**LT1-03.** Any LT1 surrogate that would move the Z1/Z2 boundary off that fraction IS future work, outside v1.
+Scope: every proposed LT1 surrogate.
+Not: the v1 fraction of threshold, which rule LT1-01 sets.
+Pinned: none
 
-It is **not adopted for v1** for reasons the same literature makes explicit: DFA-α1 is sensitive to **RR-artefact contamination** (the originating study tolerated only 0–3% artefact and excluded ectopy), to **device sampling rate**, and possibly to **chest-belt-vs-ECG** differences, and it was validated in small samples **without women** and not for constant-load or >60-min efforts — conditions a field product cannot control. The recommendation is therefore: **keep the fraction-of-threshold default for v1; carry DFA-α1 = 0.75 as the leading future LT1 determinant**, to be picked up only under the RR-quality gating the `spec/02` pipeline already partly enforces and after validation in the target population including women; and treat LT1 as a strong **human-coach-specification candidate** in the interim, since a coach with a lab or field LT1 can set it directly and side-step the measurement difficulty. Full detail is held in `future/future-directions.md`.
+**LT1-04.** DFA-α1 MAY be adopted for LT1 only under RR-quality gating, after validation in the target population including women, and through an explicit amendment of rule HRV-05.
+Scope: every future adoption of DFA-α1.
+Not: any readiness input, which rule HRV-05 governs.
+Pinned: none
+Why: decision C27 requires the amendment because DFA-α1 is computed from the RR series during running.
 
----
+**LT1-05.** Until DFA-α1 is adopted, LT1 IS a human-coach-specification candidate.
+Scope: every athlete whose coach can supply a lab or field LT1.
+Not: a measured LT1 determinant.
+Pinned: none
 
 ## Part 4 — Design and freedom-to-operate guardrails
 
-These constraints shape *how* the spec implements the choices above. They follow directly from the competitive and patent survey (`research/06`), and they happen to coincide with the raw-over-derived philosophy, so design purity and IP safety point the same way. This is engineering research, not legal advice; freedom-to-operate reliance must be confirmed with counsel (`research/06` §6).
+**FTO-01.** Load, fatigue and form MUST come from the open TRIMP / TSS / PMC / Banister lineage, and fitness and thresholds from open CS/CP and lactate-threshold-from-raw-data methods.
+Scope: every load, fatigue, form, fitness and threshold computation.
+Not: a proprietary construction, which rule FTO-02 names.
+Pinned: none
 
-**Build on open, public-domain math.** Load, fatigue, and form come from the openly published, un-patented TRIMP / TSS / Performance-Management-Chart / Banister lineage. Fitness and thresholds come from the open critical-speed / critical-power and lactate-threshold-from-raw-data methods. These are decades-old public-domain science with strong freedom to operate.
+**FTO-02.** The system MUST NOT replicate Firstbeat's reliability-weighted HR-to-VO2max pipeline (US9237868B2), EPOC-based load or Training Effect, or WHOOP's recovery-indicator construction (US11574722B2).
+Scope: every estimator and readiness construction the system builds.
+Not: the published math the system derives its own constructions from.
+Pinned: none
 
-**Avoid the specific protected constructions.** Do not replicate Firstbeat's reliability-weighted HR-to-VO2max segmentation-and-regression pipeline (US9237868B2, in force to ~2030); do not reproduce EPOC-based load or Training Effect; do not mirror WHOOP's specific recovery-indicator construction (US11574722B2). Derive readiness instead from the published HRV literature (ln rMSSD rolling means and their dispersion statistics — the SD of ln rMSSD and the coefficient of variation — Plews/Altini/Kubios; the SWC band this system ships is 0.5·SD(ln rMSSD), §5.4). Note that consuming a device's *numeric* rMSSD as an input (§3.3, Tiers 2–3) is distinct from reproducing a proprietary recovery construction: the system still computes its own baseline, band, and verdict with the open math.
+**FTO-03.** Readiness MUST derive from the published HRV literature, with the system computing its own baseline, SWC band and verdict with open math.
+Scope: every readiness verdict.
+Not: a vendor recovery score.
+Pinned: none
 
-**Keep the architecture single-ecosystem and FIT-driven.** Plan generation and adaptation operate Garmin-first from FIT files, materially distinct from the multi-device-coordination claims of US11517790 (MyFitnessPal/Under Armour lineage).
+**FTO-04.** Plan generation and adaptation MUST be single-ecosystem, Garmin-first and FIT-driven, materially distinct from the multi-device-coordination claims of US11517790.
+Scope: every plan the system generates or adapts.
+Not: multi-vendor ingestion, which is not multi-device coordination (T-28).
+Pinned: none
 
-**Learn from the teaching, build a different construction.** Three ideas taught by live patents are adopted via non-infringing constructions (`research/06` §9.2): quality-weight raw data windows before estimating (Firstbeat's teaching) using our own quality signals feeding a critical-speed fit rather than an HR↔VO2 regression; separate the aerobic and anaerobic load channels (Firstbeat/EPOC teaching) using intensity-weighted TRIMP/rTSS plus a W′-depletion term rather than EPOC; and environment- and individual-normalize load (TriDot's teaching) using published heat/humidity and grade-adjusted-pace models rather than an opaque proprietary index.
+**FTO-05.** Three patent teachings MAY be adopted only through non-infringing constructions: quality-weighting raw windows into a CS fit, separating aerobic and anaerobic load channels with TRIMP/rTSS plus a W′-depletion term, and environment- and individual-normalizing load with published heat and GAP models.
+Scope: every idea the system takes from a live patent.
+Not: the patented construction itself.
+Pinned: none
 
----
+**FTO-06.** This Part IS engineering research, not legal advice, and freedom-to-operate reliance MUST be confirmed with counsel.
+Scope: every freedom-to-operate judgement in research/00.
+Not: a legal opinion.
+Pinned: none
+
+**FTO-07.** Consuming a device's numeric rMSSD IS distinct from reproducing a proprietary recovery construction.
+Scope: every numeric resting rMSSD the system takes from a device.
+Not: a vendor HRV classification, which stays quarantined.
+Pinned: none
 
 ## Part 5 — Document map, authority, and decision records
 
+**DOC-15.** Deferred and future items MUST live in `future/future-directions.md`: coach-in-the-loop, LT1 detail and the human-coach-specification candidates.
+Scope: every item research/00 defers beyond v1.
+Not: a current rule, which research/00 states.
+Pinned: none
+
 ### 5.1 This document's authority
 
-This is the project's single decision authority. It governs the Phase-2 specification and every decision record under `decisions/`, and it governs wherever it and a mechanism research doc appear to differ. Everything here is an elevation and prioritization of decisions already present in `research/01`–`research/06`, not a change to them, with the exceptions noted in §5.4: Part 1 makes the arbitration logic of `research/05` §5.6 into the system's constitution and settles the autonomy and conflict-resolution stances; Part 2 names the architectural keystones distributed across the mechanism docs; Part 3 consolidates the defaults from `research/05` §6–§7 and the coaching/physiology docs into one register and resolves the open questions (individualization, cold-start, resting-HRV sourcing, LT1 path); Part 4 carries the freedom-to-operate posture of `research/06` forward as spec-shaping constraints. The Phase-2 specification should reference this document for every conflict-resolution, parameter-default, and freedom-to-operate question, and reference the mechanism docs for the derivations behind them.
+**DOC-01.** research/00 IS the project's single decision authority, and it governs the Phase-2 specification, every record under `decisions/`, and any place where it and a mechanism research doc (`research/01`–`06`) appear to differ.
+Scope: every rule research/00 states, and every derived document that restates one.
+Not: the physiology and device evidence itself, which the mechanism docs hold (DOC-04).
+Pinned: none
+
+**DOC-05.** The spec MUST reference research/00 for every conflict-resolution, parameter-default and freedom-to-operate question, and MUST reference the mechanism docs for the derivations.
+Scope: every section of the Phase-2 specification.
+Not: a derivation restated in research/00, which DOC-04 leaves to the mechanism docs.
+Pinned: none
 
 ### 5.2 The mechanism research docs (the evidence this document points to)
 
-- `research/01-exercise-physiology.md` — the trainable determinants of race pace and the physiology-to-pace models (CS/vVO2max/Riegel, environmental and course modifiers, fitness–fatigue dynamics).
-- `research/02-wearable-data-garmin.md` — what Garmin and paired sensors measure vs estimate, the FIT data model, signal accuracy and failure modes, programmatic data access, real-time feasibility, and (§4.1) the numeric resting-HRV acquisition paths and their tiering.
-- `research/03-subjective-injury-recovery.md` — subjective monitoring instruments, overtraining/injury early signals, the ACWR critique, and conservative return-to-run frameworks.
-- `research/04-coaching-periodization.md` — periodization structure, intensity distribution, the machine-representable workout typology, load models and the Performance Management Chart, adaptive methods, and taper.
-- `research/05-data-to-adaptation.md` — the synthesis bridge: the processing pipeline, the system's own derived metrics, the physiological state model, and the five-timescale adaptation logic with its arbitration rule.
-- `research/06-competitive-landscape-patents.md` — the competitive landscape, the patent/freedom-to-operate survey, and the extend/borrow lists.
+**DOC-04.** research/00 MUST treat the mechanism docs `research/01`–`06` as the evidence, elevating and prioritising them, and MAY change them only where §5.4 records an exception: the cold-start amendment of `research/05` §3.2 (COLD-07), and the HRV SWC band restatement of `research/05` §2.4/§6 (H-09).
+Scope: every mechanism research doc that §5.2 lists.
+Not: the spec and the decision records, which conform to research/00 (DOC-01).
+Pinned: none
 
 ### 5.3 Decision records (`decisions/`)
 
-The `decisions/` folder holds individual, dated decision records — ADR-style notes that make one specific product or architecture choice each. They **conform to this authority** (Parts 1–4); where a record and this document conflict, this document governs until the record is reconciled here. Current records:
+**DOC-03.** Decision records MUST conform to Parts 1–4, and where a record and research/00 conflict, research/00 MUST govern until the record is reconciled here.
+Scope: every record under `decisions/`.
+Not: the mechanism docs, which DOC-04 governs.
+Pinned: none
 
-- `decisions/01-conversational-coach-interface.md` — adds a natural-language Conversational Coach Interface as an **I/O layer on top of** the deterministic closed loop: the LLM translates athlete free-text into the structured inputs the engine already consumes (life constraints → the weekly loop; injury/soreness/subjective reports → the `research/03` instruments) and turns the engine's decision log into plain-language explanation. The engine still decides; chat never becomes a second, opaque adaptation path, and safety hard-flags fire deterministically regardless of how the conversation is framed. This record is consistent with §1.5 (raw-over-derived), §1.6 (explainability — it promotes the decision log to a first-class queryable record), and the arbitration ladder (§1.2), through which all chat-originated changes route.
+**AUT-05.** Chat IS an I/O layer over the deterministic engine, in which the LLM translates and explains and the engine decides.
+Scope: the Conversational Coach Interface of `decisions/01`.
+Not: a decision taken by the LLM.
+Pinned: none
+
+**AUT-07.** Every chat-originated change MUST route through the arbitration ladder (ARB-01), and chat MUST never be a second, opaque adaptation path.
+Scope: every change that starts in a chat message.
+Not: a hard flag, which fires deterministically whatever the chat framing (ARB-07).
+Pinned: none
+
+**DEC-01.** `decisions/01` (Conversational Coach Interface) IS a record that conforms to research/00 and is consistent with §1.5, §1.6 and the ladder.
+Scope: the whole of `decisions/01`.
+Not: a record that governs research/00, which it does not.
+Pinned: none (F011)
+Why: decision C21 moves the reconciliation that described the record's earlier framing to history entry H-07.
+
+**DEC-02.** Any checkpoint framing that `decisions/01` records as superseded MUST be read through §1.8–§1.9.
+Scope: every earlier framing `decisions/01` records as superseded.
+Not: the record's current posture, which conforms.
+Pinned: none
 
 ### 5.4 Reconciliations and amendments
 
-- **Cold-start (amendment).** §3.2 supersedes the population-defaults-only cold start of `research/05` §3.2 and adds the owned cold-start estimator as a Phase-2 requirement; as of 2026-08-31 it also names the specific open, cited estimators the seed is built from (Uth–Sørensen HR-ratio + Jackson-form regression) as the ratified research basis.
-- **Resting-HRV source tiering (amendment).** §3.3 supersedes the hard "chest-strap for HRV" reading of the data-quality-gating and HRV-gate register rows and of spec §2.4.5's original single-protocol capture, replacing it with the four-tier resting-HRV hierarchy (chest-strap raw RR > numeric resting rMSSD from Health Snapshot / Health API overnight > quarantined HRV Status). The two register rows above are restated to match, and the change is grounded in `research/02` §4.1 and the resting/nocturnal-PPG-vs-ECG validation literature. The uncontested "never in-run wrist PPG, never in-activity HRV" rule is retained unchanged. Spec §2.2.3, §2.4.5, and §3.7 implement it.
-- **SWC band statistic (clarification, 2026-09-09).** The HRV-guided-gate register row originally stated the band as "±0.5·CV", and spec §3.7.3 transcribed it as `0.5 · CV(ln rMSSD)`. That wording conflated two Plews quantities: the **smallest worthwhile change** used in HRV-guided-training practice, which is **0.5 × the standard deviation of ln rMSSD** over the athlete's own baseline (Plews/Altini; `research/04` §5.1 names both a CV-based and a ±0.5×SD-style band without choosing), and the *coefficient of variation of the 7-day rolling ln rMSSD*, a separate Plews metric for week-to-week stability that is not a band at all. The row now reads **±0.5·SD(ln rMSSD)**, with SD the *sample* standard deviation (n−1). This is a clarification of what the row cited, not a change of its intent: on a realistic series (rMSSD ≈ 45 ms, day-to-day SD ≈ 9 ms) 0.5·CV of the *raw* rMSSD series is 0.0525 and 0.5·SD(ln rMSSD) is 0.0526 — indistinguishable — whereas the literal 0.5·CV(ln rMSSD) is 0.0138 (about 4× too narrow) and, because CV is a ratio to the origin and a log scale's origin is arbitrary, flips sign when the same readings are expressed in seconds rather than milliseconds (band.lo above band.hi). SD(ln rMSSD) is unit-invariant. Precedence is preserved: this document is amended first and the derived statements follow it — spec §3.7.3, §3.7.4 and §3.10, spec §2.4.5's confidence note, spec §6.2.4, `spec_outline.md` Section 3, `research/05` §2.4 and §6, and the project rule `.claude/rules/project-domain-and-spec-fidelity.md` are restated to match (F005, sprint-005; the 21-site sweep is recorded in the feature's construction reference).
-- **Baseline tier must cover the judged week (clarification, 2026-09-10).** §3.3's "the baseline is built on the highest tier that sustains one" left "sustains" defined by F005's construction reference and the code as at least 14 captures in the 60-day baseline window alone. F005's sprint-005 review found that 14 in 60 days (1.6 a week) lets a tier sustain a baseline *by count* while never holding the 3 readings a judged week needs, so a two-week chest-strap trial owned the baseline for the 47 days it sat in the window with every verdict `hrv_unavailable`, a real Health-Snapshot suppression never emitted and a phantom tier-change reset. "Sustains one" is clarified: a tier sustains the baseline for a judged week when it holds at least `min_baseline_readings` captures (distinct local days, since the 2026-09-12 clarification below) in the baseline window **and** at least `min_window_readings` in that week; when no such tier covers the week, the tier with `min_baseline_readings` captures that the athlete was read on last holds it (clarified 2026-09-11, T094 — first stated as "the most baseline readings", which handed a switched athlete's thin week back to the abandoned device), so an empty week keeps the tier stable and reads unavailable; it begins no re-establishment, and one already in force persists through it (corrected 2026-09-12, below — "with no reset", as first written here, was true only of beginning one). The baseline re-establishment §3.3 attaches to a source change ("adopts or abandons") is asserted only when the tier that now sustains the baseline differs from the one that sustained the previous 60 days and the two eras do not interleave over the previous and current 60-day windows together — no capture of the new tier falls between the old tier's first and last there (T094, "non-interleaved eras"; clarified 2026-09-11, sprint-005 review cycle 3: judged on the current window alone, a finished three-week strap trial that had aged wholly into the previous window satisfied the criterion vacuously and was reported as a re-establishment for seven weeks by an athlete who never switched) — so an occasional-strap habit among daily snapshots is not a re-establishment in either direction, and abandoning an owning strap is one on the day the snapshot first sustains the baseline. This is a clarification of the tier-level degradation already stated, not a change of intent; the accepted costs — a strap worn two or three days a week alternates the tier whenever its count in the sliding judged week crosses 3, and a stale trial still inside the window plus three strap days this week is judged on the trial's band ("stale candidacy") — are named in F005's Negative Class. Precedence is preserved: this document is amended first and spec §3.7.3, §3.7.4 and §2.4.5 are annotated to match (F005, T093/T094; the sweeps are recorded in the tasks' Delivered notes).
-- **Count unit, era-boundary tolerance and the empty week (clarification, 2026-09-12).** Three refinements of the bullet above from F005's sprint-005 review cycle 3, the first two user decisions recorded in the feature's decision log. (i) *Days, not captures.* Every count in the tier rule — the 14 that make a tier a candidate, the 3 that let it take the week, rule 3's tie by count, and the 14 the re-establishment rule reads as "sustains" — is in **distinct local days**, the unit the verdict already reported as `baseline.n`, `readings_in_window` and `established`. Counted in captures, one re-taken morning made a tier cover a week it could not judge (a genuine Health-Snapshot suppression read `hrv_unavailable` with `established: true` on 18 strap days) and 14 captures on 7 days made a tier a candidate whose baseline the same response called unestablished. Every threshold keeps its value; only the unit changes. (ii) *A density tolerance for isolated captures.* "The two eras do not interleave" is judged over the previous and current windows and the judged week together, with a tolerance: the readings on the wrong side of the era boundary — captures of the new tier from the old era's first local day up to its last reading, and captures of the old tier after the new era's first — are corroboration, not use, when **together** they are fewer than `min_baseline_readings` distinct local days and fewer than `min_window_readings` inside the judged week; only use dense enough to be a candidate or to cover a week continues or begins an era, and a capture at the very instant of the old era's last is simultaneous, not isolated. Judged exactly, one capture of either tier on either side of a genuine switch — the strap tried the week before it was bought, the phone's one auto-capture after the switch, a two-week strap trial three months earlier — silenced the re-establishment for the whole era. The accepted cost, named in F005's Negative Class: a habit of the other tier dense enough to be a candidate is use, so it interleaves and no re-establishment is reported (the occasional-strap habit above, as intended), and the week half is judged on the sliding judged week as week coverage is. (iii) *The empty week.* The bullet above said an empty week "keeps the tier stable ... with no reset"; it begins none — the re-establishment rule reads nothing inside the judged week that an empty week could change — and one already in force persists through it. Precedence is preserved: this document is amended first and spec §3.7.3, §3.7.4 and §2.4.5, the feature's construction reference and the code's docstrings are restated to match (F005, T095; the sweep is recorded in the task's Delivered note).
-- **The baseline clip is not the reset report (clarification, 2026-09-13).** A refinement of the two bullets above from F005's sprint-005 review cycle 4, a user decision recorded in the feature's decision log (D4). The era boundary between two source tiers has **two separate consequences**, and this document states them apart: (i) *the clip* — the readings of the now-sustaining tier that predate the boundary are **never** in the band, because the anti-mixing constraint of §3.3 is about which era's device produced the numbers, which is a property of the athlete's capture history alone; and (ii) *the report* — the baseline re-establishment the athlete is **told** about (`reset_reason` / `reset_on`), which additionally requires that the other tier was not in use in the judged week, the sliding `[D-6, D]`, so the athlete is not told a device era ended in a week they still used it. Until this clarification the two were one condition, so the week half of the 2026-09-12 tolerance reached the band: three captures of the *other* tier in the judged week — contributing nothing to the week mean — withdrew the report, un-clipped the baseline back to the full 60 days, and drew a device era abandoned seven weeks earlier back into the band, flipping an athlete-facing verdict from suppressed to normal with **no new data at all** as the judged week slid past those captures. That is the under-calling direction §1.7 tolerates least, and it was reachable only in the conjunction of two costs each accepted separately, so it is a clarification of the intent already stated here, not a change to it. Precedence is preserved: this document is amended first, and spec §3.7.3, F005's Negative Class and the feature's construction reference are annotated to match (F005, T098).
-- **The candidacy half of the tolerance is a cliff on the band; it is priced, not removed (clarification, 2026-09-13).** A refinement of the bullet above from F005's sprint-005 review cycle 5, a user decision recorded in the feature's decision log (D5: keep the rule and price the cost). The 2026-09-12 tolerance has two halves and they reach different things. The *week* half — fewer than `min_window_readings` stray days inside the judged week — decides **what is reported and which admitted boundary is taken**: it is the **first ordering term** in `_era_boundary`'s selection key, ahead of the fewest-stray-days term, so of several admitted boundaries the one whose strays the judged week is clear of wins, and the era's first day — where the baseline is clipped, and hence where the band sits — moves with it (pinned directly on `_era_boundary` by `test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of`, where a boundary with *more* stray days wins because the week is clear of it). What it cannot do is move any *reported* band or verdict, for a reason about reachability rather than about the rule: an isolated boundary is always a candidate, so wherever one existed before T098 it is still the one chosen and `reset_on` does not move, and no series `build_series` can be handed separates the two orderings. That reachability is why the simpler "the week half decides the report only; neither the band nor the verdict moves with it" reading held here from T102 until it was corrected on 2026-09-13 (sprint-005 review cycle 6, T106; T104 had corrected the same claim only at the three sites its own diff had touched, leaving this authority contradicting the construction reference derived from it). The *candidacy* half — the strays on the wrong side of a boundary, of **both** tiers pooled into one count, fewer than `min_baseline_readings` **distinct local days** — decides whether an era boundary **exists at all**, and therefore whether the baseline is clipped: below the threshold a boundary exists and the now-sustaining tier's pre-switch readings are clipped out of the band; at the threshold there is no boundary, so there is **no clip at all** — not an unreported clip but none — and those readings enter the band. Crossing it moves the band by a step and can flip the verdict from suppressed to normal on an unchanged week mean — the under-calling direction §1.7 tolerates least. On F005's own series (a daily Health Snapshot, a 10-day chest-strap trial seven weeks before a genuine switch to a daily strap, and snapshot captures after the switch **outside** the judged week), 13 stray days give a baseline clipped at the switch — n 33, `band.lo` 3.6789, `hrv_suppressed` — and 14 give the unclipped 60 days with the trial inside — n 43, `band.lo` 3.4791, `hrv_normal` — with the 7-day mean 3.4965 on both. The contributing cause is the pooled count: an old-tier capture after the switch says nothing about whether the new tier's pre-switch trial was an era, contributes nothing to the week mean, and is what can certify the trial as one. Who notices: the athlete, in a readiness verdict that reads normal on a band partly built from a device era they abandoned; and Section 6, which reads the band. Accepted over counting only the new tier's strays for candidacy (which re-opens the shape the 2026-09-12 decision rejected) and over a continuous clip, so that no behaviour changes and the cost is legible in the athlete-facing documents rather than only in a review verdict; the unit at the gate, distinct local days — `baseline.n`'s unit — is what decides which side of the cliff an athlete lands on. Precedence is preserved: this document is amended first and spec §3.7.3, F005's Negative Class and AC 17, and the feature's construction reference are annotated to match (F005, T102).
-- **The verdict's establishment gate is symmetric (clarification, 2026-09-15).** A refinement from F005's sprint-005 review cycle 7, a user decision taken that day (IDEA-062). §3.7.3 says the resting-HRV trend withholds a below-band **suppression** verdict until the baseline is adequately established, and said nothing about the other two positions, so a week whose 7-day mean sat inside or above a band built from as few as two readings emitted **HRV normal**. That tells Section 6 autonomic readiness is intact on the strength of a baseline the same response reports as not established, and a planned hard session then stands on weak evidence — **up-regulation on weak evidence, which §1.7 forbids**. The asymmetry was not a corner case: a baseline re-establishment (a coverage gap or a source-tier change, §3.3) collapses the baseline deliberately, and the athlete then traverses 20 days beneath `min_baseline_readings` on every one of them (`R+0 .. R+19`) — **of a coverage gap only; a clean source-tier change costs 18 silent days and never goes beneath `min_baseline_readings` at all, measured 2026-09-17 in the [[T138]] bullet below** -- corrected 2026-09-16 from "roughly twelve days" (T133, review cycle 9, gap G-C9-2): twelve of those days (`R+8 .. R+19`) are the subset whose verdict *changed* at T116, not the duration of the quiet, which [[T126]] established as twenty and which this document, the authority for this figure, had not yet been corrected to state. Constructed and run against the implementation on 2026-09-14 (Pacific/Auckland): 86 days of daily chest-strap capture at ~50 ms, a 30-day illness layoff, ten days back at ~40 ms gave a coverage-gap re-establishment on a baseline of three readings, `established` false, and **HRV normal** — readiness reported intact for an athlete about 20% below his own pre-layoff level. This document therefore states the gate once, for all three positions: **no verdict of any kind is asserted on an unestablished baseline**; the below-band case reads unavailable as it already did, and the within-or-above case reads unavailable too. The **band** is unchanged and is still reported wherever it can be built, established or not, so §1.6's reproduce-it-by-hand property is preserved and the consumer can see exactly what was withheld. This is a clarification of §1.7's intent rather than a change to it — §1.7 already forbade the direction — but it **is** a behaviour change in the implementation, and its cost runs the other way: the days after a re-establishment that used to read normal now read unavailable, which is down-regulation, the direction §1.7 tolerates freely. Precedence is preserved: this document is amended first, and spec §3.7.3, F005's Negative Class and acceptance criteria and the feature's construction reference are annotated to match (F005, T116).
-- **Candidacy carries a recency condition (amendment, 2026-09-15).** A **change of behaviour**, not a clarification, and a user decision taken in F005's sprint-005 review cycle 7 ([[IDEA-064]], T117). The 2026-09-10 bullet above made a tier a candidate on count alone — `min_baseline_readings` distinct local days in the 60-day baseline window — with no recency of any kind, so a two-week chest-strap trial abandoned in July stayed a live candidate for every judged week until its first day aged out of the window, and the first week that held three strap days handed it the baseline: on 2026-09-06 and 09-07 the athlete was judged against a band whose every reading was seven weeks old. The acceptance recorded in review cycle 2 was withdrawn on 2026-09-14 (T110) once the second error direction was named — if the stale band sits *below* this week's readings a genuinely suppressed week reads HRV normal, **up-regulation on weak evidence, which §1.7 forbids**, reachable on an offset of about 0.10 ln, roughly a tenth of rMSSD over seven weeks and several times smaller than F005's own documented band steps of 0.20 and 0.68 ln. §3.3's rule is therefore amended: **a tier sustains the baseline for a judged week only if it also holds a reading within `recency_tolerance_days` (28) of the most recent baseline-window reading of any candidate.** The comparison is between the candidates themselves, never against an absolute offset from the window's end, so a lone candidate is its own reference and is never struck however old it is. The constant is **not** published in `thresholds` ([[IDEA-070]], 2026-09-15). *Why 28, and why relative.* The **parameter-free** form — "the candidate whose latest reading is later than the others'" — was built and measured on 2026-09-15 and **could not be shipped**: a daily lower-fidelity tier is always read at least as recently as a two-or-three-day-a-week higher-fidelity one, so a strict day-comparison rejects the oscillating strap (4 days behind) and the abandoned July trial (45 days behind) alike, voiding the fidelity precedence of §3.3 instead of qualifying it, and it strips a legitimately resuming device as well; five pinned tests went red in both error directions. The two populations differ only in **how** stale, which is a magnitude, and a magnitude is a constant. The value 28 is chosen for two reasons and not for being mid-band. (i) It is **four judged weeks** (4 × `window_days`), stated in the rule's own unit: a tier read at least once in any four consecutive judged weeks is never struck. (ii) It is **greater than `gap_reset_days` (21)**, which is the load-bearing one. The two mechanisms answer different questions and must not overlap: the coverage-gap reset measures the silence of the series **as a whole**, every tier together, and calls more than 21 days a break; this rule measures **one tier's** silence while another tier kept capturing. At 21 or below, relative staleness could strike a tier for a silence shorter than the shortest silence this feature is willing to call a break — two rules disagreeing about the same number of days. Which of the two fires first is a **partition, not a race**, and it is decided by where the readings are rather than by 28 against 21: when the whole series goes silent past 21 days the gap reset clips the pre-gap readings out of the window before any tier is counted, so the stale era never reaches candidacy and this rule is never consulted; when one tier goes silent while another carries the series there is no gap to report and this rule is the only one that acts. The gap reset therefore always fires first *where it fires at all*, and the remaining case — a lone tier with no rival — is the coverage gap's population, not this one. **Dated measurement, 2026-09-15, re-scoped 2026-09-15 (T121), its scope pinned 2026-09-15 (review cycle 8, `acfebae`):** green for every N in **[18, 44]** over the **394 tests** (`BAND_CORPUS_WHEN_MEASURED`) F005's five HRV suites held on that date less the tolerance pin that existed then (now `BAND_CORPUS_EXCLUDES`). Those pins assert `recency_tolerance_days == 28` or its measured consequences and are red at every N ≠ 28 by construction, so over the whole of the five suites the green band is `{28}` and the bracket is a claim about the rest of them. The subtraction, and the live collection it is taken from, are asserted by `test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_published` in `test_hrv_trend_endpoint.py`; the live count is `SCOPED_SUITE_COLLECTED` there and is deliberately **not** transcribed here, T121's literal having been invalidated by the next commit of its own fix batch with nothing able to see it (review cycle 8, `acfebae`). That relation grows with every test added to the five suites, so the bracket stays a claim about the 394 it held when it was run and the assertion reports the growth rather than absorbing it. The two ends are real and are what the band means: at 17 a legitimately resuming snapshot is struck (`test_a_clean_ended_strap_trial_reads_as_a_switch_until_the_snapshot_covers_a_week_again`) and at 45 the July trial is re-admitted (`test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band`); both ends were re-run at both brackets. The 27-day width is itself evidence that this threshold is not the cliff the candidacy half of the era-boundary tolerance is. **Two recency notions now coexist in the tier rule and they are not the same rule:** the 2026-09-11 fallback above reads recency as a **tie-break among admitted candidates**, where removing one is harmless; this one reads it as an **admission gate**, where removing one hands the baseline elsewhere — which is precisely why the parameter-free form failed. **Scope.** The condition applies to candidacy alone. The re-establishment rule's second clause — which tier sustained the *previous* 60 days — does **not** carry it: that clause asks a historical question about a window at least 67 days old, no band is built from it, and a staleness gate there would forget the tier the athlete used to be on and so withdraw the report of the very change it exists to announce (measured: applying it there turns `test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline` and `test_one_resumption_era_is_reported_coverage_gap_then_tier_change_then_nothing` red). The stale clause-(b) candidate of [[IDEA-064]]'s G12 shape is therefore **unchanged**, still refused by the interleaving tolerance, and still named in F005's Negative Class. **What moves for the athlete** (measured 2026-09-15 on the reproduction series): on 2026-09-06 the verdict changes from HRV normal to **HRV suppressed** — three of the series' fourteen genuinely suppressed days sit in that week and the athlete's own current band now calls them what they are, where the July band called the week normal; on 09-07 the verdict stays normal for the correct reason, only two suppressed days remaining. The reverse cost — an athlete returning to a device after more than four weeks away rebuilds its candidacy from the reading that resumes it — is named in F005's Negative Class. This supersedes the "no recency" reading of the 2026-09-10 bullet above, which is left standing as the history of the rule rather than rewritten. Precedence is preserved: this document is amended first and spec §3.7.3 and §3.7.4, F005's Negative Class and acceptance criteria and the feature's construction reference are restated to match; **`spec_outline.md` Section 3 is exempt, not swept** — it states the band and the window only (±0.5·SD(ln rMSSD) over the athlete's own baseline, 7-day rolling) and names no tier rule at all, so there is nothing there for a candidacy amendment to reach, which is why the 2026-09-09 band sweep above lists it and this one must not (F005, T117; [[IDEA-062]]/T116's establishment gate does **not** subsume this — the stale trial reports `established: true` with `n` 14, so it is established, merely old, and both changes are needed).
-- **A stale week is not judged either (amendment, 2026-09-16).** A **change of behaviour**, not a clarification, and a user decision taken in F005's sprint-005 review cycle 8 ([[T125]], on six measured fix forms). The bullet above put a recency condition on *candidacy* — whether a tier may own the baseline — and measured it over the **baseline window** `[D-66, D-7]`. The verdict, though, is a claim about the **judged week** `[D-6, D]`, and nothing in §3.3's rule required the surviving tier's week readings to be the recent ones. So the gate can strike the tier the athlete is *currently recording on* in favour of one whose week coverage has just run out, and the verdict is then computed entirely from readings that **predate the athlete's return to his own device**. Reproduced twice independently (Pacific/Auckland): a chest strap worn daily to 2026-07-31, a 39-day strap silence carried by a daily Health Snapshot to 09-08, then the strap resumes on 09-09 with four consecutive suppressed mornings. At `D = 2026-09-12` the shipped rule reported `baseline.tier` health_snapshot, `readings_in_window` 3 — 09-06, 09-07, 09-08 — the athlete's own four mornings all excluded `off_baseline_tier` (an exclusion reason retired 2026-09-18 by the per-tier dataset amendment below, under which those four mornings feed the strap's own dataset), and the verdict **HRV normal**. That is §1.7's forbidden direction — readiness reported intact, so a planned hard session stands — on a week the athlete did not live. Swept over 724 return geometries it is **36 geometries** of `hrv_suppressed → hrv_normal`, none of them named anywhere. The rule is therefore amended at the **verdict**, not at tier selection: **a candidate struck for staleness whose judged-week readings are all later than the resolved tier's means the judged week is not a fair sample of the tier being judged, so no verdict is asserted** — the response reads `hrv_unavailable`. The predicate is over **day sets and their order**, not counts: "every one of the struck tier's week days follows every one of the resolved tier's" is what separates a device *return* from an *abandoned trial* picked up for three days, and a count-based form cannot express it (measured: the count form re-admits the July trial the bullet above closed and turns its pin red). The struck tier must hold at least `min_window_readings` of those days, the same threshold §3.7.4 already applies to any week. **Tier selection, the band, the baseline window, both reset rules and rule 1's gate itself are unchanged** — measured tier-identical and window-identical to the shipped rule on all 2050 swept geometries; this amendment changes what is *said* about a week, never what the week is. **Why this form and not the alternative.** The competing form re-admitted the struck tier on the same predicate and told the returning athlete `hrv_suppressed` from his third morning back, which is more useful; swept, it closes the same 36 and **creates 54** geometries of `hrv_unavailable → hrv_normal` judged against a band 36 to 53 days old, plus 36 more where a surviving `hrv_normal` comes to rest on that band. Its cost lands on a *healthy* return — continuity, the ordinary shape, since the carrier tier recorded daily right through the layoff — and its benefit on a *suppressed* one, which needs a sudden-onset event timed to the device change. That is the reverse of §1.7's risk asymmetry, so the form whose cost is **silence** was chosen over the form whose cost is a stale band: 0 forbidden-direction geometries created against 54. **The accepted cost, priced not adjectival:** 72 of 2050 swept geometries move `hrv_normal → hrv_unavailable`, which is the athlete's third and fourth mornings back turning silent on top of his fifth, sixth and seventh, already silent for want of week coverage — **five of his first seven mornings back say nothing, two of them this amendment's doing** — and the 54 suppressed returns the competing form would have answered stay silent instead. Silence is withholding, the direction §1.7 tolerates freely. **The residual, which no measured form closes — and it is not a fixed count of mornings (restated 2026-09-18, [[T145]], review cycle 10):** while the returning tier holds fewer than `min_window_readings` judged-week days it is invisible to this rule, so the verdict still comes from pre-return readings and still reads normal. The number of such mornings is **`min(window_days − min_window_readings, k₃)`**, where `k₃` is the offset at which the returning tier's `min_window_readings`-th distinct local day enters the judged week — validated exhaustively over all 64 weekly return patterns containing day 0, on the return side and on T132's `never_used` side alike, zero mismatches, stable across layoff lengths s = 33..48. The wording this bullet carried until 2026-09-18 stated the **daily** case (`k₃` = 2) as though it were the general bound. Whenever the return is captured **sub-daily** — 4/wk spread `{0,2,4,6}`, 3/wk `{0,2,4}`, 2/wk `{0,3}` — `k₃` is 4 or more and the residual is **four** mornings; a 4/wk *clustered* `{0,1,2,4}` return is two, like the daily one, so the axis is the spacing of the captures and not their weekly count. **Only one of the two terms belongs to this rule.** `k₃` is the withhold's own arming delay, set by `min_window_readings` on the returning tier; the cap `window_days − min_window_readings` = 4 is the **carrier's** judged-week coverage expiring — a daily carrier ending RET−1 leaves `6 − k` carrier days in the week, so `week_too_thin` bites at `k` = 4 (measured by walking the carrier's last day back: RET−1 → 4, RET−2 → 3, RET−3 → 2, RET−4 → 1, RET−5 → 0) — and it would end the residual whether or not this withhold existed. **At sub-daily density this withhold therefore decides no verdict at all:** at 4/wk-spread and 3/wk it flips `withheld` true only at `k` = 4..6, where `readings_in_window` is already 2, 1 and 0 and `week_too_thin` precedes it in the response's fixed order of unavailable causes; at 2/wk it never fires (checked to `k` = 40). For the "two days a week" and oscillating athletes F005's Negative Class names as first-class populations, **this amendment and T132's below change no verdict**: the whole of their sub-daily silence is incidental carrier-week-coverage expiry. The guard that keeps a stray cross-device capture from withholding a legitimate verdict and the constant that hides those mornings are the **same constant**, so reaching them is exactly the change that starts producing false withholds; it is named in F005's Negative Class rather than accepted silently. The **behaviour is left unchanged** on the user's decision of 2026-09-18, against both closing the four-morning case and accepting-and-naming it: closing it means acting on fewer than `min_window_readings` readings of the returning tier — the exact trade that constant governs — and [[T130]] measured that no predicate of this family closes the neighbouring residual, so the question is carried whole to [[IDEA-071]]'s sprint. **A methodological consequence, recorded where the next measurement will look:** capture density is an axis no sweep in nine cycles varied — `spec/references/T125-fix-form-measurements.md` states its rectangle as a contiguous daily return run in all 2050 rows, and the band suite's device-return walk indexes by *days since return* while reasoning as though that equals *mornings captured*, an identity true only at daily density. Any new measurement in this area must vary capture density, and any walk indexed by "days since return" must say which of the two it means. Precedence is preserved: this document is amended first, and spec §3.7.3 and §3.7.4, the feature's construction reference and F005's Negative Class and acceptance criteria are restated to match; **`spec_outline.md` Section 3 is exempt, not swept**, for the same reason the bullet above gives — it states the band and the window only and names no tier rule and no withhold (F005, T125).
+**DOC-02.** Every change MUST be made in research/00 first, and the derived statements (spec sections, feature files, construction references, contracts, the project rule, code docstrings) MUST then be restated to match.
+Scope: every change to a rule, whoever makes it.
+Not: a restatement made first in a derived document, which DOC-16 forbids from resolving the conflict.
+Pinned: none
 
-- **Rule 4 counts its strays over the unclipped population (amendment, 2026-09-16).** A **change of behaviour**, not a clarification, and a user decision taken in F005's sprint-005 review cycle 8 ([[T129]]) on the swept numbers of [[T123]]. It **withdraws the acceptance recorded on 2026-09-15** for the gap-created era boundary (F005's Negative Class, G-C7-3) and resolves it by change. The era-boundary rule (the 2026-09-12 and 2026-09-13 bullets above) was asked its clause-(c) question over the **gap-clipped** baseline window, so every reading in `[D-66, <the resumption>)` was invisible to its **stray count** as well as to clause (a)'s candidacy count. New-tier readings hidden there would have been strays of every *late* boundary, so hiding them shrank the stray term for late boundaries and could admit, or promote over an earlier candidate, a boundary the athlete's **full capture history refuses** — a coverage gap could therefore *create* an era boundary, clip post-resumption readings of the baseline tier out of the band, and move `band.lo`. **The acceptance rested on a direction that measurement has falsified.** It was granted because a 40,000-trial search for a flip to `hrv_normal` found **0**, so every collapse landed in `hrv_unavailable`, the under-call §1.7 tolerates freely; that search was run against a rule that had since moved four times, and the 2026-09-15 establishment gate (T116) made the *thin* case — which is most of what it sampled — structurally unreachable, so it said nothing about a clip leaving `baseline_n >= min_baseline_readings`, where the clip still moves `band.lo` and a **lower** `band.lo` is an up-regulating band. Re-run on 2026-09-16 against the same-history reference (the boundary the full capture history finds, same gap clip, same resolved tier, so the judged week and its mean are identical on both sides): of 26,360 well-formed randomized histories the clip moved the boundary in 9,230, 4,466 of those held `baseline_n >= 14`, 702 geometries were flip-reachable and **5 realized the flip on an unchanged week mean** — shipped `hrv_normal`, the full history's own reference `hrv_suppressed`, established on both sides. That is up-regulation on weak evidence, which §1.7 forbids, and §1.7 is not subject to a rarity argument. **The rule is therefore amended: the clip decides which readings enter the *band*; it does not decide which readings the era rule can *see* when it counts strays.** Clause (c)'s strays are counted over every reading of every tier in `[D-66, D]` together with the previous window, gap-clipped or not; clause (a)'s candidacy count is **unchanged** and still reads the clipped window, because that clause asks whether the resumption era itself sustains a baseline. Nothing else moves: the gap rule's precedence over the *report*, the composition of the two clips as the later first day (2026-09-13 and T107), rules 1–3, the establishment gate, the withhold, and every published constant are untouched. **Measured at the fix:** the flip class is **0 of 26,360** well-formed histories (55,562 trials, seed 20260916) where it was **18** immediately before, and shipped and the full-history reference agree on **all 26,360** — the class cannot exist rather than being priced. Rejected: accepting with the direction named (a §1.7-forbidden direction accepted on rarity, which is the argument §1.7 exists to override) and narrowing the acceptance to `n < min_baseline_readings` (which splits the population and leaves the mechanism). One pinned assertion moved and it pinned the removed behaviour, not a defect in the change: `test_the_gap_created_boundary_clips_on_tier_days_at_the_resumption`, whose own docstring named "handing rule 4 the *unclipped* population" as one of the mutations that makes it red, is now `test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption` and asserts the reference numbers its T118 docstring had already recorded (`n` 22, `band.lo` 3.6805, against the clipped 18 and 3.6757). The widest witness is pinned by `test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary`. Precedence is preserved: this document is amended first, and spec §3.7.3 and §3.7.4, the feature's construction reference, and F005's Negative Class and decision log are restated to match; **`spec_outline.md` Section 3 is exempt, not swept**, for the reason the two bullets above give — it states the band and the window only and names no tier rule, no reset and no era boundary (F005, T129).
-- **The withhold is widened to reach a tier the athlete has never used before (amendment, 2026-09-16).** A **change of behaviour**, not a clarification, and a user decision taken in F005's sprint-005 review cycle 9 ([[T132]], form B, against the measured table in `spec/references/T125-fix-form-measurements.md`), the sixth §1.7-forbidden population found in this rule. The 2026-09-16 amendment above withholds a verdict when a tier the recency gate **struck** holds a full judged week entirely later than the resolved tier's — but `struck ⊆ candidates`, and `candidates` requires `>= min_baseline_readings` distinct days in the (gap-clipped) baseline window. A tier whose first-ever reading falls **inside the judged week** has zero baseline-window days, so it is never a candidate, never struck, and the withhold could never fire for it — however many judged-week days it holds and however cleanly they are ordered. Reproduced (Pacific/Auckland): a `chest_strap_raw` habit daily 2026-07-04..2026-09-04 @ 40.0 ms, a `health_snapshot` the athlete has **never used before** on 2026-09-05..2026-09-07 @ 15.0 ms (three deeply-suppressed mornings, all strictly later than every strap day), judged at D = 2026-09-08. Shipped resolved `chest_strap_raw`, `readings_in_window` 3 (the three stale strap mornings), `withheld` false, `baseline_n` 60, established — **HRV normal**, told to an athlete whose own three brand-new-device mornings, the ones actually suppressed, were silently excluded `off_baseline_tier` (retired 2026-09-18, per-tier dataset amendment below). §1.7's forbidden direction: readiness reported intact, so a planned hard session stands, on a week the athlete did not live and evidence the response never showed him. **The rule is therefore amended: the order clause is asked of the union of `struck` with any tier holding zero baseline-window days and at least `min_window_readings` distinct judged-week days.** The strict day-order clause is unchanged — every one of that tier's week days must still be later than every judged-week day of the resolved tier, exactly as already required of a struck tier. **Why this form.** Three widening forms were measured; all three close the reproduction. The two broader forms (union on any tier holding a full week, regardless of baseline presence; and "most-recently-read tier", dropping the candidacy gate and `struck` entirely) also close a second, previously unnamed forbidden-direction population (the `inter_rows` "resumed" row at era length 10), but their cost is open-ended — 988 of 2050 swept geometries withheld at `c = 0`, reaching return days up to 19 back, and not collapsing at higher `c`. The form here touches only a tier with **zero** baseline-window presence — the definitional case, since zero is not a tuned threshold but the only value that means "never used in the baseline window" — leaving every tier with 1–13 days of history (an established-adjacent geometry, not a new one) exactly as shipped. **The one population this form reopens, priced not adjectival:** a **legitimate, permanent** device switch is, for its first `min_window_readings` days, the identical shape to T132's own forbidden geometry — an un-established tier holding a full judged week, entirely after the resolved tier's own. Nothing in the judged week's readings, the baseline counts or the last-read days alone separates "a device he will never use again" from "a device he bought yesterday and will use forever"; `tier_change_reset`'s 14-baseline-window-day accumulation is the mechanism built to make that distinction in general, and no predicate over a single week's shape can substitute for it. **The accepted cost, measured at daily capture and true only there ([[T145]], 2026-09-18):** two of the athlete's first four mornings on a permanent new device (days 3 and 4; the opening mornings are already invisible to this rule for the same reason T125's residual is, and there are `min(window_days − min_window_readings, k₃)` of them — four, not two, whenever the switch's captures are **spread** (4/wk spread `{0,2,4,6}`, 3/wk `{0,2,4}`, 2/wk `{0,3}`; a 4/wk *clustered* `{0,1,2,4}` return is two, like the daily one, so the axis is the spacing of the captures, not their weekly count — qualifier restored 2026-09-18, [[T147]], review cycle 10), where this widening flips `withheld` only where `week_too_thin` already decides the verdict and so costs zero days attributable to it) turn silent — `hrv_normal → hrv_unavailable` — the direction §1.7 tolerates freely. Swept over the 2050-geometry rectangle at `c = 0`: **260 withheld, up from shipped's 180** (+80, all confined to the `q` range shipped already reaches, `q = 2..6`), and **byte-identical to shipped at every `c >= 1`** (0 additional withheld, 0 additional flips) — the extra withholds are geometries where the returning tier's era falls entirely before the sweep's own baseline window, so shipped's own `baseline_counts` for it is already zero and this is the same defect class recurring inside the sweep rather than a new cost. **Tier selection, the band, the baseline window, both reset rules, the establishment gate and rule 1's recency gate are unchanged**; this amendment changes what is *said* about a week, never what the week is, matching T125's own finding one axis over. Rejected: the two broader forms, on cost (988 vs 260 withheld at `c = 0`, unbounded `q` vs shipped's own reachable range) with no stronger closure on the four named populations (all three close the same reproduction and score zero false withholds on the July trial, the benign interleave, `switch_away_rows` and `inter_rows` "abandoned"). Precedence is preserved: this document is amended first, and spec §3.7.3 and §3.7.4, the feature's construction reference and F005's Negative Class and verdict cost table are restated to match; **`spec_outline.md` Section 3 is exempt, not swept**, for the reason the bullets above give (F005, T132).
-- **The response names which of the six causes made the verdict unavailable (amendment, 2026-09-17).** A **change of behaviour**, a user decision taken in F005's sprint-005 review cycle 9 ([[T137]], option (c) against the three-option contract-change table the cycle-9 critic brought), closing the row open in F005's Negative Class since review cycle 4: "the verdict still cannot say *why* it is unavailable." §1.6 requires a derived verdict to be reproducible by hand from what the response reports, and `hrv_unavailable` was the one place that promise failed: T128 (above) established the cause set at **six**, but the response carried an undifferentiated `hrv_unavailable` for all of them, and two of the six — a week withheld as unrepresentative (T125/T132) and a baseline below `min_baseline_readings` (T116) — are indistinguishable from the response alone even though every other field (`established`, `baseline.n`, `readings_in_window`, `reset_reason`) says the week looks judgeable. Reproduced (Pacific/Auckland): a clean, gapless, permanent device switch — daily `chest_strap_raw` at 40.0 ms through 2026-08-31, daily `health_snapshot` at 40.0 ms from 2026-09-01 — reads `hrv_unavailable` on 2026-09-03 and 09-04 with `established: true`, `baseline.n: 60`, `readings_in_window` 4 and 3 (both at or above `min_window_readings`) and both reset fields `null`; only `HrvSeries.withheld` (T125/T132, not itself a schema field) explains it. A single enum field, `unavailable_reason`, is added to the verdict block: `no_tier_sustains_a_trend`, `no_band`, `week_too_thin`, `week_not_representative`, `baseline_unestablished`, `day_not_happened` — `null` whenever `verdict` is not `hrv_unavailable`. **Precedence, not merely presence:** `judge` evaluates its four pure-rule causes in the fixed order its own docstring states (no band, then a week too thin, then a week withheld as unrepresentative, then an unestablished baseline) and the response reports the *first* one that fires, so a week that is both withheld and built on an unestablished baseline reports `week_not_representative`, not `baseline_unestablished` — pinned directly, not merely documented, since the two population's shapes both arise from the same reset mechanisms this document already describes. The remaining two causes sit outside `judge`: `no_tier_sustains_a_trend` is the structural case (`resolve_baseline_tier` answering "no tier at all"; `band` is trivially `None` on every such series, so the two share `judge`'s one guard and are told apart by name only), and `day_not_happened` is decided at the route (`main._withhold_future`) and **overrides** whichever of the other five the pure rule would have reported, on the same day — since the fields that would explain those five are still computed and returned as usual for a near-future day, and the one claim actually true of the response is that the day has not happened yet. Precedence is preserved: this document is amended first, and spec §3.7.4, F005's Negative Class and `contracts/openapi.yaml` are restated to match; the enumeration and the fixed order are pinned to `judge`, `main.py` and `resolve_baseline_tier` by `runcoach-api/tests/test_hrv_unavailable_causes.py` (T128) and to the two opaque days above by `runcoach-api/tests/test_hrv_unavailable_reason.py` (T137).
-- **The 20-day quiet was measured for one of the two reset kinds; a clean source-tier change costs 18, and costs them differently (clarification, 2026-09-17).** A refinement from F005's sprint-005 review cycle 9, raised by the critic and reproduced independently ([[T138]]). **No behaviour changes**: this is a cost the rule has always had and no document computed. The 2026-09-15 bullet above prices a baseline re-establishment at **20 days beneath `min_baseline_readings` (`R+0 .. R+19`)** and names its trigger as "a coverage gap **or a source-tier change**". That figure was established by a **coverage-gap walk** ([[T126]], whose test asserts `reset_reason == ["coverage_gap"] * 21` across its walk and is therefore structurally incapable of producing the tier-change shape). It is true of a coverage gap and **false of a source-tier change in both particulars.** Walked at `2026-09-01` (Pacific/Auckland) on a clean, gapless, permanent switch — no gap, no suppression, identical rMSSD on both tiers, so the tier is the only thing that moves: the outgoing tier keeps its own full 60-day baseline, so **`established` is `true` on every silent day** and `baseline.n` merely decays from 60; the establishment gate this bullet's predecessor describes **never fires at all**; the silence is produced by **week coverage on the tier the athlete has stopped using**; and it lasts **18 days, `R+2 .. R+19`**. **Derived, not quoted from a fixture.** The quiet *begins* on the first day the new tier holds `min_window_readings` days of the judged week all later than the resolved tier's — the withhold, so `min_window_readings − 1` = **2** — and *ends* when the new tier reaches `min_baseline_readings` distinct days at or before `D−7`, which is `R + (min_baseline_readings − 1) + 7` = **`R+20`**. The closed form is therefore **`min_baseline_readings + 7 − min_window_readings` = 14 + 7 − 3 = 18**, and the published figure moves the moment any of the three constants moves. **What it depends on.** (i) *Capture density on the new tier* — 18 at daily capture, **29** at one capture every second day (3.5 a week, still above `min_window_readings`, so his ordinary weeks remain judgeable), the report day generalising to `(min_baseline_readings − 1)·s + 7` at one capture every `s`-th day; below that the run stops being one block, because the new tier drops in and out of week coverage, so the shape rather than a third figure is what this document states. (ii) *Whether the outgoing tier's week empties before or after candidacy resolves* — here it empties at `R+7`, thirteen days before candidacy, which is what makes the quiet one unbroken run. Keep the old device recording across the boundary and there is **no silent day at all**; but then the two eras interleave past rule 4's density tolerance and **`tier_change` is never reported — not late, but never.** The silence and the reset report are bought with each other, and neither document nor test said so before. Pinned, with the derivation in the test rather than a typed literal so that moving `min_baseline_readings` or `min_window_readings` reds this number instead of silently tracking it ([[T133]]'s precedent), by `runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_them` and its three siblings.
+**DOC-09.** research/00 MUST state only current rules, and a dated summary of what changed MUST go to the history file, `specification/research/00-history.md`, under an H-NN entry.
+Scope: every change to a rule of research/00, with its date and what it changed.
+Not: verbatim superseded wording, which DOC-19 places elsewhere.
+Pinned: none
+Why: decision C38 replaces keeping superseded text in place in research/00 with a dated summary in the history file (H-39).
 
-- **The reset report lags the reset it describes by 20 days; the sum this bullet once carried is withdrawn (clarification, 2026-09-17; (iii) withdrawn 2026-09-18, [[T141]]).** The second half of [[T138]]; still **no behaviour change**. (i) **The lag, named and accepted.** Through `R+0 .. R+19` the response reports `reset_reason: null` and `reset_on: null` — *no reset happened* — when one did, and on `R+20` it reports a `reset_on` **20 days older than the day it appears on**. The date is *correct* when it finally arrives: it names the era's true first day. The defect is **latency, not accuracy**, and it is `min_baseline_readings + 7 − 1` = 20 days of it. **Accepted, deliberately**, because clause (a) is a *time-accumulating* mechanism and there is nothing yet to report: a reset asserted earlier would be a prediction, and it would have to be **withdrawn** on every trial the athlete abandons — which is exactly the phantom-`tier_change`-reported-then-withdrawn defect review cycle 3 removed. Named here so that a lagging report is not mistaken for a wrong date, and so the cost is visible: a consumer polling daily and reading `baseline.reset_reason` to decide whether the baseline moved is told "nothing happened" on each of those 20 days, and on the first two of them (`R+0`, `R+1`) it is additionally handed a **judged verdict computed on the band of a device the athlete has already stopped using**. That second half is the half with a forbidden direction in it — `hrv_normal` on the outgoing tier's band — and its length is set by when T125/T132's withhold arms, which for a **daily** returner is `R+2` — two mornings. That is the daily case and not the general bound: the count is `min(window_days − min_window_readings, k₃)` (the 2026-09-16 bullet above, as restated 2026-09-18 by [[T145]]), so an athlete whose captures are **spread** (4/wk spread `{0,2,4,6}`, 3/wk `{0,2,4}`, 2/wk `{0,3}`; a 4/wk *clustered* `{0,1,2,4}` return is two, like the daily one, so the axis is the spacing of the captures, not their weekly count — qualifier restored 2026-09-18, [[T147]], review cycle 10) is handed that judged verdict on the retired device's band for **four** mornings, and at those densities the withhold ends no morning of it — `week_too_thin` does. (ii) **What the silent days say.** Since [[T137]] every unavailable day carries an `unavailable_reason`, so the 18 are not unattributed — but the reason they carry is `week_not_representative` on two of them and **`week_too_thin` on the other sixteen, told to an athlete who captured every single morning**. It is true of the *resolved tier* and false of the *athlete*; the honest reason would be a seventh cause, *the tier that owns the baseline is not the one you are recording on*. Named, not fixed. (iii) **At what point does a rule that mostly says nothing stop being conservative and start being useless? — asked here 2026-09-17, answered here the same day, and the answer withdrawn 2026-09-18 ([[T141]], user decision, review cycle 10).** This document has admitted silence into the HRV gate four times: 20 days after a coverage gap ([[T116]]/[[T126]]), 2–5 mornings after a device return ([[T125]]), 2 more on a permanent switch ([[T132]]), and 18 after a clean tier change ([[T138]]). That is a list, and it is all this document now says about the total. [[T138]] composed those four against a **rate**, published the sum as a share of the year, and drew a normative conclusion from it; **that paragraph is withdrawn, not corrected, and the figure is not replaced.** *Why.* Its largest single term priced an athlete swapping one chest strap for another — **an event this rule cannot detect**. The reset keys on `hrv_source_tier`, whose entire domain is `chest_strap_raw`, `health_snapshot` and `health_api_overnight`, and there is **no notion of device identity anywhere in the rule's vocabulary** (`hrv_trend.py` says so in as many words, in the returning-or-brand-new-device note). A same-tier replacement holds the tier constant, fires no `tier_change_reset`, opens no era boundary, and costs **0** silent days rather than the per-switch figure that term carried. The per-switch figure was itself sound arithmetic — for a *tier change* at that capture density — and was attached to the wrong event; the parenthetical asserting it was measured rather than extrapolated made the defect worse rather than better, because it had indeed been measured, for a different event. *Why withdrawn rather than re-derived.* The decision was taken against re-deriving the rate, against repairing the arithmetic beneath the conclusion, and against deferring the whole question: any replacement rate would rest on an assumption about how often a real athlete crosses between those three tiers — a judgement about people, published in the document that is this system's authority on **measured** facts. The authority should carry no such figure rather than carry one nobody measured. Nothing is erased: the withdrawn wording is preserved verbatim in [[T141]]'s task file and in git history, and its two phrasings are declared in `runcoach-api/tests/support/withdrawn_phrasings.py`, so neither can return to any file the withdrawn-phrasing walk reads. **The critic's question is therefore open again, and that is the accepted consequence of the decision and not an oversight:** no document in this feature now states at what point a rule that mostly says nothing stops being conservative and starts being useless. It is carried, unanswered, to [[IDEA-071]]'s sprint, which is re-deriving the rule that produces the silence. **What is not withdrawn:** [[T138]]'s measurement stands entire — the 18 silent days after a clean tier change, their closed form `min_baseline_readings + 7 − min_window_readings`, the density and overlap dependencies, the 20-day reporting lag of (i) above, and all four of the walk pins that hold them. Only the composition goes. **And one of its terms was wrong on its own terms, independently of the withdrawal:** a layoff longer than `gap_reset_days` was priced at **22** silent days, which is the length of the shortest resetting layoff (`GAP_RESET_DAYS` is 21, so 21 does not reset and 22 does) but **not** the length of its silence. The baseline is untouched by the layoff, and the verdict is withheld only once the judged week falls below `MIN_WINDOW_READINGS`: on layoff day `k` the week `[D-6, D]` still holds `7 − k` pre-layoff readings, and `7 − k >= MIN_WINDOW_READINGS` holds for `k` = 1..4, so **days 1–4 are judged normally** and only days 5–22 are silent — **18, not 22**, and with the 20 re-establishment days after it **38, not 42**. That 18 is a *coverage-gap* figure and is **not** the tier change's 18 named above: the two mechanisms are unrelated and the shared length is a coincidence.
-- **Each source tier keeps its own dataset; a source change selects a dataset and no longer re-establishes the baseline (amendment, 2026-09-18).** A **change of behaviour**, not a clarification, and a user decision taken in `/ship-discuss IDEA-071` and sprint-006 planning (F006). §3.3 carried **one** baseline, owned by one tier: "the baseline is built on the highest tier that sustains one", every reading of every other tier excluded `off_baseline_tier`, and a source change — "adopts or abandons" — "treats it as a baseline re-establishment" that withheld every verdict until the new tier's baseline was established. Because one tier owned the only band, the rule had to answer *which one band is this week judged against*, and the bullets above from 2026-09-10 to 2026-09-17 each added a qualifier to close one population of that question while no condition was ever removed; [[T130]] measured the family exhausted over 12,300 rows, and the shape it kept finding — an athlete *returning* to a device whose band is already his own — is the one the single-baseline clause contradicts directly, since a return re-established nothing and yet withheld. **The rule is therefore amended to the per-tier dataset model.** (i) *Construction.* Every resting-HRV reading feeds the dataset of its tier — a morning carrying both a chest-strap capture and a Health Snapshot feeds both — and each dataset carries its own baseline mean, SD, `n`, `established` and ±0.5·SD(ln rMSSD) band, built from its own readings alone over the same `[D-66, D-7]` baseline window and `[D-6, D]` judged week, with per-day collapse (`same_day_later_capture`) and distinct-local-day counting unchanged; the anti-mixing constraint of §3.3 is honoured by construction, since no reading of one tier is ever in another's band. (ii) *Selection.* A dataset is **judgeable** when it is established (at least `min_baseline_readings` distinct local days in the baseline window) **and** holds at least `min_window_readings` distinct days of the judged week; among judgeable datasets the **highest-fidelity** one is selected — §3.3's precedence, unchanged: chest-strap raw RR over the numeric resting-rMSSD tiers — unless its latest **baseline-window** reading falls more than `recency_tolerance_days` (28) behind the latest baseline-window reading of any **established** dataset (*amended 2026-09-20, T164; this read "any judgeable dataset" from 2026-09-18 until then — see the bullet below for the measurement that moved it*), in which case it is skipped; the reference maximum is taken once, simultaneously, over every **established** dataset — those that are not judgeable and those about to be skipped alike — while the **candidates** the gate strikes from remain the judgeable datasets, so a lone established dataset is its own reference and is never skipped, and the bound is strictly greater than, as the 2026-09-15 bullet set it. The window is normative: a strap established on `D-66..D-36`, silent to `D-5` while the snapshot carried the series and back on `D-4/D-2/D-0` is skipped, because its baseline is entirely pre-layoff — an unqualified "latest reading" would select it and judge the athlete against a band 36 to 66 days old, the exact mechanism the 2026-09-16 bullet closed. Selection runs per judged day, and each point of the series names the dataset its band came from. The **fidelity rank** arbitrates, and it is what `datasets[]` carries; the §3.7.1 **confidence weight** never does and is **not emitted at all** — no confidence weight is computed in Section 3, the weighting being deferred to Section 6's readiness fusion, as §3.7.4 states (*corrected 2026-09-21, T159; this read "it is reported per dataset and left to Section 6, as §3.7.4 already defers it" from 2026-09-18 until then — see the bullet below*) — so no recency-against-quality exchange rate is minted, and none can be: Section 3 holds no weight to trade recency against. (iii) *The selected dataset decides.* The verdict, `baseline` and `band` are the selected dataset's; every other dataset's band, `n` and `established` are still computed and reported, and any dataset with a computable band whose judged-week mean reads below that band is named as disagreeing, in either direction, never overriding — **but only where a verdict was conferred. Whenever the served verdict is `hrv_unavailable`, for any cause whatever, nothing is named as disagreeing and the dissent list is empty, because a disagreement is a claim *about* a verdict and a withheld verdict makes no claim to contradict** (*amended 2026-09-21, T167, [[B-CR-002]]; a behaviour change, and the generalisation to one sentence of what the 2026-09-19 bullet's (c) below settled for the no-dataset-selected state alone. There are exactly **three** states in which no verdict is conferred — nothing selected, so the presentation fallback of the next sentence speaks; a dataset that **is** selected whose verdict is withheld under (v), the returning athlete of T125, served as `week_not_representative`; and a day that has not happened, served as `day_not_happened` — and until now this clause carried a carve-out for the first, the endpoint carried one for the third in code with no clause here to authorise it, and the second, this feature's highest-value population, was covered by neither. The rule is one condition, `verdict == hrv_unavailable`, and it subsumes all three. The served cause does not imply a selection (clarified 2026-09-22, T168; corrected the same day by F006 review cycle 3, T168 having read that selection alone separates the three, which the third state falsifies): `week_not_representative` is also served when nothing is selected and the dataset the fallback presents is itself withheld under (v) — `unavailable_reason` is the presented dataset's own first-firing guard, and the withhold is asked of every dataset as if it were the selected one — and `day_not_happened` is served on a future day whether or not a dataset is selected, because the route overrides whichever cause the pure rule reported and leaves the selection as computed (`main._withhold_future`). So whether a dataset is selected separates the second state from the first; the third is identified by its cause alone and can coincide with either, a future day with nothing selected being in the first and the third at once; and the one condition covers every such overlap unchanged; pinned at the served seam by `runcoach-api/tests/test_hrv_dataset_populations.py::test_week_not_representative_is_served_with_nothing_selected_and_names_no_dissenter`. What is withheld is only the **claim**: every dataset's own reading against its own band is still reported on `datasets[]` in all three states, and `selected_dataset`, `selected_reason` and the retained `baseline`/`band` are still kept as computed, because they **produced** the numbers the response carries and are not claims about them — §1.6, the response stays reproducible by hand. Pinned at the served seam by `runcoach-api/tests/test_hrv_dataset_populations.py::test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does`, whose control is the same rows one carrier morning apart, on which the verdict is conferred and the dissenter is named*). When no dataset is **selected** the verdict is unavailable and `baseline`/`band` are populated, for presentation only, from the dataset the athlete was read on last (the 2026-09-11 fallback, retained), with the unavailable cause resolved by a defined precedence across datasets (*amended 2026-09-21: this read "when no dataset is judgeable" from 2026-09-18 until then, which the 2026-09-20 widening of the recency reference made a strict **subset** of the condition the fallback actually fires on. Since the reference maximum may be held by a dataset that is established and not judgeable, every judgeable candidate can now be skipped at once and nothing is selected with the judgeable set non-empty; the fallback presents whenever nothing is **selected**, which is "no dataset is judgeable" **or** "every judgeable dataset was skipped"*). **The fallback confers no verdict, and that is structural rather than a convention it observes:** with nothing selected, its first clause presents the **established** dataset read last in the baseline window — which is, by definition, a holder of the recency reference maximum, and the gate never strikes a dataset that is zero days behind the maximum, itself included. So the presented dataset is never skipped; had it been judgeable it would have been a surviving candidate and would have been selected, and we would not be in the fallback at all. The presented dataset is therefore **never judgeable**, and no verdict can be conferred on it. The remaining two clauses need no separate argument: they run only when **no** dataset is established, and judgeability requires establishment, so nothing they can present is judgeable either. This invariant is what makes the fallback verdict-free, it is load-bearing for the non-nullable contract fields, and until 2026-09-21 it was stated nowhere outside the pins (`test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164`, whose first part is the never-strikes-the-maximum property over every last-read assignment, and `test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series`). (iv) *A source change selects; it does not re-establish.* Adopting a tier the athlete has never used begins that tier's dataset from nothing, and until it is judgeable the verdict comes from whichever dataset is, subject to the withhold in (v); abandoning a tier lets its dataset age out of the window; and a **return** to a dataset the athlete established before is **free** — its band was never destroyed, so nothing is re-established and nothing is withheld on its account — which is the clause the superseded rule contradicted. *(Note, 2026-09-23, non-deciding — F006 review cycle 3: as built, a return can withhold the selected dataset's verdict. T125's returning strap is established, judgeable and skipped by the recency gate, and `verdict_withheld`'s skipped arm fires on it (`runcoach_api/metrics/hrv_trend.py`, the `is_judgeable(other) and other.tier not in skipped` test), so the selected dataset's verdict is withheld on the returning dataset's account. (iii) of this bullet already names that withhold — a selected dataset whose verdict is withheld under (v), the returning athlete of T125 — so "nothing is withheld on its account" is narrower than the code. The clause is left as written pending [[IDEA-083]]; this note chooses none of its options.)* (v) *Retained mechanisms, at dataset scope.* The withhold of the 2026-09-16 bullets (T125, T132): a dataset that is **not** judgeable but holds at least `min_window_readings` judged-week days, every one later than every judged-week day of the selected dataset, withholds any verdict — without it a brand-new device leaves the outgoing dataset selected and promotes `hrv_normal` on its stale week, the sixth §1.7-forbidden population, which shipped F005 closes and no amendment may reopen. *(Note, 2026-09-22, non-deciding — F006 review cycle 3: the withhold as built, `verdict_withheld`, is asked against every other dataset that is not judgeable **or** was skipped by the recency gate, and T125's own returning strap is judgeable and skipped — so this clause's "not judgeable" alone is narrower than the code. The clause is left as written pending [[IDEA-083]], which holds the options; this note chooses none.)* The era clip of the 2026-09-12 and 2026-09-13 bullets (T094, T095, T129), re-derived per dataset: a dataset's band is clipped, unreported, at an internal capture hole of at least `gap_reset_days` inside its own baseline window, while `tier_change_reset` still decides the *reported* `reset_reason`/`reset_on` by the existing cross-tier question, asked once per dataset, with the 2026-09-16 unclipped stray count left global. And `coverage_gap_reset` stays **global** — it measures the silence of the series as a whole, every tier together, exactly as the 2026-09-15 bullet reasons — which is what keeps `recency_tolerance_days` (28) > `gap_reset_days` (21) a partition and not a race; a per-dataset gap reset would void that reasoning. (vi) *What is retired, and what is not* (*corrected 2026-09-21: this clause listed two mechanisms among the retired that F006 still runs, and the correction is recorded in the bullet below — [[IDEA-086]], found assembling T160's retirement list*). **Exactly two mechanisms are retired**, and each carries the three-valued pin this clause requires (`runcoach-api/tests/test_hrv_three_valued_retirements.py`, T160): `resolve_baseline_tier`'s role as the cross-tier **arbitration** — "one tier owns the only band", the question `build_series` no longer asks at all, though the function itself and its tie-order pin survive — and the exclusion reason `off_baseline_tier` (T152), retired in the sense that a reading of a non-selected dataset is neither dropped nor listed as excluded; it is accounted for exactly once, in its own dataset, as §1.6 requires. **A retired mechanism keeps its pins**, re-pointed at the mechanism that now closes its population and never deleted, each with a three-valued pin — green on shipped F005, red on F005 with that mechanism alone deleted, green here — and **that requirement quantifies over the retired set above and nothing else**: a mechanism this feature still runs has no state 3 to be green on, so the ones below carry no such pin, deliberately and not by omission. *Kept, re-derived or redeployed — not retired:* the cross-tier candidacy gate of 2026-09-15 (T117), redeployed as the recency gate in (ii), same constant, now safe because skipping a dataset no longer destroys the only yardstick; the era clip of the 2026-09-12 and 2026-09-13 bullets (T094, T095, T129), re-derived at dataset scope in (v); **the three-term era-boundary ordering key of 2026-09-13 (T106), retained as a sub-mechanism of that clip** — it decides *which of several admitted era boundaries a dataset's own band is clipped at*, which judgeability cannot subsume, judgeability being a rule about *which dataset is selected*; the 2026-09-13 bullet above states the key's role normatively and names its pin (`test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of`), with `test_the_era_boundary_ordering_key_keeps_its_three_terms` covering it once per dataset, and because it carries no task-labelled pin a grep-based retirement audit reports it unpinned and is wrong; T107 and T116, unchanged at dataset scope; T093's rule-3 fallback, retained for presentation in (iii); and the withhold of T125 and T132, retained at dataset scope in (v). What **is** subsumed by judgeability is T093's **week-coverage half** alone — the same condition stated once, its pins re-pointed at `is_judgeable`. From 2026-09-18 until 2026-09-21 this clause read "the week-coverage half of the 2026-09-10 rule and the ordering key of 2026-09-13 (T106) are subsumed by judgeability", carrying T106 along with a rule corrected on an adjacent date; read literally it demanded a three-valued pin whose state 3 could not be green, which is the failure AC18 exists to prevent, and F006's own Negative Class and construction reference had T106 right while this document did not. **The accepted cost, and it runs in the forbidden direction:** the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band — up-regulation while contrary evidence exists, the direction §1.7 forbids, and a consumer reading the verdict alone is not told. Accepted because quality-first promotes the *best available* instrument (chest-strap rMSSD about 2.16% error against ECG, PPG about 17.49%, an ~8× difference) and because a suppressed-wins rule lets the noisier dataset veto a good week. The rate is **newly measurable** — under one baseline the losing tier had no band — and it is measured against shipped F005 on every sweep, with capture density varied on both datasets independently, any worsening blocking release save one named, counted exception (*amended 2026-09-22, T168*: the §1.7-forbidden rate under the independent-instruments fixture — a suppressed return promoted `hrv_normal` at `c = 4` and `c = 5`, worse on 64 gated rows — carried as `DEFERRED_EXCEPTION` in `runcoach-api/tests/test_hrv_no_regression_gate.py` pending [[IDEA-087]], as the 2026-09-20 bullet below records; every other gated rate blocks outright); the dataset-flip rate of a three-days-a-week wearer is measured the same way and a worse rate reopens the deferred hysteresis decision (F006, AC21–AC23). **Two caveats, stated so they are not assumed:** the `[18, 44]` band measured for `recency_tolerance_days` above was measured against the fused band and does not transfer, so it is re-measured rather than cited; and whether a Health Snapshot on a strap morning is an independent instrument or the same beats post-processed by the watch is unmeasured, so the disagreement rate may measure vendor processing until it is. The bullets above from 2026-09-10 to 2026-09-17 are left standing as the history of the single-baseline rule rather than rewritten, and their `off_baseline_tier` reproductions are marked retired where they stand. Precedence is preserved: this document is amended first, and spec §3.7.3, §3.7.4 and §2.4.5 are restated to match; **`spec_outline.md` Section 3 is exempt, not swept**, for the reason the bullets above give; F005's own feature file, construction reference and release record describe the rule **as shipped** and are not swept — they are the record of what this amendment supersedes; the per-tier dataset model is stated in full in F006's construction reference (`spec/references/F006-dataset-model.md`), and the claim is pinned tree-wide, presence and absence, by `runcoach-api/tests/test_source_change_rule_sweep.py` (F006, T149).
-- **The unavailable cause across datasets, the fallback's clause order, and what disagreement means (clarification of (iii), 2026-09-19).** Three readings the 2026-09-18 bullet's (iii) left open, settled by T156 and pinned in `runcoach-api/tests/test_hrv_unavailable_reason.py`. (a) *The "defined precedence across datasets"* is two-level: first **which dataset speaks** — the selected dataset; else, for presentation only, F005's rule 3 restated over datasets: among established datasets the one read last in the baseline window, ties by `n` then fidelity; with none established the densest by `n`; with no baseline reading of any tier the densest in the judged week, ties to fidelity throughout; else no dataset — and second **that dataset's own guard order, unchanged** (no band, thin week, unrepresentative week, unestablished baseline). The cause named is therefore always true of the dataset whose `baseline`, `band` and `established` the response carries, never a cause another dataset satisfies, and the structural no-tier cause fires only when the series holds no dataset: an ordinary illness or holiday week with a null selection presents the dataset the athlete used last and says `week_too_thin` on its `n`. (b) *"Reads below that band … in either direction"* means reads the **other side of its own band from the selected dataset**: a dataset below its band while the selected dataset is within is named, one within while the selected is below is named, and one below while the selected is below agrees and is not — the only reading under which "either direction" has content and the field's name is honest. Judgeability is still never consulted (the 2026-09-18 planning note "AC10 taken literally" is preserved in that sense). (c) *With no dataset selected nothing is disagreed with*: a disagreement is with a verdict and the presentation fallback confers none, so `disagreed_with` is empty on the fallback even when the presented dataset's own thin week reads below its band; every dataset's reading against its own band is still reported on `datasets[]`. AC9, AC10 and AC11 are read in this sense. Precedence is preserved: this document is amended first, and spec §3.7.4 and F006's Negative Class are restated to match (F006, T156).
+**DOC-10.** A retired ratified mechanism MUST keep its pins, re-pointed at the mechanism that now closes its population.
+Scope: every ratified mechanism that a feature retires.
+Not: a mechanism that is kept, re-derived or redeployed.
+Pinned: none
 
-- **The recency reference is taken over every established dataset, not only the judgeable ones (amendment, 2026-09-20).** A **change of behaviour**, not a clarification, and a user decision taken at the F006 release gate (T164, [[IDEA-080]] option 2). The 2026-09-18 bullet's (ii) took the recency reference maximum over the **judgeable** datasets. Shipped F005 took its equivalent — rule 1's cross-tier candidacy gate of 2026-09-15 — over every tier that was **established**, whether or not it covered the judged week. The narrowing was not measured when it was made, and T162 measured it: a carrier that has stopped, or whose judged week is too thin to be judgeable, leaves the reference set, the returning dataset becomes its own reference, and it is selected on a band 36–66 days old. Over 307,500 return-rectangle rows and 24,000 device-return-walk rows, on both modules and under **both** overlap variants, `hrv_normal` promoted on an entirely pre-layoff band rose from **1,896 to 3,705** (0.617% → 1.205%, ×1.95) and from **96 to 254** (×2.65) — worse at every `c`, on 82 of 150 cells. That is §1.7's forbidden direction: up-regulation while the athlete's current state is simply unknown, with not even a dissenter to name, and it is the population (iv)'s "a return is free" calls free and AC6 was amended into existence to close. The control that isolates the mechanism: against a carrier read twice a week — never established under either rule — the two rules agree exactly at every `c`, so the divergence is entirely the datasets that are established and **not** judgeable. **The reference population is therefore widened to every established dataset; nothing else moves.** The gate itself is untouched (the same `_recency_struck`, the same baseline-window `_last_read`, the same strictly-greater-than bound, the same maximum taken once and simultaneously), and the **candidates** it strikes from are still the judgeable datasets, so (ii)'s judgeability precondition, (iii)'s "the selected dataset decides" and (v)'s retained withhold, era clip and global coverage gap are all unchanged — the withhold reads the same struck set it always did. Two consequences are stated rather than discovered: a **lone judgeable** dataset is no longer automatically its own reference (an established but weekless dataset read later can now strike it), so every judgeable dataset can be skipped at once and the presentation fallback of (iii) presents one verdict-free; and the shape T125 was written against — the gate striking the tier the athlete is currently using — is knowingly re-imported at F005's own rate, which is what the measurement prices. **What is deliberately not paid:** the other rate T162 found worse (a suppressed return promoted `hrv_normal`, 22,217 → 22,232, at `c = 4` and `c = 5` only) exists **only** under the independent-instruments fixture and reverses under the correlated one, and T162 established that the recorded corpus cannot settle which world this is ([[IDEA-087]]); it is carried as a named, counted exception in the release gate rather than repriced on an unmeasured assumption. Precedence as always: this document first, then spec §3.7.3 and §3.7.4, then F006's AC6/AC7 and its mirror.
+**DOC-11.** The authority MUST publish no figure that nobody measured, and a published number MUST be a measurement or a derivation, never an assumption about how people behave.
+Scope: every figure research/00 publishes.
+Not: a heuristic default, which DOC-06 governs.
+Pinned: none
 
-- **What F006 retires is two mechanisms, and T106's era-boundary ordering key is not one of them (correction, 2026-09-21).** A correction of this section's own clause (vi), not a change of behaviour: nothing in the code moves, and no pin changes. Clause (vi) listed "the week-coverage half of the 2026-09-10 rule and the ordering key of 2026-09-13 (T106)" as subsumed by judgeability. The first is true; the second is false, and this document contradicted itself about it — the 2026-09-13 bullet above states T106's three-term selection key normatively and names its pin, and clause (v) keeps the era clip whose boundary that key chooses, asked once per dataset. The key is live in the shipped module, reached from `tier_change_reset`, and covered by `test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of`, `stray_day_tie`'s pins and `test_the_era_boundary_ordering_key_keeps_its_three_terms`. Read literally, the old wording demanded a three-valued pin for a mechanism F006 still runs — state 3 could not be green — so an auditor obeying it would either write a pin that tests something else or delete a live mechanism's pins, which is exactly the failure F006 AC18 exists to prevent. Clause (vi) is therefore restated: the **retired set** is `resolve_baseline_tier`'s role as the cross-tier arbitration and the `off_baseline_tier` exclusion (T152), retired — the two T160 pinned three-valued, and the two F006's Negative Class already named — the three-valued-pin requirement quantifies over that set alone, and everything else on [[IDEA-071]]'s list is named as kept, re-derived, redeployed or (T093's week half alone) subsumed. Filed as [[IDEA-086]] from T160 and closed with this amendment. Precedence as always: this document first. The derived documents were then checked rather than assumed — spec §3.7.3 already states the ordering key as live and needed no change, and F006's feature file already recorded "T106 kept as a sub-mechanism of the era clip"; only F006's construction reference carried the stale reading, in its planning-time expected-disposition table, which is annotated with the measured outcome rather than rewritten.
+**DOC-12.** Any new HRV measurement MUST vary capture density, on both datasets independently.
+Scope: every new HRV sweep, harness or parameter search.
+Not: a figure already recorded at one density, which says so where it is stated.
+Pinned: none
 
-- **No confidence weight is emitted or computed in Section 3; what `datasets[]` carries is the fidelity rank (correction, 2026-09-21).** A correction of this section's own clause (ii), not a change of behaviour: nothing in the code moves, and no pin changes. Clause (ii) closed with "the **fidelity rank** arbitrates; the §3.7.1 **confidence weight** never does — it is reported per dataset and left to Section 6, as §3.7.4 already defers it — so no recency-against-quality exchange rate is minted". The arbitration half is true and is pinned two ways by `test_the_numeric_confidence_weight_never_participates_in_selection` (T156), behaviourally and by an AST check that reds if any name so much as mentioning a weight or a confidence reaches `select_dataset`. **The reporting half was false of what shipped, and false against the very section it cites**: spec §3.7.4 says the per-tier confidence weight is *not applied inside the trend* and that **no confidence weight is computed in this section today**, weighting by tier confidence being deferred to Section 6's readiness fusion. T159 — the task that had to decide what the response block renders, and so the task that exposed this — therefore emitted none: emitting one would have minted a constant Section 3 does not own, which F006's construction reference forbids in the same breath ("no new constant"). What `datasets[]` carries per dataset is **`fidelity_rank`**, the ordinal of `TIER_FIDELITY`, beside each dataset's `tier`, `n`, `established`, `band`, `last_read`, `week_days`, `week_mean`, `below`, `reset_on` and `reset_reason` — the rank being what makes `selected_reason` recomputable by hand from the response. **The conclusion the clause drew from the false half still follows, and more strongly**: no recency-against-quality exchange rate is minted because Section 3 holds no weight to trade recency against, not merely because a weight it publishes is kept out of the choice. **The precedence was inverted while this stood**, which is the failure `sweep-the-claim-not-the-diff` names in its last note: `spec/03` §3.7.4 and F006's construction reference §3 were both corrected on 2026-09-21 (T159) while this document — the authority above both — kept the stale half, so the derived documents were right and the authority was wrong. F006's reference, sitting below both, recorded the conflict for the next reader rather than resolving it from underneath, exactly as `project-domain-and-spec-fidelity` requires; that note is closed with this bullet. The derived documents were then checked rather than assumed: `spec/03` §3.7.4 already states the deferral and needed no change, and F006's feature file and construction reference already carry the corrected form. **What this bullet does not close**, stated so it is not read as closed: the sibling passages that promise a per-tier confidence weight as the eventual design — spec §2.2.3's `hrv_source_tier` and `rr_valid_fraction` rows, spec §3.1, and this document's own §3.3 and HRV-gate register row ("at reduced confidence", "a confidence weight below Tier 1") — are [[IDEA-048]]'s open sweep, filed 2026-09-09 and still proposed, and IDEA-048 records that some of them read as descriptions of what the trend does today. They are left standing here, as T087 left them, because the deferral was scoped to §3.7.4 and the sweep belongs with Section 6's fusion; that is a live divergence of its own and it is filed, not fixed.
+**DOC-13.** `spec_outline.md` Section 3 MUST state only the HRV SWC band and the window, and it MUST be swept for HRV SWC band restatements and exempt from tier-rule sweeps.
+Scope: `spec_outline.md` Section 3.
+Not: the rest of the spec, which the sweeps cover in full.
+Pinned: none
 
-- **LT1 determination (open question, resolved as a recommended path).** §3.4 ratifies the v1 fraction-of-threshold Z1/Z2 boundary default and records DFA-α1 = 0.75 as the recommended future LT1 determinant, deferred (not adopted) for v1 on RR-quality and validation grounds. Detail in `future/future-directions.md`.
-- **Spec-introduced default register back-port batch (2026-08-31).** Seven defaults the Phase-2 spec adopted under uncertainty were reviewed and ratified into the Part 3 register, each with its research basis and graceful-degradation behavior: course & environmental-modifier composition (spec §1.4.5), resting-HRV capture cadence (spec §2.4.5, confirming the §3.3 protocol), course-geometry ingestion resolution (spec §2.5), determinant-addressability scoring (spec §5.7.2), base/build/peak phase-length split (spec §5.5.1), mid-block recovery-week depth (spec §7.2.2), and the race-day target form band (spec §7.4.1). Several are flagged in `future/future-directions.md` as human-coach-specification candidates. Separately, the women's HR-TRIMP coefficient was corrected in `research/05` §2.1 (men 0.64·e^(1.92·ΔHR), women 0.86·e^(1.67·ΔHR)); the per-session-load register row above now notes both sex forms.
-- **Section 9 spec-introduced defaults (2026-08-31 follow-up).** Two further spec-introduced defaults were ratified into the Part 3 register: the **sidecar-divergence surfacing threshold** (spec §9.6 — one own-estimate confidence interval, or ~10% where none is defined; governs only surfacing, never a decision, so raw-over-derived §1.5 is preserved) and the **decision-log / raw-stream retention granularity** (spec §9.3.5 — decision/version/feature records indefinitely, raw per-sample streams on a tunable rolling window; a pure engineering default affecting no engine decision). Separately in the same follow-up, a Section 5 cross-reference slip was fixed in the spec (§5.5.4 broadened to cover goal-race conditions), and the Section 6 §6.2.2 **weekly-CTL-rise band** was fixed and *provisionally ratified in the spec* (soft ~+5/week for the amateur in build, band +3–7, hard ceiling +8, grounded in Friel/TrainingPeaks ramp-rate guidance) — its Part 3 register row is deliberately **deferred until field data refines the value**, so it is intentionally not yet in the table above.
-- **Goal-gap remedy ordering (clarification).** §1.9 fixes the order in which the system proposes goal-contract changes to close a critical projection-vs-goal gap: a revised goal pace first (primary), a later race date second (secondary, costlier), and never a race-distance change. This resolves review Finding 1, which flagged that the goal contract's bundling of `race_date`, `distance_m`, and `goal_pace_target` left a date change reading as a co-equal first-line remedy. Spec §1.4.6 states the ordering, and spec §6.8, §6.4.4, and §8.5.2 are reconciled to it.
-- **Autonomy and the chat interface (reconciliation).** `decisions/01` (its "Bonus" section) treats the chat interface as a checkpoint that surfaces high-stakes changes for athlete "awareness/confirmation," and reads `research/05` §7's autonomy question as still open. This document **resolves** that question in §1.8–§1.9: the system is *fully autonomous, apply-and-notify* over the plan, and the Conversational Coach Interface is **explicitly not a gating mechanism**. Chat exists to let the athlete probe applied changes for understanding and to feed in outside scheduling constraints for negotiation — not to acknowledge or confirm changes before they apply. The only matters requiring athlete decision are the goal contract (§1.9) and the safety pathway (§1.8), neither of which the system owns. The `decisions/01` "Bonus" wording ("awareness/confirmation," "open question") is superseded by this resolution and should be read through it.
+**DOC-14.** F005's feature file, construction reference and release record MUST describe the rule as shipped and MUST NOT be swept.
+Scope: the three F005 records named here.
+Not: the current per-tier dataset model, which DOC-22 locates.
+Pinned: none
+
+**DOC-16.** A derived document MUST never resolve a conflict with the authority from underneath, and MUST record the conflict for the next reader.
+Scope: every derived statement that DOC-02 lists.
+Not: research/00 itself, where the conflict is resolved (DOC-02).
+Pinned: none
+
+**DOC-19.** Verbatim superseded wording IS kept in git, the task files, `withdrawn_phrasings.py` and `research00_old_meanings.py`, and MUST NOT be kept in research/00.
+Scope: every withdrawn or retired phrasing of a rule.
+Not: the dated summary of a change, which the history file holds (DOC-09).
+Pinned: none
+
+**DOC-20.** Each such retired mechanism MUST get a three-valued pin: green on the shipped code, red with that mechanism alone deleted, and green on the replacement.
+Scope: the retired set only.
+Not: a mechanism that is kept, which needs no three-valued pin.
+Pinned: none
+
+**DOC-21.** Any walk indexed by "days since return" MUST say whether it means days elapsed or mornings captured.
+Scope: every HRV walk or figure indexed by time since a return.
+Not: a walk indexed by calendar date alone.
+Pinned: none
+
+**DOC-22.** The per-tier dataset model IS stated in full in `spec/references/F006-dataset-model.md`.
+Scope: the per-tier dataset model of the HRV rules.
+Not: F005's single-baseline rule, which DOC-14 leaves as shipped.
+Pinned: none
+
+**HRV-08.** For a target local date D, the judged week IS the local days `[D-6, D]`, the nominal baseline window IS `[D-66, D-7]` (60 days) and the previous window IS `[D-126, D-67]`.
+Scope: every per-tier dataset and every target date D.
+Not: an overlap, since the judged week and the nominal baseline window are disjoint.
+Pinned: none
+
+**HRV-09.** Every count in the HRV rule MUST be in distinct local days, with `min_baseline_readings` = 14 and `min_window_readings` = 3.
+Scope: every count HRV-08 to HRV-46 take, in every per-tier dataset.
+Not: a count of captures, since a second capture on one local day adds no day.
+Pinned: none
+
+**HRV-10.** Every resting-HRV reading MUST feed the dataset of its own tier, and a morning with both a strap capture and a Health Snapshot MUST feed both.
+Scope: every resting-HRV reading; the rule applies per per-tier dataset (T-06).
+Not: the HRV Status classification, which is no tier and feeds no dataset.
+Pinned: none
+
+**HRV-11.** Within a per-tier dataset, each local day MUST keep its earliest capture.
+Scope: every local day in the athlete's own zone, in every per-tier dataset.
+Not: a collapse across tiers, since each dataset collapses only its own readings.
+Pinned: none
+Why: the critique-round call adopts "earliest", on which the code and IDEA-079 agree.
+
+**HRV-12.** A per-tier dataset IS established when its dataset baseline window (T-09), the nominal `[D-66, D-7]` clipped at the latest of the coverage-gap resumption (HRV-73), its era boundary (HRV-38) and its last internal-hole resumption (HRV-37), holds at least `min_baseline_readings` distinct local days.
+Scope: every per-tier dataset, counted after all three clips.
+Not: the unclipped nominal baseline window, which a clipped dataset does not count in.
+Pinned: none
+Why: decision C12 counts establishment in the window the code reads, since the nominal window is shared by every dataset only before clipping.
+
+**HRV-13.** A per-tier dataset IS judgeable when it is established (HRV-12) and holds at least `min_window_readings` distinct days of the judged week.
+Scope: every per-tier dataset, on every judged day.
+Not: selection itself, which HRV-14 (selection) makes among the judgeable datasets.
+Pinned: none
+
+**HRV-14.** The HRV verdict MUST be taken from the highest-fidelity judgeable per-tier dataset that the recency gate did not skip, whose reference is every established dataset (HRV-15), with chest-strap raw RR ranked over the numeric tiers.
+Scope: selection on every judged day.
+Not: a confidence weight, which never arbitrates (HRV-19).
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_promoted_verdict_is_the_selected_datasets_unchanged_whatever_the_others_read
+
+**HRV-15.** A judgeable per-tier dataset MUST be skipped when its latest reading in the series baseline window (T-09) falls strictly more than `recency_tolerance_days` (28) days behind the latest series-baseline-window reading of any established dataset.
+Scope: the judgeable per-tier datasets on each judged day, which are the recency gate's candidates.
+Not: an established dataset that is not judgeable, which the gate never skips but which can hold the reference maximum.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_stale_candidacy_the_july_trial_no_longer_owns_the_week_on_the_july_band
+Why: decision C10 takes the reference over every established dataset, so an established dataset without a judgeable week, read later, can strike a lone judgeable one.
+
+**HRV-16.** `recency_tolerance_days` MUST be 28, four judged weeks (4 × `window_days`), chosen greater than `gap_reset_days` (21) so that the recency gate and the coverage-gap reset do not disagree about the same number of silent days.
+Scope: the recency gate of HRV-15 (the skip).
+Not: the silence of the whole series, which the coverage-gap reset of HRV-73 (the global gap) measures.
+Pinned: none
+
+**HRV-17.** The response's `thresholds` block MUST publish `recency_tolerance_days`.
+Scope: every HRV trend response.
+Not: the other verdict-affecting constants, which PRIN-12 (the served constants) names.
+Pinned: none (F010)
+Why: decision C33 reads §1.6 at the response level, so the constant that decides `selected_reason` is served, and F010 publishes it.
+
+**HRV-18.** Selection MUST run per judged day and read nothing from earlier days, and every point of the series MUST name the per-tier dataset its SWC band came from.
+Scope: every judged day of a requested HRV series.
+Not: a selection carried over from a previous judged day.
+Pinned: none
+
+**HRV-19.** The fidelity rank (`TIER_FIDELITY`) alone MUST arbitrate selection among the judgeable datasets.
+Scope: selection on every judged day.
+Not: recency, which only skips a candidate (HRV-15) and never ranks one.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_the_numeric_confidence_weight_never_participates_in_selection
+
+**HRV-20.** The selected per-tier dataset MUST supply the HRV verdict, `baseline` and `band`.
+Scope: every judged day on which a dataset is selected.
+Not: a day on which nothing is selected, which HRV-24 (the fallback) governs.
+Pinned: none
+
+**HRV-21.** A per-tier dataset IS disagreeing (`disagreed_with`) when its judged-week mean reads on the other side of its own SWC band from the selected dataset's, in either direction.
+Scope: every reported per-tier dataset other than the selected one.
+Not: a veto, since a disagreeing dataset is named and never overrides the selected one.
+Pinned: none
+
+**HRV-22.** Whenever the served HRV verdict is `hrv_unavailable`, for any cause, the dissent list (`disagreed_with`) MUST be empty.
+Scope: every response, whichever of the three no-verdict states of HRV-23 (no-verdict states) holds.
+Not: the reporting of each dataset against its own SWC band, which HRV-57 keeps.
+Pinned: runcoach-api/tests/test_hrv_dataset_populations.py::test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does
+
+**HRV-23.** A no-verdict state IS exactly one of three: nothing selected; a selected dataset withheld under HRV-31 (the withhold); a day that has not happened.
+Scope: every judged day on which the HRV verdict is `hrv_unavailable`.
+Not: which `unavailable_reason` is served, which HRV-28 (the causes) sets.
+Pinned: none
+
+**HRV-24.** When nothing is selected, the HRV verdict MUST be unavailable and `baseline`/`band` MUST be populated for presentation only.
+Scope: every judged day on which no per-tier dataset is selected.
+Not: a conferred verdict, which the presented dataset never carries (HRV-60).
+Pinned: none
+
+**HRV-25.** The selected per-tier dataset MAY serve `hrv_normal` while another reported dataset reads below its own SWC band only as the named §1.7 exception that PRIN-15 (the §1.7 exceptions) lists, owned by IDEA-099, and that population MUST NOT grow.
+Scope: every response whose selected dataset serves `hrv_normal` beside a dataset that reads below its own SWC band.
+Not: a veto by the dataset that reads below, which selection never grants (HRV-14).
+Pinned: none (F009)
+Why: decision C06 makes §1.7 absolute, so this population ships only as a named exception whose count and pin F009 produces.
+
+**HRV-26.** `judge` MUST judge one per-tier dataset in this fixed order: no SWC band (fewer than two baseline readings) → `week_too_thin` (fewer than `min_window_readings` in the judged week) → `week_not_representative` (withheld, HRV-31) → `baseline_unestablished` → otherwise `hrv_suppressed` iff the 7-day mean is strictly below `band.lo`, else `hrv_normal` (inside or above).
+Scope: the dataset that speaks on a judged day, selected or presented.
+Not: the choice of which dataset speaks, which HRV-14 (selection) and HRV-59 (the fallback order) make.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_reports_the_withheld_week_before_an_unestablished_baseline
+
+**HRV-27.** The system MUST NOT assert an HRV verdict of either kind on an unestablished baseline (the establishment gate is symmetric), and the SWC band MUST still be reported.
+Scope: every per-tier dataset that speaks on a judged day.
+Not: a dataset with fewer than two baseline readings, which has no SWC band to report (HRV-26).
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_baseline_unestablished_alone
+
+**HRV-28.** `unavailable_reason` IS exactly one of `no_tier_sustains_a_trend`, `no_band`, `week_too_thin`, `week_not_representative`, `baseline_unestablished`, `day_not_happened`, and it IS null exactly when the verdict is not `hrv_unavailable`.
+Scope: every served HRV verdict.
+Not: a seventh cause, which the response never names.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_six_unavailable_reason_names_are_the_same_six_in_the_module_the_schema_and_the_contract
+
+**HRV-29.** `day_not_happened` MUST be decided at the route (`main._withhold_future`) for any day after the athlete's local today.
+Scope: every requested day after the athlete's local today.
+Not: the pure rule's own causes, which HRV-26 (the guard order) orders.
+Pinned: none
+
+**HRV-30.** `no_tier_sustains_a_trend` MUST fire only when the series holds no per-tier dataset, that is, no reading of any tier in `[D-66, D]` after the gap clip.
+Scope: the structural cause, asked before any dataset's own guard order (HRV-26).
+Not: a tier with fewer than two baseline readings, which reports `no_band`.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_unavailable_reason_no_tier_when_the_store_holds_no_reading_at_all
+Why: the enum value is contract-bound, so its name is kept although it overstates the condition.
+
+**HRV-31.** A per-tier dataset's verdict MUST be withheld (`week_not_representative`) when another dataset that could not have been selected: not judgeable, or skipped by the recency gate (HRV-15), holds at least `min_window_readings` distinct judged-week days, every one later than every judged-week day of the dataset being judged.
+Scope: every per-tier dataset on every judged day.
+Not: a dataset that could have been selected, which never withholds another's verdict.
+Pinned: runcoach-api/tests/test_hrv_trend_band.py::test_the_withhold_reaches_a_never_used_tier_bought_this_week
+Why: decisions C01 and C02 state the withhold as built, which IDEA-083 option 1 chose.
+
+**HRV-32.** The withhold predicate MUST be over day sets and their order, not counts.
+Scope: the withhold of HRV-31 (the withhold).
+Not: a comparison of how many days each dataset holds.
+Pinned: none
+
+**HRV-33.** The residual (mornings on which a return is still judged on pre-return readings) IS `min(window_days − min_window_readings, k₃)`: four at spread sub-daily capture, two at daily or clustered capture.
+Scope: a returning per-tier dataset while it holds fewer than `min_window_readings` judged-week days.
+Not: the silent mornings after the residual, which other guards decide (HRV-26).
+Pinned: none
+
+**HRV-34.** A source change MUST NOT trigger any rule-level re-establishment, and a source-tier change MUST NOT collapse any SWC band.
+Scope: every source change between tiers; the rule applies per per-tier dataset (T-06).
+Not: the coverage-gap reset of HRV-73 (the global gap), the only reset that re-establishes.
+Pinned: none
+Why: decisions C03, C14 and C15 state what a source change does, and reserve re-establishment for the coverage gap.
+
+**HRV-35.** The coverage-gap reset (`coverage_gap_reset`) MUST be global, measured over the whole series.
+Scope: the series of every tier together.
+Not: one tier's silence while another tier carries the series, which HRV-52 (the partition) assigns elsewhere.
+Pinned: none
+
+**HRV-36.** The coverage gap MUST take precedence over the reset report only.
+Scope: a judged day on which both a coverage gap and an era boundary would be reported.
+Not: the clipped baseline window, which HRV-74 (clip composition) composes.
+Pinned: none
+
+**HRV-37.** A per-tier dataset's SWC band MUST also be clipped, unreported, at an internal capture hole in its own baseline window, meaning more than `gap_reset_days` (21) silent local days of its tier, so 21 does not clip and 22 does.
+Scope: every per-tier dataset, over the silent local days of its own tier inside its dataset baseline window.
+Not: a silence of the whole series, which the coverage gap of HRV-73 (the global gap) resets.
+Pinned: runcoach-api/tests/test_hrv_internal_hole_clip.py::test_a_bridged_internal_hole_clips_the_band_to_the_post_hole_readings
+
+**HRV-38.** The era boundary (`tier_change_reset`) MUST be asked once per per-tier dataset over shared cross-tier facts: (a) the dataset's tier has ≥14 days in the gap-clipped baseline window; (b) it differs from the highest-fidelity tier with ≥14 days in `[D-126, D-67]`; (c) the two eras do not interleave over both windows and the judged week, within the stray tolerance of HRV-39 (strays).
+Scope: every per-tier dataset on every judged day.
+Not: the per-dataset hole clip, which HRV-37 (the hole clip) states separately.
+Pinned: runcoach-api/tests/test_hrv_tier_change_per_dataset.py::test_the_era_boundary_ordering_key_keeps_its_three_terms
+Why: decision C13 states the era clip and the hole clip as two clips, since the code runs both.
+
+**HRV-39.** A stray IS a new-tier capture from the old era's first local day up to its last reading, or an old-tier capture after the new era's first, and strays MUST be pooled across both tiers.
+Scope: every candidate era boundary of HRV-38 (the era boundary).
+Not: a capture simultaneous with the old era's last reading (HRV-79).
+Pinned: none
+
+**HRV-40.** The now-sustaining tier's pre-boundary readings MUST never be in its SWC band (the clip is unconditional).
+Scope: every per-tier dataset with an era boundary.
+Not: the reset report, which HRV-80 (the report condition) conditions.
+Pinned: none
+
+**HRV-41.** Clause (c)'s strays MUST be counted over every reading of every tier in `[D-66, D]`, gap-clipped or not, plus the previous window.
+Scope: the stray count of HRV-38 (the era boundary).
+Not: clause (a)'s count, which HRV-81 (clause a) keeps in the gap-clipped window.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary
+
+**HRV-42.** An empty judged week MUST begin no reset, and a reset already in force MUST persist through it.
+Scope: a judged week holding no reading of any tier.
+Not: the verdict on that week, which reads unavailable under HRV-26 (the guard order).
+Pinned: none
+
+**HRV-43.** `reset_on` IS the era's true first day.
+Scope: every reported reset of every per-tier dataset.
+Not: the day the report first appears, which HRV-82 (the report lag) sets.
+Pinned: none
+
+**HRV-44.** Exactly two mechanisms of the single-baseline rule MUST stay retired: `resolve_baseline_tier`'s role as cross-tier arbitration, and the `off_baseline_tier` exclusion.
+Scope: the mechanisms IDEA-071 listed for the per-tier dataset model.
+Not: the function `resolve_baseline_tier` itself, which survives with its tie-order pin.
+Pinned: runcoach-api/tests/test_hrv_three_valued_retirements.py::test_each_pin_is_red_only_on_its_own_qualifiers_deletion
+
+**HRV-45.** Two recency notions MUST be kept apart as different rules: the presentation fallback's tie-break by last read, and the admission gate of HRV-15 (the skip).
+Scope: every use of recency in the HRV rule.
+Not: the order of the fallback's clauses, which HRV-59 (the fallback order) sets.
+Pinned: none
+
+**HRV-46.** The HRV rule MUST key on `hrv_source_tier` alone and has no notion of device identity.
+Scope: every reset and every selection in the HRV rule.
+Not: per-unit sensor identity (F007), which is ingestion data only, so a device-change rule requires amending this rule.
+Pinned: none
+
+**HRV-48.** Each per-tier dataset MUST carry its own baseline mean, SD, `n`, `established` and SWC band, built from its own readings alone.
+Scope: every per-tier dataset.
+Not: an SWC band pooled across tiers, which HRV-06 (anti-mixing) forbids.
+Pinned: none
+
+**HRV-49.** Every capture later than the earliest on the same local day MUST be excluded from its per-tier dataset as `same_day_later_capture`.
+Scope: every local day on which one tier holds more than one capture.
+Not: a capture of another tier on that day, which feeds its own dataset (HRV-10).
+Pinned: none
+
+**HRV-50.** A per-tier dataset's SWC band MUST still be built and reported from two baseline readings up, established or not.
+Scope: every per-tier dataset with at least two baseline readings.
+Not: a verdict, which HRV-27 (the symmetric gate) withholds on an unestablished baseline.
+Pinned: none
+
+**HRV-51.** The reference maximum MUST be taken once, simultaneously, over every established dataset, while the candidates the recency gate strikes from MUST stay the judgeable datasets.
+Scope: the recency gate of HRV-15 (the skip), on every judged day.
+Not: a lone judgeable dataset exempt from the gate, since an established dataset read later can strike it.
+Pinned: runcoach-api/tests/test_hrv_trend_series.py::test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164
+
+**HRV-52.** Silence MUST be partitioned by scope: the coverage-gap reset (HRV-35) covers the silence of the whole series, and the hole clip (HRV-37) and then the recency gate (HRV-15) cover one per-tier dataset's silence while another dataset carries the series.
+Scope: every silence of one tier or of the whole series.
+Not: the trailing-silence regime that HRV-53 (IDEA-093) leaves OPEN.
+Pinned: none
+Why: decision C10 scopes the partition, since the hole clip also acts on one tier's silence.
+
+**HRV-53.** The 22–28-day trailing-silence regime of one per-tier dataset, which neither the coverage-gap reset nor the hole clip reaches, IS OPEN, owned by IDEA-093.
+Scope: one tier falling silent at the end of its baseline window while another tier carries the series.
+Not: an internal hole of more than 21 silent local days, which HRV-37 (the hole clip) clips.
+Pinned: none
+
+**HRV-54.** Section 3 MUST NOT compute or emit a confidence weight (weighting is deferred to Section 6's readiness fusion), and `datasets[]` MUST carry `fidelity_rank`.
+Scope: every HRV trend response and every selection.
+Not: Section 6's readiness fusion, which may weight the HRV input later.
+Pinned: none
+
+**HRV-55.** Every other dataset's SWC band, `n` and `established` MUST still be computed and reported.
+Scope: every per-tier dataset other than the selected one.
+Not: the verdict, which only the selected dataset supplies (HRV-20).
+Pinned: none
+
+**HRV-56.** Judgeability MUST never be consulted for disagreement, and a dataset with no SWC band or no week mean MUST NOT be named as disagreeing.
+Scope: every reported per-tier dataset other than the selected one.
+Not: the selected dataset itself, which cannot disagree with its own verdict.
+Pinned: none
+
+**HRV-57.** `datasets[]`, `selected_dataset`, `selected_reason`, `baseline` and `band` MUST still be reported as computed when the HRV verdict is `hrv_unavailable`.
+Scope: every response whose HRV verdict is `hrv_unavailable`.
+Not: the dissent list, which HRV-22 (empty dissent) empties.
+Pinned: runcoach-api/tests/test_hrv_dataset_populations.py::test_week_not_representative_is_served_with_nothing_selected_and_names_no_dissenter
+
+**HRV-58.** The cause alone MUST identify the third no-verdict state, a day that has not happened, and that state MAY coincide with either of the other two.
+Scope: the three no-verdict states of HRV-23 (no-verdict states).
+Not: the first two states, which whether a dataset is selected separates.
+Pinned: none
+
+**HRV-59.** The presented dataset MUST be, in order: the established dataset read last in the baseline window (ties by `n`, then fidelity); with none established, the densest by `n`; with no baseline reading of any tier, the densest in the judged week (ties to fidelity throughout).
+Scope: every judged day on which no per-tier dataset is selected.
+Not: the selected dataset, which HRV-14 (selection) chooses.
+Pinned: none
+
+**HRV-60.** The presented dataset IS never judgeable, so a verdict MUST NOT be conferred on it.
+Scope: the presentation fallback of HRV-24 (the fallback).
+Not: the presented dataset's own reading against its SWC band, which is still reported.
+Pinned: runcoach-api/tests/test_hrv_unavailable_reason.py::test_the_fallback_confers_no_verdict_and_names_no_dissenter_even_when_its_own_week_reads_below
+
+**HRV-61.** The first cause to fire MUST be the one reported as `unavailable_reason`.
+Scope: every HRV verdict that is `hrv_unavailable`.
+Not: `day_not_happened`, which overrides the pure rule's cause (HRV-62).
+Pinned: none
+
+**HRV-62.** `day_not_happened` MUST override whichever cause the pure rule reported, and MUST leave the selection and everything that produced it as computed.
+Scope: every requested day after the athlete's local today.
+Not: a day on or before the athlete's local today, which the pure rule alone decides.
+Pinned: none
+
+**HRV-63.** The withhold MUST be asked of every per-tier dataset as if it were the selected one.
+Scope: every per-tier dataset on every judged day, selected, presented or neither.
+Not: a withhold asked of the selected dataset alone.
+Pinned: none
+
+**HRV-64.** The returning dataset MUST hold at least `min_window_readings` of those later judged-week days for the withhold to fire.
+Scope: the withhold of HRV-31 (the withhold).
+Not: a dataset with fewer such days, which withholds nothing.
+Pinned: none
+
+**HRV-65.** The residual MUST be left unchanged, by the user decision recorded at H-18.
+Scope: the residual mornings of HRV-33 (the residual).
+Not: the question whether to close it, which HRV-66 (IDEA-092) leaves OPEN.
+Pinned: none
+
+**HRV-66.** Whether the residual's mornings should be closed IS OPEN, owned by IDEA-092.
+Scope: the residual mornings of HRV-33 (the residual).
+Not: the residual's formula, which HRV-33 (the residual) states.
+Pinned: none
+Why: decision C09 homes the question with an open owner, since the sprint it was carried to has shipped.
+
+**HRV-67.** Adopting a never-used tier MUST start that tier's dataset from nothing, subject to the withhold (HRV-31), and abandoning a tier MUST let its dataset age out of the window.
+Scope: every source change between tiers.
+Not: a return to a previously established dataset, which HRV-68 (the return) governs.
+Pinned: none
+
+**HRV-68.** A returning per-tier dataset MUST be selected, by the fidelity order of HRV-14 (selection), once it is judgeable and not skipped by the recency gate.
+Scope: a per-tier dataset whose tier resumes after a silence while another dataset carried the series.
+Not: a never-used tier, which HRV-67 (adoption) governs.
+Pinned: none
+
+**HRV-69.** Until a returning per-tier dataset is selected, the recency gate MAY skip it, and its later judged-week days MAY withhold another dataset's verdict (HRV-31).
+Scope: a returning per-tier dataset that is not yet selected.
+Not: a returning dataset that is judgeable and not skipped, which HRV-68 (the return) selects.
+Pinned: none
+
+**HRV-70.** Once more than `gap_reset_days` (21) silent local days of its tier lie inside a returning dataset's own baseline window, its pre-silence readings MUST be clipped by the hole clip (HRV-37), while a trailing silence clips nothing (IDEA-093).
+Scope: a returning per-tier dataset.
+Not: a silence of the whole series, which the coverage-gap reset (HRV-73) clips.
+Pinned: none
+
+**HRV-71.** A return to a previously established per-tier dataset IS free, meaning nothing is re-established on its account, only when it follows 21 or fewer silent local days of its tier and the recency gate does not skip it.
+Scope: a returning per-tier dataset.
+Not: a return the recency gate skips, or one after more than 21 silent local days, which HRV-69 and HRV-70 (the return costs) govern.
+Pinned: none
+
+**HRV-72.** A `tier_change` reset IS an era boundary on one per-tier dataset: its pre-boundary readings are clipped from its own SWC band (HRV-40), and it is reported with the lag of HRV-82 (the report lag).
+Scope: every reported `tier_change` of every per-tier dataset.
+Not: the coverage-gap reset, the only re-establishment (HRV-34).
+Pinned: none
+
+**HRV-73.** When the whole series (every tier together) is silent for more than `gap_reset_days` (21) silent local days (21 does not reset; 22 does), the baseline window of every per-tier dataset MUST be clipped at the resumption and `coverage_gap` MUST be reported.
+Scope: the series of every tier together.
+Not: one tier's internal hole, which HRV-37 (the hole clip) clips unreported.
+Pinned: none
+
+**HRV-74.** The gap clip and the era clip MUST compose as the later first day.
+Scope: every per-tier dataset with both a gap clip and an era clip.
+Not: the reset report, over which the coverage gap takes precedence (HRV-36).
+Pinned: none
+
+**HRV-75.** The recency gate MUST apply to neither clause (a) nor clause (b) of the era boundary.
+Scope: the era boundary of HRV-38 (the era boundary).
+Not: selection, where the recency gate of HRV-15 (the skip) applies.
+Pinned: none
+
+**HRV-76.** The cross-tier era clip (HRV-40) and the per-dataset hole clip (HRV-37) MUST be applied as two separate clips, composed with the gap clip (HRV-73) as the latest first day.
+Scope: every per-tier dataset's baseline window.
+Not: the reset report, which only the era clip and the coverage gap produce.
+Pinned: runcoach-api/tests/test_hrv_internal_hole_clip.py::test_probe_the_hole_is_scanned_on_the_era_clipped_window_and_the_tier_change_report_stays
+Why: decision C13 separates the two clips, since the code runs both and composes them.
+
+**HRV-77.** The boundary-existence half of the stray tolerance (fewer than 14 distinct days of strays) MUST decide whether an era boundary exists.
+Scope: every candidate era boundary of HRV-38 (the era boundary).
+Not: the report, which the week half decides (HRV-78).
+Pinned: none
+
+**HRV-78.** The week half (fewer than 3 stray days in the judged week) MUST decide the report and MUST be the first ordering term of `_era_boundary`'s key, then the fewest stray days, then the later boundary.
+Scope: every admitted era boundary of HRV-38 (the era boundary).
+Not: whether a boundary exists, which the boundary-existence half decides (HRV-77).
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of
+
+**HRV-79.** Simultaneous captures MUST NOT count as strays.
+Scope: a capture at the very instant of the old era's last reading.
+Not: a capture at any other instant inside the stray span of HRV-39 (strays).
+Pinned: none
+
+**HRV-80.** The reset report (`reset_reason`/`reset_on`) MUST additionally require that the other tier was not in use in the judged week.
+Scope: every era boundary of every per-tier dataset.
+Not: the clip, which HRV-40 (the unconditional clip) applies regardless.
+Pinned: none
+
+**HRV-81.** Clause (a) MUST still read the gap-clipped window.
+Scope: clause (a) of HRV-38 (the era boundary).
+Not: clause (c)'s stray count, which HRV-41 (unclipped strays) widens.
+Pinned: none
+
+**HRV-82.** The reset report's lag behind the reset IS `min_baseline_readings + 7 − 1` = 20 days, accepted as latency rather than inaccuracy because an earlier report would be a prediction.
+Scope: every reported reset of every per-tier dataset.
+Not: the reported date itself, which HRV-43 (reset_on) makes the era's true first day.
+Pinned: none
+
+**HRV-83.** Everything else on IDEA-071's list MUST be kept, re-derived or redeployed, apart from T093's week-coverage half, which judgeability subsumes.
+Scope: the mechanisms IDEA-071 listed for the per-tier dataset model.
+Not: the two retired mechanisms of HRV-44 (retirements).
+Pinned: none
+
+**HRV-84.** Replacing a device within the same tier MUST fire no reset and cost no silent days.
+Scope: every device replacement within one `hrv_source_tier`.
+Not: a change of tier, which HRV-72 (tier_change) governs.
+Pinned: none
+
+**GATE-01.** Every §1.7-forbidden rate MUST be measured against shipped F005 on every sweep, with capture density varied on both datasets.
+Scope: every rate in the forbidden direction that the release gate computes.
+Not: the dataset-flip rate, which rule GATE-06 measures.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_no_1_7_rate_worsens_against_shipped_f005
+Why: decision C06 makes §1.7 absolute, so a forbidden-direction rate is gated on every sweep.
+
+**GATE-02.** The system MUST NOT add hysteresis to dataset selection, and the worsened dataset-flip set MUST remain the 80 pinned `walk_flips` cells at `car_density = 2wk`.
+Scope: the dataset-flip rate, measured against shipped F005 on every sweep the same way as rule GATE-01.
+Not: a worsened cell outside that pinned set, which fails the gate.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned
+Why: the no-hysteresis decision is recorded at H-37 and is revisited only if the unequal-dispersion measurement of IDEA-089 (b) shows harm.
+
+**GATE-03.** The constant `recency_tolerance_days` = 28 MUST rest on the two reasons of rule HRV-16 alone, (i) four judged weeks and (ii) greater than `gap_reset_days` (21), until a re-measurement against per-tier datasets is recorded.
+Scope: every citation of the recency tolerance's basis.
+Not: a measured tolerance range, which rule GATE-07 excludes for per-tier datasets.
+Pinned: none
+Why: decision C37 records that no re-measurement result exists, and T-07 reserves the word band for the HRV SWC band.
+
+**GATE-04.** Any worsening of such a rate MUST block release, save a named, counted, test-pinned exception that rule PRIN-15 lists with its owning open IDEA, and such an exception MUST NOT grow.
+Scope: every §1.7-forbidden rate rule GATE-01 measures.
+Not: a rate at parity with shipped F005, which is no worsening.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_no_1_7_rate_worsens_against_shipped_f005
+Why: decision C06 lets a forbidden-direction population ship only as such an exception, never on a rarity argument.
+
+**GATE-05.** `DEFERRED_EXCEPTION` (c = 4, 5, 64 gated rows) IS such an exception, owned by IDEA-087.
+Scope: the gated rows at c = 4 and c = 5 under the independent-instruments fixture.
+Not: any row outside those 64, which blocks release when it worsens.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
+
+**GATE-06.** The dataset-flip rate of a three-days-a-week wearer MUST be measured against shipped F005 on every sweep, the same way as the rates of rule GATE-01.
+Scope: every sweep the release gate runs.
+Not: the decision on hysteresis, which rule GATE-02 states.
+Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned
+
+**GATE-07.** The `[18, 44]` tolerance range MUST NOT be cited for per-tier datasets, because it was measured against the fused single-baseline HRV band.
+Scope: every citation of a measured tolerance range for `recency_tolerance_days`.
+Not: the value 28 itself, which rule GATE-03 grounds.
+Pinned: none
+
+**GATE-08.** Whether a strap-morning Health Snapshot is an independent instrument or the same beats post-processed by the watch IS unmeasured, so the disagreement rate may measure vendor processing until it is.
+Scope: every disagreement rate between the strap and Health Snapshot datasets.
+Not: a claim that the two are independent instruments.
+Pinned: none
+
+**FIG-01.** After a coverage-gap re-establishment the athlete traverses 20 days beneath `min_baseline_readings` (`R+0 .. R+19`), and the spec MUST publish that figure.
+Scope: a coverage-gap re-establishment of the series (rule HRV-35), not a source-tier change.
+Not: the cost of a source-tier change, which rule FIG-02 states.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_establishment_delay_after_a_reset_is_twenty_days
+Pinned: runcoach-api/tests/test_spec_cost_figures.py::test_the_establishment_delay_is_stated_at_each_site
+
+**FIG-02.** A clean, gapless source-tier change costs 18 silent days (`R+2 .. R+19`), closed form `min_baseline_readings + 7 − min_window_readings` = 18, with `established` true throughout, and the spec MUST publish that figure.
+Scope: a clean, gapless source-tier change at daily capture on the new tier.
+Not: the 20 days of a coverage-gap re-establishment, which rule FIG-01 states.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_them
+Pinned: runcoach-api/tests/test_hrv_unavailable_causes.py::test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure
+Why: the quiet ends when the new tier reaches `min_baseline_readings` distinct days at or before D−7, which is `R + (min_baseline_readings − 1) + 7` = R+20, and the 20-day figure of rule FIG-01 is true of a coverage gap and false of a source-tier change.
+
+**FIG-03.** The spec MUST publish that during a layoff longer than 21 days, days 1–4 are judged and days 5–22 are silent (18).
+Scope: a layoff of the whole series longer than `gap_reset_days`.
+Not: the silence of a source-tier change, which rule FIG-02 states.
+Pinned: none
+Why: that 18 is a coverage-gap figure, and its equality with the tier change's 18 in rule FIG-02 is a coincidence.
+
+**FIG-04.** The spec MUST publish that at a daily-capture return the withhold costs 72 of 2,050 swept geometries (`hrv_normal → hrv_unavailable`).
+Scope: a daily-capture return only, since a figure measured at one capture density holds only there (rule DOC-12).
+Not: a return at spread or sub-daily capture.
+Pinned: none
+
+**FIG-05.** The spec MUST NOT publish an aggregate HRV silence rate.
+Scope: every sum of the HRV silences the spec names.
+Not: the individual silence figures, which rules FIG-01 to FIG-04 publish.
+Pinned: none
+Why: decision C09 leaves the question of rule FIG-11 open under a named owner rather than answered by a rate.
+
+**FIG-06.** At every-second-day capture on the new tier the tier-change silence IS 29 days, and the spec MUST publish that figure.
+Scope: a clean, gapless source-tier change at one capture every second day on the new tier.
+Not: daily capture, which rule FIG-02 prices.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_grows_with_the_new_tiers_capture_density
+
+**FIG-07.** The spec MUST publish that the silent days of a source-tier change carry `week_not_representative` ×2 and `week_too_thin` ×16.
+Scope: the 18 silent days of rule FIG-02.
+Not: a seventh unavailable cause, which the response does not carry.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_them
+
+**FIG-08.** The spec MUST publish that keeping the old device recording removes the silence and the `tier_change` report together.
+Scope: a source-tier change across which the old device keeps recording.
+Not: a clean switch, which rule FIG-02 prices.
+Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_zero_when_the_old_tier_outlasts_candidacy
+
+**FIG-09.** The spec MUST publish the layoff's total silence as 38 days, its 18 silent days plus the 20 re-establishment days after it.
+Scope: a layoff of the whole series longer than `gap_reset_days`.
+Not: a layoff of 21 days or fewer, which resets nothing.
+Pinned: none
+
+**FIG-10.** The spec MUST publish that at a daily-capture return five of the athlete's first seven mornings back are silent.
+Scope: a daily-capture return only (rule DOC-12).
+Not: a return at spread or sub-daily capture.
+Pinned: none
+
+**FIG-11.** The question of when a rule that mostly says nothing stops being conservative and starts being useless IS OPEN, owned by IDEA-092.
+Scope: every rule in the HRV gate that can withhold a verdict.
+Not: a published answer, which rule FIG-05 excludes.
+Pinned: none

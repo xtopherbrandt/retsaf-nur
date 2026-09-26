@@ -10,9 +10,11 @@ cut-over (T175) runs it over the real files, and the critics (T177-T179) take th
 Each checker is proven twice: red on a minimal synthetic violation and green on a minimal valid case,
 so a checker that cannot fail is visible here; and green on one hand-written real block per group,
 written from its inventory row, so a checker that is too strict for real text is visible here rather
-than in four stalled parallel builders (T170 AC4). The real-path cases -- the committed research/00,
-history and traceability table -- are added by the cut-over, so the suite never carries an xfail or a
-skip (R11).
+than in four stalled parallel builders (T170 AC4). The real-path cases (``test_real_path_*``) -- the
+committed research/00, history and traceability table, and the committed ``OLD_MEANINGS`` -- were
+added by the cut-over (T175) in the same commit as the files, so the suite never carried an xfail or
+a skip (R11). The drafts under ``specification/research/drafts/`` were deleted by that commit;
+``assemble`` and ``fragment_errors`` stay, proven on the synthetic world.
 
 Authority: ``spec/references/F008-rewrite-decisions.md`` (R1-R11) and the inventory
 ``spec/references/research00-rewrite-inventory.md`` at commit ``4e47d0e``. Neither is read by the
@@ -371,11 +373,14 @@ def retired_ids(rows: list[dict[str, str]]) -> dict[str, str | None]:
     - otherwise (merged away) with its decision group's entry: H-38 for a Group A C-number, H-39 for
       Group B, H-40 for the critique-round ``HRV-11`` call, H-41 for an R-refinement or a T-number
       (R9's T-07 renames). The first decision in the cell decides.
-    ``None`` marks a merged-away ID with no decision to retire under; ``traceability_errors`` flags it."""
+    ``None`` marks a merged-away ID with no decision to retire under; ``traceability_errors`` flags it.
+    A malformed inventory-ID cell (not one rule ID, e.g. "PRIN-15, IND-99") retires nothing: it is
+    reported, never raised -- ``traceability_errors`` names it as not an inventory ID and ``assemble``
+    as malformed (T176's robustness finding)."""
     retired: dict[str, str | None] = {}
     for row in rows:
         inv = row["inventory ID"]
-        if _is_blank(inv) or inv in _new_rule_ids(row):
+        if _is_blank(inv) or not _RULE_ID.fullmatch(inv) or inv in _new_rule_ids(row):
             continue
         h = _H_ID.findall(row["new ID(s)"])
         if h:
@@ -844,7 +849,11 @@ def assemble(drafts_dir) -> Assembly:
             out += [block, ""]
     table = "\n".join([TRACE_HEADER, "|" + "---|" * len(TRACE_COLUMNS), *table_rows]) + "\n"
     try:
-        retired = retired_ids(parse_traceability(table))
+        parsed = parse_traceability(table)
+        problems += [f"[assemble] traceability: a malformed inventory-ID cell {r['inventory ID']!r} (one rule ID "
+                     f"or '{ADDITION}')" for r in parsed
+                     if not _is_blank(r["inventory ID"]) and not _RULE_ID.fullmatch(r["inventory ID"])]
+        retired = retired_ids(parsed)
     except ValueError as exc:
         problems.append(f"[assemble] traceability: {exc}")
         retired = {}
@@ -1950,6 +1959,134 @@ def test_the_real_old_meaning_patterns_miss_their_new_rules() -> None:
             print(f"[slice compared] {key}: {entry.pattern!r} vs {normalize(entry.example)!r}")
             assert re.search(entry.pattern, normalize(entry.example)), key
             assert not re.search(entry.pattern, normalize(case.rules)), key
+
+
+# ---------------------------------------------------------------------------
+# The real paths (T175): the committed research/00, history and traceability table, and the
+# committed OLD_MEANINGS, held to the same complete check the drafts passed under assemble_check.
+# ---------------------------------------------------------------------------
+
+_REAL_RESEARCH = _REPO_ROOT / "specification" / "research" / "00-design-decisions.md"
+_REAL_HISTORY = _REPO_ROOT / "specification" / "research" / "00-history.md"
+_REAL_TABLE = _REPO_ROOT / "specification" / "research" / "00-traceability.md"
+
+
+def _real() -> tuple[str, str, list[dict[str, str]]]:
+    research = _REAL_RESEARCH.read_text(encoding="utf-8")
+    history = _REAL_HISTORY.read_text(encoding="utf-8")
+    return research, history, parse_traceability(_REAL_TABLE.read_text(encoding="utf-8"))
+
+
+def test_real_path_ac1_ac2_ac3_every_line_of_research00_is_grammar() -> None:
+    """AC1 (no ISO date, no line over 400 characters, one sentence per rule line), AC2 (every line
+    outside the headings and the Glossary is a rule, Scope, Not, Pinned, Why or blank line) and AC3's
+    unique, well-formed IDs, over the committed file."""
+    research, _history, _rows = _real()
+    errors = rule_grammar_errors(research)
+    ids = rule_ids(research)
+    longest = max(len(line) for line in _lines(research))
+    print(f"[slice compared] {_REAL_RESEARCH.name}: {len(ids)} rule lines, longest line {longest}, "
+          f"errors {errors[:10]}")
+    assert errors == []
+    assert len(ids) >= 120 and len(set(ids)) == len(ids)
+    assert not _ISO_DATE.search(" ".join(research.split()))
+
+
+def test_real_path_ac4_glossary_and_band() -> None:
+    research, _history, _rows = _real()
+    errors = glossary_errors(research) + band_errors(research)
+    print(f"[slice compared] glossary and band over {_REAL_RESEARCH.name}: {errors[:10]}")
+    assert errors == []
+    assert GLOSSARY_HEADING in _lines(research)
+
+
+def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
+    """AC5's entry format and AC3's retired IDs: ``## Retired IDs`` lists exactly what
+    ``retired_ids`` derives from the committed table, no retired ID names a rule, and every
+    history arrow resolves to a rule or a retired ID."""
+    research, history, rows = _real()
+    errors = history_errors(history)
+    listed = _retired_listed(history)
+    derived = {i: h for i, h in retired_ids(rows).items() if h}
+    resolvable = set(rule_ids(research)) | set(listed)
+    for h, ids in _history_arrows(history).items():
+        errors += [f"[history] {h}'s arrow cites {i}, neither a rule nor a retired ID" for i in ids if i not in resolvable]
+    print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
+          f"{errors[:10]}")
+    assert errors == []
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 42)]
+    assert listed == derived and listed
+    assert not set(listed) & set(rule_ids(research))
+
+
+def test_real_path_ac6_traceability_both_directions_and_pins() -> None:
+    """AC6 over the committed table: the 149 inventory IDs, every new ID resolving, every rule named,
+    every key in the committed ``OLD_MEANINGS``, every ``Pinned:`` node found; and R11's anchors
+    (the three source_change anchors and the FIG-01 lead) each unique."""
+    research, history, rows = _real()
+    header = _REAL_TABLE.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n", 1)[0]
+    errors = (traceability_errors(rows, research, history, _OM.OLD_MEANINGS)
+              + pinned_errors(research, _REPO_ROOT) + _anchor_errors(research))
+    print(f"[slice compared] {len(rows)} rows, {len(rule_ids(research))} rules, "
+          f"{len(_OM.OLD_MEANINGS)} keys: {errors[:10]}")
+    assert header == TRACE_HEADER
+    assert errors == []
+
+
+def test_real_path_decision_column_is_complete() -> None:
+    _research, _history, rows = _real()
+    errors = decision_column_errors(rows, True)
+    print(f"[slice compared] R3 over {len(rows)} rows: {errors[:10]}")
+    assert errors == []
+
+
+def test_real_path_ac7_every_decision_is_stated_in_its_rule() -> None:
+    research, _history, rows = _real()
+    errors = operative_string_errors(research, rows)
+    cited = sorted({c for r in rows for c in _C_ID.findall(r["decision"])} & set(OPERATIVE))
+    print(f"[slice compared] operative strings for {cited}: {errors[:10]}")
+    assert errors == []
+    assert cited == sorted(OPERATIVE)
+
+
+def test_real_path_ac9_proxy_on_every_unchanged_row() -> None:
+    research, _history, rows = _real()
+    errors = _proxy_rows(rows, research)
+    checked = sum(1 for r in rows if r["meaning changed"] == "no" and not _is_blank(r["inventory sentence"]))
+    print(f"[slice compared] AC9 proxy over {checked} no rows: {errors[:10]}")
+    assert errors == []
+    assert checked > 0
+
+
+def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
+    """R4 over the committed ``OLD_MEANINGS`` and the whole of research/00, glossary included; every
+    key the table names exists, and ``EXCEPTIONS`` stays empty until F011."""
+    research, _history, rows = _real()
+    errors = old_meaning_errors(_OM.OLD_MEANINGS, research)
+    named = {k for r in rows for k in _keys(r)}
+    print(f"[slice compared] {len(_OM.OLD_MEANINGS)} keys, {len(named)} named by the table: {errors[:10]}")
+    assert errors == []
+    assert _OM.OLD_MEANINGS and named <= set(_OM.OLD_MEANINGS)
+    assert _OM.EXCEPTIONS == ()
+
+
+# ---------------------------------------------------------------------------
+# A malformed inventory-ID cell is reported, not raised (T176's robustness finding)
+# ---------------------------------------------------------------------------
+
+
+def test_a_malformed_inventory_id_cell_is_reported_not_raised(tmp_path) -> None:
+    files = _world_files()
+    _sub("doc-goal.trace.txt", "| PRIN-15 | Rule PRIN-15", "| PRIN-15, IND-99 | Rule PRIN-15")(files)
+    drafts = _write(tmp_path, files)
+    a = assemble(drafts)
+    rows = parse_traceability(a.table)
+    retired = retired_ids(rows)
+    errors = assemble_check(drafts)
+    print(f"[slice compared] problems {list(a.problems)}; retired {retired}; errors {errors[:6]}")
+    assert any("PRIN-15, IND-99" in p and "malformed" in p for p in a.problems), a.problems
+    assert "PRIN-15, IND-99" not in retired
+    assert any("PRIN-15, IND-99" in e for e in errors), errors
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,8 @@ by a property sweep, not by the absence of one string"* -- that
 (``.claude/rules/project-domain-and-spec-fidelity.md``) all state the HRV
 smallest-worthwhile-change band as **SWC_FACTOR * SD(ln rMSSD)**, never as
 **SWC_FACTOR * CV(ln rMSSD)** -- the form the 2026-09-09 sweep withdrew
-across those same seven files (``research/00`` Sec 5.4).
+across those same seven files (``research/00-history.md`` H-09, which F008
+moved there from ``research/00`` Sec 5.4).
 
 The **behavioural** half of this is solid and pinned:
 ``hrv_trend.build_band``, ``SWC_FACTOR``,
@@ -40,7 +41,7 @@ list of seven paths -- ``.claude/rules/`` is not under ``specification/``, so
 both roots are walked, each with its own floor, so a walk that has stopped
 descending cannot report a silent all-clear.
 
-**Quotation vs. claim.** ``research/00``'s own Sec 5.4 entry is the record of
+**Quotation vs. claim.** ``research/00-history.md``'s H-09 entry is the record of
 the 2026-09-09 clarification and legitimately quotes the withdrawn form as the
 thing that was clarified away -- exactly what this module must not flag. Six
 of the seven historical mentions in the corpus are wrapped in a markdown
@@ -48,7 +49,7 @@ quote (``"..."``) or a code span (`` `...` ``), and the property that
 generalises over all of them is checked directly, on synthetic text, by
 ``test_the_quotation_guard_tells_a_live_claim_from_a_historical_quotation``
 below -- not assumed. The one historical mention that survives *unquoted*
-(``research/00``'s own numeric comparison, "the literal
+(the H-09 entry's own numeric comparison, "the literal
 ``0.5·CV(ln rMSSD)`` is 0.0138 (about 4× too narrow)", argued right
 there in the same clause as *why* the form is wrong) is the one exclusion
 this module carries by line-identity, mirroring
@@ -227,18 +228,18 @@ class Site:
     rel: str
 
 
-#: The seven files research/00 Sec 5.4 names as restated by the 2026-09-09
-#: sweep: spec Sec 2.4.5, Sec 3.7.3/3.7.4/3.10 (one file, spec/03), Sec 6.2.4,
-#: spec_outline.md Section 3, research/05 Sec 2.4 and Sec 6, and the project
-#: rule -- research/00 itself is the eighth party (the amendment lives
-#: there), included here because it is also a surface a reader meets the
-#: band's form in, not only the record of its correction.
+#: The seven files research/00-history.md's H-09 names as restated by the
+#: 2026-09-09 sweep: spec Sec 2.4.5, Sec 3.7.3/3.7.4/3.10 (one file, spec/03),
+#: Sec 6.2.4, spec_outline.md Section 3, research/05 Sec 2.4 and Sec 6, and the
+#: project rule -- research/00 itself is the eighth party (its HRV-07 states
+#: the band), included here because it is a surface a reader meets the band's
+#: form in. The record of the correction moved to the history file (F008).
 SITES = (
     Site("spec/02 Sec 2.4.5 confidence and anti-mixing", "specification/spec/02-canonical-data-schema-ingestion.md"),
     Site("spec/03 Sec 3.7.1-3.7.4 and Sec 3.10", "specification/spec/03-derived-metric-formulas.md"),
     Site("spec/06 Sec 6.2.4 readiness fusion inputs", "specification/spec/06-adaptation-logic.md"),
     Site("spec_outline.md Section 3", "specification/spec_outline.md"),
-    Site("research/00 the register and its Sec 5.4 amendment", "specification/research/00-design-decisions.md"),
+    Site("research/00 the SWC band rule HRV-07", "specification/research/00-design-decisions.md"),
     Site("research/05 the HRV-guided-training rule", "specification/research/05-data-to-adaptation.md"),
     Site("the project rule", ".claude/rules/project-domain-and-spec-fidelity.md"),
 )
@@ -274,7 +275,8 @@ SCAN_ROOT_FLOORS = (15, 6)
 
 #: The one historical-record exception ([[sweep-the-claim-not-the-diff]]
 #: step 3, and test_hrv_trend_endpoint.py's own SCAN_EXCLUDED_HISTORY):
-#: research/00's 2026-09-09 reconciliation entry states two numerical
+#: research/00-history.md's H-09 entry (the 2026-09-09 reconciliation, moved
+#: out of research/00 Sec 5.4 by F008 and kept verbatim there) states two numerical
 #: comparisons -- "0.5*CV of the *raw* rMSSD series is 0.0525" and "the
 #: literal 0.5*CV(ln rMSSD) is 0.0138" -- neither wrapped in a quote or a
 #: code span, both there only to argue the withdrawn form was numerically
@@ -284,7 +286,7 @@ SCAN_ROOT_FLOORS = (15, 6)
 #: file, and checked below rather than trusted: an exclusion that shelters
 #: nothing must be deleted, not kept "just in case".
 _HISTORICAL_RECORD_LINES = (
-    ("specification/research/00-design-decisions.md", "SWC band statistic (clarification, 2026-09-09)"),
+    ("specification/research/00-history.md", "SWC band statistic (clarification, 2026-09-09)"),
 )
 
 

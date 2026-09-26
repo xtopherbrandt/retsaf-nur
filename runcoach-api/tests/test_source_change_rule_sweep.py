@@ -31,15 +31,16 @@ two-root walk with a floor per root:
   ``SUPERSEDED_FORMS`` are longer than the column at which one scan root is
   wrapped (sprint-006 review iteration 1, S1; ``_flat_text``).
   ``research/00``'s Sec 5.4 entries
-  legitimately quote the withdrawn form as the thing that was amended
-  away; a mention inside a markdown quote (``"..."``) or a code span
+  quoted the withdrawn form as the thing that was amended away until F008
+  (sprint-007 T175) moved them to ``research/00-history.md``, which
+  paraphrases; a mention inside a markdown quote (``"..."``) or a code span
   (`` `...` ``) is a quotation, not a claim, and the guard that tells the two
   apart is checked on synthetic text rather than assumed.
 
 **``off_baseline_tier``.** [[T152]] retires the exclusion reason from the
-code. ``research/00``'s two reproductions (the 2026-09-16 bullets) name it
-normatively, so unless the authority marks it retired it outlives the code.
-Every mention in either tree must sit on a line that says so.
+code. ``research/00``'s HRV-44 names it (the two 2026-09-16 reproductions that
+named it normatively were rewritten by F008), so unless the authority marks it
+retired it outlives the code. Every mention in either tree must sit on a line that says so.
 
 **A witness must print the slice it compared.** Each test prints the
 ``file@offset`` -- a character offset into the flattened file, since a line
@@ -219,19 +220,19 @@ class Site:
 
 SITES = (
     Site(
-        "research/00 Sec 3.3 the four-tier hierarchy",
+        "research/00 HRV-01 the four-tier hierarchy",
         "specification/research/00-design-decisions.md",
-        "**The resolution — a four-tier resting-HRV source hierarchy",
+        "**HRV-01.** Resting HRV MUST come through a four-tier source hierarchy",
     ),
     Site(
-        "research/00 Sec 3.3 the anti-mixing constraint",
+        "research/00 HRV-06 the anti-mixing constraint",
         "specification/research/00-design-decisions.md",
-        "**Two constraints the tiering carries.**",
+        "**HRV-06.** Because different sources carry different systematic biases",
     ),
     Site(
-        "research/00 Sec 5.4 the 2026-09-18 amendment",
+        "research/00 HRV-10 every reading feeds its own tier's dataset",
         "specification/research/00-design-decisions.md",
-        "(amendment, 2026-09-18).**",
+        "**HRV-10.** Every resting-HRV reading MUST feed the dataset of its own tier",
     ),
     Site(
         "spec/03 Sec 3.7.3 per-source baseline discipline",
@@ -471,6 +472,14 @@ def test_the_flattened_paragraphs_reconstruct_the_flattened_file() -> None:
 #: share is now **11.51%**
 #: (``.claude/rules/learnings/a-sweep-must-name-the-axes-it-holds-constant.md``)
 #: and the longest span is still **207** (research/00).
+#:
+#: **Re-measured 2026-09-25 (sprint-007 T175) after the research/00 cut-over.**
+#: Same roots, same ``_QUOTE_SPAN``, fences stripped; **36 files** now, the two
+#: added being ``research/00-history.md`` and ``research/00-traceability.md``.
+#: The maximum share is unchanged at **11.51%** (the same file), and the
+#: longest span falls from 207 to **161**
+#: (``specification/spec/05-training-plan-generation.md``): the rewrite removed
+#: research/00's 207-character span.
 #:
 #: The 9.13% this module published before, as "over both roots", was measured
 #: over ``specification/`` alone: all five widest files are under
@@ -784,8 +793,13 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
 
     A file where **no** span has a paragraph boundary after it has nowhere to
     splice the first arm, and **abstains by name**: an ``ABSTAIN`` line is
-    printed and counted, and it carries no boundary verdict. Today no swept
-    file abstains (34 of 34 probed, 2026-09-25). spec/04, whose longest span
+    printed and counted, and it carries no boundary verdict. Since the
+    research/00 cut-over (sprint-007 T175, 2026-09-25) exactly one swept file
+    abstains, ``specification/research/00-traceability.md``: a table with no
+    blank line is one paragraph, so every span sits in its final paragraph and
+    no boundary follows any of them. That is coverage knowingly lost for the
+    boundary arm on that file; its in-span arm still reads ``suppressed``.
+    35 of 36 files are probed. spec/04, whose longest span
     is in its final paragraph, was silently probed at ``len(text)`` until
     sprint-007 T169, where nothing can be swallowed (B-CR-001 Sec 1), and
     abstained under T169; since T182 it is probed at the longest of its spans
@@ -859,9 +873,9 @@ def test_the_span_guards_fire_on_text_that_defeats_the_sweep(tmp_path) -> None:
     """Every arm of the two tests above **except ``leaked``**, shown red on
     synthetic text.
 
-    The corpus is clean -- 34 files, no unpairable delimiter, no
-    paragraph-crossing span, 11.51% and 207 at the maxima (fences stripped,
-    2026-09-25) -- so the corpus alone can never show any of those arms
+    The corpus is clean -- 36 files, no unpairable delimiter, no
+    paragraph-crossing span, 11.51% and 161 at the maxima (fences stripped,
+    re-measured after the sprint-007 T175 cut-over) -- so the corpus alone can never show any of those arms
     failing, and an arm never seen failing is indistinguishable from the arm
     M3 found. Synthetic files supply the case the tree does not, measured
     through ``_span_profile``: the same function the sweep runs, not a

@@ -328,9 +328,12 @@ class Site:
     ``committed: False`` rows that used to skip under the absent ``.shipyard``
     root now point at the committed copies under ``spec-mirror/``.
 
-    ``end`` is T140's addition and is empty for every markdown row, which is
-    the behaviour those rows had before it existed: a prose block in a
-    document is one long line, so the lead line *is* the block. A block in
+    ``end`` is T140's addition and is empty for every markdown row but one,
+    which is the behaviour those rows had before it existed: a prose block in
+    a document is one long line, so the lead line *is* the block. The one is
+    ``COST_SITES``' research/00 row (sprint-007 T175): research/00 states one
+    rule per line, so FIG-01 and FIG-02 are two blocks and the row reads from
+    FIG-01's rule line to the rule after FIG-02, exclusive. A block in
     ``contracts/openapi.yaml`` or ``schemas.py`` is not -- a folded YAML
     scalar and an implicitly concatenated Python literal both wrap, and a
     cause named across a wrap is invisible to a one-line read. ``end`` names
@@ -768,10 +771,11 @@ CLOSED_FORM = _flat("min_baseline_readings + 7 - min_window_readings")
 
 COST_SITES = (
     Site(
-        label="research/00 5.4 T138 measurement",
+        label="research/00 5.4 FIG-01 and FIG-02",
         root_index=0,
         rel="specification/research/00-design-decisions.md",
-        lead="**The 20-day quiet was measured for one of the two reset kinds",
+        lead="**FIG-01.** After a coverage-gap re-establishment",
+        end="**FIG-03.** The spec MUST publish that during a layoff",
     ),
     Site(
         label="spec/03 3.7.3 establishment gate",

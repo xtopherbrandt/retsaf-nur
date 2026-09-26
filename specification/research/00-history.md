@@ -43,3 +43,5 @@
 - **H-41** (2026-09-24, 2026-09-25) The refinements after the Definition-of-Ready failure fixed the history file's single exemption, counted three §1.7 exceptions rather than two, renamed the non-HRV quantities once given the HRV term to ranges and a bracket, and settled the per-tier scope of the source-change anchors and the rule assembly order. → PRIN-15, HRV-01, HRV-06, HRV-10, FIG-01, FIG-02, REG-02, REG-16, REG-19, GATE-03, DEC-01
 
 ## Retired IDs
+
+- **PRIN-16** retired → H-39
