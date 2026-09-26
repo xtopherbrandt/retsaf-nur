@@ -165,12 +165,6 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         source='specification/research/00-design-decisions.md:105@4e47d0e',
         decision='C19 (downstream: runcoach-api/src/runcoach_api/schemas.py:298)',
     ),
-    'C19-reg09-ppg-down-weighted': OldMeaning(
-        pattern='ppg down-weighted',
-        example='PPG down-weighted and flagged',
-        source='specification/research/00-design-decisions.md:112@4e47d0e',
-        decision='C19',
-    ),
     'C21-dec01-bonus-section': OldMeaning(
         pattern='its bonus section\\) treats the chat interface as a checkpoint',
         example='`decisions/01` (its "Bonus" section) treats the chat interface as a checkpoint',

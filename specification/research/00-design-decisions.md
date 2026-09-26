@@ -376,7 +376,7 @@ Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
 **DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
-Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15 and REG-17.
+Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30.
 Not: a row ratified from the cited research, which DOC-18 governs.
 Pinned: none
 
@@ -385,7 +385,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15 and REG-17, whose batches were ratified as H-04 and H-05 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
