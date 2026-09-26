@@ -2071,6 +2071,96 @@ def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The meaning review (T180, R7/AC9): one verdict per required row, under its group, none differs
+# ---------------------------------------------------------------------------
+
+_REAL_REVIEW = _REPO_ROOT / "specification" / "research" / "00-meaning-review.md"
+REVIEW_HEADER = "| row | verdict | reason |"
+REVIEW_HEADINGS = {"doc-goal": "## DOC–GOAL", "arch-dec": "## ARCH–DEC", "hrv": "## HRV"}
+_VERDICTS = ("same", "differs")
+
+
+def review_errors(review_text: str, required: list[str]) -> list[str]:
+    """R7's coverage over a review file: every ``required`` row has exactly one verdict line, no
+    verdict line names a row outside ``required``, every verdict is ``same`` or ``differs`` and none
+    is ``differs``, every line sits under its group's heading, and each group's table opens with
+    ``REVIEW_HEADER``."""
+    errors: list[str] = []
+    group_of_heading = {h: g for g, h in REVIEW_HEADINGS.items()}
+    heading, counts, headed = None, Counter(), set()
+    for number, line in enumerate(_lines(review_text), 1):
+        if line.startswith("#"):
+            heading = line.strip()
+            continue
+        if not line.startswith("|"):
+            continue
+        if line.strip() == REVIEW_HEADER:
+            headed.add(heading)
+            continue
+        cells = _split_cells(line)
+        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+            continue
+        if len(cells) != 3:
+            errors.append(f"[review] line {number}: {len(cells)} cells, not 3: {line[:100]!r}")
+            continue
+        row, verdict, reason = cells
+        counts[row] += 1
+        if verdict not in _VERDICTS:
+            errors.append(f"[review] {row}: verdict {verdict!r} is neither same nor differs")
+        if verdict == "differs":
+            errors.append(f"[review] {row} differs: {reason[:160]}")
+        if not reason:
+            errors.append(f"[review] {row}: no reason")
+        want = REVIEW_HEADINGS.get(_GROUP_OF.get(_prefix(row.split("/", 1)[0]), ""))
+        if heading != want:
+            errors.append(f"[review] {row} sits under {heading!r}, not {want!r}")
+    need = Counter(required)
+    errors += [f"[review] {row} has no verdict" for row in need if counts[row] == 0]
+    errors += [f"[review] {row} has {n} verdicts, not one" for row, n in counts.items() if n > 1]
+    errors += [f"[review] {row} is not a required review row" for row in counts if row not in need]
+    for heading_text in group_of_heading:
+        if heading_text not in headed:
+            errors.append(f"[review] {heading_text} has no {REVIEW_HEADER} table")
+    return errors
+
+
+def _synthetic_review(required: list[str], drop: str | None = None) -> str:
+    parts = []
+    for group, heading in REVIEW_HEADINGS.items():
+        parts += [heading, "", REVIEW_HEADER, "| --- | --- | --- |"]
+        parts += [f"| {row} | same | A synthetic reason. |" for row in required
+                  if row != drop and _GROUP_OF[_prefix(row.split("/", 1)[0])] == group]
+        parts.append("")
+    return "\n".join(parts)
+
+
+def test_review_errors_turns_red_on_a_missing_verdict_row() -> None:
+    """The synthetic red case: the same file with one required row's verdict line removed."""
+    required = ["DOC-01", "DOC-01/Scope", "ARCH-01/Not", "HRV-07", "HRV-07/Why"]
+    full = _synthetic_review(required)
+    missing = _synthetic_review(required, drop="ARCH-01/Not")
+    print(f"[slice compared] full {review_errors(full, required)}; missing {review_errors(missing, required)}")
+    assert review_errors(full, required) == []
+    assert review_errors(missing, required) == ["[review] ARCH-01/Not has no verdict"]
+
+
+def test_real_path_meaning_review_covers_exactly_the_required_rows_with_no_differs() -> None:
+    """AC9 over the committed review: every row of ``required_review_rows(research/00, table)`` has
+    exactly one verdict line, there is no row outside that set, and none is ``differs``."""
+    research, _history, rows = _real()
+    required = required_review_rows(research, rows)
+    review = _REAL_REVIEW.read_text(encoding="utf-8")
+    errors = review_errors(review, required)
+    verdicts = [line for line in _lines(review) if re.match(r"^\| [^|]+ \| (same|differs) \|", line)]
+    differs = [line[:80] for line in verdicts if "| differs |" in line]
+    print(f"[slice compared] {_REAL_REVIEW.name}: {len(required)} required rows, {len(verdicts)} verdict "
+          f"lines, differs {differs}, errors {errors[:10]}")
+    assert errors == []
+    assert len(verdicts) == len(required) > 0
+    assert differs == []
+
+
+# ---------------------------------------------------------------------------
 # A malformed inventory-ID cell is reported, not raised (T176's robustness finding)
 # ---------------------------------------------------------------------------
 
