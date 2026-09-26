@@ -1,0 +1,307 @@
+| row | verdict | reason |
+| ARCH-00 | differs | Rule line matches the in-force Part 2 preamble, but its Not line adds a routing claim (see ARCH-00/Not), so the block says more than the in-force text |
+| ARCH-00/Scope | same | Every design choice the spec makes is what the in-force preamble means by the specification must honour all eight |
+| ARCH-00/Not | differs | Asserts that the Part 1 principles and the Part 3 register settle every design question no keystone addresses; the in-force text and inventory make no such routing claim, and the list leaves out the Part 4 guardrails |
+| ARCH-01 | same | Primary loop, four between-session loops as the core, optional on-device stretch module approximated post hoc: matches inventory and in-force keystone 1 |
+| ARCH-01/Scope | same | Every adaptation to training is the reach of keystone 1; adds nothing |
+| ARCH-01/Not | same | In-force keystone 1 says genuine in-session adaptation is possible only on device, so excluding in-session cutoffs from the core adds nothing |
+| ARCH-02 | same | Same determinant list, each with a trend and a confidence, as inventory and in-force keystone 2 |
+| ARCH-02/Scope | same | The determinants of race pace are exactly what keystone 2 profiles |
+| ARCH-02/Not | same | In-force keystone 2 rejects trusting a vendor VO2max, and PRIN-08 quarantines it; no new meaning |
+| ARCH-03 | same | Five-timescale nested loop with the same five loops as inventory and in-force keystone 3; the rest of the sentence moved to ARCH-09 |
+| ARCH-03/Scope | same | Loops that adjust the plan are the subject of keystone 3 |
+| ARCH-03/Not | same | States the T-27 distinction between ladder rungs and loops as the inventory proposes it |
+| ARCH-04 | same | Pace targets stored relative to the threshold/CS/VDOT estimate, as in inventory and in-force keystone 4 |
+| ARCH-04/Scope | same | Prescribed and zone paces are what in-force keystone 4 stores relative |
+| ARCH-04/Not | same | A goal pace is an athlete-owned goal-contract field (C22), not a prescribed pace; the exclusion adds nothing |
+| ARCH-05 | same | Every decision-feeding pace feature grade-adjusted through the Minetti curve, matching inventory and keystone 5 |
+| ARCH-05/Scope | same | Restates the rule's own reach, pace-derived inputs to a decision |
+| ARCH-05/Not | same | A display-only pace feeds no decision, the complement the rule already implies |
+| ARCH-06 | same | Vendor-neutral timestamped schema, FIT first, sidecar that never feeds a decision: exactly C24 as the inventory recommends |
+| ARCH-06/Scope | same | Vendor data at ingestion and the metrics it carries are the keystone 6 population |
+| ARCH-06/Not | same | Display and REG-17 divergence surfacing are the only uses C24 allows; nothing added |
+| ARCH-06/Why | same | Matches C24: the in-force by-default wording implied a switch that section 1.5 forbids |
+| ARCH-07 | same | Subjective input on equal footing, reporting process engineered not just collected, as in keystone 7 |
+| ARCH-07/Scope | same | Every subjective report is the keystone 7 population |
+| ARCH-07/Not | same | Chat is never a gate under C20 and AUT-04; the cross-reference adds no new meaning |
+| ARCH-08 | same | Rule line keeps keystone 8 confidence unchanged; the C19 deferral in its Not line and the C08 content in ARCH-12 and ARCH-13 carry the decisions |
+| ARCH-08/Scope | same | Determinant estimates in the state model are what keystone 8 covers |
+| ARCH-08/Not | same | States C19: no numeric per-tier weight is computed in Section 3, deferred to Section 6 readiness fusion |
+| ARCH-09 | same | Slower loops set the frame, faster adjust within it, the ladder composes one daily prescription: second half of keystone 3 unchanged |
+| ARCH-09/Scope | same | The daily prescription is what the ladder composes in keystone 3 |
+| ARCH-09/Not | same | Precedence between signals belongs to the ladder rungs of ARB-01; consistent with T-27 |
+| ARCH-10 | same | The plan never hard-codes absolute paces, verbatim meaning of keystone 4 |
+| ARCH-10/Scope | same | Paces the plan stores are the keystone 4 population |
+| ARCH-10/Not | same | A goal pace the athlete enters is an input under C22, not a plan target; adds nothing |
+| ARCH-11 | same | Low confidence makes adaptation more conservative and is surfaced to the athlete, as in keystone 8 |
+| ARCH-11/Scope | same | Low-confidence determinants are the subject of the keystone 8 second half |
+| ARCH-11/Not | same | In-force keystone 8 says surfaced rather than presented as false precision; nothing new |
+| ARCH-12 | same | States C08 first sentence: Section 6 treats the unavailable verdict as low confidence that widens guardrails |
+| ARCH-12/Scope | same | Every day reading unavailable is the population C08 names; whatever its reason stays within C08 |
+| ARCH-12/Not | same | An unavailable verdict asserts nothing about readiness, consistent with the withhold semantics; adds nothing |
+| ARCH-12/Why | same | Ties C08 to keystone 8 conservatism exactly as the decision does (ARCH-08 cited in C08) |
+| ARCH-13 | differs | C08 says only that withheld days are a net cost until Section 6 exists; the rule adds with no offsetting benefit, a stronger zero-benefit claim not in the decision, and recasts the fact as a duty on the spec for every day |
+| ARCH-13/Scope | same | Unavailable days before Section 6 fusion is built is the C08 until-clause population |
+| ARCH-13/Not | same | Hands the post-Section-6 case to ARCH-12, as C08 splits it |
+| ARCH-13/Why | same | Restates the C08 reason: the fusion that would widen guardrails is not built, so the days are a cost |
+| REG-01 | same | CTL 42-day EWMA, ATL 7-day EWMA, TSB equals CTL minus ATL; numbers 42 and 7 match inventory and the in-force register row |
+| REG-01/Scope | same | Fitness, fatigue and form values are the row population |
+| REG-01/Not | same | Individual fitting is deferred in the in-force row and in REG-20 |
+| REG-02 | differs | Rule line and Why state T-07 correctly (0.8 to 1.5 now a range, never a hard gate), but the block Not line adds a claim (see REG-02/Not) |
+| REG-02/Scope | same | Every use of the ACWR is the row population |
+| REG-02/Not | differs | Says monotony, strain and subjective pain inform a hard gate instead; the in-force rationale says only that they carry the real risk weight and names no hard gate they inform |
+| REG-02/Why | same | Matches T-07 and R9: band is reserved for the HRV SWC band, so the ACWR interval is a range |
+| REG-03 | differs | Rule line matches (rTSS primary with valid GAP, reconciled against HR-TRIMP and sRPE), but its Not line contradicts the degradation in REG-21 (see REG-03/Not) |
+| REG-03/Scope | same | Every session load is the row population |
+| REG-03/Not | differs | Excludes a single internal-load metric trusted alone, yet the same in-force row and REG-21 degrade load to HR-TRIMP alone, then sRPE alone, when the others are missing |
+| REG-04 | same | Coefficients men 0.64 and 1.92, women 0.86 and 1.67, identical to the in-force row |
+| REG-04/Scope | same | Every HR-TRIMP computation is the row reach |
+| REG-04/Not | same | Complement of the two sex forms; adds nothing |
+| REG-05 | same | Individual Riegel b when confidence adequate, else population 1.06 with widened interval, as in-force |
+| REG-05/Scope | same | Race-time projections using the exponent are its use |
+| REG-05/Not | same | Complement of the adequate-confidence condition |
+| REG-06 | same | EF/decoupling drift over the back third of long runs, within-athlete only, flagged emerging, as in-force |
+| REG-06/Scope | same | Every durability estimate is the row population |
+| REG-06/Not | same | Between-athlete comparison is the complement of within-athlete trend only |
+| REG-07 | same | Pyramidal-leaning in base, polarizing through build/peak, about 80 percent easy by time throughout, as in-force |
+| REG-07/Scope | same | Each block intensity distribution is the row reach |
+| REG-07/Not | same | In-force rationale says both polarized and pyramidal beat threshold-dominant |
+| REG-08 | same | About 2 weeks, about 50 percent volume cut, exponential decay, intensity kept, frequency mostly held, then individualized: as in-force |
+| REG-08/Scope | same | Every pre-race taper is the row population |
+| REG-08/Not | same | Points the down week to REG-15, which the in-force register holds separately |
+| REG-09 | differs | Rule line keeps 1 Hz and the chest strap for at-or-above-threshold HR metrics, but its Scope narrows the 1 Hz requirement (see REG-09/Scope) |
+| REG-09/Scope | differs | Limits the rule to HR metrics derived from an activity, so the in-force general 1 Hz recording requirement no longer reaches pace, GPS or other streams |
+| REG-09/Not | same | Resting HRV sourcing moved to the section 3.3 tier hierarchy, where the in-force row also pointed |
+| REG-10 | same | Multiplicative, altitude then heat/humidity then wind then grade, as in-force |
+| REG-10/Scope | same | Paces adjusted for course and environment are the row reach |
+| REG-10/Not | same | Additive composition is the complement of multiplicative |
+| REG-11 | same | Daily morning resting HRV ask through the tier hierarchy, unchanged; the C08 part is carried by REG-25 |
+| REG-11/Scope | same | Every morning resting capture is the row population |
+| REG-11/Not | same | In-force rationale says the tiering avoids requiring a chest strap every day |
+| REG-12 | same | Uniform 50 m or finer grid, linear interpolation flagged interpolated, smoothing before gradient, as in-force |
+| REG-12/Scope | same | Course-geometry ingestion is the row population |
+| REG-12/Not | same | In-force rationale treats the per-session GAP altitude smoothing as a separate pipeline |
+| REG-13 | same | Multiplicative gap-contribution, trainability, time-to-race and confidence, degrading to aerobic base plus specificity, as in-force |
+| REG-13/Scope | same | Each block choice of target determinant is the row population |
+| REG-13/Not | same | In-force rationale says multiplicative so a near-zero factor drops the determinant |
+| REG-14 | same | Base 50, build 30, peak 20 of non-taper weeks, terminal about 2-week taper, base-first compression: unchanged; citation re-pointed per C29 |
+| REG-14/Scope | same | Every macrocycle is the row population |
+| REG-14/Not | same | In-force rationale says block ordering is research-fixed |
+| REG-14/Why | same | Matches C29: the guardrail citation now resolves to research/05 section 5, with the in-force common-practice basis |
+| REG-15 | same | About 20 to 40 percent of weekly volume, intensity and frequency held, every 3 to 4 weeks, as in-force |
+| REG-15/Scope | same | Every mid-block recovery week is the row population |
+| REG-15/Not | same | The pre-race taper is REG-08, held separately in-force |
+| REG-16 | same | Race-day TSB about plus 5 to plus 25, both sides bounded, TSB controller; band renamed target range per T-07 |
+| REG-16/Scope | same | Every pre-race taper is the row population |
+| REG-16/Not | same | In-force rationale says a TSB controller rather than a fixed volume recipe |
+| REG-16/Why | same | Matches T-07 and R9 rename of the TSB band to a target range |
+| REG-17 | same | Proactive surfacing above about one own-estimate confidence interval, or about 10 percent, as in-force |
+| REG-17/Scope | same | Own-versus-vendor labelled comparisons are the row population |
+| REG-17/Not | same | In-force says proactively surfaced rather than shown only on request |
+| REG-18 | same | Decision, version and derived-feature records kept indefinitely, as in-force |
+| REG-18/Scope | same | Those records are the rule population |
+| REG-18/Not | same | Raw streams are governed by REG-29, split from the same in-force row |
+| REG-19 | same | Adds the CTL-rise row marked PROVISIONAL with plus 5 per week, plus 3 to 7 and ceiling plus 8 from spec 6.2.2 until field data refines it: C30 and T-07 as decided |
+| REG-19/Scope | same | Weekly planned CTL rise is the row population |
+| REG-19/Not | same | Provisional until field data refines it is the C30 and in-force deferral condition |
+| REG-19/Why | same | C30 restores the register as the single place, and T-07 renames band to range |
+| REG-20 | same | Constants stay at 42/7 long-term and per-athlete fitting is a later enhancement, as in-force section 3.1 and the register row |
+| REG-20/Scope | same | CTL and ATL computations are the reach of the constants |
+| REG-20/Not | same | In-force section 3.1 says a later enhancement, not a launch feature |
+| REG-21 | same | Divergence above 25 percent falls back to the mean, load degrades to HR-TRIMP then sRPE, as in-force |
+| REG-21/Scope | same | Sessions whose sources diverge or are missing are the fallback population |
+| REG-21/Not | same | In-force rationale says modest divergence is sensor noise |
+| REG-22 | same | Z2/Z3 split a phase- and distance-dependent parameter, as in-force |
+| REG-22/Scope | same | The split above easy running is the parameter reach |
+| REG-22/Not | same | The 80 percent easy share stays with REG-07 |
+| REG-23 | differs | C19 swaps a Section 3 HRV confidence weight for fidelity rank; this rule applies the ordinal rank below the strap and the deferral to readiness fusion to every PPG input, including in-activity HR, so the in-force down-weighting of activity PPG is dropped with nothing in its place |
+| REG-23/Scope | same | Every optical PPG input is the reach of the in-force PPG clause |
+| REG-23/Not | same | In-run wrist PPG HRV stays excluded by HRV-05, as in-force |
+| REG-23/Why | same | States the C19 decision text, a wording-only change resting on Section 3 computing no weight |
+| REG-24 | same | RR presence in an activity is the chest-strap signature, as in-force |
+| REG-24/Scope | same | Activities checked for a strap are the rule population |
+| REG-24/Not | same | Resting captures carry a source-tier tag (HRV-03), so they are not identified by this signature |
+| REG-25 | same | Skipped reading degrades gracefully and never fails the gate, and an unavailable day reaches Section 6 as low confidence: C08 with the down-weights wording dropped |
+| REG-25/Scope | same | Mornings without a reading are the skip population of the in-force row |
+| REG-25/Not | same | Graceful degradation and AUT-03 mean the plan never waits on a reading |
+| REG-25/Why | same | Points to C08 both halves, Section 6 treatment and the ARCH-13 net cost until then |
+| REG-26 | same | Down-week cut shallower than the taper cut, as in-force |
+| REG-26/Scope | same | Mid-block recovery weeks are the rule population |
+| REG-26/Not | same | In-force rationale says a down week refreshes without detraining |
+| REG-27 | same | Individual best-form TSB refined under the individualization rule, as in-force |
+| REG-27/Scope | same | In-force refines it from the athlete own race and tune-up history |
+| REG-27/Not | same | Holding a population target after the own history identifies one is what IND-01 rules out |
+| REG-28 | same | Threshold governs surfacing only, never a decision, flag or state change, as in-force |
+| REG-28/Scope | same | Own-versus-vendor divergences are the rule population |
+| REG-28/Not | same | Vendor numbers never enter a decision under PRIN-08; in-force says the same |
+| REG-29 | same | Raw per-sample streams kept for the current program plus a tunable rolling window, as in-force |
+| REG-29/Scope | same | Raw streams are the rule population |
+| REG-29/Not | same | Records kept indefinitely stay with REG-18 |
+| REG-30 | same | Retention affects no engine decision, as in-force |
+| REG-30/Scope | same | Retention settings are the rule population |
+| REG-30/Not | same | In-force says the raw-stream window is the one tunable knob for the largest store |
+| IND-01 | same | Individualize only when identifiable from own data and backed by enough quality data to beat the default, as in-force section 3.1; C31 is carried by IND-04 |
+| IND-01/Scope | same | Parameters that could be fit per athlete are the section 3.1 population |
+| IND-01/Not | same | In-force section 3.1 warns against fits on thin field data that cannot beat the default |
+| IND-01/Why | same | C31 names section 3.1 the governing rule for tuning, as the inventory recommends |
+| IND-02 | same | Threshold and zone paces re-anchor continuously, as in-force section 3.1 |
+| IND-02/Scope | same | Threshold and zone paces are the rule population |
+| IND-02/Not | same | The 42/7 constants stay fixed under IND-06, from the same in-force paragraph |
+| IND-03 | same | Default held with honest confidence intervals until individualized; bands to intervals changes no meaning |
+| IND-03/Scope | same | Parameters not yet individualized are the until-then population |
+| IND-03/Not | same | In-force section 3.1 says rather than fitting noise |
+| IND-04 | same | Every constant a default, tunable only under IND-01, invariants excepted: the C31 decision text |
+| IND-04/Scope | same | Numeric constants of research/00 are what C31 and the in-force preamble every number cover |
+| IND-04/Not | same | Complement of tunable only under IND-01; adds nothing |
+| IND-04/Why | same | C31 makes constants defaults, section 3.1 governs tuning, and invariants such as section 1.7 are excepted, per the inventory |
+| IND-05 | same | Endurance exponent and CS profile individualize once enough qualifying maximal efforts exist, as in-force |
+| IND-05/Scope | same | Each athlete exponent and CS profile are the rule population |
+| IND-05/Not | same | Complement of the once-enough-efforts condition |
+| IND-06 | same | Fitness/fatigue constants stay at 42/7, the inventory sentence; long-term and the later fitting sit in REG-20 |
+| IND-06/Scope | same | CTL and ATL computations are where the constants apply |
+| IND-06/Not | same | Per-athlete fitting is deferred in REG-20, as in-force |
+| COLD-01 | same | Seed before a CS fit when inputs are present, hand off to the CS estimate, blend by confidence: in-force meaning with the HRV input removed per C26 via COLD-08 |
+| COLD-01/Scope | same | Athletes without enough history for a CS fit are the cold-start population |
+| COLD-01/Not | same | Athletes with enough history are served by the CS estimate, as in-force |
+| COLD-01/Why | same | C26 grounds the seed in the two ratified estimators |
+| COLD-02 | same | Uth–Sørensen 15.3 times HR_max over HR_rest is the primary seed when a credible HR_max and true resting HR are clean, as in-force |
+| COLD-02/Scope | same | Seeds with clean HR inputs are the primary-seed population |
+| COLD-02/Not | same | Missing or untrustworthy HR inputs go to the Jackson form (COLD-03), as in-force |
+| COLD-03 | same | Jackson-form regression on age, sex, BMI or percent body fat and activity rating as corroborator and fallback, as in-force |
+| COLD-03/Scope | same | Every cold-start seed, since it corroborates or falls back for all of them |
+| COLD-03/Not | same | No non-exercise inputs means population defaults (COLD-05), as in-force |
+| COLD-04 | same | Blended by confidence where both exist, both hand off to the CS estimate, as in-force |
+| COLD-04/Scope | same | Seeds with both estimators available are the blend population |
+| COLD-04/Not | same | Hand-off to the CS estimate means no seed is held once history supports it |
+| COLD-05 | same | Population defaults b equals 1.06 and fractional-utilization curves with wide flagged intervals, as in-force |
+| COLD-05/Scope | same | No inputs and too little history is the in-force fallback case |
+| COLD-05/Not | same | Complement of the no-inputs condition |
+| COLD-06 | same | Polar OwnIndex stays quarantined, as in-force |
+| COLD-06/Scope | same | The OwnIndex and its outputs are what the quarantine covers |
+| COLD-06/Not | same | The open math of COLD-10 is what in-force says the system reproduces instead |
+| COLD-07 | same | Section 3.2 supersedes the population-only cold start of research/05 section 3.2, which is read through it, as in-force |
+| COLD-07/Scope | same | Readings of research/05 section 3.2 are what the amendment governs |
+| COLD-07/Not | same | In-force keeps the population-defaults fallback exactly as research/05 specified |
+| COLD-08 | same | Lists the inputs of the two ratified estimators, dropping HRV: the C26 resolution |
+| COLD-08/Scope | same | Non-exercise VO2max estimates are the C26 population |
+| COLD-08/Not | same | Inputs neither estimator takes are the complement of the C26 list |
+| COLD-08/Why | same | C26 rests on the 2026-08-31 back-fill, which H-02 records |
+| COLD-09 | same | Held low-confidence, widened for older athletes, superseded by the CS estimate as soon as history allows, as in-force |
+| COLD-09/Scope | same | Uth–Sørensen seeds are the caveat population |
+| COLD-09/Not | same | The caveat is stated of the Uth–Sørensen method only; the Jackson form is set by COLD-03 |
+| COLD-10 | same | Only the open Uth–Sørensen and Jackson math, in the owned namespace, as in-force |
+| COLD-10/Scope | same | Non-exercise estimators the system implements are the reach, which bounds the only |
+| COLD-10/Not | same | A proprietary estimator such as the OwnIndex stays quarantined |
+| COLD-11 | same | Owned estimator defined and validated in spec/04 section 4.4.2, discharged, as in-force |
+| COLD-11/Scope | same | The owned estimator is the rule subject |
+| COLD-11/Not | same | The ratified estimators are named by COLD-02 and COLD-03 |
+| LT1-01 | same | Fixed fraction of about 80 to 88 percent of functional-threshold velocity in v1, unable to move off the threshold anchor: C28 |
+| LT1-01/Scope | same | Z1/Z2 boundaries set in v1 are the C28 population |
+| LT1-01/Not | same | An LT1 determinant is the deferred future path of LT1-02 |
+| LT1-01/Why | same | C28 fixes the boundary and names F011 for the design change to spec section 5.4.2 |
+| LT1-02 | same | DFA-α1 equal to 0.75 is the recommended future determinant, not adopted for v1, as in-force and C27 |
+| LT1-02/Scope | same | LT1 determinations are the rule population |
+| LT1-02/Not | same | The v1 boundary belongs to LT1-01 |
+| LT1-02/Why | same | C27 keeps the future path consistent with the in-activity HRV prohibition of HRV-05 |
+| LT1-03 | differs | C28 says any surrogate is future work; the rule covers only a surrogate that would move the boundary off the fraction, leaving room in v1 for a surrogate that refines the boundary within it |
+| LT1-03/Scope | same | Proposed LT1 surrogates are the C28 population |
+| LT1-03/Not | same | The v1 fraction is LT1-01 |
+| LT1-04 | same | Adoption only under RR-quality gating, after validation including women, and by explicit amendment of HRV-05: in-force plus C27 |
+| LT1-04/Scope | same | Future adoptions of DFA-α1 are the rule population |
+| LT1-04/Not | same | C27 keeps in-activity HRV out of every readiness input under HRV-05 |
+| LT1-04/Why | same | C27 requires the amendment because DFA-α1 is computed from running RR |
+| LT1-05 | same | LT1 a human-coach-specification candidate in the interim, as in-force |
+| LT1-05/Scope | same | In-force grounds the candidacy on a coach with a lab or field LT1 setting it directly |
+| LT1-05/Not | same | A measured LT1 determinant is what does not exist yet |
+| FTO-01 | same | Open TRIMP/TSS/PMC/Banister lineage and open CS/CP and lactate-threshold methods, as in-force Part 4 |
+| FTO-01/Scope | same | Load, fatigue, form, fitness and threshold computations are the rule reach |
+| FTO-01/Not | same | The protected constructions are named in FTO-02 |
+| FTO-02 | same | Firstbeat pipeline US9237868B2, EPOC load or Training Effect, WHOOP US11574722B2 not replicated, as in-force |
+| FTO-02/Scope | same | Estimators and readiness constructions are what the patents cover |
+| FTO-02/Not | same | Published math is what in-force says the system builds on instead |
+| FTO-03 | same | Readiness from the published HRV literature, own baseline, SWC band and verdict with open math, as in-force |
+| FTO-03/Scope | same | Readiness verdicts are the rule population |
+| FTO-03/Not | same | A vendor recovery score is the construction in-force says not to mirror |
+| FTO-04 | same | Single-ecosystem, Garmin-first, FIT-driven, distinct from US11517790, as in-force |
+| FTO-04/Scope | same | Plans generated or adapted are the rule population |
+| FTO-04/Not | same | States T-28 as proposed and confirmed |
+| FTO-05 | same | Three teachings adopted only via non-infringing constructions, same three, as in-force |
+| FTO-05/Scope | same | Ideas taken from live patents are the rule population |
+| FTO-05/Not | same | The patented construction itself is what non-infringing excludes |
+| FTO-06 | same | Engineering research, not legal advice, reliance confirmed with counsel, as in-force Part 4 |
+| FTO-06/Scope | same | Freedom-to-operate judgements are what the caveat covers |
+| FTO-06/Not | same | A legal opinion is the complement of not legal advice |
+| FTO-07 | same | Consuming a numeric device rMSSD is distinct from reproducing a proprietary recovery construction, as in-force |
+| FTO-07/Scope | same | Device numeric resting rMSSD values are the rule population |
+| FTO-07/Not | same | The HRV Status classification stays quarantined per PRIN-08 and in-force section 3.3 |
+| DEC-01 | same | decisions/01 conforms and is consistent with sections 1.5, 1.6 and the ladder; the stale Bonus description moved to history per C21 |
+| DEC-01/Scope | same | The whole record is what the conformance statement covers |
+| DEC-01/Not | same | In-force section 5.3 says research/00 governs over a record; nothing new |
+| DEC-01/Why | same | C21 moves the reconciliation bullet to history, and H-07 is that entry |
+| DEC-02 | same | Superseded checkpoint framing read through sections 1.8 to 1.9, the second inventory sentence and in-force L243 |
+| DEC-02/Scope | same | Framings the record marks superseded are the rule population |
+| DEC-02/Not | same | The record current posture conforms, which DEC-01 states |
+| GATE-01 | differs | In-force L230 varies capture density on both datasets independently, and DOC-12 keeps that word; the rule drops independently, so varying the two densities together would satisfy it (the inventory sentence lost it too) |
+| GATE-01/Scope | same | Forbidden-direction rates the release gate computes are the rule population |
+| GATE-01/Not | same | The flip rate is measured under GATE-06, a separate clause of the same in-force sentence |
+| GATE-01/Why | same | C06 makes section 1.7 absolute, which is why every forbidden-direction rate is gated |
+| GATE-02 | same | No hysteresis, worsened set stays the 80 pinned walk_flips cells at car_density 2wk, revisit only on IDEA-089 (b), pointer to H-37, reopens wording gone: C05 in full |
+| GATE-02/Scope | same | The flip rate measured as GATE-01 measures its rates is the in-force population |
+| GATE-02/Not | same | A worsened cell outside the pinned 80 fails, which is what MUST remain the 80 cells means |
+| GATE-02/Why | same | H-37 records the C05 decision and its IDEA-089 (b) revisit condition |
+| GATE-03 | differs | Rule line states C37 (28 rests on the two HRV-16 reasons until a re-measurement is recorded), but its Not line names the measured interval a tolerance range where T-07 and the glossary name it the tolerance bracket |
+| GATE-03/Scope | same | Citations of the tolerance basis are the C37 population |
+| GATE-03/Not | differs | Calls the measured interval a tolerance range; T-07 as decided, and the glossary entry, name it the tolerance bracket and give range to the ACWR, TSB and CTL-rise quantities |
+| GATE-03/Why | same | C37: no re-measurement result exists; T-07 reserves band for the HRV SWC band |
+| GATE-04 | same | Worsening blocks release save a named, counted, test-pinned exception with an owning open IDEA that may not grow: C06 and R5 for the gate |
+| GATE-04/Scope | same | The rates GATE-01 measures are the gate population |
+| GATE-04/Not | same | A rate at F005 parity is not a worsening, consistent with R5 F005-parity population |
+| GATE-04/Why | same | C06: a forbidden population ships only as such an exception, never on rarity |
+| GATE-05 | same | DEFERRED_EXCEPTION at c 4 and 5, 64 gated rows, owned by IDEA-087, named as one such exception without claiming to be the only one, matching R5 three exceptions |
+| GATE-05/Scope | same | The c 4 and c 5 rows under the independent-instruments fixture are the in-force exception population |
+| GATE-05/Not | same | Any worsened row outside the 64 blocks release; the F005-parity population is not a worsening and HRV-25 may not grow |
+| GATE-06 | same | Flip rate of a three-days-a-week wearer measured against F005 on every sweep the same way, as in-force |
+| GATE-06/Scope | same | Every sweep is the in-force reach |
+| GATE-06/Not | same | The hysteresis decision is GATE-02 |
+| GATE-07 | differs | Not citing 18 to 44 for per-tier datasets matches in-force, but the rule names it the tolerance range, where T-07 and the glossary name it the tolerance bracket |
+| GATE-07/Scope | differs | Same naming slip: a measured tolerance range instead of the tolerance bracket that T-07 decides |
+| GATE-07/Not | same | The value 28 is grounded by GATE-03 and C37 |
+| GATE-08 | same | Strap-morning Health Snapshot independence unmeasured, so the disagreement rate may measure vendor processing, as in-force |
+| GATE-08/Scope | same | Strap versus Health Snapshot disagreement rates are the caveat population |
+| GATE-08/Not | same | Claiming independence is what the caveat forbids |
+| FIG-01 | same | 20 days beneath min_baseline_readings, R+0 to R+19, after a coverage-gap re-establishment, with the published-figure obligation of the target shape |
+| FIG-01/Scope | same | Coverage gap only, not a tier change, as in-force L220 and L227 correct it |
+| FIG-01/Not | same | The tier-change cost is FIG-02 |
+| FIG-02 | same | 18 silent days R+2 to R+19, closed form min_baseline_readings plus 7 minus min_window_readings equals 18, established true throughout, as in-force L227; the 29, the causes and the old-device clause are in FIG-06 to FIG-08 |
+| FIG-02/Scope | same | In-force L227 gives 18 at daily capture on a clean, gapless switch |
+| FIG-02/Not | same | The 20 days belong to the coverage gap of FIG-01 |
+| FIG-02/Why | same | R11 as decided: end of the quiet at R plus min_baseline_readings minus 1 plus 7 equals R+20, and the 20-day figure true of a coverage gap and false of a tier change, both from in-force L227 |
+| FIG-03 | same | Layoff longer than 21 days: days 1 to 4 judged, days 5 to 22 silent, 18, as in-force L229 |
+| FIG-03/Scope | same | A whole-series layoff past gap_reset_days is the in-force case |
+| FIG-03/Not | same | The tier-change silence is FIG-02 |
+| FIG-03/Why | same | In-force L229 says that 18 is a coverage-gap figure and the equal length is a coincidence |
+| FIG-04 | same | 72 of 2,050 swept geometries move normal to unavailable at a daily-capture return, as in-force L222 |
+| FIG-04/Scope | same | Daily capture only, per the inventory status note citing DOC-12 |
+| FIG-04/Not | same | Spread or less-than-daily returns are the densities in-force L229 prices differently |
+| FIG-05 | same | No aggregate silence rate published, as in-force L229; C09 is carried by FIG-11 |
+| FIG-05/Scope | same | Sums of the named silences are what in-force L229 withdrew |
+| FIG-05/Not | same | The individual figures stand, as in-force L229 says what is not withdrawn |
+| FIG-05/Why | same | C09: the question stays OPEN under a named owner rather than answered by a rate |
+| FIG-06 | same | 29 days at every-second-day capture on the new tier, as in-force L227 |
+| FIG-06/Scope | same | The every-second-day case of in-force L227 |
+| FIG-06/Not | same | Daily capture is FIG-02 |
+| FIG-07 | same | Tier-change silent days carry week_not_representative twice and week_too_thin sixteen times, as in-force L229 |
+| FIG-07/Scope | same | The 18 days of FIG-02 are the in-force population |
+| FIG-07/Not | same | In-force L229 names a seventh cause as not fixed, so the response carries none |
+| FIG-08 | same | Keeping the old device recording removes the silence and the tier_change report together, as in-force L227 |
+| FIG-08/Scope | same | The overlapping-device case of in-force L227 |
+| FIG-08/Not | same | The clean switch is FIG-02 |
+| FIG-09 | same | Total 38 days: 18 silent plus 20 re-establishment days, as in-force L229 |
+| FIG-09/Scope | same | A whole-series layoff past gap_reset_days |
+| FIG-09/Not | same | 21 silent days does not reset, as in-force L229 |
+| FIG-10 | same | Five of the first seven mornings back silent at a daily-capture return, as in-force L222 |
+| FIG-10/Scope | same | Daily capture only, per DOC-12 and the inventory note |
+| FIG-10/Not | same | Spread or less-than-daily returns are priced differently in-force |
+| FIG-11 | same | The mostly-silent-rule question is OPEN, owned by IDEA-092: C09 |
+| FIG-11/Scope | same | HRV gate rules that can withhold are what the question is about |
+| FIG-11/Not | same | No answer is published, per FIG-05 and in-force L229 |
