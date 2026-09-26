@@ -184,11 +184,11 @@ Scope: every stored resting-HRV row whose local day lies in `[D-66, D]`.
 Not: a row outside those windows, which the era rule reads but the response does not list.
 Pinned: none
 
-**PRIN-24.** `window_days` (7), which sets the judged week and which the `thresholds` block does not serve, IS an OPEN exception to rule PRIN-12 (reproducible by hand from the response).
-Scope: the verdict-affecting constants that the response does not serve.
-Not: `recency_tolerance_days`, which PRIN-12 names as served once F010 lands.
+**PRIN-24.** `window_days` (7), which sets the judged week and which the `thresholds` block does not serve, IS an OPEN exception to rule PRIN-12 (reproducible by hand from the response), and the withhold of HRV-31 (`week_not_representative`), fired or not, IS a second, owned by IDEA-102, as it reads the order of another dataset's judged-week days, of which only the count is served (`week_days`).
+Scope: the verdict-affecting constants, and the judged-week day order that the withhold of HRV-31 and HRV-63 compares, that the response does not serve.
+Not: `recency_tolerance_days`, which PRIN-12 names as served once F010 lands, and each dataset's count of judged-week days, which `week_days` serves.
 Pinned: none
-Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39).
+Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39), and the review rulings name the withhold, which no served field lets a reader reproduce, as the second (H-41).
 
 ### 1.7 Down-regulate freely, up-regulate cautiously
 
@@ -210,7 +210,7 @@ Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_for
 Pinned: none (F009)
 Why: decision C06 makes the forbidden direction absolute but for named exceptions, and the refinements count three of them, not two (H-39, H-41).
 
-**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,232 of 307,500 rectangle rows and 1,108 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-05 names.
+**PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened rows at c = 4 and 5 that GATE-05 names.
 Scope: the two IDEA-087 exceptions of PRIN-15, as T162 measured them.
 Not: HRV-25's population, whose count F009 produces.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
@@ -647,7 +647,7 @@ Pinned: none
 
 ### 3.3 Resting-HRV source tiering (resolved, amends the data-quality-gating and HRV-gate register rows)
 
-**HRV-01.** Resting HRV MUST come through a four-tier source hierarchy: (1) chest-strap resting RR, reduced to rMSSD by the system's own artefact filter; (2) Health Snapshot `RmssdAvgValue`; (3) Health API `lastNightAvg`; (4) the HRV Status classification, which stays quarantined and MUST never be a trend input.
+**HRV-01.** Resting HRV MUST come through three input tiers, in this order: (1) chest-strap resting RR, reduced to rMSSD by the system's own artefact filter; (2) Health Snapshot `RmssdAvgValue`; (3) Health API `lastNightAvg`; beside them, (4) the HRV Status classification stays quarantined, is not a tier, and MUST never be a trend input.
 Scope: every resting-HRV reading the HRV trend consumes; the rule applies per per-tier dataset (T-06).
 Not: the order in which datasets are selected, which HRV-14 (selection) sets.
 Pinned: none
@@ -772,9 +772,9 @@ Pinned: none
 
 ### 5.2 The mechanism research docs (the evidence this document points to)
 
-**DOC-04.** research/00 MUST treat the mechanism docs `research/01`–`06` as the evidence, elevating and prioritising them, and MAY change them only where §5.4 records an exception: the cold-start amendment of `research/05` §3.2 (COLD-07), and the HRV SWC band restatement of `research/05` §2.4/§6 (H-09).
+**DOC-04.** research/00 MUST treat the mechanism docs `research/01`–`06` as the evidence, elevating and prioritising them, and MAY change them only through the two exceptions COLD-07 and H-09 record: the cold-start amendment of `research/05` §3.2 (COLD-07), and the HRV SWC band restatement of `research/05` §2.4/§6 (H-09).
 Scope: every mechanism research doc that §5.2 lists.
-Not: the spec and the decision records, which conform to research/00 (DOC-01).
+Not: the spec and the decision records, which conform to research/00 (DOC-01), and the rules under §5.4, none of which changes a mechanism doc.
 Pinned: none
 
 ### 5.3 Decision records (`decisions/`)
@@ -1037,7 +1037,7 @@ Scope: every possible era boundary of HRV-38 (the era boundary).
 Not: a capture simultaneous with the old era's last reading (HRV-79).
 Pinned: none
 
-**HRV-40.** The now-sustaining tier's pre-boundary readings MUST never be in its SWC band (the clip is unconditional).
+**HRV-40.** The pre-boundary readings of the dataset's tier, the tier of clause (a) of HRV-38, MUST never be in its SWC band (the clip is unconditional).
 Scope: every per-tier dataset with an era boundary.
 Not: the reset report, which HRV-80 (the report condition) conditions.
 Pinned: none
@@ -1194,7 +1194,7 @@ Scope: a returning per-tier dataset.
 Not: a return the recency gate skips, or one after more than 21 silent local days, which HRV-69 and HRV-70 (the return costs) govern.
 Pinned: none
 
-**HRV-72.** A `tier_change` reset IS an era boundary on one per-tier dataset: its pre-boundary readings are clipped from its own SWC band (HRV-40), and it is reported with the lag of HRV-82 (the report lag).
+**HRV-72.** A `tier_change` reset IS an era boundary on one per-tier dataset: its pre-boundary readings are clipped from its own SWC band (HRV-40), and it is reported only after a lag, which HRV-82 (the report lag) states for a clean switch at daily capture.
 Scope: every reported `tier_change` of every per-tier dataset.
 Not: the coverage-gap reset, the only re-establishment (HRV-34).
 Pinned: none
@@ -1246,7 +1246,7 @@ Not: clause (c)'s stray count, which HRV-41 (unclipped strays) widens.
 Pinned: none
 
 **HRV-82.** A `tier_change` reset's report lag behind the reset IS `min_baseline_readings + 7 − 1` = 20 days, accepted as latency rather than inaccuracy because an earlier report would be a prediction.
-Scope: every reported `tier_change` reset of every per-tier dataset.
+Scope: a reported `tier_change` reset after a clean, gapless source-tier change at daily capture on the new tier, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: the reported date itself, which HRV-43 (reset_on) makes the era's true first day.
 Pinned: none
 
@@ -1305,7 +1305,7 @@ Not: a claim that the two are independent instruments.
 Pinned: none
 
 **FIG-01.** After a coverage-gap re-establishment the athlete traverses 20 days beneath `min_baseline_readings` (`R+0 .. R+19`), and the spec MUST publish that figure.
-Scope: a coverage-gap re-establishment of the series (rule HRV-35), not a source-tier change.
+Scope: a coverage-gap re-establishment of the series (rule HRV-35) at daily capture from the resumption, not a source-tier change, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: the cost of a source-tier change, which rule FIG-02 states.
 Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_establishment_delay_after_a_reset_is_twenty_days
 Pinned: runcoach-api/tests/test_spec_cost_figures.py::test_the_establishment_delay_is_stated_at_each_site
@@ -1318,7 +1318,7 @@ Pinned: runcoach-api/tests/test_hrv_unavailable_causes.py::test_the_tier_change_
 Why: the quiet ends when the new tier reaches `min_baseline_readings` distinct days at or before D−7, which is `R + (min_baseline_readings − 1) + 7` = R+20, and the 20-day figure of rule FIG-01 is true of a coverage gap and false of a source-tier change.
 
 **FIG-03.** The spec MUST publish that during a layoff longer than 21 days, days 1–4 are judged and days 5–22 are silent (18).
-Scope: a layoff of the whole series longer than `gap_reset_days`.
+Scope: a layoff of the whole series longer than `gap_reset_days`, after daily capture up to its first day, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: the silence of a source-tier change, which rule FIG-02 states.
 Pinned: none
 Why: that 18 is a coverage-gap figure, and its equality with the tier change's 18 in rule FIG-02 is a coincidence.
@@ -1350,7 +1350,7 @@ Not: a clean switch, which rule FIG-02 prices.
 Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_tier_change_silence_is_zero_when_the_old_tier_outlasts_candidacy
 
 **FIG-09.** The spec MUST publish the layoff's total silence as 38 days, its 18 silent days plus the 20 re-establishment days after it.
-Scope: a layoff of the whole series longer than `gap_reset_days`.
+Scope: a layoff of the whole series longer than `gap_reset_days`, with daily capture before it and from the resumption, since a figure measured at one capture density holds only there (rule DOC-12).
 Not: a layoff of 21 days or fewer, which resets nothing.
 Pinned: none
 

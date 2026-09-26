@@ -220,9 +220,9 @@ class Site:
 
 SITES = (
     Site(
-        "research/00 HRV-01 the four-tier hierarchy",
+        "research/00 HRV-01 the three input tiers",
         "specification/research/00-design-decisions.md",
-        "**HRV-01.** Resting HRV MUST come through a four-tier source hierarchy",
+        "**HRV-01.** Resting HRV MUST come through three input tiers",
     ),
     Site(
         "research/00 HRV-06 the anti-mixing constraint",

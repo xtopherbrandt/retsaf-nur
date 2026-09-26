@@ -2,7 +2,8 @@
 
 F008 (R4). Each ``OldMeaning`` names one superseded statement: ``pattern`` is a regex over
 ``normalize()``d text, ``example`` is verbatim old text, ``source`` is ``path:line@4e47d0e``, and
-``decision`` is the C-number (or T-number, or ``HRV-11``) that changed it. The endpoint walk holds this
+``decision`` is the C-number (or T-number, ``HRV-11``, or ``R13``, the user's sprint-007 review rulings) that
+changed it. The endpoint walk holds this
 file out by name (``SCAN_EXCLUDED_LITERALS``) on the same ground as ``withdrawn_phrasings.py``: it is a
 file of literals the scans search for, not history. Its public names are exactly the four below;
 ``test_research00_traceability.py`` asserts that from the AST.
@@ -255,6 +256,18 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         source='specification/research/00-design-decisions.md:230@4e47d0e',
         decision='HRV-11',
     ),
+    'HRV-01-R13-four-tier-hierarchy': OldMeaning(
+        pattern='four-tier (?:resting-hrv )?(?:source )?hierarchy',
+        example='a four-tier resting-HRV source hierarchy with graceful degradation',
+        source='specification/research/00-design-decisions.md:148@4e47d0e',
+        decision='R13 (the HRV Status classification is not a tier: three input tiers, T-05, T-26)',
+    ),
+    'HRV-40-R13-now-sustaining-tier': OldMeaning(
+        pattern='now-sustaining tier',
+        example='the readings of the now-sustaining tier that predate the boundary are **never** in the band',
+        source='specification/research/00-design-decisions.md:218@4e47d0e',
+        decision='R13 (the clip names the dataset\'s tier, clause (a); T-13 keeps "sustains" for clause (b))',
+    ),
     'PRIN-05-C06-conservative-wins-unscoped': OldMeaning(
         pattern='or when the state estimate is low-confidence, the more conservative reading wins',
         example='or when the state estimate is low-confidence, the **more conservative reading wins**',
@@ -284,6 +297,12 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         example='The constant is **not** published in `thresholds`',
         source='specification/research/00-design-decisions.md:221@4e47d0e',
         decision='C33',
+    ),
+    'PRIN-12-R13-withheld-response-stays-reproducible': OldMeaning(
+        pattern='the response stays reproducible by hand',
+        example='§1.6, the response stays reproducible by hand',
+        source='specification/research/00-design-decisions.md:230@4e47d0e',
+        decision='R13 (the withhold is a second OPEN exception to PRIN-12, owned by IDEA-102)',
     ),
     'PRIN-14-C07-weak-evidence-only': OldMeaning(
         pattern='up-regulation on weak evidence, which §1\\.7 forbids',
