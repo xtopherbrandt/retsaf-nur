@@ -33,6 +33,10 @@ dev = [
     # and contracts/check_drift.py read contracts/openapi.yaml. Declared
     # here so neither relies on the transitive uvicorn[standard] install.
     "pyyaml>=6.0",
+    # sprint-007 code review (F008): the claim sweep strips fenced blocks on
+    # markdown-it's CommonMark fence tokens (tests/test_source_change_rule_sweep.py).
+    # Declared here so it does not rely on the transitive rich install.
+    "markdown-it-py>=4.0",
 ]
 
 [build-system]
