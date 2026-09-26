@@ -1054,7 +1054,7 @@ Pinned: none
 
 **HRV-43.** `reset_on` IS the era's true first day.
 Scope: every reported reset of every per-tier dataset.
-Not: the day the report first appears, which HRV-82 (the report lag) sets for a `tier_change` report and HRV-73 (the global gap) sets for a `coverage_gap` report.
+Not: the day the report first appears, which for a `tier_change` report comes only after a lag that HRV-82 (the report lag) states for a clean switch at daily capture, and which HRV-73 (the global gap) sets for a `coverage_gap` report.
 Pinned: none
 
 **HRV-44.** Exactly two mechanisms of the single-baseline rule MUST stay retired: `resolve_baseline_tier`'s role as cross-tier arbitration, and the `off_baseline_tier` exclusion.
