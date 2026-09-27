@@ -5479,8 +5479,11 @@ def test_real_path_every_traceability_line_is_the_header_the_separator_or_a_row(
 def test_table_line_errors_names_a_line_that_is_not_a_row() -> None:
     """Iteration 6, S1, on synthetic text shaped like the scanner's routes, each message exactly: a
     correction line after the last row (U1c), a blockquoted contradicting row (U1b), the separator deleted
-    (U2), and the header edited. ``parse_traceability`` returns the same rows for each route, so no row
-    check can see them."""
+    (U2), and the header edited; and one case per clause of ``table_line_errors``'s row test (Stage 0.5): a
+    row with a leading space (``startswith("|")``), ``TRACE_HEADER`` repeated after a row (the header
+    clause) and ``TRACE_SEPARATOR`` repeated after a row (the separator clause). Dropping any one clause
+    left this test green before those three. ``parse_traceability`` returns the same rows for each route
+    that keeps the header and separator, so no row check can see them."""
     rows = [_row("DOC-03", "Decision records conform to Parts 1-4.", "DOC-03"),
             _row("HRV-46", "The rule keys on `hrv_source_tier` alone.", "HRV-46, HRV-84")]
     base = "\r\n".join([TRACE_HEADER, TRACE_SEPARATOR, *rows]) + "\r\n"
@@ -5494,8 +5497,12 @@ def test_table_line_errors_names_a_line_that_is_not_a_row() -> None:
         "u1b": _one_edit(base, rows[0] + "\r\n", rows[0] + "\r\n" + u1b + "\r\n"),
         "u2": _one_edit(base, TRACE_SEPARATOR + "\r\n", ""),
         "header": _one_edit(base, "| old-meaning key |", "| key |"),
+        # Stage 0.5: one route per clause of the row test, so dropping any one clause reds a case.
+        "indented": _one_edit(base, rows[1] + "\r\n", " " + rows[1] + "\r\n"),
+        "header-again": base + TRACE_HEADER + "\r\n",
+        "separator-again": base + TRACE_SEPARATOR + "\r\n",
     }
-    for name in ("u1c", "u1b"):
+    for name in ("u1c", "u1b", "indented", "header-again", "separator-again"):
         assert parse_traceability(routes[name]) == parse_traceability(base), name
     _check_cases(table_line_errors, {
         "u1c-a-correction-after-the-last-row": ((routes["u1c"],), [
@@ -5506,6 +5513,12 @@ def test_table_line_errors_names_a_line_that_is_not_a_row() -> None:
             f"[frozen-table] line 2: the separator is not '|---|---|---|---|---|---|---|' (now {rows[0][:120]!r})"]),
         "the-header-edited": ((routes["header"],), [
             f"[frozen-table] line 1: the header is not TRACE_HEADER (now {TRACE_HEADER.replace('old-meaning key', 'key')[:120]!r})"]),
+        "a-row-with-a-leading-space": ((routes["indented"],), [
+            f"[frozen-table] line 4: a table line that is not a row cannot be bound: {(' ' + rows[1])[:120]!r}"]),
+        "the-header-repeated-after-a-row": ((routes["header-again"],), [
+            f"[frozen-table] line 5: a table line that is not a row cannot be bound: {TRACE_HEADER[:120]!r}"]),
+        "the-separator-repeated-after-a-row": ((routes["separator-again"],), [
+            f"[frozen-table] line 5: a table line that is not a row cannot be bound: {TRACE_SEPARATOR[:120]!r}"]),
     })
 
 
