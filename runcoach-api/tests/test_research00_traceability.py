@@ -2845,10 +2845,18 @@ def _retired_listed(history_text: str) -> dict[str, str]:
 
 
 def _split_cells(line: str) -> list[str]:
-    body = line.strip()
-    body = body[1:] if body.startswith("|") else body
+    body = line.strip().removeprefix("|")
     body = body[:-1] if body.endswith("|") and not body.endswith("\\|") else body
     return [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", body)]
+
+
+#: One cell of a markdown table's separator line: ``---``, ``:---``, ``---:`` or ``:---:``.
+_SEPARATOR_CELL = re.compile(r":?-{3,}:?")
+
+
+def _is_separator(cells: list[str]) -> bool:
+    """Whether a line's ``_split_cells`` are a table separator: every cell is ``_SEPARATOR_CELL``."""
+    return all(_SEPARATOR_CELL.fullmatch(c) for c in cells)
 
 
 def parse_traceability(text: str) -> list[dict[str, str]]:
@@ -2860,7 +2868,7 @@ def parse_traceability(text: str) -> list[dict[str, str]]:
         if not line.strip().startswith("|"):
             continue
         cells = _split_cells(line)
-        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+        if _is_separator(cells):
             continue
         if cells and cells[0] == TRACE_COLUMNS[0]:
             if tuple(cells) != TRACE_COLUMNS:
@@ -2981,7 +2989,7 @@ def rule_grammar_errors(text: str) -> list[str]:
     glossary = _glossary_span(lines)
     state: dict | None = None
 
-    def close(end: int) -> None:
+    def close() -> None:
         if state is None or state["closed"]:
             return
         state["closed"] = True
@@ -2999,17 +3007,17 @@ def rule_grammar_errors(text: str) -> list[str]:
         if glossary and glossary[0] <= number - 1 < glossary[1]:
             continue
         if line.startswith("#"):
-            close(number)
+            close()
             state = None
             if line not in HEADINGS and line != GLOSSARY_HEADING:
                 errors.append(f"[grammar] line {number}: a heading not in HEADINGS: {line[:100]!r}")
             continue
         if not line.strip():
-            close(number)
+            close()
             continue
         m = _RULE_LINE.match(line)
         if m:
-            close(number)
+            close()
             body = m.group("body")
             state = {"id": m.group("id"), "line": number, "seen": [], "closed": False}
             if not line.endswith("."):
@@ -3034,7 +3042,7 @@ def rule_grammar_errors(text: str) -> list[str]:
             seen.append(kind)
             continue
         errors.append(f"[grammar] line {number}: not a rule, Scope, Not, Pinned, Why, heading or blank line: {line[:100]!r}")
-    close(len(lines))
+    close()
     counts = Counter(rule_ids(text))
     errors += [f"[grammar] duplicate rule ID {i} ({n} rule lines)" for i, n in counts.items() if n > 1]
     return errors
@@ -3626,7 +3634,7 @@ def table_line_errors(table_text: str) -> list[str]:
             continue
         cells = _split_cells(line)
         is_row = (line.startswith("|") and len(cells) == len(TRACE_COLUMNS) and cells[0] != TRACE_COLUMNS[0]
-                  and not all(re.fullmatch(r":?-{3,}:?", c) for c in cells))
+                  and not _is_separator(cells))
         if not is_row:
             errors.append(f"[frozen-table] line {number}: a table line that is not a row cannot be bound: "
                           f"{line[:120]!r}")
@@ -3750,6 +3758,11 @@ def _keyed_digest(lines: list[str]) -> str:
     return ".".join(_cell_digest(line) for line in lines)
 
 
+def _first_difference(have, want) -> int:
+    """The first index at which two sequences differ; the shorter length when one is a prefix of the other."""
+    return next((i for i, (a, b) in enumerate(zip(have, want)) if a != b), min(len(have), len(want)))
+
+
 def keyed_line_errors(tag: str, literal: str, where: str, entries: list[tuple[str, list[str]]],
                       frozen: dict[str, str], then: str) -> list[str]:
     """The iteration-5 binding, both ways, shared by ``GLOSSARY_SHA256``, ``PINNED_SHA256``,
@@ -3767,7 +3780,7 @@ def keyed_line_errors(tag: str, literal: str, where: str, entries: list[tuple[st
                           f"{literal}[{key!r}] = {digest!r}")
         elif digest != frozen[key]:
             have, want = digest.split("."), frozen[key].split(".")
-            first = next((i for i, (a, b) in enumerate(zip(have, want)) if a != b), min(len(have), len(want)))
+            first = _first_difference(have, want)
             now = repr(lines[first][:120]) if first < len(lines) else "no such line: a line was removed"
             errors.append(f"[{tag}] {key}: the line changed (now {now}); {then}, {literal}[{key!r}] = {digest!r}")
     return errors
@@ -3855,7 +3868,7 @@ def structure_errors(research_text: str, frozen: tuple[str, ...] | None = None) 
     have = research_structure(research_text)
     if have == frozen:
         return []
-    i = next((i for i, (a, b) in enumerate(zip(have, frozen)) if a != b), min(len(have), len(frozen)))
+    i = _first_difference(have, frozen)
     got, want = (have[i] if i < len(have) else "<end>"), (frozen[i] if i < len(frozen) else "<end>")
     after = have[i - 1] if i else "<start>"
     return [(f"[frozen-structure] position {i}, after {after!r}: research/00 has {got!r} where RESEARCH_STRUCTURE "
@@ -5704,7 +5717,7 @@ def review_errors(review_text: str, required: list[str]) -> list[str]:
             headed.add(heading)
             continue
         cells = _split_cells(line)
-        if all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+        if _is_separator(cells):
             continue
         if len(cells) != 3:
             errors.append(f"[review] line {number}: {len(cells)} cells, not 3: {line[:100]!r}")
@@ -5741,7 +5754,7 @@ def review_entries(review_text: str) -> tuple[list[tuple[str, list[str]]], list[
             continue
         if line.startswith("|"):
             cells = _split_cells(line)
-            if not all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+            if not _is_separator(cells):
                 entries.append((cells[0], [line]))
         else:
             prose.append(line)
@@ -5762,7 +5775,7 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
         "a verdict or its reason changes only in a fresh critic's round recorded under ## Rounds: once recorded")
     have = tuple(_cell_digest(line) for line in prose)
     if have != frozen_prose:
-        i = next((i for i, (a, b) in enumerate(zip(have, frozen_prose)) if a != b), min(len(have), len(frozen_prose)))
+        i = _first_difference(have, frozen_prose)
         now = repr(prose[i][:120]) if i < len(prose) else "no such line: a line was removed"
         errors.append(f"[frozen-review] prose line {i + 1} of {len(prose)} (the headings, the opening paragraph and "
                       f"## Rounds) is not the frozen line (now {now}); a round is recorded only with the review it "
