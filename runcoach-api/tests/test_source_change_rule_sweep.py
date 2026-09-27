@@ -597,6 +597,36 @@ def _spliced_claim_is_visible(text: str, at: int) -> bool:
     return any(off == expected for off, _ in hits)
 
 
+def test_a_splice_that_cuts_a_live_claim_in_half_is_still_seen_positionally() -> None:
+    """B-CR-001 fix direction 2, red in-suite (T191). Text holding one
+    **unquoted** ``SUPERSEDED_FORMS[0]``, spliced at the middle of that form:
+    the splice cuts the existing hit in half and adds one of its own, so the
+    live-hit count does not move. The positional check sees the spliced form;
+    the cardinal check it replaced, ``after == before + 1``, does not.
+
+    **Mutation that turns this red**: make ``_spliced_claim_is_visible``
+    return the cardinal ``len(hits) == len(_live_superseded_hits(text)) + 1``.
+    """
+    form = SUPERSEDED_FORMS[0]
+    text = f"When the source changes the system {form} for the new tier."
+    start = text.index(form)
+    at = start + len(form) // 2
+    spliced = f"{text[:at]} {form} {text[at:]}"
+    before, after = _live_superseded_hits(text), _live_superseded_hits(spliced)
+    positional = _spliced_claim_is_visible(text, at)
+    cardinal = len(after) == len(before) + 1
+    print(f"[slice compared] splice @{at} inside {form!r} (@{start}): {text[:at]!r} | {text[at:]!r}; "
+          f"hits before {before}, after {after}; positional {positional}, cardinal {cardinal}")
+    assert before == [(start, form)], "the unspliced text does not hold exactly one live claim"
+    assert start < at < start + len(form) and text[at - 1] != " " and text[at] != " "
+    assert len(after) == len(before) == 1, "the splice did not destroy one hit and add one"
+    assert positional, (
+        f"a claim spliced at @{at}, inside a live claim it cuts in half, was not seen: the check in "
+        f"_spliced_claim_is_visible is counting hits, not placing the spliced one (hits after {after})"
+    )
+    assert not cardinal, "the cardinal check saw the splice, so this text cannot tell the two checks apart"
+
+
 @dataclass(frozen=True)
 class SpanProfile:
     """One file's answer to: what can the quotation guard hide here?"""

@@ -2708,7 +2708,10 @@ OPERATIVE = {
     )),
     "C07": ("PRIN-14", ("forbidden direction",)),
     "C32": ("HRV-07", ("max(0.5 · SD(ln rMSSD), 0.01)",)),
-    "C33": ("PRIN-12", ("recency_tolerance_days", "Pinned: none (F010)")),
+    "C33": ("PRIN-12", (
+        "baseline_days", "min_baseline_readings", "min_window_readings", "gap_reset_days", "band_floor",
+        "swc_factor", "recency_tolerance_days", "Pinned: none (F010)",
+    )),
     "C38": ("DOC-09", ("only current rules", "dated summary")),
 }
 
@@ -4359,7 +4362,8 @@ _WORLD_DECISION_ROWS = {
 _WORLD_BODIES = {
     "DOC-09": ("Rule DOC-09 MUST hold every day, so research/00 states only current rules and a dated summary "
                "goes to the history file."),
-    "PRIN-12": "Rule PRIN-12 MUST hold every day and serves `recency_tolerance_days`.",
+    "PRIN-12": ("Rule PRIN-12 MUST hold every day and serves `baseline_days`, `min_baseline_readings`, "
+                "`min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`."),
     "PRIN-14": "Rule PRIN-14 MUST hold every day against the forbidden direction.",
     "PRIN-15": ("Rule PRIN-15 MUST hold every day, and the F005-parity population, `DEFERRED_EXCEPTION` (IDEA-087) "
                 "and the HRV-25 population (IDEA-099) may not grow."),
