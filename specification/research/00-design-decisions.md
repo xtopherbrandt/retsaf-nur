@@ -12,7 +12,7 @@
 - **T-08 baseline** IS the HRV term for a dataset's readings inside its dataset baseline window (`HrvDataset.baseline`), and the centre of its HRV SWC band is the baseline mean.
 - **T-09 baseline window** IS one of three named HRV windows: the nominal baseline window `[D-66, D-7]` (`baseline_window`); the series baseline window `[max(D-66, gap resumption), D-7]` (`HrvSeries.baseline_window`), which the recency gate reads; and the dataset baseline window (`HrvDataset.baseline_window`), which establishment reads.
 - **T-10 judged week** IS the local days `[D-6, D]` (`judged_window`), and the bare word window is never used for it.
-- **T-11 withhold** IS HRV-31's `verdict_withheld`, set as `HrvDataset.withheld` and served as `hrv_unavailable` (T-33) with `unavailable_reason` `week_not_representative`, except where HRV-26 finds no SWC band or `week_too_thin` first or the day has not happened (HRV-29); it is not a verdict of its own.
+- **T-11 withhold** IS HRV-31's `verdict_withheld`, set as `HrvDataset.withheld` and, on the dataset that speaks (HRV-26), served as `hrv_unavailable` (T-33) with `unavailable_reason` `week_not_representative`, except where HRV-26 finds no SWC band or `week_too_thin` first or the day has not happened (HRV-29); it is not a verdict of its own.
 - **T-12 silence / coverage gap / hole / days behind** IS the count of whole local days strictly between two readings (`_silence_between`); a coverage gap is a series silence of more than 21 days, a hole is one dataset's silence of more than 21 days inside its window, and g days behind in `last_read` is a silence of g−1.
 - **T-13 sustains** IS the property `sustained_tier` tests, the highest-fidelity tier with at least 14 distinct days in a window, and it is used only by clause (b) of the era rule; clause (a) is the count in the series baseline window.
 - **T-14 candidate** IS a judgeable dataset the recency gate may skip; the era rule's count-below-14 half is named the boundary-existence half, not candidacy.
@@ -184,11 +184,11 @@ Scope: every stored resting-HRV row whose local day lies in `[D-66, D]`.
 Not: a row outside those windows, which the era rule reads but the response does not list.
 Pinned: none
 
-**PRIN-24.** `window_days` (7), which sets the judged week and which the `thresholds` block does not serve, IS an OPEN exception to rule PRIN-12 (reproducible by hand from the response), and the withhold of HRV-31 (`week_not_representative`), fired or not, IS a second, owned by IDEA-102, as it reads the order of another dataset's judged-week days, of which only the count is served (`week_days`).
-Scope: the verdict-affecting constants, and the judged-week day order that the withhold of HRV-31 and HRV-63 compares, that the response does not serve.
+**PRIN-24.** `window_days` (7), the withhold's judged-week day order (HRV-31), fired or not, the previous-window readings of clauses (b) and (c) of HRV-38, and the coverage-gap test's latest reading before D-66 and the store's earliest start time (HRV-73) each IS an OPEN exception to rule PRIN-12 (reproducible by hand), owned by IDEA-102, as a verdict-affecting input the response does not serve.
+Scope: `window_days`, which sets the judged week and which the `thresholds` block does not serve; the order of another dataset's judged-week days that the withhold of HRV-31 and HRV-63 compares; and the readings before D-66, and the earliest stored start time, that the era rule (HRV-38) and the coverage gap (HRV-73) read.
 Not: `recency_tolerance_days`, which PRIN-12 names as served once F010 lands, and each dataset's count of judged-week days, which `week_days` serves.
 Pinned: none
-Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39), and the review rulings name the withhold, which no served field lets a reader reproduce, as the second (H-41).
+Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39), a clause the review rulings widened to every such input, naming the withhold's day order, the previous-window readings and the coverage-gap test's inputs, none of which a served field lets a reader reproduce (H-41).
 
 ### 1.7 Down-regulate freely, up-regulate cautiously
 
@@ -1047,9 +1047,9 @@ Scope: the stray count of HRV-38 (the era boundary).
 Not: clause (a)'s count, which HRV-81 (clause a) keeps in the gap-clipped window.
 Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary
 
-**HRV-42.** What an empty judged week holds MUST neither create, move nor end a reset.
+**HRV-42.** What an empty judged week holds MUST neither create, move nor end a reported reset (T-16).
 Scope: a judged week holding no reading of any tier.
-Not: the day a report begins or ends, or its `reset_on` changes, which the slide of the baseline window and of the previous window (HRV-08, HRV-38) sets on any day, empty week or not (HRV-43, HRV-82), and the verdict on that week, which reads unavailable under HRV-26 (the guard order).
+Not: the day a report begins or ends, or its `reset_on` changes, which on such a week the slide of the baseline window and of the previous window (HRV-08, HRV-38) sets (HRV-43, HRV-82), and the verdict on that week, which reads unavailable under HRV-26 (the guard order).
 Pinned: none
 
 **HRV-43.** `reset_on` IS the era's true first day.
