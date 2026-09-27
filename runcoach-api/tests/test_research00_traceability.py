@@ -25,8 +25,10 @@ import ast
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
+import sys
 import textwrap
 from collections import Counter
 from collections.abc import Callable
@@ -1954,7 +1956,7 @@ _ABBREVIATIONS = re.compile(r"\b(?:e\.g|i\.e|vs|cf)\.", re.IGNORECASE)
 _TERMINATOR = re.compile(r"[.!?](?=\s+[A-Z(])")
 _GLOSSARY_LINE = re.compile(r"^- \*\*(?P<id>T-\d{2}) (?P<term>[^*]+?)\*\* IS (?P<definition>\S.*)\.$")
 _HISTORY_ENTRY = re.compile(
-    r"^- \*\*(?P<id>H-\d{2})\*\* \((?:20\d{2}-\d{2}-\d{2}(?:, 20\d{2}-\d{2}-\d{2})*|undated)\) (?P<what>\S.*) → "
+    r"^- \*\*(?P<id>H-\d{2})\*\* \((?P<dates>20\d{2}-\d{2}-\d{2}(?:, 20\d{2}-\d{2}-\d{2})*|undated)\) (?P<what>\S.*) → "
     rf"(?P<ids>(?:{_P})-\d{{2,3}}(?:, (?:{_P})-\d{{2,3}})*)$"
 )
 _RETIRED_LINE = re.compile(rf"^- \*\*(?P<id>(?:{_P})-\d{{2,3}})\*\* retired → (?P<h>H-\d{{2}})$")
@@ -2031,6 +2033,18 @@ def rule_blocks(text: str) -> dict[str, str]:
 def history_ids(text: str) -> list[str]:
     """The ``H-NN`` of every history entry line, in order (duplicates kept)."""
     return re.findall(r"^- \*\*(H-\d{2})\*\* \(", text.replace("\r\n", "\n"), re.M)
+
+
+def history_dates(text: str) -> dict[str, frozenset[str]]:
+    """``{date: H-NNs}``: each ISO date in a well-formed history entry's date list, mapped to every entry
+    whose list carries it (T193 item 3, G2). An undated entry carries none, and a line ``history_errors``
+    rejects adds nothing."""
+    dates: dict[str, set[str]] = {}
+    for line in _lines(text):
+        if m := _HISTORY_ENTRY.match(line):
+            for date in _ISO_DATE.findall(m.group("dates")):
+                dates.setdefault(date, set()).add(m.group("id"))
+    return {date: frozenset(entries) for date, entries in dates.items()}
 
 
 def _history_arrows(text: str) -> dict[str, list[str]]:
@@ -2542,15 +2556,21 @@ def operative_string_errors(research_text: str, rows: list[dict[str, str]], mean
     return errors
 
 
-def proxy_errors(sentence: str, block: str) -> list[str]:
+def proxy_errors(sentence: str, block: str, dates: dict[str, frozenset[str]]) -> list[str]:
     """AC9 and R6: an unchanged row's inventory sentence survives in its mapped block(s). Date
-    expressions are removed first, and the block must then cite an ``H-NN``. Then every number
-    (``\\d+(?:\\.\\d+)?``, after ``−`` and ``–`` fold to ``-``), every backticked identifier (exactly)
-    and each quantifier (``QUANTIFIERS``, whole words, any case) must appear in the block."""
+    expressions are removed first, and for each date the block must cite an ``H-NN`` whose history
+    entry carries that date (``dates``, the history's ``history_dates``; T193 item 3, G2: any H-NN
+    passed before). Then every number (``\\d+(?:\\.\\d+)?``, after ``−`` and ``–`` fold to ``-``), every
+    backticked identifier (exactly) and each quantifier (``QUANTIFIERS``, whole words, any case) must
+    appear in the block."""
     errors = []
-    undated, removed = _ISO_DATE.subn(" ", sentence)
-    if removed and not _H_ID.search(block):
-        errors.append("[proxy] the sentence carries a date, and the block cites no H-NN for it")
+    undated = _ISO_DATE.sub(" ", sentence)
+    cited = set(_H_ID.findall(block))
+    for date in dict.fromkeys(_ISO_DATE.findall(sentence)):
+        entries = dates.get(date, frozenset())
+        if not cited & entries:
+            errors.append(f"[proxy] the sentence carries the date {date}, and the block cites no H-NN whose "
+                          f"history entry carries it ({sorted(entries)}; R6)")
     fold = str.maketrans({"−": "-", "–": "-"})
     have = set(_NUMBER.findall(block.translate(fold)))
     lost = [n for n in dict.fromkeys(_NUMBER.findall(_CODE_SPAN.sub(" ", undated).translate(fold))) if n not in have]
@@ -2852,6 +2872,32 @@ def table_line_errors(table_text: str) -> list[str]:
     return errors
 
 
+def split_numbering_errors(rows: list[dict[str, str]]) -> list[str]:
+    """AC3 and R6 "a split row keeps its ID for its first rule; the others take the next free number in
+    the prefix" (T193 item 4, G3), from the table and ``INVENTORY_IDS``. For each prefix, the rule IDs
+    the new-ID cells name that are not inventory IDs are exactly the numbers after the prefix's highest
+    inventory ID, with none skipped; and a row naming two or more rule IDs (a split) names its own
+    inventory ID. Before T193 only the frozen snapshots held either, so a regenerated snapshot cleared a
+    skipped number or a split that dropped its ID."""
+    errors = []
+    top: dict[str, int] = {}
+    for i in INVENTORY_IDS:
+        top[_prefix(i)] = max(top.get(_prefix(i), 0), int(i.rsplit("-", 1)[1]))
+    new = sorted({i for r in rows for i in _new_rule_ids(r)} - INVENTORY_IDS, key=_order_key)
+    for prefix in PREFIX_ORDER:
+        have = [i for i in new if _prefix(i) == prefix]
+        want = [f"{prefix}-{n:02d}" for n in range(top.get(prefix, 0) + 1, top.get(prefix, 0) + 1 + len(have))]
+        if [_order_key(i) for i in have] != [_order_key(i) for i in want]:
+            errors.append(f"[ids] {prefix}: the new IDs {have} are not {want}, numbered on from the inventory's "
+                          f"highest, {prefix}-{top.get(prefix, 0):02d} (AC3: the next free number in the prefix)")
+    for row in rows:
+        inv, named = row["inventory ID"], _new_rule_ids(row)
+        if not _is_blank(inv) and len(named) > 1 and inv not in named:
+            errors.append(f"[ids] {inv}: a split row names {named} and not its own ID (AC3: a split row keeps its "
+                          "ID for its first rule)")
+    return errors
+
+
 def retirement_errors(rows: list[dict[str, str]], history_text: str,
                       frozen: dict[str, str] | None = None) -> list[str]:
     """Iteration 4, M2, over the committed table and history. The IDs the table retires
@@ -3142,9 +3188,11 @@ def example_source_errors(meanings, show: Callable[[str], str]) -> list[str]:
     return errors
 
 
-def _proxy_rows(rows: list[dict[str, str]], research_text: str, only_within: set[str] | None = None) -> list[str]:
-    """The AC9 proxy on every ``no`` row with an inventory sentence, over the blocks it names. With
-    ``only_within``, a row naming a rule outside that set is left to the assembled check."""
+def _proxy_rows(rows: list[dict[str, str]], research_text: str, dates: dict[str, frozenset[str]],
+                only_within: set[str] | None = None) -> list[str]:
+    """The AC9 proxy on every ``no`` row with an inventory sentence, over the blocks it names, with
+    ``dates`` the history's ``history_dates``. With ``only_within``, a row naming a rule outside that set
+    is left to the assembled check."""
     errors, blocks = [], rule_blocks(research_text)
     for row in rows:
         new = _new_rule_ids(row)
@@ -3153,7 +3201,7 @@ def _proxy_rows(rows: list[dict[str, str]], research_text: str, only_within: set
         if only_within is not None and not set(new) <= only_within:
             continue
         mapped = "\n".join(blocks[i] for i in new if i in blocks)
-        errors += [f"{e} ({row['inventory ID']})" for e in proxy_errors(row["inventory sentence"], mapped)]
+        errors += [f"{e} ({row['inventory ID']})" for e in proxy_errors(row["inventory sentence"], mapped, dates)]
     return errors
 
 
@@ -3178,7 +3226,7 @@ def assemble_check(drafts_dir) -> list[str]:
     for h, ids in _history_arrows(a.history).items():
         errors += [f"[history] {h}'s arrow cites {i}, neither a rule nor a retired ID" for i in ids if i not in resolvable]
     errors += _anchor_errors(a.research)
-    errors += _proxy_rows(rows, a.research)
+    errors += _proxy_rows(rows, a.research, history_dates(a.history))
     return errors
 
 
@@ -3240,7 +3288,8 @@ def fragment_text_errors(rules: str, trace: str, meanings_text: str, group: str,
     if coverage:
         errors += group_coverage_errors(rows, group)
     errors += operative_string_errors(rules, rows, meanings=meanings, group=group)
-    errors += _proxy_rows(rows, rules, only_within=here)
+    # A draft's dated sentence cites the committed history's entries (H-01..H-41, as above).
+    errors += _proxy_rows(rows, rules, history_dates(_REAL_HISTORY.read_text(encoding="utf-8")), only_within=here)
     errors += old_meaning_errors(meanings, rules)
     if show is not None:
         errors += example_source_errors(meanings, show)
@@ -4271,9 +4320,13 @@ def test_operative_string_errors_checks_only_the_decisions_its_rows_cite(tmp_pat
     ],
 )
 def test_proxy_errors_turns_red_on_each_lost_token(sentence: str, block: str, fragment: str) -> None:
-    errors = proxy_errors(sentence, block)
+    errors = proxy_errors(sentence, block, _PROXY_DATES)
     print(f"[slice compared] {sentence!r} vs {block!r}: {errors}")
     assert any(fragment in e for e in errors), errors
+
+
+#: A synthetic ``history_dates`` map: 2026-09-18 is carried by two entries, as H-18 and H-20 carry it.
+_PROXY_DATES = {"2026-09-09": frozenset({"H-09"}), "2026-09-18": frozenset({"H-18", "H-20"})}
 
 
 def test_proxy_errors_is_green_when_every_token_survives() -> None:
@@ -4281,11 +4334,50 @@ def test_proxy_errors_is_green_when_every_token_survives() -> None:
                 "− only 0.5·SD.")
     block = ("**HRV-09.** Every count MUST use `min_baseline_readings` = 14, so 21 does not reset and it is never CV, "
              "only 0.5·SD.\nScope: every count.\nNot: the 2 CV forms.\nPinned: none\nWhy: user decision H-18.")
-    errors = proxy_errors(sentence, block)
+    errors = proxy_errors(sentence, block, _PROXY_DATES)
     print(f"[slice compared] {errors}")
     assert errors == []
-    assert proxy_errors("Every day is judged – not 7−1.", "**HRV-08.** Every day MUST be judged, 7-1 excepted.") == []
-    assert proxy_errors("Everything is judged.", "**HRV-08.** All is judged.") == []
+    assert proxy_errors("Every day is judged – not 7−1.", "**HRV-08.** Every day MUST be judged, 7-1 excepted.",
+                        _PROXY_DATES) == []
+    assert proxy_errors("Everything is judged.", "**HRV-08.** All is judged.", _PROXY_DATES) == []
+
+
+def test_proxy_errors_needs_the_h_nn_whose_history_entry_carries_the_date() -> None:
+    """T193 item 3 (G2; R6 "a rule that rests on a dated decision points to its H-NN"): a dated sentence's
+    block must cite an H-NN whose history entry's date list carries that date, not any H-NN. Before
+    T193 a block citing an unrelated H-NN passed. Each message exactly; a date no entry carries names
+    no entry; each date of a two-date sentence is checked on its own; the second entry carrying a date
+    serves as well as the first."""
+    sentence, two = "Left unchanged (2026-09-18).", "Set (2026-09-09) and kept (2026-09-18)."
+    block = "**HRV-33.** It MUST stay unchanged.\nScope: every day.\nNot: a gap.\nPinned: none\nWhy: user decision {}."
+    red_18 = ("[proxy] the sentence carries the date 2026-09-18, and the block cites no H-NN whose history entry "
+              "carries it (['H-18', 'H-20']; R6)")
+    _check_cases(proxy_errors, {
+        "an-unrelated-h-nn": ((sentence, block.format("H-09"), _PROXY_DATES), [red_18]),
+        "no-h-nn": ((sentence, block.format("the user"), _PROXY_DATES), [red_18]),
+        "a-date-no-entry-carries": (("Left unchanged (2026-09-19).", block.format("H-18"), _PROXY_DATES), [
+            ("[proxy] the sentence carries the date 2026-09-19, and the block cites no H-NN whose history entry "
+             "carries it ([]; R6)")]),
+        "one-of-two-dates-unmatched": ((two, block.format("H-09"), _PROXY_DATES), [red_18]),
+        "the-second-entry-carrying-it": ((sentence, block.format("H-20"), _PROXY_DATES), []),
+        "both-dates-matched": ((two, block.format("H-09, H-18"), _PROXY_DATES), []),
+    })
+
+
+def test_history_dates_maps_each_date_to_every_entry_carrying_it() -> None:
+    """T193 item 3: ``history_dates`` reads the date list of each well-formed entry, so a multi-date
+    entry is under each of its dates, an undated entry is under none, and a ``## Retired IDs`` line or
+    a malformed entry (``history_errors``' finding) adds nothing."""
+    history = "\n".join([
+        "# research/00 history", "",
+        "- **H-01** (undated) A note. → DOC-01",
+        "- **H-02** (2026-09-16, 2026-09-18) A change. → HRV-01, HRV-02",
+        "- **H-03** (2026-09-18) Another change. → HRV-03",
+        "- **H-04** 2026-09-19 no parentheses. → HRV-04", "",
+        _RETIRED_HEADING, "", "- **PRIN-16** retired → H-03", ""])
+    got = history_dates(history)
+    print(f"[slice compared] {got}")
+    assert got == {"2026-09-16": frozenset({"H-02"}), "2026-09-18": frozenset({"H-02", "H-03"})}
 
 
 def test_pinned_errors_finds_real_nodes_and_rejects_missing_ones() -> None:
@@ -4663,15 +4755,43 @@ def test_real_path_ac7_every_decision_is_stated_in_its_rule() -> None:
 
 
 def test_real_path_ac9_proxy_on_every_unchanged_row() -> None:
-    research, _history, rows = _real()
-    errors = _proxy_rows(rows, research) + inventory_sentence_errors(rows)
+    research, history, rows = _real()
+    dates = history_dates(history)
+    errors = _proxy_rows(rows, research, dates) + inventory_sentence_errors(rows)
     checked = sum(1 for r in rows if r["meaning changed"] == "no" and not _is_blank(r["inventory sentence"]))
     frozen = sum(1 for r in rows if r["inventory ID"] in INVENTORY_SENTENCE_SHA256)
+    blocks = rule_blocks(research)
+    dated = {r["inventory ID"]: (_ISO_DATE.findall(r["inventory sentence"]),
+                                 sorted({h for i in _new_rule_ids(r) for h in _H_ID.findall(blocks.get(i, ""))}))
+             for r in rows if r["meaning changed"] == "no" and _ISO_DATE.search(r["inventory sentence"])}
     print(f"[slice compared] AC9 proxy over {checked} no rows, {frozen} sentence cells against the frozen "
-          f"hashes: {errors[:10]}")
+          f"hashes; dated no rows (dates, H-NN cited) {dated}, entries per date "
+          f"{ {d: sorted(dates.get(d, ())) for ds, _h in dated.values() for d in ds} }: {errors[:10]}")
     assert errors == []
-    assert checked > 0
+    assert checked > 0 and dated
     assert frozen == len(INVENTORY_SENTENCE_SHA256) == 149
+
+
+def test_real_path_ac9_a_dated_row_citing_an_unrelated_h_nn_is_red() -> None:
+    """T193 item 3 on the committed text: the first ``no`` row whose inventory sentence carries a date
+    (chosen by that property, not by ID) passes, and with every H-NN its block cites replaced by an H-NN
+    whose entry carries none of the sentence's dates, the AC9 proxy names each date."""
+    research, history, rows = _real()
+    dates = history_dates(history)
+    row = next(r for r in rows if r["meaning changed"] == "no" and _ISO_DATE.search(r["inventory sentence"])
+               and _new_rule_ids(r))
+    carried = set(_ISO_DATE.findall(row["inventory sentence"]))
+    unrelated = next(h for h in history_ids(history) if not any(h in dates.get(d, ()) for d in carried))
+    blocks = rule_blocks(research)
+    mapped = "\n".join(blocks[i] for i in _new_rule_ids(row) if i in blocks)
+    swapped = _H_ID.sub(unrelated, mapped)
+    errors = proxy_errors(row["inventory sentence"], swapped, dates)
+    print(f"[slice compared] {row['inventory ID']}: dates {sorted(carried)}, cited {sorted(set(_H_ID.findall(mapped)))}"
+          f" -> {unrelated}: {errors}")
+    assert proxy_errors(row["inventory sentence"], mapped, dates) == []
+    assert errors == [f"[proxy] the sentence carries the date {d}, and the block cites no H-NN whose history entry "
+                      f"carries it ({sorted(dates.get(d, ()))}; R6)" for d in dict.fromkeys(
+                          _ISO_DATE.findall(row["inventory sentence"]))]
 
 
 def _real_row_swap(rows: list[dict[str, str]], inv: str, **cells: str) -> list[dict[str, str]]:
@@ -4681,15 +4801,24 @@ def _real_row_swap(rows: list[dict[str, str]], inv: str, **cells: str) -> list[d
 
 def test_real_path_every_traceability_row_is_the_frozen_row() -> None:
     """Iteration 4, M1 and M2: the committed table is ``TRACEABILITY_ROW_SHA256``, row by row and cell
-    by cell, with no row added or removed."""
+    by cell, with no row added or removed.
+
+    T193 item 1: the inventory rows are keyed by exactly ``INVENTORY_IDS``, each once, and any other row
+    is an addition keyed ``addition <new ID(s)>`` (AC6 allows them); the table's keys are the literal's
+    keys. A bare count of 149 table rows turned the sprint-007 critic's FIG-12 addition red with no hint."""
     _research, _history, rows = _real()
     errors = traceability_row_errors(rows)
     keys = [_row_key(r) for r in rows]
-    prin16 = next(r for r in rows if r["inventory ID"] == "PRIN-16")
-    print(f"[slice compared] {len(rows)} table rows, {len(set(keys))} keys, {len(TRACEABILITY_ROW_SHA256)} "
-          f"frozen; PRIN-16 {row_digest(prin16)} vs {TRACEABILITY_ROW_SHA256['PRIN-16']}: {errors[:5]}")
+    inventory = [_row_key(r) for r in rows if not _is_blank(r["inventory ID"])]
+    additions = [_row_key(r) for r in rows if _is_blank(r["inventory ID"])]
+    sample = rows[0]
+    print(f"[slice compared] {len(rows)} table rows, {len(set(keys))} keys ({len(inventory)} inventory, additions "
+          f"{additions}), {len(TRACEABILITY_ROW_SHA256)} frozen; {_row_key(sample)} {row_digest(sample)} vs "
+          f"{TRACEABILITY_ROW_SHA256.get(_row_key(sample))}: {errors[:5]}")
     assert errors == []
-    assert set(keys) == set(TRACEABILITY_ROW_SHA256) == INVENTORY_IDS and len(keys) == 149
+    assert len(set(keys)) == len(keys) and set(keys) == set(TRACEABILITY_ROW_SHA256)
+    assert sorted(inventory) == sorted(INVENTORY_IDS)
+    assert all(k.startswith("addition ") for k in additions)
 
 
 def test_real_path_every_traceability_line_is_the_header_the_separator_or_a_row() -> None:
@@ -4702,7 +4831,48 @@ def test_real_path_every_traceability_line_is_the_header_the_separator_or_a_row(
     print(f"[slice compared] {_REAL_TABLE.name}: {len(lines)} split lines, last {lines[-1]!r}, {len(rows)} rows; "
           f"line 2 {lines[1]!r}; line {len(lines) - 1} {lines[-2][:60]!r}: {errors[:5]}")
     assert errors == []
-    assert lines[-1] == "" and len(lines) - 3 == len(rows) == 149
+    assert lines[-1] == "" and len(lines) - 3 == len(rows) == len(TRACEABILITY_ROW_SHA256)
+
+
+def test_real_path_ac3_new_ids_number_on_from_the_inventory_and_each_split_keeps_its_id() -> None:
+    """T193 item 4 (G3, AC3): over the committed table, each prefix's non-inventory IDs run on from its
+    highest inventory ID, and every split row names its own ID. Before T193 only the frozen snapshots
+    held this."""
+    _research, _history, rows = _real()
+    errors = split_numbering_errors(rows)
+    splits = sum(1 for r in rows if not _is_blank(r["inventory ID"]) and len(_new_rule_ids(r)) > 1)
+    new = sorted({i for r in rows for i in _new_rule_ids(r)} - INVENTORY_IDS, key=_order_key)
+    print(f"[slice compared] {splits} split rows, {len(new)} new IDs from {new[0]} to {new[-1]}: {errors}")
+    assert errors == []
+    assert splits > 0 and new
+
+
+def test_split_numbering_errors_names_a_gap_and_a_split_that_drops_its_own_id() -> None:
+    """T193 item 4 (G3), on synthetic rows over FIG, whose highest inventory ID is FIG-05, each message
+    exactly: a new ID that skips a number; a new ID at or below the inventory's highest that is not an
+    inventory ID; and a split row that names its new IDs and drops its own."""
+    top = max((i for i in INVENTORY_IDS if _prefix(i) == "FIG"), key=_order_key)
+    assert top == "FIG-05" and "FIG-00" not in INVENTORY_IDS
+    fig02, fig03 = _row("FIG-02", "s", "FIG-02, FIG-06, FIG-07"), _row("FIG-03", "s", "FIG-03, FIG-08")
+    addition = _row(ADDITION, ADDITION, "FIG-09", "C09")
+    rows = [_as_row(line) for line in (fig02, fig03, addition)]
+    assert split_numbering_errors(rows) == []
+    gap = [*rows[:2], _as_row(_row(ADDITION, ADDITION, "FIG-10", "C09"))]
+    below = [*rows, _as_row(_row(ADDITION, ADDITION, "FIG-00", "C09"))]
+    dropped = [rows[0], _as_row(_row("FIG-03", "s", "FIG-08, FIG-10")), rows[2]]
+    _check_cases(split_numbering_errors, {
+        "a-gap": ((gap,), [
+            ("[ids] FIG: the new IDs ['FIG-06', 'FIG-07', 'FIG-08', 'FIG-10'] are not ['FIG-06', 'FIG-07', "
+             "'FIG-08', 'FIG-09'], numbered on from the inventory's highest, FIG-05 (AC3: the next free number "
+             "in the prefix)")]),
+        "a-new-id-below-the-inventorys-highest": ((below,), [
+            ("[ids] FIG: the new IDs ['FIG-00', 'FIG-06', 'FIG-07', 'FIG-08', 'FIG-09'] are not ['FIG-06', "
+             "'FIG-07', 'FIG-08', 'FIG-09', 'FIG-10'], numbered on from the inventory's highest, FIG-05 (AC3: "
+             "the next free number in the prefix)")]),
+        "a-split-that-drops-its-own-id": ((dropped,), [
+            ("[ids] FIG-03: a split row names ['FIG-08', 'FIG-10'] and not its own ID (AC3: a split row keeps "
+             "its ID for its first rule)")]),
+    })
 
 
 def test_table_line_errors_names_a_line_that_is_not_a_row() -> None:
@@ -5184,10 +5354,14 @@ def test_real_path_every_reviewed_block_line_is_the_text_its_verdict_judged() ->
     errors = reviewed_block_errors(research, rows, _REAL_REVIEW.read_text(encoding="utf-8"))
     terms = [label for label in required if _GLOSSARY_LABEL.fullmatch(label)]
     rule_rows = [label for label in required if not _GLOSSARY_LABEL.fullmatch(label)]
+    # T193 item 1: the printed samples are chosen by property (a no row's rule, a yes row's rule, the first
+    # term), not by ID, so a retired HRV-24 or DOC-09 cannot raise a KeyError before the assertions.
+    samples = [*(next((i for r in rows if r["meaning changed"] == m for i in _new_rule_ids(r) if i in lines), None)
+                 for m in ("no", "yes")), *terms[:1]]
+    shown = ", ".join(f"{s} {_cell_digest(lines[s])} vs {judged.get(s)}" for s in samples if s in lines)
     print(f"[slice compared] {len(required)} required rows ({len(rule_rows)} rule rows, {len(terms)} Glossary "
           f"rows), {len(lines)} mapped, {len(judged)} judged digests in {_REAL_REVIEW.name}, problems {problems}; "
-          f"HRV-24 {_cell_digest(lines['HRV-24'])} vs {judged['HRV-24']}, DOC-09 {_cell_digest(lines['DOC-09'])} vs "
-          f"{judged['DOC-09']}, T-13 {_cell_digest(lines['T-13'])} vs {judged['T-13']}: {errors[:5]}")
+          f"{shown}: {errors[:5]}")
     assert problems == [] and errors == []
     assert list(lines) == required and sorted(judged) == sorted(required)
     assert terms == list(GLOSSARY_TERMS) and required == [*rule_rows, *terms]
@@ -5845,28 +6019,58 @@ def test_frozen_literals_emits_no_digest_for_a_row_without_a_verdict() -> None:
     """T192 (R13): the sprint-007 critic added a rule, FIG-12, and ``frozen_literals()`` printed digests for
     its review rows with no review. Over the committed files plus a FIG-12 block that an addition row names,
     and HRV-24's verdict line dropped from the review, the printed source holds no block digest of any of
-    those four review rows, and its notes name each as needing a critic verdict, as a problem."""
+    those four review rows, and its notes name each as needing a critic verdict, as a problem.
+
+    T193 item 1: the added rule is the next free FIG number after the committed FIG rules and the dropped
+    verdict is a ``no`` row's rule, each chosen by property, so a committed FIG-12 (the critic's own route)
+    or a retired HRV-24 leaves this test asserting the same thing."""
     research, _history, rows = _real()
-    fig11 = rule_blocks(research)["FIG-11"]
-    fig12 = _block("FIG-12", "The spec MUST publish a synthetic figure.")
-    added = _one_edit(research, fig11, f"{fig11}\n\n{fig12}")
-    added_rows = [*rows, _as_row(_row(ADDITION, ADDITION, "FIG-12", "C03"))]
+    blocks = rule_blocks(research)
+    last_fig = max((i for i in blocks if _prefix(i) == "FIG"), key=_order_key)
+    new_fig = f"FIG-{_order_key(last_fig)[1] + 1:02d}"
+    fig = _block(new_fig, "The spec MUST publish a synthetic figure.")
+    added = _one_edit(research, blocks[last_fig], f"{blocks[last_fig]}\n\n{fig}")
+    added_rows = [*rows, _as_row(_row(ADDITION, ADDITION, new_fig, "C03"))]
     review = _REAL_REVIEW.read_text(encoding="utf-8")
-    hrv24 = next(line for line in _lines(review) if line.startswith("| HRV-24 |"))
-    dropped = _one_edit(review, hrv24 + "\n", "")
+    judged = review_digests(review)
+    no_rule = next(i for r in rows if r["meaning changed"] == "no" for i in _new_rule_ids(r) if i in judged)
+    verdict = next(line for line in _lines(review) if line.startswith(f"| {no_rule} |"))
+    dropped = _one_edit(review, verdict + "\n", "")
     lines, _problems = reviewed_block_lines(added, added_rows)
-    labels = ["HRV-24", "FIG-12", "FIG-12/Scope", "FIG-12/Not"]
+    labels = [no_rule, new_fig, f"{new_fig}/Scope", f"{new_fig}/Not"]
+    in_order = [label for label in required_review_rows(added, added_rows) if label in labels]
     digests = {label: _cell_digest(lines[label]) for label in labels}
     source = frozen_literals(research=added, rows=added_rows, review=dropped)
     notes = [line for line in source.splitlines() if line.startswith("# ")]
     leaked = {label: d for label, d in digests.items() if d in source}
     verdicts = next(n for n in notes if n.startswith("# meaning review:"))
     print(f"[slice compared] {digests}; leaked {leaked}; {verdicts}; {notes[-1][:300]}")
-    assert set(labels) <= set(required_review_rows(added, added_rows))
+    assert sorted(in_order) == sorted(labels)
     assert leaked == {}
-    assert verdicts.endswith(f"needs a critic verdict {labels!r}; changed after its verdict []")
+    assert verdicts.endswith(f"needs a critic verdict {in_order!r}; changed after its verdict []")
     assert all(f"{label} needs a critic verdict" in notes[-1] for label in labels)
 
 
+@pytest.mark.parametrize(
+    "io_encoding", [pytest.param(None, id="pythonioencoding-unset"), pytest.param("cp1252", id="pythonioencoding-cp1252")])
+def test_the_documented_regeneration_command_runs_with_piped_output(io_encoding: str | None) -> None:
+    """T193 item 2: ``frozen_literals()``'s documented command, run with its output piped (``> out``),
+    exited 1 on a cp1252 console with ``UnicodeEncodeError`` on '₃', since a piped stdout takes the
+    locale's encoding. Run the file as the command does, with ``PYTHONIOENCODING`` unset (the user's
+    console) and set to cp1252 (the same failure on any platform), and ``PYTHONUTF8=0``."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"}
+    env["PYTHONUTF8"] = "0"
+    if io_encoding is not None:
+        env["PYTHONIOENCODING"] = io_encoding
+    done = subprocess.run([sys.executable, str(Path(__file__))], capture_output=True, env=env, cwd=_REPO_ROOT,
+                          check=False, timeout=120)
+    out, err = done.stdout.decode("utf-8", errors="replace"), done.stderr.decode("utf-8", errors="replace")
+    print(f"[slice compared] exit {done.returncode}, {len(done.stdout)} bytes out, stderr tail {err[-300:]!r}")
+    assert done.returncode == 0, err[-2000:]
+    assert "\nTRACEABILITY_ROW_SHA256 = {\n" in out.replace("\r\n", "\n")
+    assert "₃" in done.stdout.decode("utf-8")
+
+
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
     print(frozen_literals())
