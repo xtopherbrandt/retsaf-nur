@@ -1356,6 +1356,25 @@ def test_a_line_separator_markdown_it_does_not_count_cannot_shift_the_fence_stri
     ], f"the fence strip left a stray fence or lost the claim: {text!r} -> {offenders}"
 
 
+def test_a_cr_only_file_keeps_the_line_break_a_fence_leaves() -> None:
+    """Sprint-007 review iteration 4, S3. A fence leaves the line break that
+    ended its closing line, read by ``lines[end - 1].endswith(("\\n", "\\r"))``.
+    markdown-it also breaks a line on a lone CR, so in a CR-only file the
+    closing fence line ends in CR; narrowing the test to LF alone dropped the
+    break, gluing the intro's blank line to the claim, and 34 passed. Called
+    directly, the exact result is the lines outside the fence with one LF in
+    the fence's place."""
+    claim = "When the tier changes the system treats it as a baseline re-establishment."
+    source = f"Intro line.\r\r```\rcode\r```\r{claim}\r"
+    fences = [token.map for token in _MARKDOWN.parse(source) if token.type == "fence"]
+    stripped = _strip_fences(source)
+    print(f"[slice compared] {source!r}: fence map {fences} -> {stripped!r}")
+    assert fences == [[2, 5]], f"markdown-it no longer reads this CR-only fence as lines 2-5: {fences}"
+    assert stripped == f"Intro line.\r\r\n{claim}\r", (
+        f"the fence in a CR-only file did not leave its line break: {stripped!r}"
+    )
+
+
 def test_a_file_with_no_span_abstains_from_the_inside_arm_by_name(tmp_path) -> None:
     """Sprint-007 review iteration 1, S2. A file with no quoted or code span
     has nothing to splice inside. The inside arm used to read

@@ -396,6 +396,245 @@ KEY_OWNERS: dict[str, frozenset[str]] = {
     "T07-tsb-target-form-band": frozenset({"REG-16"}),
 }
 
+#: The committed traceability table, frozen row by row (sprint-007 review iteration 4, M1 and M2).
+#: Five routes in one family (iteration 1 M2, iteration 2 M1, iteration 3 S1, iteration 4 M1 and M2)
+#: each edited 00-traceability.md in a way no frozen literal covered: PRIN-10's keyed ``no`` row turned
+#: ``yes`` by adding an unrelated authorizing C-number (``C19, C38``), and DOC-03 retired under H-39
+#: with its changed text re-homed on an addition row. The table is authored in the same repo as the
+#: check, so without a snapshot the check has no independent oracle. Keyed by ``_row_key``: the
+#: inventory ID, or ``addition <new ID(s)>`` for an addition row. Each value is ``row_digest(row)``:
+#: the seven cells' ``_cell_digest`` (the first 12 hex of ``_sentence_digest``: whitespace collapsed,
+#: nothing else changed), in ``TRACE_COLUMNS`` order, joined by ``.``, so a mismatch names its cell.
+#: Derived 2026-09-26 from the committed table at 790ea0c: 149 rows, 149 unique keys (the 149
+#: inventory IDs), no addition row. Asserted both ways by ``traceability_row_errors``.
+#:
+#: **Regenerating a digest deliberately.** A legitimate table edit is a reviewed change to this
+#: literal, never a widening of a check. Each ``[frozen-table]`` error names the row and the cell and
+#: prints the row's new digest, ready to paste here once the edit is reviewed. ``frozen_literals()``
+#: prints every digest literal this module freezes, from the committed files:
+#: ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``.
+TRACEABILITY_ROW_SHA256 = {
+    "DOC-01": "0db604f4ed7c.db839f374fe7.fd2d36f07f9b.0db604f4ed7c.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-02": "0768538d8cc1.cf0680478c48.d25cf343afe7.deb5e5239433.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-03": "bc248cd682e5.09392b30e7af.22b323dbce4a.bc248cd682e5.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-04": "3e47716b9fd2.5300aacf0fc6.ed7bfeb06544.3e47716b9fd2.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-05": "d2986df6ef7b.07768412f26c.f3df1b1a6836.d2986df6ef7b.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-06": "09c0b60f5204.eb52e3501bae.276a439ac097.fb3d99e27995.ba9d0f8031fa.8a798890fe93.c4a72fa5bde9",
+    "DOC-07": "6742a589b261.47985bb08254.0fc16dea499d.4d76ce879899.0de00bed0228.9390298f3fb0.bda050585a00",
+    "DOC-08": "b7e990e1e770.40ad869b6aac.0fc16dea499d.b7e990e1e770.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-09": "baf386b45863.b6085b77097c.141502a4d41f.1cc31399cc6b.625808357ae1.8a798890fe93.d17d35ce92b2",
+    "DOC-10": "3bd142b2b1e1.69f29cf25b55.bcdadad2fbc7.a47495d71a85.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-11": "a860874a6373.04bb003ee4b3.b924d37d808d.a860874a6373.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-12": "45ecfcd46bc1.85f371f6dd47.141502a4d41f.0d543de46eca.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-13": "467a44b148d4.e6fb9c944c22.141502a4d41f.467a44b148d4.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-14": "4785a6d27692.ae91e23c9b4a.141502a4d41f.27915a045041.bda050585a00.9390298f3fb0.bda050585a00",
+    "DOC-15": "edd9efeaaf28.0be0e79c8015.68e0e541fa4c.edd9efeaaf28.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-01": "2880239d9831.9c24c99aead5.e9b8842a6764.2880239d9831.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-02": "5a161eec763a.bc4e27f99a8f.e9b8842a6764.5a161eec763a.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-03": "b326882eb42c.e515ed8fd283.5cdc045f5ad9.b326882eb42c.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-04": "848180c35b6a.663644c4b4d2.3f7b5e6cc46f.848180c35b6a.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-05": "c1f7bf41ba01.910f76e3cda2.0f5e0d50cfe3.cdae81e1c37b.e18b75a07d89.8a798890fe93.cd582787b3b2",
+    "PRIN-06": "39ba548399e0.51e10f46e03e.0f5e0d50cfe3.eed8c40ff52a.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-07": "644752b65331.e2638a9261f8.ae3f7c6f4add.644752b65331.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-08": "57c7d3a77f12.86f27db53205.103dc6246b0e.d9af109ec97d.cb031e6f7fc6.8a798890fe93.828906f78405",
+    "PRIN-09": "a7ec19cf42b5.36557c69dde9.59464aa69139.a7ec19cf42b5.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-10": "9ffe88a4b14d.10b0a06f7359.d663ecf5fa5a.7d7226145cdb.a539dc09c09c.9390298f3fb0.16b7f083a84e",
+    "PRIN-11": "94ee3c5975a7.6d57e5f11cd9.8825ccca09f2.253d4600eeb0.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-12": "d191ef3229ab.6cb6ac81454f.4fef567a5a58.e579689f5fda.0e01f0971f82.8a798890fe93.5f39f9aa8ebf",
+    "PRIN-13": "e47004f3f0c5.d7c14355883f.369c49596864.e47004f3f0c5.bda050585a00.9390298f3fb0.bda050585a00",
+    "PRIN-14": "4fc6fb4664dc.8d6698e35470.494da81eb714.4fc6fb4664dc.1751f998fdad.8a798890fe93.ac919b316567",
+    "PRIN-15": "d5452db028f5.ac46c591281b.a3e3b9ad5b3b.a6260e38dafd.8d05991678e9.8a798890fe93.ebf2f0bfa089",
+    "PRIN-16": "e716bfb58948.141ac72b92ba.0208c460b4e9.e19449ddac9a.acade632f70d.8a798890fe93.d174652dd329",
+    "ARB-01": "9ab809362800.cc3f97b16818.78fb27e49156.9ab809362800.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARB-02": "be8db9b45932.640b1a4315ff.7d33de084491.71d67f9620cf.e377a9bf7155.9390298f3fb0.bda050585a00",
+    "ARB-03": "00f4832e21a5.20f0b3c35d78.006bfc3279ee.00f4832e21a5.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARB-04": "f1ea0df1810d.f889d330da56.af4b1bb175b5.f1ea0df1810d.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARB-05": "86fb15cf1bb1.ee60948c94d7.dd79e45a6077.86fb15cf1bb1.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARB-06": "80dc9b16b0ff.cb71b4fab675.de087c1303c8.80dc9b16b0ff.bda050585a00.9390298f3fb0.bda050585a00",
+    "AUT-01": "38e9f8a968e8.c4e4c0c673c2.853237b8c6b0.38e9f8a968e8.bda050585a00.9390298f3fb0.bda050585a00",
+    "AUT-02": "d3a0a2760200.db401802608a.bb1728856887.d0548c9f952b.e377a9bf7155.8a798890fe93.fdd31aec7605",
+    "AUT-03": "6d5ccf8bc36e.45f593b40bbd.f90d208fa0e0.6d5ccf8bc36e.bda050585a00.9390298f3fb0.bda050585a00",
+    "AUT-04": "3b0e88506545.4140bc60705e.853237b8c6b0.3b0e88506545.c9c1dd0d52c9.8a798890fe93.bf6c0488af9b",
+    "AUT-05": "df388a05e776.e8c9cbdc5f1c.22b323dbce4a.5c7023df818a.bda050585a00.9390298f3fb0.bda050585a00",
+    "AUT-06": "fbea78351434.20cca433af29.853237b8c6b0.fbea78351434.bda050585a00.9390298f3fb0.bda050585a00",
+    "GOAL-01": "9989f6257e18.32a82d981e2d.510533124ac0.9989f6257e18.bda050585a00.9390298f3fb0.bda050585a00",
+    "GOAL-02": "988c99a19250.64b6df95acdf.510533124ac0.988c99a19250.0ee73df9932d.8a798890fe93.b569d55df7f3",
+    "GOAL-03": "0306c222c244.b4ad8a2781c5.510533124ac0.0306c222c244.bda050585a00.9390298f3fb0.bda050585a00",
+    "GOAL-04": "ef3ac215f988.fbfbdd8cde73.510533124ac0.ef3ac215f988.bda050585a00.9390298f3fb0.bda050585a00",
+    "GOAL-05": "6076c3526989.e88553fb7cca.510533124ac0.6076c3526989.bda050585a00.9390298f3fb0.bda050585a00",
+    "GOAL-06": "f0d054ca660e.2b8b3b5512d6.8f7a50b83591.f0d054ca660e.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-00": "379875c57851.e8e67f6e2230.5e9b00ff6f83.379875c57851.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-01": "3497384177b1.b8bb673a86b0.2d139a584015.3497384177b1.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-02": "572ed3eb3f94.04d06b59bb62.30bbd43e174d.572ed3eb3f94.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-03": "3700935a39b8.485ad4f767e3.38cce7a3b9e5.0bf25ec06d7c.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-04": "0daf71d9638a.a44d250c7628.b757487a4aec.aba11c510cae.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-05": "a4c29cfc88a4.0eb9375dfd33.ff5727d9c886.a4c29cfc88a4.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-06": "1039a13cbc79.3de99579f98a.d1df5d8a022e.1039a13cbc79.133d22d98524.8a798890fe93.979d2a1c3d35",
+    "ARCH-07": "636fec22662a.a5a07cc2c0af.83df11ad8848.636fec22662a.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-08": "3472cc20ecde.2b98a4971bbb.019f3c7c59e9.9836ef97f2fe.78ecfcabf16b.8a798890fe93.255499c8d2e7",
+    "REG-01": "9afce4bb4ddd.ee15dadd5fc1.a2a0b5d7990f.3b686d9baf66.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-02": "8851291a18ea.ee616bc65186.91b47fbf02ec.8851291a18ea.ed777df09525.8a798890fe93.4c7546809706",
+    "REG-03": "46739600e3aa.e6cd4bb9de95.49185ebface6.9901af2d4b73.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-04": "7b02e057a1f4.8d240f5f740c.99b3afaff7b9.7b02e057a1f4.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-05": "00ff87265672.82aaa29d1402.90d8b41320a1.00ff87265672.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-06": "16b77275c0e4.a2360c8cd0f8.cea4cd09cf57.16b77275c0e4.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-07": "cd1674ed9e54.07205c6f2542.8404e3c7d8fa.f70aa13013a4.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-08": "36a915c98bbb.f603aeb013aa.a67714682961.36a915c98bbb.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-09": "123f9a193907.4e1e315a715b.33557eefc407.94d5ac98e04f.a539dc09c09c.9390298f3fb0.09f38653cd07",
+    "REG-10": "d8a133f008aa.9e957995bd43.5594b20b9ae3.d8a133f008aa.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-11": "2aa4e9fd9c24.82b80437d097.e4d35ea771f4.d3c404bc0bbc.acade632f70d.8a798890fe93.0fb674f52df5",
+    "REG-12": "25a2bafc572e.efb64032acf6.475c2fe10576.25a2bafc572e.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-13": "5ac8e1306056.a0be2143099e.7718c6781dab.5ac8e1306056.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-14": "51010afb1bf8.7e3162850707.e2961d1e9540.51010afb1bf8.efe2ca6af330.9390298f3fb0.bda050585a00",
+    "REG-15": "0562b0504e7c.d3240a8cee0b.7a80a52ffec1.934d7a5eecd5.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-16": "44be79c4758b.117368020848.f21cf13c85e0.9a5722332927.ed777df09525.8a798890fe93.b81e706d465c",
+    "REG-17": "ac4f80ca80bd.cf0a67d461f5.027a9e1685f6.5044af1ae9ef.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-18": "a55a21406c93.9ce47b2da463.15b49fba9d7b.70c17c5db4c4.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-19": "e52a08532a45.3de0a38757b7.0d42a18b72d9.e52a08532a45.6731f758068f.8a798890fe93.2e71bf85dbaf",
+    "IND-01": "45344277e3d8.9cd5b1ce2b12.581cdb8ed5b6.a650ba82004b.ba9d0f8031fa.8a798890fe93.c80441c1aa5c",
+    "IND-02": "d5584bd276b1.4ae2f8dec412.d7b496df724b.6077f84f18cf.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-01": "aa569cba809e.9effcb79c1f9.8ee90f7ec740.32d88d386866.31c65e049802.8a798890fe93.386195ff7f81",
+    "COLD-02": "37273b252a93.8d1f36e9f6cd.67092354fec7.135584b4163f.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-03": "152f5df3f3f7.96c95a803f87.67092354fec7.152f5df3f3f7.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-04": "4f8aa2ec8356.8c60ffc82d32.67092354fec7.4f8aa2ec8356.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-05": "019c8eed7b50.cde718d3f56a.67092354fec7.019c8eed7b50.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-06": "5495392a35eb.40ce6d9eafe0.67092354fec7.d2b236f5326c.bda050585a00.9390298f3fb0.bda050585a00",
+    "COLD-07": "6176f87e3de3.64789b01c94d.b88f0aac8432.ad21ed2d89b7.bda050585a00.9390298f3fb0.bda050585a00",
+    "GATE-01": "4d3bbbcc988b.45251b819781.517943edbb5c.df3c78df7cc2.e18b75a07d89.8a798890fe93.87e26cf2dc22",
+    "GATE-02": "1e1adcc48077.f8f51b197a29.b2da7bd96a12.a8ffad264e66.12754373b28a.8a798890fe93.47e80c58745f",
+    "GATE-03": "3b4c3c560b99.b7acb5f5c829.141502a4d41f.3a559c1a892a.89fe5fe525de.8a798890fe93.179dafcef28e",
+    "FIG-01": "708d32901569.524fccb0f809.6969f00b1b8f.708d32901569.bda050585a00.9390298f3fb0.bda050585a00",
+    "FIG-02": "ae30d4a0a46d.49e2eb0c879c.6258c57f0cb8.9a7aac665d7b.bda050585a00.9390298f3fb0.bda050585a00",
+    "FIG-03": "06e89546331f.b749ad48ee2b.b924d37d808d.93b9133f8a95.bda050585a00.9390298f3fb0.bda050585a00",
+    "FIG-04": "494aab1be5ff.10d5783676a1.82adc07c8c81.937826225158.bda050585a00.9390298f3fb0.bda050585a00",
+    "FIG-05": "da46be147807.a1e992520364.b924d37d808d.370e9b5b8ac5.09947c6e5a08.8a798890fe93.1fb58675ff63",
+    "LT1-01": "c69ec440c21a.0641fd79efe9.d39900e1f13e.17205d0f7a98.ebca3449f77b.8a798890fe93.074d9af3c337",
+    "LT1-02": "acff1d9a67b3.691d7b3d4834.f4a1833827c9.19e3a51f3f3e.2fbe87fe5a12.8a798890fe93.a058510d2e35",
+    "FTO-01": "2d268e2188d0.c0ec8cb8fe64.1bdd44dca48f.2d268e2188d0.bda050585a00.9390298f3fb0.bda050585a00",
+    "FTO-02": "88c395c3a7f3.fbdce0b431ba.1bdd44dca48f.88c395c3a7f3.bda050585a00.9390298f3fb0.bda050585a00",
+    "FTO-03": "4945ae081b18.911fc1dddb18.1bdd44dca48f.ee64702ab009.bda050585a00.9390298f3fb0.bda050585a00",
+    "FTO-04": "3e643e1c7189.43224e6cfe9f.1bdd44dca48f.3e643e1c7189.bda050585a00.9390298f3fb0.bda050585a00",
+    "FTO-05": "2bb3a3ea6285.a2589d6c6372.1bdd44dca48f.2bb3a3ea6285.bda050585a00.9390298f3fb0.bda050585a00",
+    "FTO-06": "ed96df13b148.a15c73237ab4.1bdd44dca48f.ed96df13b148.bda050585a00.9390298f3fb0.bda050585a00",
+    "DEC-01": "aaa88c4354b8.cd26e8547d8d.2055f7073018.c1c7baacbc77.abb23d0d25cd.9390298f3fb0.433d7ffa90c8",
+    "HRV-01": "5f8e665ba762.13a614660b06.8d28dd0a34a1.5f8e665ba762.7a2eca4de16f.9390298f3fb0.6c48482d1617",
+    "HRV-02": "e71b6ab0c325.528a4ad85b20.43ad342351f4.89b45ca81b2a.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-03": "2875db3e0aee.15d36d43964e.f5c94c7ffb8b.2875db3e0aee.a539dc09c09c.9390298f3fb0.1097ed74c667",
+    "HRV-04": "f8a0bb862e06.b4c4b4ab01f5.1d351f884336.f8a0bb862e06.a539dc09c09c.9390298f3fb0.09f38653cd07",
+    "HRV-05": "c174f37f1a7b.770b84444be6.1d351f884336.c174f37f1a7b.2fbe87fe5a12.8a798890fe93.2ba531efd1a7",
+    "HRV-06": "b1d8b2fc756f.d550490e2ad8.c4a6ee0b49b2.b1d8b2fc756f.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-07": "b1e8f4496d4c.bbca067bdccd.7c09b4d8d78a.b1e8f4496d4c.fb44388faf2a.8a798890fe93.a36430c37261",
+    "HRV-08": "46e318b004fb.5bb27bbd25e0.141502a4d41f.46e318b004fb.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-09": "965a032ffeb7.a34d7bfd9ad4.3c0a138dcb1d.965a032ffeb7.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-10": "3ce6699fcb65.c631e969ab03.0e41697b58a0.0e60a0170cf2.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-11": "72443a5a64c7.7ed69b047f3f.cde953767a87.475b3c7b820c.72443a5a64c7.8a798890fe93.de17b5e1a4da",
+    "HRV-12": "9e647e5b9a13.31c3fc916325.91729d5cbade.9e613ccb61a4.fa70213c8aaf.8a798890fe93.e8193fd69620",
+    "HRV-13": "da2edb6bd28d.9eeaa388dabe.7254413f89b0.da2edb6bd28d.fa70213c8aaf.9390298f3fb0.bda050585a00",
+    "HRV-14": "8fbe7fb6a6bd.2f272c5d6dee.033555daebbb.8fbe7fb6a6bd.22b5894e02a7.9390298f3fb0.bda050585a00",
+    "HRV-15": "919858c53430.a5f8bab2b1d0.b87309485bb6.26611ca9c85a.3b7e32ae3b46.8a798890fe93.a43d5d712d8f",
+    "HRV-16": "c2832f302a28.599b8952be2d.b6a0e2d29c10.0cb5f881058a.908d72900e24.8a798890fe93.0209abe539b2",
+    "HRV-17": "b2695c4ae6dc.568765382f56.b6a0e2d29c10.b2695c4ae6dc.a39ed58c5b0b.8a798890fe93.6928e5dc8c01",
+    "HRV-18": "2c60e3953b4c.9164c163de0e.91729d5cbade.2c60e3953b4c.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-19": "a99fac6f6f45.280aa306bc89.91729d5cbade.04a48dea847d.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-20": "352400d42a51.b6df2edfb657.39034ddf782a.c801f9d98d9b.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-21": "2f461612904a.901241c6a2ee.9231830c8f20.190d2ca5a335.e1d53e4f418b.9390298f3fb0.69c1a96d1053",
+    "HRV-22": "de1edc054ee0.03a23537a126.39034ddf782a.11e6e530f1bf.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-23": "2bdbb34d3b99.4ebfdbd0d25a.39034ddf782a.a0b98f2203c6.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-24": "868aeaea3064.7b7f1073e65e.d89ce01a1dad.3720c715ebb4.aa482ed186ee.9390298f3fb0.cd795478b76e",
+    "HRV-25": "aab245056fcb.172890d79358.30a80ed79fd5.aab245056fcb.e18b75a07d89.8a798890fe93.06cb4bcea601",
+    "HRV-26": "6414c71e0922.0e689db70c8c.477cb6490208.6414c71e0922.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-27": "53110bc0046a.088b43f2148d.bfb1273e210c.53110bc0046a.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-28": "cea676d8a58f.2690e3e38516.d97f2ac6b450.f14acf628da5.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-29": "dd178b664468.7450e8b6ca90.141502a4d41f.d4bb179b13d2.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-30": "1e2ef029bb73.e90ce41db4ca.141502a4d41f.1e2ef029bb73.d7cbb6e7dea7.9390298f3fb0.282872747bf5",
+    "HRV-31": "f7644bece5b9.732e7894a8f3.3a4b0f9ead80.58b8c6440f07.1ba9aa97fd04.8a798890fe93.adb94f7ea4d9",
+    "HRV-32": "62efc47e433a.6396eb3ddd48.82adc07c8c81.8b943484deab.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-33": "cfa72e4a99bc.6f71a595c3c7.4a0ffb80cd0b.ac8890863d7e.09947c6e5a08.8a798890fe93.492c4fa8e233",
+    "HRV-34": "bfbe516a48bc.0adf15613391.f9643ded7f32.6e7a11003862.d3bcf7c77f65.8a798890fe93.d9282680ba9d",
+    "HRV-35": "438c8a2e6aea.550e3512df10.141502a4d41f.826c270b6978.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-36": "f25c6f7a0081.83aa4a7625d5.141502a4d41f.545c84be8788.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-37": "350c4ef1265b.f7cff2c54ef9.1d68241bcea9.350c4ef1265b.34a44366294a.8a798890fe93.00c2bffa0831",
+    "HRV-38": "08458bc79ce4.308982854b97.6f1cce33f7f0.733d298e8d61.6645ca87da63.8a798890fe93.e0b223b1e875",
+    "HRV-39": "67e71657c83f.c9dbbd781835.d893b15300d5.f61dd6f1bbac.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-40": "a3a5f5539618.9f6e3248ce64.ee88d8b09d69.6814368af646.7a2eca4de16f.9390298f3fb0.6b810ca2c02f",
+    "HRV-41": "6c5693acd4be.a30eb10ac751.a3e3b9ad5b3b.07247f6021b7.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-42": "78c3365d0fab.4ea3f04e28ef.141502a4d41f.78c3365d0fab.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-43": "a11166190cf5.6c975d166371.5b1f25a4fe5e.ab0502a80971.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-44": "468dcd7ad504.4dab9c88cf6a.bcdadad2fbc7.3b90d5b578f0.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-45": "751aa58120e5.9d2c5dda43b9.141502a4d41f.751aa58120e5.bda050585a00.9390298f3fb0.bda050585a00",
+    "HRV-46": "effcc59e51a1.d8b1cb2b89be.b924d37d808d.6d7af968a571.bda050585a00.9390298f3fb0.bda050585a00",
+}
+
+#: Every inventory ID the committed table retires, with the H-NN it retires under (iteration 4, M2).
+#: ``retired_ids`` and ``## Retired IDs`` were only compared with each other, so retiring DOC-03 under
+#: H-39 in both stayed green. Derived 2026-09-26 at 790ea0c: ``retired_ids(table)`` and the history's
+#: list are both exactly this. Asserted by ``retirement_errors``.
+RETIRED_IDS = {"PRIN-16": "H-39"}
+
+#: ``OLD_MEANINGS``, frozen per key (iteration 4, S1). Loosening AUT-04-C20's pattern and example
+#: together let AUT-04 restate C20's old meaning with the suite green. Held here, not in the support
+#: module, so the literals and the snapshot of them never share a file. Each value is
+#: ``old_meaning_digest(entry)``: the first 12 hex of sha256 of the raw pattern, example, source and
+#: decision, joined by ``.``, so a mismatch names its field. Derived 2026-09-26 from the support module
+#: at 790ea0c (54 keys). Asserted both ways by ``old_meaning_digest_errors``; regenerate as for
+#: ``TRACEABILITY_ROW_SHA256``.
+OLD_MEANING_SHA256 = {
+    "AUT-02-C23-override-outside-autonomy": "40ee0124162e.a0a2a0e5f7d0.443a6d782c81.e377a9bf7155",
+    "AUT-04-C20-two-purposes-only": "fcf9289cd377.ad92b399c18a.9a371cbdd09e.c9c1dd0d52c9",
+    "C01-withhold-not-judgeable-only": "ece30e6d2bca.bce6926526bb.576b340a4e35.132bfbedb168",
+    "C02-withhold-against-selected": "4a0e7e6c8041.88bcc0e544f8.576b340a4e35.371e0b6ba48a",
+    "C03-return-is-free": "d16d359a47ee.d16d359a47ee.84e7c78e5b2a.0dfab5acbae0",
+    "C04-hole-at-least": "4f07aadc1443.9f5c88160919.576b340a4e35.34a44366294a",
+    "C05-gate02-worse-rate-reopens": "617c02393a16.7483b505e85d.576b340a4e35.12754373b28a",
+    "C06-gate01-one-exception": "ebcd7bc8c59e.75275b4710d1.576b340a4e35.e18b75a07d89",
+    "C06-hrv-25-accepted-cost": "a11cbc550188.77a9b4bb08b1.576b340a4e35.e18b75a07d89",
+    "C08-arch08-silence-tolerated-freely": "2d05d06f5484.31b6dd220bb2.bf4bbfce9e6f.acade632f70d",
+    "C08-reg11-readiness-gate-down-weights": "1612ccf784d8.266bc9b30f23.9386f81ad126.acade632f70d",
+    "C09-fig05-idea071-sprint": "82e07b40ba5c.973bd9eadf9c.83e90ba33390.09947c6e5a08",
+    "C09-residual-carried-to-idea-071": "89849bbccdd0.e677a7cdc3d8.bf4bbfce9e6f.09947c6e5a08",
+    "C10-lone-candidate-never-struck": "5d697fcd9aa1.d4181fae1f2a.f9699c8b2640.908d72900e24",
+    "C10-recency-only-rule-that-acts": "6e032fe70942.e0c1bfef36eb.f9699c8b2640.908d72900e24",
+    "C12-same-baseline-window": "f32159e95c30.01b0b0473635.576b340a4e35.fa70213c8aaf",
+    "C13-era-clip-becomes-hole-clip": "5933dbf510dd.952bdd8429e2.576b340a4e35.6645ca87da63",
+    "C14-tier-change-collapses-baseline": "31e37b56e539.3ac56c9d3a23.5b9172a8603f.fafc221218d3",
+    "C15-tier-change-called-re-establishment": "eb43eddec2c7.baf9a521ce2f.c9ea2c9d2933.c1f5e527f9d4",
+    "C16-hrv21-reads-below-that-band": "79b4138db0e7.9f8dec54b13d.576b340a4e35.1150591c77a1",
+    "C17-hrv24-read-on-last": "cf5e3da90d63.39f1ab966669.576b340a4e35.a7314aec43f1",
+    "C18-no-tier-from-resolver": "a7915eb5cb64.4ebc7a63f730.e77fba90b5d8.66880a20dae0",
+    "C19-hrv-03-tag-and-confidence": "1051957c88ad.201b14aa6fa0.f79e61bfca66.a539dc09c09c",
+    "C19-hrv-04-reduced-confidence": "9e3fa949fdc4.7ec3fdac444a.700a5baf5724.aae16350d9be",
+    "C21-dec01-bonus-section": "02834eedae78.6bc22b93b0fd.ecc48cc297fe.abb23d0d25cd",
+    "C24-arch06-ignores-by-default": "d22a4b5bede7.aeac417e7a2c.16bd7814bc5b.133d22d98524",
+    "C26-cold01-hrv-input": "e56a9c2c97b7.d2aeea8a5c8e.d03fa426dc05.31c65e049802",
+    "C27-in-activity-hrv-not-computed-at-all": "410e49bf0f47.d1dcfde1a753.84e7c78e5b2a.2fbe87fe5a12",
+    "C27-lt1-picked-up-without-amendment": "8c68cf241bd9.3a281279449a.94a35c825035.2fbe87fe5a12",
+    "C28-lt1-surrogate-refinement": "008db5a8005c.46ad84e349f4.d0587e831403.9a58d8421888",
+    "C30-ctl-rise-row-deferred": "98dda4c9a678.b4ff1eb4d65c.14883507e245.0de00bed0228",
+    "C31-ind01-remains-tunable": "5421a47351bb.5421a47351bb.29be2e003f4f.ba9d0f8031fa",
+    "C32-band-without-floor": "8545442b8f9e.93c50f9822f4.700a5baf5724.fb44388faf2a",
+    "C33-hrv-17-tolerance-not-published": "11cbd5f33443.56bcb20c6d0e.f9699c8b2640.a39ed58c5b0b",
+    "C37-gate03-remeasured-not-cited": "234bcca0345f.9d59e0ef188b.576b340a4e35.5a816f13397a",
+    "DOC-06-C31-every-number-tunable": "67023c89d734.418fd8dee2b1.8dd82d028b88.ba9d0f8031fa",
+    "DOC-09-C38-superseded-text-left-standing": "f74a6dd03624.2d0d80fd956f.f9699c8b2640.625808357ae1",
+    "GOAL-02-C22-goal-contract-two-fields": "8e791a826dd9.af406bcf953a.443a6d782c81.0ee73df9932d",
+    "HRV-01-R13-four-tier-hierarchy": "e24c73a9ccb2.3bbb4d9f9c89.cebc61292e06.3e0a42a643a3",
+    "HRV-11-per-day-collapse-unspecified": "e7af0a519d0b.d524be355a54.576b340a4e35.72443a5a64c7",
+    "HRV-40-R13-now-sustaining-tier": "32e01ca7b893.ca8a8ddd8413.c9ea2c9d2933.ef61f8cd3858",
+    "PRIN-05-C06-conservative-wins-unscoped": "9a7ed38813f0.187075f13758.31002881e3fe.e18b75a07d89",
+    "PRIN-08-C24-sidecar-ignored-by-default": "611f94de932f.aeac417e7a2c.16bd7814bc5b.133d22d98524",
+    "PRIN-08-C25-rule-file-short-list": "15bea1a5a8f5.e7b67b07770d.67ae3d3f6543.d0f66c4b6e21",
+    "PRIN-10-C19-reduced-confidence": "4a55d90edabf.a241fbcc66d1.0440c34e3192.f5e2ee7f48ed",
+    "PRIN-12-C33-tolerance-not-published": "90a523ce3525.56bcb20c6d0e.f9699c8b2640.a39ed58c5b0b",
+    "PRIN-12-R13-withheld-response-stays-reproducible": "140471decdb7.965760d0f608.576b340a4e35.bf1999145d8e",
+    "PRIN-14-C07-weak-evidence-only": "037bd3251a9c.9fc907922633.5b9172a8603f.ab2c8aca25fc",
+    "PRIN-15-C06-accepted-as-priced": "cedf36087186.77a9b4bb08b1.576b340a4e35.e18b75a07d89",
+    "PRIN-16-C08-silence-tolerated-freely": "71ccd3cd648e.21241cf65605.5b9172a8603f.acade632f70d",
+    "T07-acwr-band": "045461dab097.a7436e9fe478.d6ff9e26863e.bc3dfbf4de86",
+    "T07-ctl-rise-band": "a021f2e9a52a.3b0843c5517b.14883507e245.bc3dfbf4de86",
+    "T07-tolerance-band": "0a50e1bfac53.3314b0e312c8.576b340a4e35.bc3dfbf4de86",
+    "T07-tsb-target-form-band": "00275c8ecc64.2893c573f717.7721e99e1123.bc3dfbf4de86",
+}
+
 #: The decisions reference's two tables, for the H-NN a merged-away ID retires under (R11).
 GROUP_A = frozenset({
     "C01", "C02", "C03", "C04", "C10", "C11", "C12", "C13", "C14", "C15", "C16", "C17", "C18", "C19",
@@ -930,7 +1169,10 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
     names records -- its **leading** token (``_lead_decision``), not any token its prose mentions --
     is cited in the row's decision cell, so a key cannot be borrowed from another row's change (M2,
     M1); and a key in ``KEY_OWNERS`` is named only by a row its frozen set holds, so a row citing the
-    same decision still cannot borrow it (iteration 3, S1); an addition row cites a decision. The key checks read ``meanings``
+    same decision still cannot borrow it (iteration 3, S1); a ``yes`` row whose keys all exist names
+    at least one whose leading decision itself authorizes the yes (``_key_authorizes``), so a keyed
+    ``no`` row cannot turn ``yes`` by adding an unrelated authorizing C-number beside its no-only one
+    (iteration 4, M1); an addition row cites a decision. The key checks read ``meanings``
     (default: the support module's ``OLD_MEANINGS``); a key absent from it is
     ``traceability_errors``' finding. With ``complete``, every decision appears and every decision
     outside NO_ONLY backs at least one ``yes`` row. Group ownership is coverage, not exclusivity (R3),
@@ -966,6 +1208,12 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
                 errors.append(f"[decision] {label}: a yes row must name an old-meaning key (F008 AC6)")
         keys = _keys(row)
         key_lead = {k: _lead_decision(meanings[k].decision) for k in keys if k in meanings}
+        if (meaning == "yes" and keys and all(k in meanings for k in keys)
+                and not any(_key_authorizes(lead, row["inventory ID"]) for lead in key_lead.values())):
+            errors.append(f"[decision] {label}: a yes row names no old-meaning key whose decision authorizes "
+                          f"the yes ({', '.join(f'{k} -> {key_lead[k]}' for k in dict.fromkeys(keys))}); "
+                          "name the key of the C-number outside NO_ONLY, or of the NON_C_AUTHORITIES token, "
+                          "that changes the meaning (R3, iteration 4 M1)")
         for c in KEYED_NO_ONLY:
             if c not in cs:
                 continue
@@ -993,6 +1241,15 @@ def decision_column_errors(rows: list[dict[str, str]], complete: bool, meanings=
         errors += [f"[decision] {c} backs no yes row (R3; YES_ROW_OWNER gives it to {YES_ROW_OWNER[c]})"
                    for c in DECISIONS if c not in NO_ONLY and c in cited and c not in yes]
     return errors
+
+
+def _key_authorizes(lead: str | None, inventory_id: str) -> bool:
+    """Whether a key's leading decision authorizes a ``yes`` on ``inventory_id`` by itself: a C-number
+    of ``DECISIONS`` outside NO_ONLY, or a ``NON_C_AUTHORITIES`` token whose frozen set holds the row
+    (iteration 4, M1)."""
+    if lead is None:
+        return False
+    return (lead in YES_ROW_OWNER and lead not in NO_ONLY) or inventory_id in NON_C_AUTHORITIES.get(lead, ())
 
 
 def group_coverage_errors(rows: list[dict[str, str]], group: str) -> list[str]:
@@ -1268,6 +1525,126 @@ def inventory_sentence_errors(rows: list[dict[str, str]]) -> list[str]:
     return errors
 
 
+#: The hex digits of one cell's or one field's digest in ``TRACEABILITY_ROW_SHA256`` and
+#: ``OLD_MEANING_SHA256`` (48 bits each; the row or entry value is all of them).
+_DIGEST_HEX = 12
+_OLD_MEANING_FIELDS = ("pattern", "example", "source", "decision")
+
+
+def _cell_digest(cell: str) -> str:
+    """One traceability cell's frozen form: the first 12 hex of ``_sentence_digest`` (iteration 4, M1)."""
+    return _sentence_digest(cell)[:_DIGEST_HEX]
+
+
+def _row_key(row: dict[str, str]) -> str:
+    """A row's key in ``TRACEABILITY_ROW_SHA256``: its inventory ID, or ``addition <new ID(s)>``."""
+    inv = row["inventory ID"]
+    return inv if not _is_blank(inv) else f"addition {' '.join(row['new ID(s)'].split())}"
+
+
+def row_digest(row: dict[str, str]) -> str:
+    """The row's frozen form: each cell's ``_cell_digest``, in ``TRACE_COLUMNS`` order, joined by ``.``."""
+    return ".".join(_cell_digest(row[column]) for column in TRACE_COLUMNS)
+
+
+def traceability_row_errors(rows: list[dict[str, str]], frozen: dict[str, str] | None = None) -> list[str]:
+    """The table is the frozen table (iteration 4, M1 and M2), both ways: each row key occurs once; every
+    frozen row is in the table and every table row is frozen (no row added, removed or re-keyed); and
+    each row's ``row_digest`` is its frozen digest. Each message names the row and the cell that
+    differs, and prints the row's new digest for a deliberate regeneration."""
+    frozen = TRACEABILITY_ROW_SHA256 if frozen is None else frozen
+    keys = [_row_key(r) for r in rows]
+    errors = [f"[frozen-table] row {k} occurs {n} times, not once" for k, n in Counter(keys).items() if n > 1]
+    errors += [f"[frozen-table] row {k} is frozen in TRACEABILITY_ROW_SHA256 and is not in the table"
+               for k in sorted(frozen.keys() - set(keys))]
+    for row, key in zip(rows, keys, strict=True):
+        digest = row_digest(row)
+        if key not in frozen:
+            errors.append(f"[frozen-table] row {key} is not in TRACEABILITY_ROW_SHA256 (a row was added or "
+                          f"its key cell changed); its digest is {digest!r}")
+            continue
+        for column, have, want in zip(TRACE_COLUMNS, digest.split("."), frozen[key].split("."), strict=False):
+            if have != want:
+                errors.append(f"[frozen-table] {key}: the {column!r} cell is not the frozen cell (now "
+                              f"{row[column][:120]!r}); once the edit is reviewed, "
+                              f"TRACEABILITY_ROW_SHA256[{key!r}] = {digest!r}")
+    return errors
+
+
+def retirement_errors(rows: list[dict[str, str]], history_text: str,
+                      frozen: dict[str, str] | None = None) -> list[str]:
+    """Iteration 4, M2, over the committed table and history. The IDs the table retires
+    (``retired_ids``) and the IDs ``## Retired IDs`` lists each equal ``RETIRED_IDS``. And a row that
+    retires under an H-NN it names is ``yes`` and cites a decision whose ``_decision_group_entry`` is
+    that H-NN (PRIN-16: C08 is Group B, H-39). A ``no`` row naming only an H-NN names no rule, so the
+    AC9 proxy (``_proxy_rows``) never reads it: DOC-03 retired under H-39 with its changed text
+    re-homed on an addition row stayed green. Not part of ``traceability_errors``: R11 lets a draft
+    move a row to a history entry (the synthetic world's DOC-15 -> H-01); the committed table has no
+    such row, and this holds it to that."""
+    frozen = RETIRED_IDS if frozen is None else frozen
+    errors = []
+    for source, got in (("the table (retired_ids)", retired_ids(rows)),
+                        ("## Retired IDs", _retired_listed(history_text))):
+        for i in sorted(got.keys() | frozen.keys()):
+            if got.get(i) != frozen.get(i):
+                errors.append(f"[retired] {source} retires {i} under {got.get(i)}, and RETIRED_IDS says "
+                              f"{frozen.get(i)} (M2: RETIRED_IDS is frozen)")
+    for row in rows:
+        inv, h = row["inventory ID"], _H_ID.findall(row["new ID(s)"])
+        if _is_blank(inv) or not _RULE_ID.fullmatch(inv) or inv in _new_rule_ids(row) or not h:
+            continue
+        entries = {t: _decision_group_entry(t) for t in _DECISION_TOKEN.findall(row["decision"])}
+        if row["meaning changed"] != "yes":
+            errors.append(f"[retired] {inv}: retires under {h[0]} on a {row['meaning changed']!r} row; a rule "
+                          "retired under an H-NN changes meaning, so the row is yes (M2)")
+        if h[0] not in entries.values():
+            errors.append(f"[retired] {inv}: retires under {h[0]}, and no decision its cell cites "
+                          f"({row['decision']!r}) retires under {h[0]}: {entries} (M2)")
+    return errors
+
+
+def old_meaning_digest(entry) -> str:
+    """An ``OldMeaning``'s frozen form: the first 12 hex of sha256 of each raw field, in
+    ``_OLD_MEANING_FIELDS`` order, joined by ``.`` (iteration 4, S1)."""
+    return ".".join(hashlib.sha256(getattr(entry, name).encode("utf-8")).hexdigest()[:_DIGEST_HEX]
+                    for name in _OLD_MEANING_FIELDS)
+
+
+def old_meaning_digest_errors(meanings, frozen: dict[str, str] | None = None) -> list[str]:
+    """``meanings`` is the frozen ``OLD_MEANINGS`` (iteration 4, S1), both ways: every frozen key is
+    present, every key is frozen, and each entry's ``old_meaning_digest`` is its frozen digest. Each
+    message names the key and the field that differs, and prints the entry's new digest."""
+    frozen = OLD_MEANING_SHA256 if frozen is None else frozen
+    errors = [f"[frozen-meanings] {k} is frozen in OLD_MEANING_SHA256 and is not in OLD_MEANINGS"
+              for k in sorted(frozen.keys() - meanings.keys())]
+    for key in sorted(meanings):
+        entry, digest = meanings[key], old_meaning_digest(meanings[key])
+        if key not in frozen:
+            errors.append(f"[frozen-meanings] {key} is not in OLD_MEANING_SHA256 (a key was added or renamed); "
+                          f"its digest is {digest!r}")
+            continue
+        for name, have, want in zip(_OLD_MEANING_FIELDS, digest.split("."), frozen[key].split("."), strict=False):
+            if have != want:
+                errors.append(f"[frozen-meanings] {key}: the {name!r} field is not the frozen field (now "
+                              f"{getattr(entry, name)[:120]!r}); once the edit is reviewed, "
+                              f"OLD_MEANING_SHA256[{key!r}] = {digest!r}")
+    return errors
+
+
+def example_source_errors(meanings, show: Callable[[str], str]) -> list[str]:
+    """R4's verbatim check: each ``example``, after ``normalize()``, is a substring of
+    ``normalize(show(path))`` for its ``source`` path (``show`` stands for ``git show 4e47d0e:<path>``).
+    ``fragment_errors`` runs it on the drafts; iteration 4, S1 runs it on the committed module."""
+    errors, cache = [], {}
+    for key, entry in meanings.items():
+        path = entry.source.split(":", 1)[0]
+        if path not in cache:
+            cache[path] = normalize(show(path))
+        if normalize(entry.example) not in cache[path]:
+            errors.append(f"[old-meaning] {key}: example is not verbatim in {path} at 4e47d0e")
+    return errors
+
+
 def _proxy_rows(rows: list[dict[str, str]], research_text: str, only_within: set[str] | None = None) -> list[str]:
     """The AC9 proxy on every ``no`` row with an inventory sentence, over the blocks it names. With
     ``only_within``, a row naming a rule outside that set is left to the assembled check."""
@@ -1369,13 +1746,7 @@ def fragment_text_errors(rules: str, trace: str, meanings_text: str, group: str,
     errors += _proxy_rows(rows, rules, only_within=here)
     errors += old_meaning_errors(meanings, rules)
     if show is not None:
-        cache: dict[str, str] = {}
-        for key, entry in meanings.items():
-            path = entry.source.split(":", 1)[0]
-            if path not in cache:
-                cache[path] = normalize(show(path))
-            if normalize(entry.example) not in cache[path]:
-                errors.append(f"[old-meaning] {key}: example is not verbatim in {path} at 4e47d0e")
+        errors += example_source_errors(meanings, show)
     return errors
 
 
@@ -1781,11 +2152,13 @@ def _world_files() -> dict[str, str]:
             meaning = "yes" if any(c not in NO_ONLY for c in cs) else "no"
             # AC6 and R3: a yes row, and a row citing C19 or C25, names a key (S5).
             has_key = meaning == "yes" or any(c in KEYED_NO_ONLY for c in cs)
-            # M1: a key records one decision, its leading token, and the row cites it. C25 and C19
-            # rows name that C-number's key (S5); any other row its first decision's.
-            lead = next((c for c in ("C25", "C19") if c in cs), cs[0]) if has_key else None
-            keyed += [lead] if lead else []
-            key = _world_key(group, lead) if lead else ADDITION
+            # M1: a key records one decision, its leading token, and the row cites it. A yes row names
+            # the key of the decision that authorizes it (iteration 4, M1), and a C25 or C19 row also
+            # names that C-number's key (S5): PRIN-08's "C24, C25" names both.
+            leads = [next(c for c in cs if c not in NO_ONLY)] if meaning == "yes" else []
+            leads += [c for c in ("C25", "C19") if c in cs] if has_key else []
+            keyed += leads
+            key = ", ".join(_world_key(group, c) for c in leads) or ADDITION
             rows.append(_row(inv, _world_sentence(inv), new, ", ".join(cs) or ADDITION, meaning, key))
         # One old meaning per recorded decision, each quoting the group's verbatim example.
         for c in dict.fromkeys([_WORLD_OLD[group]["decision"], *keyed]):
@@ -2041,6 +2414,10 @@ def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> 
             # Iteration 3, S1: the key records R13, which the cell cites, but it is HRV-01's key.
             [("[decision] DOC-03: R13 authorizes a yes only on ['PRIN-12'], not on DOC-03 (R3, M1: "
               "NON_C_AUTHORITIES is frozen)"),
+             # Iteration 4, M1: and its one key records R13, which does not authorize a yes on DOC-03.
+             ("[decision] DOC-03: a yes row names no old-meaning key whose decision authorizes the yes "
+              "(HRV-01-R13-four-tier-hierarchy -> R13); name the key of the C-number outside NO_ONLY, or of "
+              "the NON_C_AUTHORITIES token, that changes the meaning (R3, iteration 4 M1)"),
              ("[decision] DOC-03: old-meaning key 'HRV-01-R13-four-tier-hierarchy' belongs to ['HRV-01'], "
               "not to DOC-03 (S1: KEY_OWNERS is frozen; a key cannot be borrowed)")],
             id="m1-r13-yes-on-a-row-r13-does-not-rule-on"),
@@ -2072,6 +2449,21 @@ def test_group_coverage_errors_names_each_owned_decision_without_a_yes_row() -> 
             [("[decision] DOC-09: old-meaning key 'T07-acwr-band' records decision 'T-07', which the row's "
              "cell 'C38, R9' does not cite (M2, M1: a key cannot be borrowed)")],
             id="m1-borrow-through-r9-in-the-t07-keys-prose"),
+        # Iteration 4, M1: the scanner's PRIN-10 route. The keyed no row turns yes by adding C38, which
+        # authorizes a yes, beside C19; its one key records C19, which never does.
+        pytest.param(
+            _row("PRIN-10", "s", "PRIN-10, PRIN-21", "C19, C38", "yes", "PRIN-10-C19-reduced-confidence"),
+            [("[decision] PRIN-10: a yes row names no old-meaning key whose decision authorizes the yes "
+              "(PRIN-10-C19-reduced-confidence -> C19); name the key of the C-number outside NO_ONLY, or of "
+              "the NON_C_AUTHORITIES token, that changes the meaning (R3, iteration 4 M1)")],
+            id="m1-iter4-prin-10-c19-c38-yes-on-its-c19-key"),
+        # Iteration 4, M1: the scanner's REG-09 route, on the key REG-09 shares with HRV-04.
+        pytest.param(
+            _row("REG-09", "s", "REG-09", "C19, C06", "yes", "C19-hrv-04-reduced-confidence"),
+            [("[decision] REG-09: a yes row names no old-meaning key whose decision authorizes the yes "
+              "(C19-hrv-04-reduced-confidence -> C19); name the key of the C-number outside NO_ONLY, or of "
+              "the NON_C_AUTHORITIES token, that changes the meaning (R3, iteration 4 M1)")],
+            id="m1-iter4-reg-09-c19-c06-yes-on-its-shared-c19-key"),
         # S5: a C19 no row with its key blanked.
         pytest.param(
             _row("HRV-03", "s", "HRV-03", "C19", "no"),
@@ -2122,6 +2514,68 @@ _NON_C_AUTHORITIES_PIN = {
 }
 
 
+#: A second copy of ``KEY_OWNERS``, which the pin test compares the map against (sprint-007 review
+#: iteration 4, S2), as ``_NON_C_AUTHORITIES_PIN`` does for its map: checked only against the table,
+#: the map and the table could widen together. Derived 2026-09-26 from the committed table at
+#: 790ea0c: 54 keys, all of ``OLD_MEANINGS``; one shared, by HRV-04 and REG-09.
+_KEY_OWNERS_PIN: dict[str, frozenset[str]] = {
+    "AUT-02-C23-override-outside-autonomy": frozenset({"AUT-02"}),
+    "AUT-04-C20-two-purposes-only": frozenset({"AUT-04"}),
+    "C01-withhold-not-judgeable-only": frozenset({"HRV-31"}),
+    "C02-withhold-against-selected": frozenset({"HRV-31"}),
+    "C03-return-is-free": frozenset({"HRV-34"}),
+    "C04-hole-at-least": frozenset({"HRV-37"}),
+    "C05-gate02-worse-rate-reopens": frozenset({"GATE-02"}),
+    "C06-gate01-one-exception": frozenset({"GATE-01"}),
+    "C06-hrv-25-accepted-cost": frozenset({"HRV-25"}),
+    "C08-arch08-silence-tolerated-freely": frozenset({"ARCH-08"}),
+    "C08-reg11-readiness-gate-down-weights": frozenset({"REG-11"}),
+    "C09-fig05-idea071-sprint": frozenset({"FIG-05"}),
+    "C09-residual-carried-to-idea-071": frozenset({"HRV-33"}),
+    "C10-lone-candidate-never-struck": frozenset({"HRV-15"}),
+    "C10-recency-only-rule-that-acts": frozenset({"HRV-16"}),
+    "C12-same-baseline-window": frozenset({"HRV-12"}),
+    "C13-era-clip-becomes-hole-clip": frozenset({"HRV-38"}),
+    "C14-tier-change-collapses-baseline": frozenset({"HRV-34"}),
+    "C15-tier-change-called-re-establishment": frozenset({"HRV-34"}),
+    "C16-hrv21-reads-below-that-band": frozenset({"HRV-21"}),
+    "C17-hrv24-read-on-last": frozenset({"HRV-24"}),
+    "C18-no-tier-from-resolver": frozenset({"HRV-30"}),
+    "C19-hrv-03-tag-and-confidence": frozenset({"HRV-03"}),
+    "C19-hrv-04-reduced-confidence": frozenset({"HRV-04", "REG-09"}),
+    "C21-dec01-bonus-section": frozenset({"DEC-01"}),
+    "C24-arch06-ignores-by-default": frozenset({"ARCH-06"}),
+    "C26-cold01-hrv-input": frozenset({"COLD-01"}),
+    "C27-in-activity-hrv-not-computed-at-all": frozenset({"HRV-05"}),
+    "C27-lt1-picked-up-without-amendment": frozenset({"LT1-02"}),
+    "C28-lt1-surrogate-refinement": frozenset({"LT1-01"}),
+    "C30-ctl-rise-row-deferred": frozenset({"REG-19"}),
+    "C31-ind01-remains-tunable": frozenset({"IND-01"}),
+    "C32-band-without-floor": frozenset({"HRV-07"}),
+    "C33-hrv-17-tolerance-not-published": frozenset({"HRV-17"}),
+    "C37-gate03-remeasured-not-cited": frozenset({"GATE-03"}),
+    "DOC-06-C31-every-number-tunable": frozenset({"DOC-06"}),
+    "DOC-09-C38-superseded-text-left-standing": frozenset({"DOC-09"}),
+    "GOAL-02-C22-goal-contract-two-fields": frozenset({"GOAL-02"}),
+    "HRV-01-R13-four-tier-hierarchy": frozenset({"HRV-01"}),
+    "HRV-11-per-day-collapse-unspecified": frozenset({"HRV-11"}),
+    "HRV-40-R13-now-sustaining-tier": frozenset({"HRV-40"}),
+    "PRIN-05-C06-conservative-wins-unscoped": frozenset({"PRIN-05"}),
+    "PRIN-08-C24-sidecar-ignored-by-default": frozenset({"PRIN-08"}),
+    "PRIN-08-C25-rule-file-short-list": frozenset({"PRIN-08"}),
+    "PRIN-10-C19-reduced-confidence": frozenset({"PRIN-10"}),
+    "PRIN-12-C33-tolerance-not-published": frozenset({"PRIN-12"}),
+    "PRIN-12-R13-withheld-response-stays-reproducible": frozenset({"PRIN-12"}),
+    "PRIN-14-C07-weak-evidence-only": frozenset({"PRIN-14"}),
+    "PRIN-15-C06-accepted-as-priced": frozenset({"PRIN-15"}),
+    "PRIN-16-C08-silence-tolerated-freely": frozenset({"PRIN-16"}),
+    "T07-acwr-band": frozenset({"REG-02"}),
+    "T07-ctl-rise-band": frozenset({"REG-19"}),
+    "T07-tolerance-band": frozenset({"GATE-03"}),
+    "T07-tsb-target-form-band": frozenset({"REG-16"}),
+}
+
+
 def test_the_non_c_authority_map_is_the_committed_tables_yes_rows() -> None:
     """M1's map, frozen from the table at adcb66d: the map equals its pinned copy,
     ``_NON_C_AUTHORITIES_PIN``, for all three tokens; every committed ``yes`` row a non-C token
@@ -2149,6 +2603,13 @@ def test_the_key_owner_map_is_the_committed_tables_key_column() -> None:
     keys are exactly the committed ``OLD_MEANINGS``. One key is shared, by REG-09 and HRV-04; a
     second shared key is a change to review, not to freeze."""
     _research, _history, rows = _real()
+    drift = {k: sorted(KEY_OWNERS.get(k, frozenset()) ^ _KEY_OWNERS_PIN.get(k, frozenset()))
+             for k in sorted(KEY_OWNERS.keys() | _KEY_OWNERS_PIN.keys())
+             if KEY_OWNERS.get(k) != _KEY_OWNERS_PIN.get(k)}
+    print(f"[slice compared] KEY_OWNERS ({len(KEY_OWNERS)} keys) against _KEY_OWNERS_PIN "
+          f"({len(_KEY_OWNERS_PIN)} keys): drift {drift}")
+    assert KEY_OWNERS == _KEY_OWNERS_PIN, (
+        f"KEY_OWNERS differs from its pinned copy (key: IDs in one and not the other): {drift}")
     derived: dict[str, set[str]] = {}
     for r in rows:
         for k in _keys(r):
@@ -2457,7 +2918,7 @@ def _drop_first_row(files: dict[str, str]) -> None:
         pytest.param("arch-dec", _put("arch-dec.meanings.txt", _C05_LINE.replace("hysteresis decision\"", "hysteresis decision, invented\"") + "\n"), "4e47d0e", id="example-not-verbatim"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| C11 | no |", "| C11 | yes |"), "never authorizes", id="decision-column"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| C01, C02 | yes |", "| C01, C02 | no |"), "owns C01", id="group-coverage"),
-        pytest.param("doc-goal", _sub("doc-goal.trace.txt", "| C24, C25 | yes | doc-goal-old-c25 |", "| C24, C25 | yes | — |"), "old-meaning key", id="yes-row-without-key"),
+        pytest.param("doc-goal", _sub("doc-goal.trace.txt", "| C24, C25 | yes | doc-goal-old, doc-goal-old-c25 |", "| C24, C25 | yes | — |"), "old-meaning key", id="yes-row-without-key"),
         pytest.param("hrv", _sub("hrv.rules.txt", "Rule HRV-02 MUST", "The band MUST"), "band", id="band"),
         pytest.param("hrv", _drop_file("hrv.meanings.txt"), "hrv.meanings.txt", id="missing-draft"),
         pytest.param("hrv", _sub("hrv.trace.txt", "| no | — |", "| no | k9 |", 1), "no such old-meaning key", id="key-not-in-group-meanings"),
@@ -2708,6 +3169,164 @@ def test_real_path_ac9_proxy_on_every_unchanged_row() -> None:
     assert frozen == len(INVENTORY_SENTENCE_SHA256) == 149
 
 
+def _real_row_swap(rows: list[dict[str, str]], inv: str, **cells: str) -> list[dict[str, str]]:
+    assert sum(r["inventory ID"] == inv for r in rows) == 1, inv
+    return [dict(r, **cells) if r["inventory ID"] == inv else r for r in rows]
+
+
+def test_real_path_every_traceability_row_is_the_frozen_row() -> None:
+    """Iteration 4, M1 and M2: the committed table is ``TRACEABILITY_ROW_SHA256``, row by row and cell
+    by cell, with no row added or removed."""
+    _research, _history, rows = _real()
+    errors = traceability_row_errors(rows)
+    keys = [_row_key(r) for r in rows]
+    prin16 = next(r for r in rows if r["inventory ID"] == "PRIN-16")
+    print(f"[slice compared] {len(rows)} table rows, {len(set(keys))} keys, {len(TRACEABILITY_ROW_SHA256)} "
+          f"frozen; PRIN-16 {row_digest(prin16)} vs {TRACEABILITY_ROW_SHA256['PRIN-16']}: {errors[:5]}")
+    assert errors == []
+    assert set(keys) == set(TRACEABILITY_ROW_SHA256) == INVENTORY_IDS and len(keys) == 149
+
+
+def test_traceability_row_errors_names_the_changed_row_and_cell() -> None:
+    """Iteration 4, M1 and M2, on the scanner's routes over the committed table, each message exactly:
+    M1's PRIN-10 row turned ``yes`` under ``C19, C38``; M2's DOC-03 retired under H-39 with an addition
+    row DOC-23; a row removed; a row repeated."""
+    _research, _history, rows = _real()
+    m1 = _real_row_swap(rows, "PRIN-10", decision="C19, C38", **{"meaning changed": "yes"})
+    m2 = _real_row_swap(rows, "DOC-03", **{"new ID(s)": "H-39"}) + [_as_row(_row(ADDITION, ADDITION, "DOC-23", "C38",
+                                                                                   cited=ADDITION))]
+    prin10 = "9ffe88a4b14d.10b0a06f7359.d663ecf5fa5a.7d7226145cdb.a8764817f4d7.8a798890fe93.16b7f083a84e"
+    doc03 = "bc248cd682e5.09392b30e7af.22b323dbce4a.ff8260b88f68.bda050585a00.9390298f3fb0.bda050585a00"
+    doc23 = "bda050585a00.bda050585a00.bda050585a00.6b27e5b9ab01.625808357ae1.9390298f3fb0.bda050585a00"
+    cases = {
+        "m1-prin-10": (m1, [
+            (f"[frozen-table] PRIN-10: the 'decision' cell is not the frozen cell (now 'C19, C38'); once the "
+             f"edit is reviewed, TRACEABILITY_ROW_SHA256['PRIN-10'] = '{prin10}'"),
+            (f"[frozen-table] PRIN-10: the 'meaning changed' cell is not the frozen cell (now 'yes'); once the "
+             f"edit is reviewed, TRACEABILITY_ROW_SHA256['PRIN-10'] = '{prin10}'")]),
+        "m2-doc-03": (m2, [
+            (f"[frozen-table] DOC-03: the 'new ID(s)' cell is not the frozen cell (now 'H-39'); once the edit "
+             f"is reviewed, TRACEABILITY_ROW_SHA256['DOC-03'] = '{doc03}'"),
+            (f"[frozen-table] row addition DOC-23 is not in TRACEABILITY_ROW_SHA256 (a row was added or its "
+             f"key cell changed); its digest is '{doc23}'")]),
+        "removed": ([r for r in rows if r["inventory ID"] != "HRV-09"],
+                    ["[frozen-table] row HRV-09 is frozen in TRACEABILITY_ROW_SHA256 and is not in the table"]),
+        "repeated": (rows + [next(r for r in rows if r["inventory ID"] == "HRV-09")],
+                     ["[frozen-table] row HRV-09 occurs 2 times, not once"]),
+    }
+    for name, (mutated, expected) in cases.items():
+        errors = traceability_row_errors(mutated)
+        print(f"[slice compared] {name}: {errors}")
+        assert errors == expected, (name, errors)
+    assert row_digest(m1[[r["inventory ID"] for r in m1].index("PRIN-10")]) == prin10
+
+
+def test_real_path_retired_ids_are_frozen_and_each_retires_under_its_decision() -> None:
+    """Iteration 4, M2: the table retires exactly ``RETIRED_IDS``, the history lists exactly it, and
+    PRIN-16, the one row retired under an H-NN, is ``yes`` under C08, whose entry is H-39."""
+    _research, history, rows = _real()
+    errors = retirement_errors(rows, history)
+    prin16 = next(r for r in rows if r["inventory ID"] == "PRIN-16")
+    print(f"[slice compared] retired_ids {retired_ids(rows)}, listed {_retired_listed(history)}, frozen "
+          f"{RETIRED_IDS}; PRIN-16 {prin16['new ID(s)']!r} {prin16['decision']!r} {prin16['meaning changed']!r} "
+          f"-> {_decision_group_entry(prin16['decision'])}: {errors}")
+    assert errors == []
+
+
+def test_retirement_errors_names_a_no_row_retired_under_an_h_nn() -> None:
+    """Iteration 4, M2, on the scanner's route: DOC-03 retired under H-39 in the table and in the
+    history, its row still ``no`` with no decision, each message exactly."""
+    _research, history, rows = _real()
+    m2 = _real_row_swap(rows, "DOC-03", **{"new ID(s)": "H-39"})
+    listed = history.replace("- **PRIN-16** retired → H-39\n", "- **PRIN-16** retired → H-39\n- **DOC-03** retired → H-39\n")
+    assert listed != history
+    errors = retirement_errors(m2, listed)
+    print(f"[slice compared] {errors}")
+    assert errors == [
+        "[retired] the table (retired_ids) retires DOC-03 under H-39, and RETIRED_IDS says None (M2: RETIRED_IDS is frozen)",
+        "[retired] ## Retired IDs retires DOC-03 under H-39, and RETIRED_IDS says None (M2: RETIRED_IDS is frozen)",
+        "[retired] DOC-03: retires under H-39 on a 'no' row; a rule retired under an H-NN changes meaning, so the row is yes (M2)",
+        "[retired] DOC-03: retires under H-39, and no decision its cell cites ('—') retires under H-39: {} (M2)",
+    ]
+    # The retire rule alone, with RETIRED_IDS widened to fit: a yes row under a Group A decision (H-38).
+    group_a = _real_row_swap(m2, "DOC-03", decision="C03", **{"meaning changed": "yes"})
+    errors = retirement_errors(group_a, listed, frozen={**RETIRED_IDS, "DOC-03": "H-39"})
+    print(f"[slice compared] widened: {errors}")
+    assert errors == [("[retired] DOC-03: retires under H-39, and no decision its cell cites ('C03') retires under "
+                       "H-39: {'C03': 'H-38'} (M2)")]
+
+
+def test_real_path_old_meanings_are_the_frozen_literals() -> None:
+    """Iteration 4, S1: the committed ``OLD_MEANINGS`` is ``OLD_MEANING_SHA256``, key by key and field
+    by field, with no key added or removed."""
+    errors = old_meaning_digest_errors(_OM.OLD_MEANINGS)
+    key = "AUT-04-C20-two-purposes-only"
+    print(f"[slice compared] {len(_OM.OLD_MEANINGS)} keys, {len(OLD_MEANING_SHA256)} frozen; {key} "
+          f"{old_meaning_digest(_OM.OLD_MEANINGS[key])} vs {OLD_MEANING_SHA256[key]}: {errors[:5]}")
+    assert errors == []
+    assert set(OLD_MEANING_SHA256) == set(_OM.OLD_MEANINGS) and len(OLD_MEANING_SHA256) == 54
+
+
+def test_old_meaning_digest_errors_names_the_changed_key_and_field() -> None:
+    """Iteration 4, S1, on the scanner's route: AUT-04-C20's pattern and example loosened together, so
+    AUT-04 could restate C20's old meaning; and a key added and one removed. Each message exactly."""
+    key = "AUT-04-C20-two-purposes-only"
+    loosened = dict(_OM.OLD_MEANINGS)
+    loosened[key] = OldMeaning("chat serves exactly two purposes", "Chat serves exactly two purposes",
+                               loosened[key].source, loosened[key].decision)
+    new = "ff62d8cdcf9f.a1b89c8b9d06.9a371cbdd09e.c9c1dd0d52c9"
+    renamed = {("AUT-04-C20-renamed" if k == key else k): v for k, v in _OM.OLD_MEANINGS.items()}
+    cases = {
+        "loosened": (loosened, [
+            (f"[frozen-meanings] {key}: the 'pattern' field is not the frozen field (now 'chat serves exactly two "
+             f"purposes'); once the edit is reviewed, OLD_MEANING_SHA256['{key}'] = '{new}'"),
+            (f"[frozen-meanings] {key}: the 'example' field is not the frozen field (now 'Chat serves exactly two "
+             f"purposes'); once the edit is reviewed, OLD_MEANING_SHA256['{key}'] = '{new}'")]),
+        "renamed": (renamed, [
+            f"[frozen-meanings] {key} is frozen in OLD_MEANING_SHA256 and is not in OLD_MEANINGS",
+            (f"[frozen-meanings] AUT-04-C20-renamed is not in OLD_MEANING_SHA256 (a key was added or renamed); "
+             f"its digest is '{OLD_MEANING_SHA256[key]}'")]),
+    }
+    for name, (meanings, expected) in cases.items():
+        errors = old_meaning_digest_errors(meanings)
+        print(f"[slice compared] {name}: {errors}")
+        assert errors == expected, (name, errors)
+
+
+def _commit_4e47d0e_is_here() -> bool:
+    return subprocess.run(["git", "cat-file", "-e", "4e47d0e^{commit}"], capture_output=True, cwd=_REPO_ROOT,
+                          check=False).returncode == 0
+
+
+def test_real_path_every_old_meaning_example_is_verbatim_at_4e47d0e() -> None:
+    """Iteration 4, S1: each committed ``example``, after ``normalize()``, is in ``git show
+    4e47d0e:<source path>`` after ``normalize()`` (``example_source_errors`` over ``_git_show``). A
+    shallow clone (CI's ``actions/checkout`` default) does not hold 4e47d0e, so there this skips by name;
+    ``OLD_MEANING_SHA256`` still freezes every example there."""
+    if not _commit_4e47d0e_is_here():
+        pytest.skip("4e47d0e is not in this clone (a shallow checkout): the example-at-source check needs "
+                    "the full history; OLD_MEANING_SHA256 still freezes every example")
+    errors = example_source_errors(_OM.OLD_MEANINGS, _git_show)
+    paths = sorted({e.source.split(":", 1)[0] for e in _OM.OLD_MEANINGS.values()})
+    print(f"[slice compared] {len(_OM.OLD_MEANINGS)} examples against git show 4e47d0e of {paths}: {errors[:5]}")
+    assert errors == []
+
+
+def test_example_source_errors_names_an_example_not_at_its_source() -> None:
+    """The red side of the check above, on ``_old_show``'s text: a verbatim example is green, and the
+    scanner's loosened AUT-04 example is named."""
+    meanings = {
+        "k-verbatim": OldMeaning("worse rate reopens", "a worse rate reopens the deferred hysteresis decision",
+                                 "specification/research/00-design-decisions.md:230@4e47d0e", "C05"),
+        "k-invented": OldMeaning("chat serves exactly two purposes", "Chat serves exactly two purposes",
+                                 "specification/research/00-design-decisions.md:57@4e47d0e", "C20"),
+    }
+    errors = example_source_errors(meanings, _old_show)
+    print(f"[slice compared] {errors}")
+    assert errors == [("[old-meaning] k-invented: example is not verbatim in "
+                       "specification/research/00-design-decisions.md at 4e47d0e")]
+
+
 def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
     """R4 over the committed ``OLD_MEANINGS`` and the whole of research/00, glossary included; every
     key the table names exists, and ``EXCEPTIONS`` stays empty until F011."""
@@ -2860,3 +3479,25 @@ def test_the_endpoint_walk_declares_and_applies_the_literals_exclusion() -> None
     assert literals not in walked, (
         f"{value[1]} is read by the endpoint scan: SCAN_EXCLUDED_LITERALS is declared but not applied"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regenerating the frozen digests deliberately (iteration 4)
+# ---------------------------------------------------------------------------
+
+
+def frozen_literals() -> str:
+    """The source of ``TRACEABILITY_ROW_SHA256``, ``RETIRED_IDS`` and ``OLD_MEANING_SHA256`` as the
+    committed files now give them. For a reviewed edit only: paste the entries the edit changed, and
+    no others, so the diff of the literal shows what was approved. Run
+    ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``."""
+    _research, history, rows = _real()
+    out = ["TRACEABILITY_ROW_SHA256 = {", *[f'    "{_row_key(r)}": "{row_digest(r)}",' for r in rows], "}", ""]
+    out += [f"RETIRED_IDS = {dict(sorted(retired_ids(rows).items()))!r}  # listed: {_retired_listed(history)!r}", ""]
+    out += ["OLD_MEANING_SHA256 = {",
+            *[f'    "{k}": "{old_meaning_digest(e)}",' for k, e in sorted(_OM.OLD_MEANINGS.items())], "}"]
+    return "\n".join(out)
+
+
+if __name__ == "__main__":
+    print(frozen_literals())
