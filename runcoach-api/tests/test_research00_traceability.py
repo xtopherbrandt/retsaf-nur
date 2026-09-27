@@ -27,6 +27,7 @@ import importlib.util
 import json
 import re
 import subprocess
+import textwrap
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -1438,6 +1439,1232 @@ REVIEWED_BLOCK_SHA256: dict[str, str] = {
     "FIG-11/Not": "27bbfda3defc",
 }
 
+#: Iteration 5 (the principle extending the user's M3 ruling): every line of the four research/00 files
+#: that carries meaning or structure is bound, so an edit to it needs a visible edit to a frozen literal.
+#: Each value below is ``_keyed_digest`` (a ``_cell_digest`` per line: whitespace collapsed, first 12 hex),
+#: derived 2026-09-26 at 12348f1 by ``derived_literals()``, which keyed every line and printed its counts;
+#: each error names the line and prints the new digest, and ``frozen_literals()`` prints every literal.
+#:
+#: ``GLOSSARY_SHA256`` (M1): each Glossary definition, keyed by T-NN (33 lines, 33 keys). The T-NN lines
+#: are normative IS definitions outside every rule block, so neither the review nor the AC9 proxy read
+#: them: T-13's 14 days became 21, T-03's ``>=`` became ``>`` and T-05's HRV Status became a tier, with the
+#: suite green. A Glossary change needs a fresh critic. Asserted both ways by ``glossary_digest_errors``.
+GLOSSARY_SHA256 = {
+    "T-01": "c0c28ddfd4e1",
+    "T-02": "9457159e89a3",
+    "T-03": "f8e6c46b72c2",
+    "T-04": "7825d1c7b3df",
+    "T-05": "52637cb6fa06",
+    "T-06": "732253a9416f",
+    "T-07": "5d646686330b",
+    "T-08": "5f4c404a3abf",
+    "T-09": "d8ddf1465b2e",
+    "T-10": "944baf4f3d04",
+    "T-11": "c58b107621a1",
+    "T-12": "bc179232d905",
+    "T-13": "8f37bec5b094",
+    "T-14": "e76fa1508d13",
+    "T-15": "8b3b883ad54d",
+    "T-16": "3756f4f2a810",
+    "T-17": "edbe1b565746",
+    "T-18": "44bee810629e",
+    "T-19": "1b0e5c3240ea",
+    "T-20": "34384310d4b6",
+    "T-21": "913cff1fdcd5",
+    "T-22": "65e2694c0221",
+    "T-23": "7e39c10f35dd",
+    "T-24": "0ed2c84fdcf9",
+    "T-25": "10f5b0d66534",
+    "T-26": "325dd542e443",
+    "T-27": "75ec58a85e8e",
+    "T-28": "0bac3b383cba",
+    "T-29": "e3821e8b5560",
+    "T-30": "5b9ce1060c08",
+    "T-31": "86f28ce112a1",
+    "T-32": "0509a5fb0e65",
+    "T-33": "1a3153ddf525",
+}
+
+#: ``PINNED_SHA256`` (S1): each rule's Pinned lines, keyed ``<ID>/Pinned`` (246 rules, 249 lines).
+#: ``pinned_errors`` only finds the node, so PRIN-26's ``Pinned: none (F009)`` retargeted to an unrelated
+#: existing test stayed green. Three rules carry two Pinned lines (PRIN-15, FIG-01, FIG-02); the key stays
+#: one per rule and its value is the two lines' digests in order, joined by ``.``, so a mismatch still
+#: names its line. Asserted both ways by ``pinned_digest_errors``.
+PINNED_SHA256 = {
+    "PRIN-01/Pinned": "6f6a2e0e1e2d",
+    "PRIN-02/Pinned": "6f6a2e0e1e2d",
+    "PRIN-03/Pinned": "6f6a2e0e1e2d",
+    "ARB-01/Pinned": "6f6a2e0e1e2d",
+    "ARB-02/Pinned": "6f6a2e0e1e2d",
+    "ARB-03/Pinned": "6f6a2e0e1e2d",
+    "ARB-04/Pinned": "6f6a2e0e1e2d",
+    "ARB-05/Pinned": "6f6a2e0e1e2d",
+    "ARB-06/Pinned": "6f6a2e0e1e2d",
+    "ARB-07/Pinned": "6f6a2e0e1e2d",
+    "PRIN-04/Pinned": "6f6a2e0e1e2d",
+    "PRIN-05/Pinned": "6f6a2e0e1e2d",
+    "PRIN-06/Pinned": "6f6a2e0e1e2d",
+    "PRIN-17/Pinned": "6f6a2e0e1e2d",
+    "PRIN-18/Pinned": "6f6a2e0e1e2d",
+    "PRIN-07/Pinned": "6f6a2e0e1e2d",
+    "PRIN-08/Pinned": "6f6a2e0e1e2d",
+    "PRIN-09/Pinned": "6f6a2e0e1e2d",
+    "PRIN-10/Pinned": "6f6a2e0e1e2d",
+    "PRIN-19/Pinned": "6f6a2e0e1e2d",
+    "PRIN-20/Pinned": "6f6a2e0e1e2d",
+    "PRIN-21/Pinned": "6f6a2e0e1e2d",
+    "PRIN-11/Pinned": "6f6a2e0e1e2d",
+    "PRIN-12/Pinned": "6b459de01b1d",
+    "PRIN-22/Pinned": "6f6a2e0e1e2d",
+    "PRIN-23/Pinned": "6f6a2e0e1e2d",
+    "PRIN-24/Pinned": "6f6a2e0e1e2d",
+    "PRIN-13/Pinned": "6f6a2e0e1e2d",
+    "PRIN-14/Pinned": "6f6a2e0e1e2d",
+    "PRIN-15/Pinned": "b4566a98f730.e89bfe873864",
+    "PRIN-25/Pinned": "b4566a98f730",
+    "PRIN-26/Pinned": "e89bfe873864",
+    "AUT-01/Pinned": "6f6a2e0e1e2d",
+    "AUT-02/Pinned": "6f6a2e0e1e2d",
+    "AUT-03/Pinned": "6f6a2e0e1e2d",
+    "AUT-04/Pinned": "6f6a2e0e1e2d",
+    "AUT-06/Pinned": "6f6a2e0e1e2d",
+    "AUT-08/Pinned": "6f6a2e0e1e2d",
+    "GOAL-01/Pinned": "6f6a2e0e1e2d",
+    "GOAL-02/Pinned": "6f6a2e0e1e2d",
+    "GOAL-03/Pinned": "6f6a2e0e1e2d",
+    "GOAL-04/Pinned": "6f6a2e0e1e2d",
+    "GOAL-05/Pinned": "6f6a2e0e1e2d",
+    "GOAL-06/Pinned": "6f6a2e0e1e2d",
+    "ARCH-00/Pinned": "6f6a2e0e1e2d",
+    "ARCH-01/Pinned": "6f6a2e0e1e2d",
+    "ARCH-02/Pinned": "6f6a2e0e1e2d",
+    "ARCH-03/Pinned": "6f6a2e0e1e2d",
+    "ARCH-04/Pinned": "6f6a2e0e1e2d",
+    "ARCH-05/Pinned": "6f6a2e0e1e2d",
+    "ARCH-06/Pinned": "6f6a2e0e1e2d",
+    "ARCH-07/Pinned": "6f6a2e0e1e2d",
+    "ARCH-08/Pinned": "6f6a2e0e1e2d",
+    "ARCH-09/Pinned": "6f6a2e0e1e2d",
+    "ARCH-10/Pinned": "6f6a2e0e1e2d",
+    "ARCH-11/Pinned": "6f6a2e0e1e2d",
+    "ARCH-12/Pinned": "6f6a2e0e1e2d",
+    "ARCH-13/Pinned": "6f6a2e0e1e2d",
+    "DOC-06/Pinned": "6f6a2e0e1e2d",
+    "DOC-07/Pinned": "6f6a2e0e1e2d",
+    "DOC-08/Pinned": "6f6a2e0e1e2d",
+    "DOC-17/Pinned": "6f6a2e0e1e2d",
+    "DOC-18/Pinned": "6f6a2e0e1e2d",
+    "REG-01/Pinned": "6f6a2e0e1e2d",
+    "REG-02/Pinned": "6f6a2e0e1e2d",
+    "REG-03/Pinned": "6f6a2e0e1e2d",
+    "REG-04/Pinned": "6f6a2e0e1e2d",
+    "REG-05/Pinned": "6f6a2e0e1e2d",
+    "REG-06/Pinned": "6f6a2e0e1e2d",
+    "REG-07/Pinned": "6f6a2e0e1e2d",
+    "REG-08/Pinned": "6f6a2e0e1e2d",
+    "REG-09/Pinned": "6f6a2e0e1e2d",
+    "REG-10/Pinned": "6f6a2e0e1e2d",
+    "REG-11/Pinned": "6f6a2e0e1e2d",
+    "REG-12/Pinned": "6f6a2e0e1e2d",
+    "REG-13/Pinned": "6f6a2e0e1e2d",
+    "REG-14/Pinned": "6f6a2e0e1e2d",
+    "REG-15/Pinned": "6f6a2e0e1e2d",
+    "REG-16/Pinned": "6f6a2e0e1e2d",
+    "REG-17/Pinned": "6f6a2e0e1e2d",
+    "REG-18/Pinned": "6f6a2e0e1e2d",
+    "REG-19/Pinned": "6f6a2e0e1e2d",
+    "REG-20/Pinned": "6f6a2e0e1e2d",
+    "REG-21/Pinned": "6f6a2e0e1e2d",
+    "REG-22/Pinned": "6f6a2e0e1e2d",
+    "REG-23/Pinned": "6f6a2e0e1e2d",
+    "REG-24/Pinned": "6f6a2e0e1e2d",
+    "REG-25/Pinned": "6f6a2e0e1e2d",
+    "REG-26/Pinned": "6f6a2e0e1e2d",
+    "REG-27/Pinned": "6f6a2e0e1e2d",
+    "REG-28/Pinned": "6f6a2e0e1e2d",
+    "REG-29/Pinned": "6f6a2e0e1e2d",
+    "REG-30/Pinned": "6f6a2e0e1e2d",
+    "HRV-07/Pinned": "4094322b60da",
+    "IND-01/Pinned": "6f6a2e0e1e2d",
+    "IND-02/Pinned": "6f6a2e0e1e2d",
+    "IND-03/Pinned": "6f6a2e0e1e2d",
+    "IND-04/Pinned": "6f6a2e0e1e2d",
+    "IND-05/Pinned": "6f6a2e0e1e2d",
+    "IND-06/Pinned": "6f6a2e0e1e2d",
+    "COLD-01/Pinned": "6f6a2e0e1e2d",
+    "COLD-02/Pinned": "6f6a2e0e1e2d",
+    "COLD-03/Pinned": "6f6a2e0e1e2d",
+    "COLD-04/Pinned": "6f6a2e0e1e2d",
+    "COLD-05/Pinned": "6f6a2e0e1e2d",
+    "COLD-06/Pinned": "6f6a2e0e1e2d",
+    "COLD-07/Pinned": "6f6a2e0e1e2d",
+    "COLD-08/Pinned": "6f6a2e0e1e2d",
+    "COLD-09/Pinned": "6f6a2e0e1e2d",
+    "COLD-10/Pinned": "6f6a2e0e1e2d",
+    "COLD-11/Pinned": "6f6a2e0e1e2d",
+    "HRV-01/Pinned": "6f6a2e0e1e2d",
+    "HRV-02/Pinned": "6f6a2e0e1e2d",
+    "HRV-03/Pinned": "6f6a2e0e1e2d",
+    "HRV-04/Pinned": "6f6a2e0e1e2d",
+    "HRV-05/Pinned": "6f6a2e0e1e2d",
+    "HRV-06/Pinned": "6f6a2e0e1e2d",
+    "HRV-47/Pinned": "6f6a2e0e1e2d",
+    "LT1-01/Pinned": "6f6a2e0e1e2d",
+    "LT1-02/Pinned": "6f6a2e0e1e2d",
+    "LT1-03/Pinned": "6f6a2e0e1e2d",
+    "LT1-04/Pinned": "6f6a2e0e1e2d",
+    "LT1-05/Pinned": "6f6a2e0e1e2d",
+    "FTO-01/Pinned": "6f6a2e0e1e2d",
+    "FTO-02/Pinned": "6f6a2e0e1e2d",
+    "FTO-03/Pinned": "6f6a2e0e1e2d",
+    "FTO-04/Pinned": "6f6a2e0e1e2d",
+    "FTO-05/Pinned": "6f6a2e0e1e2d",
+    "FTO-06/Pinned": "6f6a2e0e1e2d",
+    "FTO-07/Pinned": "6f6a2e0e1e2d",
+    "DOC-15/Pinned": "6f6a2e0e1e2d",
+    "DOC-01/Pinned": "6f6a2e0e1e2d",
+    "DOC-05/Pinned": "6f6a2e0e1e2d",
+    "DOC-04/Pinned": "6f6a2e0e1e2d",
+    "DOC-03/Pinned": "6f6a2e0e1e2d",
+    "AUT-05/Pinned": "6f6a2e0e1e2d",
+    "AUT-07/Pinned": "6f6a2e0e1e2d",
+    "DEC-01/Pinned": "f94658762ab1",
+    "DEC-02/Pinned": "6f6a2e0e1e2d",
+    "DOC-02/Pinned": "6f6a2e0e1e2d",
+    "DOC-09/Pinned": "6f6a2e0e1e2d",
+    "DOC-10/Pinned": "6f6a2e0e1e2d",
+    "DOC-11/Pinned": "6f6a2e0e1e2d",
+    "DOC-12/Pinned": "6f6a2e0e1e2d",
+    "DOC-13/Pinned": "6f6a2e0e1e2d",
+    "DOC-14/Pinned": "6f6a2e0e1e2d",
+    "DOC-16/Pinned": "6f6a2e0e1e2d",
+    "DOC-19/Pinned": "6f6a2e0e1e2d",
+    "DOC-20/Pinned": "6f6a2e0e1e2d",
+    "DOC-21/Pinned": "6f6a2e0e1e2d",
+    "DOC-22/Pinned": "6f6a2e0e1e2d",
+    "HRV-08/Pinned": "6f6a2e0e1e2d",
+    "HRV-09/Pinned": "6f6a2e0e1e2d",
+    "HRV-10/Pinned": "6f6a2e0e1e2d",
+    "HRV-11/Pinned": "6f6a2e0e1e2d",
+    "HRV-12/Pinned": "6f6a2e0e1e2d",
+    "HRV-13/Pinned": "6f6a2e0e1e2d",
+    "HRV-14/Pinned": "92597a74acb6",
+    "HRV-15/Pinned": "51606625db95",
+    "HRV-16/Pinned": "6f6a2e0e1e2d",
+    "HRV-17/Pinned": "6b459de01b1d",
+    "HRV-18/Pinned": "6f6a2e0e1e2d",
+    "HRV-19/Pinned": "068d30b2b1f3",
+    "HRV-20/Pinned": "6f6a2e0e1e2d",
+    "HRV-21/Pinned": "6f6a2e0e1e2d",
+    "HRV-22/Pinned": "477b63dda640",
+    "HRV-23/Pinned": "6f6a2e0e1e2d",
+    "HRV-24/Pinned": "6f6a2e0e1e2d",
+    "HRV-25/Pinned": "e89bfe873864",
+    "HRV-26/Pinned": "c66a808d4242",
+    "HRV-27/Pinned": "aa7abdc0d2c8",
+    "HRV-28/Pinned": "55df02f3086b",
+    "HRV-29/Pinned": "6f6a2e0e1e2d",
+    "HRV-30/Pinned": "54a1a8becdd9",
+    "HRV-31/Pinned": "db2eecae9291",
+    "HRV-32/Pinned": "6f6a2e0e1e2d",
+    "HRV-33/Pinned": "6f6a2e0e1e2d",
+    "HRV-34/Pinned": "6f6a2e0e1e2d",
+    "HRV-35/Pinned": "6f6a2e0e1e2d",
+    "HRV-36/Pinned": "6f6a2e0e1e2d",
+    "HRV-37/Pinned": "94532aae8b40",
+    "HRV-38/Pinned": "57b75a412632",
+    "HRV-39/Pinned": "6f6a2e0e1e2d",
+    "HRV-40/Pinned": "6f6a2e0e1e2d",
+    "HRV-41/Pinned": "ca11309c6477",
+    "HRV-42/Pinned": "6f6a2e0e1e2d",
+    "HRV-43/Pinned": "6f6a2e0e1e2d",
+    "HRV-44/Pinned": "99e9bf6d0bfa",
+    "HRV-45/Pinned": "6f6a2e0e1e2d",
+    "HRV-46/Pinned": "6f6a2e0e1e2d",
+    "HRV-48/Pinned": "6f6a2e0e1e2d",
+    "HRV-49/Pinned": "6f6a2e0e1e2d",
+    "HRV-50/Pinned": "6f6a2e0e1e2d",
+    "HRV-51/Pinned": "b21037c95648",
+    "HRV-52/Pinned": "6f6a2e0e1e2d",
+    "HRV-53/Pinned": "6f6a2e0e1e2d",
+    "HRV-54/Pinned": "6f6a2e0e1e2d",
+    "HRV-55/Pinned": "6f6a2e0e1e2d",
+    "HRV-56/Pinned": "6f6a2e0e1e2d",
+    "HRV-57/Pinned": "2abe3c626185",
+    "HRV-58/Pinned": "6f6a2e0e1e2d",
+    "HRV-59/Pinned": "6f6a2e0e1e2d",
+    "HRV-60/Pinned": "debeaefe0c53",
+    "HRV-61/Pinned": "6f6a2e0e1e2d",
+    "HRV-62/Pinned": "6f6a2e0e1e2d",
+    "HRV-63/Pinned": "6f6a2e0e1e2d",
+    "HRV-64/Pinned": "6f6a2e0e1e2d",
+    "HRV-65/Pinned": "6f6a2e0e1e2d",
+    "HRV-66/Pinned": "6f6a2e0e1e2d",
+    "HRV-67/Pinned": "6f6a2e0e1e2d",
+    "HRV-68/Pinned": "6f6a2e0e1e2d",
+    "HRV-69/Pinned": "6f6a2e0e1e2d",
+    "HRV-70/Pinned": "6f6a2e0e1e2d",
+    "HRV-71/Pinned": "6f6a2e0e1e2d",
+    "HRV-72/Pinned": "6f6a2e0e1e2d",
+    "HRV-73/Pinned": "6f6a2e0e1e2d",
+    "HRV-74/Pinned": "6f6a2e0e1e2d",
+    "HRV-75/Pinned": "6f6a2e0e1e2d",
+    "HRV-76/Pinned": "ba5ce5e828ff",
+    "HRV-77/Pinned": "6f6a2e0e1e2d",
+    "HRV-78/Pinned": "d006ea69acf9",
+    "HRV-79/Pinned": "6f6a2e0e1e2d",
+    "HRV-80/Pinned": "6f6a2e0e1e2d",
+    "HRV-81/Pinned": "6f6a2e0e1e2d",
+    "HRV-82/Pinned": "6f6a2e0e1e2d",
+    "HRV-83/Pinned": "6f6a2e0e1e2d",
+    "HRV-84/Pinned": "6f6a2e0e1e2d",
+    "GATE-01/Pinned": "c372ad0b2a6e",
+    "GATE-02/Pinned": "b1d64ea186a2",
+    "GATE-03/Pinned": "6f6a2e0e1e2d",
+    "GATE-04/Pinned": "c372ad0b2a6e",
+    "GATE-05/Pinned": "b4566a98f730",
+    "GATE-06/Pinned": "b1d64ea186a2",
+    "GATE-07/Pinned": "6f6a2e0e1e2d",
+    "GATE-08/Pinned": "6f6a2e0e1e2d",
+    "FIG-01/Pinned": "e8d6f5f9382e.9e2fafe435a8",
+    "FIG-02/Pinned": "b52b0ae17284.6e87b2c1e576",
+    "FIG-03/Pinned": "6f6a2e0e1e2d",
+    "FIG-04/Pinned": "6f6a2e0e1e2d",
+    "FIG-05/Pinned": "6f6a2e0e1e2d",
+    "FIG-06/Pinned": "04591f67f2bc",
+    "FIG-07/Pinned": "b52b0ae17284",
+    "FIG-08/Pinned": "690b1f78d148",
+    "FIG-09/Pinned": "6f6a2e0e1e2d",
+    "FIG-10/Pinned": "6f6a2e0e1e2d",
+    "FIG-11/Pinned": "6f6a2e0e1e2d",
+}
+
+#: ``RESEARCH_STRUCTURE`` (S1): research/00's every heading, Glossary T-NN and rule ID, in document order
+#: (303 entries: 24 headings, 33 terms, 246 rules). The heading check reads the headings alone and the
+#: rule checks read blocks alone, so moving ``### 1.2`` above PRIN-02 stayed green. Asserted by
+#: ``structure_errors``, which names the first position that differs.
+RESEARCH_STRUCTURE = (
+    "# Design Decisions & Governing Principles",
+    "## Glossary",
+    "T-01", "T-02", "T-03", "T-04", "T-05", "T-06", "T-07", "T-08", "T-09", "T-10", "T-11", "T-12", "T-13",
+    "T-14", "T-15", "T-16", "T-17", "T-18", "T-19", "T-20", "T-21", "T-22", "T-23", "T-24", "T-25", "T-26",
+    "T-27", "T-28", "T-29", "T-30", "T-31", "T-32", "T-33",
+    "## Part 1 — Principle hierarchy and tie-breakers",
+    "### 1.1 The supreme objective",
+    "PRIN-01", "PRIN-02",
+    "### 1.2 The arbitration ladder",
+    "PRIN-03", "ARB-01", "ARB-02", "ARB-03", "ARB-04", "ARB-05", "ARB-06", "ARB-07",
+    "### 1.3 The meta-rule",
+    "PRIN-04",
+    "### 1.4 Conflict resolution between subjective and objective signals",
+    "PRIN-05", "PRIN-06", "PRIN-17", "PRIN-18",
+    "### 1.5 Raw over derived",
+    "PRIN-07", "PRIN-08", "PRIN-09", "PRIN-10", "PRIN-19", "PRIN-20", "PRIN-21",
+    "### 1.6 Transparency and explainability",
+    "PRIN-11", "PRIN-12", "PRIN-22", "PRIN-23", "PRIN-24",
+    "### 1.7 Down-regulate freely, up-regulate cautiously",
+    "PRIN-13", "PRIN-14", "PRIN-15", "PRIN-25", "PRIN-26",
+    "### 1.8 Autonomy posture",
+    "AUT-01", "AUT-02", "AUT-03", "AUT-04", "AUT-06", "AUT-08",
+    "### 1.9 System ownership: plan versus goal",
+    "GOAL-01", "GOAL-02", "GOAL-03", "GOAL-04", "GOAL-05", "GOAL-06",
+    "## Part 2 — Load-bearing findings",
+    "ARCH-00", "ARCH-01", "ARCH-02", "ARCH-03", "ARCH-04", "ARCH-05", "ARCH-06", "ARCH-07", "ARCH-08",
+    "ARCH-09", "ARCH-10", "ARCH-11", "ARCH-12", "ARCH-13",
+    "## Part 3 — Decision register",
+    "DOC-06", "DOC-07", "DOC-08", "DOC-17", "DOC-18", "REG-01", "REG-02", "REG-03", "REG-04", "REG-05",
+    "REG-06", "REG-07", "REG-08", "REG-09", "REG-10", "REG-11", "REG-12", "REG-13", "REG-14", "REG-15",
+    "REG-16", "REG-17", "REG-18", "REG-19", "REG-20", "REG-21", "REG-22", "REG-23", "REG-24", "REG-25",
+    "REG-26", "REG-27", "REG-28", "REG-29", "REG-30", "HRV-07",
+    "### 3.1 Individualization — the governing rule (resolved)",
+    "IND-01", "IND-02", "IND-03", "IND-04", "IND-05", "IND-06",
+    "### 3.2 Cold-start — establishing day-one state (resolved, amends `research/05` §3.2)",
+    "COLD-01", "COLD-02", "COLD-03", "COLD-04", "COLD-05", "COLD-06", "COLD-07", "COLD-08", "COLD-09",
+    "COLD-10", "COLD-11",
+    "### 3.3 Resting-HRV source tiering (resolved, amends the data-quality-gating and HRV-gate register rows)",
+    "HRV-01", "HRV-02", "HRV-03", "HRV-04", "HRV-05", "HRV-06", "HRV-47",
+    "### 3.4 Aerobic-threshold (LT1) determination — recommended path (open, deferred to a future determinant)",
+    "LT1-01", "LT1-02", "LT1-03", "LT1-04", "LT1-05",
+    "## Part 4 — Design and freedom-to-operate guardrails",
+    "FTO-01", "FTO-02", "FTO-03", "FTO-04", "FTO-05", "FTO-06", "FTO-07",
+    "## Part 5 — Document map, authority, and decision records",
+    "DOC-15",
+    "### 5.1 This document's authority",
+    "DOC-01", "DOC-05",
+    "### 5.2 The mechanism research docs (the evidence this document points to)",
+    "DOC-04",
+    "### 5.3 Decision records (`decisions/`)",
+    "DOC-03", "AUT-05", "AUT-07", "DEC-01", "DEC-02",
+    "### 5.4 Reconciliations and amendments",
+    "DOC-02", "DOC-09", "DOC-10", "DOC-11", "DOC-12", "DOC-13", "DOC-14", "DOC-16", "DOC-19", "DOC-20",
+    "DOC-21", "DOC-22", "HRV-08", "HRV-09", "HRV-10", "HRV-11", "HRV-12", "HRV-13", "HRV-14", "HRV-15",
+    "HRV-16", "HRV-17", "HRV-18", "HRV-19", "HRV-20", "HRV-21", "HRV-22", "HRV-23", "HRV-24", "HRV-25",
+    "HRV-26", "HRV-27", "HRV-28", "HRV-29", "HRV-30", "HRV-31", "HRV-32", "HRV-33", "HRV-34", "HRV-35",
+    "HRV-36", "HRV-37", "HRV-38", "HRV-39", "HRV-40", "HRV-41", "HRV-42", "HRV-43", "HRV-44", "HRV-45",
+    "HRV-46", "HRV-48", "HRV-49", "HRV-50", "HRV-51", "HRV-52", "HRV-53", "HRV-54", "HRV-55", "HRV-56",
+    "HRV-57", "HRV-58", "HRV-59", "HRV-60", "HRV-61", "HRV-62", "HRV-63", "HRV-64", "HRV-65", "HRV-66",
+    "HRV-67", "HRV-68", "HRV-69", "HRV-70", "HRV-71", "HRV-72", "HRV-73", "HRV-74", "HRV-75", "HRV-76",
+    "HRV-77", "HRV-78", "HRV-79", "HRV-80", "HRV-81", "HRV-82", "HRV-83", "HRV-84", "GATE-01", "GATE-02",
+    "GATE-03", "GATE-04", "GATE-05", "GATE-06", "GATE-07", "GATE-08", "FIG-01", "FIG-02", "FIG-03", "FIG-04",
+    "FIG-05", "FIG-06", "FIG-07", "FIG-08", "FIG-09", "FIG-10", "FIG-11",
+)
+
+#: ``HISTORY_SHA256`` (S2): every non-blank line of 00-history.md (44: the title, the 41 entries keyed by
+#: H-NN, ``## Retired IDs`` and its one line keyed ``PRIN-16 retired``). ``history_errors`` checks the
+#: format and the arrows only resolve, so H-06's prose rewritten, or GOAL-06 dropped from its arrow list,
+#: stayed green. Asserted both ways by ``history_digest_errors``.
+HISTORY_SHA256 = {
+    "# research/00 history": "f063580c1056",
+    "H-01": "a30b075ea608",
+    "H-02": "9141cff19448",
+    "H-03": "9e30329874b8",
+    "H-04": "dd1558bab4bc",
+    "H-05": "7ce9255e0700",
+    "H-06": "e9f75c6771e7",
+    "H-07": "24bc9091953f",
+    "H-08": "c50df375e8a2",
+    "H-09": "aee95a74af2f",
+    "H-10": "8f4a2c603818",
+    "H-11": "b794226b981e",
+    "H-12": "4d95ef2aab30",
+    "H-13": "0a7b43b825a5",
+    "H-14": "553bc3d6a041",
+    "H-15": "5d2cd499951f",
+    "H-16": "4f9538531353",
+    "H-17": "b03bc6373647",
+    "H-18": "e14bad09d41e",
+    "H-19": "ff4fdedc434f",
+    "H-20": "28240cd4a638",
+    "H-21": "62a9b4b19be6",
+    "H-22": "da73db101476",
+    "H-23": "1852a072656e",
+    "H-24": "d9086c3a0efa",
+    "H-25": "63e6012e3d63",
+    "H-26": "13e74a60ee23",
+    "H-27": "7f4acb4b4adf",
+    "H-28": "95defe788454",
+    "H-29": "c68ee8aa7ff4",
+    "H-30": "7fd51f643796",
+    "H-31": "949cdb78465f",
+    "H-32": "1928b509d19d",
+    "H-33": "71ffeb27d85a",
+    "H-34": "0353a68b5608",
+    "H-35": "36ded55f0140",
+    "H-36": "60dc60611b45",
+    "H-37": "74478c3a736f",
+    "H-38": "864b2eb04911",
+    "H-39": "7a4d2f9c3018",
+    "H-40": "ff2a30c98d83",
+    "H-41": "2e10a7076339",
+    "## Retired IDs": "df75a433ff9c",
+    "PRIN-16 retired": "44a1c18ceea9",
+}
+
+#: ``REVIEW_PROSE_SHA256`` (S3): the review file's 14 lines outside its tables, in order (the title, the
+#: opening paragraph, the three group headings, ``## Rounds`` and its paragraphs), one digest each.
+#: Asserted by ``review_line_errors``, which names the first line that differs; a new round updates it.
+REVIEW_PROSE_SHA256 = (
+    "3a7b11e58598", "b051f146b589", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "96de422a6cb7",
+    "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41", "ca0e1376449f",
+    "1ab83c31c697", "1ab8f103ac7a",
+)
+
+#: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict and reason
+#: together, keyed by its row (789 lines, 789 rows). ``review_errors`` caught a flipped verdict, not a
+#: reason: PRIN-01's rewritten to "Not reviewed." stayed green. A new round updates these digests
+#: deliberately, alongside ``REVIEWED_BLOCK_SHA256``. Asserted both ways by ``review_line_errors``.
+REVIEW_LINE_SHA256 = {
+    "PRIN-01": "a7e1c9e52032",
+    "PRIN-01/Scope": "b8c31674851e",
+    "PRIN-01/Not": "633e4fdf0a6b",
+    "PRIN-02": "7e7935d9b077",
+    "PRIN-02/Scope": "2077b2d51054",
+    "PRIN-02/Not": "6e98a3e36aac",
+    "PRIN-03": "0bcab07e0359",
+    "PRIN-03/Scope": "0d0411dade0b",
+    "PRIN-03/Not": "d3efb51ef0a8",
+    "ARB-01": "b28821c11359",
+    "ARB-01/Scope": "b387f96f1dce",
+    "ARB-01/Not": "df2f60ae2161",
+    "ARB-02": "5b3b39c2dfde",
+    "ARB-02/Scope": "fd758a35d579",
+    "ARB-02/Not": "3e08c611f7a5",
+    "ARB-03": "01da60071810",
+    "ARB-03/Scope": "8a50de3e713d",
+    "ARB-03/Not": "8b5a2e9127f8",
+    "ARB-04": "e513514c9e32",
+    "ARB-04/Scope": "f07f98bd844c",
+    "ARB-04/Not": "6b2d9f78703d",
+    "ARB-05": "9807463efb49",
+    "ARB-05/Scope": "7f7b2a9c4f70",
+    "ARB-05/Not": "f78f6fa7af7d",
+    "ARB-06": "c057eccca70b",
+    "ARB-06/Scope": "fac6d9f906c7",
+    "ARB-06/Not": "ef52516a97a2",
+    "ARB-07": "87a8e1ac85aa",
+    "ARB-07/Scope": "da44a0631c43",
+    "ARB-07/Not": "4ebb0af8c724",
+    "PRIN-04": "12a88f322953",
+    "PRIN-04/Scope": "d7eff621c712",
+    "PRIN-04/Not": "61bdb62f0342",
+    "PRIN-05": "5ac648632b4a",
+    "PRIN-05/Scope": "4960363ca352",
+    "PRIN-05/Not": "ead17aeaed30",
+    "PRIN-05/Why": "98da67b0367a",
+    "PRIN-06": "067648bf7c54",
+    "PRIN-06/Scope": "cb0a1a1b398e",
+    "PRIN-06/Not": "bb8ee110d715",
+    "PRIN-17": "ff96d4c21c47",
+    "PRIN-17/Scope": "4ec9b2dd2684",
+    "PRIN-17/Not": "c83d3fa9346d",
+    "PRIN-18": "a4e845f57059",
+    "PRIN-18/Scope": "c2df6ceb25f4",
+    "PRIN-18/Not": "8ee2d3bafbaa",
+    "PRIN-07": "91bab25e9ff4",
+    "PRIN-07/Scope": "83c95add581e",
+    "PRIN-07/Not": "1127a4a32fb4",
+    "PRIN-08": "8d800a363981",
+    "PRIN-08/Scope": "5f582a01b5c0",
+    "PRIN-08/Not": "e598d956ac25",
+    "PRIN-08/Why": "ff5bc9d69b9b",
+    "PRIN-09": "4fed292634db",
+    "PRIN-09/Scope": "5a4b9de1186c",
+    "PRIN-09/Not": "7c5765328ea0",
+    "PRIN-10": "0cff3b3a0ebe",
+    "PRIN-10/Scope": "0e0211fc00ce",
+    "PRIN-10/Not": "1fdd85e8265c",
+    "PRIN-19": "66551f730f19",
+    "PRIN-19/Scope": "0e575dbde0e9",
+    "PRIN-19/Not": "d399e82564af",
+    "PRIN-20": "06f762dfe95d",
+    "PRIN-20/Scope": "1396942ad85d",
+    "PRIN-20/Not": "9ba23913c260",
+    "PRIN-20/Why": "1d2fcbb63f91",
+    "PRIN-21": "3cf8e16273a9",
+    "PRIN-21/Scope": "38e54c9d40f6",
+    "PRIN-21/Not": "22b05435ca2c",
+    "PRIN-11": "036278ed407c",
+    "PRIN-11/Scope": "16b3b1ebd125",
+    "PRIN-11/Not": "2e05e8b2f7d9",
+    "PRIN-12": "d43b69d3acfc",
+    "PRIN-12/Scope": "cec103472cfe",
+    "PRIN-12/Not": "2eb6768b6d94",
+    "PRIN-12/Why": "5aa73bbf537a",
+    "PRIN-22": "f030adf027ba",
+    "PRIN-22/Scope": "979276a0ec8a",
+    "PRIN-22/Not": "fece653ccdca",
+    "PRIN-23": "b0bc226ef078",
+    "PRIN-23/Scope": "f143b94d64f7",
+    "PRIN-23/Not": "3a2ddbaaaf1d",
+    "PRIN-24": "2286e09a7138",
+    "PRIN-24/Scope": "a677162a2e36",
+    "PRIN-24/Not": "93a897daff62",
+    "PRIN-24/Why": "839ffa2c58af",
+    "PRIN-13": "918e80b7e2e0",
+    "PRIN-13/Scope": "7a022539d67d",
+    "PRIN-13/Not": "38816d71b561",
+    "PRIN-14": "c2bec84c9aa5",
+    "PRIN-14/Scope": "f97f2dde58f7",
+    "PRIN-14/Not": "05161c2d8617",
+    "PRIN-14/Why": "265de8961edc",
+    "PRIN-15": "1a90b1ed8470",
+    "PRIN-15/Scope": "e1c2a9b9cfca",
+    "PRIN-15/Not": "6c94998a409f",
+    "PRIN-15/Why": "cac0a6bc6653",
+    "PRIN-25": "3f5014eeb82c",
+    "PRIN-25/Scope": "429576235a91",
+    "PRIN-25/Not": "1f907675c2a6",
+    "PRIN-26": "383ff1e57a73",
+    "PRIN-26/Scope": "8bd1c510e18a",
+    "PRIN-26/Not": "18076fc74ff9",
+    "AUT-01": "6d6211390e9e",
+    "AUT-01/Scope": "f834f219bdfe",
+    "AUT-01/Not": "18eb96c68ce3",
+    "AUT-02": "504fbce65d38",
+    "AUT-02/Scope": "2658d358e77e",
+    "AUT-02/Not": "24c1bba149a1",
+    "AUT-02/Why": "1011c048fb9e",
+    "AUT-03": "934e3158fcba",
+    "AUT-03/Scope": "16e1a9448835",
+    "AUT-03/Not": "249c3bed5417",
+    "AUT-04": "4aa1f9b89a29",
+    "AUT-04/Scope": "1bb7b83722d5",
+    "AUT-04/Not": "1ecd662e8baa",
+    "AUT-04/Why": "157a1309daf1",
+    "AUT-06": "3d0534fcb9a5",
+    "AUT-06/Scope": "040543437c11",
+    "AUT-06/Not": "116ebbba7bb1",
+    "AUT-08": "8e73f0a323e3",
+    "AUT-08/Scope": "abbdda4a9146",
+    "AUT-08/Not": "0368cb396adf",
+    "GOAL-01": "4e0593e931d1",
+    "GOAL-01/Scope": "21e000dadbcb",
+    "GOAL-01/Not": "17d0ea1bc127",
+    "GOAL-02": "4a4845200d98",
+    "GOAL-02/Scope": "33bba95a6cd7",
+    "GOAL-02/Not": "3ec4a566707e",
+    "GOAL-02/Why": "71f7439abbf8",
+    "GOAL-03": "c8bbebd1a803",
+    "GOAL-03/Scope": "4a69f9707825",
+    "GOAL-03/Not": "588ab55fd4ff",
+    "GOAL-04": "3bae3ab25411",
+    "GOAL-04/Scope": "feb4d8da5737",
+    "GOAL-04/Not": "6aaec14b43f2",
+    "GOAL-05": "49540af01d15",
+    "GOAL-05/Scope": "c67b94e19768",
+    "GOAL-05/Not": "b364ad30ace9",
+    "GOAL-06": "1d85f242ac24",
+    "GOAL-06/Scope": "53fcace94c0b",
+    "GOAL-06/Not": "3b39f58295b2",
+    "DOC-06": "33a509761f6f",
+    "DOC-06/Scope": "1f2d32b9da9d",
+    "DOC-06/Not": "c26c8dc22f78",
+    "DOC-06/Why": "4b1c2fca872d",
+    "DOC-07": "14c4d97a1528",
+    "DOC-07/Scope": "1a56b88c936d",
+    "DOC-07/Not": "f3332c7cd92a",
+    "DOC-08": "619debe4d74b",
+    "DOC-08/Scope": "71f64d9a6b87",
+    "DOC-08/Not": "bfce02fb3b5a",
+    "DOC-17": "dbf2f1ce4e9a",
+    "DOC-17/Scope": "6f7381317af7",
+    "DOC-17/Not": "e923bd7b7299",
+    "DOC-18": "6f8e114fc4f8",
+    "DOC-18/Scope": "5cd2b8157d9c",
+    "DOC-18/Not": "ee0909710f85",
+    "DOC-15": "1fb309d90439",
+    "DOC-15/Scope": "a34e1462b1ee",
+    "DOC-15/Not": "ed215664c186",
+    "DOC-01": "093a90ed5d15",
+    "DOC-01/Scope": "c3e2a29574bf",
+    "DOC-01/Not": "3b7bce4db26a",
+    "DOC-05": "dafe4ae7fc89",
+    "DOC-05/Scope": "536b6780b2c0",
+    "DOC-05/Not": "0da4625294ac",
+    "DOC-04": "d6e0aef16f8c",
+    "DOC-04/Scope": "13d2772e3517",
+    "DOC-04/Not": "ebb4b57eef09",
+    "DOC-03": "5af3a7b12c07",
+    "DOC-03/Scope": "965c11aa271e",
+    "DOC-03/Not": "a2ccf0f37dc2",
+    "AUT-05": "ac39b28f638c",
+    "AUT-05/Scope": "21217082f9d6",
+    "AUT-05/Not": "419f158be6c1",
+    "AUT-07": "a8e0f3b15409",
+    "AUT-07/Scope": "89db91628172",
+    "AUT-07/Not": "fc5e09f81916",
+    "DOC-02": "1b483e199bca",
+    "DOC-02/Scope": "8f87defbc725",
+    "DOC-02/Not": "c40d47ae298e",
+    "DOC-09": "13af1023d38d",
+    "DOC-09/Scope": "d797d8bb024f",
+    "DOC-09/Not": "e978be6eb916",
+    "DOC-09/Why": "e7013880deaa",
+    "DOC-10": "c637fed4fe24",
+    "DOC-10/Scope": "9714f260a1cb",
+    "DOC-10/Not": "ba034b0df311",
+    "DOC-11": "7773dfc55fdd",
+    "DOC-11/Scope": "34e7af556807",
+    "DOC-11/Not": "46860a953358",
+    "DOC-12": "73cac9aeb846",
+    "DOC-12/Scope": "bfe59905b3bc",
+    "DOC-12/Not": "4192afec55bf",
+    "DOC-13": "c47e6749ce33",
+    "DOC-13/Scope": "384a22f07295",
+    "DOC-13/Not": "643c862f58fd",
+    "DOC-14": "1d5ee6dece7d",
+    "DOC-14/Scope": "63925b9f67ff",
+    "DOC-14/Not": "bf1872addd81",
+    "DOC-16": "80b15977bcf4",
+    "DOC-16/Scope": "4a1830e458cb",
+    "DOC-16/Not": "6a8a761b9fb6",
+    "DOC-19": "406421b2c509",
+    "DOC-19/Scope": "67de6ccbb150",
+    "DOC-19/Not": "08baef24bb41",
+    "DOC-20": "f2ebd36e3b2f",
+    "DOC-20/Scope": "ab16caaea04a",
+    "DOC-20/Not": "01e51481336c",
+    "DOC-21": "ce4cb22267ef",
+    "DOC-21/Scope": "946ebd29957c",
+    "DOC-21/Not": "61096c26a6d8",
+    "DOC-22": "102fa9eee0d4",
+    "DOC-22/Scope": "046f947ad70b",
+    "DOC-22/Not": "a0311a62015b",
+    "ARCH-00": "397e2c6cba93",
+    "ARCH-00/Scope": "3cc44232ba4b",
+    "ARCH-00/Not": "cd9c340465f6",
+    "ARCH-01": "a622d41f4c0a",
+    "ARCH-01/Scope": "d72c21d61d9f",
+    "ARCH-01/Not": "3fa7e1970c88",
+    "ARCH-02": "adc993567067",
+    "ARCH-02/Scope": "43c08e768b31",
+    "ARCH-02/Not": "a1a84dcf86f7",
+    "ARCH-03": "865921b210c0",
+    "ARCH-03/Scope": "f18b7bc2fb4a",
+    "ARCH-03/Not": "cda5c68eda87",
+    "ARCH-04": "4af7797a639a",
+    "ARCH-04/Scope": "78bfafbd3ac5",
+    "ARCH-04/Not": "deacb6a72f7f",
+    "ARCH-05": "94575478b7e1",
+    "ARCH-05/Scope": "1203fd557cd4",
+    "ARCH-05/Not": "537e8457c58c",
+    "ARCH-06": "d095de8ec568",
+    "ARCH-06/Scope": "236b64f07198",
+    "ARCH-06/Not": "006ba6bdf848",
+    "ARCH-06/Why": "36c99e6944d4",
+    "ARCH-07": "123704542f0e",
+    "ARCH-07/Scope": "995eb604def8",
+    "ARCH-07/Not": "5b566cc5dc5a",
+    "ARCH-08": "8e4e842334ad",
+    "ARCH-08/Scope": "95368b38e340",
+    "ARCH-08/Not": "d51f5b16dc5f",
+    "ARCH-09": "8d6b1c014338",
+    "ARCH-09/Scope": "34017829837a",
+    "ARCH-09/Not": "7c427bd29b5b",
+    "ARCH-10": "450392214909",
+    "ARCH-10/Scope": "edc51d09bc4b",
+    "ARCH-10/Not": "fe8fe38f1940",
+    "ARCH-11": "4b7d11bab263",
+    "ARCH-11/Scope": "f4ca8d795b65",
+    "ARCH-11/Not": "f4b0812fa6da",
+    "ARCH-12": "4573152888f6",
+    "ARCH-12/Scope": "6e35c639f2fa",
+    "ARCH-12/Not": "a661f26e0e0b",
+    "ARCH-12/Why": "9a57c6d7e058",
+    "ARCH-13": "824ccfd262b9",
+    "ARCH-13/Scope": "2fc2aa20b84d",
+    "ARCH-13/Not": "f16b30747463",
+    "ARCH-13/Why": "6c3a9cc47f00",
+    "REG-01": "fc9b831ba165",
+    "REG-01/Scope": "885324bd8305",
+    "REG-01/Not": "fef65748815f",
+    "REG-02": "f0bdb504255e",
+    "REG-02/Scope": "8e36b1089214",
+    "REG-02/Not": "107287078ebc",
+    "REG-02/Why": "efb1dd92f02c",
+    "REG-03": "eea0f92d4ec3",
+    "REG-03/Scope": "c2835884fb2b",
+    "REG-03/Not": "7348f56c0c54",
+    "REG-04": "c6937368d1c3",
+    "REG-04/Scope": "39b6c5c3ec94",
+    "REG-04/Not": "706f90c27fe0",
+    "REG-05": "1dbfb87969d6",
+    "REG-05/Scope": "3878db6cc9d4",
+    "REG-05/Not": "8f68cc200934",
+    "REG-06": "4268e21ce79b",
+    "REG-06/Scope": "a5a72855d2e1",
+    "REG-06/Not": "da838d5184a2",
+    "REG-07": "16115063c169",
+    "REG-07/Scope": "6edf229706a1",
+    "REG-07/Not": "6a1a4aab7bd3",
+    "REG-08": "fb1e7748f923",
+    "REG-08/Scope": "3e11683d0bf9",
+    "REG-08/Not": "0e71d88a6dbd",
+    "REG-09": "1cc3e8a1e966",
+    "REG-09/Scope": "3c0da97e815f",
+    "REG-09/Not": "e84b58c28380",
+    "REG-10": "231006dfca36",
+    "REG-10/Scope": "1b2d69ec9d37",
+    "REG-10/Not": "0ecafa448ca6",
+    "REG-11": "bbb6e18b035c",
+    "REG-11/Scope": "f091343a86bf",
+    "REG-11/Not": "8d599cefef8f",
+    "REG-12": "026c632b34c4",
+    "REG-12/Scope": "681f58b449c7",
+    "REG-12/Not": "8d91260db691",
+    "REG-13": "166dc65d8c81",
+    "REG-13/Scope": "6ae029155cb9",
+    "REG-13/Not": "a9a49ecbcbc2",
+    "REG-14": "8e463f67cf64",
+    "REG-14/Scope": "e56cf17d0b4c",
+    "REG-14/Not": "c95d297289ad",
+    "REG-14/Why": "1f2264bb59d5",
+    "REG-15": "0f493156f5c7",
+    "REG-15/Scope": "33ec4f13fbe0",
+    "REG-15/Not": "bc2932f0d882",
+    "REG-16": "53f300c13860",
+    "REG-16/Scope": "acba03485cf9",
+    "REG-16/Not": "1c021432df78",
+    "REG-16/Why": "cdc4b729d788",
+    "REG-17": "2cb31ee6013f",
+    "REG-17/Scope": "c2eaf6f568cb",
+    "REG-17/Not": "fca2230313fd",
+    "REG-18": "af17d4eadb13",
+    "REG-18/Scope": "0ddf0ddbca69",
+    "REG-18/Not": "2602815a2516",
+    "REG-19": "2fb6948f2b9d",
+    "REG-19/Scope": "4e9a04375c46",
+    "REG-19/Not": "bd6350425805",
+    "REG-19/Why": "11fe0751c6eb",
+    "REG-20": "42b2920ceb91",
+    "REG-20/Scope": "54894df7346f",
+    "REG-20/Not": "3efa7303334c",
+    "REG-21": "971a56959af4",
+    "REG-21/Scope": "3055c9a74df2",
+    "REG-21/Not": "d33aff3f3cb7",
+    "REG-22": "20be62dee0b7",
+    "REG-22/Scope": "fee0206c753d",
+    "REG-22/Not": "30eeb2beaf8d",
+    "REG-23": "9067c4860b14",
+    "REG-23/Scope": "9d6aa44d3874",
+    "REG-23/Not": "db4dc045287d",
+    "REG-23/Why": "0b52ff45fe17",
+    "REG-24": "34c0ba381588",
+    "REG-24/Scope": "aeab9a9ab97c",
+    "REG-24/Not": "86ded5cfaf48",
+    "REG-25": "4660318590b9",
+    "REG-25/Scope": "e724b216a47a",
+    "REG-25/Not": "bacad9a86f47",
+    "REG-25/Why": "fbf051780125",
+    "REG-26": "670447f4d78a",
+    "REG-26/Scope": "6258a68946f3",
+    "REG-26/Not": "a76bead3872c",
+    "REG-27": "b733ab3defb3",
+    "REG-27/Scope": "d2626c0b87ba",
+    "REG-27/Not": "d5f2afc0819a",
+    "REG-28": "792b0904177b",
+    "REG-28/Scope": "a3787e1729cb",
+    "REG-28/Not": "b53fec544235",
+    "REG-29": "46864d8ea53f",
+    "REG-29/Scope": "a04d4660ffcf",
+    "REG-29/Not": "17e38012fb0b",
+    "REG-30": "9c3314eff14a",
+    "REG-30/Scope": "7d2c9497c323",
+    "REG-30/Not": "7b6d5523d9bc",
+    "IND-01": "52219b8f6a28",
+    "IND-01/Scope": "215167a50d1e",
+    "IND-01/Not": "a7560951b55a",
+    "IND-01/Why": "c1407a096f64",
+    "IND-02": "9defd6e62d0c",
+    "IND-02/Scope": "5d9fbd017b4d",
+    "IND-02/Not": "b761a05d8139",
+    "IND-03": "dde2b5816a1a",
+    "IND-03/Scope": "1c4698331703",
+    "IND-03/Not": "a6efb2583d96",
+    "IND-04": "b222c56256e3",
+    "IND-04/Scope": "d5cbe13c8d11",
+    "IND-04/Not": "7e5ece068a84",
+    "IND-04/Why": "a90e25b0a018",
+    "IND-05": "0f68d42734bf",
+    "IND-05/Scope": "9a9e82d53180",
+    "IND-05/Not": "102830668744",
+    "IND-06": "9658fa2bb906",
+    "IND-06/Scope": "cbe4b5823768",
+    "IND-06/Not": "3b9d093d2e72",
+    "COLD-01": "dcaedb6f315d",
+    "COLD-01/Scope": "1b1a0b0d2688",
+    "COLD-01/Not": "528bb887f0a7",
+    "COLD-01/Why": "3a68fea5676a",
+    "COLD-02": "4e3adc6b140d",
+    "COLD-02/Scope": "86096139e31a",
+    "COLD-02/Not": "2d426a2353c2",
+    "COLD-03": "a5d06b8a566f",
+    "COLD-03/Scope": "c6853e441e7b",
+    "COLD-03/Not": "5f35932750e0",
+    "COLD-04": "7476a7b3466a",
+    "COLD-04/Scope": "fbc44d653c71",
+    "COLD-04/Not": "f622d7a532d1",
+    "COLD-05": "d15455e1e701",
+    "COLD-05/Scope": "02555a54e278",
+    "COLD-05/Not": "89a6e9bcb23d",
+    "COLD-06": "e66c8bedf8e1",
+    "COLD-06/Scope": "8e462587d5a7",
+    "COLD-06/Not": "f7b25de38116",
+    "COLD-07": "9a5407ad2781",
+    "COLD-07/Scope": "13ff5703008d",
+    "COLD-07/Not": "b1df269da013",
+    "COLD-08": "6db06e3bc143",
+    "COLD-08/Scope": "3b1e83c79d11",
+    "COLD-08/Not": "d550ac4bd361",
+    "COLD-08/Why": "bf40f82b9071",
+    "COLD-09": "eac4225d7a46",
+    "COLD-09/Scope": "640e0620a6ea",
+    "COLD-09/Not": "b03f8eb94dda",
+    "COLD-10": "34221e881ece",
+    "COLD-10/Scope": "b08170f22e99",
+    "COLD-10/Not": "b3d2199d8b26",
+    "COLD-11": "d087624f1281",
+    "COLD-11/Scope": "12b5119702bf",
+    "COLD-11/Not": "614cd10c1663",
+    "LT1-01": "3ca570f563aa",
+    "LT1-01/Scope": "8153037c43c4",
+    "LT1-01/Not": "2fca6dcec846",
+    "LT1-01/Why": "6746fe2aeea6",
+    "LT1-02": "d69c196e414d",
+    "LT1-02/Scope": "35c1199d2bfb",
+    "LT1-02/Not": "718466622e40",
+    "LT1-02/Why": "a7d200503987",
+    "LT1-03": "9a37c327a327",
+    "LT1-03/Scope": "b6d3e8676a2a",
+    "LT1-03/Not": "de02c79c3a22",
+    "LT1-04": "be91d6db700d",
+    "LT1-04/Scope": "9162e08e9404",
+    "LT1-04/Not": "af7b7cdb7eb1",
+    "LT1-04/Why": "eb22e333a0c5",
+    "LT1-05": "4c34de26a13c",
+    "LT1-05/Scope": "b3eb8809b7c4",
+    "LT1-05/Not": "0df680790d95",
+    "FTO-01": "856c4680f544",
+    "FTO-01/Scope": "5b05dba06932",
+    "FTO-01/Not": "67f0a958895d",
+    "FTO-02": "cb100b2a334a",
+    "FTO-02/Scope": "8de126dabd7b",
+    "FTO-02/Not": "cd5b09b33443",
+    "FTO-03": "31f3a927676e",
+    "FTO-03/Scope": "013186775c26",
+    "FTO-03/Not": "f093f8b0bdfa",
+    "FTO-04": "6efdca82f90e",
+    "FTO-04/Scope": "f1db5ad843c6",
+    "FTO-04/Not": "2d9e82dac9d1",
+    "FTO-05": "5587d54de12a",
+    "FTO-05/Scope": "abe540feab66",
+    "FTO-05/Not": "90cd179ff7ca",
+    "FTO-06": "0bd9426fae30",
+    "FTO-06/Scope": "1a275b587cd1",
+    "FTO-06/Not": "a9603ea56922",
+    "FTO-07": "6e5d80c47948",
+    "FTO-07/Scope": "b7d5ffc2f360",
+    "FTO-07/Not": "afe728c8b9d7",
+    "DEC-01": "e715743956d1",
+    "DEC-01/Scope": "f3d9b36049b1",
+    "DEC-01/Not": "b98e711c6154",
+    "DEC-01/Why": "7abb667d874f",
+    "DEC-02": "307fdcb12cde",
+    "DEC-02/Scope": "7178949aa269",
+    "DEC-02/Not": "ea4554c706b7",
+    "GATE-01": "8e9b24b92042",
+    "GATE-01/Scope": "1f7210536a59",
+    "GATE-01/Not": "208b93fb7fcc",
+    "GATE-01/Why": "8e85a89fee4d",
+    "GATE-02": "88e7c9c3a570",
+    "GATE-02/Scope": "a7a0b2e95f83",
+    "GATE-02/Not": "70daa8cf205c",
+    "GATE-02/Why": "3990886c7a79",
+    "GATE-03": "f961d77c6e3e",
+    "GATE-03/Scope": "af58df63ca56",
+    "GATE-03/Not": "b1677c495a51",
+    "GATE-03/Why": "aaac61f70996",
+    "GATE-04": "aee1deb8e197",
+    "GATE-04/Scope": "43fe740d5518",
+    "GATE-04/Not": "bcc819540fba",
+    "GATE-04/Why": "d3d4237ddf1d",
+    "GATE-05": "872a55a1b893",
+    "GATE-05/Scope": "92fc72cb47fe",
+    "GATE-05/Not": "d318c48e39dc",
+    "GATE-06": "42410cd199c6",
+    "GATE-06/Scope": "5f1eed559c52",
+    "GATE-06/Not": "1647fa66267b",
+    "GATE-07": "fe6821b930ea",
+    "GATE-07/Scope": "d698289e1703",
+    "GATE-07/Not": "467a31cfe950",
+    "GATE-08": "f4c8be183dc0",
+    "GATE-08/Scope": "d697df08e1dc",
+    "GATE-08/Not": "ae41e8435324",
+    "FIG-01": "b5c12d9bdbd2",
+    "FIG-01/Scope": "c58097b55f3e",
+    "FIG-01/Not": "f3f11ba16e37",
+    "FIG-02": "b619af5a7092",
+    "FIG-02/Scope": "02efc7bc6dd7",
+    "FIG-02/Not": "adc994dd097e",
+    "FIG-02/Why": "0f5411ff5f86",
+    "FIG-03": "899a892cdf22",
+    "FIG-03/Scope": "8c97876088c9",
+    "FIG-03/Not": "15b71f964425",
+    "FIG-03/Why": "2ffd4e0a1e27",
+    "FIG-04": "886dcad4e900",
+    "FIG-04/Scope": "46a5a4e94653",
+    "FIG-04/Not": "2516923c8617",
+    "FIG-05": "cc45651d2b72",
+    "FIG-05/Scope": "46812980d3e9",
+    "FIG-05/Not": "c9a78569f2d3",
+    "FIG-05/Why": "60a63eeb9364",
+    "FIG-06": "8675204773d1",
+    "FIG-06/Scope": "5beb549b8a87",
+    "FIG-06/Not": "2d91147cef05",
+    "FIG-07": "a75151053167",
+    "FIG-07/Scope": "14f8689a1891",
+    "FIG-07/Not": "dd2052c43c50",
+    "FIG-08": "657a33bc2b34",
+    "FIG-08/Scope": "d1aca9e9e38c",
+    "FIG-08/Not": "c7f478b86cb0",
+    "FIG-09": "2163af2aa820",
+    "FIG-09/Scope": "95922d74a55f",
+    "FIG-09/Not": "3307db0bcd59",
+    "FIG-10": "a341e9bce887",
+    "FIG-10/Scope": "52aac7147607",
+    "FIG-10/Not": "72eefa43719d",
+    "FIG-11": "ccab1350effa",
+    "FIG-11/Scope": "f6398a7f6e8c",
+    "FIG-11/Not": "f2ce2dfaf210",
+    "HRV-07": "30ec98f1150c",
+    "HRV-07/Scope": "2b3fef73d397",
+    "HRV-07/Not": "8ce5a2dca89c",
+    "HRV-07/Why": "56945f1c5e8d",
+    "HRV-01": "f815245776d6",
+    "HRV-01/Scope": "d3f77a0357cd",
+    "HRV-01/Not": "1a716e599a21",
+    "HRV-02": "7a311bbefec9",
+    "HRV-02/Scope": "d551bc66ce7e",
+    "HRV-02/Not": "edeb20720902",
+    "HRV-03": "2f83eb911729",
+    "HRV-03/Scope": "a0a01a0f4a58",
+    "HRV-03/Not": "0fe603994d7c",
+    "HRV-04": "132d6da76e9c",
+    "HRV-04/Scope": "b5bd331401d9",
+    "HRV-04/Not": "8bb68cb8ac91",
+    "HRV-04/Why": "8b359444e85b",
+    "HRV-05": "ea4c46054ac1",
+    "HRV-05/Scope": "77aa5e51d6c8",
+    "HRV-05/Not": "8688b2ef7670",
+    "HRV-05/Why": "df40c7e563cb",
+    "HRV-06": "769466eceac9",
+    "HRV-06/Scope": "ddf359caed55",
+    "HRV-06/Not": "dd777a1a594a",
+    "HRV-47": "898fe27a045f",
+    "HRV-47/Scope": "e6169fa0e4e1",
+    "HRV-47/Not": "0a9c5b611210",
+    "HRV-08": "5bb1b041bcc2",
+    "HRV-08/Scope": "1ba8bc27f154",
+    "HRV-08/Not": "1f1d7dde6006",
+    "HRV-09": "cdbcdbf2bf0a",
+    "HRV-09/Scope": "880344c615e0",
+    "HRV-09/Not": "d4427f1f35c5",
+    "HRV-10": "5909d77ed821",
+    "HRV-10/Scope": "320c02dc6e31",
+    "HRV-10/Not": "bfc6db128bac",
+    "HRV-11": "e38439d854d0",
+    "HRV-11/Scope": "93dff64ecdec",
+    "HRV-11/Not": "45b1b35bef1e",
+    "HRV-11/Why": "afb34323500a",
+    "HRV-12": "1cd388af2a7c",
+    "HRV-12/Scope": "157c6ba72a32",
+    "HRV-12/Not": "27bc45607f67",
+    "HRV-12/Why": "f149efc16217",
+    "HRV-13": "d115191f4377",
+    "HRV-13/Scope": "29b2f59e50d1",
+    "HRV-13/Not": "527bc0bf7863",
+    "HRV-14": "6e5161ebce2f",
+    "HRV-14/Scope": "3193e90b933b",
+    "HRV-14/Not": "49c9aa4abacd",
+    "HRV-15": "1c572aae0657",
+    "HRV-15/Scope": "66ac3da09707",
+    "HRV-15/Not": "31749cbde698",
+    "HRV-15/Why": "57168bb3858b",
+    "HRV-16": "d5942746b7ce",
+    "HRV-16/Scope": "c13f091f983e",
+    "HRV-16/Not": "e22d8a47e175",
+    "HRV-17": "a1907990d8d0",
+    "HRV-17/Scope": "23cc14df012c",
+    "HRV-17/Not": "648e3985459a",
+    "HRV-17/Why": "3cb121691c71",
+    "HRV-18": "11e581bf0787",
+    "HRV-18/Scope": "611b04a0d50b",
+    "HRV-18/Not": "3a4207c9c090",
+    "HRV-19": "50332ed21eaa",
+    "HRV-19/Scope": "3a071be637f4",
+    "HRV-19/Not": "7d1d15e95a47",
+    "HRV-20": "7fbc49972bb8",
+    "HRV-20/Scope": "28afb334b3f5",
+    "HRV-20/Not": "af96169c6e8a",
+    "HRV-21": "d7eda81e6dcf",
+    "HRV-21/Scope": "ff9afca2e6c3",
+    "HRV-21/Not": "bbbf63ffab64",
+    "HRV-22": "579f4d00358b",
+    "HRV-22/Scope": "32f4900585a9",
+    "HRV-22/Not": "c7ef5afe54a6",
+    "HRV-23": "a07e72848158",
+    "HRV-23/Scope": "78f7a3ad9fa0",
+    "HRV-23/Not": "403389dfee3d",
+    "HRV-24": "4e052216bb2d",
+    "HRV-24/Scope": "cbcb81a7caba",
+    "HRV-24/Not": "bc3bdfd60e9c",
+    "HRV-25": "d20244217c8a",
+    "HRV-25/Scope": "2bdd10f769c0",
+    "HRV-25/Not": "9ef570ef327c",
+    "HRV-25/Why": "5f8e9ab40ea3",
+    "HRV-26": "fd9a52c43aab",
+    "HRV-26/Scope": "b3d3cccc9c8e",
+    "HRV-26/Not": "b20822e807ab",
+    "HRV-27": "c1c7de946fd7",
+    "HRV-27/Scope": "7cfc7829b43f",
+    "HRV-27/Not": "4d573093cdc3",
+    "HRV-28": "c48ad5f55afa",
+    "HRV-28/Scope": "7bee76da6077",
+    "HRV-28/Not": "d9d455a42c91",
+    "HRV-29": "f67e14c37608",
+    "HRV-29/Scope": "8759935c5122",
+    "HRV-29/Not": "90dbc4b33d34",
+    "HRV-30": "d6b7fb8d6382",
+    "HRV-30/Scope": "ea3ebec0d5ef",
+    "HRV-30/Not": "2b2be3c0cc7e",
+    "HRV-30/Why": "84a404030228",
+    "HRV-31": "a812f6472798",
+    "HRV-31/Scope": "7e8481362239",
+    "HRV-31/Not": "1354e77a464c",
+    "HRV-31/Why": "47bf5a21f957",
+    "HRV-32": "5887880b6e47",
+    "HRV-32/Scope": "4b0574719e47",
+    "HRV-32/Not": "50f12623ca55",
+    "HRV-33": "53cc14aaeda9",
+    "HRV-33/Scope": "9b5a79f635a0",
+    "HRV-33/Not": "88f7a0747066",
+    "HRV-34": "1ccd6c90baca",
+    "HRV-34/Scope": "a8128537c98c",
+    "HRV-34/Not": "c3654af2b0fa",
+    "HRV-34/Why": "80096d38abb2",
+    "HRV-35": "709fa13b448d",
+    "HRV-35/Scope": "c187df2ccaab",
+    "HRV-35/Not": "8a9f5c8d129b",
+    "HRV-36": "ce4e2aeabf9a",
+    "HRV-36/Scope": "b2a4fc721398",
+    "HRV-36/Not": "8e3e8f21c537",
+    "HRV-37": "c3353edb53ea",
+    "HRV-37/Scope": "1f8660641fee",
+    "HRV-37/Not": "effef8ba300d",
+    "HRV-38": "14e16dca1564",
+    "HRV-38/Scope": "82ff50adde0f",
+    "HRV-38/Not": "605d503e07d9",
+    "HRV-38/Why": "f531dcbbbc6c",
+    "HRV-39": "9b2971a79da4",
+    "HRV-39/Scope": "40cd5c299e0d",
+    "HRV-39/Not": "960a7feb45ca",
+    "HRV-40": "83cba3ff9ba6",
+    "HRV-40/Scope": "c8efd0c7a25b",
+    "HRV-40/Not": "0f9b6533f7e2",
+    "HRV-41": "299e631231ae",
+    "HRV-41/Scope": "a25084238bd6",
+    "HRV-41/Not": "5e0fd9396b00",
+    "HRV-42": "dd6f5bf18b2f",
+    "HRV-42/Scope": "5ab98d3c01e1",
+    "HRV-42/Not": "fcb4f1b83213",
+    "HRV-43": "cb686202ec2f",
+    "HRV-43/Scope": "6ff47f315991",
+    "HRV-43/Not": "de957e0947f9",
+    "HRV-44": "2c3b46af25a8",
+    "HRV-44/Scope": "b0d84a5f0d32",
+    "HRV-44/Not": "154b3b6d9570",
+    "HRV-45": "1d9414115d6a",
+    "HRV-45/Scope": "a2d5de6df01d",
+    "HRV-45/Not": "f0fab6529dfa",
+    "HRV-46": "cf4d07cf1afb",
+    "HRV-46/Scope": "97704c1e0a4e",
+    "HRV-46/Not": "5bfa1175cb54",
+    "HRV-48": "e486e351cdf1",
+    "HRV-48/Scope": "f31d8baf8f87",
+    "HRV-48/Not": "5daac0c3666c",
+    "HRV-49": "f9c449e4c73d",
+    "HRV-49/Scope": "d63da2ca80ae",
+    "HRV-49/Not": "03850988250c",
+    "HRV-50": "5c4beaa41b2f",
+    "HRV-50/Scope": "6d33d8ccf312",
+    "HRV-50/Not": "f6cd0d428416",
+    "HRV-51": "0adba7ab127a",
+    "HRV-51/Scope": "b4093382ba0c",
+    "HRV-51/Not": "f4c16e7485e9",
+    "HRV-52": "0e4b4af1aa2a",
+    "HRV-52/Scope": "5b00c7ac957b",
+    "HRV-52/Not": "9aeb76814a6b",
+    "HRV-52/Why": "fadeb34616c1",
+    "HRV-53": "65175129f193",
+    "HRV-53/Scope": "90a953e95e85",
+    "HRV-53/Not": "bbad89512a68",
+    "HRV-54": "78ba0006ac35",
+    "HRV-54/Scope": "2dc434d2c718",
+    "HRV-54/Not": "e4053b62655a",
+    "HRV-55": "4d0d7f410f85",
+    "HRV-55/Scope": "d11eb9a65ad0",
+    "HRV-55/Not": "c18e2cb12818",
+    "HRV-56": "ad07a9fc9db2",
+    "HRV-56/Scope": "3c9747d0211a",
+    "HRV-56/Not": "2ec20ef52de1",
+    "HRV-57": "cc820ffe4d60",
+    "HRV-57/Scope": "054e8d29d9db",
+    "HRV-57/Not": "2ba664040992",
+    "HRV-58": "a70a6a272a21",
+    "HRV-58/Scope": "35378b260dcd",
+    "HRV-58/Not": "3828126233ec",
+    "HRV-59": "215c67ac65d9",
+    "HRV-59/Scope": "5ce98fd1ebdd",
+    "HRV-59/Not": "7db55d5c40fb",
+    "HRV-60": "3d881192a408",
+    "HRV-60/Scope": "3f1df1cdc767",
+    "HRV-60/Not": "332b550f0d26",
+    "HRV-61": "a85610871d0e",
+    "HRV-61/Scope": "581ec7130a4f",
+    "HRV-61/Not": "ccd4439a1a73",
+    "HRV-62": "99863abd1b91",
+    "HRV-62/Scope": "e437f785de4d",
+    "HRV-62/Not": "6a7597cabaa2",
+    "HRV-63": "94ed9da3b373",
+    "HRV-63/Scope": "2e972e1111ad",
+    "HRV-63/Not": "ca867b76a7b8",
+    "HRV-64": "d7d3cb5fe163",
+    "HRV-64/Scope": "1a945d4bc95e",
+    "HRV-64/Not": "47d7077ac4f8",
+    "HRV-65": "cf7b520c85f7",
+    "HRV-65/Scope": "2dad71fb72c8",
+    "HRV-65/Not": "f540ad7e6ad6",
+    "HRV-66": "2ad40f24b637",
+    "HRV-66/Scope": "cc6b02632845",
+    "HRV-66/Not": "d9c0c35484a6",
+    "HRV-66/Why": "7ebff3d18794",
+    "HRV-67": "33e38497583d",
+    "HRV-67/Scope": "1b2b5203d343",
+    "HRV-67/Not": "29c58c4f3b80",
+    "HRV-68": "efdd286e3d8a",
+    "HRV-68/Scope": "35b54c7b3071",
+    "HRV-68/Not": "6efdabb9c119",
+    "HRV-69": "55acf8a042f4",
+    "HRV-69/Scope": "7d9623d2ef14",
+    "HRV-69/Not": "eed996a003c1",
+    "HRV-70": "fbeb3bcd2e28",
+    "HRV-70/Scope": "6f88400a5e6d",
+    "HRV-70/Not": "4e100cb8e0c8",
+    "HRV-71": "b0e0ca28047c",
+    "HRV-71/Scope": "6352b63d1b52",
+    "HRV-71/Not": "a3fa6323ee6a",
+    "HRV-72": "20e3683f1be2",
+    "HRV-72/Scope": "26b9a6cbbb56",
+    "HRV-72/Not": "c8874e90a40d",
+    "HRV-73": "0034274ce381",
+    "HRV-73/Scope": "1ec55740235d",
+    "HRV-73/Not": "b11005e68815",
+    "HRV-74": "a70625c57214",
+    "HRV-74/Scope": "efb405135126",
+    "HRV-74/Not": "bfead98db590",
+    "HRV-75": "3fb05a1d4d4d",
+    "HRV-75/Scope": "a3cc698e5d26",
+    "HRV-75/Not": "547cca626472",
+    "HRV-76": "ba07a11a1764",
+    "HRV-76/Scope": "d2c099f62812",
+    "HRV-76/Not": "620ef40f7348",
+    "HRV-76/Why": "98331c4ae013",
+    "HRV-77": "b788d07d30f2",
+    "HRV-77/Scope": "2aa1c3b50961",
+    "HRV-77/Not": "b34c6e089041",
+    "HRV-78": "04e36cc9dace",
+    "HRV-78/Scope": "d467a697ab0e",
+    "HRV-78/Not": "cbe4e2086e50",
+    "HRV-79": "261c718fdb0c",
+    "HRV-79/Scope": "00aced749eb5",
+    "HRV-79/Not": "34085666d1ba",
+    "HRV-80": "ee3799b950db",
+    "HRV-80/Scope": "973bc9cb3e88",
+    "HRV-80/Not": "632b1dae3cb3",
+    "HRV-81": "8ea5bda3a3b9",
+    "HRV-81/Scope": "c5e388f04c81",
+    "HRV-81/Not": "8b169b4bf947",
+    "HRV-82": "f22d24b04aa3",
+    "HRV-82/Scope": "9910b5b5813c",
+    "HRV-82/Not": "babb335012cb",
+    "HRV-83": "e027b137bb5e",
+    "HRV-83/Scope": "c9a6738d2d2b",
+    "HRV-83/Not": "27a6aaa39eb1",
+    "HRV-84": "a35d592babae",
+    "HRV-84/Scope": "1a74d3f2ad98",
+    "HRV-84/Not": "e835e93a58ef",
+}
+
 #: The decisions reference's two tables, for the H-NN a merged-away ID retires under (R11).
 GROUP_A = frozenset({
     "C01", "C02", "C03", "C04", "C10", "C11", "C12", "C13", "C14", "C15", "C16", "C17", "C18", "C19",
@@ -2475,6 +3702,164 @@ def reviewed_block_errors(research_text: str, rows: list[dict[str, str]],
                           f"(now {line[:120]!r}); a fresh critic must re-review {label} in "
                           f"00-meaning-review.md, then REVIEWED_BLOCK_SHA256[{label!r}] = {digest!r}")
     return errors
+
+
+#: A Glossary line's key: its T-NN, read before the format check, so an edit that breaks the format is
+#: still named by its term (``glossary_errors`` reports the format).
+_GLOSSARY_KEY = re.compile(r"^- \*\*(?P<id>T-\d{2})\b")
+#: A history entry's key: its H-NN, read before the format check (``history_errors`` reports the format).
+_HISTORY_KEY = re.compile(r"^- \*\*(?P<id>H-\d{2})\*\* ")
+
+
+def _keyed_digest(lines: list[str]) -> str:
+    """A keyed entry's frozen form (iteration 5): each line's ``_cell_digest``, in order, joined by ``.``.
+    Every key has one line except ``<ID>/Pinned`` on a rule with more than one Pinned line (PRIN-15,
+    FIG-01, FIG-02), so a mismatch still names its line."""
+    return ".".join(_cell_digest(line) for line in lines)
+
+
+def keyed_line_errors(tag: str, literal: str, where: str, entries: list[tuple[str, list[str]]],
+                      frozen: dict[str, str], then: str) -> list[str]:
+    """The iteration-5 binding, both ways, shared by ``GLOSSARY_SHA256``, ``PINNED_SHA256``,
+    ``HISTORY_SHA256`` and ``REVIEW_LINE_SHA256``: each key occurs once, every frozen key is in
+    ``where`` and every key in ``where`` is frozen, and each key's ``_keyed_digest`` is its frozen
+    digest. A mismatch names the key and the first of its lines that differs; every message says what
+    must happen first (``then``) and prints the new digest to paste."""
+    keys = [key for key, _lines_of_key in entries]
+    errors = [f"[{tag}] {key} occurs {n} times in {where}, not once" for key, n in Counter(keys).items() if n > 1]
+    errors += [f"[{tag}] {key} is frozen in {literal} and is not in {where}" for key in sorted(frozen.keys() - set(keys))]
+    for key, lines in entries:
+        digest = _keyed_digest(lines)
+        if key not in frozen:
+            errors.append(f"[{tag}] {key} is not in {literal} (a line was added or re-keyed); {then}, "
+                          f"{literal}[{key!r}] = {digest!r}")
+        elif digest != frozen[key]:
+            have, want = digest.split("."), frozen[key].split(".")
+            first = next((i for i, (a, b) in enumerate(zip(have, want)) if a != b), min(len(have), len(want)))
+            now = repr(lines[first][:120]) if first < len(lines) else "no such line: a line was removed"
+            errors.append(f"[{tag}] {key}: the line changed (now {now}); {then}, {literal}[{key!r}] = {digest!r}")
+    return errors
+
+
+def glossary_entries(research_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """``([(T-NN, [line])], problems)`` over the Glossary section, in order (iteration 5, M1). A
+    non-blank line with no T-NN key is a problem, so no Glossary line is unbound."""
+    lines = _lines(research_text)
+    span = _glossary_span(lines)
+    if span is None:
+        return [], [f"[frozen-glossary] research/00 has no {GLOSSARY_HEADING!r} section"]
+    entries, problems = [], []
+    for number in range(*span):
+        line = lines[number]
+        if not line.strip():
+            continue
+        if m := _GLOSSARY_KEY.match(line):
+            entries.append((m.group("id"), [line]))
+        else:
+            problems.append(f"[frozen-glossary] line {number + 1}: a Glossary line with no T-NN key cannot be "
+                            f"bound: {line[:120]!r}")
+    return entries, problems
+
+
+def glossary_digest_errors(research_text: str, frozen: dict[str, str] | None = None) -> list[str]:
+    """Each Glossary definition is the frozen definition (iteration 5, M1), both ways. The T-NN lines are
+    normative IS definitions outside every rule block, so neither the review nor the proxy read them:
+    T-13's 14 days became 21, T-03's ``>=`` became ``>`` and T-05's HRV Status became a tier, with the
+    suite green, though R13 states T-05, T-13 and T-26 unchanged."""
+    frozen = GLOSSARY_SHA256 if frozen is None else frozen
+    entries, problems = glossary_entries(research_text)
+    return problems + keyed_line_errors(
+        "frozen-glossary", "GLOSSARY_SHA256", "the Glossary", entries, frozen,
+        "a Glossary change needs a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it")
+
+
+def pinned_entries(research_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """``([(<ID>/Pinned, [lines])], problems)`` in document order (iteration 5, S1): each rule's Pinned
+    lines, in order, under one key. A Pinned line outside a rule block is a problem."""
+    entries: dict[str, list[str]] = {}
+    problems, current = [], None
+    for number, line in enumerate(_lines(research_text), 1):
+        if m := _RULE_LINE.match(line):
+            current = m.group("id")
+        elif current is not None and _SUB_LINE.match(line):
+            if line.startswith("Pinned:"):
+                entries.setdefault(f"{current}/Pinned", []).append(line)
+        else:
+            current = None
+            if line.startswith("Pinned:"):
+                problems.append(f"[frozen-pinned] line {number}: a Pinned line outside a rule block cannot be "
+                                f"bound: {line[:120]!r}")
+    return list(entries.items()), problems
+
+
+def pinned_digest_errors(research_text: str, frozen: dict[str, str] | None = None) -> list[str]:
+    """Each rule's Pinned lines are the frozen lines (iteration 5, S1), both ways. ``pinned_errors`` only
+    finds the node: PRIN-26's ``Pinned: none (F009)`` retargeted to an unrelated existing test stayed
+    green."""
+    frozen = PINNED_SHA256 if frozen is None else frozen
+    entries, problems = pinned_entries(research_text)
+    return problems + keyed_line_errors(
+        "frozen-pinned", "PINNED_SHA256", "research/00", entries, frozen,
+        "a Pinned change needs a review that the node pins the rule: once reviewed")
+
+
+def research_structure(research_text: str) -> tuple[str, ...]:
+    """research/00's structure (iteration 5, S1): every heading line, Glossary T-NN and rule ID, in
+    document order."""
+    out = []
+    for line in _lines(research_text):
+        if line.startswith("#"):
+            out.append(line)
+        elif m := (_RULE_LINE.match(line) or _GLOSSARY_KEY.match(line)):
+            out.append(m.group("id"))
+    return tuple(out)
+
+
+def structure_errors(research_text: str, frozen: tuple[str, ...] | None = None) -> list[str]:
+    """research/00's structure is ``RESEARCH_STRUCTURE`` (iteration 5, S1). The heading check reads the
+    headings alone and the rule checks read blocks alone, so moving ``### 1.2`` above PRIN-02 stayed
+    green. The message names the first position that differs."""
+    frozen = RESEARCH_STRUCTURE if frozen is None else frozen
+    have = research_structure(research_text)
+    if have == frozen:
+        return []
+    i = next((i for i, (a, b) in enumerate(zip(have, frozen)) if a != b), min(len(have), len(frozen)))
+    got, want = (have[i] if i < len(have) else "<end>"), (frozen[i] if i < len(frozen) else "<end>")
+    after = have[i - 1] if i else "<start>"
+    return [(f"[frozen-structure] position {i}, after {after!r}: research/00 has {got!r} where RESEARCH_STRUCTURE "
+             f"has {want!r} ({len(have)} entries, {len(frozen)} frozen): a heading, term or rule moved, was added "
+             f"or was removed; once the move is reviewed, paste RESEARCH_STRUCTURE from frozen_literals()")]
+
+
+def history_entries(history_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """``([(key, [line])], problems)`` over every non-blank line of the history (iteration 5, S2): an
+    entry is keyed by its H-NN, a ``## Retired IDs`` line by ``<ID> retired`` and a heading by its own
+    text. Any other line is a problem, so no history line is unbound."""
+    entries, problems = [], []
+    for number, line in enumerate(_lines(history_text), 1):
+        if not line.strip():
+            continue
+        if line.startswith("#"):
+            entries.append((line, [line]))
+        elif m := _HISTORY_KEY.match(line):
+            entries.append((m.group("id"), [line]))
+        elif m := _RETIRED_LINE.match(line):
+            entries.append((f"{m.group('id')} retired", [line]))
+        else:
+            problems.append(f"[frozen-history] line {number}: a history line with no key cannot be bound: "
+                            f"{line[:120]!r}")
+    return entries, problems
+
+
+def history_digest_errors(history_text: str, frozen: dict[str, str] | None = None) -> list[str]:
+    """Each history line is the frozen line (iteration 5, S2), both ways. ``history_errors`` checks the
+    format and the arrows only resolve: H-06's prose rewritten, or GOAL-06 dropped from its arrow list,
+    stayed green."""
+    frozen = HISTORY_SHA256 if frozen is None else frozen
+    entries, problems = history_entries(history_text)
+    return problems + keyed_line_errors(
+        "frozen-history", "HISTORY_SHA256", "00-history.md", entries, frozen,
+        "a history change is reviewed like the rules it records: once reviewed")
 
 
 def example_source_errors(meanings, show: Callable[[str], str]) -> list[str]:
@@ -4036,14 +5421,18 @@ def test_real_path_every_traceability_row_is_the_frozen_row() -> None:
 def test_traceability_row_errors_names_the_changed_row_and_cell() -> None:
     """Iteration 4, M1 and M2, on the scanner's routes over the committed table, each message exactly:
     M1's PRIN-10 row turned ``yes`` under ``C19, C38``; M2's DOC-03 retired under H-39 with an addition
-    row DOC-23; a row removed; a row repeated."""
+    row DOC-23; a row removed; a row repeated. The frozen side is derived from the unmutated table and each
+    expected digest from the mutated row (iteration 5, S5), so a reviewed edit to PRIN-10 or DOC-03 leaves
+    this test green; the committed literal is the real-path test's."""
     _research, _history, rows = _real()
+    frozen = {_row_key(r): row_digest(r) for r in rows}
     m1 = _real_row_swap(rows, "PRIN-10", decision="C19, C38", **{"meaning changed": "yes"})
     m2 = _real_row_swap(rows, "DOC-03", **{"new ID(s)": "H-39"}) + [_as_row(_row(ADDITION, ADDITION, "DOC-23", "C38",
                                                                                    cited=ADDITION))]
-    prin10 = "9ffe88a4b14d.10b0a06f7359.d663ecf5fa5a.7d7226145cdb.a8764817f4d7.8a798890fe93.16b7f083a84e"
-    doc03 = "bc248cd682e5.09392b30e7af.22b323dbce4a.ff8260b88f68.bda050585a00.9390298f3fb0.bda050585a00"
-    doc23 = "bda050585a00.bda050585a00.bda050585a00.6b27e5b9ab01.625808357ae1.9390298f3fb0.bda050585a00"
+    prin10 = row_digest(next(r for r in m1 if r["inventory ID"] == "PRIN-10"))
+    doc03 = row_digest(next(r for r in m2 if r["inventory ID"] == "DOC-03"))
+    doc23 = row_digest(m2[-1])
+    assert traceability_row_errors(rows, frozen) == []
     cases = {
         "m1-prin-10": (m1, [
             (f"[frozen-table] PRIN-10: the 'decision' cell is not the frozen cell (now 'C19, C38'); once the "
@@ -4061,10 +5450,9 @@ def test_traceability_row_errors_names_the_changed_row_and_cell() -> None:
                      ["[frozen-table] row HRV-09 occurs 2 times, not once"]),
     }
     for name, (mutated, expected) in cases.items():
-        errors = traceability_row_errors(mutated)
+        errors = traceability_row_errors(mutated, frozen)
         print(f"[slice compared] {name}: {errors}")
         assert errors == expected, (name, errors)
-    assert row_digest(m1[[r["inventory ID"] for r in m1].index("PRIN-10")]) == prin10
 
 
 def test_real_path_retired_ids_are_frozen_and_each_retires_under_its_decision() -> None:
@@ -4114,14 +5502,25 @@ def test_real_path_old_meanings_are_the_frozen_literals() -> None:
 
 
 def test_old_meaning_digest_errors_names_the_changed_key_and_field() -> None:
-    """Iteration 4, S1, on the scanner's route: AUT-04-C20's pattern and example loosened together, so
-    AUT-04 could restate C20's old meaning; and a key added and one removed. Each message exactly."""
+    """Iteration 4, S1, on the scanner's route over synthetic entries shaped like AUT-04-C20's: the
+    pattern and example loosened together, so AUT-04 could restate C20's old meaning; and a key added and
+    one removed. Each message exactly. The frozen side is derived from the unmutated entries and each
+    expected digest from the mutated entry (iteration 5, S5), so an F009 or F011 edit to the committed
+    ``OLD_MEANINGS`` leaves this test green; the committed literal is the real-path test's."""
     key = "AUT-04-C20-two-purposes-only"
-    loosened = dict(_OM.OLD_MEANINGS)
+    meanings = {
+        key: OldMeaning("serves two purposes only", "Chat serves two purposes only",
+                        "specification/research/00-design-decisions.md:57@4e47d0e", "C20"),
+        "C05-reopens": OldMeaning("worse rate reopens", "a worse rate reopens the deferred hysteresis decision",
+                                  "specification/research/00-design-decisions.md:230@4e47d0e", "C05"),
+    }
+    frozen = {k: old_meaning_digest(e) for k, e in meanings.items()}
+    assert old_meaning_digest_errors(meanings, frozen) == []
+    loosened = dict(meanings)
     loosened[key] = OldMeaning("chat serves exactly two purposes", "Chat serves exactly two purposes",
                                loosened[key].source, loosened[key].decision)
-    new = "ff62d8cdcf9f.a1b89c8b9d06.9a371cbdd09e.c9c1dd0d52c9"
-    renamed = {("AUT-04-C20-renamed" if k == key else k): v for k, v in _OM.OLD_MEANINGS.items()}
+    new = old_meaning_digest(loosened[key])
+    renamed = {("AUT-04-C20-renamed" if k == key else k): v for k, v in meanings.items()}
     cases = {
         "loosened": (loosened, [
             (f"[frozen-meanings] {key}: the 'pattern' field is not the frozen field (now 'chat serves exactly two "
@@ -4131,10 +5530,10 @@ def test_old_meaning_digest_errors_names_the_changed_key_and_field() -> None:
         "renamed": (renamed, [
             f"[frozen-meanings] {key} is frozen in OLD_MEANING_SHA256 and is not in OLD_MEANINGS",
             (f"[frozen-meanings] AUT-04-C20-renamed is not in OLD_MEANING_SHA256 (a key was added or renamed); "
-             f"its digest is '{OLD_MEANING_SHA256[key]}'")]),
+             f"its digest is '{frozen[key]}'")]),
     }
-    for name, (meanings, expected) in cases.items():
-        errors = old_meaning_digest_errors(meanings)
+    for name, (mutated, expected) in cases.items():
+        errors = old_meaning_digest_errors(mutated, frozen)
         print(f"[slice compared] {name}: {errors}")
         assert errors == expected, (name, errors)
 
@@ -4241,6 +5640,46 @@ def review_errors(review_text: str, required: list[str]) -> list[str]:
     return errors
 
 
+def review_entries(review_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """``([(row, [line])], prose)`` over the review file (iteration 5, S3): each verdict line keyed by its
+    row, and every other non-blank line that is not a table header or separator (the headings, the
+    opening paragraph and the ``## Rounds`` paragraphs), in order. ``review_errors`` holds the table
+    headers and the cell count."""
+    entries, prose = [], []
+    for line in _lines(review_text):
+        if not line.strip() or line.strip() == REVIEW_HEADER:
+            continue
+        if line.startswith("|"):
+            cells = _split_cells(line)
+            if not all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+                entries.append((cells[0], [line]))
+        else:
+            prose.append(line)
+    return entries, prose
+
+
+def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
+                       frozen_prose: tuple[str, ...] | None = None) -> list[str]:
+    """Each verdict line, label, verdict and reason together, is the frozen line (iteration 5, S3), both
+    ways, and the file's prose is ``REVIEW_PROSE_SHA256``. ``review_errors`` caught a flipped verdict,
+    not a reason: PRIN-01's rewritten to "Not reviewed." stayed green. A new round updates these
+    literals deliberately, alongside ``REVIEWED_BLOCK_SHA256``."""
+    frozen = REVIEW_LINE_SHA256 if frozen is None else frozen
+    frozen_prose = REVIEW_PROSE_SHA256 if frozen_prose is None else frozen_prose
+    entries, prose = review_entries(review_text)
+    errors = keyed_line_errors(
+        "frozen-review", "REVIEW_LINE_SHA256", "00-meaning-review.md", entries, frozen,
+        "a verdict or its reason changes only in a fresh critic's round recorded under ## Rounds: once recorded")
+    have = tuple(_cell_digest(line) for line in prose)
+    if have != frozen_prose:
+        i = next((i for i, (a, b) in enumerate(zip(have, frozen_prose)) if a != b), min(len(have), len(frozen_prose)))
+        now = repr(prose[i][:120]) if i < len(prose) else "no such line: a line was removed"
+        errors.append(f"[frozen-review] prose line {i + 1} of {len(prose)} (the headings, the opening paragraph and "
+                      f"## Rounds) is not the frozen line (now {now}); a round is recorded only with the review it "
+                      f"records: once it is, REVIEW_PROSE_SHA256 = {have!r}")
+    return errors
+
+
 def _synthetic_review(required: list[str], drop: str | None = None) -> str:
     parts = []
     for group, heading in REVIEW_HEADINGS.items():
@@ -4297,38 +5736,48 @@ def test_reviewed_block_errors_names_a_row_whose_text_changed_after_its_verdict(
     """Iteration 4, M3, on the scanner's two routes, each editing only research/00 after the review and
     each message exactly: RA3, HRV-24 drops ``band`` (a ``no`` row; the AC9 proxy holds only the
     identifiers its inventory sentence backticks); RC, DOC-09's text changes (a ``yes`` row, unproxied
-    by design). Then the key set both ways, and a label with two lines of its kind."""
+    by design). Then the key set both ways, and a label with two lines of its kind.
+
+    Iteration 5, S5: the frozen side is derived from the unmutated text, each route's edit is applied to
+    the derived line (RA3 and RC each drop the line's last backticked span: HRV-24's ``band``, DOC-09's
+    history path), and each expected "now" text and digest comes from the mutated line. A reviewed
+    rewording of HRV-24 or DOC-09 leaves this test green; the committed literal is the real-path test's."""
     research, _history, rows = _real()
+    lines, _problems = reviewed_block_lines(research, rows)
+    frozen = {label: _cell_digest(line) for label, line in lines.items()}
+    blocks = rule_blocks(research)
 
-    def edit(old: str, new: str) -> str:
-        assert research.count(old) == 1, old
-        return research.replace(old, new)
+    def edit(rule_id: str, old: str, new: str) -> str:
+        block = blocks[rule_id]
+        assert research.count(block) == 1 and block.count(old) == 1, (rule_id, old)
+        return research.replace(block, block.replace(old, new))
 
-    ra3 = edit("and `baseline`/`band` MUST be populated for presentation only.",
-               "and `baseline` MUST be populated for presentation only.")
-    rc = edit("MUST go to the history file, `specification/research/00-history.md`,",
-              "MUST go to the history file, `specification/research/99-history.md`,")
-    hrv24_scope = "for presentation only.\nScope: every judged day on which no per-tier dataset is selected.\n"
-    doubled = edit(hrv24_scope, hrv24_scope + "Scope: every day.\n")
+    def drop_last_code_span(line: str) -> str:
+        span = list(_CODE_SPAN.finditer(line))[-1]
+        return line[:span.start()] + line[span.end():]
+
+    ra3_line, rc_line = drop_last_code_span(lines["HRV-24"]), drop_last_code_span(lines["DOC-09"])
+    ra3, rc = edit("HRV-24", lines["HRV-24"], ra3_line), edit("DOC-09", lines["DOC-09"], rc_line)
+    scope = lines["HRV-24/Scope"]
+    doubled = edit("HRV-24", scope, scope + "\nScope: every day.")
     assert {r["meaning changed"] for r in rows if r["inventory ID"] in ("HRV-24", "DOC-09")} == {"no", "yes"}
-    narrowed = {k: v for k, v in REVIEWED_BLOCK_SHA256.items() if k != "HRV-24/Scope"} | {"HRV-99": "000000000000"}
+    assert reviewed_block_errors(research, rows, frozen) == []
+    narrowed = {k: v for k, v in frozen.items() if k != "HRV-24/Scope"} | {"HRV-99": "000000000000"}
     cases = {
-        "ra3-hrv-24": (ra3, None, [
-            ("[reviewed-block] HRV-24: the block line changed after its meaning-review verdict (now '**HRV-24.** "
-             "When nothing is selected, the HRV verdict MUST be unavailable and `baseline` MUST be populated for "
-             "presentat'); a fresh critic must re-review HRV-24 in 00-meaning-review.md, then "
-             "REVIEWED_BLOCK_SHA256['HRV-24'] = '7ffab8b54344'")]),
-        "rc-doc-09": (rc, None, [
-            ("[reviewed-block] DOC-09: the block line changed after its meaning-review verdict (now '**DOC-09.** "
-             "research/00 MUST state only current rules, and a dated summary of what changed MUST go to the "
-             "history file, '); a fresh critic must re-review DOC-09 in 00-meaning-review.md, then "
-             "REVIEWED_BLOCK_SHA256['DOC-09'] = 'c7f052a0a9c7'")]),
+        "ra3-hrv-24": (ra3, frozen, [
+            (f"[reviewed-block] HRV-24: the block line changed after its meaning-review verdict (now "
+             f"{ra3_line[:120]!r}); a fresh critic must re-review HRV-24 in 00-meaning-review.md, then "
+             f"REVIEWED_BLOCK_SHA256['HRV-24'] = {_cell_digest(ra3_line)!r}")]),
+        "rc-doc-09": (rc, frozen, [
+            (f"[reviewed-block] DOC-09: the block line changed after its meaning-review verdict (now "
+             f"{rc_line[:120]!r}); a fresh critic must re-review DOC-09 in 00-meaning-review.md, then "
+             f"REVIEWED_BLOCK_SHA256['DOC-09'] = {_cell_digest(rc_line)!r}")]),
         "key-set": (research, narrowed, [
             "[reviewed-block] HRV-99 is frozen in REVIEWED_BLOCK_SHA256 and is not a required review row",
             ("[reviewed-block] HRV-24/Scope is a required review row and is not in REVIEWED_BLOCK_SHA256, so no "
              "verdict is bound to its text; once a critic has reviewed it, "
-             "REVIEWED_BLOCK_SHA256['HRV-24/Scope'] = 'a0ed00bd1565'")]),
-        "doubled": (doubled, None, ["[reviewed-block] HRV-24/Scope: 2 block lines, not one"]),
+             f"REVIEWED_BLOCK_SHA256['HRV-24/Scope'] = {frozen['HRV-24/Scope']!r}")]),
+        "doubled": (doubled, frozen, ["[reviewed-block] HRV-24/Scope: 2 block lines, not one"]),
     }
     wrong = {}
     for name, (text, frozen, expected) in cases.items():
@@ -4337,6 +5786,241 @@ def test_reviewed_block_errors_names_a_row_whose_text_changed_after_its_verdict(
         if errors != expected:
             wrong[name] = errors
     assert wrong == {}, wrong
+
+
+# ---------------------------------------------------------------------------
+# Iteration 5: the Glossary, the Pinned lines, the structure, the history and the review lines are bound
+# ---------------------------------------------------------------------------
+
+
+def _check_cases(check: Callable[..., list[str]], cases: dict[str, tuple]) -> None:
+    """Run ``check(*args)`` for each case and compare its errors with the expected list, exactly."""
+    wrong = {}
+    for name, (args, expected) in cases.items():
+        errors = check(*args)
+        print(f"[slice compared] {name}: {errors}")
+        if errors != expected:
+            wrong[name] = errors
+    assert wrong == {}, wrong
+
+
+def _one_edit(text: str, old: str, new: str) -> str:
+    assert text.count(old) == 1, old
+    return text.replace(old, new)
+
+
+def test_real_path_every_glossary_definition_is_the_frozen_definition() -> None:
+    """Iteration 5, M1: the committed Glossary is ``GLOSSARY_SHA256``, term by term, both ways; every
+    Glossary line has a T-NN key, and the keys are ``GLOSSARY_TERMS``'s, in order."""
+    research, _history, _rows = _real()
+    entries, problems = glossary_entries(research)
+    errors = glossary_digest_errors(research)
+    t13 = dict(entries)["T-13"]
+    print(f"[slice compared] {len(entries)} Glossary lines, {len(GLOSSARY_SHA256)} frozen, problems {problems}; "
+          f"T-13 {_keyed_digest(t13)} vs {GLOSSARY_SHA256['T-13']}: {errors[:5]}")
+    assert errors == []
+    assert [k for k, _ in entries] == list(GLOSSARY_SHA256) == list(GLOSSARY_TERMS)
+
+
+def test_glossary_digest_errors_names_a_changed_definition() -> None:
+    """Iteration 5, M1, on synthetic text shaped like the scanner's routes, each message exactly: T-13's
+    14 days made 21 (N1), T-05's HRV Status made a tier (N3), then a term replaced by another, a term
+    repeated and a line with no key. The frozen side is derived from the unmutated text (S5)."""
+    t13 = "- **T-13 sustains** IS the highest-fidelity tier with at least 14 distinct days in a window."
+    t05 = "- **T-05 tier** IS a value of `hrv_source_tier`; HRV Status is a sidecar metric and not a tier."
+    base = f"{HEADINGS[0]}\n\n{GLOSSARY_HEADING}\n\n{_glossary(**{'T-13': t13, 'T-05': t05})}\n{HEADINGS[1]}\n"
+    entries, problems = glossary_entries(base)
+    frozen = {k: _keyed_digest(lines) for k, lines in entries}
+    assert problems == [] and len(frozen) == 33 and glossary_digest_errors(base, frozen) == []
+    t13_21 = t13.replace("at least 14", "at least 21")
+    t05_tier = t05.replace("and not a tier", "and a tier")
+    t33 = "- **T-33 term33** IS the synthetic definition 33."
+    t34 = "- **T-34 term34** IS a new term."
+    _check_cases(glossary_digest_errors, {
+        "n1-t13": ((_one_edit(base, t13, t13_21), frozen), [
+            ("[frozen-glossary] T-13: the line changed (now '- **T-13 sustains** IS the highest-fidelity tier with "
+             "at least 21 distinct days in a window.'); a Glossary change needs a fresh critic (R13 holds T-05, "
+             f"T-13 and T-26 unchanged): once one has reviewed it, GLOSSARY_SHA256['T-13'] = {_cell_digest(t13_21)!r}")]),
+        "n3-t05": ((_one_edit(base, t05, t05_tier), frozen), [
+            ("[frozen-glossary] T-05: the line changed (now '- **T-05 tier** IS a value of `hrv_source_tier`; HRV "
+             "Status is a sidecar metric and a tier.'); a Glossary change needs a fresh critic (R13 holds T-05, "
+             f"T-13 and T-26 unchanged): once one has reviewed it, GLOSSARY_SHA256['T-05'] = {_cell_digest(t05_tier)!r}")]),
+        "re-keyed": ((_one_edit(base, t33, t34), frozen), [
+            "[frozen-glossary] T-33 is frozen in GLOSSARY_SHA256 and is not in the Glossary",
+            ("[frozen-glossary] T-34 is not in GLOSSARY_SHA256 (a line was added or re-keyed); a Glossary change "
+             "needs a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it, "
+             f"GLOSSARY_SHA256['T-34'] = {_cell_digest(t34)!r}")]),
+        "repeated-and-unkeyed": ((_one_edit(base, t33, t33 + "\n- **T-01 again** IS twice.\nSome prose."), frozen), [
+            "[frozen-glossary] line 39: a Glossary line with no T-NN key cannot be bound: 'Some prose.'",
+            "[frozen-glossary] T-01 occurs 2 times in the Glossary, not once",
+            ("[frozen-glossary] T-01: the line changed (now '- **T-01 again** IS twice.'); a Glossary change needs "
+             "a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it, "
+             f"GLOSSARY_SHA256['T-01'] = {_cell_digest('- **T-01 again** IS twice.')!r}")]),
+    })
+
+
+def test_real_path_every_pinned_line_is_the_frozen_line() -> None:
+    """Iteration 5, S1: each committed rule's Pinned lines are ``PINNED_SHA256``, both ways, one key per
+    rule in document order; no Pinned line sits outside a rule block."""
+    research, _history, _rows = _real()
+    entries, problems = pinned_entries(research)
+    errors = pinned_digest_errors(research)
+    multi = {k: len(v) for k, v in entries if len(v) > 1}
+    print(f"[slice compared] {len(entries)} rules, {sum(len(v) for _, v in entries)} Pinned lines, "
+          f"{len(PINNED_SHA256)} frozen, more than one {multi}, problems {problems}; PRIN-26 "
+          f"{_keyed_digest(dict(entries)['PRIN-26/Pinned'])} vs {PINNED_SHA256['PRIN-26/Pinned']}: {errors[:5]}")
+    assert errors == []
+    assert [k for k, _ in entries] == list(PINNED_SHA256) == [f"{i}/Pinned" for i in rule_ids(research)]
+
+
+def test_pinned_digest_errors_names_a_retargeted_pin() -> None:
+    """Iteration 5, S1, on synthetic blocks, each message exactly: PRIN-26's ``Pinned: none (F009)``
+    retargeted to an unrelated existing node (N5); the second of PRIN-15's two Pinned lines edited, then
+    dropped; a rule removed; a Pinned line outside a block. The frozen side is derived (S5)."""
+    two = ("Pinned: runcoach-api/tests/test_a.py::test_a", "Pinned: none (F009)")
+    base = "\n\n".join(["### 1.7 Down-regulate freely, up-regulate cautiously",
+                        _block("PRIN-15", pinned=two), _block("PRIN-25", pinned=("Pinned: none (F009)",)),
+                        _block("PRIN-26", pinned=("Pinned: none (F009)",))]) + "\n"
+    entries, problems = pinned_entries(base)
+    frozen = {k: _keyed_digest(lines) for k, lines in entries}
+    assert problems == [] and glossary_entries(base)[0] == [] and pinned_digest_errors(base, frozen) == []
+    retarget = "Pinned: runcoach-api/tests/test_hrv_trend_band.py::test_the_floor_fires_for_a_degenerate_baseline"
+    prin26 = _block("PRIN-26", pinned=("Pinned: none (F009)",))
+    prin15 = _block("PRIN-15", pinned=two)
+    then = "a Pinned change needs a review that the node pins the rule: once reviewed"
+    _check_cases(pinned_digest_errors, {
+        "n5-prin-26": ((_one_edit(base, prin26, _block("PRIN-26", pinned=(retarget,))), frozen), [
+            (f"[frozen-pinned] PRIN-26/Pinned: the line changed (now {retarget!r}); {then}, "
+             f"PINNED_SHA256['PRIN-26/Pinned'] = {_cell_digest(retarget)!r}")]),
+        "second-edited": ((_one_edit(base, prin15, _block("PRIN-15", pinned=(two[0], "Pinned: none (F011)"))), frozen), [
+            (f"[frozen-pinned] PRIN-15/Pinned: the line changed (now 'Pinned: none (F011)'); {then}, "
+             f"PINNED_SHA256['PRIN-15/Pinned'] = {_keyed_digest([two[0], 'Pinned: none (F011)'])!r}")]),
+        "n4-second-dropped": ((_one_edit(base, prin15, _block("PRIN-15", pinned=two[:1])), frozen), [
+            (f"[frozen-pinned] PRIN-15/Pinned: the line changed (now no such line: a line was removed); {then}, "
+             f"PINNED_SHA256['PRIN-15/Pinned'] = {_cell_digest(two[0])!r}")]),
+        "rule-removed": ((_one_edit(base, "\n\n" + prin26, ""), frozen), [
+            "[frozen-pinned] PRIN-26/Pinned is frozen in PINNED_SHA256 and is not in research/00"]),
+        "outside-a-block": ((base + "\nPinned: none\n", frozen), [
+            "[frozen-pinned] line 19: a Pinned line outside a rule block cannot be bound: 'Pinned: none'"]),
+    })
+
+
+def test_real_path_research00_structure_is_the_frozen_structure() -> None:
+    """Iteration 5, S1: research/00's headings, Glossary terms and rules sit where ``RESEARCH_STRUCTURE``
+    puts them."""
+    research, _history, _rows = _real()
+    have = research_structure(research)
+    errors = structure_errors(research)
+    heads = [e for e in have if e.startswith("#")]
+    print(f"[slice compared] {len(have)} entries ({len(heads)} headings), {len(RESEARCH_STRUCTURE)} frozen; "
+          f"around 1.2 {have[have.index(HEADINGS[3]) - 2:have.index(HEADINGS[3]) + 2]}: {errors}")
+    assert errors == []
+    assert heads == [HEADINGS[0], GLOSSARY_HEADING, *HEADINGS[1:]]
+
+
+def test_structure_errors_names_the_first_position_that_differs() -> None:
+    """Iteration 5, S1, on synthetic text, each message exactly: ``### 1.2`` moved above PRIN-02 (N6), and
+    the last rule removed. The frozen side is derived (S5)."""
+    one, two = "### 1.1 The supreme objective", "### 1.2 The arbitration ladder"
+    base = "\n\n".join([one, _block("PRIN-01"), _block("PRIN-02"), two, _block("PRIN-03")]) + "\n"
+    moved = "\n\n".join([one, _block("PRIN-01"), two, _block("PRIN-02"), _block("PRIN-03")]) + "\n"
+    frozen = research_structure(base)
+    assert frozen == (one, "PRIN-01", "PRIN-02", two, "PRIN-03") and structure_errors(base, frozen) == []
+    _check_cases(structure_errors, {
+        "n6-heading-moved": ((moved, frozen), [
+            ("[frozen-structure] position 2, after 'PRIN-01': research/00 has '### 1.2 The arbitration ladder' "
+             "where RESEARCH_STRUCTURE has 'PRIN-02' (5 entries, 5 frozen): a heading, term or rule moved, was "
+             "added or was removed; once the move is reviewed, paste RESEARCH_STRUCTURE from frozen_literals()")]),
+        "last-removed": ((_one_edit(base, "\n\n" + _block("PRIN-03"), ""), frozen), [
+            ("[frozen-structure] position 4, after '### 1.2 The arbitration ladder': research/00 has '<end>' where "
+             "RESEARCH_STRUCTURE has 'PRIN-03' (4 entries, 5 frozen): a heading, term or rule moved, was added or "
+             "was removed; once the move is reviewed, paste RESEARCH_STRUCTURE from frozen_literals()")]),
+    })
+
+
+def test_real_path_every_history_line_is_the_frozen_line() -> None:
+    """Iteration 5, S2: every non-blank line of the committed history is ``HISTORY_SHA256``, both ways,
+    and every one has a key."""
+    _research, history, _rows = _real()
+    entries, problems = history_entries(history)
+    errors = history_digest_errors(history)
+    print(f"[slice compared] {len(entries)} history lines, {len(HISTORY_SHA256)} frozen, problems {problems}; "
+          f"H-06 {_keyed_digest(dict(entries)['H-06'])} vs {HISTORY_SHA256['H-06']}: {errors[:5]}")
+    assert errors == []
+    assert [k for k, _ in entries] == list(HISTORY_SHA256)
+    assert [k for k in HISTORY_SHA256 if k.startswith("H-")] == history_ids(history)
+
+
+def test_history_digest_errors_names_a_changed_entry() -> None:
+    """Iteration 5, S2, on a synthetic history, each message exactly: H-06's prose rewritten (N9), GOAL-06
+    dropped from its arrows (N10), the retired line re-pointed, an entry removed and a line with no key.
+    The frozen side is derived (S5)."""
+    h06 = "- **H-06** (undated) A clarification fixed the order as pace first and distance never. → GOAL-03, GOAL-06"
+    base = _one_edit(_history(retired="- **PRIN-16** retired → H-39\n"), "- **H-06** (2026-09-07) Synthetic change 6. → DOC-01", h06)
+    entries, problems = history_entries(base)
+    frozen = {k: _keyed_digest(lines) for k, lines in entries}
+    assert problems == [] and len(frozen) == 44 and history_digest_errors(base, frozen) == []
+    n9, n10 = h06.replace("distance never", "distance last"), h06.replace(", GOAL-06", "")
+    retired = "- **PRIN-16** retired → H-38"
+    then = "a history change is reviewed like the rules it records: once reviewed"
+    _check_cases(history_digest_errors, {
+        "n9-h-06-prose": ((_one_edit(base, h06, n9), frozen), [
+            f"[frozen-history] H-06: the line changed (now {n9!r}); {then}, HISTORY_SHA256['H-06'] = {_cell_digest(n9)!r}"]),
+        "n10-h-06-arrows": ((_one_edit(base, h06, n10), frozen), [
+            f"[frozen-history] H-06: the line changed (now {n10!r}); {then}, HISTORY_SHA256['H-06'] = {_cell_digest(n10)!r}"]),
+        "retired-re-pointed": ((_one_edit(base, "- **PRIN-16** retired → H-39", retired), frozen), [
+            (f"[frozen-history] PRIN-16 retired: the line changed (now {retired!r}); {then}, "
+             f"HISTORY_SHA256['PRIN-16 retired'] = {_cell_digest(retired)!r}")]),
+        "removed-and-unkeyed": ((_one_edit(base, "- **H-41** (2026-09-14) Synthetic change 41. → DOC-01",
+                                           "A paragraph with no key."), frozen), [
+            "[frozen-history] line 43: a history line with no key cannot be bound: 'A paragraph with no key.'",
+            "[frozen-history] H-41 is frozen in HISTORY_SHA256 and is not in 00-history.md"]),
+    })
+
+
+def test_real_path_every_review_line_and_the_rounds_are_frozen() -> None:
+    """Iteration 5, S3: each committed verdict line, label, verdict and reason together, is
+    ``REVIEW_LINE_SHA256``, both ways, over exactly the rows ``REVIEWED_BLOCK_SHA256`` binds; and the
+    file's prose, ``## Rounds`` included, is ``REVIEW_PROSE_SHA256``."""
+    review = _REAL_REVIEW.read_text(encoding="utf-8")
+    entries, prose = review_entries(review)
+    errors = review_line_errors(review)
+    print(f"[slice compared] {len(entries)} verdict lines, {len(REVIEW_LINE_SHA256)} frozen, {len(prose)} prose "
+          f"lines; PRIN-01 {_keyed_digest(dict(entries)['PRIN-01'])} vs {REVIEW_LINE_SHA256['PRIN-01']}: {errors[:5]}")
+    assert errors == []
+    assert [k for k, _ in entries] == list(REVIEW_LINE_SHA256)
+    assert set(REVIEW_LINE_SHA256) == set(REVIEWED_BLOCK_SHA256) and len(REVIEW_LINE_SHA256) == 789
+    assert "## Rounds" in prose and len(prose) == len(REVIEW_PROSE_SHA256)
+
+
+def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> None:
+    """Iteration 5, S3, on a synthetic review, each message exactly: PRIN-01's reason rewritten to "Not
+    reviewed." (N12), its verdict flipped (N11), a row dropped, and a ``## Rounds`` paragraph edited. The
+    frozen side is derived (S5)."""
+    required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
+    base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
+    entries, prose = review_entries(base)
+    frozen, frozen_prose = {k: _keyed_digest(lines) for k, lines in entries}, tuple(_cell_digest(p) for p in prose)
+    assert len(frozen) == 4 and len(prose) == 5 and review_line_errors(base, frozen, frozen_prose) == []
+    row = "| PRIN-01 | same | A synthetic reason. |"
+    n12, n11 = "| PRIN-01 | same | Not reviewed. |", "| PRIN-01 | differs | A synthetic reason. |"
+    rounds = "Round 1: a synthetic critic reviewed 5 rows."
+    edited = _one_edit(base, "Round 1: a synthetic critic reviewed 4 rows.", rounds)
+    then = "a verdict or its reason changes only in a fresh critic's round recorded under ## Rounds: once recorded"
+    _check_cases(review_line_errors, {
+        "n12-reason": ((_one_edit(base, row, n12), frozen, frozen_prose), [
+            (f"[frozen-review] PRIN-01: the line changed (now '| PRIN-01 | same | Not reviewed. |'); {then}, "
+             f"REVIEW_LINE_SHA256['PRIN-01'] = {_cell_digest(n12)!r}")]),
+        "n11-verdict": ((_one_edit(base, row, n11), frozen, frozen_prose), [
+            (f"[frozen-review] PRIN-01: the line changed (now '| PRIN-01 | differs | A synthetic reason. |'); "
+             f"{then}, REVIEW_LINE_SHA256['PRIN-01'] = {_cell_digest(n11)!r}")]),
+        "row-dropped": ((_one_edit(base, "| HRV-07 | same | A synthetic reason. |\n", ""), frozen, frozen_prose), [
+            "[frozen-review] HRV-07 is frozen in REVIEW_LINE_SHA256 and is not in 00-meaning-review.md"]),
+        "round-edited": ((edited, frozen, frozen_prose), [
+            ("[frozen-review] prose line 5 of 5 (the headings, the opening paragraph and ## Rounds) is not the "
+             "frozen line (now 'Round 1: a synthetic critic reviewed 5 rows.'); a round is recorded only with the "
+             f"review it records: once it is, REVIEW_PROSE_SHA256 = {(*frozen_prose[:4], _cell_digest(rounds))!r}")]),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -4394,21 +6078,138 @@ def test_the_endpoint_walk_declares_and_applies_the_literals_exclusion() -> None
 # ---------------------------------------------------------------------------
 
 
-def frozen_literals() -> str:
-    """The source of ``TRACEABILITY_ROW_SHA256``, ``RETIRED_IDS``, ``OLD_MEANING_SHA256`` and
-    ``REVIEWED_BLOCK_SHA256`` as the
-    committed files now give them. For a reviewed edit only: paste the entries the edit changed, and
-    no others, so the diff of the literal shows what was approved. Run
-    ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``."""
+#: Every frozen literal ``frozen_literals()`` prints, in its order (iteration 5, S4). Each is a snapshot of
+#: the committed files, so each has one regeneration path, and
+#: ``test_frozen_literals_prints_every_frozen_literal_as_committed`` proves the path gives the committed
+#: value. ``HEADINGS`` and ``INVENTORY_IDS`` are not here: they are the 4e47d0e inventory's (R11), inputs
+#: no edit regenerates, and ``RESEARCH_STRUCTURE`` carries where each heading sits.
+FROZEN_LITERALS = (
+    "INVENTORY_SENTENCE_SHA256", "GLOSSARY_TERMS", "NON_C_AUTHORITIES", "_NON_C_AUTHORITIES_PIN", "KEY_OWNERS",
+    "_KEY_OWNERS_PIN", "TRACEABILITY_ROW_SHA256", "RETIRED_IDS", "OLD_MEANING_SHA256", "REVIEWED_BLOCK_SHA256",
+    "GLOSSARY_SHA256", "PINNED_SHA256", "RESEARCH_STRUCTURE", "HISTORY_SHA256", "REVIEW_LINE_SHA256",
+    "REVIEW_PROSE_SHA256",
+)
+
+
+def derived_literals() -> tuple[dict[str, object], list[str]]:
+    """``({name: value}, notes)``: each of ``FROZEN_LITERALS`` as the committed files now give it, and
+    what the derivation found (counts, and every line it could not key). The two maps are rulings drawn
+    from the table: ``NON_C_AUTHORITIES`` holds each ``yes`` row citing a non-C token under a key whose
+    ``_lead_decision`` is that token (PRIN-15 cites R13 for S9's counts under a C06 key only), and
+    ``KEY_OWNERS`` each key's naming rows; each pin is the same value, pasted twice after review."""
     research, history, rows = _real()
-    out = ["TRACEABILITY_ROW_SHA256 = {", *[f'    "{_row_key(r)}": "{row_digest(r)}",' for r in rows], "}", ""]
-    out += [f"RETIRED_IDS = {dict(sorted(retired_ids(rows).items()))!r}  # listed: {_retired_listed(history)!r}", ""]
-    out += ["OLD_MEANING_SHA256 = {",
-            *[f'    "{k}": "{old_meaning_digest(e)}",' for k, e in sorted(_OM.OLD_MEANINGS.items())], "}", ""]
-    lines, problems = reviewed_block_lines(research, rows)
-    out += [f"# reviewed_block_lines: {len(lines)} labels mapped, problems {problems}", "REVIEWED_BLOCK_SHA256 = {",
-            *[f'    "{label}": "{_cell_digest(line)}",' for label, line in lines.items()], "}"]
+    review = _REAL_REVIEW.read_text(encoding="utf-8")
+    inventory = [r for r in rows if not _is_blank(r["inventory ID"])]
+    leads = {k: _lead_decision(e.decision) for k, e in _OM.OLD_MEANINGS.items()}
+    tokens = sorted({t for t in leads.values() if t and not _C_ID.fullmatch(t)})
+    authorities = {t: frozenset(r["inventory ID"] for r in inventory if r["meaning changed"] == "yes"
+                                and t in _DECISION_TOKEN.findall(r["decision"])
+                                and any(leads.get(k) == t for k in _keys(r))) for t in tokens}
+    owners: dict[str, set[str]] = {}
+    for r in rows:
+        for k in _keys(r):
+            owners.setdefault(k, set()).add(r["inventory ID"])
+    glossary, glossary_problems = glossary_entries(research)
+    pinned, pinned_problems = pinned_entries(research)
+    history_lines, history_problems = history_entries(history)
+    review_lines, prose = review_entries(review)
+    blocks, block_problems = reviewed_block_lines(research, rows)
+    values: dict[str, object] = {
+        "INVENTORY_SENTENCE_SHA256": {r["inventory ID"]: _sentence_digest(r["inventory sentence"]) for r in inventory},
+        "GLOSSARY_TERMS": {m.group("id"): m.group("term") for _k, (line,) in glossary
+                           if (m := _GLOSSARY_LINE.match(line))},
+        "NON_C_AUTHORITIES": authorities,
+        "_NON_C_AUTHORITIES_PIN": authorities,
+        "KEY_OWNERS": {k: frozenset(v) for k, v in sorted(owners.items())},
+        "_KEY_OWNERS_PIN": {k: frozenset(v) for k, v in sorted(owners.items())},
+        "TRACEABILITY_ROW_SHA256": {_row_key(r): row_digest(r) for r in rows},
+        "RETIRED_IDS": dict(sorted((i, h) for i, h in retired_ids(rows).items() if h)),
+        "OLD_MEANING_SHA256": {k: old_meaning_digest(e) for k, e in sorted(_OM.OLD_MEANINGS.items())},
+        "REVIEWED_BLOCK_SHA256": {label: _cell_digest(line) for label, line in blocks.items()},
+        "GLOSSARY_SHA256": {k: _keyed_digest(lines) for k, lines in glossary},
+        "PINNED_SHA256": {k: _keyed_digest(lines) for k, lines in pinned},
+        "RESEARCH_STRUCTURE": research_structure(research),
+        "HISTORY_SHA256": {k: _keyed_digest(lines) for k, lines in history_lines},
+        "REVIEW_LINE_SHA256": {k: _keyed_digest(lines) for k, lines in review_lines},
+        "REVIEW_PROSE_SHA256": tuple(_cell_digest(line) for line in prose),
+    }
+    multi = [k for k, lines in pinned if len(lines) > 1]
+    notes = [
+        f"{len(inventory)} inventory rows, {len(rows)} table rows; non-C tokens {tokens}; {len(owners)} keys",
+        f"retired: table {retired_ids(rows)!r}, listed {_retired_listed(history)!r}",
+        f"reviewed_block_lines: {len(blocks)} labels mapped, problems {block_problems}",
+        (f"Glossary: {len(glossary)} keyed lines, {len({k for k, _ in glossary})} unique keys, "
+         f"unkeyable {glossary_problems}"),
+        (f"Pinned: {len(pinned)} rules, {sum(len(v) for _, v in pinned)} lines, more than one line {multi}, "
+         f"unkeyable {pinned_problems}"),
+        f"structure: {len(values['RESEARCH_STRUCTURE'])} entries",
+        (f"history: {len(history_lines)} keyed lines, {len({k for k, _ in history_lines})} unique keys, "
+         f"unkeyable {history_problems}"),
+        (f"review: {len(review_lines)} verdict lines, {len({k for k, _ in review_lines})} unique rows, "
+         f"{len(prose)} prose lines"),
+    ]
+    problems = glossary_problems + pinned_problems + history_problems + block_problems
+    problems += [f"{k} occurs more than once" for entries in (glossary, history_lines, review_lines)
+                 for k, n in Counter(k for k, _ in entries).items() if n > 1]
+    return values, notes + [f"problems {problems}"]
+
+
+def _literal_source(name: str, value: object) -> list[str]:
+    """``name = value`` as Python source, one entry per line (a structure run per line, wrapped)."""
+    def item(v: object) -> str:
+        if isinstance(v, frozenset):
+            return "frozenset({" + ", ".join(f'"{x}"' for x in sorted(v)) + "})"
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(value, dict):
+        return [f"{name} = {{", *[f"    {item(k)}: {item(v)}," for k, v in value.items()], "}"]
+    if name == "RESEARCH_STRUCTURE":
+        out, run = [f"{name} = ("], []
+        for entry in (*value, None):
+            if entry is None or entry.startswith("#"):
+                out += textwrap.wrap(" ".join(f"{item(x)}," for x in run), 112, initial_indent="    ",
+                                     subsequent_indent="    ", break_on_hyphens=False, break_long_words=False)
+                run = []
+                if entry is not None:
+                    out.append(f"    {item(entry)},")
+            else:
+                run.append(entry)
+        return [*out, ")"]
+    return [f"{name} = (", *textwrap.wrap(" ".join(f"{item(x)}," for x in value), 112, initial_indent="    ",
+                                          subsequent_indent="    "), ")"]
+
+
+def frozen_literals() -> str:
+    """The source of every literal in ``FROZEN_LITERALS``, as the committed files now give it, headed by
+    what the derivation found. For a reviewed edit only: paste the entries the edit changed, and no
+    others, so the diff of the literal shows what was approved. Run
+    ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``."""
+    values, notes = derived_literals()
+    out = [f"# {note}" for note in notes]
+    for name in FROZEN_LITERALS:
+        out += ["", *_literal_source(name, values[name])]
     return "\n".join(out)
+
+
+def test_frozen_literals_prints_every_frozen_literal_as_committed() -> None:
+    """Iteration 5, S4: ``frozen_literals()`` prints every frozen literal, and its printed source, run,
+    gives each committed literal exactly, so the one regeneration path is proven to match. Every module
+    name ending ``_SHA256`` or ``_PIN`` is in ``FROZEN_LITERALS``, and the derivation keyed every line."""
+    source = frozen_literals()
+    printed: dict[str, object] = {}
+    exec(source, {}, printed)  # noqa: S102 -- the module's own generated source, run to prove it
+    declared = {n for n in globals() if n.endswith(("_SHA256", "_PIN"))}
+    wrong = {}
+    for name in FROZEN_LITERALS:
+        have, want = printed.get(name), globals()[name]
+        if have != want:
+            wrong[name] = (sorted(k for k in set(have) | set(want) if have.get(k) != want.get(k))[:5]
+                           if isinstance(want, dict) and isinstance(have, dict) else "differs")
+    notes = [line for line in source.splitlines() if line.startswith("# ")]
+    print(f"[slice compared] {len(printed)} printed, {len(FROZEN_LITERALS)} frozen, declared {sorted(declared)}; "
+          f"{notes}; differing {wrong}")
+    assert set(printed) == set(FROZEN_LITERALS) and declared <= set(FROZEN_LITERALS)
+    assert notes[-1] == "# problems []"
+    assert wrong == {}
 
 
 if __name__ == "__main__":
