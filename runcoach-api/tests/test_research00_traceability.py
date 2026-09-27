@@ -3601,6 +3601,38 @@ def traceability_row_errors(rows: list[dict[str, str]], frozen: dict[str, str] |
     return errors
 
 
+#: The committed table's separator line, exactly: one ``---`` per column of ``TRACE_HEADER``.
+TRACE_SEPARATOR = "|" + "---|" * len(TRACE_COLUMNS)
+
+
+def table_line_errors(table_text: str) -> list[str]:
+    """Every line of 00-traceability.md is bound (iteration 6, S1): line 1 is ``TRACE_HEADER``, line 2 is
+    ``TRACE_SEPARATOR``, every later line is a row ``parse_traceability`` returns, and nothing follows
+    but the final newline. ``parse_traceability`` skips any line that does not start with ``|``, so a
+    ``Correction (C38): ... read its row as yes`` line after the last row (U1c), a blockquoted
+    ``> | DOC-03 | ... | yes |`` row (U1b) and a deleted separator (U2) each left every row, and so every
+    frozen digest, unchanged, with the suite green. Each message names the line."""
+    lines = _lines(table_text)
+    lines = lines[:-1] if lines and lines[-1] == "" else lines
+    errors = []
+    for number, line in enumerate(lines, 1):
+        if number == 1:
+            if line != TRACE_HEADER:
+                errors.append(f"[frozen-table] line 1: the header is not TRACE_HEADER (now {line[:120]!r})")
+            continue
+        if number == 2:
+            if line != TRACE_SEPARATOR:
+                errors.append(f"[frozen-table] line 2: the separator is not {TRACE_SEPARATOR!r} (now {line[:120]!r})")
+            continue
+        cells = _split_cells(line)
+        is_row = (line.startswith("|") and len(cells) == len(TRACE_COLUMNS) and cells[0] != TRACE_COLUMNS[0]
+                  and not all(re.fullmatch(r":?-{3,}:?", c) for c in cells))
+        if not is_row:
+            errors.append(f"[frozen-table] line {number}: a table line that is not a row cannot be bound: "
+                          f"{line[:120]!r}")
+    return errors
+
+
 def retirement_errors(rows: list[dict[str, str]], history_text: str,
                       frozen: dict[str, str] | None = None) -> list[str]:
     """Iteration 4, M2, over the committed table and history. The IDs the table retires
@@ -5418,14 +5450,65 @@ def test_real_path_every_traceability_row_is_the_frozen_row() -> None:
     assert set(keys) == set(TRACEABILITY_ROW_SHA256) == INVENTORY_IDS and len(keys) == 149
 
 
+def test_real_path_every_traceability_line_is_the_header_the_separator_or_a_row() -> None:
+    """Iteration 6, S1: the committed table is ``TRACE_HEADER``, ``TRACE_SEPARATOR`` and one parsed row per
+    later line, and nothing else, so no line of it sits outside ``TRACEABILITY_ROW_SHA256``."""
+    text = _REAL_TABLE.read_text(encoding="utf-8")
+    lines = _lines(text)
+    errors = table_line_errors(text)
+    rows = parse_traceability(text)
+    print(f"[slice compared] {_REAL_TABLE.name}: {len(lines)} split lines, last {lines[-1]!r}, {len(rows)} rows; "
+          f"line 2 {lines[1]!r}; line {len(lines) - 1} {lines[-2][:60]!r}: {errors[:5]}")
+    assert errors == []
+    assert lines[-1] == "" and len(lines) - 3 == len(rows) == 149
+
+
+def test_table_line_errors_names_a_line_that_is_not_a_row() -> None:
+    """Iteration 6, S1, on synthetic text shaped like the scanner's routes, each message exactly: a
+    correction line after the last row (U1c), a blockquoted contradicting row (U1b), the separator deleted
+    (U2), and the header edited. ``parse_traceability`` returns the same rows for each route, so no row
+    check can see them."""
+    rows = [_row("DOC-03", "Decision records conform to Parts 1-4.", "DOC-03"),
+            _row("HRV-46", "The rule keys on `hrv_source_tier` alone.", "HRV-46, HRV-84")]
+    base = "\r\n".join([TRACE_HEADER, TRACE_SEPARATOR, *rows]) + "\r\n"
+    assert table_line_errors(base) == [] and len(parse_traceability(base)) == 2
+    u1c = ("Correction (C38): DOC-03's meaning changed; read its row as yes, key "
+           "DOC-09-C38-superseded-text-left-standing.")
+    u1b = "> " + _row("DOC-03", "(see above)", "DOC-03", "C38", "yes", "DOC-09-C38-superseded-text-left-standing",
+                      cited=ADDITION)
+    routes = {
+        "u1c": base + u1c + "\r\n",
+        "u1b": _one_edit(base, rows[0] + "\r\n", rows[0] + "\r\n" + u1b + "\r\n"),
+        "u2": _one_edit(base, TRACE_SEPARATOR + "\r\n", ""),
+        "header": _one_edit(base, "| old-meaning key |", "| key |"),
+    }
+    for name in ("u1c", "u1b"):
+        assert parse_traceability(routes[name]) == parse_traceability(base), name
+    _check_cases(table_line_errors, {
+        "u1c-a-correction-after-the-last-row": ((routes["u1c"],), [
+            f"[frozen-table] line 5: a table line that is not a row cannot be bound: {u1c[:120]!r}"]),
+        "u1b-a-blockquoted-row": ((routes["u1b"],), [
+            f"[frozen-table] line 4: a table line that is not a row cannot be bound: {u1b[:120]!r}"]),
+        "u2-the-separator-deleted": ((routes["u2"],), [
+            f"[frozen-table] line 2: the separator is not '|---|---|---|---|---|---|---|' (now {rows[0][:120]!r})"]),
+        "the-header-edited": ((routes["header"],), [
+            f"[frozen-table] line 1: the header is not TRACE_HEADER (now {TRACE_HEADER.replace('old-meaning key', 'key')[:120]!r})"]),
+    })
+
+
 def test_traceability_row_errors_names_the_changed_row_and_cell() -> None:
-    """Iteration 4, M1 and M2, on the scanner's routes over the committed table, each message exactly:
-    M1's PRIN-10 row turned ``yes`` under ``C19, C38``; M2's DOC-03 retired under H-39 with an addition
-    row DOC-23; a row removed; a row repeated. The frozen side is derived from the unmutated table and each
-    expected digest from the mutated row (iteration 5, S5), so a reviewed edit to PRIN-10 or DOC-03 leaves
-    this test green; the committed literal is the real-path test's."""
-    _research, _history, rows = _real()
+    """Iteration 4, M1 and M2, on the scanner's routes, each message exactly: M1's PRIN-10 row turned
+    ``yes`` under ``C19, C38``; M2's DOC-03 retired under H-39 with an addition row DOC-23; a row removed;
+    a row repeated. Iteration 6, S2: the routes run over the synthetic world's table (``_world_files()``:
+    PRIN-10 ``no`` under C19, DOC-03 ``no`` with no decision), not the committed one, so a reviewed edit
+    to the committed PRIN-10, DOC-03 or HRV-09 row cannot change what this test asserts; the frozen side is
+    derived from the unmutated rows and each expected digest from the mutated row (iteration 5, S5)."""
+    world = _world_files()
+    rows = parse_traceability("".join(world[f"{group}.trace.txt"] for group in GROUPS))
     frozen = {_row_key(r): row_digest(r) for r in rows}
+    before = {r["inventory ID"]: (r["decision"], r["meaning changed"]) for r in rows if r["inventory ID"] in ("PRIN-10", "DOC-03")}
+    print(f"[slice compared] world rows {len(rows)}; before the routes {before}")
+    assert before == {"PRIN-10": ("C19", "no"), "DOC-03": (ADDITION, "no")}
     m1 = _real_row_swap(rows, "PRIN-10", decision="C19, C38", **{"meaning changed": "yes"})
     m2 = _real_row_swap(rows, "DOC-03", **{"new ID(s)": "H-39"}) + [_as_row(_row(ADDITION, ADDITION, "DOC-23", "C38",
                                                                                    cited=ADDITION))]
@@ -5469,12 +5552,19 @@ def test_real_path_retired_ids_are_frozen_and_each_retires_under_its_decision() 
 
 def test_retirement_errors_names_a_no_row_retired_under_an_h_nn() -> None:
     """Iteration 4, M2, on the scanner's route: DOC-03 retired under H-39 in the table and in the
-    history, its row still ``no`` with no decision, each message exactly."""
-    _research, history, rows = _real()
+    history, its row still ``no`` with no decision, each message exactly. Iteration 6, S2: on synthetic
+    rows and a synthetic history shaped like the committed ones (PRIN-16 ``yes`` under C08, retired under
+    H-39; DOC-03 ``no`` with no decision), with their own frozen map, so a reviewed edit to the committed
+    DOC-03 row, the history or ``RETIRED_IDS`` cannot change what this test asserts."""
+    rows = [_as_row(_row("PRIN-16", "Silence is tolerated freely.", "H-39 (dropped by C08)", "C08", "yes",
+                         "PRIN-16-C08-silence-tolerated-freely")),
+            _as_row(_row("DOC-03", "Decision records conform to Parts 1-4.", "DOC-03"))]
+    history = _history(retired="- **PRIN-16** retired → H-39\n")
+    frozen = {"PRIN-16": "H-39"}
+    assert retirement_errors(rows, history, frozen) == []
     m2 = _real_row_swap(rows, "DOC-03", **{"new ID(s)": "H-39"})
-    listed = history.replace("- **PRIN-16** retired → H-39\n", "- **PRIN-16** retired → H-39\n- **DOC-03** retired → H-39\n")
-    assert listed != history
-    errors = retirement_errors(m2, listed)
+    listed = _one_edit(history, "- **PRIN-16** retired → H-39\n", "- **PRIN-16** retired → H-39\n- **DOC-03** retired → H-39\n")
+    errors = retirement_errors(m2, listed, frozen)
     print(f"[slice compared] {errors}")
     assert errors == [
         "[retired] the table (retired_ids) retires DOC-03 under H-39, and RETIRED_IDS says None (M2: RETIRED_IDS is frozen)",
@@ -5484,7 +5574,7 @@ def test_retirement_errors_names_a_no_row_retired_under_an_h_nn() -> None:
     ]
     # The retire rule alone, with RETIRED_IDS widened to fit: a yes row under a Group A decision (H-38).
     group_a = _real_row_swap(m2, "DOC-03", decision="C03", **{"meaning changed": "yes"})
-    errors = retirement_errors(group_a, listed, frozen={**RETIRED_IDS, "DOC-03": "H-39"})
+    errors = retirement_errors(group_a, listed, frozen={**frozen, "DOC-03": "H-39"})
     print(f"[slice compared] widened: {errors}")
     assert errors == [("[retired] DOC-03: retires under H-39, and no decision its cell cites ('C03') retires under "
                        "H-39: {'C03': 'H-38'} (M2)")]
@@ -5741,9 +5831,26 @@ def test_reviewed_block_errors_names_a_row_whose_text_changed_after_its_verdict(
     Iteration 5, S5: the frozen side is derived from the unmutated text, each route's edit is applied to
     the derived line (RA3 and RC each drop the line's last backticked span: HRV-24's ``band``, DOC-09's
     history path), and each expected "now" text and digest comes from the mutated line. A reviewed
-    rewording of HRV-24 or DOC-09 leaves this test green; the committed literal is the real-path test's."""
-    research, _history, rows = _real()
+    rewording of HRV-24 or DOC-09 leaves this test green; the committed literal is the real-path test's.
+
+    Iteration 6, S2: the blocks and rows are synthetic, shaped like the committed ones (HRV-24 a ``no`` row
+    whose rule line ends in the ``band`` span, DOC-09 a ``yes`` row whose rule line ends in the history
+    path), so a reviewed edit to the committed HRV-24 or DOC-09 (a row turned ``yes``, a rule line with no
+    code span) cannot change what this test asserts."""
+    research = "\n\n".join([
+        HEADINGS[-1],
+        _block("DOC-09", "research/00 MUST state only current rules, and a dated summary of what changed MUST go "
+                         "to the history file, `specification/research/00-history.md`."),
+        _block("HRV-24", "When nothing is selected, the HRV verdict MUST be unavailable and `baseline`/`band` MUST "
+                         "be populated for presentation only."),
+    ]) + "\n"
+    rows = [_as_row(_row("DOC-09", "A dated summary goes to the history file.", "DOC-09", "C38", "yes",
+                         "DOC-09-C38-superseded-text-left-standing")),
+            _as_row(_row("HRV-24", "The band is populated for presentation only.", "HRV-24", "C17", "no",
+                         "C17-hrv24-read-on-last"))]
     lines, _problems = reviewed_block_lines(research, rows)
+    assert _problems == [] and list(lines) == ["DOC-09", "DOC-09/Scope", "DOC-09/Not", "HRV-24", "HRV-24/Scope",
+                                               "HRV-24/Not"]
     frozen = {label: _cell_digest(line) for label, line in lines.items()}
     blocks = rule_blocks(research)
 
