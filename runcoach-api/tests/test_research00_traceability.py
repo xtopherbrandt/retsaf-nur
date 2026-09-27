@@ -1023,7 +1023,7 @@ HISTORY_SHA256 = {
     "H-38": "864b2eb04911",
     "H-39": "7a4d2f9c3018",
     "H-40": "ff2a30c98d83",
-    "H-41": "2e10a7076339",
+    "H-41": "968b83a0f2d4",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1031,11 +1031,12 @@ HISTORY_SHA256 = {
 #: ``REVIEW_PROSE_SHA256`` (S3): the review file's 17 lines outside its tables, in order (the title, the
 #: opening paragraph, the three group headings and the Glossary's, ``## Rounds`` and its paragraphs), one
 #: digest each. Asserted by ``review_line_errors``, which names the first line that differs; a new round
-#: updates it (regenerated through ``frozen_literals()`` at T192 for round 7).
+#: updates it (regenerated through ``frozen_literals()`` at T192 for round 7, at T194 for rounds 8 and 9).
 REVIEW_PROSE_SHA256 = (
     "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
-    "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "a6d7a151e7cb",
+    "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
+    "4c428c90dfad",
 )
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1091,7 +1092,7 @@ REVIEW_LINE_SHA256 = {
     "PRIN-17/Not": "8a4a695902e8",
     "PRIN-18": "acaf948c7dbd",
     "PRIN-18/Scope": "9d1072c5849c",
-    "PRIN-18/Not": "830f8f85584a",
+    "PRIN-18/Not": "9ee7f8e2399d",
     "PRIN-07": "92d3592a12d6",
     "PRIN-07/Scope": "297923eeec1b",
     "PRIN-07/Not": "a7995f06a008",
@@ -1099,11 +1100,11 @@ REVIEW_LINE_SHA256 = {
     "PRIN-08/Scope": "5ed2bb8a5b09",
     "PRIN-08/Not": "f8266aa2a2ef",
     "PRIN-08/Why": "cd08a720c075",
-    "PRIN-09": "04aa1ad89887",
+    "PRIN-09": "bf022260d245",
     "PRIN-09/Scope": "9908a42e8959",
     "PRIN-09/Not": "82d01a78c104",
     "PRIN-10": "7dfdd89d5026",
-    "PRIN-10/Scope": "73082051ff79",
+    "PRIN-10/Scope": "cb16899cd058",
     "PRIN-10/Not": "9125da803dd8",
     "PRIN-19": "877ecac351f2",
     "PRIN-19/Scope": "17fac90aef50",
@@ -1118,37 +1119,37 @@ REVIEW_LINE_SHA256 = {
     "PRIN-11": "c5cde54990aa",
     "PRIN-11/Scope": "c922e0deda56",
     "PRIN-11/Not": "2594377f39f9",
-    "PRIN-12": "18ef7848144e",
-    "PRIN-12/Scope": "f9b19cdb1b7a",
-    "PRIN-12/Not": "49532f3d149b",
-    "PRIN-12/Why": "5138766c08d4",
+    "PRIN-12": "1aa5aa81c124",
+    "PRIN-12/Scope": "d540f126cc46",
+    "PRIN-12/Not": "7299ce1c2a83",
+    "PRIN-12/Why": "3d9eefb0eedc",
     "PRIN-22": "c97d92a2e7c8",
     "PRIN-22/Scope": "7b910dbe3375",
     "PRIN-22/Not": "b3071e8295aa",
-    "PRIN-23": "22b4607a152e",
-    "PRIN-23/Scope": "e131bbdf312b",
-    "PRIN-23/Not": "0426c5379b44",
-    "PRIN-24": "0c4c7d801975",
+    "PRIN-23": "ea5c41159796",
+    "PRIN-23/Scope": "1d5c6357246e",
+    "PRIN-23/Not": "554539bcf885",
+    "PRIN-24": "875525ec4ee0",
     "PRIN-24/Scope": "37ef5390ca78",
-    "PRIN-24/Not": "b9283a2eb20a",
-    "PRIN-24/Why": "ac460b907c66",
+    "PRIN-24/Not": "bbb134d8af12",
+    "PRIN-24/Why": "5236a38eb7db",
     "PRIN-13": "6569e1900548",
     "PRIN-13/Scope": "060f62f49158",
     "PRIN-13/Not": "d9d0793208a5",
     "PRIN-14": "c536c3f8950d",
-    "PRIN-14/Scope": "d5d71f02187b",
-    "PRIN-14/Not": "dfcb60e7d859",
+    "PRIN-14/Scope": "c01e6a628875",
+    "PRIN-14/Not": "bd1309442ee7",
     "PRIN-14/Why": "715624d693db",
-    "PRIN-15": "3680fcb366ce",
-    "PRIN-15/Scope": "f79d97cc19a7",
-    "PRIN-15/Not": "9bf77b14bd31",
-    "PRIN-15/Why": "98b291e0bd3f",
+    "PRIN-15": "e254ea273a4c",
+    "PRIN-15/Scope": "07c0d94b926e",
+    "PRIN-15/Not": "4c479fff2ad3",
+    "PRIN-15/Why": "47f18f7da28a",
     "PRIN-25": "7a21460cdba8",
-    "PRIN-25/Scope": "c9e25c95778e",
-    "PRIN-25/Not": "77cc88b3ae60",
-    "PRIN-26": "ec4c4cf972a7",
-    "PRIN-26/Scope": "07edb24d534c",
-    "PRIN-26/Not": "3cb2d68e6959",
+    "PRIN-25/Scope": "27460e4ffe23",
+    "PRIN-25/Not": "2a02fc1bc1b2",
+    "PRIN-26": "b63a97bdfc6f",
+    "PRIN-26/Scope": "04b4b671a188",
+    "PRIN-26/Not": "84e3d5e044b0",
     "AUT-01": "14b005f66b8b",
     "AUT-01/Scope": "b22976e3321c",
     "AUT-01/Not": "226a57523dab",
@@ -1194,14 +1195,14 @@ REVIEW_LINE_SHA256 = {
     "DOC-06/Why": "fc980e1c1e31",
     "DOC-07": "8926a0d1c4ba",
     "DOC-07/Scope": "0c1b40d2a350",
-    "DOC-07/Not": "62454771c34d",
+    "DOC-07/Not": "a65c8186cda7",
     "DOC-08": "665c938d6dce",
-    "DOC-08/Scope": "6ae6d8a18040",
-    "DOC-08/Not": "c56bc49665c4",
+    "DOC-08/Scope": "7e38e11a000e",
+    "DOC-08/Not": "5e3bba338cf9",
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "8a3590d802c5",
+    "DOC-18": "5c62443fefd6",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1209,16 +1210,16 @@ REVIEW_LINE_SHA256 = {
     "DOC-15/Not": "35620635d692",
     "DOC-01": "ca30fa043c39",
     "DOC-01/Scope": "bc99f26ff756",
-    "DOC-01/Not": "b1cb5e8662a2",
+    "DOC-01/Not": "23bbc6a3c068",
     "DOC-05": "101690c38b90",
     "DOC-05/Scope": "6490392c7868",
-    "DOC-05/Not": "5042261b6e2b",
+    "DOC-05/Not": "c9b6864ac087",
     "DOC-04": "86943994a51b",
     "DOC-04/Scope": "448c0ebee43a",
     "DOC-04/Not": "4b229e9aad80",
     "DOC-03": "da9ec9d2ae5d",
     "DOC-03/Scope": "526d37be048e",
-    "DOC-03/Not": "f58b13ba0160",
+    "DOC-03/Not": "1f517ad918ef",
     "AUT-05": "7c68af809c59",
     "AUT-05/Scope": "dc4c18617dac",
     "AUT-05/Not": "660c533715d0",
@@ -1262,15 +1263,15 @@ REVIEW_LINE_SHA256 = {
     "DOC-22": "6096438683f7",
     "DOC-22/Scope": "8879c1bfc0fe",
     "DOC-22/Not": "8ea310badb34",
-    "ARCH-00": "fa022468cc15",
+    "ARCH-00": "a7d381d719d5",
     "ARCH-00/Scope": "5d220756d526",
-    "ARCH-00/Not": "7d60a90eb336",
+    "ARCH-00/Not": "56d27034cc1a",
     "ARCH-01": "5a1d8153c670",
     "ARCH-01/Scope": "e5cc70057ae6",
     "ARCH-01/Not": "8cd234d8dc4b",
     "ARCH-02": "609e915821c0",
     "ARCH-02/Scope": "440f8157c7b8",
-    "ARCH-02/Not": "8f735fa3f44b",
+    "ARCH-02/Not": "8bd0be978a51",
     "ARCH-03": "8aaf439fad5f",
     "ARCH-03/Scope": "47b2fc6fe4b7",
     "ARCH-03/Not": "c1c2787e378c",
@@ -1396,7 +1397,7 @@ REVIEW_LINE_SHA256 = {
     "REG-27/Not": "49194e5fdb6c",
     "REG-28": "95d42018fde6",
     "REG-28/Scope": "6cda71a0bac5",
-    "REG-28/Not": "90ceff48d3e3",
+    "REG-28/Not": "0c06bd89d9f7",
     "REG-29": "648c2e74bbe3",
     "REG-29/Scope": "269d7b66ed1a",
     "REG-29/Not": "6f1a99ead82f",
@@ -1465,13 +1466,13 @@ REVIEW_LINE_SHA256 = {
     "LT1-02": "21429b02283a",
     "LT1-02/Scope": "3ee8eecd9664",
     "LT1-02/Not": "91982543c74b",
-    "LT1-02/Why": "55888b1b9f21",
+    "LT1-02/Why": "dc0aeb112337",
     "LT1-03": "90be4e761815",
     "LT1-03/Scope": "04f3f3aede00",
     "LT1-03/Not": "aec7ef8b0bff",
-    "LT1-04": "7dd823048301",
+    "LT1-04": "7d9abe42ccf3",
     "LT1-04/Scope": "a7106765bf85",
-    "LT1-04/Not": "0e3930414e10",
+    "LT1-04/Not": "bd1a327c0e72",
     "LT1-04/Why": "2723f99e611f",
     "LT1-05": "0f351ff9869a",
     "LT1-05/Scope": "9758e879f429",
@@ -1509,7 +1510,7 @@ REVIEW_LINE_SHA256 = {
     "GATE-01/Not": "c7a0fd65a3ef",
     "GATE-01/Why": "95489ef2dbe7",
     "GATE-02": "c0d5ee9c73ab",
-    "GATE-02/Scope": "3c1eb7ef609e",
+    "GATE-02/Scope": "f028282b1a9a",
     "GATE-02/Not": "860ae5316c96",
     "GATE-02/Why": "698d51be4369",
     "GATE-03": "dd851028af0e",
@@ -1517,13 +1518,13 @@ REVIEW_LINE_SHA256 = {
     "GATE-03/Not": "6b3988bb8e3c",
     "GATE-03/Why": "0fc5817022f2",
     "GATE-04": "717c94d0f4f4",
-    "GATE-04/Scope": "481254b1b818",
+    "GATE-04/Scope": "ba55066506a0",
     "GATE-04/Not": "5f3ad43c8bef",
     "GATE-04/Why": "a88a70edfcf5",
     "GATE-05": "8b34a9aa2475",
     "GATE-05/Scope": "9a66e8d65126",
     "GATE-05/Not": "8346fee91043",
-    "GATE-06": "8eda0a22a9c5",
+    "GATE-06": "ebbb2a214339",
     "GATE-06/Scope": "5e4455767c6c",
     "GATE-06/Not": "670560076b05",
     "GATE-07": "3190daf4868f",
@@ -1537,8 +1538,8 @@ REVIEW_LINE_SHA256 = {
     "FIG-01/Not": "7c0a6e96cc21",
     "FIG-02": "9db86bc6bcd6",
     "FIG-02/Scope": "f997f524c272",
-    "FIG-02/Not": "c715d7a97370",
-    "FIG-02/Why": "efe5adec9fbb",
+    "FIG-02/Not": "0fe6eb993790",
+    "FIG-02/Why": "f04f67777fb6",
     "FIG-03": "cd8556b6ab66",
     "FIG-03/Scope": "04169881839a",
     "FIG-03/Not": "0313a975943e",
@@ -1548,8 +1549,8 @@ REVIEW_LINE_SHA256 = {
     "FIG-04/Not": "715df7436d73",
     "FIG-05": "f559004f254f",
     "FIG-05/Scope": "2d8c3ef5f98f",
-    "FIG-05/Not": "a80acf438194",
-    "FIG-05/Why": "9426f00c4c9d",
+    "FIG-05/Not": "a9fe7df147e8",
+    "FIG-05/Why": "7f82d0a9dc8a",
     "FIG-06": "6460af4708fa",
     "FIG-06/Scope": "8e59d3fb32fa",
     "FIG-06/Not": "0cc7eb8f5a1d",
@@ -1573,28 +1574,28 @@ REVIEW_LINE_SHA256 = {
     "HRV-07/Not": "de800d5edf8d",
     "HRV-07/Why": "239aa7aaab70",
     "HRV-01": "a625a83601e9",
-    "HRV-01/Scope": "04df4b2bc132",
-    "HRV-01/Not": "73828e76ea4d",
+    "HRV-01/Scope": "243f189a9f04",
+    "HRV-01/Not": "f46cdc9d6fca",
     "HRV-02": "20d441b9a0aa",
     "HRV-02/Scope": "d6dab8d3537c",
     "HRV-02/Not": "3ac4b1f6d808",
     "HRV-03": "233a618c4c86",
-    "HRV-03/Scope": "73acb048587b",
+    "HRV-03/Scope": "98264b8ab629",
     "HRV-03/Not": "6ef2edcd7c7d",
     "HRV-04": "07a190672132",
     "HRV-04/Scope": "89ff1a02764f",
-    "HRV-04/Not": "0ae05af7ca82",
+    "HRV-04/Not": "e512b41dee8a",
     "HRV-04/Why": "9b4e7d69e7cb",
     "HRV-05": "26b50ed7192e",
     "HRV-05/Scope": "3d13b8e75ef8",
-    "HRV-05/Not": "cfa6365a863d",
+    "HRV-05/Not": "dbf19636b248",
     "HRV-05/Why": "b42a4bd76ed1",
     "HRV-06": "9957d79c329b",
     "HRV-06/Scope": "72cc54ee5ab8",
     "HRV-06/Not": "afdfccf36a18",
     "HRV-47": "239630b97f30",
     "HRV-47/Scope": "ca8aa342c493",
-    "HRV-47/Not": "3b4a0c35166e",
+    "HRV-47/Not": "ac283b1b1450",
     "HRV-08": "1615ce63fbfe",
     "HRV-08/Scope": "4a63ff18af52",
     "HRV-08/Not": "133bd4eaad06",
@@ -1608,14 +1609,14 @@ REVIEW_LINE_SHA256 = {
     "HRV-11/Scope": "9f446c42ab0c",
     "HRV-11/Not": "75a057c40b11",
     "HRV-11/Why": "3cf41eb2fd4b",
-    "HRV-12": "8f1b33b7a701",
+    "HRV-12": "8cf935028db1",
     "HRV-12/Scope": "21416ba764c7",
     "HRV-12/Not": "e6ccb2eddef1",
     "HRV-12/Why": "79ef85be4721",
     "HRV-13": "fc040263734d",
     "HRV-13/Scope": "1bfa4052c28e",
     "HRV-13/Not": "1e91faedfc4b",
-    "HRV-14": "604565b0bfde",
+    "HRV-14": "395a425a3509",
     "HRV-14/Scope": "33201b9540fd",
     "HRV-14/Not": "39df47c3e654",
     "HRV-15": "76b6f65edfe5",
@@ -1623,18 +1624,18 @@ REVIEW_LINE_SHA256 = {
     "HRV-15/Not": "66515a413aa4",
     "HRV-15/Why": "b046ce9afd46",
     "HRV-16": "78feb26ec92a",
-    "HRV-16/Scope": "8730b23fa13f",
-    "HRV-16/Not": "c0fbbb2450e0",
+    "HRV-16/Scope": "75d75d1b4d20",
+    "HRV-16/Not": "9f3c524331e4",
     "HRV-17": "481b7a5a4f89",
     "HRV-17/Scope": "26538333515b",
-    "HRV-17/Not": "0f954592d493",
+    "HRV-17/Not": "18004ee97cb5",
     "HRV-17/Why": "d3808c3e3783",
     "HRV-18": "81264ff3f6d0",
     "HRV-18/Scope": "8e895b601a61",
     "HRV-18/Not": "d8d6479eeb2a",
     "HRV-19": "47c4f894ba02",
     "HRV-19/Scope": "6ec8a9583186",
-    "HRV-19/Not": "10fc92c5dd16",
+    "HRV-19/Not": "6bbec61df342",
     "HRV-20": "37174055b80d",
     "HRV-20/Scope": "33a2defa9927",
     "HRV-20/Not": "d218f17bed90",
@@ -1642,7 +1643,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-21/Scope": "36d9f3025f91",
     "HRV-21/Not": "85ca110fca99",
     "HRV-22": "9fe1409c69ac",
-    "HRV-22/Scope": "c1a4e8187fd0",
+    "HRV-22/Scope": "0298748d6c2e",
     "HRV-22/Not": "f785719f483d",
     "HRV-23": "eacc88513e50",
     "HRV-23/Scope": "eef515146df0",
@@ -1670,7 +1671,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-30/Scope": "456e7b3a5613",
     "HRV-30/Not": "4ab8c225ebb2",
     "HRV-30/Why": "f099d87304a2",
-    "HRV-31": "40a93bcdc81e",
+    "HRV-31": "88b856523dca",
     "HRV-31/Scope": "993f7bc7f0d4",
     "HRV-31/Not": "1d8ab42fc187",
     "HRV-31/Why": "133a6f0017c8",
@@ -1682,7 +1683,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-33/Not": "81ae6bda4b4f",
     "HRV-34": "e0527a154c24",
     "HRV-34/Scope": "7ad8f02428c0",
-    "HRV-34/Not": "cb6ec277dff9",
+    "HRV-34/Not": "1d85bcc986c4",
     "HRV-34/Why": "1f654144da33",
     "HRV-35": "3fd804604fab",
     "HRV-35/Scope": "3c301df1a263",
@@ -1692,8 +1693,8 @@ REVIEW_LINE_SHA256 = {
     "HRV-36/Not": "b1fd3064a6b8",
     "HRV-37": "fec6986aab63",
     "HRV-37/Scope": "61f8b8b467f1",
-    "HRV-37/Not": "7d4f732a6410",
-    "HRV-38": "8b3112db89af",
+    "HRV-37/Not": "4b86614dae48",
+    "HRV-38": "2d11ccadd875",
     "HRV-38/Scope": "bdcfbec48c04",
     "HRV-38/Not": "e1c045c9fba2",
     "HRV-38/Why": "7c791380eaba",
@@ -1701,21 +1702,21 @@ REVIEW_LINE_SHA256 = {
     "HRV-39/Scope": "ea9877b5a93f",
     "HRV-39/Not": "53ed93d4fd37",
     "HRV-40": "6716a4cd6af3",
-    "HRV-40/Scope": "b3ce3823c856",
-    "HRV-40/Not": "1949b5022cc7",
+    "HRV-40/Scope": "7035b9f2e668",
+    "HRV-40/Not": "3b30ea4950f7",
     "HRV-41": "1e89f14f16d2",
     "HRV-41/Scope": "6e38595f378c",
     "HRV-41/Not": "3fb475e37a05",
-    "HRV-42": "484fcdb4b3b0",
+    "HRV-42": "0dafaf6d3df1",
     "HRV-42/Scope": "26fa62a3a697",
-    "HRV-42/Not": "f64e178349f8",
+    "HRV-42/Not": "7be4a8ae3172",
     "HRV-43": "3ec276fad26c",
     "HRV-43/Scope": "c706f190a6fe",
     "HRV-43/Not": "6f38e8f32c03",
     "HRV-44": "40259c446cbd",
     "HRV-44/Scope": "7707568447bb",
     "HRV-44/Not": "2b1c8f91caa7",
-    "HRV-45": "2d08319cbf28",
+    "HRV-45": "0048eca30436",
     "HRV-45/Scope": "1aa1f38af6c9",
     "HRV-45/Not": "9b43ccae0cee",
     "HRV-46": "17c95f8e69c0",
@@ -1731,11 +1732,11 @@ REVIEW_LINE_SHA256 = {
     "HRV-50/Scope": "b6517109197d",
     "HRV-50/Not": "3f19a2f7139c",
     "HRV-51": "84ee799fd975",
-    "HRV-51/Scope": "ba54ba0fc119",
+    "HRV-51/Scope": "0b9f30a89f35",
     "HRV-51/Not": "7d4f2dfeef0d",
-    "HRV-52": "e66d64c79c4f",
+    "HRV-52": "86ff4b905f64",
     "HRV-52/Scope": "c14d75c3742f",
-    "HRV-52/Not": "e753081aa73a",
+    "HRV-52/Not": "f6d7ca383449",
     "HRV-52/Why": "6617f7a0ac54",
     "HRV-53": "0d03ce426146",
     "HRV-53/Scope": "88aa094c4d01",
@@ -1753,7 +1754,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-57/Scope": "34f8d49cc160",
     "HRV-57/Not": "c19dfbc7247b",
     "HRV-58": "4b38e934ebc8",
-    "HRV-58/Scope": "793e5eb81527",
+    "HRV-58/Scope": "950539ebad97",
     "HRV-58/Not": "718d168148d2",
     "HRV-59": "cddb6a1cc113",
     "HRV-59/Scope": "131bad36bcfb",
@@ -1791,7 +1792,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-69/Not": "d6364bfbf3a6",
     "HRV-70": "28224ab49645",
     "HRV-70/Scope": "874613f114da",
-    "HRV-70/Not": "a271a0f598b3",
+    "HRV-70/Not": "bb7b6fcf2a90",
     "HRV-71": "a0b8f06b84f2",
     "HRV-71/Scope": "20c51fd682df",
     "HRV-71/Not": "627c2840e705",
@@ -1806,8 +1807,8 @@ REVIEW_LINE_SHA256 = {
     "HRV-74/Not": "65bd17f87bf9",
     "HRV-75": "c5523b79f0fb",
     "HRV-75/Scope": "0c114d971ab6",
-    "HRV-75/Not": "22e75fc0d25d",
-    "HRV-76": "8f5ba1be9fad",
+    "HRV-75/Not": "80103ab6de75",
+    "HRV-76": "24ed651d0e3d",
     "HRV-76/Scope": "3c58dbb172d7",
     "HRV-76/Not": "93e42a004389",
     "HRV-76/Why": "2d66a8730c0f",
@@ -1816,25 +1817,25 @@ REVIEW_LINE_SHA256 = {
     "HRV-77/Not": "69582122149d",
     "HRV-78": "5342a113382c",
     "HRV-78/Scope": "c6c1d49f2511",
-    "HRV-78/Not": "7bf2056e6a0a",
+    "HRV-78/Not": "f8cb13a3d622",
     "HRV-79": "59f55e60abf6",
     "HRV-79/Scope": "55a949b973db",
-    "HRV-79/Not": "050ad1b9e4fc",
-    "HRV-80": "f93b760a1219",
-    "HRV-80/Scope": "f4455c1183b5",
-    "HRV-80/Not": "10299ad2f1fc",
+    "HRV-79/Not": "43d9704b9fcc",
+    "HRV-80": "ff7d473d318e",
+    "HRV-80/Scope": "509dc8740daa",
+    "HRV-80/Not": "fbf6b3a1265a",
     "HRV-81": "fcf709831c42",
     "HRV-81/Scope": "b358483ee04d",
     "HRV-81/Not": "81d4fb26bdd1",
     "HRV-82": "756a57fdbd6e",
     "HRV-82/Scope": "9e58d80adb2a",
-    "HRV-82/Not": "c1be39b86e08",
+    "HRV-82/Not": "ae5fc5ac916a",
     "HRV-83": "ffda90f684d3",
     "HRV-83/Scope": "09a61b79bc1d",
     "HRV-83/Not": "2cde49728668",
     "HRV-84": "7a0f91ec5fb7",
     "HRV-84/Scope": "202d25511444",
-    "HRV-84/Not": "de61538225d5",
+    "HRV-84/Not": "393f305612ff",
     "T-01": "9bdd9c159bd4",
     "T-02": "59cb80cac177",
     "T-03": "128dcb9ecadf",
@@ -5214,19 +5215,22 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
     alone is also named here.
 
     T192 step C1 closes the paste route: no message about a verdict line prints a digest, and every row
-    whose verdict line differs from ``frozen`` must be named in the last ``Round N:`` paragraph under
-    ``## Rounds`` (``last_round_labels``). ``review_line_literal`` regenerates ``REVIEW_LINE_SHA256``
-    with the same rule, so regenerating the literal clears only a row a round names."""
+    whose verdict line differs from ``frozen`` must be named by a ``Round N:`` paragraph under
+    ``## Rounds`` that is not yet in ``frozen_prose`` (``unfrozen_round_labels``; T194: every such
+    round, not only the last, so two critic rounds between commits both freeze). A frozen round cannot
+    name a new row without its own prose line changing, which the prose check names.
+    ``review_line_literal`` regenerates ``REVIEW_LINE_SHA256`` with the same rule, so regenerating the
+    literal clears only a row an unfrozen round names."""
     frozen = REVIEW_LINE_SHA256 if frozen is None else frozen
     frozen_prose = REVIEW_PROSE_SHA256 if frozen_prose is None else frozen_prose
     entries, prose = review_entries(review_text)
     errors = keyed_line_errors(
         "frozen-review", "REVIEW_LINE_SHA256", "00-meaning-review.md", entries, frozen,
         "a verdict line changes only in a critic round", paste=False)
-    _regenerated, unnamed = review_line_literal(review_text, frozen)
-    round_name = last_round(review_text)[0]
-    errors += [f"[frozen-review] {row}: its verdict line changed and the last round under ## Rounds "
-               f"({round_name or 'none'}) does not name it: only a critic round changes a verdict line (R7)"
+    _regenerated, unnamed = review_line_literal(review_text, frozen, frozen_prose)
+    names = ", ".join(name for name, _ in unfrozen_rounds(review_text, frozen_prose)) or "none"
+    errors += [f"[frozen-review] {row}: its verdict line changed and no round under ## Rounds that is not yet "
+               f"in REVIEW_PROSE_SHA256 ({names}) names it: only a critic round changes a verdict line (R7)"
                for row in unnamed]
     have = tuple(_cell_digest(line) for line in prose)
     if have != frozen_prose:
@@ -5245,20 +5249,22 @@ _ROUND_LABEL = re.compile(rf"\b(?:(?:{_P})-\d{{2,3}}(?:/(?:Scope|Not|Why)\b)?|T-
 _ROUND_RANGE = re.compile(rf"\b(?P<prefix>{_P}|T)-(?P<a>\d{{2,3}}) to (?P=prefix)-(?P<b>\d{{2,3}})\b")
 
 
-def last_round(review_text: str) -> tuple[str | None, str]:
-    """``(name, paragraph)`` of the last ``Round N:`` paragraph under ``## Rounds``, or ``(None, "")``."""
-    found, under = (None, ""), False
+def unfrozen_rounds(review_text: str, frozen_prose: tuple[str, ...] | None = None) -> list[tuple[str, str]]:
+    """``[(name, paragraph)]`` of every ``Round N:`` paragraph under ``## Rounds`` whose line is not among
+    ``frozen_prose`` (``REVIEW_PROSE_SHA256`` by default), in order (T194): the rounds written since the
+    last commit that froze the review. A frozen round edited is unfrozen too, and its prose line is named."""
+    frozen = set(REVIEW_PROSE_SHA256 if frozen_prose is None else frozen_prose)
+    found, under = [], False
     for line in _lines(review_text):
         if line.startswith("#"):
             under = line.strip() == "## Rounds"
-        elif under and (m := _ROUND_LINE.match(line)):
-            found = (m.group("name"), line)
+        elif under and (m := _ROUND_LINE.match(line)) and _cell_digest(line) not in frozen:
+            found.append((m.group("name"), line))
     return found
 
 
-def last_round_labels(review_text: str) -> set[str]:
-    """Every review row the last round names (T192 step C1): each label token, and each ``A to B`` range."""
-    paragraph = last_round(review_text)[1]
+def round_labels(paragraph: str) -> set[str]:
+    """Every review row one round paragraph names (T192 step C1): each label token, and each ``A to B`` range."""
     named = set(_ROUND_LABEL.findall(paragraph))
     for m in _ROUND_RANGE.finditer(paragraph):
         width = len(m.group("a"))
@@ -5266,12 +5272,19 @@ def last_round_labels(review_text: str) -> set[str]:
     return named
 
 
-def review_line_literal(review_text: str, frozen: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+def unfrozen_round_labels(review_text: str, frozen_prose: tuple[str, ...] | None = None) -> set[str]:
+    """Every review row an unfrozen round names (T194: every unfrozen round, not only the last)."""
+    return set().union(*(round_labels(p) for _name, p in unfrozen_rounds(review_text, frozen_prose)))
+
+
+def review_line_literal(review_text: str, frozen: dict[str, str],
+                        frozen_prose: tuple[str, ...] | None = None) -> tuple[dict[str, str], list[str]]:
     """``(REVIEW_LINE_SHA256 regenerated, rows left unnamed)`` (T192 step C1): each verdict line's
-    ``_keyed_digest`` when it equals ``frozen`` or the last round names its row, otherwise the frozen
-    digest kept (none for a new row), with the row listed. Regenerating the literal therefore clears
-    only a row whose change a critic's round records; a pasted digest cell stays red."""
-    named = last_round_labels(review_text)
+    ``_keyed_digest`` when it equals ``frozen`` or a round not yet in ``frozen_prose`` names its row
+    (T194), otherwise the frozen digest kept (none for a new row), with the row listed. Regenerating the
+    literal therefore clears only a row whose change a critic's new round records; a pasted digest cell
+    stays red."""
+    named = unfrozen_round_labels(review_text, frozen_prose)
     literal, unnamed = {}, []
     for row, lines in review_entries(review_text)[0]:
         digest = _keyed_digest(lines)
@@ -5459,7 +5472,7 @@ def test_a_changed_rule_stays_red_until_a_critic_writes_a_new_verdict() -> None:
        what ``reviewed_block_errors`` compares against;
     3. an edit to the verdict line's digest cell alone, verdict and reason unchanged, clears this check but
        is named by the committed ``REVIEW_LINE_SHA256`` side (``review_line_errors``); since step C1 that
-       message prints no digest, the last round must name the row, and ``review_line_literal`` (what
+       message prints no digest, an unfrozen round must name the row, and ``review_line_literal`` (what
        ``frozen_literals()`` prints) keeps the committed digest, so regenerating the literal stays red;
     4. a critic's new verdict line, carrying the new digest, is what turns it green, and its round, naming
        the row, is what lets the literal be regenerated."""
@@ -5494,11 +5507,11 @@ def test_a_changed_rule_stays_red_until_a_critic_writes_a_new_verdict() -> None:
     assert reviewed_block_errors(may, rows, pasted) == []
     pasted_red = [
         "[frozen-review] HRV-24: the line changed; a verdict line changes only in a critic round",
-        ("[frozen-review] HRV-24: its verdict line changed and the last round under ## Rounds (1) does not name it: "
-         "only a critic round changes a verdict line (R7)")]
+        ("[frozen-review] HRV-24: its verdict line changed and no round under ## Rounds that is not yet in "
+         "REVIEW_PROSE_SHA256 (none) names it: only a critic round changes a verdict line (R7)")]
     assert seen == pasted_red and not any(re.search(r"[0-9a-f]{12}|= '", e) for e in seen)
     # 3b. Regenerating REVIEW_LINE_SHA256 as frozen_literals() does keeps the committed HRV-24 digest.
-    regenerated, unnamed = review_line_literal(pasted, frozen_lines)
+    regenerated, unnamed = review_line_literal(pasted, frozen_lines, frozen_prose)
     print(f"[slice compared] regenerated after the paste: HRV-24 {regenerated['HRV-24']} (committed "
           f"{frozen_lines['HRV-24']}, pasted line {_cell_digest(pasted_row)}), unnamed {unnamed}; "
           f"{review_line_errors(pasted, regenerated, frozen_prose)}")
@@ -5509,7 +5522,7 @@ def test_a_changed_rule_stays_red_until_a_critic_writes_a_new_verdict() -> None:
     print(f"[slice compared] new verdict: {reviewed_block_errors(may, rows, renewed)}")
     assert reviewed_block_errors(may, rows, renewed) == []
     rounded = renewed + "\nRound 2: a fresh critic re-reviewed HRV-24 and returned 0 differs verdicts.\n"
-    regenerated, unnamed = review_line_literal(rounded, frozen_lines)
+    regenerated, unnamed = review_line_literal(rounded, frozen_lines, frozen_prose)
     new_prose = tuple(_cell_digest(p) for p in review_entries(rounded)[1])
     print(f"[slice compared] with round 2: unnamed {unnamed}, HRV-24 {regenerated['HRV-24']}; "
           f"{review_line_errors(rounded, regenerated, new_prose)}")
@@ -5715,7 +5728,7 @@ def test_real_path_every_review_line_and_the_rounds_are_frozen() -> None:
     is ``REVIEW_LINE_SHA256``, both ways, over exactly the rows ``required_review_rows`` gives (T192:
     these were ``REVIEWED_BLOCK_SHA256``'s keys); and the file's prose, ``## Rounds`` included, is
     ``REVIEW_PROSE_SHA256``. T192 step C1: every row whose verdict line differs from the literal is named
-    by the last round (inside ``review_line_errors``), and ``review_line_literal`` regenerates the literal
+    by an unfrozen round (inside ``review_line_errors``), and ``review_line_literal`` regenerates the literal
     exactly."""
     research, _history, rows = _real()
     review = _REAL_REVIEW.read_text(encoding="utf-8")
@@ -5724,7 +5737,8 @@ def test_real_path_every_review_line_and_the_rounds_are_frozen() -> None:
     required = required_review_rows(research, rows)
     regenerated, unnamed = review_line_literal(review, REVIEW_LINE_SHA256)
     print(f"[slice compared] {len(entries)} verdict lines, {len(REVIEW_LINE_SHA256)} frozen, {len(required)} "
-          f"required, {len(prose)} prose lines, last round {last_round(review)[0]}, unnamed {unnamed}; PRIN-01 "
+          f"required, {len(prose)} prose lines, unfrozen rounds {[n for n, _ in unfrozen_rounds(review)]}, unnamed "
+          f"{unnamed}; PRIN-01 "
           f"{_keyed_digest(dict(entries)['PRIN-01'])} vs {REVIEW_LINE_SHA256['PRIN-01']}, T-13 "
           f"{_keyed_digest(dict(entries)['T-13'])} vs {REVIEW_LINE_SHA256.get('T-13')}: {errors[:5]}")
     assert errors == []
@@ -5740,8 +5754,8 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     too, so a digest cell pasted without a new verdict is visible.
 
     T192 step C1 (the residual paste route): no verdict-line message prints a digest, and each changed or
-    added row the last round does not name is named again as such; a row the last round names reds only
-    until the literal is regenerated."""
+    added row no unfrozen round names is named again as such; a row an unfrozen round names reds only
+    until the literal is regenerated. T194: an unfrozen round is one not yet in ``REVIEW_PROSE_SHA256``."""
     required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
     base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
     entries, prose = review_entries(base)
@@ -5758,9 +5772,9 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     added = _one_edit(base, row, f"{row}\n| PRIN-01/Why | same | {d} | A synthetic reason. |")
     changed = "[frozen-review] PRIN-01: the line changed; a verdict line changes only in a critic round"
 
-    def unnamed(label: str, round_name: str = "1") -> str:
-        return (f"[frozen-review] {label}: its verdict line changed and the last round under ## Rounds ({round_name}) "
-                f"does not name it: only a critic round changes a verdict line (R7)")
+    def unnamed(label: str, round_names: str = "none") -> str:
+        return (f"[frozen-review] {label}: its verdict line changed and no round under ## Rounds that is not yet "
+                f"in REVIEW_PROSE_SHA256 ({round_names}) names it: only a critic round changes a verdict line (R7)")
     cases = {
         "n12-reason": ((_one_edit(base, row, n12), frozen, frozen_prose), [changed, unnamed("PRIN-01")]),
         "n11-verdict": ((_one_edit(base, row, n11), frozen, frozen_prose), [changed, unnamed("PRIN-01")]),
@@ -5788,21 +5802,101 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     # round 2 names takes its new one.
     for name, text, want in (("digest-cell", _one_edit(base, row, pasted), (frozen, ["PRIN-01"])),
                              ("named-by-round-2", named, ({**frozen, "PRIN-01": _cell_digest(pasted)}, []))):
-        print(f"[slice compared] regenerated {name}: {review_line_literal(text, frozen)}")
-        assert review_line_literal(text, frozen) == want
+        print(f"[slice compared] regenerated {name}: {review_line_literal(text, frozen, frozen_prose)}")
+        assert review_line_literal(text, frozen, frozen_prose) == want
 
 
-def test_last_round_labels_reads_labels_and_ranges_from_the_last_round_only() -> None:
-    """T192 step C1: the rows a round names are its label tokens, with ``/Scope``, ``/Not`` or ``/Why``
-    kept, and each ``A to B`` range of one prefix; only the last ``Round N:`` under ``## Rounds`` counts."""
+def _regenerate(text: str, frozen: dict[str, str], frozen_prose: tuple[str, ...]) -> list[str]:
+    """``review_line_errors`` after regenerating both review literals as ``frozen_literals()`` does:
+    ``REVIEW_LINE_SHA256`` through ``review_line_literal`` against the committed literals, and
+    ``REVIEW_PROSE_SHA256`` from the prose as it stands."""
+    lines = review_line_literal(text, frozen, frozen_prose)[0]
+    return review_line_errors(text, lines, tuple(_cell_digest(p) for p in review_entries(text)[1]))
+
+
+def test_review_line_errors_accepts_every_unfrozen_round_and_no_frozen_one() -> None:
+    """T194: two critic rounds between commits (rounds 8 and 9) each freeze the rows they name, so the
+    rows a changed verdict line may carry are those named by every ``Round N:`` paragraph not yet in
+    ``REVIEW_PROSE_SHA256``, not only the last one's. On a synthetic review, each message exactly:
+
+    (a) two unfrozen rounds, each naming its own changed row: green once both literals are regenerated
+        (a last-round-only rule leaves round 2's row unnamed);
+    (b) a row changed and named only by an already-frozen round, with a new round naming another row: red
+        after regenerating (a rule that accepts every round clears it);
+    (c) a label appended to an already-frozen round paragraph to cover a pasted row: red on that prose line,
+        and still red once ``REVIEW_LINE_SHA256`` alone is regenerated."""
+    required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
+    d = _SYNTHETIC_DIGEST
+    row, arch = (f"| PRIN-01 | same | {d} | A synthetic reason. |", f"| ARCH-01/Not | same | {d} | A synthetic reason. |")
+    pasted, arch_new = ("| PRIN-01 | same | 0123456789ac | A synthetic reason. |",
+                        "| ARCH-01/Not | same | 0123456789ad | A new synthetic verdict. |")
+    changed = "[frozen-review] {}: the line changed; a verdict line changes only in a critic round"
+
+    def unnamed(label: str, round_names: str) -> str:
+        return (f"[frozen-review] {label}: its verdict line changed and no round under ## Rounds that is not yet "
+                f"in REVIEW_PROSE_SHA256 ({round_names}) names it: only a critic round changes a verdict line (R7)")
+
+    def frozen_of(text: str) -> tuple[dict[str, str], tuple[str, ...]]:
+        entries, prose = review_entries(text)
+        return {k: _keyed_digest(v) for k, v in entries}, tuple(_cell_digest(p) for p in prose)
+
+    # (a) Rounds 2 and 3 both written since the last freeze, naming PRIN-01 and ARCH-01/Not in turn.
+    base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
+    frozen, frozen_prose = frozen_of(base)
+    two = (_one_edit(_one_edit(base, row, pasted), arch, arch_new)
+           + "\nRound 2: a fresh critic re-reviewed PRIN-01.\n\nRound 3: a fresh critic re-reviewed ARCH-01/Not.\n")
+    names = [n for n, _ in unfrozen_rounds(two, frozen_prose)]
+    lines_a, unnamed_a = review_line_literal(two, frozen, frozen_prose)
+    print(f"[slice compared] (a) unfrozen rounds {names}, labels {sorted(unfrozen_round_labels(two, frozen_prose))}, "
+          f"unnamed {unnamed_a}; committed {review_line_errors(two, frozen, frozen_prose)}; "
+          f"regenerated {_regenerate(two, frozen, frozen_prose)}")
+    assert names == ["2", "3"] and unfrozen_round_labels(two, frozen_prose) == {"PRIN-01", "ARCH-01/Not"}
+    assert unnamed_a == [] and lines_a == {**frozen, "PRIN-01": _cell_digest(pasted), "ARCH-01/Not": _cell_digest(arch_new)}
+    assert review_line_errors(two, frozen, frozen_prose) == [
+        changed.format("PRIN-01"), changed.format("ARCH-01/Not"),
+        ("[frozen-review] prose line 6 of 7 (the headings, the opening paragraph and ## Rounds) is not the "
+         "frozen line (now 'Round 2: a fresh critic re-reviewed PRIN-01.'); a round is recorded only with the "
+         f"review it records: once it is, REVIEW_PROSE_SHA256 = {frozen_of(two)[1]!r}")]
+    assert _regenerate(two, frozen, frozen_prose) == []
+    # (b) Round 1, already frozen, names PRIN-01; a new round 2 names only HRV-07; PRIN-01's cell is pasted.
+    base_b = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed PRIN-01 and 3 more.\n"
+    frozen_b, prose_b = frozen_of(base_b)
+    stale = _one_edit(base_b, row, pasted) + "\nRound 2: a fresh critic re-reviewed HRV-07.\n"
+    print(f"[slice compared] (b) unfrozen rounds {[n for n, _ in unfrozen_rounds(stale, prose_b)]}, "
+          f"regenerated {_regenerate(stale, frozen_b, prose_b)}")
+    assert review_line_literal(stale, frozen_b, prose_b) == (frozen_b, ["PRIN-01"])
+    assert review_line_errors(stale, frozen_b, prose_b)[:2] == [changed.format("PRIN-01"), unnamed("PRIN-01", "2")]
+    assert _regenerate(stale, frozen_b, prose_b) == [changed.format("PRIN-01"), unnamed("PRIN-01", "none")]
+    # (c) The frozen round 1 paragraph gains the label PRIN-01 to cover a pasted cell: its prose line is named.
+    edited_round = "Round 1: a synthetic critic reviewed 4 rows, PRIN-01 among them."
+    appended = _one_edit(_one_edit(base, row, pasted), "Round 1: a synthetic critic reviewed 4 rows.", edited_round)
+    prose_red = ("[frozen-review] prose line 5 of 5 (the headings, the opening paragraph and ## Rounds) is not the "
+                 f"frozen line (now {edited_round!r}); a round is recorded only with the review it records: once it "
+                 f"is, REVIEW_PROSE_SHA256 = {frozen_of(appended)[1]!r}")
+    lines_c = review_line_literal(appended, frozen, frozen_prose)[0]
+    print(f"[slice compared] (c) committed {review_line_errors(appended, frozen, frozen_prose)}; line literal "
+          f"regenerated {review_line_errors(appended, lines_c, frozen_prose)}")
+    assert review_line_errors(appended, frozen, frozen_prose) == [changed.format("PRIN-01"), prose_red]
+    assert review_line_errors(appended, lines_c, frozen_prose) == [prose_red]
+
+
+def test_unfrozen_round_labels_reads_labels_and_ranges_from_every_unfrozen_round() -> None:
+    """T192 step C1, T194: the rows a round names are its label tokens, with ``/Scope``, ``/Not`` or
+    ``/Why`` kept, and each ``A to B`` range of one prefix; every ``Round N:`` under ``## Rounds`` whose
+    line is not frozen counts, a frozen round, a line before the heading and the Final line do not."""
+    round_1 = "Round 1: a critic named PRIN-01."
     review = ("# Review\n\nRound 9: prose before the Rounds heading names HRV-01.\n\n## Rounds\n\n"
-              "Round 1: a critic named PRIN-01.\n\n"
+              f"{round_1}\n\nRound 2: a critic named ARCH-01/Why.\n\n"
               "Round 3b: a critic re-reviewed HRV-82/Scope, DOC-04, FIG-11/Scope and the 3 Glossary lines T-01 to T-03.\n"
               "\nFinal: 4 rows, naming ARCH-12.\n")
-    print(f"[slice compared] {last_round(review)[0]}: {sorted(last_round_labels(review))}")
-    assert last_round(review)[0] == "3b"
-    assert last_round_labels(review) == {"HRV-82/Scope", "DOC-04", "FIG-11/Scope", "T-01", "T-02", "T-03"}
-    assert last_round("## Rounds\n\nNo round yet.\n") == (None, "") and last_round_labels("") == set()
+    frozen_prose = (_cell_digest(round_1),)
+    print(f"[slice compared] {[n for n, _ in unfrozen_rounds(review, frozen_prose)]}: "
+          f"{sorted(unfrozen_round_labels(review, frozen_prose))}")
+    assert [n for n, _ in unfrozen_rounds(review, frozen_prose)] == ["2", "3b"]
+    assert unfrozen_round_labels(review, frozen_prose) == {
+        "ARCH-01/Why", "HRV-82/Scope", "DOC-04", "FIG-11/Scope", "T-01", "T-02", "T-03"}
+    assert unfrozen_round_labels(review, ()) == unfrozen_round_labels(review, frozen_prose) | {"PRIN-01"}
+    assert unfrozen_rounds("## Rounds\n\nNo round yet.\n", ()) == [] and unfrozen_round_labels("", ()) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -5945,13 +6039,14 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
         (f"history: {len(history_lines)} keyed lines, {len({k for k, _ in history_lines})} unique keys, "
          f"unkeyable {history_problems}"),
         (f"review: {len(review_lines)} verdict lines, {len({k for k, _ in review_lines})} unique rows, "
-         f"{len(prose)} prose lines; last round {last_round(review)[0]}; verdict lines changed with no "
-         f"round naming them {unnamed}"),
+         f"{len(prose)} prose lines; rounds not yet in REVIEW_PROSE_SHA256 {[n for n, _ in unfrozen_rounds(review)]} "
+         f"naming {sorted(unfrozen_round_labels(review))}; verdict lines changed with no such round naming them "
+         f"{unnamed}"),
     ]
     problems = glossary_problems + pinned_problems + history_problems + block_problems
     problems += [f"{label} needs a critic verdict" for label in unreviewed]
     problems += [f"{label} changed after its verdict" for label in changed]
-    problems += [f"{row}'s verdict line changed and the last round does not name it" for row in unnamed]
+    problems += [f"{row}'s verdict line changed and no unfrozen round names it" for row in unnamed]
     problems += [f"{k} occurs more than once" for entries in (glossary, history_lines, review_lines)
                  for k, n in Counter(k for k, _ in entries).items() if n > 1]
     return values, notes + [f"problems {problems}"]

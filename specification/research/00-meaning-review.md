@@ -51,7 +51,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-17/Not | same | c93966d11465 | A veto can only lower a session, which section 1.3 and section 1.7 already require. |
 | PRIN-18 | same | 31ef81e47807 | Weak single day, actionable coherent decline, and a single good night not clearing multi-day suppression; the in-force word instantly, already absent from the inventory, adds nothing a single night could change. |
 | PRIN-18/Scope | same | aee13726ffd4 | Section 1.4 governs the readiness reading, which is the day-of readiness rung. |
-| PRIN-18/Not | same | 2b55b40ca339 | The HRV verdict windows and counts are set by in-force HRV-08 and HRV-09; this only marks the boundary. |
+| PRIN-18/Not | same | 2b55b40ca339 | Round 8: neighbour; HRV-08 and HRV-09 still set the windows and counts. |
 | PRIN-07 | same | d661923cc81b | Rule line unchanged: the same six metric families built only from the same seven raw signals, power where present, as section 1.5 says; only the Scope line moved. |
 | PRIN-07/Scope | same | 0ccdb04b3c57 | Resolves round 1: the scope is now the state model and the five named metric families as section 1.5 lists them, so subjective input and the cold-start estimator are no longer swept in; wherever the system computes them adds no meaning. |
 | PRIN-07/Not | same | 59cc84ae9a2d | Vendor-derived estimates are the quarantined metrics of section 1.5. |
@@ -59,11 +59,11 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-08/Scope | same | b79b75ab630b | Resolves round 1: the quarantine now reaches every vendor black-box metric from any vendor, with the six listed ones among them, matching section 1.5 and keystone 6, so an unlisted vendor metric can no longer feed a decision. |
 | PRIN-08/Not | same | 43bf841c503a | The numeric resting rMSSD is the section 1.5 boundary case admitted as an HRV input. |
 | PRIN-08/Why | same | 73f7f3c5b989 | States C24's point that no default or switch lets the coaching logic read a quarantined metric, and no more. |
-| PRIN-09 | same | b8466fcaa59b | An open derived estimate such as the cold-start estimator is owned and transparent and so consistent with raw over derived, as section 1.5 says. |
+| PRIN-09 | same | b8466fcaa59b | Round 8: neighbour; PRIN-07 still builds only on raw signals, so an owned open method is consistent with it. |
 | PRIN-09/Scope | same | fe231d6eb6bf | An open documented method reproduced in the owned namespace, as section 1.5 and section 3.2 describe. |
 | PRIN-09/Not | same | fb88b29ff2c2 | Section 3.2 keeps the vendor construction of the same estimate quarantined. |
 | PRIN-10 | same | c9496d34707f | Same two numeric sources, standard statistic not a composite, admitted as an HRV input; reduced fidelity as an ordinal rank is the in-force meaning once the section 3 no-confidence-weight correction is read with it, per C19. |
-| PRIN-10/Scope | same | ab4137f32c05 | The numeric tiers of the hierarchy are the sources this rule admits. |
+| PRIN-10/Scope | same | ab4137f32c05 | Round 8: neighbour; HRV-01 still orders the tiers, and tiers 2 and 3 are the numeric ones. |
 | PRIN-10/Not | same | 83ed8d397c03 | The numeric per-tier weight deferred to section 6 is C19's resolution and the in-force correction. |
 | PRIN-19 | same | f8cec5657ba1 | Rule line unchanged: display and divergence surfacing as the only uses, C24's decision text; only the Scope line moved. |
 | PRIN-19/Scope | same | 564e3f8991a9 | Resolves round 1: every vendor black-box metric PRIN-08 quarantines, the six listed ones among them, so the only-uses limit covers the whole quarantined set the in-force rule names by example. |
@@ -78,37 +78,37 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-11 | same | 759ce8fb41ee | Rule line unchanged: every derived metric has a transparent reproducible formula the spec states in full, as section 1.6 says. |
 | PRIN-11/Scope | same | d00ae3d76812 | Resolves round 1: every metric the system derives, now naming open derived estimates such as the cold-start estimator, which section 1.5 calls owned and transparent and PRIN-09 keeps; the raw-signal narrowing is gone. |
 | PRIN-11/Not | same | a7ed8bca22e5 | Vendor black-box metrics are the quarantined ones, not the system's derived metrics. |
-| PRIN-12 | same | b2acf3b170c7 | Resolves round 1: the rule now names every unserved verdict-affecting constant as an OPEN exception, window_days today, as C33 requires of PRIN-12 itself, and no longer calls the seven served constants the whole set; the seven names are unchanged and agree with PRIN-24. |
-| PRIN-12/Scope | same | d4f3dac795bd | Response-level reading including selected_reason is C33's decision and the inventory's C33 evidence. |
-| PRIN-12/Not | same | 79610d715295 | The spec stating the formulas in full is the section 1.6 clause kept in PRIN-11. |
-| PRIN-12/Why | same | 9bc596260189 | States C33's response-level reading, recency_tolerance_days made served by F010, and the reversal of the IDEA-070 narrowing recorded at H-17. |
+| PRIN-12 | same | 41b97ba007c1 | Round 8: says what the T194 ruling says: the seven constants baseline_days, min_baseline_readings, min_window_readings, gap_reset_days, band_floor, swc_factor and recency_tolerance_days are all still served, and the exception widens from unserved constants to every unserved verdict-affecting input, which it names as window_days and the withhold day order with PRIN-24 as the pointer, so the shortened wording loses no part of the ruling; it agrees with PRIN-24, which names the same two, with HRV-17, and with the code, whose Thresholds block serves six today and whose verdict_withheld reads another dataset day order that only week_days counts. |
+| PRIN-12/Scope | same | d4f3dac795bd | Round 8: each response read on its own is the scope C33 sets at the response level, and R13 and the T194 widening change the exception, not the scope. |
+| PRIN-12/Not | same | 79610d715295 | Round 8: the formulas stay with PRIN-11 under C33 and R13 alike; the widened exception concerns served inputs, not formulas. |
+| PRIN-12/Why | same | 9bc596260189 | Round 8: states C33 exactly, recency_tolerance_days served through F010 reversing H-17; the R13 half of the decision cell, the withhold as a second exception, is explained by PRIN-24/Why, and nothing here contradicts it or the T194 widening. |
 | PRIN-22 | same | 40852c4fcdb8 | Every applied adaptation or decision logged with its inputs and the rule that fired, as section 1.6 and the Part 1 intro say. |
 | PRIN-22/Scope | same | 5da0a2823dbe | Every applied adaptation, whatever loop or rung produced it. |
 | PRIN-22/Not | same | 114757cf603b | Section 5.3 has chat explanation read the decision log. |
-| PRIN-23 | same | b10b26a50cb7 | Every stored row inside the windows is in exactly one dataset or excluded with exactly one reason, unchanged from the inventory. |
-| PRIN-23/Scope | same | bd38d855141a | The windows are the baseline window and judged week, D-66 through D, as the code's partition comment states. |
-| PRIN-23/Not | same | 6b4725bd80fb | Rows before D-66 are read for the era rule and trimmed from the response's excluded list, as the route does. |
-| PRIN-24 | same | 5c0af79c297a | Round 4: states what R13 M3 rules and no more: window_days (7, the WINDOW_DAYS of hrv_trend.py) stays the first OPEN exception, and the withhold of HRV-31 is the second, owned by IDEA-102, fired or not, since verdict_withheld compares the order of the judged-week days of another dataset and the response serves only DatasetSummary.week_days, a count; one sentence holds both and PRIN-12 is unchanged, as R13 requires. |
+| PRIN-23 | same | b10b26a50cb7 | Round 8: the second inventory sentence of the PRIN-12 row, unchanged by C33 or R13; build_series lists each row in one dataset series or once in excluded. |
+| PRIN-23/Scope | same | bd38d855141a | Round 8: every stored row in [D-66, D], the windows the rule names, unchanged by the cell. |
+| PRIN-23/Not | same | 6b4725bd80fb | Round 8: rows outside the windows are read by the era rule and trimmed from excluded by main.py, so the response does not list them. |
+| PRIN-24 | same | 5c0af79c297a | Round 8: neighbour; PRIN-12 now names this rule two exceptions itself, so calling them exceptions to PRIN-12 reads true. |
 | PRIN-24/Scope | same | 0e1a04d2542d | Round 4: the unserved constants of C33 plus the judged-week day order the withhold compares, asked of every dataset by HRV-63 as verdict_withheld is, which is the unserved fact R13 names and nothing wider. |
-| PRIN-24/Not | same | f615e9b99379 | Round 4: recency_tolerance_days stays excluded as served once F010 lands, per C33, and the per-dataset judged-week count is excluded because DatasetSummary.week_days serves it, which is the half R13 says is served. |
-| PRIN-24/Why | same | 8176401abbe6 | Round 4: cites C33 for the constant exception and the R13 review rulings, recorded at H-41, for the withhold, with the ground R13 gives, that no served field carries the day order. |
+| PRIN-24/Not | same | f615e9b99379 | Round 8: neighbour; PRIN-12 still names recency_tolerance_days as served once F010 lands. |
+| PRIN-24/Why | same | 8176401abbe6 | Round 8: neighbour; C33 had PRIN-12 name unserved constants and the rulings added the withhold (H-39, H-41); the widened PRIN-12 agrees. |
 | PRIN-13 | same | be8b15fee359 | Reduce freely, never manufacture hard work, no easy day made hard on a green day, placement with the weekly plan; dropping the in-force words on impulse changes nothing, since placement stays with the plan. |
 | PRIN-13/Scope | same | bd00e12e23c6 | Section 1.7 is about the daily gate's effect on the planned session. |
 | PRIN-13/Not | same | ad93b63bc539 | The project rule calls this a design invariant, not a tunable default. |
 | PRIN-14 | same | fdc2c14b5214 | Round 7: only the ruled term changed; MUST withhold the verdict in the broad sense retired by the T-11 ruling now reads MUST serve hrv_unavailable, which is what every absent verdict is served as (T-33), so the insufficient-evidence duty stays unconditional as C07 states, and the PRIN-15 exceptions, the C06 and C07 cell and T-24 are untouched. |
-| PRIN-14/Scope | same | e450c8114047 | Every served HRV verdict is the population the forbidden direction is judged over. |
-| PRIN-14/Not | same | c58d67456d93 | Manufactured hard work is section 1.7's original clause, kept in PRIN-13. |
+| PRIN-14/Scope | same | e450c8114047 | Round 8: every served HRV verdict is the reach C06 and C07 give the rule, whichever dataset and cause. |
+| PRIN-14/Not | same | c58d67456d93 | Round 8: the hard-work clause is PRIN-13, separate from the forbidden direction under C06 and C07. |
 | PRIN-14/Why | same | f42d9eadcb5e | States C07's weak-evidence clause and the single T-24 definition, and now credits C06 for making the whole direction absolute but for PRIN-15's named exceptions, which is C06's text; no further claim is added. |
-| PRIN-15 | same | 1083fa6079ec | Never on rarity, only as a named, counted, test-pinned, IDEA-owned exception that may not grow, and exactly three exceptions with their owners, as C06 and R5 state. |
-| PRIN-15/Scope | same | 5e5800b34562 | Every population the forbidden direction reaches is the set C06 governs. |
-| PRIN-15/Not | same | 161d4d24e7fd | The rule governs which populations may ship, not the verdict logic, which the HRV rules state. |
-| PRIN-15/Why | same | 0a62d4ea5ff2 | States C06's absolute-but-for-named-exceptions and R5's count of three rather than two. |
+| PRIN-15 | same | 1083fa6079ec | Round 8: C06 absolute direction with named, counted, pinned exceptions that may not grow, and exactly three today, the F005-parity population and DEFERRED_EXCEPTION under IDEA-087 and HRV-25 under IDEA-099, as H-41 and the R13 counts record; the R13 part of the cell changes only PRIN-25 figures. |
+| PRIN-15/Scope | same | 5e5800b34562 | Round 8: neighbour; PRIN-14 still defines the forbidden direction; its hrv_unavailable rewording changes no population. |
+| PRIN-15/Not | same | 161d4d24e7fd | Round 8: the verdict logic stays with HRV-14 to HRV-31; C06 and the R13 counts govern only which populations ship. |
+| PRIN-15/Why | same | 0a62d4ea5ff2 | Round 8: C06 and the three counted exceptions of H-39 and H-41 match the decision cell. |
 | PRIN-25 | same | ea37aacd156e | Round 5: R13 S5 counts DEFERRED_EXCEPTION as the 64 worsened gated rows, the unit GATE-05 uses and DEFERRED_EXCEPTION_ROWS 64 pins in the gate test, where deferred keeps only worse_rows, which are gated rows with f006 above f005; the population is unchanged. Round 4: R13 S9 corrects the F005-parity counts to 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, the F005 column of DEFERRED_EXCEPTION_TOTALS in the gate test, so the two IDEA-087 exceptions no longer overlap; the 64 worsened rows at c 4 and 5 named by GATE-05 are unchanged. |
-| PRIN-25/Scope | same | 59bb14df91e9 | The two IDEA-087 exceptions as T162 measured them, which R5 states. |
-| PRIN-25/Not | same | 3642a7e5e60d | R5 leaves HRV-25's count to F009. |
-| PRIN-26 | same | 3bdc3cb84d33 | Rule line unchanged: naming before counting only while a feature owns the count, with F009 owning HRV-25's count and pin and the count OPEN, per C06's note and R5. |
-| PRIN-26/Scope | same | 0d2d916961ec | Resolves round 1: the scope is now every exception PRIN-15 names before it is counted, and since C06 has PRIN-15 list every exception, a later uncounted one falls inside; HRV-25's population is defined in HRV-25, so dropping it here loses nothing. |
-| PRIN-26/Not | same | 55aa769c5980 | An uncounted exception with no owning feature may not ship, which is the converse C06's note implies. |
+| PRIN-25/Scope | same | 59bb14df91e9 | Round 8: the two IDEA-087 exceptions as T162 measured them, which the R13 S9 counts restate. |
+| PRIN-25/Not | same | 3642a7e5e60d | Round 8: HRV-25 is counted by F009, as PRIN-26 and the IDEA table say. |
+| PRIN-26 | same | 3bdc3cb84d33 | Round 8: under C06 and R13 an uncounted exception ships only while a feature owns its count, and F009 owns HRV-25, as the IDEA table records. |
+| PRIN-26/Scope | same | 0d2d916961ec | Round 8: HRV-25 is today the one exception named before it is counted. |
+| PRIN-26/Not | same | 55aa769c5980 | Round 8: an uncounted exception with no owning feature may not ship, as C06 requires. |
 | AUT-01 | same | cd95606074eb | Applies every plan adaptation autonomously, re-periodizations included, and explains afterwards with no confirmation step, as section 1.8 says. |
 | AUT-01/Scope | same | 58f1ac7d789f | The plan is what section 1.8 and section 1.9 say the system owns. |
 | AUT-01/Not | same | 96c3c0688555 | The two exceptions are the section 1.8 matters the system does not own. |
@@ -154,14 +154,14 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | DOC-06/Why | same | 1ca51bf6fa3f | States C31's rule that IND-01 governs all per-athlete tuning. |
 | DOC-07 | same | 5851626610bf | Resolves round 1: the register is again the single place the spec reconciles choices made under scientific uncertainty or among competing methods, parameter defaults included, which is the Part 3 intro; method choices are restored. |
 | DOC-07/Scope | same | 226f8636bffe | Every such choice, research- or spec-introduced, follows the widened rule line and the Part 3 intro, and adds no meaning. |
-| DOC-07/Not | same | 36d64493bffa | The mechanism docs hold the derivations, per section 5.1. |
+| DOC-07/Not | same | 36d64493bffa | Round 8: neighbour; DOC-04 still holds the derivations in the mechanism docs. |
 | DOC-08 | same | 7a48246d8507 | The rule line is byte-identical to round 3 and still states the in-force duty, a research basis or a pure engineering default plus graceful degradation; only the Scope line changed, and it is judged on DOC-08/Scope. |
-| DOC-08/Scope | same | 57ef6cd15cb2 | Applies the R12 round-3 correction exactly and resolves T188: it lists the eight marked rows of 4e47d0e L114 to L119, L121 and L122 (REG-10 to REG-15, REG-17, REG-18) and every split-off, REG-25 from 11, REG-26 from 15, REG-28 from 17, REG-29 and REG-30 from 18, as 00-traceability confirms; REG-16 and REG-27 stay out as research-ratified, REG-18 restores the pure engineering default example, nothing new is added. Key verdict: the REG-09 re-point is sound, since C19-hrv-04-reduced-confidence matches only the resting numeric tier weight (at reduced confidence, still live at schemas.py:298) and cannot match activity-PPG down-weighting, which R12 keeps, and removing C19-reg09-ppg-down-weighted stops F011 sweeping it; the key is now shared with HRV-04, which R3 allows. |
-| DOC-08/Not | same | 3f6ee134808b | Rows ratified from cited research are the other half of the Part 3 intro. |
+| DOC-08/Scope | same | 57ef6cd15cb2 | Round 8: neighbour; REG-25 changed only its hrv_unavailable wording and is still split off a spec-introduced row. |
+| DOC-08/Not | same | 3f6ee134808b | Round 8: neighbour; DOC-18 still governs rows ratified from research. |
 | DOC-17 | same | 80a6f7ba6ddc | Invariants excepted from tuning is C31's text, with PRIN-13 as the in-force example. |
 | DOC-17/Scope | same | 44b9f0946f17 | Every rule research/00 names a design invariant. |
 | DOC-17/Not | same | 5f3befffef78 | Heuristic defaults are DOC-06's. |
-| DOC-18 | same | 0e3a69cf6e2c | Resolves T188: the exception now names the same eight marked rows and five split-offs as DOC-08/Scope, so REG-18 is back inside it, while REG-16 and its split-off REG-27, from the H-04 batch but cited to research/04 and never marked, correctly stay under the ratified-from-research duty; the closing clause holds because every listed row sits in the H-04 or H-05 batch, and nothing else in the rule moved. |
+| DOC-18 | same | 0e3a69cf6e2c | Round 8: neighbour; REG-25 changed only its hrv_unavailable wording; the list and H-04 and H-05 stand. |
 | DOC-18/Scope | same | da14a8687a45 | Every register row. |
 | DOC-18/Not | same | e8f6dcb5f15d | Resolves round 1: the carve-out for an unmarked row citing no research is gone, so such a row now breaks the rule; excluding per-athlete tuning, which IND-01 governs under C31, is a neighbouring subject and adds no exemption. |
 | DOC-15 | same | ed78409c94a8 | Deferred and future items, coach-in-the-loop, LT1 detail and the human-coach-specification candidates, live in future-directions, as the cited in-force sites say. |
@@ -169,16 +169,16 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | DOC-15/Not | same | a2f9bf38a000 | Current rules stay in research/00. |
 | DOC-01 | same | c4aa7f4cbf34 | Single decision authority governing the spec, every decisions record and any apparent difference with research/01 to 06, as the preamble and section 5.1 say. |
 | DOC-01/Scope | same | b77303a824c8 | The rules and the derived documents that restate them are what the authority governs. |
-| DOC-01/Not | same | 52a701272e8e | The preamble says research/00 does not restate physiology or device detail, which the mechanism docs hold. |
+| DOC-01/Not | same | 52a701272e8e | Round 8: neighbour; DOC-04 still makes the mechanism docs the evidence. |
 | DOC-05 | same | 47433d9f0455 | The spec references research/00 for conflict-resolution, parameter-default and freedom-to-operate questions and the mechanism docs for derivations, as section 5.1 says. |
 | DOC-05/Scope | same | ec7f8f98c694 | Every section of the Phase-2 specification. |
-| DOC-05/Not | same | 6c2a12e5f0b3 | Derivations belong to the mechanism docs, per section 5.1. |
+| DOC-05/Not | same | 6c2a12e5f0b3 | Round 8: neighbour; DOC-04 still leaves derivations to the mechanism docs. |
 | DOC-04 | same | 2e63a0802198 | Round 4: the same two exceptions, the research/05 section 3.2 cold start and the section 2.4 and 6 SWC band restatement, now cited by COLD-07 and H-09, where they are recorded (S8); H-09 does record research/05 sections 2.4 and 6 restated, and the evidence and elevation clauses are unchanged. |
 | DOC-04/Scope | same | b328c6a56ade | The mechanism docs section 5.2 lists. |
 | DOC-04/Not | same | 94f2bc92f29f | Round 4: adds that no section 5.4 rule changes a mechanism doc, which follows from the rule line limiting changes to the two exceptions, neither of which is a section 5.4 rule, and no rule under section 5.4 names a mechanism doc; the section 5.4 number the AC9 proxy needs is kept. |
 | DOC-03 | same | e69eee603461 | Decision records conform to Parts 1 to 4 and research/00 governs a conflict until the record is reconciled, as section 5.3 says. |
 | DOC-03/Scope | same | 569c8d4bae00 | Every record under decisions. |
-| DOC-03/Not | same | 59aa351b16e5 | The mechanism docs are governed separately by section 5.1 and 5.2. |
+| DOC-03/Not | same | 59aa351b16e5 | Round 8: neighbour; DOC-04 still governs the mechanism docs. |
 | AUT-05 | same | 17e4d487f044 | Chat is an I/O layer in which the LLM translates and explains and the engine decides, as section 5.3 says; routing moves to AUT-07. |
 | AUT-05/Scope | same | d9bca8e40cc5 | The Conversational Coach Interface of decisions/01 is section 5.3's subject. |
 | AUT-05/Not | same | 5be81b2ebd82 | The engine decides, so the LLM does not. |
@@ -227,15 +227,15 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 
 | row | verdict | digest | reason |
 | --- | --- | --- | --- |
-| ARCH-00 | same | 8542a3f43cc1 | Rule line matches the in-force Part 2 preamble and the inventory sentence, and the new Not line makes no routing claim, so round 1's added meaning is gone |
+| ARCH-00 | same | 8542a3f43cc1 | Round 8: neighbour; ARCH-13 changed only its hrv_unavailable wording; the range still states the keystones. |
 | ARCH-00/Scope | same | e5167d14e030 | Every design choice the spec makes is what the in-force preamble means by the specification must honour all eight |
-| ARCH-00/Not | same | 24f2d975c0f8 | Resolved: the Not line now only points to ARCH-01 to ARCH-13 for each keystone's detail, which the rule line already says, and claims nothing about who settles other questions |
+| ARCH-00/Not | same | 24f2d975c0f8 | Round 8: neighbour; ARCH-13 changed only its hrv_unavailable wording. |
 | ARCH-01 | same | 6f21ab2b6449 | Primary loop, four between-session loops as the core, optional on-device stretch module approximated post hoc: matches inventory and in-force keystone 1 |
 | ARCH-01/Scope | same | 1236aec58159 | Every adaptation to training is the reach of keystone 1; adds nothing |
 | ARCH-01/Not | same | 7781cd389228 | In-force keystone 1 says genuine in-session adaptation is possible only on device, so excluding in-session cutoffs from the core adds nothing |
 | ARCH-02 | same | 03cdd3e4ebc5 | Same determinant list, each with a trend and a confidence, as inventory and in-force keystone 2 |
 | ARCH-02/Scope | same | 30367a2dc0ff | The determinants of race pace are exactly what keystone 2 profiles |
-| ARCH-02/Not | same | e4a1f38e3a13 | In-force keystone 2 rejects trusting a vendor VO2max, and PRIN-08 quarantines it; no new meaning |
+| ARCH-02/Not | same | e4a1f38e3a13 | Round 8: neighbour; PRIN-08 still quarantines vendor metrics. |
 | ARCH-03 | same | 1550a2a8fa65 | Five-timescale nested loop with the same five loops as inventory and in-force keystone 3; the rest of the sentence moved to ARCH-09 |
 | ARCH-03/Scope | same | e21359d928e9 | Loops that adjust the plan are the subject of keystone 3 |
 | ARCH-03/Not | same | 965aeb745e17 | States the T-27 distinction between ladder rungs and loops as the inventory proposes it |
@@ -361,7 +361,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | REG-27/Not | same | 38300e63fd52 | Holding a population target after the own history identifies one is what IND-01 rules out |
 | REG-28 | same | 27b294948dc6 | Threshold governs surfacing only, never a decision, flag or state change, as in-force |
 | REG-28/Scope | same | a30c26198a0e | Own-versus-vendor divergences are the rule population |
-| REG-28/Not | same | d0213d2fb45d | Vendor numbers never enter a decision under PRIN-08; in-force says the same |
+| REG-28/Not | same | d0213d2fb45d | Round 8: neighbour; PRIN-08 still keeps vendor numbers out of decisions. |
 | REG-29 | same | 7fcbe780f50b | Raw per-sample streams kept for the current program plus a tunable rolling window, as in-force |
 | REG-29/Scope | same | 56a541512732 | Raw streams are the rule population |
 | REG-29/Not | same | 9d74de060409 | Records kept indefinitely stay with REG-18 |
@@ -430,13 +430,13 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | LT1-02 | same | 5c90f1bd927f | DFA-α1 equal to 0.75 is the recommended future determinant, not adopted for v1, as in-force and C27 |
 | LT1-02/Scope | same | 10613b0ce4d0 | LT1 determinations are the rule population |
 | LT1-02/Not | same | 7f5a66c92437 | The v1 boundary belongs to LT1-01 |
-| LT1-02/Why | same | 93fb500c42ae | C27 keeps the future path consistent with the in-activity HRV prohibition of HRV-05 |
+| LT1-02/Why | same | 93fb500c42ae | Round 8: neighbour; HRV-05 still forbids in-activity HRV in v1. |
 | LT1-03 | same | 6890f261cf1a | Resolved: any LT1 surrogate is future work outside v1, exactly C28, and LT1-01 no longer carries the refine-toward-a-surrogate clause, so the two agree |
 | LT1-03/Scope | same | 94cd9258389e | Proposed LT1 surrogates are the C28 population |
 | LT1-03/Not | same | 4dacc32160b5 | The v1 fraction is LT1-01 |
-| LT1-04 | same | 847b9b8ea963 | Adoption only under RR-quality gating, after validation including women, and by explicit amendment of HRV-05: in-force plus C27 |
+| LT1-04 | same | 847b9b8ea963 | Round 8: neighbour; HRV-05 still requires its own amendment. |
 | LT1-04/Scope | same | 86a30c3f6aa8 | Future adoptions of DFA-α1 are the rule population |
-| LT1-04/Not | same | aadfcd834386 | C27 keeps in-activity HRV out of every readiness input under HRV-05 |
+| LT1-04/Not | same | aadfcd834386 | Round 8: neighbour; HRV-05 still governs readiness inputs. |
 | LT1-04/Why | same | 9df511463e67 | C27 requires the amendment because DFA-α1 is computed from running RR |
 | LT1-05 | same | e36de8857cf8 | LT1 a human-coach-specification candidate in the interim, as in-force |
 | LT1-05/Scope | same | d28b10190c3e | In-force grounds the candidacy on a coach with a lab or field LT1 setting it directly |
@@ -474,7 +474,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | GATE-01/Not | same | 58c2f5e862e8 | The flip rate is measured under GATE-06, a separate clause of the same in-force sentence |
 | GATE-01/Why | same | df1c3445f8bb | C06 makes section 1.7 absolute, which is why every forbidden-direction rate is gated |
 | GATE-02 | same | d9a1f3ebb626 | No hysteresis, worsened set stays the 80 pinned walk_flips cells at car_density 2wk, revisit only on IDEA-089 (b), pointer to H-37, reopens wording gone: C05 in full |
-| GATE-02/Scope | same | cd72a08bef98 | The flip rate measured as GATE-01 measures its rates is the in-force population |
+| GATE-02/Scope | same | cd72a08bef98 | Round 8: neighbour; GATE-01 still measures against shipped F005 on every sweep. |
 | GATE-02/Not | same | 6a32203f7bb3 | A worsened cell outside the pinned 80 fails, which is what MUST remain the 80 cells means |
 | GATE-02/Why | same | 50848c756ce0 | H-37 records the C05 decision and its IDEA-089 (b) revisit condition |
 | GATE-03 | same | 95dfca4ecfa1 | Rule line still states C37, and its Not line now uses tolerance bracket as T-07 and the glossary name it |
@@ -482,13 +482,13 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | GATE-03/Not | same | a0e77beb7c9c | Resolved: names the measured interval the tolerance bracket, as T-07 and the glossary entry do, and adds nothing else |
 | GATE-03/Why | same | 3ffd87da959f | C37: no re-measurement result exists; T-07 reserves band for the HRV SWC band |
 | GATE-04 | same | 8939c1d99611 | Worsening blocks release save a named, counted, test-pinned exception with an owning open IDEA that may not grow: C06 and R5 for the gate |
-| GATE-04/Scope | same | 968d494550ac | The rates GATE-01 measures are the gate population |
+| GATE-04/Scope | same | 968d494550ac | Round 8: neighbour; GATE-01 still measures the forbidden rates. |
 | GATE-04/Not | same | beca759b790a | A rate at F005 parity is not a worsening, consistent with R5 F005-parity population |
 | GATE-04/Why | same | d481cc3137f8 | C06: a forbidden population ships only as such an exception, never on rarity |
 | GATE-05 | same | a0a07651a7e6 | DEFERRED_EXCEPTION at c 4 and 5, 64 gated rows, owned by IDEA-087, named as one such exception without claiming to be the only one, matching R5 three exceptions |
 | GATE-05/Scope | same | 3ede6a012284 | The c 4 and c 5 rows under the independent-instruments fixture are the in-force exception population |
 | GATE-05/Not | same | fcd1615cf8ab | Any worsened row outside the 64 blocks release; the F005-parity population is not a worsening and HRV-25 may not grow |
-| GATE-06 | same | a1951004ee84 | Flip rate of a three-days-a-week wearer measured against F005 on every sweep the same way, as in-force |
+| GATE-06 | same | a1951004ee84 | Round 8: neighbour; GATE-01 still measures against shipped F005 on every sweep. |
 | GATE-06/Scope | same | 3ba7592db249 | Every sweep is the in-force reach |
 | GATE-06/Not | same | 34e54ca7dd74 | The hysteresis decision is GATE-02 |
 | GATE-07 | same | 9134cff02b07 | Resolved: the [18, 44] interval is now the tolerance bracket per T-07, and the ban on citing it for per-tier datasets matches in-force |
@@ -502,8 +502,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-01/Not | same | c07139d9bdef | The tier-change cost is FIG-02 |
 | FIG-02 | same | 707d0e6e1a56 | 18 silent days R+2 to R+19, closed form min_baseline_readings plus 7 minus min_window_readings equals 18, established true throughout, as in-force L227; the 29, the causes and the old-device clause are in FIG-06 to FIG-08 |
 | FIG-02/Scope | same | b5332a15448b | In-force L227 gives 18 at daily capture on a clean, gapless switch |
-| FIG-02/Not | same | 9af27532a373 | The 20 days belong to the coverage gap of FIG-01 |
-| FIG-02/Why | same | bd5b399ea058 | R11 as decided: end of the quiet at R plus min_baseline_readings minus 1 plus 7 equals R+20, and the 20-day figure true of a coverage gap and false of a tier change, both from in-force L227 |
+| FIG-02/Not | same | 9af27532a373 | Round 8: neighbour; FIG-01 still states the 20-day coverage-gap figure. |
+| FIG-02/Why | same | bd5b399ea058 | Round 8: neighbour; FIG-01 still states 20 days for a coverage gap only. |
 | FIG-03 | same | 81238a4d905e | Round 5: the rule now prices the 22-day layoff, the shortest longer than 21 days, which is the layoff in-force L229 priced when it called 22 the length of the shortest resetting layoff and counted days 5 to 22 as its 18 silent days; R13, follow-on to S10, rules this scope. True of the code: GAP_RESET_DAYS is 21 and coverage_gap_reset resets on more than 21 silent days, and on layoff day k the week holds 7 minus k pre-layoff readings, at least MIN_WINDOW_READINGS 3 only for k 1 to 4, so days 5 to 22 are silent. Since a layoff of L days is silent L minus 4 days, the old unscoped wording was false of every longer layoff and the scoped one is not. |
 | FIG-03/Scope | same | e02700542148 | Round 5: the shortest layoff of the whole series that resets, gap_reset_days plus 1 equals 22 days, at daily capture up to the layoff, is the case the rule line prices and the one R13 names; the whole-series reach matches coverage_gap_reset, which reads every tier together, and DOC-12 still carries the density. |
 | FIG-03/Not | same | 68de4c4b9ef1 | The tier-change silence is FIG-02 |
@@ -513,8 +513,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-04/Not | same | 4d8aafecde1b | Spread or less-than-daily returns are the densities in-force L229 prices differently |
 | FIG-05 | same | 55f720f7b0f3 | No aggregate silence rate published, as in-force L229; C09 is carried by FIG-11 |
 | FIG-05/Scope | same | 52369bbfee66 | Sums of the named silences are what in-force L229 withdrew |
-| FIG-05/Not | same | f20b7b01c20e | The individual figures stand, as in-force L229 says what is not withdrawn |
-| FIG-05/Why | same | 0863d5e9be03 | C09: the question stays OPEN under a named owner rather than answered by a rate |
+| FIG-05/Not | same | f20b7b01c20e | Round 8: neighbour; FIG-01 to FIG-04 still publish the individual figures. |
+| FIG-05/Why | same | 0863d5e9be03 | Round 8: neighbour; FIG-11 changed only its hrv_unavailable wording and stays OPEN under IDEA-092. |
 | FIG-06 | same | 63b8d622fefe | 29 days at every-second-day capture on the new tier, as in-force L227 |
 | FIG-06/Scope | same | fa2851738dcf | The every-second-day case of in-force L227 |
 | FIG-06/Not | same | 872fc4ae82d9 | Daily capture is FIG-02 |
@@ -543,28 +543,28 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-07/Not | same | 0131b7089218 | Restates the inventory's never-CV sentence and the in-force clarification that the band statistic is SD, not CV. |
 | HRV-07/Why | same | e6fe5c49d977 | Matches C32 and the inventory resolution: the authority now states the floor the code applies on a degenerate series. |
 | HRV-01 | same | dc21d8c23680 | Round 4: R13 S11 wording: three input tiers in the in-force order, which match TIER_FIDELITY, and the HRV Status classification beside them, quarantined, not a tier and never a trend input, as T-05 and T-26 say; the four sources, their order and the quarantine are the in-force ones, so the meaning is unchanged, and the rules citing HRV-01 as the hierarchy still read true of an ordered three-tier list. |
-| HRV-01/Scope | same | 640778d74ec0 | Per-tier dataset scope is R11 scope, not meaning; the readings covered are the ones the hierarchy already governs. |
-| HRV-01/Not | same | 07ee400f7bf5 | Only points selection order to HRV-14; adds no exclusion beyond the in-force text. |
+| HRV-01/Scope | same | 640778d74ec0 | Round 8: the R13 ruling restates the sources as three input tiers beside the quarantined classification; the scope of every consumed reading, per per-tier dataset, is unchanged. |
+| HRV-01/Not | same | 07ee400f7bf5 | Round 8: selection order stays with HRV-14; the R13 wording of the tiers adds nothing to selection. |
 | HRV-02 | same | d837b07acd64 | Preferred, highest-fidelity and not a prerequisite, as in the inventory and the in-force preferred, highest-confidence, not a hard prerequisite. |
 | HRV-02/Scope | same | b25bd623b90e | The choice of source is what the rule governs; adds nothing beyond the inventory. |
 | HRV-02/Not | same | 3bcec8dd953a | Only defers the numeric tiers' reduced fidelity to HRV-04. |
 | HRV-03 | same | 3752dd3d1ea2 | Matches the inventory sentence; dropping the in-force and-confidence tail is the wording change C19 names as a no-meaning fix, with the old wording keyed for F011. |
-| HRV-03/Scope | same | 4f8aad2cd9bc | Tiers 2 and 3 supplying a scalar rather than beats is the in-force reason given in section 3.3. |
+| HRV-03/Scope | same | 4f8aad2cd9bc | Round 8: neighbour; tiers 2 and 3 of HRV-01 are still the snapshot and API scalars. |
 | HRV-03/Not | same | a1bbf7952ae8 | Excluding a confidence value is the removal C19 and its old-meaning key already make; no further meaning is added. |
 | HRV-04 | same | d5d6c81f9cd5 | States C19's wording exactly: reduced fidelity as an ordinal rank in selection, numeric per-tier weight deferred to Section 6, consistent with the in-force correction that Section 3 computes no weight. |
 | HRV-04/Scope | same | cba18117d197 | Health Snapshot and Health API are the numeric tiers 2 and 3; per-dataset placement is in force. |
-| HRV-04/Not | same | 9ccf60368ad0 | The HRV Status classification stays quarantined in the in-force text. |
+| HRV-04/Not | same | 9ccf60368ad0 | Round 8: neighbour; HRV-01 still quarantines the HRV Status classification. |
 | HRV-04/Why | same | c08fa08f3d96 | Matches C19's reason, that Section 3 holds no confidence weight. |
 | HRV-05 | same | 8f24d1416b41 | The statement is unchanged and still states C27 plus the unscoped never on in-run wrist PPG; only the Scope line moved, and it now narrows nothing. |
 | HRV-05/Scope | same | 3a8238d1fdc2 | Resolves round 1: every HRV computation from any source leaves the never on in-run wrist PPG unscoped, and C27's v1 and readiness limits sit only on the in-activity clause of the statement. |
-| HRV-05/Not | same | 9ab93756282e | Resting HRV from the source hierarchy is outside the in-activity prohibition in the in-force text. |
+| HRV-05/Not | same | 9ab93756282e | Round 8: neighbour; HRV-01 still holds the resting sources. |
 | HRV-05/Why | same | bc80d17fe61c | Matches C27's stated reason, removing the contradiction with the recommended LT1 path. |
 | HRV-06 | same | 42998459e682 | Same biases premise, same never-enter-another-tier's-baseline-or-band clause and same never-a-physiological-shift clause as the inventory and in-force section 3.3. |
 | HRV-06/Scope | same | a923114009e9 | Every reading of every tier, per per-tier dataset, is R11 scope and in force. |
 | HRV-06/Not | same | e2979f14609c | A same-tier device replacement is governed by the in-force rule that keys on tier alone (HRV-46, HRV-84). |
 | HRV-47 | same | 86cf636eceea | Health Snapshot as the preferred no-strap default matches the inventory and the in-force register row and tier 2 text. |
 | HRV-47/Scope | same | 533612db5bcb | An athlete not using a strap is exactly the no-strap case. |
-| HRV-47/Not | same | d6b4475f91a9 | Health API ranks below Health Snapshot in the in-force hierarchy. |
+| HRV-47/Not | same | d6b4475f91a9 | Round 8: neighbour; HRV-01 still ranks the Health API below Health Snapshot. |
 | HRV-08 | same | 2fcab8f59b81 | Same windows D-6 to D, D-66 to D-7 of 60 days and D-126 to D-67; calling the baseline window nominal is the glossary's name for the same interval. |
 | HRV-08/Scope | same | cb792a73f36e | Every dataset and target date is the rule's in-force reach. |
 | HRV-08/Not | same | 508b74dc5b50 | Carries the inventory's disjointness sentence without change; the nominal window is disjoint from the judged week and every clipped window lies inside it. |
@@ -578,14 +578,14 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-11/Scope | same | e4ebed337951 | A local day in the athlete's own zone is the in-force distinct-local-day unit, applied per dataset. |
 | HRV-11/Not | same | b388339d21e7 | Collapse per dataset only follows from in-force (i), where a morning with both captures feeds both. |
 | HRV-11/Why | same | 04511d556bfa | Matches the decision text: the word earliest is adopted because the code and IDEA-079 agree. |
-| HRV-12 | same | cb0e88e71a72 | States C12 exactly: establishment is counted in the dataset baseline window, the nominal window clipped at the latest of gap resumption, era first day and hole resumption, holding at least 14 distinct days. |
+| HRV-12 | same | cb0e88e71a72 | Round 8: neighbour; HRV-73 still clips at the resumption, and the code clips at the latest of the three first days. |
 | HRV-12/Scope | same | 9b268f73b3ac | Counting after all three clips is C12's resolution. |
 | HRV-12/Not | same | a432fb49b981 | Excluding the unclipped nominal window is the other face of C12. |
 | HRV-12/Why | same | 84e7c4a378ec | Matches C12's reason that the same-window phrase holds only before clipping. |
 | HRV-13 | same | 1587a0f2dab4 | Established and at least min_window_readings distinct judged-week days, as the inventory and in-force (ii) state; establishment is read through HRV-12 as the row's C12 note says. |
 | HRV-13/Scope | same | d9225bff1dfe | Every dataset on every judged day is the in-force reach. |
 | HRV-13/Not | same | a99ee9ad8203 | Only separates the judgeability test from selection. |
-| HRV-14 | same | b1f8092f0d81 | States C11's restatement: highest-fidelity judgeable dataset not skipped, reference every established dataset, strap over numeric tiers; already in force since the 2026-09-20 amendment, so no is right. |
+| HRV-14 | same | b1f8092f0d81 | Round 8: neighbour; HRV-15 still takes its reference over every established dataset. |
 | HRV-14/Scope | same | b7e6a19978f1 | Selection on every judged day is in force (selection runs per judged day). |
 | HRV-14/Not | same | 4c884a528ba1 | The in-force correction says the confidence weight never arbitrates. |
 | HRV-15 | same | 197ba0bdb526 | Statement unchanged: strictly more than 28 days behind the latest series-baseline-window reading of any established dataset, as the inventory and in-force 2026-09-20 text state; only the Why line changed. |
@@ -593,18 +593,18 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-15/Not | same | 79c3b665344f | An established, non-judgeable dataset holding the maximum but never struck is the in-force 2026-09-20 text. |
 | HRV-15/Why | same | ecc8f60e6f33 | Resolves round 1: C10 is credited only with dropping the lone-candidate wording, and the reference over every established dataset is attributed to H-26 (the 2026-09-20 amendment) with C11 as its restatement, as C10 and C11 read. |
 | HRV-16 | same | 105d1d11ad4e | 28 as four judged weeks and greater than gap_reset_days 21 so the two rules do not disagree, as the inventory and in-force reasons (i) and (ii) state. |
-| HRV-16/Scope | same | 0f11528658f7 | The constant serves the recency gate. |
-| HRV-16/Not | same | 24d82a07b19f | Series silence belongs to the coverage-gap reset in force. |
+| HRV-16/Scope | same | 0f11528658f7 | Round 8: neighbour; HRV-15 is still the recency gate. |
+| HRV-16/Not | same | 24d82a07b19f | Round 8: neighbour; HRV-73 still measures whole-series silence. |
 | HRV-17 | same | 88bb9be3c36f | States C33 exactly: recency_tolerance_days becomes served, marked Pinned none F010 until then. |
 | HRV-17/Scope | same | 0f4deffe11ff | Every trend response carries the thresholds block. |
-| HRV-17/Not | same | 10513b8e8cdb | Defers the other served constants to PRIN-12, which C33 names as their home. |
+| HRV-17/Not | same | 10513b8e8cdb | Round 8: neighbour; PRIN-12 still names the other served constants; its widened exception does not touch this pointer. |
 | HRV-17/Why | same | 93518371ca7c | Matches C33: section 1.6 read at the response level, the constant that decides selected_reason is served, F010 publishes it. |
 | HRV-18 | same | 48f837c5c59a | Per judged day, nothing read from earlier days, every point names its dataset, as the inventory and in-force (ii) state. |
 | HRV-18/Scope | same | a91e213ef979 | Every judged day of a requested series is the in-force reach. |
 | HRV-18/Not | same | 2e25adb93901 | A carried-over selection is exactly what reading nothing from earlier days excludes. |
 | HRV-19 | same | 9cb70e93f3ea | The fidelity rank alone arbitrates, as the inventory and in-force (ii) state; naming TIER_FIDELITY and the judgeable set adds no meaning. |
 | HRV-19/Scope | same | b7e6a19978f1 | Selection on every judged day. |
-| HRV-19/Not | same | 82e804a03a8a | Recency only skips in force; it never ranks. |
+| HRV-19/Not | same | 82e804a03a8a | Round 8: neighbour; HRV-15 still only skips a candidate. |
 | HRV-20 | same | 5c605a08d865 | The selected dataset supplies verdict, baseline and band, as in-force (iii) states. |
 | HRV-20/Scope | same | b47bfb7803dc | Days with a selected dataset. |
 | HRV-20/Not | same | 9eb30ac70c06 | The nothing-selected case is the in-force fallback. |
@@ -612,7 +612,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-21/Scope | same | 584aa166a1a9 | Every reported dataset other than the selected one. |
 | HRV-21/Not | same | a8ce71b5a5e5 | Named but never overriding is in-force (iii). |
 | HRV-22 | same | 2f4e4a6d092a | Whenever the served verdict is hrv_unavailable, for any cause, the dissent list is empty, as the in-force 2026-09-21 amendment states. |
-| HRV-22/Scope | same | 6eb721eb2245 | The one condition covers all three no-verdict states in force. |
+| HRV-22/Scope | same | 6eb721eb2245 | Round 8: neighbour; HRV-23 still states three no-verdict states. |
 | HRV-22/Not | same | 6bebbac22003 | Every dataset's own reading against its own band is still reported in force. |
 | HRV-23 | same | c8fabb0283be | Resolves round 1: the set is exactly three states and the day that has not happened may coincide with either other, as the inventory and in-force (iii) state, and HRV-58 agrees; the new old-meaning keys for HRV-21 and HRV-24 match 4e47d0e line 230, are absent from HEAD and follow the keyed no-row precedent of HRV-03, so no concern. |
 | HRV-23/Scope | same | b5e91934c78b | Every hrv_unavailable day falls in one of the three states in force, since a selected dataset is judgeable. |
@@ -640,7 +640,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-30/Scope | same | 254f3f55dd17 | The structural cause sits before any dataset's guard order in in-force (a). |
 | HRV-30/Not | same | 4373b4c4b11c | One reading gives no_band, as the inventory's C18 notes. |
 | HRV-30/Why | same | c2c355809fa8 | Matches C18: keep the contract-bound enum and note its name as historical. |
-| HRV-31 | same | 9242a3f18bdb | States C01 and C02 exactly: withheld when a dataset that could not have been selected, not judgeable or skipped, holds at least min_window_readings judged-week days all later than those of the dataset being judged. |
+| HRV-31 | same | 9242a3f18bdb | Round 8: neighbour; HRV-15 is still the recency gate that skips, and verdict_withheld reads as stated. |
 | HRV-31/Scope | same | 8e985d95c336 | Every dataset on every judged day, per C02. |
 | HRV-31/Not | same | 65b82f565b0f | A selectable dataset never triggers the withhold under C01. |
 | HRV-31/Why | same | ec24b7456bef | Matches the decisions reference: C01 and C02 state the withhold as built, IDEA-083 option 1. |
@@ -652,7 +652,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-33/Not | same | 62214a85e346 | Mornings after the residual fall to the guard order in force. |
 | HRV-34 | same | 971c7e5bcc9c | States C03's first clause and C14 exactly: no rule-level re-establishment on a source change, and a source-tier change collapses no band. |
 | HRV-34/Scope | same | ba535ddd0900 | Changes between tiers per dataset is R11 scope. |
-| HRV-34/Not | same | 72cd6f3af173 | C15 reserves re-establishment for the coverage gap. |
+| HRV-34/Not | same | 72cd6f3af173 | Round 8: neighbour; HRV-73 is still the only re-establishing reset. |
 | HRV-34/Why | same | 24f8bdaf17bf | Matches C03, C14 and C15. |
 | HRV-35 | same | f2439ab89ba7 | The coverage-gap reset is global over the whole series, as in force. |
 | HRV-35/Scope | same | d7d102e0e598 | Every tier together is the in-force definition. |
@@ -662,8 +662,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-36/Not | same | 6bb4ef6fd485 | The window composition is the separate later-first-day rule. |
 | HRV-37 | same | fcc9ac1ffa9e | States C04 exactly: a hole is more than gap_reset_days 21 silent local days, 21 does not clip and 22 does. |
 | HRV-37/Scope | same | 7c2e5b35a6c0 | Silent days of its own tier inside its dataset baseline window is C03's and C04's wording. |
-| HRV-37/Not | same | 7afdffae4735 | Series silence is the global gap. |
-| HRV-38 | same | 8a97e197e256 | Same clauses a, b and c with the same 14, 14 and D-126 to D-67 figures; pointing to HRV-39 for the tolerance adds no meaning, and no earliest appears in any clip composition. |
+| HRV-37/Not | same | 7afdffae4735 | Round 8: neighbour; HRV-73 still resets on whole-series silence. |
+| HRV-38 | same | 8a97e197e256 | Round 8: neighbour; HRV-39 still defines the strays and their pooling. |
 | HRV-38/Scope | same | 8e985d95c336 | Asked once per dataset on every judged day, as in force. |
 | HRV-38/Not | same | 95187aea6b5b | Keeps the hole clip apart, as C13 requires. |
 | HRV-38/Why | same | 665edf241bac | Matches C13: two clips, since the code runs both. |
@@ -671,21 +671,21 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-39/Scope | same | 9796d5f55a79 | Possible for candidate era boundary is vocabulary only, following glossary T-14 which reserves candidate for the recency gate; the set of boundaries is the same. |
 | HRV-39/Not | same | 9ada46e17dc4 | A capture at the very instant of the old era's last is simultaneous in force. |
 | HRV-40 | same | c0ff9587dc39 | Round 4: R13 S11 names the tier of clause (a) of HRV-38, the dataset tier that tier_change_reset is asked with, in place of the now-sustaining tier; in the per-dataset model that is the same tier the in-force clip bullet meant, and the clip stays unconditional, so the meaning is unchanged and T-13 keeps sustains for clause (b). |
-| HRV-40/Scope | same | 67b78d9e0bea | Datasets with an era boundary. |
-| HRV-40/Not | same | 43683699a046 | The report's extra condition is in force as a separate consequence. |
+| HRV-40/Scope | same | 67b78d9e0bea | Round 8: every per-tier dataset with an era boundary is where the clip applies; R13 renamed only the tier term. |
+| HRV-40/Not | same | 43683699a046 | Round 8: the report stays conditioned by HRV-80; the R13 rename of the tier leaves that split as in force. |
 | HRV-41 | same | b848653a8c27 | Strays counted over every reading of every tier in D-66 to D, gap-clipped or not, plus the previous window, as in force. |
 | HRV-41/Scope | same | 448302cb0a67 | The clause c stray count. |
 | HRV-41/Not | same | d5cecaf48594 | Clause a keeps the clipped window in force. |
-| HRV-42 | same | 01982d9f9255 | Reset for re-establishment follows C15's vocabulary; in force the empty-week clause concerned the tier-change era, now the tier_change reset, and an empty week can begin no reported reset of either kind. |
+| HRV-42 | same | 2431461adfd7 | Round 8: the refined T194 ruling word for word, and true of the code: on an empty-week day build_series hands tier_change_reset no judged-week reading, coverage_gap_reset scans none and _isolated counts no stray day in the week, so the HRV-80 condition and the first ordering term of HRV-78 hold exactly as on D-1, whose week can hold only D-7; an independent probe that moved the judged window to an empty far-future week changed no reset on any of 3,946 empty-week days, and the causal form restores the in-force reason that the rule reads nothing inside an empty week. |
 | HRV-42/Scope | same | bbe6e01cba0c | A judged week with no reading of any tier. |
-| HRV-42/Not | same | 4fd44ca5c335 | An empty week reads unavailable in force. |
+| HRV-42/Not | same | 2275f9edad9b | Round 9: true of the round-8 follow-up ruling and of the code: the line now names the slide of both windows, HRV-08 and HRV-38 beside HRV-43 and HRV-82, and an independent probe over 34,790 empty-week days found 602 report changes, each reproduced at D by shifting back one day the baseline window alone, 493, the previous window alone, 107, or both together, 2, and none by the judged window or by nothing; the 80 changes of reset_reason alone on an unchanged reset_on are all coverage_gap to tier_change exactly 67 days after the resumption, set by the baseline slide alone, with the series gap_reset_on going from that day to none, so the coverage_gap report ends as its resumption ages past D-66 and the tier_change report of the same era, until then outranked by the gap, begins, which coverage_gap_reset itself calls one era with successive reports, and the line covers the day as one report ending and another beginning; all 5,645 empty-week days checked for the verdict read hrv_unavailable. |
 | HRV-43 | same | b7c950e08cb8 | Unchanged: reset_on is the era's true first day for both reset kinds, as in-force lag bullet (i) says; only the Not line moved. |
 | HRV-43/Scope | same | 959c9fc5908c | For a coverage gap reset_on is the resumption day R, so the statement holds for both kinds. |
 | HRV-43/Not | same | ee6bf9140f60 | Round 4b: still points per reset kind as R12 rules, HRV-82 for a tier_change report and HRV-73 for a coverage_gap report, and now credits HRV-82 only with the lag it states for a clean switch at daily capture, the R13 S10 scope HRV-72 already carries; true against tier_change_reset, whose clause (a) needs MIN_BASELINE_READINGS days of the new tier at or before D-7, so every tier_change report lags its reset_on, 20 days at daily capture as in-force bullet (i) measured, while HRV-73 reports coverage_gap from R+0; HRV-82/Not, which cites back to HRV-43, is unaffected. |
 | HRV-44 | same | 9847af628916 | Exactly two retired mechanisms, the same two, as the in-force correction states. |
 | HRV-44/Scope | same | 06f2df4ae640 | IDEA-071's list. |
 | HRV-44/Not | same | 19aad97ef788 | The function and its tie-order pin survive in force. |
-| HRV-45 | same | b15be3261367 | Two different recency notions, tie-break and admission gate, as in force. |
+| HRV-45 | same | b15be3261367 | Round 8: neighbour; HRV-15 is still the admission gate. |
 | HRV-45/Scope | same | 5c12d176ca6e | Every use of recency. |
 | HRV-45/Not | same | 6872a6ffbe63 | Clause order is the fallback's own rule. |
 | HRV-46 | same | af55a406cafc | Keys on hrv_source_tier alone, no device identity, as in force. |
@@ -701,11 +701,11 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-50/Scope | same | 7d3b2838b6d0 | Datasets with two or more readings. |
 | HRV-50/Not | same | f47dcf37870e | Round 7: HRV-27 withholds, broad sense, now reads HRV-27 leaves hrv_unavailable on an unestablished baseline, which is what judge serves there, reason baseline_unestablished; the symmetric gate still excludes the verdict, not the band. |
 | HRV-51 | same | 3b302230defa | Maximum taken once and simultaneously over every established dataset, candidates stay judgeable, as in force. |
-| HRV-51/Scope | same | cda7920fb2b4 | The recency gate. |
+| HRV-51/Scope | same | cda7920fb2b4 | Round 8: neighbour; HRV-15 is still the recency gate. |
 | HRV-51/Not | same | c9c686d3bfca | Dropping the lone-candidate exemption is C10 and the in-force 2026-09-20 consequence. |
-| HRV-52 | same | c41fb808976f | States C10's scoped partition: the global gap covers series silence, the hole clip and then the recency gate cover per-dataset silence, in stated order. |
+| HRV-52 | same | c41fb808976f | Round 8: neighbour; HRV-15, HRV-35 and HRV-37 still divide the silence as stated. |
 | HRV-52/Scope | same | 712c3a5b3377 | Silence of one tier or the whole series. |
-| HRV-52/Not | same | ccd53b6a8d0f | The trailing regime is excluded as C10 requires. |
+| HRV-52/Not | same | ccd53b6a8d0f | Round 8: neighbour; HRV-53 still leaves the trailing silence OPEN under IDEA-093. |
 | HRV-52/Why | same | 1dfc2a83afff | Matches C10's reason that the hole clip also acts on one tier's silence. |
 | HRV-53 | same | 263ff1823729 | Resolves round 1: names all three mechanisms the 22 to 28 day trailing silence escapes, the gap, the hole clip and the recency gate, as C10 and IDEA-093 state, and now agrees with HRV-52's Not line. |
 | HRV-53/Scope | same | 67b78592f736 | One tier silent at the end of its window while another carries the series is IDEA-093's regime. |
@@ -723,7 +723,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-57/Scope | same | a8ce153fa251 | Unavailable responses. |
 | HRV-57/Not | same | 0ab5814f6905 | The dissent list is emptied by HRV-22. |
 | HRV-58 | same | c830847e47df | The third state identified by its cause alone and able to coincide with either other, as in force. |
-| HRV-58/Scope | same | bccc71c96dc8 | The three states. |
+| HRV-58/Scope | same | bccc71c96dc8 | Round 8: neighbour; HRV-23 still states three no-verdict states. |
 | HRV-58/Not | same | b0be3698badc | Whether a dataset is selected separates the first two in force. |
 | HRV-59 | same | 049fd70fc221 | Same three clauses, same ties by n then fidelity and ties to fidelity throughout, as in-force (a). |
 | HRV-59/Scope | same | a0ed00bd1565 | Nothing-selected days. |
@@ -761,7 +761,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-69/Not | same | 37534c1fbe7d | A judgeable, unskipped return is selected under C03. |
 | HRV-70 | same | eb981c874921 | States C03's clip clause exactly: more than 21 silent days of its tier inside its dataset window clips pre-silence readings, and a trailing silence clips nothing (IDEA-093). |
 | HRV-70/Scope | same | 6a94b9fc322d | A returning dataset. |
-| HRV-70/Not | same | d5fd042d7605 | Series silence is the global gap. |
+| HRV-70/Not | same | d5fd042d7605 | Round 8: neighbour; HRV-73 still clips on whole-series silence. |
 | HRV-71 | same | 2c039c546328 | Resolves round 1: free now means no skip, no hole clip and no withhold on its account, which skipped or long-silent returns do incur (HRV-69, HRV-70), so the only-when limit of C03's corrected paraphrase is no longer empty. |
 | HRV-71/Scope | same | 6a94b9fc322d | A returning dataset. |
 | HRV-71/Not | same | 3d91b8ee5017 | Skipped returns and returns after more than 21 silent days are the C03 cost cases. |
@@ -776,8 +776,8 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-74/Not | same | d1447ec705ea | Report precedence is HRV-36. |
 | HRV-75 | same | 9f40075b704f | The recency gate applies to neither clause a nor b, as in force. |
 | HRV-75/Scope | same | 1f064dead565 | The era boundary. |
-| HRV-75/Not | same | a00bd8861bbc | The gate applies to selection in force. |
-| HRV-76 | same | f8e9908fe968 | States C13 exactly: two separate clips, composed with the gap clip as the latest first day. |
+| HRV-75/Not | same | a00bd8861bbc | Round 8: neighbour; HRV-15 still applies the gate at selection. |
+| HRV-76 | same | f8e9908fe968 | Round 8: neighbour; HRV-40 names the dataset tier now and HRV-73 still clips at the resumption; the composition as the latest first day stands. |
 | HRV-76/Scope | same | e11924f502db | The dataset baseline window. |
 | HRV-76/Not | same | 9dabe0f5d184 | The hole clip is unreported in force, so only the era clip and the gap reach the report. |
 | HRV-76/Why | same | f85649f41eb5 | Matches C13's reason. |
@@ -786,25 +786,25 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-77/Not | same | 8d13d15dadd3 | The report is the week half's in force. |
 | HRV-78 | same | ef2491f7b96b | Fewer than 3 in the judged week decides the report and is the first ordering term, then fewest stray days, then the later boundary, as in force. |
 | HRV-78/Scope | same | a2c2bc42caca | Admitted boundaries. |
-| HRV-78/Not | same | 7ccd2a7b28c0 | Existence is the other half's. |
+| HRV-78/Not | same | 7ccd2a7b28c0 | Round 8: neighbour; HRV-77 still decides existence. |
 | HRV-79 | same | b76bae6c9a21 | Simultaneous captures are not strays, as in force. |
 | HRV-79/Scope | same | c709c9d17d24 | The in-force simultaneous case is the instant of the old era's last reading. |
-| HRV-79/Not | same | 177fd24fc7bb | Other instants in the span are strays in force. |
-| HRV-80 | same | 3162051e2692 | The report also needs the other tier unused in the judged week, as in force. |
-| HRV-80/Scope | same | 99f75a3f5771 | Era boundaries. |
-| HRV-80/Not | same | 96d1c2d9b7ec | The clip is unconditional in force. |
+| HRV-79/Not | same | 177fd24fc7bb | Round 8: neighbour; HRV-39 still defines the stray span. |
+| HRV-80 | same | 3162051e2692 | Round 8: the second sentence of the HRV-40 row verbatim in meaning; R13 changed only the first sentence tier term, and the code reports only when _isolated holds, fewer than 3 stray days in the judged week. |
+| HRV-80/Scope | same | 99f75a3f5771 | Round 8: every era boundary of every per-tier dataset is where the report condition is asked, one call per dataset. |
+| HRV-80/Not | same | 96d1c2d9b7ec | Round 8: neighbour; HRV-40 still clips unconditionally. |
 | HRV-81 | same | 56f22369f36a | Clause a still reads the gap-clipped window, as in force. |
 | HRV-81/Scope | same | ecddcb49a653 | Clause a. |
 | HRV-81/Not | same | 02c3b5a00246 | Clause c's widened count is HRV-41. |
 | HRV-82 | same | 34365140e3e7 | Resolves round 1: the 20-day lag, min_baseline_readings plus 7 minus 1, is now the tier_change report's only, as the in-force lag bullet's time-accumulating clause (a) reasoning and test_hrv_trend_reset's coverage-gap report from R+0 show. |
 | HRV-82/Scope | same | 773b34318f83 | Round 4: R13 S10 scope restoration: the 20-day lag was walked on a clean, gapless switch at daily capture, and the in-force T138 bullet already generalises the report day with capture spacing, so limiting the figure to that case, beside FIG-02 and citing DOC-12, restores the in-force reach rather than narrowing a meaning. |
-| HRV-82/Not | same | c7e2bf759228 | The reported date is HRV-43's. |
+| HRV-82/Not | same | c7e2bf759228 | Round 8: neighbour; HRV-43 still makes reset_on the true first day. |
 | HRV-83 | same | 777c2c9ef7e2 | Everything else kept, re-derived or redeployed, T093's week half subsumed, as in force. |
 | HRV-83/Scope | same | 06f2df4ae640 | IDEA-071's list. |
 | HRV-83/Not | same | 4e6ddbefe243 | The two retirements are HRV-44's. |
 | HRV-84 | same | 2820ebf76eff | A same-tier replacement fires no reset and costs no silent days, as in force. |
 | HRV-84/Scope | same | 8b9ec18595a4 | Replacements within one tier. |
-| HRV-84/Not | same | 62a2569e03f2 | A tier change is the tier_change rule. |
+| HRV-84/Not | same | 62a2569e03f2 | Round 8: neighbour; HRV-72 still governs a change of tier. |
 
 ## Glossary
 
@@ -864,4 +864,8 @@ Round 6: a fresh critic, under T192 and R13, checked every verdict row against t
 
 Round 7: a fresh critic, under T192 step C2 and the user ruling of 2026-09-27 that withhold carries the narrow sense only, re-judged the 9 rows the rewrite changed: T-11 against verdict_withheld, _unavailable_reason, REASON_WEEK_NOT_REPRESENTATIVE and main._withhold_future, against T-33, HRV-22, HRV-26, HRV-29 and HRV-31 and against the ruling; and PRIN-14, ARCH-12/Why, ARCH-13, ARCH-13/Not, ARCH-13/Why, REG-25/Why, HRV-50/Not and FIG-11/Scope against the in-force meaning of each row before the rewrite, in which withhold meant any hrv_unavailable. It returned 0 differs verdicts: T-11 now matches the code and the ruling, and each of the eight other lines changes only the retired broad term to hrv_unavailable. The neighbours T-06, PRIN-24, HRV-23, HRV-26, HRV-31, HRV-32, HRV-63, HRV-64, HRV-67, HRV-69, HRV-71 and FIG-04 use withhold only in the narrow sense and read correctly beside the new T-11, and a case-folded search of 00-design-decisions.md finds no broad-sense use left outside code names.
 
-Final: 822 rows, 789 block rows and 33 Glossary rows, 822 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b, round 5, round 6, round 7.
+Round 8: a fresh critic, under T194 and the user rulings of 2026-09-27 on HRV-42 and PRIN-12, re-judged 81 rows. First, the 3 rows the rulings changed, PRIN-12, HRV-42 and HRV-42/Not, against the ruling text, hrv_trend.py, main.py and schemas.py and their neighbours, with its own probe of the code: over 3,946 empty-week days, moving the judged window to an empty far-future week changed no reset, and of the 44 report changes on 2,832 of those days, 10 were set by the previous window alone at day D-127. Second, the 22 rows whose decision cell changed after their last verdict, against the cell and R13: PRIN-12/Scope, PRIN-12/Not, PRIN-12/Why, PRIN-15, PRIN-23, PRIN-26, PRIN-14/Scope, PRIN-14/Not, HRV-01/Scope, HRV-01/Not, HRV-40/Scope, HRV-40/Not, HRV-80, PRIN-15/Not, PRIN-15/Why, PRIN-23/Scope, PRIN-23/Not, PRIN-25/Scope, PRIN-25/Not, PRIN-26/Scope, PRIN-26/Not and HRV-80/Scope. Third, the 56 neighbours whose line cites a rule changed after their last verdict, each read beside what it cites: DOC-01/Not, DOC-03/Not, DOC-05/Not, DOC-07/Not, DOC-08/Not, DOC-08/Scope, DOC-18, PRIN-09, PRIN-10/Scope, PRIN-15/Scope, PRIN-18/Not, PRIN-24, PRIN-24/Not, PRIN-24/Why, ARCH-00, ARCH-00/Not, ARCH-02/Not, REG-28/Not, HRV-03/Scope, HRV-04/Not, HRV-05/Not, HRV-12, HRV-14, HRV-16/Not, HRV-16/Scope, HRV-17/Not, HRV-19/Not, HRV-22/Scope, HRV-31, HRV-34/Not, HRV-37/Not, HRV-38, HRV-45, HRV-47/Not, HRV-51/Scope, HRV-52, HRV-52/Not, HRV-58/Scope, HRV-70/Not, HRV-75/Not, HRV-76, HRV-78/Not, HRV-79/Not, HRV-80/Not, HRV-82/Not, HRV-84/Not, GATE-02/Scope, GATE-04/Scope, GATE-06, FIG-02/Not, FIG-02/Why, FIG-05/Not, FIG-05/Why, LT1-02/Why, LT1-04 and LT1-04/Not. It returned 1 differs verdict, HRV-42/Not, which credits the baseline window slide with every day a report begins or ends or its reset_on changes, although the previous window of HRV-08 slides too and alone sets such days through clause (b) of HRV-38. PRIN-12, HRV-42 and the other 79 rows read the same.
+
+Round 9: a fresh critic, under T194 and the round-8 follow-up ruling of 2026-09-27 that names the slide of the baseline window and of the previous window, re-judged the 1 row the ruling changed, HRV-42/Not, against the ruling, its own rule line, the window, era boundary, reset_on and report lag rules the line cites and hrv_trend.py, with its own probe of 600 histories biased to a gap followed by a tier switch: over 34,790 empty-week days, each of 602 report changes was reproduced by shifting back the baseline window, the previous window or both, none by the judged window, and the 80 changes of reset_reason alone were a coverage_gap report ending and a tier_change report of the same era beginning on the same reset_on, set by the baseline slide. It returned 0 differs verdicts; the rule line of the same block is unchanged since round 8 and keeps its verdict.
+
+Final: 822 rows, 789 block rows and 33 Glossary rows, 822 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b, round 5, round 6, round 7, round 8, round 9.

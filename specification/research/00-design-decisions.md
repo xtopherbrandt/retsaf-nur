@@ -168,7 +168,7 @@ Scope: every metric the system derives, including an open method that is itself 
 Not: a vendor black-box metric, which PRIN-08 quarantines.
 Pinned: none
 
-**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so the response's `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every verdict-affecting constant it does not serve, `window_days` today (PRIN-24), IS an OPEN exception.
+**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so its `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every unserved verdict-affecting input, `window_days` and the withhold's day order (PRIN-24), IS an OPEN exception.
 Scope: each response read on its own, including its `selected_reason`.
 Not: the formulas themselves, which the spec states in full under PRIN-11 (transparent formulas).
 Pinned: none (F010)
@@ -1047,9 +1047,9 @@ Scope: the stray count of HRV-38 (the era boundary).
 Not: clause (a)'s count, which HRV-81 (clause a) keeps in the gap-clipped window.
 Pinned: runcoach-api/tests/test_hrv_trend_reset.py::test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary
 
-**HRV-42.** An empty judged week MUST begin no reset, and a reset already in force MUST persist through it.
+**HRV-42.** What an empty judged week holds MUST neither create, move nor end a reset.
 Scope: a judged week holding no reading of any tier.
-Not: the verdict on that week, which reads unavailable under HRV-26 (the guard order).
+Not: the day a report begins or ends, or its `reset_on` changes, which the slide of the baseline window and of the previous window (HRV-08, HRV-38) sets on any day, empty week or not (HRV-43, HRV-82), and the verdict on that week, which reads unavailable under HRV-26 (the guard order).
 Pinned: none
 
 **HRV-43.** `reset_on` IS the era's true first day.
