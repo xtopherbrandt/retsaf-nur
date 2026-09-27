@@ -3300,12 +3300,12 @@ def _commit_4e47d0e_is_here() -> bool:
 
 def test_real_path_every_old_meaning_example_is_verbatim_at_4e47d0e() -> None:
     """Iteration 4, S1: each committed ``example``, after ``normalize()``, is in ``git show
-    4e47d0e:<source path>`` after ``normalize()`` (``example_source_errors`` over ``_git_show``). A
-    shallow clone (CI's ``actions/checkout`` default) does not hold 4e47d0e, so there this skips by name;
-    ``OLD_MEANING_SHA256`` still freezes every example there."""
-    if not _commit_4e47d0e_is_here():
-        pytest.skip("4e47d0e is not in this clone (a shallow checkout): the example-at-source check needs "
-                    "the full history; OLD_MEANING_SHA256 still freezes every example")
+    4e47d0e:<source path>`` after ``normalize()`` (``example_source_errors`` over ``_git_show``). The
+    suite carries no skip (R11), so a clone without 4e47d0e reds here by name rather than passing
+    silently; CI checks out with ``fetch-depth: 0`` (``.github/workflows/test-suite.yml``)."""
+    assert _commit_4e47d0e_is_here(), (
+        "4e47d0e is not in this clone (a shallow checkout?): the example-at-source check needs the full "
+        "history -- fetch it (git fetch --unshallow), do not skip this test")
     errors = example_source_errors(_OM.OLD_MEANINGS, _git_show)
     paths = sorted({e.source.split(":", 1)[0] for e in _OM.OLD_MEANINGS.values()})
     print(f"[slice compared] {len(_OM.OLD_MEANINGS)} examples against git show 4e47d0e of {paths}: {errors[:5]}")
