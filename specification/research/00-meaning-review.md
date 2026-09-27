@@ -1,6 +1,6 @@
 # Research/00 meaning review
 
-The meaning review of the research/00 rewrite (R7, AC9): one verdict per row that required_review_rows derives from 00-design-decisions.md and 00-traceability.md, that is the block of every rule a yes or no table row names and every rule's Scope, Not and Why line. A verdict of same means the rewritten text carries the in-force meaning and nothing more; differs means it does not. Each row shows its final verdict and the reason given in the round that settled it. The Rounds section at the foot records how the review converged.
+The meaning review of the research/00 rewrite (R7, AC9): one verdict per row that required_review_rows derives from 00-design-decisions.md and 00-traceability.md, that is the block of every rule a yes or no table row names and every rule's Scope, Not and Why line. A verdict of same means the rewritten text carries the in-force meaning and nothing more; differs means it does not. Each row shows its final verdict, the digest of the text it judged and the reason given in the round that settled it: the digest cell is the _cell_digest of the block line or Glossary line the verdict judged, so a line changed after its verdict no longer matches its row until a fresh critic writes a new verdict for it. The Glossary is reviewed too, one verdict per line T-01 to T-33, each judged against the code's definition where the code has one. The Rounds section at the foot records how the review converged.
 
 ## DOC–GOAL
 
@@ -95,7 +95,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | PRIN-13 | same | be8b15fee359 | Reduce freely, never manufacture hard work, no easy day made hard on a green day, placement with the weekly plan; dropping the in-force words on impulse changes nothing, since placement stays with the plan. |
 | PRIN-13/Scope | same | bd00e12e23c6 | Section 1.7 is about the daily gate's effect on the planned session. |
 | PRIN-13/Not | same | ad93b63bc539 | The project rule calls this a design invariant, not a tunable default. |
-| PRIN-14 | same | 088b665342f2 | Resolves round 1: the absolute ban now points to PRIN-15's named exceptions, so HRV-25's shipped population is no longer barred by the line read alone; the decision cell now carries C06 beside C07, the insufficient-evidence withhold stays unconditional as C07 states, and T-24 dropped the usage clause neither decision states while keeping C07 and R5's broad definition. |
+| PRIN-14 | same | fdc2c14b5214 | Round 7: only the ruled term changed; MUST withhold the verdict in the broad sense retired by the T-11 ruling now reads MUST serve hrv_unavailable, which is what every absent verdict is served as (T-33), so the insufficient-evidence duty stays unconditional as C07 states, and the PRIN-15 exceptions, the C06 and C07 cell and T-24 are untouched. |
 | PRIN-14/Scope | same | e450c8114047 | Every served HRV verdict is the population the forbidden direction is judged over. |
 | PRIN-14/Not | same | c58d67456d93 | Manufactured hard work is section 1.7's original clause, kept in PRIN-13. |
 | PRIN-14/Why | same | f42d9eadcb5e | States C07's weak-evidence clause and the single T-24 definition, and now credits C06 for making the whole direction absolute but for PRIN-15's named exceptions, which is C06's text; no further claim is added. |
@@ -267,11 +267,11 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | ARCH-12 | same | 75ddd061c21e | States C08 first sentence: Section 6 treats the unavailable verdict as low confidence that widens guardrails |
 | ARCH-12/Scope | same | 00434c8be6e5 | Every day reading unavailable is the population C08 names; whatever its reason stays within C08 |
 | ARCH-12/Not | same | ffb35a021500 | An unavailable verdict asserts nothing about readiness, consistent with the withhold semantics; adds nothing |
-| ARCH-12/Why | same | dc9c3ee6a72e | Ties C08 to keystone 8 conservatism exactly as the decision does (ARCH-08 cited in C08) |
-| ARCH-13 | same | 2af31a053cb9 | Resolved: the rule now states C08 as decided, that until Section 6 exists a withheld day is a net cost, without the zero-benefit claim or the duty on the spec |
+| ARCH-12/Why | same | db68e4efd936 | Round 7: a withheld HRV verdict, broad sense, now reads an HRV verdict of hrv_unavailable, the population ARCH-12 and its Scope already name whatever the unavailable_reason; C08 is still tied to keystone 8 conservatism exactly as the decision does. |
+| ARCH-13 | same | aee4c164e6f0 | Round 7: a withheld HRV day, broad sense, now reads a day on which the HRV input reads hrv_unavailable, the same population ARCH-13/Scope names; the rule still states C08 as decided, a net cost until Section 6 exists, with no zero-benefit claim and no duty on the spec. |
 | ARCH-13/Scope | same | 44c5223481ac | Unavailable days before Section 6 fusion is built is the C08 until-clause population |
-| ARCH-13/Not | same | 86f16ce685be | Hands the post-Section-6 case to ARCH-12, as C08 splits it |
-| ARCH-13/Why | same | 312db4cafb2a | Restates the C08 reason: the fusion that would widen guardrails is not built, so the days are a cost |
+| ARCH-13/Not | same | ed550e56930d | Round 7: such a day refers back to the hrv_unavailable day of ARCH-13, replacing a withheld day in the broad sense; it still hands the post-Section-6 case to ARCH-12, as C08 splits it. |
+| ARCH-13/Why | same | 4e428bcd9f4d | Round 7: the withheld days, broad sense, now read the hrv_unavailable days; it still restates the C08 reason, that the fusion that would widen guardrails is not built, so the days are a cost. |
 | REG-01 | same | 6f3833ba0dd0 | CTL 42-day EWMA, ATL 7-day EWMA, TSB equals CTL minus ATL; numbers 42 and 7 match inventory and the in-force register row |
 | REG-01/Scope | same | e37abed58974 | Fitness, fatigue and form values are the row population |
 | REG-01/Not | same | f995248410b9 | Individual fitting is deferred in the in-force row and in REG-20 |
@@ -352,7 +352,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | REG-25 | same | 0c7063813fc6 | Skipped reading degrades gracefully and never fails the gate, and an unavailable day reaches Section 6 as low confidence: C08 with the down-weights wording dropped |
 | REG-25/Scope | same | 22abaae1e192 | Mornings without a reading are the skip population of the in-force row |
 | REG-25/Not | same | 630fb574ef1b | Graceful degradation and AUT-03 mean the plan never waits on a reading |
-| REG-25/Why | same | 6f2abe59b155 | Points to C08 both halves, Section 6 treatment and the ARCH-13 net cost until then |
+| REG-25/Why | same | f80f3c5d00b8 | Round 7: the withheld day, broad sense, now reads the day the missing reading leaves reading hrv_unavailable, the phrase REG-25 itself uses, with the same presupposition; it still points to both halves of C08, Section 6 treatment and the ARCH-13 net cost until then. |
 | REG-26 | same | b4106c053919 | Down-week cut shallower than the taper cut, as in-force |
 | REG-26/Scope | same | eb731201f4ef | Mid-block recovery weeks are the rule population |
 | REG-26/Not | same | b162912c2f3b | In-force rationale says a down week refreshes without detraining |
@@ -531,7 +531,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | FIG-10/Scope | same | 503a4cb5b791 | Daily capture only, per DOC-12 and the inventory note |
 | FIG-10/Not | same | 4d8aafecde1b | Spread or less-than-daily returns are priced differently in-force |
 | FIG-11 | same | 62353849ef46 | The mostly-silent-rule question is OPEN, owned by IDEA-092: C09 |
-| FIG-11/Scope | same | a86691c2e599 | HRV gate rules that can withhold are what the question is about |
+| FIG-11/Scope | same | c2f5dd5e9c3d | Round 7: rules that can withhold a verdict, broad sense, now read rules that can leave the verdict hrv_unavailable; the HRV gate rules that say nothing are still what the question is about. |
 | FIG-11/Not | same | 27bbfda3defc | No answer is published, per FIG-05 and in-force L229 |
 
 ## HRV
@@ -699,7 +699,7 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-49/Not | same | 3e99d7926e9c | Another tier's capture feeds its own dataset in force. |
 | HRV-50 | same | 5cc0031e0d97 | Band built and reported from two readings up, established or not, as in force. |
 | HRV-50/Scope | same | 7d3b2838b6d0 | Datasets with two or more readings. |
-| HRV-50/Not | same | b613cb59f6a9 | The symmetric gate withholds the verdict. |
+| HRV-50/Not | same | f47dcf37870e | Round 7: HRV-27 withholds, broad sense, now reads HRV-27 leaves hrv_unavailable on an unestablished baseline, which is what judge serves there, reason baseline_unestablished; the symmetric gate still excludes the verdict, not the band. |
 | HRV-51 | same | 3b302230defa | Maximum taken once and simultaneously over every established dataset, candidates stay judgeable, as in force. |
 | HRV-51/Scope | same | cda7920fb2b4 | The recency gate. |
 | HRV-51/Not | same | c9c686d3bfca | Dropping the lone-candidate exemption is C10 and the in-force 2026-09-20 consequence. |
@@ -805,6 +805,45 @@ The meaning review of the research/00 rewrite (R7, AC9): one verdict per row tha
 | HRV-84 | same | 2820ebf76eff | A same-tier replacement fires no reset and costs no silent days, as in force. |
 | HRV-84/Scope | same | 8b9ec18595a4 | Replacements within one tier. |
 | HRV-84/Not | same | 62a2569e03f2 | A tier change is the tier_change rule. |
+
+## Glossary
+
+| row | verdict | digest | reason |
+| --- | --- | --- | --- |
+| T-01 | same | c0c28ddfd4e1 | is_judgeable in hrv_trend.py is established and at least MIN_WINDOW_READINGS distinct judged-week days, the inventory resolution; HRV-14 and HRV-31 use it so. |
+| T-02 | same | 9457159e89a3 | select_dataset returns the first judgeable dataset by fidelity rank outside the skipped set, and a dataset shown with nothing selected carries presented_by from _presentation_fallback, as the inventory split selected from presented. |
+| T-03 | same | f8e6c46b72c2 | build_series sets established as n at least MIN_BASELINE_READINGS over the dataset baseline after every clip, n counting one reading per local day, inventory sense 2. |
+| T-04 | same | 7825d1c7b3df | _recency_struck returns the set it strikes over the candidates it is handed, select_dataset calls the judgeable ones in it skipped, and stale survives in SELECTED_HIGHER_FIDELITY_STALE; the stale band clause is the inventory resolution. |
+| T-05 | same | 52637cb6fa06 | TIER_FIDELITY holds exactly the three hrv_source_tier values; HRV Status as a quarantined sidecar and a device not being a tier are the inventory resolution. |
+| T-06 | same | 732253a9416f | HrvDataset is one tier for one target date with its own clipped baseline_window, band, n, established, reset_on, reset_reason and withheld. |
+| T-07 | same | 5d646686330b | Band holds mean, half_width, lo, hi and floored, and build_band takes half_width as the larger of SWC_FACTOR 0.5 times the sample SD of ln rMSSD and BAND_FLOOR 0.01; the four renames are the inventory resolution. |
+| T-08 | same | 5f4c404a3abf | HrvDataset.baseline is the dataset readings inside its baseline_window, and Band.mean is the band centre the response serves as the baseline. |
+| T-09 | same | d8ddf1465b2e | baseline_window gives D-66 to D-7, HrvSeries.baseline_window clips it at the gap resumption and feeds the gate last_read, and HrvDataset.baseline_window clips further per dataset and is what established counts over. |
+| T-10 | same | 944baf4f3d04 | judged_window gives D-6 to D, WINDOW_DAYS 7, the inventory resolution. |
+| T-11 | same | f3a7574e3009 | Round 7: the line now says what the ruling and the code say: verdict_withheld sets HrvDataset.withheld, judge serves hrv_unavailable and _unavailable_reason names REASON_WEEK_NOT_REPRESENTATIVE only after no band and week_too_thin have not fired, as HRV-26 orders, main._withhold_future overrides it to day_not_happened on a future day, as HRV-29 decides, and it is not a verdict of its own, so T-33 covers the served value, HRV-31 is the rule it names and HRV-22 empties the dissent list for it as for every hrv_unavailable. |
+| T-12 | same | bc179232d905 | _silence_between is the day difference minus one; coverage_gap_reset and _internal_hole_resumption fire on a silence greater than GAP_RESET_DAYS 21, over every tier and inside one dataset window with the leading stretch not a hole; the g minus 1 seam is the RECENCY_TOLERANCE_DAYS note. |
+| T-13 | same | 8f37bec5b094 | sustained_tier is called only on the previous window in tier_change_reset, clause (b), and clause (a) counts the tier in the gap-clipped baseline_readings, the series baseline window. |
+| T-14 | same | e76fa1508d13 | select_dataset takes the judgeable datasets as the candidates and skips only among them; code comments still call the stray-count half the candidacy half, a name the inventory replaced, not a different meaning. |
+| T-15 | same | 8b3b883ad54d | EraBoundary(first_day, reported) is what _era_boundary returns, asked per dataset through tier_change_reset. |
+| T-16 | same | 3756f4f2a810 | reset_reason is coverage_gap or tier_change with its reset_on; the hole clip reports nothing and is no reset, and coverage_gap_reset is the only re-establishment, per C15. |
+| T-17 | same | edbe1b565746 | _exclude_before_reset moves every earlier reading to excluded as before_reset with its reason, and build_series composes the gap, era and hole clips as the latest first day, the hole clip using the coverage_gap reason. |
+| T-18 | same | 44bee810629e | A dataset reset_on and reset_reason are non-null only when the gap fires or EraBoundary.reported holds with no gap. |
+| T-19 | same | 1b0e5c3240ea | The strays _era_boundary counts against MIN_BASELINE_READINGS are the readings _isolated tests. |
+| T-20 | same | 34384310d4b6 | No code definition; the line is the inventory resolution, and HRV-69 and HRV-71 use return and carrier in that sense. |
+| T-21 | same | 913cff1fdcd5 | Selection ranks by _FIDELITY_RANK from TIER_FIDELITY and consults no confidence weight, as select_dataset states and C19 resolved. |
+| T-22 | same | 65e2694c0221 | disagreed_with names datasets whose below differs from the selected one in either direction, below being a week mean strictly under band.lo, and main serves an empty list whenever the served verdict is hrv_unavailable; in-force 2026-09-19 (b) and (c), HRV-21 and HRV-22 agree. |
+| T-23 | same | 7e39c10f35dd | Every count goes through _days or _tier_counts, and each dataset keeps the earliest capture per local day and lists the rest as same_day_later_capture; the code class Reading also names a screened row before that collapse, a name only, so no count changes. |
+| T-24 | same | 0ed2c84fdcf9 | The C07 wording pinned in FORBIDDEN_DIRECTION_CLAUSES carries the inventory reported-evidence sense and is what the gate test forbidden metric counts, hrv_normal promoted while the athlete return reads suppressed, the population HRV-25 names. |
+| T-25 | same | 10f5b0d66534 | OPEN with IDEA-088, as AC4 requires; no code definition. |
+| T-26 | same | 325dd542e443 | The three TIER_FIDELITY tiers plus the quarantined HRV Status, the inventory resolution of the former C34. |
+| T-27 | same | 75ec58a85e8e | No code definition; the inventory resolution of the former C35, as ARB-01 and ARCH-03 use rung and loop. |
+| T-28 | same | 0bac3b383cba | No code definition; the inventory definition without its confirm note, and FTO-04 uses the term in that sense. |
+| T-29 | same | e3821e8b5560 | No code definition in runcoach_api; the three fields are C22 and GOAL-02 names the same three. |
+| T-30 | same | 5b9ce1060c08 | No code definition; the inventory resolution, as ARB-02 and AUT-02 use override and pathway. |
+| T-31 | same | 86f28ce112a1 | EraBoundary.first_day is the new tier first reading after the old era and coverage_gap_reset returns the resumption day, D is the build_series target date, and k3 is as HRV-33 uses it. |
+| T-32 | same | 0509a5fb0e65 | Retired per HRV-44 and HRV-38; resolve_baseline_tier survives in hrv_trend.py as an uncalled F005 function name, not as served or rule vocabulary. |
+| T-33 | same | 1a3153ddf525 | VERDICT_UNAVAILABLE is hrv_unavailable, _unavailable_reason names a cause whenever a guard fires, _withhold_future sets day_not_happened, and schemas makes the reason null only when the verdict is not unavailable. |
+
 ## Rounds
 
 Round 1: three independent critics, one per group, reviewed all 789 rows and returned 37 differs verdicts, 13 in DOC–GOAL, 16 in ARCH–DEC and 8 in HRV. T183 fixed them in commit ef648fe.
@@ -821,4 +860,8 @@ Round 4b: a fresh critic re-reviewed the 1 row commit 395b733 changed, HRV-43/No
 
 Round 5: a fresh critic re-reviewed the 5 rows commit 295adaa changed, FIG-03, FIG-03/Scope, FIG-09, FIG-09/Scope and PRIN-25, against R13 with its follow-on to S10 and S5, in-force L229 at 4e47d0e, GAP_RESET_DAYS, coverage_gap_reset and the gate test, and returned 0 differs verdicts. The neighbours FIG-02 with its Why, FIG-03/Not, FIG-03/Why, FIG-04, FIG-09/Not, FIG-10, GATE-05 and PRIN-15 were read beside the changed blocks and none contradicts them: the 18 of a 22-day layoff, 22 minus 4, and the 18 of FIG-02, 14 plus 7 minus 3, still come from unrelated constants, so the coincidence stands, and FIG-04 and FIG-10 price a per-tier return with the carrier recording through the layoff, not a whole-series reset, so their rows keep their verdicts.
 
-Final: 789 rows, 789 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b, round 5.
+Round 6: a fresh critic, under T192 and R13, checked every verdict row against the text it judged and reviewed the Glossary for the first time. For each of the 789 rows it replayed the history of this file and of the round drafts it was assembled from, found the commit at which the row's verdict and reason were last written, and computed the _cell_digest of that label's block line in 00-design-decisions.md at that commit: 789 of 789 digest cells equal it, 0 mismatches, so no judged line changed after its verdict. It then judged the 33 Glossary lines T-01 to T-33 against the code's definition where the code has one, mainly hrv_trend.py, main.py and schemas.py, against inventory section 3 at 4e47d0e and against the rules that use each term, and returned 1 differs verdict, T-11, which sets the withhold apart from unavailable while the code serves it as hrv_unavailable with unavailable_reason week_not_representative, and whose term PRIN-14, ARCH-12/Why, ARCH-13, REG-25/Why, HRV-50/Not and FIG-11/Scope still use for every absent verdict.
+
+Round 7: a fresh critic, under T192 step C2 and the user ruling of 2026-09-27 that withhold carries the narrow sense only, re-judged the 9 rows the rewrite changed: T-11 against verdict_withheld, _unavailable_reason, REASON_WEEK_NOT_REPRESENTATIVE and main._withhold_future, against T-33, HRV-22, HRV-26, HRV-29 and HRV-31 and against the ruling; and PRIN-14, ARCH-12/Why, ARCH-13, ARCH-13/Not, ARCH-13/Why, REG-25/Why, HRV-50/Not and FIG-11/Scope against the in-force meaning of each row before the rewrite, in which withhold meant any hrv_unavailable. It returned 0 differs verdicts: T-11 now matches the code and the ruling, and each of the eight other lines changes only the retired broad term to hrv_unavailable. The neighbours T-06, PRIN-24, HRV-23, HRV-26, HRV-31, HRV-32, HRV-63, HRV-64, HRV-67, HRV-69, HRV-71 and FIG-04 use withhold only in the narrow sense and read correctly beside the new T-11, and a case-folded search of 00-design-decisions.md finds no broad-sense use left outside code names.
+
+Final: 822 rows, 789 block rows and 33 Glossary rows, 822 same, 0 differs. Later rounds supersede earlier ones row by row, in the order round 1, round 2, round 3, round 3b, round 4, round 4b, round 5, round 6, round 7.

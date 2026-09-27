@@ -648,45 +648,8 @@ OLD_MEANING_SHA256 = {
 #: derived 2026-09-26 at 12348f1 by ``derived_literals()``, which keyed every line and printed its counts;
 #: each error names the line and prints the new digest, and ``frozen_literals()`` prints every literal.
 #:
-#: ``GLOSSARY_SHA256`` (M1): each Glossary definition, keyed by T-NN (33 lines, 33 keys). The T-NN lines
-#: are normative IS definitions outside every rule block, so neither the review nor the AC9 proxy read
-#: them: T-13's 14 days became 21, T-03's ``>=`` became ``>`` and T-05's HRV Status became a tier, with the
-#: suite green. A Glossary change needs a fresh critic. Asserted both ways by ``glossary_digest_errors``.
-GLOSSARY_SHA256 = {
-    "T-01": "c0c28ddfd4e1",
-    "T-02": "9457159e89a3",
-    "T-03": "f8e6c46b72c2",
-    "T-04": "7825d1c7b3df",
-    "T-05": "52637cb6fa06",
-    "T-06": "732253a9416f",
-    "T-07": "5d646686330b",
-    "T-08": "5f4c404a3abf",
-    "T-09": "d8ddf1465b2e",
-    "T-10": "944baf4f3d04",
-    "T-11": "c58b107621a1",
-    "T-12": "bc179232d905",
-    "T-13": "8f37bec5b094",
-    "T-14": "e76fa1508d13",
-    "T-15": "8b3b883ad54d",
-    "T-16": "3756f4f2a810",
-    "T-17": "edbe1b565746",
-    "T-18": "44bee810629e",
-    "T-19": "1b0e5c3240ea",
-    "T-20": "34384310d4b6",
-    "T-21": "913cff1fdcd5",
-    "T-22": "65e2694c0221",
-    "T-23": "7e39c10f35dd",
-    "T-24": "0ed2c84fdcf9",
-    "T-25": "10f5b0d66534",
-    "T-26": "325dd542e443",
-    "T-27": "75ec58a85e8e",
-    "T-28": "0bac3b383cba",
-    "T-29": "e3821e8b5560",
-    "T-30": "5b9ce1060c08",
-    "T-31": "86f28ce112a1",
-    "T-32": "0509a5fb0e65",
-    "T-33": "1a3153ddf525",
-}
+#: T192 step C1 retired ``GLOSSARY_SHA256`` (M1): each Glossary definition is now a required review row
+#: (``T-NN``), bound by the digest its verdict line in 00-meaning-review.md records, as a block line is.
 
 #: ``PINNED_SHA256`` (S1): each rule's Pinned lines, keyed ``<ID>/Pinned`` (246 rules, 249 lines).
 #: ``pinned_errors`` only finds the node, so PRIN-26's ``Pinned: none (F009)`` retargeted to an unrelated
@@ -1063,21 +1026,23 @@ HISTORY_SHA256 = {
     "PRIN-16 retired": "44a1c18ceea9",
 }
 
-#: ``REVIEW_PROSE_SHA256`` (S3): the review file's 14 lines outside its tables, in order (the title, the
-#: opening paragraph, the three group headings, ``## Rounds`` and its paragraphs), one digest each.
-#: Asserted by ``review_line_errors``, which names the first line that differs; a new round updates it.
+#: ``REVIEW_PROSE_SHA256`` (S3): the review file's 17 lines outside its tables, in order (the title, the
+#: opening paragraph, the three group headings and the Glossary's, ``## Rounds`` and its paragraphs), one
+#: digest each. Asserted by ``review_line_errors``, which names the first line that differs; a new round
+#: updates it (regenerated through ``frozen_literals()`` at T192 for round 7).
 REVIEW_PROSE_SHA256 = (
-    "3a7b11e58598", "b051f146b589", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "96de422a6cb7",
-    "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41", "ca0e1376449f",
-    "1ab83c31c697", "1ab8f103ac7a",
+    "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
+    "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
+    "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "a6d7a151e7cb",
 )
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
-#: and reason together, keyed by its row (789 lines, 789 rows). ``review_errors`` caught a flipped verdict,
-#: not a reason: PRIN-01's rewritten to "Not reviewed." stayed green. It also makes an edit to a verdict
-#: line's digest cell visible when the verdict and reason stay (T192). A new round updates these digests
-#: deliberately; the verdict line's own digest cell is what binds the text. Asserted both ways by
-#: ``review_line_errors``.
+#: and reason together, keyed by its row (one per ``required_review_rows`` row: the rule rows, then T-01 to
+#: T-33, added at T192 step C1 from round 6). ``review_errors`` caught a flipped verdict, not a reason:
+#: PRIN-01's rewritten to "Not reviewed." stayed green. It also makes an edit to a verdict line's digest
+#: cell visible when the verdict and reason stay (T192). A new round updates these digests deliberately,
+#: and only for the rows that round names (``review_line_literal``); the verdict line's own digest cell is
+#: what binds the text. Asserted both ways by ``review_line_errors``.
 REVIEW_LINE_SHA256 = {
     "PRIN-01": "02d5c6065e90",
     "PRIN-01/Scope": "69d7dc23734b",
@@ -1168,7 +1133,7 @@ REVIEW_LINE_SHA256 = {
     "PRIN-13": "6569e1900548",
     "PRIN-13/Scope": "060f62f49158",
     "PRIN-13/Not": "d9d0793208a5",
-    "PRIN-14": "974c7ca7b9a1",
+    "PRIN-14": "c536c3f8950d",
     "PRIN-14/Scope": "d5d71f02187b",
     "PRIN-14/Not": "dfcb60e7d859",
     "PRIN-14/Why": "715624d693db",
@@ -1335,11 +1300,11 @@ REVIEW_LINE_SHA256 = {
     "ARCH-12": "8597ff5b9f60",
     "ARCH-12/Scope": "cd28c43b7cac",
     "ARCH-12/Not": "bad072faf3ad",
-    "ARCH-12/Why": "2b4fbdba40e2",
-    "ARCH-13": "b19626016970",
+    "ARCH-12/Why": "7f6f6b5f1ed4",
+    "ARCH-13": "95bab0c903ba",
     "ARCH-13/Scope": "df9edd9675ec",
-    "ARCH-13/Not": "10a18073e280",
-    "ARCH-13/Why": "6ee0a9baf57d",
+    "ARCH-13/Not": "1e2a87383a2c",
+    "ARCH-13/Why": "5302427617a8",
     "REG-01": "be8a6e7a439e",
     "REG-01/Scope": "f491888bad98",
     "REG-01/Not": "1522bca26fc6",
@@ -1420,7 +1385,7 @@ REVIEW_LINE_SHA256 = {
     "REG-25": "545d4bd8a50b",
     "REG-25/Scope": "752146eba9ab",
     "REG-25/Not": "cf0bdfec9093",
-    "REG-25/Why": "21ebc7c98f09",
+    "REG-25/Why": "b2cbeec9b159",
     "REG-26": "53b1bf3aa385",
     "REG-26/Scope": "79b8012e9741",
     "REG-26/Not": "0a604538abe1",
@@ -1599,7 +1564,7 @@ REVIEW_LINE_SHA256 = {
     "FIG-10/Scope": "002ec3d47dba",
     "FIG-10/Not": "4a189de10700",
     "FIG-11": "0463ec082878",
-    "FIG-11/Scope": "c22e457dbe04",
+    "FIG-11/Scope": "8ce10885a996",
     "FIG-11/Not": "54b0cc8f95a7",
     "HRV-07": "7f414512ca69",
     "HRV-07/Scope": "b8feac613953",
@@ -1762,7 +1727,7 @@ REVIEW_LINE_SHA256 = {
     "HRV-49/Not": "0a879f7c5ece",
     "HRV-50": "8ecd5f5df9ea",
     "HRV-50/Scope": "b6517109197d",
-    "HRV-50/Not": "4ebae5686b38",
+    "HRV-50/Not": "3f19a2f7139c",
     "HRV-51": "84ee799fd975",
     "HRV-51/Scope": "ba54ba0fc119",
     "HRV-51/Not": "7d4f2dfeef0d",
@@ -1868,6 +1833,39 @@ REVIEW_LINE_SHA256 = {
     "HRV-84": "7a0f91ec5fb7",
     "HRV-84/Scope": "202d25511444",
     "HRV-84/Not": "de61538225d5",
+    "T-01": "9bdd9c159bd4",
+    "T-02": "59cb80cac177",
+    "T-03": "128dcb9ecadf",
+    "T-04": "281e9636216e",
+    "T-05": "7d804dcbeed8",
+    "T-06": "b929ab8e30d8",
+    "T-07": "aaf9dbc71499",
+    "T-08": "6c47411381db",
+    "T-09": "56e1217ead9d",
+    "T-10": "95811317a1e3",
+    "T-11": "c552f5dea47e",
+    "T-12": "98c25ed721dd",
+    "T-13": "3f43ba0aa12d",
+    "T-14": "1ebfb600f65c",
+    "T-15": "d42b7d3d57dd",
+    "T-16": "b01695ab8f91",
+    "T-17": "de3e34f6f99e",
+    "T-18": "c70f5d04b9ef",
+    "T-19": "69c497243bc4",
+    "T-20": "77a34c675844",
+    "T-21": "9b34f424fda7",
+    "T-22": "7239237d8256",
+    "T-23": "1faeae78af2b",
+    "T-24": "982c09e126e0",
+    "T-25": "7e93b75a643b",
+    "T-26": "a4feff5cba8e",
+    "T-27": "96193acf57e1",
+    "T-28": "12619b4b4664",
+    "T-29": "7c1305033cc9",
+    "T-30": "5c8a43064104",
+    "T-31": "c3305747107d",
+    "T-32": "26cc12f15622",
+    "T-33": "1ca03b6623e0",
 }
 
 #: The decisions reference's two tables, for the H-NN a merged-away ID retires under (R11).
@@ -2614,7 +2612,10 @@ def old_meaning_errors(entries, research_text: str) -> list[str]:
 def required_review_rows(research_text: str, rows: list[dict[str, str]], group: str | None = None) -> list[str]:
     """R7's row IDs, in document order: the block of every rule a ``no`` or ``yes`` row names
     (``<ID>``), and every rule's ``<ID>/Scope``, ``<ID>/Not`` and ``<ID>/Why`` line. ``group`` keeps
-    only the rules whose prefix is in that group."""
+    only the rules whose prefix is in that group.
+
+    T192 (R13, G1): with no ``group``, the Glossary joins the critic scope, one row per T-NN key of the
+    Glossary section (``glossary_entries``), after the rules, each once. A Glossary sits in no group."""
     blocks = rule_blocks(research_text)
     named = {i for r in rows if r["meaning changed"] in ("yes", "no") for i in _new_rule_ids(r)}
     need = []
@@ -2625,6 +2626,8 @@ def required_review_rows(research_text: str, rows: list[dict[str, str]], group: 
             need.append(rule_id)
         kinds = [line.split(":", 1)[0] for line in block.splitlines()[1:]]
         need += [f"{rule_id}/{k}" for k in ("Scope", "Not", "Why") if k in kinds]
+    if group is None:
+        need += list(dict.fromkeys(key for key, _lines_of_key in glossary_entries(research_text)[0]))
     return need
 
 
@@ -2913,10 +2916,25 @@ def reviewed_block_lines(research_text: str, rows: list[dict[str, str]]) -> tupl
     """``({label: line}, problems)`` for each ``required_review_rows`` label (iteration 4, M3): ``<ID>`` is
     the rule's own line and ``<ID>/Scope``, ``/Not``, ``/Why`` its line of that kind, from
     ``rule_blocks``. A label whose block has no such line, or more than one (a repeated rule ID merges
-    two blocks), is a problem, not a line."""
+    two blocks), is a problem, not a line.
+
+    T192 (R13, G1): a ``T-NN`` label is that term's Glossary line (``glossary_entries``), so a Glossary
+    line changed after its verdict reds like a block line. A term keyed on more than one line is a
+    problem, and so is a Glossary line with no T-NN key, which no verdict could bind."""
     blocks = {rule_id: block.split("\n") for rule_id, block in rule_blocks(research_text).items()}
-    lines, problems = {}, []
+    has_glossary = _glossary_span(_lines(research_text)) is not None
+    glossary, glossary_problems = glossary_entries(research_text) if has_glossary else ([], [])
+    terms: dict[str, list[str]] = {}
+    for key, key_lines in glossary:
+        terms.setdefault(key, []).extend(key_lines)
+    lines, problems = {}, list(glossary_problems)
     for label in required_review_rows(research_text, rows):
+        if label in terms:
+            if len(terms[label]) == 1:
+                lines[label] = terms[label][0]
+            else:
+                problems.append(f"[reviewed-block] {label}: {len(terms[label])} Glossary lines, not one")
+            continue
         rule_id, _, kind = label.partition("/")
         block = blocks.get(rule_id, [])
         hits = [line for line in block if (_RULE_LINE.match(line) if not kind
@@ -2970,21 +2988,25 @@ def _first_difference(have, want) -> int:
 
 
 def keyed_line_errors(tag: str, literal: str, where: str, entries: list[tuple[str, list[str]]],
-                      frozen: dict[str, str], then: str) -> list[str]:
-    """The iteration-5 binding, both ways, shared by ``GLOSSARY_SHA256``, ``PINNED_SHA256``,
-    ``HISTORY_SHA256`` and ``REVIEW_LINE_SHA256``: each key occurs once, every frozen key is in
-    ``where`` and every key in ``where`` is frozen, and each key's ``_keyed_digest`` is its frozen
-    digest. A mismatch names the key and the first of its lines that differs; every message says what
-    must happen first (``then``) and prints the new digest to paste."""
+                      frozen: dict[str, str], then: str, paste: bool = True) -> list[str]:
+    """The iteration-5 binding, both ways, shared by ``PINNED_SHA256``, ``HISTORY_SHA256`` and
+    ``REVIEW_LINE_SHA256``: each key occurs once, every frozen key is in ``where`` and every key in
+    ``where`` is frozen, and each key's ``_keyed_digest`` is its frozen digest. A mismatch names the key
+    and the first of its lines that differs; every message says what must happen first (``then``) and,
+    with ``paste``, prints the new digest to paste. Without ``paste`` (T192, the review lines) a message
+    prints no digest and no line text, since a verdict line carries its judged digest."""
     keys = [key for key, _lines_of_key in entries]
     errors = [f"[{tag}] {key} occurs {n} times in {where}, not once" for key, n in Counter(keys).items() if n > 1]
     errors += [f"[{tag}] {key} is frozen in {literal} and is not in {where}" for key in sorted(frozen.keys() - set(keys))]
     for key, lines in entries:
         digest = _keyed_digest(lines)
         if key not in frozen:
-            errors.append(f"[{tag}] {key} is not in {literal} (a line was added or re-keyed); {then}, "
-                          f"{literal}[{key!r}] = {digest!r}")
+            errors.append(f"[{tag}] {key} is not in {literal} (a line was added or re-keyed); {then}"
+                          + (f", {literal}[{key!r}] = {digest!r}" if paste else ""))
         elif digest != frozen[key]:
+            if not paste:
+                errors.append(f"[{tag}] {key}: the line changed; {then}")
+                continue
             have, want = digest.split("."), frozen[key].split(".")
             first = _first_difference(have, want)
             now = repr(lines[first][:120]) if first < len(lines) else "no such line: a line was removed"
@@ -2994,11 +3016,16 @@ def keyed_line_errors(tag: str, literal: str, where: str, entries: list[tuple[st
 
 def glossary_entries(research_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
     """``([(T-NN, [line])], problems)`` over the Glossary section, in order (iteration 5, M1). A
-    non-blank line with no T-NN key is a problem, so no Glossary line is unbound."""
+    non-blank line with no T-NN key is a problem, so no Glossary line is unbound.
+
+    The T-NN lines are normative IS definitions outside every rule block: T-13's 14 days became 21,
+    T-03's ``>=`` became ``>`` and T-05's HRV Status became a tier, with the suite green (iteration 5).
+    Since T192 (R13, G1) each is a required review row, bound by the digest its verdict line records
+    (``reviewed_block_errors``); ``GLOSSARY_SHA256`` is retired."""
     lines = _lines(research_text)
     span = _glossary_span(lines)
     if span is None:
-        return [], [f"[frozen-glossary] research/00 has no {GLOSSARY_HEADING!r} section"]
+        return [], [f"[reviewed-block] research/00 has no {GLOSSARY_HEADING!r} section"]
     entries, problems = [], []
     for number in range(*span):
         line = lines[number]
@@ -3007,21 +3034,9 @@ def glossary_entries(research_text: str) -> tuple[list[tuple[str, list[str]]], l
         if m := _GLOSSARY_KEY.match(line):
             entries.append((m.group("id"), [line]))
         else:
-            problems.append(f"[frozen-glossary] line {number + 1}: a Glossary line with no T-NN key cannot be "
+            problems.append(f"[reviewed-block] line {number + 1}: a Glossary line with no T-NN key cannot be "
                             f"bound: {line[:120]!r}")
     return entries, problems
-
-
-def glossary_digest_errors(research_text: str, frozen: dict[str, str] | None = None) -> list[str]:
-    """Each Glossary definition is the frozen definition (iteration 5, M1), both ways. The T-NN lines are
-    normative IS definitions outside every rule block, so neither the review nor the proxy read them:
-    T-13's 14 days became 21, T-03's ``>=`` became ``>`` and T-05's HRV Status became a tier, with the
-    suite green, though R13 states T-05, T-13 and T-26 unchanged."""
-    frozen = GLOSSARY_SHA256 if frozen is None else frozen
-    entries, problems = glossary_entries(research_text)
-    return problems + keyed_line_errors(
-        "frozen-glossary", "GLOSSARY_SHA256", "the Glossary", entries, frozen,
-        "a Glossary change needs a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it")
 
 
 def pinned_entries(research_text: str) -> tuple[list[tuple[str, list[str]]], list[str]]:
@@ -4320,6 +4335,13 @@ def test_required_review_rows_is_every_block_and_every_scope_not_and_why_line() 
                     "HRV-02", "HRV-02/Scope", "HRV-02/Not"]
     assert required_review_rows(research, rows, group="hrv") == need[4:]
     assert required_review_rows(research, rows, group="arch-dec") == []
+    # T192 (G1): with a Glossary, each T-NN is a row, once, after the rules; a group holds none.
+    glossed = f"{HEADINGS[0]}\n\n{GLOSSARY_HEADING}\n\n{_glossary(3)}\n{HEADINGS[1]}\n\n{research}"
+    with_terms = required_review_rows(glossed, rows)
+    doubled = required_review_rows(_one_edit(glossed, "- **T-03 ", "- **T-02 again** IS twice.\n- **T-03 "), rows)
+    print(f"[slice compared] {with_terms}; doubled T-02 {doubled[-3:]}")
+    assert with_terms == [*need, "T-01", "T-02", "T-03"] and doubled == with_terms
+    assert required_review_rows(glossed, rows, group="hrv") == need[4:]
 
 
 # ---------------------------------------------------------------------------
@@ -4920,6 +4942,16 @@ _VERDICTS = ("same", "differs")
 #: A verdict line's digest cell (T192): the ``_cell_digest`` of the block line the verdict judged, bare
 #: lowercase hex, so the review file stays spanless (``INSIDE_ARM_ABSTAINING``).
 _JUDGED_DIGEST = re.compile(r"[0-9a-f]{12}")
+#: A Glossary row's label (T192, G1): its verdict line sits under the review's own ``## Glossary`` table.
+_GLOSSARY_LABEL = re.compile(r"T-\d{2}")
+REVIEW_GLOSSARY_HEADING = GLOSSARY_HEADING
+
+
+def _review_heading(row: str) -> str | None:
+    """The review heading a verdict line for ``row`` sits under: its group's, or the Glossary's."""
+    if _GLOSSARY_LABEL.fullmatch(row):
+        return REVIEW_GLOSSARY_HEADING
+    return REVIEW_HEADINGS.get(_GROUP_OF.get(_prefix(row.split("/", 1)[0]), ""))
 
 
 def review_digests(review_text: str) -> dict[str, str]:
@@ -4940,9 +4972,12 @@ def review_errors(review_text: str, required: list[str]) -> list[str]:
     """R7's coverage over a review file: every ``required`` row has exactly one verdict line, no
     verdict line names a row outside ``required``, every verdict is ``same`` or ``differs`` and none
     is ``differs``, every verdict line carries a judged digest (T192), every line sits under its
-    group's heading, and each group's table opens with ``REVIEW_HEADER``."""
+    group's heading, and each group's table opens with ``REVIEW_HEADER``. A Glossary row (T192, G1)
+    sits under ``## Glossary``, whose table is required once a Glossary row is."""
     errors: list[str] = []
     group_of_heading = {h: g for g, h in REVIEW_HEADINGS.items()}
+    if any(_GLOSSARY_LABEL.fullmatch(row) for row in required):
+        group_of_heading[REVIEW_GLOSSARY_HEADING] = "glossary"
     heading, counts, headed = None, Counter(), set()
     for number, line in enumerate(_lines(review_text), 1):
         if line.startswith("#"):
@@ -4969,7 +5004,7 @@ def review_errors(review_text: str, required: list[str]) -> list[str]:
             errors.append(f"[review] {row} differs: {reason[:160]}")
         if not reason:
             errors.append(f"[review] {row}: no reason")
-        want = REVIEW_HEADINGS.get(_GROUP_OF.get(_prefix(row.split("/", 1)[0]), ""))
+        want = _review_heading(row)
         if heading != want:
             errors.append(f"[review] {row} sits under {heading!r}, not {want!r}")
     need = Counter(required)
@@ -5006,13 +5041,23 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
     ways, and the file's prose is ``REVIEW_PROSE_SHA256``. ``review_errors`` caught a flipped verdict,
     not a reason: PRIN-01's rewritten to "Not reviewed." stayed green. A new round updates these
     literals deliberately. Since T192 a verdict line holds its judged digest, so an edit to that cell
-    alone is also named here."""
+    alone is also named here.
+
+    T192 step C1 closes the paste route: no message about a verdict line prints a digest, and every row
+    whose verdict line differs from ``frozen`` must be named in the last ``Round N:`` paragraph under
+    ``## Rounds`` (``last_round_labels``). ``review_line_literal`` regenerates ``REVIEW_LINE_SHA256``
+    with the same rule, so regenerating the literal clears only a row a round names."""
     frozen = REVIEW_LINE_SHA256 if frozen is None else frozen
     frozen_prose = REVIEW_PROSE_SHA256 if frozen_prose is None else frozen_prose
     entries, prose = review_entries(review_text)
     errors = keyed_line_errors(
         "frozen-review", "REVIEW_LINE_SHA256", "00-meaning-review.md", entries, frozen,
-        "a verdict or its reason changes only in a fresh critic's round recorded under ## Rounds: once recorded")
+        "a verdict line changes only in a critic round", paste=False)
+    _regenerated, unnamed = review_line_literal(review_text, frozen)
+    round_name = last_round(review_text)[0]
+    errors += [f"[frozen-review] {row}: its verdict line changed and the last round under ## Rounds "
+               f"({round_name or 'none'}) does not name it: only a critic round changes a verdict line (R7)"
+               for row in unnamed]
     have = tuple(_cell_digest(line) for line in prose)
     if have != frozen_prose:
         i = _first_difference(have, frozen_prose)
@@ -5021,6 +5066,52 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
                       f"## Rounds) is not the frozen line (now {now}); a round is recorded only with the review it "
                       f"records: once it is, REVIEW_PROSE_SHA256 = {have!r}")
     return errors
+
+
+_ROUND_LINE = re.compile(r"^Round (?P<name>\d+[a-z]?): ")
+#: A review row named in a round's prose: a rule ID with an optional ``/Scope``, ``/Not`` or ``/Why``, or a
+#: T-NN; ``<A> to <B>`` with one prefix names every plain ID from A to B (Round 6's "T-01 to T-33").
+_ROUND_LABEL = re.compile(rf"\b(?:(?:{_P})-\d{{2,3}}(?:/(?:Scope|Not|Why)\b)?|T-\d{{2}})")
+_ROUND_RANGE = re.compile(rf"\b(?P<prefix>{_P}|T)-(?P<a>\d{{2,3}}) to (?P=prefix)-(?P<b>\d{{2,3}})\b")
+
+
+def last_round(review_text: str) -> tuple[str | None, str]:
+    """``(name, paragraph)`` of the last ``Round N:`` paragraph under ``## Rounds``, or ``(None, "")``."""
+    found, under = (None, ""), False
+    for line in _lines(review_text):
+        if line.startswith("#"):
+            under = line.strip() == "## Rounds"
+        elif under and (m := _ROUND_LINE.match(line)):
+            found = (m.group("name"), line)
+    return found
+
+
+def last_round_labels(review_text: str) -> set[str]:
+    """Every review row the last round names (T192 step C1): each label token, and each ``A to B`` range."""
+    paragraph = last_round(review_text)[1]
+    named = set(_ROUND_LABEL.findall(paragraph))
+    for m in _ROUND_RANGE.finditer(paragraph):
+        width = len(m.group("a"))
+        named |= {f"{m.group('prefix')}-{n:0{width}d}" for n in range(int(m.group("a")), int(m.group("b")) + 1)}
+    return named
+
+
+def review_line_literal(review_text: str, frozen: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """``(REVIEW_LINE_SHA256 regenerated, rows left unnamed)`` (T192 step C1): each verdict line's
+    ``_keyed_digest`` when it equals ``frozen`` or the last round names its row, otherwise the frozen
+    digest kept (none for a new row), with the row listed. Regenerating the literal therefore clears
+    only a row whose change a critic's round records; a pasted digest cell stays red."""
+    named = last_round_labels(review_text)
+    literal, unnamed = {}, []
+    for row, lines in review_entries(review_text)[0]:
+        digest = _keyed_digest(lines)
+        if frozen.get(row) == digest or row in named:
+            literal[row] = digest
+        else:
+            unnamed.append(row)
+            if row in frozen:
+                literal[row] = frozen[row]
+    return literal, unnamed
 
 
 #: The judged digest a synthetic verdict line carries when a test does not bind it to a block line.
@@ -5053,6 +5144,16 @@ def test_review_errors_turns_red_on_a_missing_verdict_row() -> None:
     assert review_errors(no_digest, required) == [
         "[review] line 18: 3 cells, not 4: '| HRV-07 | same | A synthetic reason. |'", "[review] HRV-07 has no verdict"]
     assert review_errors(upper, required) == ["[review] HRV-07: digest '0123456789AB' is not 12 lowercase hex digits"]
+    # T192 step C1 (G1): a Glossary row sits under the review's ## Glossary table, required once a T-NN is.
+    t01 = f"| T-01 | same | {_SYNTHETIC_DIGEST} | A synthetic reason. |\n"
+    glossed = f"{full}{REVIEW_GLOSSARY_HEADING}\n\n{REVIEW_HEADER}\n| --- | --- | --- | --- |\n{t01}"
+    misplaced = full + t01
+    print(f"[slice compared] glossed {review_errors(glossed, [*required, 'T-01'])}; misplaced "
+          f"{review_errors(misplaced, [*required, 'T-01'])}")
+    assert review_errors(glossed, [*required, "T-01"]) == []
+    assert review_errors(misplaced, [*required, "T-01"]) == [
+        "[review] T-01 sits under '## HRV', not '## Glossary'",
+        f"[review] ## Glossary has no {REVIEW_HEADER} table"]
 
 
 def test_real_path_meaning_review_covers_exactly_the_required_rows_with_no_differs() -> None:
@@ -5074,17 +5175,24 @@ def test_real_path_meaning_review_covers_exactly_the_required_rows_with_no_diffe
 def test_real_path_every_reviewed_block_line_is_the_text_its_verdict_judged() -> None:
     """Iteration 4, M3 (ruled 2026-09-26; T192): the committed review's verdict lines carry a judged
     digest for exactly ``required_review_rows``, each label maps to one block line, in that order, and
-    each line is the text its verdict line records it judged."""
+    each line is the text its verdict line records it judged. T192 step C1 (G1): the rows are the rule
+    rows and one per Glossary term, T-01 to T-33, each mapped to its Glossary line."""
     research, _history, rows = _real()
     required = required_review_rows(research, rows)
     lines, problems = reviewed_block_lines(research, rows)
     judged = review_digests(_REAL_REVIEW.read_text(encoding="utf-8"))
     errors = reviewed_block_errors(research, rows, _REAL_REVIEW.read_text(encoding="utf-8"))
-    print(f"[slice compared] {len(required)} required rows, {len(lines)} mapped, {len(judged)} judged digests in "
-          f"{_REAL_REVIEW.name}, problems {problems}; HRV-24 {_cell_digest(lines['HRV-24'])} vs "
-          f"{judged['HRV-24']}, DOC-09 {_cell_digest(lines['DOC-09'])} vs {judged['DOC-09']}: {errors[:5]}")
+    terms = [label for label in required if _GLOSSARY_LABEL.fullmatch(label)]
+    rule_rows = [label for label in required if not _GLOSSARY_LABEL.fullmatch(label)]
+    print(f"[slice compared] {len(required)} required rows ({len(rule_rows)} rule rows, {len(terms)} Glossary "
+          f"rows), {len(lines)} mapped, {len(judged)} judged digests in {_REAL_REVIEW.name}, problems {problems}; "
+          f"HRV-24 {_cell_digest(lines['HRV-24'])} vs {judged['HRV-24']}, DOC-09 {_cell_digest(lines['DOC-09'])} vs "
+          f"{judged['DOC-09']}, T-13 {_cell_digest(lines['T-13'])} vs {judged['T-13']}: {errors[:5]}")
     assert problems == [] and errors == []
-    assert list(lines) == required and sorted(judged) == sorted(required) and len(required) == 789
+    assert list(lines) == required and sorted(judged) == sorted(required)
+    assert terms == list(GLOSSARY_TERMS) and required == [*rule_rows, *terms]
+    assert len(set(required)) == len(required) == len(rule_rows) + len(GLOSSARY_TERMS)
+    assert all(lines[t].startswith(f"- **{t} {GLOSSARY_TERMS[t]}** IS ") for t in terms)
 
 
 def test_reviewed_block_errors_names_a_row_whose_text_changed_after_its_verdict() -> None:
@@ -5176,8 +5284,11 @@ def test_a_changed_rule_stays_red_until_a_critic_writes_a_new_verdict() -> None:
        ``frozen_literals()`` prints), is satisfied, and the check is still red: nothing in this file is
        what ``reviewed_block_errors`` compares against;
     3. an edit to the verdict line's digest cell alone, verdict and reason unchanged, clears this check but
-       is named by the committed ``REVIEW_LINE_SHA256`` side (``review_line_errors``);
-    4. a critic's new verdict line, carrying the new digest, is what turns it green."""
+       is named by the committed ``REVIEW_LINE_SHA256`` side (``review_line_errors``); since step C1 that
+       message prints no digest, the last round must name the row, and ``review_line_literal`` (what
+       ``frozen_literals()`` prints) keeps the committed digest, so regenerating the literal stays red;
+    4. a critic's new verdict line, carrying the new digest, is what turns it green, and its round, naming
+       the row, is what lets the literal be regenerated."""
     research, rows, lines = _synthetic_reviewed_world()
     judged = {label: _cell_digest(line) for label, line in lines.items()}
     review = _synthetic_review(list(lines), digests=judged) + "## Rounds\n\nRound 1: a synthetic critic.\n"
@@ -5207,11 +5318,30 @@ def test_a_changed_rule_stays_red_until_a_critic_writes_a_new_verdict() -> None:
     print(f"[slice compared] digest cell pasted: reviewed_block_errors {reviewed_block_errors(may, rows, pasted)}; "
           f"review_line_errors {seen}")
     assert reviewed_block_errors(may, rows, pasted) == []
-    assert [e.split(" (now ")[0] for e in seen] == ["[frozen-review] HRV-24: the line changed"]
-    # 4. The critic's new verdict line for HRV-24, with the digest of the text it judged.
+    pasted_red = [
+        "[frozen-review] HRV-24: the line changed; a verdict line changes only in a critic round",
+        ("[frozen-review] HRV-24: its verdict line changed and the last round under ## Rounds (1) does not name it: "
+         "only a critic round changes a verdict line (R7)")]
+    assert seen == pasted_red and not any(re.search(r"[0-9a-f]{12}|= '", e) for e in seen)
+    # 3b. Regenerating REVIEW_LINE_SHA256 as frozen_literals() does keeps the committed HRV-24 digest.
+    regenerated, unnamed = review_line_literal(pasted, frozen_lines)
+    print(f"[slice compared] regenerated after the paste: HRV-24 {regenerated['HRV-24']} (committed "
+          f"{frozen_lines['HRV-24']}, pasted line {_cell_digest(pasted_row)}), unnamed {unnamed}; "
+          f"{review_line_errors(pasted, regenerated, frozen_prose)}")
+    assert regenerated == frozen_lines and unnamed == ["HRV-24"]
+    assert review_line_errors(pasted, regenerated, frozen_prose) == pasted_red
+    # 4. The critic's new verdict line for HRV-24, with the digest of the text it judged, and its round.
     renewed = _one_edit(review, old_row, f"| HRV-24 | same | {_cell_digest(may_line)} | A new synthetic verdict. |")
     print(f"[slice compared] new verdict: {reviewed_block_errors(may, rows, renewed)}")
     assert reviewed_block_errors(may, rows, renewed) == []
+    rounded = renewed + "\nRound 2: a fresh critic re-reviewed HRV-24 and returned 0 differs verdicts.\n"
+    regenerated, unnamed = review_line_literal(rounded, frozen_lines)
+    new_prose = tuple(_cell_digest(p) for p in review_entries(rounded)[1])
+    print(f"[slice compared] with round 2: unnamed {unnamed}, HRV-24 {regenerated['HRV-24']}; "
+          f"{review_line_errors(rounded, regenerated, new_prose)}")
+    assert unnamed == [] and regenerated == {**frozen_lines, "HRV-24": _cell_digest(
+        f"| HRV-24 | same | {_cell_digest(may_line)} | A new synthetic verdict. |")}
+    assert review_line_errors(rounded, regenerated, new_prose) == [] == reviewed_block_errors(may, rows, rounded)
 
 
 # ---------------------------------------------------------------------------
@@ -5235,54 +5365,56 @@ def _one_edit(text: str, old: str, new: str) -> str:
     return text.replace(old, new)
 
 
-def test_real_path_every_glossary_definition_is_the_frozen_definition() -> None:
-    """Iteration 5, M1: the committed Glossary is ``GLOSSARY_SHA256``, term by term, both ways; every
-    Glossary line has a T-NN key, and the keys are ``GLOSSARY_TERMS``'s, in order."""
+def test_real_path_every_glossary_line_is_keyed_and_the_terms_are_glossary_terms() -> None:
+    """Iteration 5, M1: every committed Glossary line has a T-NN key, once, and the keys are
+    ``GLOSSARY_TERMS``'s, in order. T192 step C1 retired ``GLOSSARY_SHA256``: each line is bound by its
+    verdict line's digest (``test_real_path_every_reviewed_block_line_is_the_text_its_verdict_judged``)."""
     research, _history, _rows = _real()
     entries, problems = glossary_entries(research)
-    errors = glossary_digest_errors(research)
-    t13 = dict(entries)["T-13"]
-    print(f"[slice compared] {len(entries)} Glossary lines, {len(GLOSSARY_SHA256)} frozen, problems {problems}; "
-          f"T-13 {_keyed_digest(t13)} vs {GLOSSARY_SHA256['T-13']}: {errors[:5]}")
-    assert errors == []
-    assert [k for k, _ in entries] == list(GLOSSARY_SHA256) == list(GLOSSARY_TERMS)
+    print(f"[slice compared] {len(entries)} Glossary lines, problems {problems}; keys {[k for k, _ in entries]}")
+    assert problems == []
+    assert [k for k, _ in entries] == list(GLOSSARY_TERMS)
+    assert all(len(lines) == 1 for _k, lines in entries)
 
 
-def test_glossary_digest_errors_names_a_changed_definition() -> None:
-    """Iteration 5, M1, on synthetic text shaped like the scanner's routes, each message exactly: T-13's
-    14 days made 21 (N1), T-05's HRV Status made a tier (N3), then a term replaced by another, a term
-    repeated and a line with no key. The frozen side is derived from the unmutated text (S5)."""
+def test_a_glossary_line_changed_after_its_verdict_stays_red_until_a_critic_writes_a_new_one() -> None:
+    """T192 step C1 (R13, G1), on synthetic text shaped like the scanner's iteration-5 routes, each message
+    exactly and none printing a digest: T-13's 14 days made 21 (N1), T-05's HRV Status made a tier (N3),
+    then a term replaced by another, a term repeated and a line with no key. The judged side is a synthetic
+    review whose Glossary verdict lines carry the unmutated lines' digests; at e4ab89d these edits reached
+    only ``GLOSSARY_SHA256``, whose message printed the digest that cleared them."""
     t13 = "- **T-13 sustains** IS the highest-fidelity tier with at least 14 distinct days in a window."
     t05 = "- **T-05 tier** IS a value of `hrv_source_tier`; HRV Status is a sidecar metric and not a tier."
     base = f"{HEADINGS[0]}\n\n{GLOSSARY_HEADING}\n\n{_glossary(**{'T-13': t13, 'T-05': t05})}\n{HEADINGS[1]}\n"
-    entries, problems = glossary_entries(base)
-    frozen = {k: _keyed_digest(lines) for k, lines in entries}
-    assert problems == [] and len(frozen) == 33 and glossary_digest_errors(base, frozen) == []
+    lines, problems = reviewed_block_lines(base, [])
+    assert problems == [] and list(lines) == list(GLOSSARY_TERMS) and lines["T-13"] == t13
+    review = (f"{REVIEW_GLOSSARY_HEADING}\n\n{REVIEW_HEADER}\n| --- | --- | --- | --- |\n"
+              + "".join(f"| {t} | same | {_cell_digest(line)} | A synthetic reason. |\n" for t, line in lines.items()))
+    assert reviewed_block_errors(base, [], review) == []
     t13_21 = t13.replace("at least 14", "at least 21")
     t05_tier = t05.replace("and not a tier", "and a tier")
     t33 = "- **T-33 term33** IS the synthetic definition 33."
     t34 = "- **T-34 term34** IS a new term."
-    _check_cases(glossary_digest_errors, {
-        "n1-t13": ((_one_edit(base, t13, t13_21), frozen), [
-            ("[frozen-glossary] T-13: the line changed (now '- **T-13 sustains** IS the highest-fidelity tier with "
-             "at least 21 distinct days in a window.'); a Glossary change needs a fresh critic (R13 holds T-05, "
-             f"T-13 and T-26 unchanged): once one has reviewed it, GLOSSARY_SHA256['T-13'] = {_cell_digest(t13_21)!r}")]),
-        "n3-t05": ((_one_edit(base, t05, t05_tier), frozen), [
-            ("[frozen-glossary] T-05: the line changed (now '- **T-05 tier** IS a value of `hrv_source_tier`; HRV "
-             "Status is a sidecar metric and a tier.'); a Glossary change needs a fresh critic (R13 holds T-05, "
-             f"T-13 and T-26 unchanged): once one has reviewed it, GLOSSARY_SHA256['T-05'] = {_cell_digest(t05_tier)!r}")]),
-        "re-keyed": ((_one_edit(base, t33, t34), frozen), [
-            "[frozen-glossary] T-33 is frozen in GLOSSARY_SHA256 and is not in the Glossary",
-            ("[frozen-glossary] T-34 is not in GLOSSARY_SHA256 (a line was added or re-keyed); a Glossary change "
-             "needs a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it, "
-             f"GLOSSARY_SHA256['T-34'] = {_cell_digest(t34)!r}")]),
-        "repeated-and-unkeyed": ((_one_edit(base, t33, t33 + "\n- **T-01 again** IS twice.\nSome prose."), frozen), [
-            "[frozen-glossary] line 39: a Glossary line with no T-NN key cannot be bound: 'Some prose.'",
-            "[frozen-glossary] T-01 occurs 2 times in the Glossary, not once",
-            ("[frozen-glossary] T-01: the line changed (now '- **T-01 again** IS twice.'); a Glossary change needs "
-             "a fresh critic (R13 holds T-05, T-13 and T-26 unchanged): once one has reviewed it, "
-             f"GLOSSARY_SHA256['T-01'] = {_cell_digest('- **T-01 again** IS twice.')!r}")]),
-    })
+
+    def changed(term: str) -> str:
+        return (f"[reviewed-block] {term} changed after its verdict: a fresh critic must write a new verdict for "
+                f"{term} in 00-meaning-review.md (R7)")
+    cases = {
+        "n1-t13": ((_one_edit(base, t13, t13_21), [], review), [changed("T-13")]),
+        "n3-t05": ((_one_edit(base, t05, t05_tier), [], review), [changed("T-05")]),
+        "re-keyed": ((_one_edit(base, t33, t34), [], review), [
+            "[reviewed-block] T-33 has a verdict in 00-meaning-review.md and is not a required review row",
+            ("[reviewed-block] T-34 needs a critic verdict: no verdict line in 00-meaning-review.md records the text "
+             "it judged (R7)")]),
+        "repeated-and-unkeyed": ((_one_edit(base, t33, t33 + "\n- **T-01 again** IS twice.\nSome prose."), [], review), [
+            "[reviewed-block] line 39: a Glossary line with no T-NN key cannot be bound: 'Some prose.'",
+            "[reviewed-block] T-01: 2 Glossary lines, not one"]),
+    }
+    _check_cases(reviewed_block_errors, cases)
+    assert not any(re.search(r"[0-9a-f]{12}|= '", e) for (_args, expected) in cases.values() for e in expected)
+    # A critic's new verdict line for T-13, carrying the digest of the text it judged, turns it green.
+    renewed = _one_edit(review, f"| T-13 | same | {_cell_digest(t13)} |", f"| T-13 | same | {_cell_digest(t13_21)} |")
+    assert reviewed_block_errors(_one_edit(base, t13, t13_21), [], renewed) == []
 
 
 def test_real_path_every_pinned_line_is_the_frozen_line() -> None:
@@ -5408,16 +5540,22 @@ def test_real_path_every_review_line_and_the_rounds_are_frozen() -> None:
     """Iteration 5, S3: each committed verdict line, label, verdict, judged digest and reason together,
     is ``REVIEW_LINE_SHA256``, both ways, over exactly the rows ``required_review_rows`` gives (T192:
     these were ``REVIEWED_BLOCK_SHA256``'s keys); and the file's prose, ``## Rounds`` included, is
-    ``REVIEW_PROSE_SHA256``."""
+    ``REVIEW_PROSE_SHA256``. T192 step C1: every row whose verdict line differs from the literal is named
+    by the last round (inside ``review_line_errors``), and ``review_line_literal`` regenerates the literal
+    exactly."""
     research, _history, rows = _real()
     review = _REAL_REVIEW.read_text(encoding="utf-8")
     entries, prose = review_entries(review)
     errors = review_line_errors(review)
-    print(f"[slice compared] {len(entries)} verdict lines, {len(REVIEW_LINE_SHA256)} frozen, {len(prose)} prose "
-          f"lines; PRIN-01 {_keyed_digest(dict(entries)['PRIN-01'])} vs {REVIEW_LINE_SHA256['PRIN-01']}: {errors[:5]}")
+    required = required_review_rows(research, rows)
+    regenerated, unnamed = review_line_literal(review, REVIEW_LINE_SHA256)
+    print(f"[slice compared] {len(entries)} verdict lines, {len(REVIEW_LINE_SHA256)} frozen, {len(required)} "
+          f"required, {len(prose)} prose lines, last round {last_round(review)[0]}, unnamed {unnamed}; PRIN-01 "
+          f"{_keyed_digest(dict(entries)['PRIN-01'])} vs {REVIEW_LINE_SHA256['PRIN-01']}, T-13 "
+          f"{_keyed_digest(dict(entries)['T-13'])} vs {REVIEW_LINE_SHA256.get('T-13')}: {errors[:5]}")
     assert errors == []
-    assert [k for k, _ in entries] == list(REVIEW_LINE_SHA256)
-    assert set(REVIEW_LINE_SHA256) == set(required_review_rows(research, rows)) and len(REVIEW_LINE_SHA256) == 789
+    assert [k for k, _ in entries] == list(REVIEW_LINE_SHA256) and regenerated == REVIEW_LINE_SHA256
+    assert set(REVIEW_LINE_SHA256) == set(required) and len(REVIEW_LINE_SHA256) == len(required)
     assert "## Rounds" in prose and len(prose) == len(REVIEW_PROSE_SHA256)
 
 
@@ -5425,7 +5563,11 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     """Iteration 5, S3, on a synthetic review, each message exactly: PRIN-01's reason rewritten to "Not
     reviewed." (N12), its verdict flipped (N11), a row dropped, and a ``## Rounds`` paragraph edited. The
     frozen side is derived (S5). T192: its judged digest alone rewritten, verdict and reason kept, is named
-    too, so a digest cell pasted without a new verdict is visible."""
+    too, so a digest cell pasted without a new verdict is visible.
+
+    T192 step C1 (the residual paste route): no verdict-line message prints a digest, and each changed or
+    added row the last round does not name is named again as such; a row the last round names reds only
+    until the literal is regenerated."""
     required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
     base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
     entries, prose = review_entries(base)
@@ -5437,17 +5579,26 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     pasted = "| PRIN-01 | same | 0123456789ac | A synthetic reason. |"
     rounds = "Round 1: a synthetic critic reviewed 5 rows."
     edited = _one_edit(base, "Round 1: a synthetic critic reviewed 4 rows.", rounds)
-    then = "a verdict or its reason changes only in a fresh critic's round recorded under ## Rounds: once recorded"
-    _check_cases(review_line_errors, {
-        "n12-reason": ((_one_edit(base, row, n12), frozen, frozen_prose), [
-            (f"[frozen-review] PRIN-01: the line changed (now '| PRIN-01 | same | {d} | Not reviewed. |'); {then}, "
-             f"REVIEW_LINE_SHA256['PRIN-01'] = {_cell_digest(n12)!r}")]),
-        "n11-verdict": ((_one_edit(base, row, n11), frozen, frozen_prose), [
-            (f"[frozen-review] PRIN-01: the line changed (now '| PRIN-01 | differs | {d} | A synthetic reason. |'); "
-             f"{then}, REVIEW_LINE_SHA256['PRIN-01'] = {_cell_digest(n11)!r}")]),
-        "digest-cell": ((_one_edit(base, row, pasted), frozen, frozen_prose), [
-            (f"[frozen-review] PRIN-01: the line changed (now '{pasted}'); {then}, "
-             f"REVIEW_LINE_SHA256['PRIN-01'] = {_cell_digest(pasted)!r}")]),
+    round_2 = "Round 2: a fresh critic re-reviewed PRIN-01 and returned 0 differs verdicts."
+    named = _one_edit(base, row, pasted) + f"\n{round_2}\n"
+    added = _one_edit(base, row, f"{row}\n| PRIN-01/Why | same | {d} | A synthetic reason. |")
+    changed = "[frozen-review] PRIN-01: the line changed; a verdict line changes only in a critic round"
+
+    def unnamed(label: str, round_name: str = "1") -> str:
+        return (f"[frozen-review] {label}: its verdict line changed and the last round under ## Rounds ({round_name}) "
+                f"does not name it: only a critic round changes a verdict line (R7)")
+    cases = {
+        "n12-reason": ((_one_edit(base, row, n12), frozen, frozen_prose), [changed, unnamed("PRIN-01")]),
+        "n11-verdict": ((_one_edit(base, row, n11), frozen, frozen_prose), [changed, unnamed("PRIN-01")]),
+        "digest-cell": ((_one_edit(base, row, pasted), frozen, frozen_prose), [changed, unnamed("PRIN-01")]),
+        "added-row": ((added, frozen, frozen_prose), [
+            ("[frozen-review] PRIN-01/Why is not in REVIEW_LINE_SHA256 (a line was added or re-keyed); a verdict line "
+             "changes only in a critic round"), unnamed("PRIN-01/Why")]),
+        "named-by-round-2": ((named, frozen, frozen_prose), [
+            changed,
+            ("[frozen-review] prose line 6 of 6 (the headings, the opening paragraph and ## Rounds) is not the "
+             f"frozen line (now {round_2!r}); a round is recorded only with the review it records: once it is, "
+             f"REVIEW_PROSE_SHA256 = {(*frozen_prose, _cell_digest(round_2))!r}")]),
         "row-dropped": ((_one_edit(base, f"| HRV-07 | same | {d} | A synthetic reason. |\n", ""), frozen,
                          frozen_prose), [
             "[frozen-review] HRV-07 is frozen in REVIEW_LINE_SHA256 and is not in 00-meaning-review.md"]),
@@ -5455,7 +5606,29 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
             ("[frozen-review] prose line 5 of 5 (the headings, the opening paragraph and ## Rounds) is not the "
              "frozen line (now 'Round 1: a synthetic critic reviewed 5 rows.'); a round is recorded only with the "
              f"review it records: once it is, REVIEW_PROSE_SHA256 = {(*frozen_prose[:4], _cell_digest(rounds))!r}")]),
-    })
+    }
+    _check_cases(review_line_errors, cases)
+    assert not any(re.search(r"[0-9a-f]{12}", e) for name, (_a, want) in cases.items() for e in want
+                   if not name.startswith(("named", "round")))
+    # Regenerating as frozen_literals() does: the pasted digest cell keeps its committed digest, and the row
+    # round 2 names takes its new one.
+    for name, text, want in (("digest-cell", _one_edit(base, row, pasted), (frozen, ["PRIN-01"])),
+                             ("named-by-round-2", named, ({**frozen, "PRIN-01": _cell_digest(pasted)}, []))):
+        print(f"[slice compared] regenerated {name}: {review_line_literal(text, frozen)}")
+        assert review_line_literal(text, frozen) == want
+
+
+def test_last_round_labels_reads_labels_and_ranges_from_the_last_round_only() -> None:
+    """T192 step C1: the rows a round names are its label tokens, with ``/Scope``, ``/Not`` or ``/Why``
+    kept, and each ``A to B`` range of one prefix; only the last ``Round N:`` under ``## Rounds`` counts."""
+    review = ("# Review\n\nRound 9: prose before the Rounds heading names HRV-01.\n\n## Rounds\n\n"
+              "Round 1: a critic named PRIN-01.\n\n"
+              "Round 3b: a critic re-reviewed HRV-82/Scope, DOC-04, FIG-11/Scope and the 3 Glossary lines T-01 to T-03.\n"
+              "\nFinal: 4 rows, naming ARCH-12.\n")
+    print(f"[slice compared] {last_round(review)[0]}: {sorted(last_round_labels(review))}")
+    assert last_round(review)[0] == "3b"
+    assert last_round_labels(review) == {"HRV-82/Scope", "DOC-04", "FIG-11/Scope", "T-01", "T-02", "T-03"}
+    assert last_round("## Rounds\n\nNo round yet.\n") == (None, "") and last_round_labels("") == set()
 
 
 # ---------------------------------------------------------------------------
@@ -5519,11 +5692,12 @@ def test_the_endpoint_walk_declares_and_applies_the_literals_exclusion() -> None
 #: value. ``HEADINGS`` and ``INVENTORY_IDS`` are not here: they are the 4e47d0e inventory's (R11), inputs
 #: no edit regenerates, and ``RESEARCH_STRUCTURE`` carries where each heading sits. T192 retired
 #: ``REVIEWED_BLOCK_SHA256``: the digest a verdict judged lives in that verdict's line in
-#: 00-meaning-review.md, which no regeneration here writes.
+#: 00-meaning-review.md, which no regeneration here writes. T192 step C1 retired ``GLOSSARY_SHA256`` the
+#: same way: each Glossary line is a required review row, bound by its verdict line's digest.
 FROZEN_LITERALS = (
     "INVENTORY_SENTENCE_SHA256", "GLOSSARY_TERMS", "NON_C_AUTHORITIES", "_NON_C_AUTHORITIES_PIN", "KEY_OWNERS",
     "_KEY_OWNERS_PIN", "TRACEABILITY_ROW_SHA256", "RETIRED_IDS", "OLD_MEANING_SHA256",
-    "GLOSSARY_SHA256", "PINNED_SHA256", "RESEARCH_STRUCTURE", "HISTORY_SHA256", "REVIEW_LINE_SHA256",
+    "PINNED_SHA256", "RESEARCH_STRUCTURE", "HISTORY_SHA256", "REVIEW_LINE_SHA256",
     "REVIEW_PROSE_SHA256",
 )
 
@@ -5539,7 +5713,9 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
     T192: no literal carries a required review row's block digest. A required row with no verdict line
     is listed as needing a critic verdict, and one whose text differs from the digest its verdict line
     records as changed after its verdict; each is a problem, never a digest. ``research``, ``rows`` and
-    ``review`` replace the committed files, for the test of exactly that."""
+    ``review`` replace the committed files, for the test of exactly that. T192 step C1:
+    ``REVIEW_LINE_SHA256`` comes from ``review_line_literal``, so a verdict line that changed with no
+    round naming it keeps its committed digest and is a problem."""
     committed_research, history, committed_rows = _real()
     research = committed_research if research is None else research
     rows = committed_rows if rows is None else rows
@@ -5562,6 +5738,7 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
     judged = review_digests(review)
     unreviewed = [label for label in blocks if label not in judged]
     changed = [label for label, line in blocks.items() if label in judged and _cell_digest(line) != judged[label]]
+    review_literal, unnamed = review_line_literal(review, REVIEW_LINE_SHA256)
     values: dict[str, object] = {
         "INVENTORY_SENTENCE_SHA256": {r["inventory ID"]: _sentence_digest(r["inventory sentence"]) for r in inventory},
         "GLOSSARY_TERMS": {m.group("id"): m.group("term") for _k, (line,) in glossary
@@ -5573,11 +5750,10 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
         "TRACEABILITY_ROW_SHA256": {_row_key(r): row_digest(r) for r in rows},
         "RETIRED_IDS": dict(sorted((i, h) for i, h in retired_ids(rows).items() if h)),
         "OLD_MEANING_SHA256": {k: old_meaning_digest(e) for k, e in sorted(_OM.OLD_MEANINGS.items())},
-        "GLOSSARY_SHA256": {k: _keyed_digest(lines) for k, lines in glossary},
         "PINNED_SHA256": {k: _keyed_digest(lines) for k, lines in pinned},
         "RESEARCH_STRUCTURE": research_structure(research),
         "HISTORY_SHA256": {k: _keyed_digest(lines) for k, lines in history_lines},
-        "REVIEW_LINE_SHA256": {k: _keyed_digest(lines) for k, lines in review_lines},
+        "REVIEW_LINE_SHA256": review_literal,
         "REVIEW_PROSE_SHA256": tuple(_cell_digest(line) for line in prose),
     }
     multi = [k for k, lines in pinned if len(lines) > 1]
@@ -5595,11 +5771,13 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
         (f"history: {len(history_lines)} keyed lines, {len({k for k, _ in history_lines})} unique keys, "
          f"unkeyable {history_problems}"),
         (f"review: {len(review_lines)} verdict lines, {len({k for k, _ in review_lines})} unique rows, "
-         f"{len(prose)} prose lines"),
+         f"{len(prose)} prose lines; last round {last_round(review)[0]}; verdict lines changed with no "
+         f"round naming them {unnamed}"),
     ]
     problems = glossary_problems + pinned_problems + history_problems + block_problems
     problems += [f"{label} needs a critic verdict" for label in unreviewed]
     problems += [f"{label} changed after its verdict" for label in changed]
+    problems += [f"{row}'s verdict line changed and the last round does not name it" for row in unnamed]
     problems += [f"{k} occurs more than once" for entries in (glossary, history_lines, review_lines)
                  for k, n in Counter(k for k, _ in entries).items() if n > 1]
     return values, notes + [f"problems {problems}"]

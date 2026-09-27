@@ -12,7 +12,7 @@
 - **T-08 baseline** IS the HRV term for a dataset's readings inside its dataset baseline window (`HrvDataset.baseline`), and the centre of its HRV SWC band is the baseline mean.
 - **T-09 baseline window** IS one of three named HRV windows: the nominal baseline window `[D-66, D-7]` (`baseline_window`); the series baseline window `[max(D-66, gap resumption), D-7]` (`HrvSeries.baseline_window`), which the recency gate reads; and the dataset baseline window (`HrvDataset.baseline_window`), which establishment reads.
 - **T-10 judged week** IS the local days `[D-6, D]` (`judged_window`), and the bare word window is never used for it.
-- **T-11 withhold** IS the verdict withholding `verdict_withheld` decides and sets as `HrvDataset.withheld`, served as `week_not_representative`; every other absent verdict is unavailable (T-33), with its `unavailable_reason`.
+- **T-11 withhold** IS HRV-31's `verdict_withheld`, set as `HrvDataset.withheld` and served as `hrv_unavailable` (T-33) with `unavailable_reason` `week_not_representative`, except where HRV-26 finds no SWC band or `week_too_thin` first or the day has not happened (HRV-29); it is not a verdict of its own.
 - **T-12 silence / coverage gap / hole / days behind** IS the count of whole local days strictly between two readings (`_silence_between`); a coverage gap is a series silence of more than 21 days, a hole is one dataset's silence of more than 21 days inside its window, and g days behind in `last_read` is a silence of g−1.
 - **T-13 sustains** IS the property `sustained_tier` tests, the highest-fidelity tier with at least 14 distinct days in a window, and it is used only by clause (b) of the era rule; clause (a) is the count in the series baseline window.
 - **T-14 candidate** IS a judgeable dataset the recency gate may skip; the era rule's count-below-14 half is named the boundary-existence half, not candidacy.
@@ -197,7 +197,7 @@ Scope: the day-of readiness rung's effect on the planned session.
 Not: a tunable default, since this is a design invariant (DOC-17).
 Pinned: none
 
-**PRIN-14.** The system MUST NOT assert a readiness-intact verdict (`hrv_normal`) in the forbidden direction (T-24) outside the named exceptions of PRIN-15, and where the evidence it reports is insufficient it MUST withhold the verdict instead.
+**PRIN-14.** The system MUST NOT assert a readiness-intact verdict (`hrv_normal`) in the forbidden direction (T-24) outside the named exceptions of PRIN-15, and where the evidence it reports is insufficient it MUST serve `hrv_unavailable` instead.
 Scope: every served HRV verdict, whichever dataset and cause produced it.
 Not: the manufacture of hard work on a green day, which PRIN-13 forbids separately.
 Pinned: none
@@ -354,13 +354,13 @@ Pinned: none
 Scope: every day on which the HRV input reads `hrv_unavailable`, whatever its `unavailable_reason`.
 Not: a verdict about the athlete's readiness, which `hrv_unavailable` does not assert.
 Pinned: none
-Why: decision C08 makes a withheld HRV verdict conservative through Section 6's treatment of it, as keystone 8 requires of low confidence.
+Why: decision C08 makes an HRV verdict of `hrv_unavailable` conservative through Section 6's treatment of it, as keystone 8 requires of low confidence.
 
-**ARCH-13.** Until Section 6 exists, a withheld HRV day IS a net cost.
+**ARCH-13.** Until Section 6 exists, a day on which the HRV input reads `hrv_unavailable` IS a net cost.
 Scope: every day on which the HRV input reads `hrv_unavailable` before Section 6's readiness fusion is built.
-Not: a withheld day once Section 6 exists, which rule ARCH-12 governs.
+Not: such a day once Section 6 exists, which rule ARCH-12 governs.
 Pinned: none
-Why: decision C08 prices the withheld days honestly while the fusion that would widen guardrails on them is not built.
+Why: decision C08 prices the `hrv_unavailable` days honestly while the fusion that would widen guardrails on them is not built.
 
 ## Part 3 — Decision register
 
@@ -519,7 +519,7 @@ Pinned: none
 Scope: every morning on which the athlete takes no resting HRV reading.
 Not: a hold on the plan until a reading arrives.
 Pinned: none
-Why: decision C08 makes a missing reading conservative through Section 6, and until Section 6 exists rule ARCH-13 prices the withheld day.
+Why: decision C08 makes a missing reading conservative through Section 6, and until Section 6 exists rule ARCH-13 prices the day it leaves reading `hrv_unavailable`.
 
 **REG-26.** The mid-block down-week cut MUST be shallower than the taper's volume cut.
 Scope: every mid-block recovery week.
@@ -1084,7 +1084,7 @@ Pinned: none
 
 **HRV-50.** A per-tier dataset's SWC band MUST still be built and reported from two baseline readings up, established or not.
 Scope: every per-tier dataset with at least two baseline readings.
-Not: a verdict, which HRV-27 (the symmetric gate) withholds on an unestablished baseline.
+Not: a verdict, which HRV-27 (the symmetric gate) leaves `hrv_unavailable` on an unestablished baseline.
 Pinned: none
 
 **HRV-51.** The reference maximum MUST be taken once, simultaneously, over every established dataset, while the candidates the recency gate strikes from MUST stay the judgeable datasets.
@@ -1360,6 +1360,6 @@ Not: a return at spread or sub-daily capture.
 Pinned: none
 
 **FIG-11.** The question of when a rule that mostly says nothing stops being conservative and starts being useless IS OPEN, owned by IDEA-092.
-Scope: every rule in the HRV gate that can withhold a verdict.
+Scope: every rule in the HRV gate that can leave the verdict `hrv_unavailable`.
 Not: a published answer, which rule FIG-05 excludes.
 Pinned: none
