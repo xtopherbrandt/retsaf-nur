@@ -1,3 +1,7 @@
 path,key
 specification/spec/06-adaptation-logic.md,*
 specification/spec_outline.md,*
+specification/decisions/01-conversational-coach-interface.md,AUT-02-C23-override-outside-autonomy
+specification/decisions/01-conversational-coach-interface.md,AUT-04-C20-two-purposes-only
+specification/decisions/01-conversational-coach-interface.md,GOAL-02-C22-goal-contract-two-fields
+specification/spec_development_plan.md,C30-ctl-rise-row-deferred

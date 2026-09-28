@@ -1,0 +1,152 @@
+key,path,excerpt,source
+C32-band-without-floor,.claude/rules/project-domain-and-spec-fidelity.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change (SWC) band,grep
+PRIN-08-C25-rule-file-short-list,.claude/rules/project-domain-and-spec-fidelity.md,"vendor proprietary estimates (VO2max, Training Status, Training Readiness, Body Battery, Performance Condition)",grep
+T07-acwr-band,.claude/rules/project-domain-and-spec-fidelity.md,~0.8–1.5 band,grep
+C17-hrv24-read-on-last,contracts/openapi.yaml,the dataset the athlete was read on last,grep
+C18-no-tier-from-resolver,contracts/openapi.yaml,"resolve_baseline_tier answering ""no tier at all",grep
+C18-no-tier-from-resolver,contracts/openapi.yaml,"resolve_baseline_tier answered ""no tier at all",grep
+C19-hrv-04-reduced-confidence,contracts/openapi.yaml,"rMSSD itself, degrading — at reduced confidence",grep
+PRIN-12-R13-withheld-response-stays-reproducible,runcoach-api/src/runcoach_api/main.py,the response stays reproducible by hand,grep
+C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"a lone candidate is its own reference and is never struck,",grep
+C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,a lone candidate is its own reference and is never struck.,grep
+C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,this rule is the only one that acts,grep
+C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,the dataset the athlete was read on last,grep
+C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,constant is not published in ``thresholds`` #:,grep
+C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"is not published in ``thresholds`` ([[IDEA-070]],",grep
+PRIN-12-C33-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,The constant is not published in ``thresholds`` #:,grep
+PRIN-12-C33-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"struck. The constant is not published in ``thresholds`` ([[IDEA-070]],",grep
+C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the "" ""dataset the athlete was read on last",grep
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"resolve_baseline_tier answering ""no tier at ' 'all",grep
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,resolve_baseline_tier answered 'no tier at all,grep
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/schemas.py,"rMSSD itself, degrading -- "" ""at reduced confidence",grep
+C01-withhold-not-judgeable-only,spec-mirror/features/F006-per-tier-hrv-datasets.md,not** judgeable but holds at least `MIN_WINDOW_READINGS,grep
+C02-withhold-against-selected,spec-mirror/features/F006-per-tier-hrv-datasets.md,later than every judged-week day of the selected dataset,grep
+C04-hole-at-least,spec-mirror/features/F006-per-tier-hrv-datasets.md,capture hole of at least `GAP_RESET_DAYS,grep
+C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,conditional`): `research/00` still says a worse rate *reopens* the decision and does not,grep
+C06-hrv-25-accepted-cost,spec-mirror/features/F006-per-tier-hrv-datasets.md,Accepted because quality-first promotes,grep
+C16-hrv21-reads-below-that-band,spec-mirror/features/F006-per-tier-hrv-datasets.md,judged-week mean reads below that band,grep
+PRIN-15-C06-accepted-as-priced,spec-mirror/features/F006-per-tier-hrv-datasets.md,Accepted because quality-first promotes the *best available* instrument,grep
+C06-hrv-25-accepted-cost,spec-mirror/references/F006-dataset-model.md,Accepted because quality-first promotes,grep
+PRIN-15-C06-accepted-as-priced,spec-mirror/references/F006-dataset-model.md,Accepted because quality-first promotes the *best available* instrument,grep
+C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,rMSSD carried at reduced confidence,grep
+C24-arch06-ignores-by-default,specification/research/02-wearable-data-garmin.md,coaching logic ignores by default,grep
+HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,four-tier resting-HRV source hierarchy,grep
+HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,four-tier hierarchy,grep
+C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a return to a dataset the athlete established before is free,grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"rMSSD (a standard statistic in known units, §2.4.5) is admitted as an HRV input at reduced confidence",grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"rMSSD, admitted at reduced confidence",grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"rmssd_ms`, resolved on every tier (§2.2.3) — preferring a chest-strap raw RR capture the system reduces itself, and falling back, at reduced confidence",grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,rMSSD is **not** a quarantined composite — it is a standard statistic admitted (at reduced confidence,grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,rMSSD sources at reduced confidence,grep
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,rMSSD at reduced confidence,grep
+C24-arch06-ignores-by-default,specification/spec/02-canonical-data-schema-ingestion.md,coaching logic ignores by default,grep
+C27-in-activity-hrv-not-computed-at-all,specification/spec/02-canonical-data-schema-ingestion.md,in-activity HRV is not computed at all,grep
+HRV-01-R13-four-tier-hierarchy,specification/spec/02-canonical-data-schema-ingestion.md,four-tier resting-HRV source hierarchy,grep
+PRIN-10-C19-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,admitted as an HRV input at reduced confidence,grep
+C03-return-is-free,specification/spec/03-derived-metric-formulas.md,a **return** to a dataset the athlete established before is free,grep
+C04-hole-at-least,specification/spec/03-derived-metric-formulas.md,an internal capture hole of at least `gap_reset_days` —,grep
+C04-hole-at-least,specification/spec/03-derived-metric-formulas.md,an internal capture hole of at least `gap_reset_days` (`research/00`,grep
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,"rMSSD (§3.7), which is a standard statistic, not a vendor composite, and enters at reduced confidence",grep
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,"rMSSD itself, and degrades — at reduced confidence",grep
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,"rMSSD) smallest-worthwhile-change band, sourced by the four-tier hierarchy (chest-strap raw RR preferred, degrading to a numeric resting rMSSD at reduced confidence",grep
+C32-band-without-floor,specification/spec/03-derived-metric-formulas.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
+HRV-01-R13-four-tier-hierarchy,specification/spec/03-derived-metric-formulas.md,the four-tier hierarchy of,grep
+HRV-01-R13-four-tier-hierarchy,specification/spec/03-derived-metric-formulas.md,the four-tier hierarchy (chest-strap,grep
+HRV-40-R13-now-sustaining-tier,specification/spec/03-derived-metric-formulas.md,the now-sustaining tier that,grep
+HRV-40-R13-now-sustaining-tier,specification/spec/03-derived-metric-formulas.md,the now-sustaining tier's,grep
+PRIN-14-C07-weak-evidence-only,specification/spec/03-derived-metric-formulas.md,"up-regulation on weak evidence, which §1.7 forbids",grep
+C32-band-without-floor,specification/spec/06-adaptation-logic.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
+C24-arch06-ignores-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,coaching logic ignores by default,grep
+PRIN-08-C24-sidecar-ignored-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,sidecar the coaching logic ignores by default,grep
+C32-band-without-floor,specification/spec_outline.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
+C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
+C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
+C10-lone-candidate-never-struck,spec-mirror/features/F006-per-tier-hrv-datasets.md,so a lone **established** dataset is its own reference and is never skipped,inventory
+HRV-11-per-day-collapse-unspecified,spec-mirror/features/F006-per-tier-hrv-datasets.md,only the later is kept,inventory
+C16-hrv21-reads-below-that-band,spec-mirror/references/F006-dataset-model.md,a judgeable dataset reading below its own band is listed in `disagreed_with` even when its own verdict is withheld,inventory
+AUT-02-C23-override-outside-autonomy,specification/decisions/01-conversational-coach-interface.md,"and the **safety pathway**, neither of which the system decides unilaterally",inventory
+AUT-04-C20-two-purposes-only,specification/decisions/01-conversational-coach-interface.md,Its role is the two directions above and nothing more,inventory
+GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-coach-interface.md,"the athlete owns only the **goal contract** (target pace, race date)",inventory
+C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
+C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
+C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
+C05-gate02-worse-rate-reopens,specification/spec/03-derived-metric-formulas.md,The one population this reopens,inventory
+C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
+C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over the same baseline window and judged week,inventory
+C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
+C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,Where the athlete's own data identifies an LT1 surrogate above the noise,inventory
+GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,The declared target pace and race date are the athlete's,inventory
+GOAL-02-C22-goal-contract-two-fields,specification/spec/08-conversational-coach-interface.md,The goal contract** — the declared target pace and race date — is the athlete's,inventory
+PRIN-08-C25-rule-file-short-list,.claude/rules/project-domain-and-spec-fidelity.md,"Body Battery, Training Readiness, VO2max estimate, and Performance Condition are display-only",loose
+T07-acwr-band,.claude/rules/project-domain-and-spec-fidelity.md,"the ACWR band, taper duration",loose
+C15-tier-change-called-re-establishment,contracts/openapi.yaml,"The day the current baseline era began, when the re-establishment is reported",loose
+C15-tier-change-called-re-establishment,contracts/openapi.yaml,Why the re-establishment is reported,loose
+C15-tier-change-called-re-establishment,contracts/openapi.yaml,This dataset's OWN reported re-establishment day,loose
+C15-tier-change-called-re-establishment,contracts/openapi.yaml,Why this dataset's re-establishment is reported,loose
+C19-hrv-04-reduced-confidence,contracts/openapi.yaml,the numeric per-tier CONFIDENCE WEIGHT at which §3.7.1 admits the numeric tiers,loose
+C15-tier-change-called-re-establishment,runcoach-api/src/runcoach_api/schemas.py,"Local day the current baseline era began, **when the re-establishment is reported",loose
+C15-tier-change-called-re-establishment,runcoach-api/src/runcoach_api/schemas.py,Why the baseline was re-established,loose
+C15-tier-change-called-re-establishment,runcoach-api/src/runcoach_api/schemas.py,This dataset's **own** reported re-establishment day,loose
+C15-tier-change-called-re-establishment,runcoach-api/src/runcoach_api/schemas.py,Why this dataset's re-establishment is reported,loose
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/schemas.py,"the numeric per-tier **confidence weight** at which 3.7.1 admits the numeric "" ""tiers",loose
+C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,save AC21's one counted exception,loose
+C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,populated from the dataset the athlete used last,loose
+C19-hrv-04-reduced-confidence,spec-mirror/features/F006-per-tier-hrv-datasets.md,arbitrates while the confidence weight never does,loose
+C03-return-is-free,spec-mirror/references/F006-dataset-model.md,making a return free contradicts it,loose
+C03-return-is-free,spec-mirror/references/F006-dataset-model.md,which a free return contradicts,loose
+C04-hole-at-least,spec-mirror/references/F006-dataset-model.md,at an internal hole of at least `GAP_RESET_DAYS,loose
+C05-gate02-worse-rate-reopens,spec-mirror/references/F006-dataset-model.md,"Explicit hysteresis deferred**, now with a trigger it can actually fire",loose
+C06-gate01-one-exception,spec-mirror/references/F006-dataset-model.md,save AC21's one counted exception,loose
+C10-lone-candidate-never-struck,spec-mirror/references/F006-dataset-model.md,so a lone **established** dataset is its own reference and is never skipped (AC7),loose
+C17-hrv24-read-on-last,spec-mirror/references/F006-dataset-model.md,populated from the dataset the athlete used last,loose
+C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,the numeric per-tier weight §3.7.1 defines,loose
+C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,Fidelity rank arbitrates; the confidence weight never does,loose
+C37-gate03-remeasured-not-cited,spec-mirror/references/F006-dataset-model.md,AC19/AC21 must re-measure it,loose
+C37-gate03-remeasured-not-cited,spec-mirror/references/F006-dataset-model.md,Do **not** cite it as transferring; AC19/AC21 re-measure it,loose
+C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,(a) it carries a confidence discount,loose
+DOC-06-C31-every-number-tunable,specification/research/05-data-to-adaptation.md,"Every threshold given as a number is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+PRIN-08-C25-rule-file-short-list,specification/research/05-data-to-adaptation.md,"VO2max estimate, Training Status/Readiness, Body Battery, Performance Condition",loose
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,reads this to apply the tier's confidence weight,loose
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,carry a **confidence discount** below the chest-strap tier,loose
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,reading `hrv_source_tier` to apply the per-tier confidence weight,loose
+C27-in-activity-hrv-not-computed-at-all,specification/spec/02-canonical-data-schema-ingestion.md,in-activity HRV is never computed,loose
+C27-in-activity-hrv-not-computed-at-all,specification/spec/02-canonical-data-schema-ingestion.md,in-activity HRV (never computed at all,loose
+C13-era-clip-becomes-hole-clip,specification/spec/03-derived-metric-formulas.md,the same cross-tier question now decides only the *reported* `tier_change` reset,loose
+C14-tier-change-collapses-baseline,specification/spec/03-derived-metric-formulas.md,a re-establishment collapses the baseline deliberately,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,reachable after every baseline re-establishment this section performs,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,both re-establishment rules are exactly what they were,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,both re-establishment rules are unchanged,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,not** on the re-establishment rule's previous-window clause,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,"A re-establishment (""adopts or abandons"", above) is asserted only when",loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,is never a re-establishment in either direction,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,while the re-establishment is *reported* only when the density tolerance holds,loose
+C15-tier-change-called-re-establishment,specification/spec/03-derived-metric-formulas.md,the boundary this section's re-establishment clause finds,loose
+C17-hrv24-read-on-last,specification/spec/03-derived-metric-formulas.md,the tier with `min_baseline_readings` that the athlete was read on last holds it,loose
+C17-hrv24-read-on-last,specification/spec/03-derived-metric-formulas.md,presents the dataset the athlete used last,loose
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,The per-tier **confidence weight** at which §3.7.1 admits the numeric tiers,loose
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,admitted at an explicit confidence discount,loose
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,confidence weights are shipped defaults,loose
+C32-band-without-floor,specification/spec/03-derived-metric-formulas.md,a Section 3 heuristic default like every other constant here,loose
+DOC-06-C31-every-number-tunable,specification/spec/03-derived-metric-formulas.md,"Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+DOC-09-C38-superseded-text-left-standing,specification/spec/03-derived-metric-formulas.md,they are left standing as the history of the reported reset,loose
+PRIN-14-C07-weak-evidence-only,specification/spec/03-derived-metric-formulas.md,reading a genuinely suppressed week as normal (up-regulation on weak evidence,loose
+PRIN-14-C07-weak-evidence-only,specification/spec/03-derived-metric-formulas.md,"on both sides — up-regulation on weak evidence, which `research/00` §1.7 forbids",loose
+PRIN-16-C08-silence-tolerated-freely,specification/spec/03-derived-metric-formulas.md,"also turn silent (`hrv_normal → hrv_unavailable`), the direction `research/00` §1.7 tolerates freely",loose
+PRIN-16-C08-silence-tolerated-freely,specification/spec/03-derived-metric-formulas.md,"outgoing week (`hrv_normal → hrv_unavailable`, the direction `research/00` §1.7 tolerates freely",loose
+DOC-06-C31-every-number-tunable,specification/spec/04-physiological-state-model.md,"Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+DOC-06-C31-every-number-tunable,specification/spec/05-training-plan-generation.md,"Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+AUT-02-C23-override-outside-autonomy,specification/spec/06-adaptation-logic.md,and the **safety pathway** (a stop-and-escalate or seek-assessment instruction is athlete-facing,loose
+DOC-06-C31-every-number-tunable,specification/spec/06-adaptation-logic.md,"Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,the **goal contract** (target pace and race date,loose
+GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,the athlete supplies a new target pace or race date,loose
+PRIN-05-C06-conservative-wins-unscoped,specification/spec/06-adaptation-logic.md,or when the state estimate is low-confidence — the more conservative reading wins,loose
+PRIN-14-C07-weak-evidence-only,specification/spec/06-adaptation-logic.md,"would be up-regulation on weak evidence, the one direction `research/00` §1.7 forbids",loose
+DOC-06-C31-every-number-tunable,specification/spec/07-recovery-and-taper.md,"Every numeric constant below is a **default flagged as a heuristic**, tunable per athlete as data accumulates",loose
+C30-ctl-rise-row-deferred,specification/spec_development_plan.md,register row is intentionally deferred until real field data,loose
+C30-ctl-rise-row-deferred,specification/spec_development_plan.md,register row is intentionally deferred until field data refines,loose
+PRIN-08-C25-rule-file-short-list,specification/spec_outline.md,"VO2max, Training Status, Training Readiness, Body Battery, Performance Condition — ingested",loose
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,at reduced confidence,narrowed
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,carried at reduced confidence rather,narrowed
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence —,narrowed
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence until,narrowed
+C19-hrv-04-reduced-confidence,specification/spec/04-physiological-state-model.md,at reduced confidence,narrowed

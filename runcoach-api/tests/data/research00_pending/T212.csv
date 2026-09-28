@@ -1,0 +1,2 @@
+path,key
+runcoach-api/tests/test_hrv_no_regression_gate.py,C05-gate02-worse-rate-reopens

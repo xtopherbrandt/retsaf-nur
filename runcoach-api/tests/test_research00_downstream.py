@@ -481,9 +481,13 @@ OWNERSHIP = (
     ("specification/spec/05-*", "*", "T204"),
     ("specification/spec/08-*", "*", "T204"),
     ("specification/spec/09-*", "*", "T204"),
+    # T200: the census found spec/07's preamble (DOC-06, the sentence T204 fixes in spec/04 and spec/05).
+    ("specification/spec/07-*", "*", "T204"),
     ("specification/future/future-directions.md", "*", "T204"),
     ("specification/spec/06-adaptation-logic.md", "*", "T205"),
     ("specification/spec_outline.md", "*", "T205"),
+    # T200: the census found C30 in the development plan, spec_outline's spec_* sibling.
+    ("specification/spec_development_plan.md", "*", "T205"),
     ("specification/decisions/01-*.md", "*", "T205"),
     ("specification/research/02-*", "*", "T206"),
     ("specification/research/05-*", "*", "T206"),
@@ -513,12 +517,14 @@ def gate_failures(hits: list[Hit], pending: dict[str, list[tuple[str, str]]],
             and not (pending_tasks(hit, pending) and owners_of(hit.path, hit.key, ownership))]
 
 
-def stale_pending_rows(hits: list[Hit], pending: dict[str, list[tuple[str, str]]]) -> list[str]:
-    """S15: each pending row with no live hit left to cover -- a ``(path, *)`` row needs any live hit
-    in ``path``, a ``(path, key)`` row a live hit of that key in ``path``."""
-    live = [h for h in hits if h.live]
+def stale_pending_rows(hits: list[Hit], pending: dict[str, list[tuple[str, str]]],
+                       red_sites=()) -> list[str]:
+    """S15: each pending row with nothing red left to cover -- a ``(path, *)`` row needs a live hit or a
+    red census site (``red_sites``, ``(path, key)`` pairs, T200) in ``path``, a ``(path, key)`` row one
+    of that key in ``path``."""
+    red = [(h.path, h.key) for h in hits if h.live] + list(red_sites)
     return [f"{task}.csv: {path},{key}" for task, rows in pending.items() for path, key in rows
-            if not any(h.path == path and key in ("*", h.key) for h in live)]
+            if not any(p == path and key in ("*", k) for p, k in red)]
 
 
 #: S4 and S11: each ``OLD_MEANINGS`` key whose pattern F011 narrowed, with the pattern it had before. A
@@ -597,6 +603,150 @@ def narrowed_census_errors(extras: list[Hit], census_rows, narrowed_from=NARROWE
                 errors.append(f"{key}: narrowed row {path}: excerpt {row.get('excerpt')!r} overlaps none of "
                               f"the old pattern's extra matches there")
     return errors
+
+
+# --------------------------------------------------------------------------------------------------
+# S11 (T200): the census, checked both ways.
+# --------------------------------------------------------------------------------------------------
+
+#: ``key,path,excerpt,source``. ``grep``: a pattern hits the site; ``inventory`` / ``loose``: no pattern
+#: reaches it, a site to fix; ``narrowed``: correct prose a narrowing stopped matching, a record.
+#: Built once by ``support/build_research00_census.py``; the committed CSV is the record.
+CENSUS_HEADER = ["key", "path", "excerpt", "source"]
+CENSUS_SOURCES = ("grep", "inventory", "loose", "narrowed")
+#: The one census row outside S2's roots (S6): the no_regression gate's C05 comment.
+CENSUS_TEST_ROW = "runcoach-api/tests/test_hrv_no_regression_gate.py"
+
+
+def _occurrences(text: str, excerpt: str) -> list[tuple[int, int]]:
+    needle = normalize(excerpt)
+    return [(m.start(), m.end()) for m in re.finditer(re.escape(needle), text)] if needle else []
+
+
+def census_state(row, repo_root: Path = _REPO_ROOT, exceptions=None) -> str:
+    """Where a census row stands now: ``missing`` (no such file), ``gone`` (its excerpt no longer
+    occurs), ``sheltered`` (every occurrence overlaps an ``EXCEPTIONS`` excerpt in that file, S4), or
+    ``present`` -- the site still states what it did."""
+    exceptions = _OM.EXCEPTIONS if exceptions is None else exceptions
+    path = Path(row["path"]).as_posix()
+    if not (repo_root / path).is_file():
+        return "missing"
+    text = normalize((repo_root / path).read_text(encoding="utf-8"))
+    found = _occurrences(text, row.get("excerpt") or "")
+    if not found:
+        return "gone"
+    sheltering = _excerpt_ranges(text, path, exceptions)
+    if all(any(a < e and s < b for _i, a, b in sheltering) for s, e in found):
+        return "sheltered"
+    return "present"
+
+
+def census_coverage(hits: list[Hit], rows, repo_root: Path = _REPO_ROOT):
+    """S11's count, ``(a, b, c, uncovered)``: ``a`` the ``grep`` rows, ``b`` the unquoted hits (live or
+    sheltered: every site a pattern reaches), ``c`` the ``grep`` rows whose excerpt is gone (or whose
+    file is), and the hits no ``grep`` row covers -- same path and key, an excerpt occurrence
+    overlapping the hit. ``a == b + c`` holds before the work (``c == 0``), during it and after it."""
+    grep_rows = [r for r in rows if r.get("source") == "grep"]
+    unquoted = [h for h in hits if not h.quoted]
+    texts: dict[str, str] = {}
+
+    def text_of(path: str) -> str | None:
+        if path not in texts:
+            full = repo_root / path
+            texts[path] = normalize(full.read_text(encoding="utf-8")) if full.is_file() else None
+        return texts[path]
+
+    gone = 0
+    spans: list[tuple[str, str, int, int]] = []
+    for row in grep_rows:
+        path = Path(row["path"]).as_posix()
+        text = text_of(path)
+        found = _occurrences(text, row.get("excerpt") or "") if text is not None else []
+        if not found:
+            gone += 1
+        spans += [(path, row["key"], s, e) for s, e in found]
+    uncovered = [h for h in unquoted
+                 if not any(p == h.path and k == h.key and s < h.end and h.start < e for p, k, s, e in spans)]
+    return len(grep_rows), len(unquoted), gone, uncovered
+
+
+@dataclass(frozen=True)
+class CensusSite:
+    """One census row as a test parameter; ``n`` counts the rows of its path and key from 1."""
+    key: str
+    path: str
+    excerpt: str
+    source: str
+    n: int
+
+    @property
+    def ident(self) -> str:
+        return site_id(self.path, self.key, self.n)
+
+    def row(self) -> dict[str, str]:
+        return {"key": self.key, "path": self.path, "excerpt": self.excerpt, "source": self.source}
+
+
+def census_sites(rows, narrowed: bool) -> list[CensusSite]:
+    """The census's ``narrowed`` rows, or every other row, in file order."""
+    counts: dict[tuple[str, str], int] = {}
+    sites = []
+    for row in rows:
+        if (row.get("source") == "narrowed") != narrowed:
+            continue
+        path = Path(row["path"]).as_posix()
+        counts[(path, row["key"])] = counts.get((path, row["key"]), 0) + 1
+        sites.append(CensusSite(row["key"], path, row["excerpt"], row["source"], counts[(path, row["key"])]))
+    return sites
+
+
+def census_pending_tasks(site: CensusSite, pending) -> list[str]:
+    """The task ids whose pending file covers the site's ``(path, key)`` or ``(path, *)`` (S15)."""
+    return sorted(task for task, rows in pending.items()
+                  if (site.path, site.key) in rows or (site.path, "*") in rows)
+
+
+def red_census_sites(rows, repo_root: Path = _REPO_ROOT) -> list[tuple[str, str]]:
+    """``(path, key)`` of every non-``narrowed`` row whose site still states what it did."""
+    return [(s.path, s.key) for s in census_sites(rows, narrowed=False)
+            if census_state(s.row(), repo_root) == "present"]
+
+
+def census_row_errors(rows, header, repo_root: Path = _REPO_ROOT) -> list[str]:
+    """The census's shape: the header; a source, an ``OLD_MEANINGS`` key and a one-line, non-empty
+    excerpt per row; paths inside S2's roots (or the one test-comment row); no duplicate row; each
+    excerpt still present occurs exactly once in its file; ``narrowed`` rows only for a narrowed key."""
+    errors = [] if header == CENSUS_HEADER else [f"header {header} is not {CENSUS_HEADER}"]
+    live = {p for paths in live_files(repo_root).values() for p in paths}
+    seen = set()
+    for i, row in enumerate(rows, start=2):
+        path = Path(row.get("path") or "").as_posix()
+        where = f"row {i} ({path}, {row.get('key')})"
+        excerpt = row.get("excerpt") or ""
+        if row.get("source") not in CENSUS_SOURCES:
+            errors.append(f"{where}: source {row.get('source')!r}")
+        if row.get("key") not in OLD_MEANINGS:
+            errors.append(f"{where}: not an OLD_MEANINGS key")
+        if row.get("source") == "narrowed" and row.get("key") not in NARROWED_FROM:
+            errors.append(f"{where}: a narrowed row for a key no narrowing touched")
+        if not normalize(excerpt) or "\n" in excerpt or "\r" in excerpt:
+            errors.append(f"{where}: excerpt empty or not one line")
+        if path not in live and path != CENSUS_TEST_ROW:
+            errors.append(f"{where}: outside S2's roots")
+        ident = (row.get("key"), path, normalize(excerpt))
+        if ident in seen:
+            errors.append(f"{where}: duplicate row")
+        seen.add(ident)
+        if (repo_root / path).is_file() and normalize(excerpt):
+            count = len(_occurrences(normalize((repo_root / path).read_text(encoding="utf-8")), excerpt))
+            if count > 1:
+                errors.append(f"{where}: excerpt occurs {count} times, so it does not name one site")
+    return errors
+
+
+def _read_census_or_empty() -> list[dict[str, str]]:
+    """The census for collection: no file (before T200) collects no row, and the census tests red."""
+    return read_census() if CENSUS_PATH.exists() else []
 
 
 _REAL_SCAN: list[Hit] = []
@@ -934,12 +1084,13 @@ def test_every_live_hit_is_pending_under_an_owner():
 
 def test_every_pending_row_is_still_needed():
     """S15: a pending row whose sites are all fixed must go with its file. Each ``(path, key)`` (or
-    ``(path, *)``) row needs a live hit that is still red. T200's census rows and T201's presence rows
-    are the other red rows that keep a row needed; they join this check when those tasks add them."""
+    ``(path, *)``) row needs a live hit or a census site (T200) that is still red. T201's presence rows
+    join this check when that task adds them."""
     live = [h for h in real_scan() if h.live]
-    stale = stale_pending_rows(live, read_pending())
+    red = red_census_sites(_read_census_or_empty())
+    stale = stale_pending_rows(live, read_pending(), red)
     print(f"[slice compared] {sum(len(r) for r in read_pending().values())} pending rows against "
-          f"{len(live)} live hits; stale {stale}")
+          f"{len(live)} live hits and {len(red)} red census sites; stale {stale}")
     assert stale == []
 
 
@@ -1273,3 +1424,213 @@ def test_the_f009_exceptions_shelter_every_hrv_trend_hit_each_excerpt_once():
     assert all(count == 1 for count in counts.values()), counts
     assert all(h.sheltered_by and set(h.sheltered_by) <= set(f009) for h in hits)
     assert set(f009) <= {i for h in hits for i in h.sheltered_by}
+
+
+def test_narrowed_census_row_excerpt_must_overlap_an_extra_match_in_its_own_file(tmp_path):
+    """``narrowed_census_errors`` credits a row only for an extra match in the row's own file. Two
+    correct-prose files each hold one extra match, and the census names both; file X's row carries an
+    excerpt of X's text that lies at exactly the normalized offsets of Y's extra match. Judged by offsets
+    alone it would overlap Y's match and pass; judged in its own file it overlaps nothing."""
+    key = "C19-hrv-04-reduced-confidence"
+    correct = "carried at reduced confidence."
+    x, y = "specification/spec/98-x.md", "specification/spec/99-y.md"
+    filler = " ".join(f"w{i:02d}" for i in range(30))
+    _plant(tmp_path, y, f"{filler} {correct}\n")
+    _plant(tmp_path, x, f"{correct} {filler}\n")
+    extras = narrowed_extras(tmp_path)
+    at = {h.path: (h.start, h.end) for h in extras}
+    x_text, y_text = (normalize((tmp_path / p).read_text(encoding="utf-8")) for p in (x, y))
+    ys, ye = at[y]
+    borrowed = x_text[ys:ye]
+    print(f"[slice compared] extras {sorted(at.items())}; X's text at Y's match offsets: {borrowed!r}")
+    assert sorted(at) == [x, y] and at[x][1] < ys and x_text.count(borrowed) == 1
+    assert y_text[ys:ye] == "at reduced confidence"
+    rows = [{"key": key, "path": y, "excerpt": correct, "source": "narrowed"},
+            {"key": key, "path": x, "excerpt": borrowed, "source": "narrowed"}]
+    errors = narrowed_census_errors(extras, rows, repo_root=tmp_path)
+    print(f"[slice compared] {errors}")
+    assert errors == [(f"{key}: narrowed row {x}: excerpt {borrowed!r} overlaps none of the old pattern's "
+                       f"extra matches there")]
+    rows[1] = dict(rows[1], excerpt=correct)
+    assert narrowed_census_errors(extras, rows, repo_root=tmp_path) == []
+
+
+# --------------------------------------------------------------------------------------------------
+# S11 (T200): the census on the checkout, and its proof in a tmp_path world.
+# --------------------------------------------------------------------------------------------------
+
+
+def _census_site_params(marked: bool, rows=None, pending=None):
+    """One param per non-``narrowed`` census row, with its S15 id. With ``marked``, a row a pending file
+    covers under an ``OWNERSHIP`` owner is a strict xfail naming the covering task(s): its site is red
+    until that task lands, and a fixed site under a pending row XPASSes (S15). With no census at all
+    (before T200) a single ``no_census`` param reds."""
+    rows = _read_census_or_empty() if rows is None else rows
+    pending = read_pending() if pending is None else pending
+    params = []
+    for site in census_sites(rows, narrowed=False):
+        marks = ()
+        tasks = census_pending_tasks(site, pending)
+        if marked and tasks and owners_of(site.path, site.key):
+            verb = "fixes" if len(tasks) == 1 else "fix"
+            marks = pytest.mark.xfail(strict=True, reason=f"{', '.join(tasks)} {verb} these sites")
+        params.append(pytest.param(site, id=site.ident, marks=marks))
+    return params or [pytest.param(None, id="no_census")]
+
+
+def _narrowed_site_params(rows=None):
+    rows = _read_census_or_empty() if rows is None else rows
+    return [pytest.param(s, id=s.ident) for s in census_sites(rows, narrowed=True)] or [
+        pytest.param(None, id="no_census")]
+
+
+def test_census_covers_every_hit(capsys):
+    """S11 as amended 2026-09-27: every site a pattern reaches has a ``grep`` row, and the ``grep`` rows
+    number the hits plus the rows already cleared. Before the work that is ``a == b`` (``c == 0``). The
+    count line goes to the terminal uncaptured as well, so a run records it whatever its ``-r`` flags
+    (pytest keeps only the last ``-r``: ``-rP -rxX`` reports no passes)."""
+    rows = read_census()
+    a, b, c, uncovered = census_coverage(real_scan(), rows)
+    line = f"grep-sourced rows: {a} hits: {b} cleared: {c}"
+    with capsys.disabled():
+        print(f"\n{line}")
+    print(line)
+    for hit in uncovered:
+        print(f"  uncovered: {hit.path}:{hit.line} {hit.key} {hit.matched!r}")
+    print(f"[slice compared] {len(rows)} census rows ({a} grep) against {b} unquoted hits of "
+          f"{len(OLD_MEANINGS)} keys; uncovered {len(uncovered)}")
+    assert uncovered == []
+    assert a == b + c
+
+
+def test_census_rows_are_well_formed():
+    with CENSUS_PATH.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        header = reader.fieldnames
+    errors = census_row_errors(rows, header)
+    per_source = {s: sum(r.get("source") == s for r in rows) for s in CENSUS_SOURCES}
+    print(f"[slice compared] {len(rows)} census rows {per_source}; errors {errors}")
+    assert errors == []
+
+
+@pytest.mark.parametrize("site", _census_site_params(marked=False))
+def test_census_row_file_exists(site):
+    """S11 after the work: a census row cannot be dropped silently by deleting or renaming its file."""
+    assert site is not None, "no census: T200 writes runcoach-api/tests/data/research00_census.csv"
+    assert (_REPO_ROOT / site.path).is_file(), f"{site.path} (census row {site.key}) no longer exists"
+
+
+@pytest.mark.parametrize("site", _census_site_params(marked=True))
+def test_census_row_excerpt_is_gone_or_sheltered(site):
+    """S11 after the work: each census site no longer states what it did -- its excerpt is gone, or an
+    ``EXCEPTIONS`` excerpt shelters it (S4). A present excerpt is red; pending ones are expected red."""
+    assert site is not None, "no census: T200 writes runcoach-api/tests/data/research00_census.csv"
+    state = census_state(site.row())
+    owners = sorted(owners_of(site.path, site.key))
+    assert state in ("gone", "sheltered"), (
+        f"{site.path} still states {site.key} ({site.source}): {site.excerpt!r} is {state}; "
+        f"planned owner {owners or 'none: the path and key are outside OWNERSHIP'}")
+
+
+@pytest.mark.parametrize("site", _narrowed_site_params())
+def test_narrowed_row_is_still_present_and_unmatched(site):
+    """S4 and S11: a ``narrowed`` row is correct prose -- it stays (its excerpt occurs once in its file),
+    and the key's current pattern misses it (no hit of that key there overlaps it)."""
+    assert site is not None, "no census: T200 writes runcoach-api/tests/data/research00_census.csv"
+    path = _REPO_ROOT / site.path
+    assert path.is_file(), f"{site.path}: the narrowed row's file is gone"
+    found = _occurrences(normalize(path.read_text(encoding="utf-8")), site.excerpt)
+    matched = [h for h in real_scan() if h.path == site.path and h.key == site.key
+               and any(h.start < e and s < h.end for s, e in found)]
+    print(f"[slice compared] {site.path} {site.excerpt!r}: {len(found)} occurrence(s); current-pattern "
+          f"hits over it {[(h.line, h.matched) for h in matched]}")
+    assert len(found) == 1, f"the correct prose {site.excerpt!r} is no longer in {site.path} exactly once"
+    assert matched == []
+
+
+def test_a_census_site_whose_text_is_still_present_turns_the_gate_red(tmp_path):
+    """AC1's proof: in a planted world, a census site whose text is still there is red, whatever its
+    source; fixed, it clears; an exception shelters it; a deleted file is not a cleared row. The count
+    ``a == b + c`` holds before and after the fix, and fails when a hit has no ``grep`` row."""
+    key = "C05-gate02-worse-rate-reopens"
+    example = OLD_MEANINGS[key].example
+    rel = "specification/spec/99-site.md"
+    original = f"Loose: the deferred decision stays open here.\n\nGrep: {example}.\n"
+    grep_row = {"key": key, "path": rel, "excerpt": example, "source": "grep"}
+    loose_row = {"key": key, "path": rel, "excerpt": "the deferred decision stays open", "source": "loose"}
+    rows = [grep_row, loose_row]
+    _plant(tmp_path, rel, original)
+    before = scan(tmp_path)
+    states = {"before": [census_state(r, tmp_path, ()) for r in rows]}
+    coverage = {"before": census_coverage(before, rows, tmp_path)[:3],
+                "no grep row": census_coverage(before, [loose_row], tmp_path),
+                "another key's row": census_coverage(before, [dict(grep_row, key="C03-return-is-free")], tmp_path)}
+    states["sheltered"] = [census_state(r, tmp_path, ((rel, f"Grep: {example}", "F009"),)) for r in rows]
+    _plant(tmp_path, rel, "Loose: the decision was taken.\n\nGrep: no hysteresis.\n")
+    states["fixed"] = [census_state(r, tmp_path, ()) for r in rows]
+    coverage["fixed"] = census_coverage(scan(tmp_path), rows, tmp_path)[:3]
+    (tmp_path / rel).unlink()
+    states["deleted"] = [census_state(r, tmp_path, ()) for r in rows]
+    print(f"[slice compared] states {states}; coverage (a, b, c) {coverage}")
+    assert states["before"] == ["present", "present"]
+    assert states["sheltered"] == ["sheltered", "present"]
+    assert states["fixed"] == ["gone", "gone"]
+    assert states["deleted"] == ["missing", "missing"]
+    assert coverage["before"] == (1, 1, 0) and coverage["fixed"] == (1, 0, 1)
+    a, b, c, uncovered = coverage["no grep row"]
+    assert (a, b, c) == (0, 1, 0) and [(h.path, h.key) for h in uncovered] == [(rel, key)]
+    a, b, c, uncovered = coverage["another key's row"]
+    assert (a, b, c) == (1, 1, 0) and [(h.path, h.key) for h in uncovered] == [(rel, key)]
+    params = _census_site_params(marked=True, rows=rows, pending={"T900": [(rel, "*")]})
+    assert [p.id for p in params] == [site_id(rel, key, 1), site_id(rel, key, 2)]
+    assert all(not p.marks for p in params), "a path outside OWNERSHIP is never pending"
+    assert stale_pending_rows([], {"T900": [(rel, key)]}, [(rel, key)]) == []
+    assert stale_pending_rows([], {"T900": [(rel, key)]}, []) == [f"T900.csv: {rel},{key}"]
+
+
+def test_census_site_params_mark_pending_rows_and_only_owned_ones():
+    """S15 on census rows: an owned path under a pending row is a strict xfail naming its task; the
+    same row unpended, or pended outside ``OWNERSHIP``, is a plain (red) test; the unmarked variant
+    never marks; and no census at all is one ``no_census`` param."""
+    spec03 = "specification/spec/03-derived-metric-formulas.md"
+    rows = [{"key": "C12-same-baseline-window", "path": spec03, "excerpt": "x", "source": "inventory"},
+            {"key": "C12-same-baseline-window", "path": "specification/spec/01-scope-inputs-pace-target.md",
+             "excerpt": "y", "source": "loose"},
+            {"key": "C19-hrv-04-reduced-confidence", "path": spec03, "excerpt": "z", "source": "narrowed"}]
+    pending = {"T202": [(spec03, "C12-same-baseline-window")],
+               "T900": [("specification/spec/01-scope-inputs-pace-target.md", "*")]}
+    marked = _census_site_params(marked=True, rows=rows, pending=pending)
+    shapes = [(p.id, [m.kwargs.get("reason") for m in p.marks]) for p in marked]
+    print(f"[slice compared] {shapes}")
+    assert shapes == [(site_id(spec03, "C12-same-baseline-window", 1), ["T202 fixes these sites"]),
+                      (site_id("specification/spec/01-scope-inputs-pace-target.md", "C12-same-baseline-window", 1),
+                       [])]
+    assert all(m.kwargs.get("strict") for p in marked for m in p.marks)
+    assert all(not p.marks for p in _census_site_params(marked=False, rows=rows, pending=pending))
+    assert [p.id for p in _census_site_params(marked=True, rows=[], pending={})] == ["no_census"]
+    assert [p.id for p in _narrowed_site_params(rows)] == [site_id(spec03, "C19-hrv-04-reduced-confidence", 1)]
+
+
+def test_census_row_errors_catch_each_malformed_row(tmp_path):
+    rel = "specification/spec/99-site.md"
+    _plant(tmp_path, rel, "Once here. Twice. Twice.\n")
+    for other in ("contracts/c.yaml",):
+        _plant(tmp_path, other, "x: 1\n")
+    good = {"key": "C03-return-is-free", "path": rel, "excerpt": "Once here", "source": "loose"}
+    cases = {
+        "good": ([good], CENSUS_HEADER),
+        "bad header": ([good], ["key", "path", "source", "excerpt"]),
+        "bad source": ([dict(good, source="manual")], CENSUS_HEADER),
+        "bad key": ([dict(good, key="C99-nothing")], CENSUS_HEADER),
+        "narrowed, key never narrowed": ([dict(good, source="narrowed")], CENSUS_HEADER),
+        "empty excerpt": ([dict(good, excerpt="  ")], CENSUS_HEADER),
+        "two-line excerpt": ([dict(good, excerpt="Once\nhere")], CENSUS_HEADER),
+        "outside the roots": ([dict(good, path="runcoach-api/tests/test_x.py")], CENSUS_HEADER),
+        "duplicate": ([good, dict(good, excerpt="once   HERE")], CENSUS_HEADER),
+        "ambiguous excerpt": ([dict(good, excerpt="Twice")], CENSUS_HEADER),
+    }
+    verdicts = {name: census_row_errors(rows, header, tmp_path) for name, (rows, header) in cases.items()}
+    print(f"[slice compared] {verdicts}")
+    assert verdicts.pop("good") == []
+    assert all(len(errors) == 1 for errors in verdicts.values()), verdicts

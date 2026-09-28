@@ -2,3 +2,4 @@ path,key
 specification/spec/02-canonical-data-schema-ingestion.md,C03-return-is-free
 specification/spec/02-canonical-data-schema-ingestion.md,C24-arch06-ignores-by-default
 specification/spec/02-canonical-data-schema-ingestion.md,C27-in-activity-hrv-not-computed-at-all
+specification/spec/02-canonical-data-schema-ingestion.md,C32-band-without-floor
