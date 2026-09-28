@@ -260,13 +260,14 @@ PAID_BY_T164 = {
 #: behaviour: growth, shrinkage and a shift in *which* cells worsen all still
 #: red here, and name what moved.
 #:
-#: **The two conditions that are not met**, and which is why IDEA-089 is
-#: conditional rather than resolved (sprint-006 review, Stage 4.6 critic):
+#: **The two conditions** IDEA-089 was made conditional on (sprint-006
+#: review, Stage 4.6 critic), of which the second is still not met:
 #:
-#: 1. **The authority is silent.** ``specification/research/00-design-decisions.md``
-#:    still reads "a worse rate **reopens** the deferred hysteresis decision",
-#:    and does not record the decision being taken. §5.4's precedence clause
-#:    says the authority is amended first; that amendment is queued, not done.
+#: 1. **The authority now carries the decision.** ``specification/research/00-design-decisions.md``
+#:    GATE-02 (decision C05): the system **MUST NOT add hysteresis** to
+#:    dataset selection, and the worsened dataset-flip set must remain the 80
+#:    pinned ``walk_flips`` cells at ``car_density = 2wk``. It is revisited
+#:    only if IDEA-089's part (b) shows harm.
 #: 2. **The corpus cannot express the harm.** ``spec/references/T130-overlap-sweep-harness.py``'s
 #:    ``era()`` gives every tier the same value generator -- its own docstring:
 #:    "the band's dispersion is the same at every density" -- so both tiers
