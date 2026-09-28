@@ -617,6 +617,25 @@ CENSUS_SOURCES = ("grep", "inventory", "loose", "narrowed")
 #: The one census row outside S2's roots (S6): the no_regression gate's C05 comment.
 CENSUS_TEST_ROW = "runcoach-api/tests/test_hrv_no_regression_gate.py"
 
+#: S11 ("a row cannot be dropped silently"): the rows removed from the census after its commit
+#: (``8e6b787``, T200's wave-4 review), as ``(key, path, excerpt, reason)``. S11 names no drop mechanism,
+#: so each removal is frozen here, printed by ``test_census_removed_rows_are_recorded_and_absent``, and
+#: resolved out through the builder (which reads this literal into ``LOOSE_RESOLUTIONS``).
+CENSUS_REMOVED = (
+    ("C05-gate02-worse-rate-reopens", "specification/spec/03-derived-metric-formulas.md",
+     "The one population this reopens",
+     ("'reopens' is T132's widening re-exposing a device-switch population; spec/03 never mentions "
+      "hysteresis, and C05's old meaning is a worse rate reopening the deferred hysteresis decision. No "
+      "other key fits")),
+    ("C19-hrv-04-reduced-confidence", "spec-mirror/features/F006-per-tier-hrv-datasets.md",
+     "arbitrates while the confidence weight never does",
+     ("correct: fidelity rank arbitrates, the confidence weight never does and no weight is emitted "
+      "(HRV-04, HRV-54); HRV-04 defers the weight to Section 6, it does not abolish it")),
+    ("C19-hrv-04-reduced-confidence", "spec-mirror/references/F006-dataset-model.md",
+     "Fidelity rank arbitrates; the confidence weight never does",
+     "correct: as the feature file's §13 note (HRV-04, HRV-54)"),
+)
+
 
 def _occurrences(text: str, excerpt: str) -> list[tuple[int, int]]:
     needle = normalize(excerpt)
@@ -670,6 +689,15 @@ def census_coverage(hits: list[Hit], rows, repo_root: Path = _REPO_ROOT):
     return len(grep_rows), len(unquoted), gone, uncovered
 
 
+def census_balance_errors(a: int, b: int, c: int, uncovered: list[Hit]) -> list[str]:
+    """S11's accounting over ``census_coverage``'s count: every hit covered, and ``a == b + c`` exactly --
+    a surplus ``grep`` row (two rows over one hit) is as wrong as a missing one."""
+    errors = [f"uncovered: {h.path}:{h.line} {h.key} {h.matched!r}" for h in uncovered]
+    if a != b + c:
+        errors.append(f"grep-sourced rows {a} != hits {b} + cleared {c}")
+    return errors
+
+
 @dataclass(frozen=True)
 class CensusSite:
     """One census row as a test parameter; ``n`` counts the rows of its path and key from 1."""
@@ -710,6 +738,25 @@ def red_census_sites(rows, repo_root: Path = _REPO_ROOT) -> list[tuple[str, str]
     """``(path, key)`` of every non-``narrowed`` row whose site still states what it did."""
     return [(s.path, s.key) for s in census_sites(rows, narrowed=False)
             if census_state(s.row(), repo_root) == "present"]
+
+
+def narrowed_row_errors(site: CensusSite, hits: list[Hit], repo_root: Path = _REPO_ROOT):
+    """S4 and S11 for one ``narrowed`` row, ``(errors, found, matched)``: its file exists, its excerpt
+    occurs there exactly once, and no hit of the row's own key overlaps it (``matched``). Another key's
+    hit over the same text is that key's business, not the narrowing's."""
+    path = repo_root / site.path
+    if not path.is_file():
+        return [f"{site.path}: the narrowed row's file is gone"], [], []
+    found = _occurrences(normalize(path.read_text(encoding="utf-8")), site.excerpt)
+    matched = [h for h in hits if h.path == site.path and h.key == site.key
+               and any(h.start < e and s < h.end for s, e in found)]
+    errors = []
+    if len(found) != 1:
+        errors.append(f"the correct prose {site.excerpt!r} is no longer in {site.path} exactly once")
+    if matched:
+        errors.append(f"the current {site.key} pattern still matches {site.excerpt!r} in {site.path}: "
+                      f"{[(h.line, h.matched) for h in matched]}")
+    return errors, found, matched
 
 
 def census_row_errors(rows, header, repo_root: Path = _REPO_ROOT) -> list[str]:
@@ -1495,12 +1542,10 @@ def test_census_covers_every_hit(capsys):
     with capsys.disabled():
         print(f"\n{line}")
     print(line)
-    for hit in uncovered:
-        print(f"  uncovered: {hit.path}:{hit.line} {hit.key} {hit.matched!r}")
+    errors = census_balance_errors(a, b, c, uncovered)
     print(f"[slice compared] {len(rows)} census rows ({a} grep) against {b} unquoted hits of "
-          f"{len(OLD_MEANINGS)} keys; uncovered {len(uncovered)}")
-    assert uncovered == []
-    assert a == b + c
+          f"{len(OLD_MEANINGS)} keys; uncovered {len(uncovered)}; errors {errors}")
+    assert errors == []
 
 
 def test_census_rows_are_well_formed():
@@ -1512,6 +1557,24 @@ def test_census_rows_are_well_formed():
     per_source = {s: sum(r.get("source") == s for r in rows) for s in CENSUS_SOURCES}
     print(f"[slice compared] {len(rows)} census rows {per_source}; errors {errors}")
     assert errors == []
+
+
+def test_census_removed_rows_are_recorded_and_absent(capsys):
+    """S11: a row cannot be dropped silently. Each removal is in ``CENSUS_REMOVED`` with its reason, printed
+    to the terminal on every run, and no census row -- under any key -- still names its path and excerpt."""
+    rows = read_census()
+    present = {(Path(r["path"]).as_posix(), normalize(r["excerpt"])): r["key"] for r in rows}
+    with capsys.disabled():
+        print(f"\ncensus rows removed (CENSUS_REMOVED): {len(CENSUS_REMOVED)}")
+        for key, path, excerpt, reason in CENSUS_REMOVED:
+            print(f"  removed: {path} {key} {excerpt!r} -- {reason}")
+    still = [(path, key, present[(path, normalize(excerpt))]) for key, path, excerpt, _reason in CENSUS_REMOVED
+             if (path, normalize(excerpt)) in present]
+    malformed = [(key, path) for key, path, excerpt, reason in CENSUS_REMOVED
+                 if key not in OLD_MEANINGS or not normalize(excerpt) or not reason.strip()]
+    print(f"[slice compared] {len(CENSUS_REMOVED)} removals against {len(rows)} census rows; "
+          f"still present {still}; malformed {malformed}")
+    assert still == [] and malformed == []
 
 
 @pytest.mark.parametrize("site", _census_site_params(marked=False))
@@ -1538,15 +1601,10 @@ def test_narrowed_row_is_still_present_and_unmatched(site):
     """S4 and S11: a ``narrowed`` row is correct prose -- it stays (its excerpt occurs once in its file),
     and the key's current pattern misses it (no hit of that key there overlaps it)."""
     assert site is not None, "no census: T200 writes runcoach-api/tests/data/research00_census.csv"
-    path = _REPO_ROOT / site.path
-    assert path.is_file(), f"{site.path}: the narrowed row's file is gone"
-    found = _occurrences(normalize(path.read_text(encoding="utf-8")), site.excerpt)
-    matched = [h for h in real_scan() if h.path == site.path and h.key == site.key
-               and any(h.start < e and s < h.end for s, e in found)]
+    errors, found, matched = narrowed_row_errors(site, real_scan())
     print(f"[slice compared] {site.path} {site.excerpt!r}: {len(found)} occurrence(s); current-pattern "
-          f"hits over it {[(h.line, h.matched) for h in matched]}")
-    assert len(found) == 1, f"the correct prose {site.excerpt!r} is no longer in {site.path} exactly once"
-    assert matched == []
+          f"hits over it {[(h.line, h.matched) for h in matched]}; errors {errors}")
+    assert errors == []
 
 
 def test_a_census_site_whose_text_is_still_present_turns_the_gate_red(tmp_path):
@@ -1634,3 +1692,66 @@ def test_census_row_errors_catch_each_malformed_row(tmp_path):
     print(f"[slice compared] {verdicts}")
     assert verdicts.pop("good") == []
     assert all(len(errors) == 1 for errors in verdicts.values()), verdicts
+
+
+def test_census_sites_number_rows_per_path_and_key():
+    """S15's ``__<n>`` counts the rows of one path *and key* from 1: a second key on the same path
+    restarts at 1, and a third row of the first key continues its own count."""
+    p, q = "specification/spec/03-derived-metric-formulas.md", "specification/spec/02-canonical-data-schema-ingestion.md"
+    a, b = "C12-same-baseline-window", "C13-era-clip-becomes-hole-clip"
+    rows = [{"key": a, "path": p, "excerpt": "x1", "source": "inventory"},
+            {"key": b, "path": p, "excerpt": "y1", "source": "loose"},
+            {"key": a, "path": p, "excerpt": "x2", "source": "loose"},
+            {"key": a, "path": q, "excerpt": "x3", "source": "grep"},
+            {"key": a, "path": p, "excerpt": "z", "source": "narrowed"}]
+    sites = census_sites(rows, narrowed=False)
+    got = [(s.path, s.key, s.n) for s in sites]
+    print(f"[slice compared] {got}")
+    assert got == [(p, a, 1), (p, b, 1), (p, a, 2), (q, a, 1)]
+    assert [s.ident for s in sites] == [site_id(p, a, 1), site_id(p, b, 1), site_id(p, a, 2), site_id(q, a, 1)]
+    assert [(s.key, s.n) for s in census_sites(rows, narrowed=True)] == [(a, 1)]
+
+
+def test_census_balance_rejects_a_surplus_grep_row(tmp_path):
+    """``a == b + c`` is an equality: two ``grep`` rows with different excerpts over one hit cover it, so
+    nothing is uncovered, yet ``a`` (2) exceeds ``b + c`` (1) and the balance is red. One row balances;
+    no row leaves the hit uncovered."""
+    key = "C05-gate02-worse-rate-reopens"
+    example = OLD_MEANINGS[key].example
+    rel = "specification/spec/99-site.md"
+    _plant(tmp_path, rel, f"Grep: {example}.\n")
+    hits = [h for h in scan(tmp_path) if not h.quoted]
+    row = {"key": key, "path": rel, "excerpt": example, "source": "grep"}
+    cases = {"one row": [row], "two rows over one hit": [row, dict(row, excerpt=f"Grep: {example}")], "no row": []}
+    coverage = {name: census_coverage(hits, rows, tmp_path) for name, rows in cases.items()}
+    verdicts = {name: census_balance_errors(*cov) for name, cov in coverage.items()}
+    print(f"[slice compared] hits {[(h.key, h.matched) for h in hits]}; (a, b, c) "
+          f"{ {name: cov[:3] for name, cov in coverage.items()} }; verdicts {verdicts}")
+    assert [(h.path, h.key) for h in hits] == [(rel, key)]
+    assert coverage["one row"][:3] == (1, 1, 0) and verdicts["one row"] == []
+    assert coverage["two rows over one hit"][:3] == (2, 1, 0) and coverage["two rows over one hit"][3] == []
+    assert verdicts["two rows over one hit"] == ["grep-sourced rows 2 != hits 1 + cleared 0"]
+    assert coverage["no row"][:3] == (0, 1, 0) and len(verdicts["no row"]) == 2
+
+
+def test_narrowed_row_is_red_only_under_its_own_key_current_pattern(tmp_path):
+    """The narrowed-row check in a planted world. Correct prose the current C19 pattern misses is green.
+    Text the current C19 pattern still matches is red -- the "current pattern misses it" half can fail.
+    Text only another key's pattern (C05) matches is green: that hit is not the narrowing's."""
+    c19, c05 = "C19-hrv-04-reduced-confidence", "C05-gate02-worse-rate-reopens"
+    rel = "specification/spec/99-site.md"
+    correct = "carried at reduced confidence until it is established"
+    _plant(tmp_path, rel, (f"Correct: the tier is {correct}.\n\nOld: {OLD_MEANINGS[c19].example}.\n\n"
+                           f"Other: {OLD_MEANINGS[c05].example}.\n"))
+    hits = scan(tmp_path)
+    sites = {"correct prose": CensusSite(c19, rel, correct, "narrowed", 1),
+             "still matched": CensusSite(c19, rel, OLD_MEANINGS[c19].example, "narrowed", 2),
+             "another key's text": CensusSite(c19, rel, OLD_MEANINGS[c05].example, "narrowed", 3),
+             "file gone": CensusSite(c19, "specification/spec/98-gone.md", correct, "narrowed", 1)}
+    verdicts = {name: narrowed_row_errors(site, hits, tmp_path)[0] for name, site in sites.items()}
+    print(f"[slice compared] hits {[(h.key, h.matched) for h in hits]}; verdicts {verdicts}")
+    assert sorted({h.key for h in hits}) == [c05, c19]
+    assert verdicts["correct prose"] == []
+    assert len(verdicts["still matched"]) == 1 and "still matches" in verdicts["still matched"][0]
+    assert verdicts["another key's text"] == []
+    assert verdicts["file gone"] == ["specification/spec/98-gone.md: the narrowed row's file is gone"]

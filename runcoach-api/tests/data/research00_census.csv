@@ -70,7 +70,6 @@ GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-c
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
-C05-gate02-worse-rate-reopens,specification/spec/03-derived-metric-formulas.md,The one population this reopens,inventory
 C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
 C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over the same baseline window and judged week,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
@@ -91,7 +90,6 @@ C15-tier-change-called-re-establishment,runcoach-api/src/runcoach_api/schemas.py
 C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/schemas.py,"the numeric per-tier **confidence weight** at which 3.7.1 admits the numeric "" ""tiers",loose
 C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,save AC21's one counted exception,loose
 C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,populated from the dataset the athlete used last,loose
-C19-hrv-04-reduced-confidence,spec-mirror/features/F006-per-tier-hrv-datasets.md,arbitrates while the confidence weight never does,loose
 C03-return-is-free,spec-mirror/references/F006-dataset-model.md,making a return free contradicts it,loose
 C03-return-is-free,spec-mirror/references/F006-dataset-model.md,which a free return contradicts,loose
 C04-hole-at-least,spec-mirror/references/F006-dataset-model.md,at an internal hole of at least `GAP_RESET_DAYS,loose
@@ -100,7 +98,6 @@ C06-gate01-one-exception,spec-mirror/references/F006-dataset-model.md,save AC21'
 C10-lone-candidate-never-struck,spec-mirror/references/F006-dataset-model.md,so a lone **established** dataset is its own reference and is never skipped (AC7),loose
 C17-hrv24-read-on-last,spec-mirror/references/F006-dataset-model.md,populated from the dataset the athlete used last,loose
 C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,the numeric per-tier weight §3.7.1 defines,loose
-C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,Fidelity rank arbitrates; the confidence weight never does,loose
 C37-gate03-remeasured-not-cited,spec-mirror/references/F006-dataset-model.md,AC19/AC21 must re-measure it,loose
 C37-gate03-remeasured-not-cited,spec-mirror/references/F006-dataset-model.md,Do **not** cite it as transferring; AC19/AC21 re-measure it,loose
 C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,(a) it carries a confidence discount,loose

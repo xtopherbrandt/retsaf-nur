@@ -274,12 +274,8 @@ LOOSE_RESOLUTIONS = (
         "C19: §3.7.1 said to admit the numeric tiers at a weight (HRV-04)"),
     _in("C19-hrv-04-reduced-confidence", SCHEMAS, "the numeric per-tier confidence weight at which 3.7.1 admits the numeric tiers",
         "C19: the schemas.py copy of the openapi sentence (HRV-04; AC5)"),
-    _in("C19-hrv-04-reduced-confidence", F006, "arbitrates while the confidence weight never does",
-        "C19: presupposes a confidence weight that exists and abstains (HRV-54: none is computed)"),
     _in("C19-hrv-04-reduced-confidence", F006DM, "the numeric per-tier weight §3.7.1 defines",
         "C19: §3.7.1 said to define a numeric per-tier weight (HRV-04)"),
-    _in("C19-hrv-04-reduced-confidence", F006DM, "Fidelity rank arbitrates; the confidence weight never does",
-        "C19: as the feature file's §13 note (T209 names :423)"),
     # C27: in-activity HRV never computed, unscoped.
     _in("C27-in-activity-hrv-not-computed-at-all", S02, "in-activity HRV is never computed",
         "C27: unscoped (HRV-05: not in v1 or for any readiness input; LT1-02 amends it)"),
@@ -338,6 +334,10 @@ LOOSE_RESOLUTIONS = (
         "T-07: ACWR's range called a band in the rule file (S12)"),
 
     # ---- out -------------------------------------------------------------------------------------
+    # Rows removed after the census commit (T200 wave-4 review): the gate's frozen CENSUS_REMOVED
+    # records each with its reason (S11: a row cannot be dropped silently).
+    *(_out(key, path, excerpt, f"removed (CENSUS_REMOVED): {reason}")
+      for key, path, excerpt, reason in GATE.CENSUS_REMOVED),
     _out("*", HRV_TREND, None, F009_OWNS),
     _out("PRIN-12-R13-withheld-response-stays-reproducible", "*", None, F012_REPRODUCIBLE),
     _out("AUT-02-C23-override-outside-autonomy", "*", None,
@@ -449,9 +449,6 @@ MANUAL_ROWS = (
      "AC2 names research/05:219 (C32)"),
     ("C32-band-without-floor", S02, "the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",
      "AC2 names spec/02:212 (C32): the band without its floor"),
-    ("C05-gate02-worse-rate-reopens", S03, "The one population this reopens",
-     ("T200's list names spec/03:236 (C05 'reopens'). Flagged: the sentence prices T132's widening, not "
-      "the hysteresis decision; T202 may need a ruling")),
     ("C10-lone-candidate-never-struck", S03, "so a lone candidate is never struck",
      ("AC2 names spec/03 §3.7.3 (C10, IDEA-090): the T117 clause; the excerpt stops before F010's 'gains "
       "no key' clause (S4)")),
