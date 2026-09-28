@@ -20,6 +20,11 @@ here reads it: every fact taken from the decisions is frozen as a literal.
   code span is quotation. Spans are found on the raw text, before ``normalize()``; they never cross a
   blank line; a fenced block is code; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and
   ``.yml`` are scanned whole.
+- **Hits (T199, AC1).** Each ``OLD_MEANINGS`` key's pattern is searched in every live file its
+  ``KEY_ROOTS`` entry lets it reach (S12: the four T-07 keys reach ``.claude/rules/`` only). A hit is
+  quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt overlapping it in that one file (S4), a
+  pending site (S15: ``tests/data/research00_pending/<task id>.csv``, strict xfail, owned per
+  ``OWNERSHIP``), or a failure.
 
 **Blind spots, stated rather than argued away:**
 
@@ -31,12 +36,17 @@ here reads it: every fact taken from the decisions is frozen as a literal.
   only the ``test_hrv_no_regression_gate.py`` comment has a row (S6).
 """
 
+import csv
+import fnmatch
 import importlib.util
 import os
 import re
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SUPPORT = Path(__file__).parent / "support"
@@ -288,12 +298,16 @@ def normalize_with_offsets(raw: str) -> tuple[str, list[int]]:
     return text, offsets
 
 
-def hit_is_quoted(raw: str, norm_start: int, norm_end: int) -> bool:
+def hit_is_quoted(raw: str, norm_start: int, norm_end: int, offsets=None, spans=None) -> bool:
     """S3: a hit at ``[norm_start, norm_end)`` of ``normalize(raw)`` is quotation only when its raw
-    extent lies wholly inside one quote span. Half inside is not sheltered."""
-    _text, offsets = normalize_with_offsets(raw)
+    extent lies wholly inside one quote span. Half inside is not sheltered. A caller that scans one
+    file for many hits passes that file's ``offsets`` and ``spans`` once instead of re-deriving them."""
+    if offsets is None:
+        _text, offsets = normalize_with_offsets(raw)
+    if spans is None:
+        spans = quote_spans(raw)
     raw_start, raw_end = offsets[norm_start], offsets[norm_end - 1] + 1
-    return any(a <= raw_start and raw_end <= b for a, b in quote_spans(raw))
+    return any(a <= raw_start and raw_end <= b for a, b in spans)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -311,6 +325,207 @@ def slug(text: str) -> str:
 def site_id(path: str, key: str, n: int) -> str:
     """S15's parametrize id, ``<path slug>__<key slug>__<n>``; ``path`` is compared as posix."""
     return f"{slug(Path(path).as_posix())}__{slug(key)}__{n}"
+
+
+# --------------------------------------------------------------------------------------------------
+# AC1 (T199): the hit scan over OLD_MEANINGS, the key roots (S12), exceptions (S4) and pending
+# sites (S15).
+# --------------------------------------------------------------------------------------------------
+
+OLD_MEANINGS = _OM.OLD_MEANINGS
+
+#: S12's mechanism: a key listed here reaches only the files under its root prefixes; a key not listed
+#: reaches every root. All four T-07 keys (``research00_old_meanings.py``) reach the rule files only:
+#: that is the glossary agents read first, and the other ~30 "band" sites go to IDEA-100.
+KEY_ROOTS = MappingProxyType({
+    "T07-acwr-band": (".claude/rules/",),
+    "T07-ctl-rise-band": (".claude/rules/",),
+    "T07-tolerance-band": (".claude/rules/",),
+    "T07-tsb-target-form-band": (".claude/rules/",),
+})
+
+
+def key_reaches(key: str, path: str, key_roots=KEY_ROOTS) -> bool:
+    """True when ``key``'s pattern is searched in the live file ``path`` (S12)."""
+    roots = key_roots.get(key)
+    return roots is None or any(path.startswith(root) for root in roots)
+
+
+@dataclass(frozen=True)
+class Hit:
+    """One match of one key's pattern in one live file, outside every section record. ``n`` counts
+    the key's matches in that file from 1; ``start`` and ``end`` are offsets into the file's
+    ``normalize()``d text. ``quoted`` is S3; ``sheltered_by`` lists the ``EXCEPTIONS`` indexes whose
+    excerpt overlaps the hit in this file (S4)."""
+    path: str
+    key: str
+    n: int
+    line: int
+    start: int
+    end: int
+    matched: str
+    quoted: bool
+    sheltered_by: tuple[int, ...]
+
+    @property
+    def ident(self) -> str:
+        return site_id(self.path, self.key, self.n)
+
+    @property
+    def live(self) -> bool:
+        """Neither quotation nor sheltered: the gate's red unless a pending file covers it."""
+        return not self.quoted and not self.sheltered_by
+
+
+def _is_exception_triple(entry) -> bool:
+    return isinstance(entry, tuple) and len(entry) == 3 and all(isinstance(x, str) for x in entry)
+
+
+def _excerpt_ranges(text: str, path: str, exceptions) -> list[tuple[int, int, int]]:
+    """``(index, start, end)`` of each occurrence of each exception's normalized excerpt in ``text``,
+    the normalized text of ``path``. A malformed entry, or one naming another file, covers nothing."""
+    ranges = []
+    for i, entry in enumerate(exceptions):
+        if not _is_exception_triple(entry) or Path(entry[0]).as_posix() != path:
+            continue
+        excerpt = normalize(entry[1])
+        if not excerpt:
+            continue
+        ranges += [(i, m.start(), m.end()) for m in re.finditer(re.escape(excerpt), text)]
+    return ranges
+
+
+def scan(repo_root: Path = _REPO_ROOT, old_meanings=None, exceptions=None,
+         key_roots=KEY_ROOTS) -> list[Hit]:
+    """Every hit of every key over the live files of ``repo_root`` (S2), after ``normalize()``,
+    skipping text under a section record (S1). Quoted and sheltered hits are returned, flagged; the
+    caller decides what is red. Keys are taken in ``OLD_MEANINGS`` order, files in walk order."""
+    old_meanings = OLD_MEANINGS if old_meanings is None else old_meanings
+    exceptions = _OM.EXCEPTIONS if exceptions is None else exceptions
+    hits: list[Hit] = []
+    for path in (p for paths in live_files(repo_root).values() for p in paths):
+        raw = (repo_root / path).read_text(encoding="utf-8")
+        text, offsets = normalize_with_offsets(raw)
+        records = record_ranges(path, raw)
+        spans = quote_spans(raw) if path.endswith(".md") else None
+        excerpts = _excerpt_ranges(text, path, exceptions)
+        for key, meaning in old_meanings.items():
+            if not key_reaches(key, path, key_roots):
+                continue
+            n = 0
+            for match in re.finditer(meaning.pattern, text):
+                start, end = match.start(), match.end()
+                raw_start = offsets[start]
+                if any(a <= raw_start < b for a, b in records):
+                    continue
+                n += 1
+                hits.append(Hit(
+                    path=path, key=key, n=n, line=raw.count("\n", 0, raw_start) + 1,
+                    start=start, end=end, matched=match.group(0),
+                    quoted=spans is not None and hit_is_quoted(raw, start, end, offsets, spans),
+                    sheltered_by=tuple(sorted({i for i, a, b in excerpts if start < b and a < end})),
+                ))
+    return hits
+
+
+def exception_shelter_errors(hits: list[Hit], exceptions) -> list[str]:
+    """S4: each exception must shelter at least one hit, in its own file."""
+    sheltering = {i for hit in hits for i in hit.sheltered_by}
+    return [f"EXCEPTIONS #{i} shelters no hit: {entry!r}"
+            for i, entry in enumerate(exceptions) if i not in sheltering]
+
+
+#: S15: one ``<task id>.csv`` per owning site task, columns ``path,key``; ``*`` is every key.
+PENDING_DIR = Path(__file__).parent / "data" / "research00_pending"
+PENDING_HEADER = ["path", "key"]
+
+
+def read_pending(pending_dir: Path = PENDING_DIR) -> dict[str, list[tuple[str, str]]]:
+    """``{task id: [(path, key), ...]}`` from every ``*.csv`` in ``pending_dir``; paths as posix. An
+    absent directory, or a directory with no file, is the end state: nothing is pending."""
+    pending: dict[str, list[tuple[str, str]]] = {}
+    if not pending_dir.is_dir():
+        return pending
+    for csv_path in sorted(pending_dir.glob("*.csv")):
+        with csv_path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.reader(handle))
+        assert rows and rows[0] == PENDING_HEADER, f"{csv_path.name}: header is not path,key: {rows[:1]}"
+        assert all(len(row) == 2 for row in rows[1:]), f"{csv_path.name}: a row is not path,key"
+        pending[csv_path.stem] = [(Path(p).as_posix(), k) for p, k in rows[1:]]
+    return pending
+
+
+def pending_tasks(hit: Hit, pending: dict[str, list[tuple[str, str]]]) -> list[str]:
+    """The task ids whose pending file covers ``hit``: its ``(path, key)``, or ``(path, *)``."""
+    return sorted(task for task, rows in pending.items()
+                  if (hit.path, hit.key) in rows or (hit.path, "*") in rows)
+
+
+#: The planned owner of every ``(path, key)`` that hits at ``a15610d``/HEAD (T199's table, from the
+#: sprint-008 plan). Rows are ``(path glob, key, owner)``; the key is an exact ``OLD_MEANINGS`` name or
+#: ``*``. For a named key, rows naming that key win over ``*`` rows for the same path. The C19 and
+#: HRV-01 families are expanded to their exact names; the five C19 correct-prose hits T218 narrows are
+#: recorded as explicit T218 rows beside their family or ``*`` owner (spec/03:81 and :155, spec/04:123,
+#: spec/02:191, and rr_reconstruction.py:418). Hits outside every row fail the gate.
+OWNERSHIP = (
+    ("specification/spec/03-derived-metric-formulas.md", "*", "T202"),
+    ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-03-tag-and-confidence", "T213"),
+    ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence", "T213"),
+    ("specification/spec/03-derived-metric-formulas.md", "HRV-01-R13-four-tier-hierarchy", "T213"),
+    ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence", "T218"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-03-tag-and-confidence", "T203"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-04-reduced-confidence", "T203"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "HRV-01-R13-four-tier-hierarchy", "T203"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "PRIN-10-C19-reduced-confidence", "T203"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-04-reduced-confidence", "T218"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "*", "T214"),
+    ("specification/spec/04-*", "*", "T204"),
+    ("specification/spec/04-physiological-state-model.md", "C19-hrv-04-reduced-confidence", "T218"),
+    ("specification/spec/05-*", "*", "T204"),
+    ("specification/spec/08-*", "*", "T204"),
+    ("specification/spec/09-*", "*", "T204"),
+    ("specification/future/future-directions.md", "*", "T204"),
+    ("specification/spec/06-adaptation-logic.md", "*", "T205"),
+    ("specification/spec_outline.md", "*", "T205"),
+    ("specification/decisions/01-*.md", "*", "T205"),
+    ("specification/research/02-*", "*", "T206"),
+    ("specification/research/05-*", "*", "T206"),
+    (".claude/rules/project-domain-and-spec-fidelity.md", "*", "T207"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "*", "T208"),
+    ("spec-mirror/references/F006-dataset-model.md", "*", "T209"),
+    ("contracts/openapi.yaml", "*", "T210"),
+    ("runcoach-api/src/runcoach_api/schemas.py", "*", "T210"),
+    ("runcoach-api/src/runcoach_api/main.py", "*", "T210"),
+    ("runcoach-api/tests/test_hrv_no_regression_gate.py", "C05-gate02-worse-rate-reopens", "T212"),
+    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "*", "T218"),
+    ("runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py", "C19-hrv-04-reduced-confidence", "T218"),
+)
+
+
+def owners_of(path: str, key: str, ownership=OWNERSHIP) -> set[str]:
+    """The planned owners of ``(path, key)``: the rows naming ``key`` for a path glob matching
+    ``path`` if there are any, otherwise that path's ``*`` rows. ``key`` may itself be ``*``."""
+    rows = [(k, owner) for glob, k, owner in ownership if fnmatch.fnmatchcase(path, glob)]
+    named = {owner for k, owner in rows if k == key and key != "*"}
+    return named or {owner for k, owner in rows if k == "*"}
+
+
+def gate_failures(hits: list[Hit], pending: dict[str, list[tuple[str, str]]],
+                  ownership=OWNERSHIP) -> list[Hit]:
+    """The gate's red: each live hit that no pending file covers, or whose path and key have no
+    owner in ``ownership`` (a hit outside the table is never pending)."""
+    return [hit for hit in hits if hit.live
+            and not (pending_tasks(hit, pending) and owners_of(hit.path, hit.key, ownership))]
+
+
+_REAL_SCAN: list[Hit] = []
+
+
+def real_scan() -> list[Hit]:
+    """The scan of the checkout, once per session: collection and several tests read it."""
+    if not _REAL_SCAN:
+        _REAL_SCAN.extend(scan(_REPO_ROOT))
+    return _REAL_SCAN
 
 
 # ==================================================================================================
@@ -578,3 +793,254 @@ def test_scanner_site_ids_use_only_word_characters():
     print(f"[slice compared] {ident}")
     assert ident == "spec_mirror_references_F006_dataset_model_md__T07_acwr_band__3"
     assert re.fullmatch(r"[A-Za-z0-9_]+", site_id(".claude/rules/x y.md", "*", 0))
+
+
+# --------------------------------------------------------------------------------------------------
+# AC1 (T199): the hit test on the checkout.
+# --------------------------------------------------------------------------------------------------
+
+
+def _hit_params():
+    """One param per live hit of the checkout, with its S15 id. A hit covered by a pending file and
+    owned in ``OWNERSHIP`` is a strict xfail naming the covering task(s); any other hit is red. With no
+    live hit at all (the end state), a single ``no_live_hits`` param re-checks that, so the release
+    gate never sees an empty-parameter skip."""
+    pending = read_pending()
+    params = []
+    for hit in (h for h in real_scan() if h.live):
+        tasks = pending_tasks(hit, pending)
+        marks = ()
+        if tasks and owners_of(hit.path, hit.key):
+            verb = "fixes" if len(tasks) == 1 else "fix"
+            marks = pytest.mark.xfail(strict=True, reason=f"{', '.join(tasks)} {verb} these sites")
+        params.append(pytest.param(hit, id=hit.ident, marks=marks))
+    return params or [pytest.param(None, id="no_live_hits")]
+
+
+@pytest.mark.parametrize("hit", _hit_params())
+def test_live_hit_states_an_old_meaning(hit):
+    """F011 AC1: a live file states an old meaning -- unquoted (S3) and sheltered by no exception (S4).
+    Each such hit is red; the ones a pending file covers are expected red until their task lands."""
+    if hit is None:
+        assert [h.ident for h in real_scan() if h.live] == []
+        return
+    owners = sorted(owners_of(hit.path, hit.key))
+    pytest.fail(f"{hit.path}:{hit.line} states old meaning {hit.key} ({hit.matched!r}); "
+                f"planned owner {owners or 'none: the path and key are outside OWNERSHIP'}")
+
+
+def test_every_live_hit_is_pending_under_an_owner():
+    hits = real_scan()
+    live = [h for h in hits if h.live]
+    pending = read_pending()
+    per_key: dict[str, int] = {}
+    per_path: dict[str, int] = {}
+    for hit in live:
+        per_key[hit.key] = per_key.get(hit.key, 0) + 1
+        per_path[hit.path] = per_path.get(hit.path, 0) + 1
+    for key, count in sorted(per_key.items()):
+        print(f"  key {key}: {count}")
+    for path, count in sorted(per_path.items()):
+        owners = sorted({o for h in live if h.path == path for o in owners_of(path, h.key)})
+        print(f"  path {path}: {count} (owners {owners})")
+    failures = gate_failures(hits, pending)
+    print(f"[slice compared] {len(hits)} hits: {len(live)} live, "
+          f"{sum(h.quoted for h in hits)} quoted, {sum(bool(h.sheltered_by) for h in hits)} sheltered; "
+          f"{len(pending)} pending files; unpended {[h.ident for h in failures]}")
+    assert failures == []
+
+
+def test_every_pending_row_is_still_needed():
+    """S15: a pending row whose sites are all fixed must go with its file. Each ``(path, key)`` (or
+    ``(path, *)``) row needs a live hit that is still red. T200's census rows and T201's presence rows
+    are the other red rows that keep a row needed; they join this check when those tasks add them."""
+    live = [h for h in real_scan() if h.live]
+    stale = [f"{task}.csv: {path},{key}" for task, rows in read_pending().items() for path, key in rows
+             if not any(h.path == path and key in ("*", h.key) for h in live)]
+    print(f"[slice compared] {sum(len(r) for r in read_pending().values())} pending rows against "
+          f"{len(live)} live hits; stale {stale}")
+    assert stale == []
+
+
+def test_pending_files_match_ownership():
+    """Every row of ``<id>.csv`` is owned by ``<id>`` in ``OWNERSHIP``, and names ``*`` or an
+    ``OLD_MEANINGS`` key. An absent file is fine: that is the end state."""
+    pending = read_pending()
+    errors = []
+    for task, rows in pending.items():
+        for path, key in rows:
+            if key != "*" and key not in OLD_MEANINGS:
+                errors.append(f"{task}.csv: {path},{key}: not * and not an OLD_MEANINGS key")
+            owners = owners_of(path, key)
+            if task not in owners:
+                errors.append(f"{task}.csv: {path},{key}: owned by {sorted(owners) or 'nobody'}")
+    print(f"[slice compared] {sum(len(r) for r in pending.values())} rows in {sorted(pending)}; errors {errors}")
+    assert errors == []
+
+
+def test_ownership_expands_the_c19_and_hrv01_families_to_their_exact_keys():
+    """T199's table names two families; ``OWNERSHIP`` must list every member by name for each family
+    row (spec/03 for T213, spec/02 for T203), and every named key must exist."""
+    families = {prefix: sorted(k for k in OLD_MEANINGS if k.startswith(prefix)) for prefix in ("C19", "HRV-01")}
+    listed = {(path, owner): sorted(k for p, k, o in OWNERSHIP if (p, o) == (path, owner))
+              for path, owner in (("specification/spec/03-derived-metric-formulas.md", "T213"),
+                                  ("specification/spec/02-canonical-data-schema-ingestion.md", "T203"))}
+    print(f"[slice compared] families {families}; listed {listed}")
+    assert listed[("specification/spec/03-derived-metric-formulas.md", "T213")] == sorted(
+        families["C19"] + families["HRV-01"])
+    assert listed[("specification/spec/02-canonical-data-schema-ingestion.md", "T203")] == sorted(
+        families["C19"] + families["HRV-01"] + ["PRIN-10-C19-reduced-confidence"])
+    assert [k for _p, k, _o in OWNERSHIP if k != "*" and k not in OLD_MEANINGS] == []
+
+
+def test_every_exception_shelters_a_hit():
+    """S4: each ``EXCEPTIONS`` triple shelters at least one hit in its own file. Vacuous while
+    ``EXCEPTIONS == ()``; T218 adds the F009 triples, F010 its C33 ones."""
+    exceptions = _OM.EXCEPTIONS
+    errors = exception_shelter_errors(real_scan(), exceptions)
+    print(f"[slice compared] {len(exceptions)} exceptions; shelter nothing: {errors}")
+    assert errors == []
+
+
+def test_key_roots_hold_the_four_t07_keys_to_the_rule_files(tmp_path):
+    t07 = sorted(k for k in OLD_MEANINGS if k.startswith("T07-"))
+    print(f"[slice compared] KEY_ROOTS {dict(KEY_ROOTS)} against the T07 keys {t07}")
+    assert sorted(KEY_ROOTS) == t07 == ["T07-acwr-band", "T07-ctl-rise-band", "T07-tolerance-band",
+                                        "T07-tsb-target-form-band"]
+    assert all(roots == (".claude/rules/",) for roots in KEY_ROOTS.values())
+    for rel in ("specification/spec/99-planted.md", ".claude/rules/planted.md"):
+        _plant(tmp_path, rel, "".join(f"{OLD_MEANINGS[k].example}. " for k in t07))
+    reached = sorted((h.path, h.key) for h in scan(tmp_path))
+    assert reached == [(".claude/rules/planted.md", k) for k in t07]
+
+
+# --------------------------------------------------------------------------------------------------
+# AC1's "proving it" demonstrations, each in a tmp_path world (the census one is T200's).
+# --------------------------------------------------------------------------------------------------
+
+_PLANT_BODY = {
+    "md": "Planted prose before. {example}. Planted prose after.\n",
+    "py": '"""Planted module."""\n\n# {example}\nVALUE = 1\n',
+    "yaml": "planted:\n  description: >\n    {example}\n",
+}
+
+
+def _plant(root: Path, rel: str, text: str) -> None:
+    target = root / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+
+
+def _plant_path(key: str, suffix: str) -> str:
+    """A live site for ``key``: in a rule file for a ``KEY_ROOTS`` key, elsewhere in a root otherwise."""
+    if key in KEY_ROOTS:
+        return f".claude/rules/planted.{suffix}"
+    return {"md": "specification/spec/99-planted.md", "py": "runcoach-api/src/runcoach_api/planted.py",
+            "yaml": "contracts/planted.yaml"}[suffix]
+
+
+@pytest.mark.parametrize(("key", "suffix"), [
+    pytest.param(key, suffix, id=f"{key}-{suffix}") for key in OLD_MEANINGS for suffix in _PLANT_BODY
+])
+def test_reinserting_an_example_at_a_live_site_turns_the_gate_red(tmp_path, key, suffix):
+    rel = _plant_path(key, suffix)
+    _plant(tmp_path, rel, _PLANT_BODY[suffix].format(example="neutral text"))
+    assert gate_failures(scan(tmp_path), {}) == []
+    _plant(tmp_path, rel, _PLANT_BODY[suffix].format(example=OLD_MEANINGS[key].example))
+    red = gate_failures(scan(tmp_path), {})
+    print(f"[slice compared] {rel} holding {key}'s example: red {[(h.path, h.key, h.line) for h in red]}")
+    assert (rel, key) in [(h.path, h.key) for h in red]
+    assert all(h.path == rel for h in red)
+
+
+def test_scan_skips_quotation_in_markdown_only_and_section_records(tmp_path):
+    """S3 and S1 through ``scan``: on the checkout both a quoted hit and a record hit fall in files a
+    ``*`` pending row covers, so only this world shows the skips are applied at all."""
+    key = "C05-gate02-worse-rate-reopens"
+    example = OLD_MEANINGS[key].example
+    record = "spec-mirror/features/F006-per-tier-hrv-datasets.md"
+    _plant(tmp_path, "specification/spec/99-quoted.md", f'Quoted: "{example}".\n\nBare: {example}.\n')
+    _plant(tmp_path, "runcoach-api/src/runcoach_api/quoted.py", f'TEXT = "{example}"\n')
+    _plant(tmp_path, record, f"# F006\n\nLive: {example}.\n\n## Decision Log\n\n- {example}\n")
+    hits = scan(tmp_path)
+    seen = sorted((h.path, h.line, h.quoted) for h in hits)
+    print(f"[slice compared] {seen}; red {[(h.path, h.line) for h in gate_failures(hits, {})]}")
+    assert seen == [("runcoach-api/src/runcoach_api/quoted.py", 1, False),
+                    (record, 3, False),
+                    ("specification/spec/99-quoted.md", 1, True),
+                    ("specification/spec/99-quoted.md", 3, False)]
+    assert sorted((h.path, h.line) for h in gate_failures(hits, {})) == [
+        ("runcoach-api/src/runcoach_api/quoted.py", 1), (record, 3), ("specification/spec/99-quoted.md", 3)]
+
+
+def test_reinserting_an_example_inside_an_excepted_file_outside_its_excerpt_turns_the_gate_red(tmp_path):
+    rel = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+    key = "C10-lone-candidate-never-struck"
+    example = OLD_MEANINGS[key].example
+    sheltered = f"# Sheltered for F009: {example}.\nVALUE = 1\n"
+    exceptions = ((rel, f"Sheltered for F009: {example}", "F009"),)
+    _plant(tmp_path, rel, sheltered)
+    hits = scan(tmp_path, exceptions=exceptions)
+    assert [(h.key, h.sheltered_by) for h in hits] == [(key, (0,))]
+    assert gate_failures(hits, {}) == [] and exception_shelter_errors(hits, exceptions) == []
+    _plant(tmp_path, rel, sheltered + f"\n# Reinserted later in the file: {example}.\n")
+    hits = scan(tmp_path, exceptions=exceptions)
+    red = gate_failures(hits, {})
+    print(f"[slice compared] {[(h.line, h.sheltered_by) for h in hits]}; red {[(h.line, h.key) for h in red]}")
+    assert [(h.line, h.key) for h in red] == [(4, key)]
+
+
+def test_an_exception_that_shelters_nothing_turns_the_gate_red(tmp_path):
+    key = "C05-gate02-worse-rate-reopens"
+    example = OLD_MEANINGS[key].example
+    _plant(tmp_path, "specification/spec/98-a.md", f"Prose: {example}.\n")
+    _plant(tmp_path, "specification/spec/99-b.md", "Nothing old here.\n")
+    cases = {
+        "shelters its hit": (("specification/spec/98-a.md", example, "F010"),),
+        "excerpt not in the file": (("specification/spec/98-a.md", "text this file lacks", "F010"),),
+        "excerpt in another file": (("specification/spec/99-b.md", example, "F010"),),
+    }
+    verdicts = {}
+    for name, exceptions in cases.items():
+        hits = scan(tmp_path, exceptions=exceptions)
+        verdicts[name] = (exception_shelter_errors(hits, exceptions), [h.ident for h in gate_failures(hits, {})])
+    print(f"[slice compared] {verdicts}")
+    assert verdicts["shelters its hit"] == ([], [])
+    for name in ("excerpt not in the file", "excerpt in another file"):
+        errors, red = verdicts[name]
+        assert len(errors) == 1 and errors[0].startswith("EXCEPTIONS #0 shelters no hit")
+        assert red == ["specification_spec_98_a_md__C05_gate02_worse_rate_reopens__1"]
+
+
+def test_a_root_below_its_floor_turns_the_gate_red(tmp_path):
+    names = {"spec_star": "specification/spec_{i}.md", "research": "specification/research/0{j}-planted.md",
+             "src": "runcoach-api/src/f{i}.py"}
+    for label, directory, *_rest in ROOTS:
+        floor = dict(ROOT_FLOORS)[label]
+        for i in range(floor):
+            rel = names.get(label, f"{directory}/f{{i}}.md").format(i=i, j=i + 1)
+            _plant(tmp_path, rel, "x\n")
+    assert floor_shortfalls(live_files(tmp_path)) == []
+    (tmp_path / ".claude/rules/f0.md").unlink()
+    problems = floor_shortfalls(live_files(tmp_path))
+    print(f"[slice compared] every root at its floor, then one rule file removed: {problems}")
+    assert problems == [f"rules: {dict(ROOT_FLOORS)['rules'] - 1} live, floor {dict(ROOT_FLOORS)['rules']}"]
+
+
+def test_pending_file_parsing_and_coverage(tmp_path):
+    (tmp_path / "T900.csv").write_bytes(b"path,key\r\nspec/a.md,*\r\nspec\\b.md,C05-gate02-worse-rate-reopens\r\n")
+    pending = read_pending(tmp_path)
+    other = Hit("spec/b.md", "C03-return-is-free", 1, 1, 0, 1, "x", False, ())
+    whole = Hit("spec/a.md", "C03-return-is-free", 1, 1, 0, 1, "x", False, ())
+    print(f"[slice compared] {pending}")
+    assert pending == {"T900": [("spec/a.md", "*"), (Path("spec\\b.md").as_posix(), "C05-gate02-worse-rate-reopens")]}
+    assert read_pending(tmp_path / "absent") == {}
+    assert pending_tasks(whole, pending) == ["T900"] and pending_tasks(other, pending) == []
+    # A pended hit outside OWNERSHIP is still red: a hit whose path is not in the table fails.
+    assert gate_failures([whole], pending) == [whole]
+    assert gate_failures([whole], pending, ownership=(("spec/a.md", "*", "T900"),)) == []
+    assert owners_of("specification/spec/03-derived-metric-formulas.md", "C03-return-is-free") == {"T202"}
+    assert owners_of("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence") == {
+        "T213", "T218"}
+    assert owners_of("specification/spec/04-physiological-state-model.md", "*") == {"T204"}
+    assert owners_of("specification/spec/01-scope-inputs-pace-target.md", "*") == set()

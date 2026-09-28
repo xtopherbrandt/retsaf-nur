@@ -1,0 +1,6 @@
+path,key
+runcoach-api/src/runcoach_api/metrics/hrv_trend.py,*
+runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,C19-hrv-04-reduced-confidence
+specification/spec/03-derived-metric-formulas.md,C19-hrv-04-reduced-confidence
+specification/spec/04-physiological-state-model.md,C19-hrv-04-reduced-confidence
+specification/spec/02-canonical-data-schema-ingestion.md,C19-hrv-04-reduced-confidence
