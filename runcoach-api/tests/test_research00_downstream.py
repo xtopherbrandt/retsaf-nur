@@ -518,6 +518,14 @@ def gate_failures(hits: list[Hit], pending: dict[str, list[tuple[str, str]]],
             and not (pending_tasks(hit, pending) and owners_of(hit.path, hit.key, ownership))]
 
 
+def stale_pending_rows(hits: list[Hit], pending: dict[str, list[tuple[str, str]]]) -> list[str]:
+    """S15: each pending row with no live hit left to cover -- a ``(path, *)`` row needs any live hit
+    in ``path``, a ``(path, key)`` row a live hit of that key in ``path``."""
+    live = [h for h in hits if h.live]
+    return [f"{task}.csv: {path},{key}" for task, rows in pending.items() for path, key in rows
+            if not any(h.path == path and key in ("*", h.key) for h in live)]
+
+
 _REAL_SCAN: list[Hit] = []
 
 
@@ -800,14 +808,15 @@ def test_scanner_site_ids_use_only_word_characters():
 # --------------------------------------------------------------------------------------------------
 
 
-def _hit_params():
+def _hit_params(hits=None, pending=None):
     """One param per live hit of the checkout, with its S15 id. A hit covered by a pending file and
     owned in ``OWNERSHIP`` is a strict xfail naming the covering task(s); any other hit is red. With no
     live hit at all (the end state), a single ``no_live_hits`` param re-checks that, so the release
-    gate never sees an empty-parameter skip."""
-    pending = read_pending()
+    gate never sees an empty-parameter skip. ``hits`` and ``pending`` default to the checkout's."""
+    pending = read_pending() if pending is None else pending
+    hits = real_scan() if hits is None else hits
     params = []
-    for hit in (h for h in real_scan() if h.live):
+    for hit in (h for h in hits if h.live):
         tasks = pending_tasks(hit, pending)
         marks = ()
         if tasks and owners_of(hit.path, hit.key):
@@ -855,8 +864,7 @@ def test_every_pending_row_is_still_needed():
     ``(path, *)``) row needs a live hit that is still red. T200's census rows and T201's presence rows
     are the other red rows that keep a row needed; they join this check when those tasks add them."""
     live = [h for h in real_scan() if h.live]
-    stale = [f"{task}.csv: {path},{key}" for task, rows in read_pending().items() for path, key in rows
-             if not any(h.path == path and key in ("*", h.key) for h in live)]
+    stale = stale_pending_rows(live, read_pending())
     print(f"[slice compared] {sum(len(r) for r in read_pending().values())} pending rows against "
           f"{len(live)} live hits; stale {stale}")
     assert stale == []
@@ -1044,3 +1052,62 @@ def test_pending_file_parsing_and_coverage(tmp_path):
         "T213", "T218"}
     assert owners_of("specification/spec/04-physiological-state-model.md", "*") == {"T204"}
     assert owners_of("specification/spec/01-scope-inputs-pace-target.md", "*") == set()
+
+
+def test_pending_named_key_row_goes_stale_while_another_key_still_hits_its_path(tmp_path):
+    """S15 on spec/03's split (T199's table): T202 and T213 both pend named keys in one path. When
+    T213's C19 site is fixed while T202's C03 site still hits, T213's row is stale -- a row matching on
+    path alone would stay needed for as long as any other owner's key hits there."""
+    spec03 = "specification/spec/03-derived-metric-formulas.md"
+    c03, c19 = "C03-return-is-free", "C19-hrv-04-reduced-confidence"
+    pending = {"T202": [(spec03, c03)], "T213": [(spec03, c19)], "T900": [(spec03, "*")]}
+    _plant(tmp_path, spec03, f"Both: {OLD_MEANINGS[c03].example}.\n\nAnd: {OLD_MEANINGS[c19].example}.\n")
+    both = scan(tmp_path)
+    _plant(tmp_path, spec03, f"Only: {OLD_MEANINGS[c03].example}.\n\nThe C19 site is fixed.\n")
+    fixed = scan(tmp_path)
+    print(f"[slice compared] both {[(h.key, h.line) for h in both]}: stale {stale_pending_rows(both, pending)}; "
+          f"C19 fixed {[(h.key, h.line) for h in fixed]}: stale {stale_pending_rows(fixed, pending)}")
+    assert {h.key for h in both} == {c03, c19} and {h.key for h in fixed} == {c03}
+    assert stale_pending_rows(both, pending) == []
+    assert stale_pending_rows(fixed, pending) == [f"T213.csv: {spec03},{c19}"]
+
+
+def test_no_live_hits_is_the_single_param_when_the_scan_finds_no_live_hit(tmp_path):
+    """The end state: with no live hit the hit test still runs, as exactly one ``no_live_hits`` case
+    carrying ``None`` and no mark, rather than an empty parametrization pytest would skip."""
+    _plant(tmp_path, "specification/spec/99-clean.md", "Nothing old here.\n")
+    quoted = Hit("specification/spec/99-clean.md", "C03-return-is-free", 1, 1, 0, 1, "x", True, ())
+    cases = {"empty hit list": ([], {}), "clean tmp world": (scan(tmp_path), {}),
+             "only a quoted hit": ([quoted], {})}
+    shapes = {name: [(p.id, p.values, tuple(p.marks)) for p in _hit_params(hits, pending)]
+              for name, (hits, pending) in cases.items()}
+    live = Hit("specification/spec/99-clean.md", "C03-return-is-free", 1, 1, 0, 1, "x", False, ())
+    with_live = [p.id for p in _hit_params([live], {})]
+    print(f"[slice compared] {shapes}; one live hit gives {with_live}")
+    for name, shape in shapes.items():
+        assert shape == [("no_live_hits", (None,), ())], name
+    assert with_live == [live.ident]
+
+
+@pytest.mark.parametrize("body", [
+    pytest.param(b"key,path\r\nspec/a.md,*\r\n", id="columns_swapped"),
+    pytest.param(b"spec/a.md,*\r\n", id="no_header_row"),
+    pytest.param(b"path,key,owner\r\nspec/a.md,*,T900\r\n", id="three_column_header"),
+    pytest.param(b"", id="empty_file"),
+])
+def test_read_pending_rejects_a_file_without_the_path_key_header(tmp_path, body):
+    (tmp_path / "T900.csv").write_bytes(body)
+    with pytest.raises(AssertionError, match="T900.csv: header is not path,key") as raised:
+        read_pending(tmp_path)
+    print(f"[slice compared] {body!r} -> {raised.value}")
+
+
+@pytest.mark.parametrize("body", [
+    pytest.param(b"path,key\r\nspec/a.md\r\n", id="one_column_row"),
+    pytest.param(b"path,key\r\nspec/a.md,*,extra\r\n", id="three_column_row"),
+])
+def test_read_pending_rejects_a_row_that_is_not_path_key(tmp_path, body):
+    (tmp_path / "T900.csv").write_bytes(body)
+    with pytest.raises(AssertionError, match="T900.csv: a row is not path,key") as raised:
+        read_pending(tmp_path)
+    print(f"[slice compared] {body!r} -> {raised.value}")
