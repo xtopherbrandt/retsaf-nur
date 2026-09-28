@@ -168,7 +168,7 @@ Scope: every metric the system derives, including an open method that is itself 
 Not: a vendor black-box metric, which PRIN-08 quarantines.
 Pinned: none
 
-**PRIN-12.** Every derived verdict MUST be reproducible by hand from what the same response reports, so its `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every unserved verdict-affecting input, `window_days` and the withhold's day order (PRIN-24), IS an OPEN exception.
+**PRIN-12.** Every derived verdict MUST be reproducible by hand from its response, whose `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every unserved verdict-affecting input, such as `window_days` and the withhold's day order, each named in PRIN-24, IS an OPEN exception.
 Scope: each response read on its own, including its `selected_reason`.
 Not: the formulas themselves, which the spec states in full under PRIN-11 (transparent formulas).
 Pinned: none (F010)
@@ -184,11 +184,11 @@ Scope: every stored resting-HRV row whose local day lies in `[D-66, D]`.
 Not: a row outside those windows, which the era rule reads but the response does not list.
 Pinned: none
 
-**PRIN-24.** `window_days` (7), the withhold's judged-week day order (HRV-31), fired or not, the previous-window readings of clauses (b) and (c) of HRV-38, and the coverage-gap test's latest reading before D-66 and the store's earliest start time (HRV-73) each IS an OPEN exception to rule PRIN-12 (reproducible by hand), owned by IDEA-102, as a verdict-affecting input the response does not serve.
-Scope: `window_days`, which sets the judged week and which the `thresholds` block does not serve; the order of another dataset's judged-week days that the withhold of HRV-31 and HRV-63 compares; and the readings before D-66, and the earliest stored start time, that the era rule (HRV-38) and the coverage gap (HRV-73) read.
+**PRIN-24.** `window_days` (7), which the `thresholds` block does not serve, and four inputs the response does not serve, the withhold's judged-week day order (HRV-31), fired or not, HRV-38's previous-window readings of clauses (b) and (c), and the coverage-gap test's latest reading before D-66 and the store's earliest start time (HRV-73), each IS an OPEN exception to PRIN-12, owned by IDEA-102.
+Scope: `window_days`, which sets the judged week the response serves as `window` and which the `thresholds` block does not serve; the order of another dataset's judged-week days that the withhold of HRV-31 and HRV-63 compares; and the readings before D-66, and the earliest stored start time, that the era rule (HRV-38) and the coverage gap (HRV-73) read.
 Not: `recency_tolerance_days`, which PRIN-12 names as served once F010 lands, and each dataset's count of judged-week days, which `week_days` serves.
 Pinned: none
-Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39), a clause the review rulings widened to every such input, naming the withhold's day order, the previous-window readings and the coverage-gap test's inputs, none of which a served field lets a reader reproduce (H-41).
+Why: decision C33 has PRIN-12 name every verdict-affecting constant it does not serve as an OPEN exception (H-39), a clause the review rulings widened to every such input, naming beside `window_days` the withhold's day order, the previous-window readings and the coverage-gap test's inputs, none of which a served field lets a reader reproduce (H-41).
 
 ### 1.7 Down-regulate freely, up-regulate cautiously
 

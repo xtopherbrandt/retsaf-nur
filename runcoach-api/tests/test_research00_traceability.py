@@ -1022,9 +1022,9 @@ HISTORY_SHA256 = {
     "H-36": "60dc60611b45",
     "H-37": "74478c3a736f",
     "H-38": "864b2eb04911",
-    "H-39": "4abb9f5e7e81",
+    "H-39": "457803c89983",
     "H-40": "ff2a30c98d83",
-    "H-41": "a4f3cb9cdfa9",
+    "H-41": "1ba5b170b3ed",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1039,7 +1039,7 @@ REVIEW_PROSE_SHA256 = (
     "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
-    "a4e5252f9b6e", "c74bec8af89e",
+    "a4e5252f9b6e", "4cf8113a2480", "b533aae73e9f",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1060,6 +1060,7 @@ FROZEN_ROUNDS = {
     "8": "4bab88c420df",
     "9": "a27a119979ce",
     "10": "a4e5252f9b6e",
+    "11": "4cf8113a2480",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1077,6 +1078,7 @@ _FROZEN_ROUNDS_PIN = {
     "8": "4bab88c420df",
     "9": "a27a119979ce",
     "10": "a4e5252f9b6e",
+    "11": "4cf8113a2480",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1161,7 +1163,7 @@ REVIEW_LINE_SHA256 = {
     "PRIN-11": "c5cde54990aa",
     "PRIN-11/Scope": "c922e0deda56",
     "PRIN-11/Not": "2594377f39f9",
-    "PRIN-12": "5c247100cdf7",
+    "PRIN-12": "8bc78d8a371b",
     "PRIN-12/Scope": "d540f126cc46",
     "PRIN-12/Not": "7299ce1c2a83",
     "PRIN-12/Why": "3d9eefb0eedc",
@@ -1171,10 +1173,10 @@ REVIEW_LINE_SHA256 = {
     "PRIN-23": "ea5c41159796",
     "PRIN-23/Scope": "1d5c6357246e",
     "PRIN-23/Not": "554539bcf885",
-    "PRIN-24": "bf87fce6b72e",
-    "PRIN-24/Scope": "63b8df46495a",
+    "PRIN-24": "aa0209aba25e",
+    "PRIN-24/Scope": "d0fde64cc05b",
     "PRIN-24/Not": "de1880951463",
-    "PRIN-24/Why": "f48890eefaa9",
+    "PRIN-24/Why": "f80b1a76c58d",
     "PRIN-13": "6569e1900548",
     "PRIN-13/Scope": "060f62f49158",
     "PRIN-13/Not": "d9d0793208a5",
