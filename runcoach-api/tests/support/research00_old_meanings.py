@@ -362,9 +362,17 @@ EXCEPTIONS: tuple = (
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'The comparison is between candidates, so a lone candidate is its own reference and is never struck', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'The constant is not published in ``thresholds`` ([[IDEA-070]]', 'F009'),
+     'struck. The constant is not published in ``thresholds`` ([[IDEA-070]]', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'research/00`` §5.4 (iii): "the dataset the athlete was read on last"', 'F009'),
+    # T219: sites wrapped over ``#`` comment lines, which the gate now reads with the markers removed,
+    # so each excerpt is written without them.
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'never to ``D-7``, so a lone candidate is its own reference and is never struck', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     "says the now-sustaining tier's pre-boundary readings are *never* in the band", 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'one structural (``resolve_baseline_tier`` answering "no tier at all")', 'F009'),
 )
 
 _DROPPED = str.maketrans("", "", "\"'`*_“”‘’")

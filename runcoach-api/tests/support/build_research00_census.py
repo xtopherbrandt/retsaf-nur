@@ -6,6 +6,10 @@ lives in the data dir and changes (T211 turns the inventory's C14 quotations int
 site tasks (T202-T214) rewrite the very text it greps, so a later run would differ. Never re-run it to
 "refresh" the census; the gate (``test_research00_downstream.py``) checks the committed rows both ways.
 
+It was re-run once more, by T219 at ``6050724`` (no site edited yet), when the gate began reading a
+``.py`` file with its comment markers removed: the only rows that changed were ``hrv_trend.py``'s
+``grep`` rows (three new hits, three excerpts widened or re-cut off a ``#:``), all F009's.
+
 Run from the main checkout (the inventory is read by its absolute data-dir path)::
 
     uv run --package runcoach-api python runcoach-api/tests/support/build_research00_census.py
@@ -542,11 +546,13 @@ def _git_lines(path: str, commit: str = INVENTORY_COMMIT) -> list[str]:
 
 
 class File:
-    """One file's raw and normalized text, with the map between them."""
+    """One file's text as the gate reads it (``GATE.gate_source``: a ``.py`` file's comment markers
+    removed, T219) and its normalized form, with the map between them. ``raw`` keeps every newline, so
+    line numbers are the file's, and an excerpt drawn from it matches the gate's text."""
 
     def __init__(self, rel: str, repo_root: Path = REPO_ROOT):
         self.rel = rel
-        self.raw = (repo_root / rel).read_text(encoding="utf-8")
+        self.raw, _to_raw = GATE.gate_source(rel, (repo_root / rel).read_text(encoding="utf-8"))
         self.text, self.offsets = GATE.normalize_with_offsets(self.raw)
 
     def raw_span(self, start: int, end: int) -> tuple[int, int]:
@@ -737,7 +743,7 @@ def loose_hits(repo_root: Path = REPO_ROOT, nouns=None):
     found = []
     for path in (p for paths in GATE.live_files(repo_root).values() for p in paths):
         raw = (repo_root / path).read_text(encoding="utf-8")
-        text, offsets = GATE.normalize_with_offsets(raw)
+        text, offsets = GATE.gate_text(path, raw)
         records = GATE.record_ranges(path, raw)
         spans = GATE.quote_spans(raw) if path.endswith(".md") else None
         for key, regex in nouns.items():

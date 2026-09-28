@@ -20,6 +20,10 @@ here reads it: every fact taken from the decisions is frozen as a literal.
   code span is quotation. Spans are found on the raw text, before ``normalize()``; they never cross a
   blank line; a fenced block is code; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and
   ``.yml`` are scanned whole.
+- **Wrapped ``#`` comments (T219).** In ``.py`` only, each comment line's marker (indentation, a ``#``
+  run, a ``#:`` colon) is removed before ``normalize()`` (``gate_text``), so a meaning wrapped over two
+  comment lines reads as one sentence. ``.md``, ``.yaml`` and ``.yml`` keep every ``#``. Every census and
+  exception check compares against this same text.
 - **Hits (T199, AC1).** Each ``OLD_MEANINGS`` key's pattern is searched in every live file its
   ``KEY_ROOTS`` entry lets it reach (S12: the four T-07 keys reach ``.claude/rules/`` only). A hit is
   quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt overlapping it in that one file (S4), a
@@ -310,6 +314,45 @@ def hit_is_quoted(raw: str, norm_start: int, norm_end: int, offsets=None, spans=
     return any(a <= raw_start and raw_end <= b for a, b in spans)
 
 
+#: T219: a Python comment line's marker -- optional indentation, a ``#`` run and a ``#:`` doc-comment
+#: colon -- at the start of a line. ``normalize()`` keeps it, so a meaning wrapped over two ``#`` lines
+#: reads "... reference # and is never struck" and no pattern matches it.
+_WRAPPED_COMMENT = re.compile(r"^[ \t]*#+:?", re.MULTILINE)
+
+
+def gate_source(path: str, raw: str) -> tuple[str, list[int]]:
+    """The file ``path``'s text before ``normalize()``, with each character's raw offset: for ``.py``,
+    ``raw`` with every comment line's marker (``_WRAPPED_COMMENT``) removed and each newline kept (so
+    line numbers hold); for ``.md``, ``.yaml`` and ``.yml``, ``raw`` itself."""
+    if not path.endswith(".py"):
+        return raw, list(range(len(raw)))
+    pos = 0
+    pieces: list[str] = []
+    source_to_raw: list[int] = []
+    for marker in _WRAPPED_COMMENT.finditer(raw):
+        pieces.append(raw[pos:marker.start()])
+        source_to_raw += range(pos, marker.start())
+        pos = marker.end()
+    pieces.append(raw[pos:])
+    source_to_raw += range(pos, len(raw))
+    return "".join(pieces), source_to_raw
+
+
+def gate_text(path: str, raw: str) -> tuple[str, list[int]]:
+    """The text the gate matches in the file ``path``, with each character's raw offset:
+    ``normalize_with_offsets`` of ``gate_source``. For ``.md``, ``.yaml`` and ``.yml`` that is
+    ``normalize_with_offsets(raw)`` unchanged. ``normalize()`` itself is shared with research/00's
+    checker and is not touched (T219)."""
+    source, source_to_raw = gate_source(path, raw)
+    text, offsets = normalize_with_offsets(source)
+    return text, [source_to_raw[o] for o in offsets]
+
+
+def gate_normal(path: str, raw: str) -> str:
+    """``gate_text``'s text alone: what every census and exception check compares an excerpt against."""
+    return gate_text(path, raw)[0]
+
+
 # --------------------------------------------------------------------------------------------------
 # S15: test ids.
 # --------------------------------------------------------------------------------------------------
@@ -405,7 +448,7 @@ def scan(repo_root: Path = _REPO_ROOT, old_meanings=None, exceptions=None,
     hits: list[Hit] = []
     for path in (p for paths in live_files(repo_root).values() for p in paths):
         raw = (repo_root / path).read_text(encoding="utf-8")
-        text, offsets = normalize_with_offsets(raw)
+        text, offsets = gate_text(path, raw)
         records = record_ranges(path, raw)
         spans = quote_spans(raw) if path.endswith(".md") else None
         excerpts = _excerpt_ranges(text, path, exceptions)
@@ -595,7 +638,7 @@ def narrowed_census_errors(extras: list[Hit], census_rows, narrowed_from=NARROWE
             if not (repo_root / path).is_file():
                 errors.append(f"{key}: narrowed row {path}: no such file")
                 continue
-            text = normalize((repo_root / path).read_text(encoding="utf-8"))
+            text = gate_normal(path, (repo_root / path).read_text(encoding="utf-8"))
             excerpt = normalize(row.get("excerpt") or "")
             spans = [(m.start(), m.end()) for m in re.finditer(re.escape(excerpt), text)] if excerpt else []
             if not any(a < h.end and h.start < b for a, b in spans
@@ -650,7 +693,7 @@ def census_state(row, repo_root: Path = _REPO_ROOT, exceptions=None) -> str:
     path = Path(row["path"]).as_posix()
     if not (repo_root / path).is_file():
         return "missing"
-    text = normalize((repo_root / path).read_text(encoding="utf-8"))
+    text = gate_normal(path, (repo_root / path).read_text(encoding="utf-8"))
     found = _occurrences(text, row.get("excerpt") or "")
     if not found:
         return "gone"
@@ -672,7 +715,7 @@ def census_coverage(hits: list[Hit], rows, repo_root: Path = _REPO_ROOT):
     def text_of(path: str) -> str | None:
         if path not in texts:
             full = repo_root / path
-            texts[path] = normalize(full.read_text(encoding="utf-8")) if full.is_file() else None
+            texts[path] = gate_normal(path, full.read_text(encoding="utf-8")) if full.is_file() else None
         return texts[path]
 
     gone = 0
@@ -747,7 +790,7 @@ def narrowed_row_errors(site: CensusSite, hits: list[Hit], repo_root: Path = _RE
     path = repo_root / site.path
     if not path.is_file():
         return [f"{site.path}: the narrowed row's file is gone"], [], []
-    found = _occurrences(normalize(path.read_text(encoding="utf-8")), site.excerpt)
+    found = _occurrences(gate_normal(site.path, path.read_text(encoding="utf-8")), site.excerpt)
     matched = [h for h in hits if h.path == site.path and h.key == site.key
                and any(h.start < e and s < h.end for s, e in found)]
     errors = []
@@ -785,7 +828,7 @@ def census_row_errors(rows, header, repo_root: Path = _REPO_ROOT) -> list[str]:
             errors.append(f"{where}: duplicate row")
         seen.add(ident)
         if (repo_root / path).is_file() and normalize(excerpt):
-            count = len(_occurrences(normalize((repo_root / path).read_text(encoding="utf-8")), excerpt))
+            count = len(_occurrences(gate_normal(path, (repo_root / path).read_text(encoding="utf-8")), excerpt))
             if count > 1:
                 errors.append(f"{where}: excerpt occurs {count} times, so it does not name one site")
     return errors
@@ -1058,7 +1101,7 @@ def test_scanner_offset_map_reproduces_normalize_on_every_live_file():
     checked = 0
     for path in (p for paths in files.values() for p in paths):
         raw = (_REPO_ROOT / path).read_text(encoding="utf-8")
-        text, offsets = normalize_with_offsets(raw)
+        text, offsets = gate_text(path, raw)
         assert len(offsets) == len(text)
         assert offsets == sorted(offsets)
         checked += 1
@@ -1250,6 +1293,59 @@ def test_scan_skips_quotation_in_markdown_only_and_section_records(tmp_path):
                     ("specification/spec/99-quoted.md", 3, False)]
     assert sorted((h.path, h.line) for h in gate_failures(hits, {})) == [
         ("runcoach-api/src/runcoach_api/quoted.py", 1), (record, 3), ("specification/spec/99-quoted.md", 3)]
+
+
+_WRAPPED_KEY = "C10-lone-candidate-never-struck"
+_WRAPPED_HEAD, _WRAPPED_TAIL = "a lone candidate is its own reference", "and is never struck however old it is"
+#: The example split over two ``#`` lines, as hrv_trend.py:925-926 states C10.
+_WRAPPED_BODY = f"VALUE = 1\n\n    # Rule 1: {_WRAPPED_HEAD}\n    #: {_WRAPPED_TAIL}.\nOTHER = 2\n"
+
+
+def _wrapped_world(tmp_path: Path, suffix: str) -> tuple[str, list[Hit]]:
+    rel = {"py": "runcoach-api/src/runcoach_api/planted.py", "md": "specification/spec/99-planted.md",
+           "yaml": "contracts/planted.yaml"}[suffix]
+    _plant(tmp_path, rel, _WRAPPED_BODY)
+    return rel, [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+
+
+def test_wrapped_comment_py_example_split_over_two_hash_lines_is_a_hit(tmp_path):
+    """T219: in ``.py`` the gate reads a wrapped ``#`` comment as one sentence, so an old meaning split
+    over two comment lines is a hit, reported on its first line, and the map back to the raw text holds
+    (the matched span starts at the raw ``lone``; an EXCEPTIONS excerpt written without the ``#``
+    shelters it)."""
+    rel, hits = _wrapped_world(tmp_path, "py")
+    raw = (tmp_path / rel).read_text(encoding="utf-8")
+    text, offsets = gate_text(rel, raw)
+    print(f"[slice compared] {rel} gate text {text!r}; hits {[(h.line, h.matched, h.ident) for h in hits]}")
+    assert [(h.path, h.line, h.ident) for h in hits] == [(rel, 3, site_id(rel, _WRAPPED_KEY, 1))]
+    assert raw[offsets[hits[0].start]:].startswith("lone candidate")
+    assert (rel, _WRAPPED_KEY) in [(h.path, h.key) for h in gate_failures(hits, {})]
+    excerpt = f"{_WRAPPED_HEAD} {_WRAPPED_TAIL}"
+    sheltered = [h for h in scan(tmp_path, exceptions=((rel, excerpt, "F009"),)) if h.key == _WRAPPED_KEY]
+    print(f"[slice compared] sheltered by an excerpt without the marker: {[h.sheltered_by for h in sheltered]}")
+    assert [h.sheltered_by for h in sheltered] == [(0,)]
+    assert census_state({"path": rel, "excerpt": excerpt}, tmp_path, exceptions=()) == "present"
+
+
+@pytest.mark.parametrize("suffix", ["md", "yaml"])
+def test_wrapped_comment_markers_stay_in_md_and_yaml(tmp_path, suffix):
+    """T219: only ``.py`` loses its comment markers. The same text in ``.md`` or ``.yaml`` keeps the
+    ``#`` (a heading, a YAML comment), so the split example is no hit there, as before."""
+    rel, hits = _wrapped_world(tmp_path, suffix)
+    raw = (tmp_path / rel).read_text(encoding="utf-8")
+    text, offsets = gate_text(rel, raw)
+    print(f"[slice compared] {rel} gate text {text!r}; hits {hits}")
+    assert (text, offsets) == normalize_with_offsets(raw)
+    assert "reference #: and" in text
+    assert hits == []
+
+
+def test_wrapped_comment_mutant_without_the_stripping_loses_the_py_hit(tmp_path, monkeypatch):
+    """T219's mutant: with the marker pattern disabled, the ``.py`` world's split example is no hit."""
+    monkeypatch.setitem(globals(), "_WRAPPED_COMMENT", re.compile(r"(?!)"))
+    rel, hits = _wrapped_world(tmp_path, "py")
+    print(f"[slice compared] mutant: {rel} hits {hits}")
+    assert hits == []
 
 
 def test_reinserting_an_example_inside_an_excepted_file_outside_its_excerpt_turns_the_gate_red(tmp_path):
@@ -1460,7 +1556,7 @@ def test_the_f009_exceptions_shelter_every_hrv_trend_hit_each_excerpt_once():
     hit; and no F009 triple names another file."""
     exceptions = _OM.EXCEPTIONS
     f009 = [i for i, e in enumerate(exceptions) if e[2] == "F009"]
-    text = normalize((_REPO_ROOT / _HRV_TREND).read_text(encoding="utf-8"))
+    text = gate_normal(_HRV_TREND, (_REPO_ROOT / _HRV_TREND).read_text(encoding="utf-8"))
     counts = {i: text.count(normalize(exceptions[i][1])) for i in f009}
     hits = [h for h in real_scan() if h.path == _HRV_TREND]
     for hit in hits:

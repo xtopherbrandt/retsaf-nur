@@ -8,12 +8,15 @@ C18-no-tier-from-resolver,contracts/openapi.yaml,"resolve_baseline_tier answered
 C19-hrv-04-reduced-confidence,contracts/openapi.yaml,"rMSSD itself, degrading — at reduced confidence",grep
 PRIN-12-R13-withheld-response-stays-reproducible,runcoach-api/src/runcoach_api/main.py,the response stays reproducible by hand,grep
 C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"a lone candidate is its own reference and is never struck,",grep
-C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,a lone candidate is its own reference and is never struck.,grep
+C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,so a lone candidate is its own reference and is never struck. The,grep
+C10-lone-candidate-never-struck,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,so a lone candidate is its own reference and is never struck. Factored,grep
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,this rule is the only one that acts,grep
 C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,the dataset the athlete was read on last,grep
-C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,constant is not published in ``thresholds`` #:,grep
-C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"is not published in ``thresholds`` ([[IDEA-070]],",grep
-PRIN-12-C33-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,The constant is not published in ``thresholds`` #:,grep
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"resolve_baseline_tier`` answering ""no tier at all",grep
+C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"``D-7``. The constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15).",grep
+C33-hrv-17-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15). 2.",grep
+HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,now-sustaining tier,grep
+PRIN-12-C33-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"``D-7``. The constant is not published in ``thresholds`` ([[IDEA-070]],",grep
 PRIN-12-C33-tolerance-not-published,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,"struck. The constant is not published in ``thresholds`` ([[IDEA-070]],",grep
 C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the "" ""dataset the athlete was read on last",grep
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"resolve_baseline_tier answering ""no tier at ' 'all",grep
