@@ -3236,6 +3236,42 @@ def example_source_errors(meanings, show: Callable[[str], str]) -> list[str]:
     return errors
 
 
+#: F011 S4: the one path an F009-owned exception may name.
+EXCEPTION_F009_PATH = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+#: F011 S4: the C33 sites F010 AC2 lists (both contract copies and spec/03), frozen 2026-09-28 from
+#: spec/features/F010-publish-recency-tolerance.md AC2. ``hrv_trend.py`` is F009's, not F010's.
+EXCEPTION_F010_PATHS = frozenset({
+    "contracts/openapi.yaml",
+    "runcoach-api/src/runcoach_api/schemas.py",
+    "specification/spec/03-derived-metric-formulas.md",
+})
+
+
+def exceptions_shape_errors(exceptions) -> list[str]:
+    """F011 S4's shape for ``EXCEPTIONS``: each entry is a ``(path, excerpt, owner)`` triple of
+    strings, ``owner`` is F009 (path exactly ``EXCEPTION_F009_PATH``) or F010 (path in
+    ``EXCEPTION_F010_PATHS``), and the excerpt is non-empty. One error per fault. Whether an exception
+    shelters a hit is the downstream gate's check (T199), not this one."""
+    errors = []
+    for i, entry in enumerate(exceptions):
+        if not (isinstance(entry, tuple) and len(entry) == 3 and all(isinstance(x, str) for x in entry)):
+            errors.append(f"[exceptions] #{i}: not a (path, excerpt, owner) triple of strings: {entry!r}")
+            continue
+        path, excerpt, owner = entry
+        if owner == "F009":
+            if path != EXCEPTION_F009_PATH:
+                errors.append(f"[exceptions] #{i}: owner F009 may name only {EXCEPTION_F009_PATH}, not {path}")
+        elif owner == "F010":
+            if path not in EXCEPTION_F010_PATHS:
+                errors.append(f"[exceptions] #{i}: owner F010 may name only the C33 sites of F010 AC2, "
+                              f"not {path}")
+        else:
+            errors.append(f"[exceptions] #{i}: owner {owner!r} is not F009 or F010")
+        if not excerpt.strip():
+            errors.append(f"[exceptions] #{i}: empty excerpt")
+    return errors
+
+
 def _proxy_rows(rows: list[dict[str, str]], research_text: str, dates: dict[str, frozenset[str]],
                 only_within: set[str] | None = None) -> list[str]:
     """The AC9 proxy on every ``no`` row with an inventory sentence, over the blocks it names, with
@@ -5141,7 +5177,7 @@ def test_example_source_errors_names_an_example_not_at_its_source() -> None:
 
 def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
     """R4 over the committed ``OLD_MEANINGS`` and the whole of research/00, glossary included; every
-    key the table names exists, and ``EXCEPTIONS`` stays empty until F011."""
+    key the table names exists, and ``EXCEPTIONS`` has F011 S4's triple shape."""
     research, _history, rows = _real()
     errors = old_meaning_errors(_OM.OLD_MEANINGS, research)
     named = {k for r in rows for k in _keys(r)}
@@ -5150,7 +5186,32 @@ def test_real_path_old_meanings_miss_the_whole_of_research00() -> None:
     assert _OM.OLD_MEANINGS and named <= set(_OM.OLD_MEANINGS)
     orphans = sorted(set(_OM.OLD_MEANINGS) - named)
     assert not orphans, f"OLD_MEANINGS keys no traceability row names (S5): {orphans}"
-    assert _OM.EXCEPTIONS == ()
+    shape = exceptions_shape_errors(_OM.EXCEPTIONS)
+    print(f"[slice compared] {len(_OM.EXCEPTIONS)} EXCEPTIONS triples: {shape}")
+    assert shape == []
+
+
+def test_exceptions_shape_rejects_each_wrong_shape() -> None:
+    """F011 S4: each wrong triple gives exactly one error naming its fault, and a well-formed triple
+    for each owner gives none."""
+    hrv = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+    good = [(hrv, "does not echo", "F009"), ("contracts/openapi.yaml", "these six", "F010"),
+            ("runcoach-api/src/runcoach_api/schemas.py", "these six", "F010"),
+            ("specification/spec/03-derived-metric-formulas.md", "gains no key", "F010")]
+    print(f"[slice compared] good: {exceptions_shape_errors(good)}")
+    assert exceptions_shape_errors(good) == []
+    bad = {
+        "owner F011": ((hrv, "does not echo", "F011"), "owner"),
+        "F009 on main.py": (("runcoach-api/src/runcoach_api/main.py", "does not echo", "F009"), "F009"),
+        "F010 outside AC2": (("specification/spec/01-data-model.md", "these six", "F010"), "F010"),
+        "empty excerpt": ((hrv, "", "F009"), "excerpt"),
+        "2-tuple": ((hrv, "F009"), "triple"),
+    }
+    for label, (triple, word) in bad.items():
+        errors = exceptions_shape_errors([triple])
+        print(f"[slice compared] {label}: {errors}")
+        assert len(errors) == 1 and word in errors[0], label
+    assert len(exceptions_shape_errors([t for t, _ in bad.values()] + good)) == len(bad)
 
 
 # ---------------------------------------------------------------------------
