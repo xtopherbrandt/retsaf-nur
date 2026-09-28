@@ -29,6 +29,11 @@ here reads it: every fact taken from the decisions is frozen as a literal.
   quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt overlapping it in that one file (S4), a
   pending site (S15: ``tests/data/research00_pending/<task id>.csv``, strict xfail, owned per
   ``OWNERSHIP``), or a failure.
+- **Presence rows (T201, S6).** Each census site whose key cites a decision in F008 AC7's ``OPERATIVE``
+  (read from the traceability test by path, never copied) has one row per operative string: the ``.md``
+  paragraph holding the site's frozen anchor (``PRESENCE_ANCHORS``) states the string after
+  ``normalize()``. A site or string that gets no row is in ``DROPPED_PRESENCE_ROWS`` with its reason.
+  ``test_decisions_01_conforms`` (S9) and the no_regression comment's absence row sit beside them.
 
 **Blind spots, stated rather than argued away:**
 
@@ -1174,10 +1179,10 @@ def test_every_live_hit_is_pending_under_an_owner():
 
 def test_every_pending_row_is_still_needed():
     """S15: a pending row whose sites are all fixed must go with its file. Each ``(path, key)`` (or
-    ``(path, *)``) row needs a live hit or a census site (T200) that is still red. T201's presence rows
-    join this check when that task adds them."""
+    ``(path, *)``) row needs a live hit, a census site (T200) or a presence row (T201) that is still red."""
     live = [h for h in real_scan() if h.live]
-    red = red_census_sites(_read_census_or_empty())
+    census = _read_census_or_empty()
+    red = red_census_sites(census) + red_presence_sites(census)
     stale = stale_pending_rows(live, read_pending(), red)
     print(f"[slice compared] {sum(len(r) for r in read_pending().values())} pending rows against "
           f"{len(live)} live hits and {len(red)} red census sites; stale {stale}")
@@ -1851,3 +1856,429 @@ def test_narrowed_row_is_red_only_under_its_own_key_current_pattern(tmp_path):
     assert len(verdicts["still matched"]) == 1 and "still matches" in verdicts["still matched"][0]
     assert verdicts["another key's text"] == []
     assert verdicts["file gone"] == ["specification/spec/98-gone.md: the narrowed row's file is gone"]
+
+
+# --------------------------------------------------------------------------------------------------
+# S6 and S9 (T201): presence rows, decisions/01's conformance and the no_regression comment.
+# --------------------------------------------------------------------------------------------------
+
+_TRACEABILITY = Path(__file__).parent / "test_research00_traceability.py"
+_OPERATIVE_CACHE: dict[str, dict] = {}
+
+
+def operative() -> dict:
+    """F008 AC7's ``OPERATIVE`` (``{decision: (rule id, strings)}``), read from the traceability test by
+    path once per session. It is bound there and is not moved or copied here (S6: only F008's strings)."""
+    if "OPERATIVE" not in _OPERATIVE_CACHE:
+        _OPERATIVE_CACHE["OPERATIVE"] = _load_module("research00_traceability_operative", _TRACEABILITY).OPERATIVE
+    return _OPERATIVE_CACHE["OPERATIVE"]
+
+
+def operative_key(key: str, operative_map) -> str | None:
+    """The ``OPERATIVE`` decision an ``OLD_MEANINGS`` key's ``decision`` cites, or ``None``."""
+    cited = [c for c in re.findall(r"\bC\d{2}\b", OLD_MEANINGS[key].decision) if c in operative_map]
+    return cited[0] if cited else None
+
+
+#: S6: each census site with an AC7 string, as ``(path, census key, census excerpt, anchor)``. The block is
+#: the blank-line paragraph (``.md`` only) holding the anchor, which occurs exactly once in the file after
+#: ``normalize()``. The anchor is a label of that paragraph the site's fix leaves standing, not the
+#: census excerpt, which the fix removes. Several census rows in one paragraph share one anchor and so one
+#: row per string. Ordered as the rows are numbered (``__<n>`` per path and decision).
+PRESENCE_ANCHORS = (
+    (".claude/rules/project-domain-and-spec-fidelity.md", "C32-band-without-floor",
+     "±0.5·SD(ln rMSSD) smallest-worthwhile-change (SWC) band", "**HRV trend**"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C04-hole-at-least",
+     "capture hole of at least `GAP_RESET_DAYS", "**AC17 —"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C05-gate02-worse-rate-reopens",
+     "a worse rate triggers the deferred hysteresis decision", "**AC23 —"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C01-withhold-not-judgeable-only",
+     "not** judgeable but holds at least `MIN_WINDOW_READINGS", "**AC24 —"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C02-withhold-against-selected",
+     "later than every judged-week day of the selected dataset", "**AC24 —"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06-hrv-25-accepted-cost",
+     "Accepted because quality-first promotes", "| cost | direction and why it is accepted |"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "PRIN-15-C06-accepted-as-priced",
+     "Accepted because quality-first promotes the *best available* instrument",
+     "| cost | direction and why it is accepted |"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06-gate01-one-exception",
+     "save AC21's one counted exception", "| cost | direction and why it is accepted |"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C05-gate02-worse-rate-reopens",
+     "conditional`): `research/00` still says a worse rate *reopens* the decision and does not",
+     "**The withhold is retained, not retired (T158, AC24).**"),
+    ("spec-mirror/references/F006-dataset-model.md", "C06-hrv-25-accepted-cost",
+     "Accepted because quality-first promotes", "| cost | direction and why it is accepted |"),
+    ("spec-mirror/references/F006-dataset-model.md", "PRIN-15-C06-accepted-as-priced",
+     "Accepted because quality-first promotes the *best available* instrument",
+     "| cost | direction and why it is accepted |"),
+    ("spec-mirror/references/F006-dataset-model.md", "C06-gate01-one-exception",
+     "save AC21's one counted exception", "| cost | direction and why it is accepted |"),
+    ("spec-mirror/references/F006-dataset-model.md", "C05-gate02-worse-rate-reopens",
+     "Explicit hysteresis deferred**, now with a trigger it can actually fire",
+     "**Dataset key is the tier, not the device**"),
+    ("spec-mirror/references/F006-dataset-model.md", "C04-hole-at-least",
+     "at an internal hole of at least `GAP_RESET_DAYS", "**AC17 split into two mechanisms**"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "C32-band-without-floor",
+     "the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",
+     "**Confidence and the anti-mixing rule.**"),
+    ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
+     "up-regulation on weak evidence, which §1.7 forbids",
+     "**Either position on a baseline that is not yet established**"),
+    ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
+     "reading a genuinely suppressed week as normal (up-regulation on weak evidence",
+     "**Per-source baseline discipline (the anti-mixing rule).**"),
+    ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
+     "on both sides — up-regulation on weak evidence, which `research/00` §1.7 forbids",
+     "**Per-source baseline discipline (the anti-mixing rule).**"),
+    ("specification/spec/03-derived-metric-formulas.md", "C04-hole-at-least",
+     "an internal capture hole of at least `gap_reset_days` (`research/00`",
+     "**Graceful degradation across tiers, then unavailable.**"),
+    ("specification/spec/03-derived-metric-formulas.md", "C32-band-without-floor",
+     "±0.5·SD(ln rMSSD) smallest-worthwhile-change band",
+     "Section 3 delivers the system's own transparent metric layer"),
+    ("specification/spec/06-adaptation-logic.md", "C32-band-without-floor",
+     "±0.5·SD(ln rMSSD) smallest-worthwhile-change band", "**Morning HRV verdict**"),
+    ("specification/spec/06-adaptation-logic.md", "PRIN-14-C07-weak-evidence-only",
+     "would be up-regulation on weak evidence, the one direction `research/00` §1.7 forbids",
+     "The gate may **down-regulate freely"),
+    ("specification/spec_outline.md", "C32-band-without-floor",
+     "±0.5·SD(ln rMSSD) smallest-worthwhile-change band", "**Defines, each formula stated in full.**"),
+    ("specification/research/05-data-to-adaptation.md", "C32-band-without-floor",
+     "(default ± 0.5 × SD(ln rMSSD), the sample standard deviation", "**Morning ln rMSSD trend**"),
+    ("specification/research/05-data-to-adaptation.md", "C32-band-without-floor",
+     "Default:* ± 0.5·SD(ln rMSSD) — the sample SD", "**HRV-guided training rule — ADOPT.**"),
+)
+
+_C33_REASON = ("C33's prose and its EXCEPTIONS are F010's, not F011's (F011 Not in scope); this site is "
+               "hrv_trend.py (F009's, sheltered by EXCEPTIONS) and a .py block, which T201 does not build")
+_PINNED_REASON = ("a Pinned line is research/00's own rule-block field, and F009 replaces 'none (F009)'; "
+                  "no downstream prose states it, so the row could never pass")
+
+#: S6: what gets no presence row, as ``(path, decision, locator, string, reason)``. With string ``*`` the
+#: locator is a census excerpt and the whole census row is dropped; otherwise the locator is an anchor of
+#: ``PRESENCE_ANCHORS`` and only that string's row under it is dropped.
+DROPPED_PRESENCE_ROWS = (
+    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "C33",
+     "``D-7``. The constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15).", "*", _C33_REASON),
+    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "C33",
+     "constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15). 2.", "*", _C33_REASON),
+    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "C33",
+     "``D-7``. The constant is not published in ``thresholds`` ([[IDEA-070]],", "*", _C33_REASON),
+    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "C33",
+     "struck. The constant is not published in ``thresholds`` ([[IDEA-070]],", "*", _C33_REASON),
+    ("runcoach-api/tests/test_hrv_no_regression_gate.py", "C05",
+     'still reads "a worse rate **reopens** the deferred hysteresis decision",', "*",
+     "S6 gives this .py test comment its own absence row instead (test_no_regression_comment_drops_reopen)"),
+    ("specification/spec/03-derived-metric-formulas.md", "C04",
+     "an internal capture hole of at least `gap_reset_days` —", "*",
+     "S6: the site's paragraph (:238, 13.4k characters) already says 'more than' twice at HEAD, so the row "
+     "could not be red; the census row's absence check covers the site"),
+    ("specification/spec/03-derived-metric-formulas.md", "C32",
+     "a Section 3 heuristic default like every other constant here", "*",
+     "S6: the site's paragraph (:240) already states max(0.5 · SD(ln rMSSD), 0.01) at HEAD"),
+    ("specification/spec/03-derived-metric-formulas.md", "C38",
+     "they are left standing as the history of the reported reset", "*",
+     "DOC-09's strings ('only current rules', 'dated summary') govern research/00's own form; spec/03's "
+     "corrected history sentence has no reason to state them"),
+    ("specification/spec/06-adaptation-logic.md", "C06",
+     "or when the state estimate is low-confidence — the more conservative reading wins", "*",
+     "the key's old meaning is PRIN-05's unscoped conservative-wins; its correct statement is PRIN-05's "
+     "scope (HRV-14's fidelity rank decides between datasets), which carries none of PRIN-15's strings"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "| cost | direction and why it is accepted |",
+     "DEFERRED_EXCEPTION", "S6: already in the Negative Class table at HEAD"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "| cost | direction and why it is accepted |",
+     "IDEA-087", "S6: already in the Negative Class table at HEAD"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "| cost | direction and why it is accepted |",
+     "Pinned: none (F009)", _PINNED_REASON),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
+     "DEFERRED_EXCEPTION", "S6: already in the cost table at HEAD"),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
+     "IDEA-087", "S6: already in the cost table at HEAD"),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
+     "Pinned: none (F009)", _PINNED_REASON),
+)
+
+
+@dataclass(frozen=True)
+class PresenceRow:
+    """One S6 row: the paragraph holding ``anchor`` in ``path`` states ``string`` after ``normalize()``.
+    ``key`` is the ``OPERATIVE`` decision; ``census_keys`` are the census rows' keys it stands for."""
+    path: str
+    key: str
+    anchor: str
+    string: str
+    census_keys: tuple[str, ...]
+    n: int
+
+    @property
+    def ident(self) -> str:
+        return site_id(self.path, self.key, self.n)
+
+
+def presence_plan(rows, operative_map, anchors=PRESENCE_ANCHORS, dropped=DROPPED_PRESENCE_ROWS):
+    """``(presence rows, errors)``. Every non-``narrowed`` census row whose key cites an ``OPERATIVE``
+    decision is anchored or dropped whole, never both and never neither; every anchor and drop entry is
+    used; and only ``.md`` paths get a row."""
+    errors: list[str] = []
+    ops = {}
+    for site in census_sites(rows, narrowed=False):
+        op = operative_key(site.key, operative_map)
+        if op is not None:
+            ops[(site.path, site.key, normalize(site.excerpt))] = op
+    whole = {(p, d, normalize(loc)) for p, d, loc, s, _r in dropped if s == "*"}
+    strings = {(p, d, normalize(loc), normalize(s)) for p, d, loc, s, _r in dropped if s != "*"}
+    used = set()
+    anchored = set()
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    for path, key, excerpt, anchor in anchors:
+        ident = (path, key, normalize(excerpt))
+        if ident not in ops:
+            errors.append(f"anchor entry {path} {key} {excerpt!r}: no census row cites an OPERATIVE decision")
+            continue
+        anchored.add(ident)
+        if not path.endswith(".md"):
+            errors.append(f"{path} {key}: a presence row needs a .md block (T201 returns BLOCKED)")
+            continue
+        keys = groups.setdefault((path, ops[ident], anchor), [])
+        if key not in keys:
+            keys.append(key)
+    for (path, key, excerpt), op in ops.items():
+        if (path, op, excerpt) in whole:
+            used.add(("*", path, op, excerpt))
+            if (path, key, excerpt) in anchored:
+                errors.append(f"{path} {key} {excerpt!r}: both anchored and dropped")
+        elif (path, key, excerpt) not in anchored:
+            errors.append(f"{path} {key} ({op}) {excerpt!r}: census site with no presence row and no drop")
+    result: list[PresenceRow] = []
+    counts: dict[tuple[str, str], int] = {}
+    for (path, op, anchor), keys in groups.items():
+        for string in operative_map[op][1]:
+            if (path, op, normalize(anchor), normalize(string)) in strings:
+                used.add((normalize(string), path, op, normalize(anchor)))
+                continue
+            counts[(path, op)] = counts.get((path, op), 0) + 1
+            result.append(PresenceRow(path, op, anchor, string, tuple(keys), counts[(path, op)]))
+    for p, d, loc, s, _r in dropped:
+        mark = ("*" if s == "*" else normalize(s), p, d, normalize(loc))
+        if mark not in used:
+            errors.append(f"DROPPED_PRESENCE_ROWS {p} {d} {loc!r} {s!r}: drops nothing")
+    return result, errors
+
+
+def presence_block(path: str, anchor: str, repo_root: Path = _REPO_ROOT) -> tuple[str, str | None]:
+    """``(state, block)``: the raw blank-line paragraph holding ``anchor``'s one occurrence (after
+    ``normalize()``), or a state naming why there is none -- ``no file``, ``anchor missing`` or
+    ``anchor ambiguous``."""
+    full = repo_root / path
+    if not full.is_file():
+        return "no file", None
+    raw = full.read_text(encoding="utf-8")
+    text, offsets = gate_text(path, raw)
+    found = [m.start() for m in re.finditer(re.escape(normalize(anchor)), text)]
+    if len(found) != 1:
+        return ("anchor missing" if not found else "anchor ambiguous"), None
+    at = offsets[found[0]]
+    for a, b in _paragraphs(raw, _fenced_blocks(raw)):
+        if a <= at < b:
+            return "ok", raw[a:b]
+    return "anchor missing", None
+
+
+def presence_state(row: PresenceRow, repo_root: Path = _REPO_ROOT) -> str:
+    """``present`` when the anchor's block states the row's string after ``normalize()``; ``absent`` when
+    it does not; otherwise ``presence_block``'s state."""
+    state, block = presence_block(row.path, row.anchor, repo_root)
+    if block is None:
+        return state
+    return "present" if normalize(row.string) in normalize(block) else "absent"
+
+
+def _pending_marks(pairs, pending=None) -> tuple:
+    """S15: a strict xfail naming the task(s) whose pending file covers one of ``pairs`` (``(path,
+    census key)``) under an ``OWNERSHIP`` owner; none otherwise."""
+    pending = read_pending() if pending is None else pending
+    tasks = sorted({task for path, key in pairs for task, rows in pending.items()
+                    if ((path, key) in rows or (path, "*") in rows) and owners_of(path, key)})
+    if not tasks:
+        return ()
+    verb = "fixes" if len(tasks) == 1 else "fix"
+    return (pytest.mark.xfail(strict=True, reason=f"{', '.join(tasks)} {verb} these sites"),)
+
+
+def _presence_params(rows=None, pending=None):
+    rows = _read_census_or_empty() if rows is None else rows
+    plan, _errors = presence_plan(rows, operative())
+    return [pytest.param(row, id=row.ident, marks=_pending_marks([(row.path, k) for k in row.census_keys], pending))
+            for row in plan] or [pytest.param(None, id="no_presence_rows")]
+
+
+def red_presence_sites(rows) -> list[tuple[str, str]]:
+    """``(path, census key)`` of every presence row not yet ``present`` (S15's stale-row check)."""
+    plan, _errors = presence_plan(rows, operative())
+    return [(r.path, k) for r in plan if presence_state(r) != "present" for k in r.census_keys]
+
+
+def _marked(marks):
+    def decorate(func):
+        for mark in marks:
+            func = mark(func)
+        return func
+    return decorate
+
+
+@pytest.mark.parametrize("row", _presence_params())
+def test_presence_row(row):
+    """F011 AC2 and S6: the site's block states its rule's F008 AC7 operative string after ``normalize()``.
+    Each row is red (a strict xfail under its site task's pending file) until that site is edited."""
+    assert row is not None, "no presence rows: the census or PRESENCE_ANCHORS is empty"
+    state, block = presence_block(row.path, row.anchor)
+    head = normalize(block)[:80] if block else None
+    print(f"[slice compared] {row.path} block at {row.anchor!r} ({state}; {len(block or '')} chars, "
+          f"starts {head!r}) for {row.string!r}")
+    assert presence_state(row) == "present", (
+        f"{row.path}: the block at {row.anchor!r} does not state {row.key}'s {row.string!r} ({state}); "
+        f"census rows {list(row.census_keys)}, planned owner {sorted(owners_of(row.path, row.census_keys[0]))}")
+
+
+def test_presence_rows_account_for_every_operative_census_site():
+    """S6: each census site whose key cites an ``OPERATIVE`` decision has rows or a reasoned drop; only
+    ``.md`` blocks are built; and the decisions with rows are the ones T201 names (C33 and C38 are
+    dropped with reasons)."""
+    rows = read_census()
+    operative_map = operative()
+    plan, errors = presence_plan(rows, operative_map)
+    for row in plan:
+        print(f"  {row.ident}: {row.string!r} at {row.anchor!r} for {list(row.census_keys)}")
+    for p, d, loc, s, reason in DROPPED_PRESENCE_ROWS:
+        print(f"  dropped: {p} {d} {s!r} at {loc!r} -- {reason}")
+    keys = sorted({r.key for r in plan})
+    print(f"[slice compared] OPERATIVE {sorted(operative_map)}; {len(plan)} presence rows over {keys}; "
+          f"{len(DROPPED_PRESENCE_ROWS)} drops; errors {errors}")
+    assert errors == []
+    assert keys == ["C01", "C02", "C04", "C05", "C06", "C07", "C32"]
+    assert all(r.path.endswith(".md") for r in plan)
+
+
+def test_presence_anchors_resolve_to_one_paragraph_each():
+    """Each anchor occurs exactly once in its file and lies in a paragraph, before and after its site's
+    edit: an anchor lost to an edit would otherwise hide inside a strict xfail as a red row."""
+    states = {(p, a): presence_block(p, a)[0] for p, _k, _e, a in PRESENCE_ANCHORS}
+    print(f"[slice compared] {len(states)} anchors: {sorted(set(states.values()))}; "
+          f"not ok {[k for k, s in states.items() if s != 'ok']}")
+    assert all(s == "ok" for s in states.values())
+
+
+def test_presence_row_is_red_without_its_string_in_the_anchor_block(tmp_path):
+    """S6 in a planted world: the string outside the anchor's paragraph is red; inside it, whatever its
+    case and wrapping, it is green; a lost or doubled anchor is red and says so."""
+    rel = "specification/spec/99-site.md"
+    row = PresenceRow(rel, "C05", "**AC23 —", "MUST NOT add hysteresis", ("C05-gate02-worse-rate-reopens",), 1)
+    cases = {
+        "elsewhere": "**AC23 — flip rate.** A worse rate triggers the deferred decision.\n\nThe system MUST NOT add hysteresis.\n",
+        "in block": "**AC23 — flip rate.** The system must not add\r\nhysteresis to selection.\r\n\r\nOther.\r\n",
+        "no anchor": "**AC22 — flip rate.** The system MUST NOT add hysteresis.\n",
+        "two anchors": "**AC23 — a.** MUST NOT add hysteresis.\n\n**AC23 — b.**\n",
+    }
+    verdicts = {}
+    (tmp_path / rel).parent.mkdir(parents=True)
+    for name, body in cases.items():
+        (tmp_path / rel).write_bytes(body.encode("utf-8"))  # bytes as written: the CRLF case stays CRLF
+        verdicts[name] = presence_state(row, tmp_path)
+    print(f"[slice compared] {verdicts}")
+    assert verdicts == {"elsewhere": "absent", "in block": "present", "no anchor": "anchor missing",
+                        "two anchors": "anchor ambiguous"}
+
+
+def test_presence_plan_rejects_an_unaccounted_site_a_dead_entry_and_a_py_block():
+    """``presence_plan`` on a census of its own: a site with no anchor and no drop, an anchor naming no
+    census row, a drop that drops nothing and a ``.py`` anchor each produce one error."""
+    op = {"C05": ("GATE-02", ("MUST NOT add hysteresis",))}
+    key = "C05-gate02-worse-rate-reopens"
+    md, py = "specification/spec/99-a.md", "runcoach-api/src/runcoach_api/planted.py"
+    rows = [{"key": key, "path": md, "excerpt": "x one", "source": "loose"},
+            {"key": key, "path": py, "excerpt": "x two", "source": "loose"}]
+    good_anchors = ((md, key, "x one", "**A —"),)
+    good_drops = ((py, "C05", "x two", "*", "a .py site"),)
+    cases = {
+        "good": (good_anchors, good_drops),
+        "unaccounted": (good_anchors, ()),
+        "dead anchor": (good_anchors + ((md, key, "x three", "**B —"),), good_drops),
+        "dead drop": (good_anchors, good_drops + ((md, "C05", "**A —", "other", "r"),)),
+        "py block": (good_anchors + ((py, key, "x two", "# A"),), ()),
+    }
+    verdicts = {name: presence_plan(rows, op, a, d) for name, (a, d) in cases.items()}
+    print(f"[slice compared] {[(n, [r.ident for r in v[0]], v[1]) for n, v in verdicts.items()]}")
+    plan, errors = verdicts.pop("good")
+    assert errors == [] and [r.ident for r in plan] == [site_id(md, "C05", 1)]
+    assert all(len(errors) == 1 for _plan, errors in verdicts.values()), verdicts
+
+
+_DECISIONS_01 = "specification/decisions/01-"
+
+
+def _decisions_01_pairs():
+    return [(Path(r["path"]).as_posix(), r["key"]) for r in _read_census_or_empty()
+            if r["path"].startswith(_DECISIONS_01)]
+
+
+@_marked(_pending_marks(_decisions_01_pairs()))
+def test_decisions_01_conforms():
+    """S9 as amended: AC1's sweep restricted to decisions/01 finds no live hit, and every decisions/01
+    census row is cleared (zero hits alone holds today and proves nothing: its sites are manual rows)."""
+    files = [p for p in live_files(_REPO_ROOT)["decisions"] if p.startswith(_DECISIONS_01)]
+    hits = [h for h in real_scan() if h.path.startswith(_DECISIONS_01) and h.live]
+    sites = [s for s in census_sites(read_census(), narrowed=False) if s.path.startswith(_DECISIONS_01)]
+    states = {s.ident: census_state(s.row()) for s in sites}
+    print(f"[slice compared] {files}: live hits {[h.ident for h in hits]}; census rows {states}")
+    assert files and sites
+    assert hits == []
+    assert all(state in ("gone", "sheltered") for state in states.values()), states
+
+
+_NO_REGRESSION = "runcoach-api/tests/test_hrv_no_regression_gate.py"
+#: The comment block S6 names is the ``#`` run directly above this assignment (it was :267 at HEAD).
+_NO_REGRESSION_ANCHOR = "AC23_METRIC = "
+_REOPEN = re.compile(r"re-?\s*open", re.IGNORECASE)
+
+
+def comment_block_above(raw: str, anchor: str) -> str | None:
+    """The contiguous ``#`` lines directly above the first line that starts with ``anchor``, with their
+    comment markers removed and joined by ``normalize()``; ``None`` without the anchor or the comment."""
+    lines = raw.splitlines()
+    at = next((i for i, line in enumerate(lines) if line.startswith(anchor)), None)
+    if at is None:
+        return None
+    start = at
+    while start > 0 and lines[start - 1].lstrip().startswith("#"):
+        start -= 1
+    if start == at:
+        return None
+    return normalize(_WRAPPED_COMMENT.sub("", "\n".join(lines[start:at])))
+
+
+@_marked(_pending_marks([(_NO_REGRESSION, "C05-gate02-worse-rate-reopens")]))
+def test_no_regression_comment_drops_reopen():
+    """S6 and AC2: the no_regression gate's AC23 comment no longer says the decision "reopens" -- no
+    ``re-?open`` in any case, so "re-opens" and "reopen" are red too."""
+    block = comment_block_above((_REPO_ROOT / _NO_REGRESSION).read_text(encoding="utf-8"), _NO_REGRESSION_ANCHOR)
+    found = [m.group(0) for m in _REOPEN.finditer(block or "")]
+    print(f"[slice compared] {_NO_REGRESSION} comment above {_NO_REGRESSION_ANCHOR!r}: "
+          f"{len(block or '')} chars; re-?open matches {found}")
+    assert block, f"no comment block above {_NO_REGRESSION_ANCHOR!r} in {_NO_REGRESSION}"
+    assert found == []
+
+
+def test_no_regression_comment_matcher_catches_each_spelling():
+    """The absence row's matcher: every spelling of "reopen" inside the block is red, a wrapped one too;
+    the same word below the anchor, or a comment with none, is not."""
+    def matches(comment: str) -> list[str]:
+        raw = f"X = 1\n\n{comment}\n{_NO_REGRESSION_ANCHOR}\"walk_flips\"\n# reopens, below the anchor\n"
+        return [m.group(0) for m in _REOPEN.finditer(comment_block_above(raw, _NO_REGRESSION_ANCHOR) or "")]
+    cases = {"reopens": "#: a worse rate reopens it", "Re-opens": "#: a worse rate Re-opens it",
+             "REOPEN": "# REOPEN", "wrapped": "#: a worse rate re-\n#: opens it",
+             "clean": "#: the system MUST NOT add hysteresis"}
+    verdicts = {name: matches(comment) for name, comment in cases.items()}
+    print(f"[slice compared] {verdicts}")
+    assert verdicts.pop("clean") == []
+    assert all(len(found) == 1 for found in verdicts.values()), verdicts
+    assert comment_block_above("X = 1\nAC23_METRIC = 1\n", _NO_REGRESSION_ANCHOR) is None
