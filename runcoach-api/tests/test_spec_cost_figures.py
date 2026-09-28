@@ -210,7 +210,7 @@ SITES = (
     Site(
         label="spec/03 3.7.3",
         rel="specification/spec/03-derived-metric-formulas.md",
-        lead="it was reachable after every baseline re-establishment this section performs",
+        lead="it was reachable after every coverage-gap reset this section performs",
     ),
 )
 
