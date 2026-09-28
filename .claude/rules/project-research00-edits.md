@@ -40,7 +40,7 @@ F011 edit these files through this procedure.
    Rounds heading, after the last round and before the Final line, and it rewrites the Final line.
    The paragraph is one line, never wrapped: only the line that begins with its name is read for
    labels, and a second line breaks the review's shape (`review_shape_errors`). Its name is a plain
-   number above every earlier round's, so the next round after round 10 is 11, never 08 or 10b
+   number above every earlier round's, so the next round after round 11 is 12, never 012 or 11b
    (3b and 4b are the only lettered rounds). It names every changed row, and says "removed" and
    the label before each removed row. The builder never edits the meaning review.
 4. **Regenerate only the changed non-verdict literals**, plus `REVIEW_LINE_SHA256`,
@@ -107,9 +107,8 @@ base's three literals in place of this file's. For each literal it prints what c
 base, by key or position and never by value, and whether this file's literal is the derived one.
 It prints a line beginning `# difference:` for each of these, and exits 1 if there is one: a
 problem in the derivation; a literal that is not the derived one (routes 1 to 3, route 3 in one
-step or two);
-`INVENTORY_SENTENCE_SHA256` changed at all; and `REVIEW_PROSE_SHA256` moved other than as a
-legitimate round moves it (route 4). The change is approved only when it ends with
+step or two); `INVENTORY_SENTENCE_SHA256` changed at all; and `REVIEW_PROSE_SHA256` moved other
+than as a legitimate round moves it (route 4). The change is approved only when it ends with
 `# differences: none`. A legitimate round gives:
 
 - `REVIEW_LINE_SHA256`: changed or added entries only for rows whose verdict line's reason begins
