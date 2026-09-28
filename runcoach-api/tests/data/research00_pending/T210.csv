@@ -1,4 +1,0 @@
-path,key
-contracts/openapi.yaml,*
-runcoach-api/src/runcoach_api/schemas.py,*
-runcoach-api/src/runcoach_api/main.py,*

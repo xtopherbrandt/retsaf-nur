@@ -515,8 +515,10 @@ def _disagreed_with(
 
     Only the *claim* is withheld. ``selected_dataset`` and ``selected_reason``
     are kept as computed, for ``_withhold_future``'s own stated reason:
-    everything that **produced** the verdict is left alone so the response
-    stays reproducible by hand (``research/00`` 1.6), and those two identify
+    everything that **produced** the verdict is left alone, so the response
+    keeps what ``research/00`` PRIN-12 asks a verdict to be reproduced from by
+    hand (the inputs it does not serve are PRIN-24's OPEN exceptions, owned by
+    IDEA-102), and those two identify
     which dataset the retained ``baseline``/``band`` came from. They are
     producers, not claims. ``datasets[]`` is kept for the same reason and
     keeps the day's state legible: every dataset's own ``below`` is still

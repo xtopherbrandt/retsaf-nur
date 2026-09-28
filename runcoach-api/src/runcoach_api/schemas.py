@@ -105,7 +105,8 @@ class Baseline(BaseModel):
     )
     reset_on: datetime.date | None = Field(
         description=(
-            "Local day the current baseline era began, **when the re-establishment is reported**; else "
+            "Local day the current baseline era began, **when the reset that began it is reported** "
+            "(see `reset_reason`); else "
             "null. It says what the athlete is told, not how `window` was built: a tier-change era "
             "boundary clips `window` whenever it exists, and is reported here only when the other tier "
             "was also not in use in the judged week [date-6, date]. So a null reset_on does not mean the "
@@ -120,9 +121,10 @@ class Baseline(BaseModel):
     )
     reset_reason: Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE] | None = Field(
         description=(
-            "Why the baseline was re-established: more than gap_reset_days consecutive local days with no "
-            "entry in the post-exclusion series (`coverage_gap`), or a sustained source-tier change "
-            "(`tier_change`). Null when nothing reset. A timezone change is never a reset. Each report has "
+            "Why the current baseline era's reset is reported: more than gap_reset_days consecutive local "
+            "days with no entry in the post-exclusion series (`coverage_gap`, the only reset that "
+            "re-establishes a baseline), or a sustained source-tier change (`tier_change`, an era "
+            "boundary that re-establishes none; research/00 HRV-34). Null when nothing reset. A timezone change is never a reset. Each report has "
             "a lifetime: `coverage_gap` is reported from the resumption until the resumption leaves "
             "[date-66, date] -- 67 days; `tier_change` for at most as long as the previous window "
             "[date-126, date-67] stays sustained by a tier other than the resolved one, and often for "
@@ -294,13 +296,14 @@ class DatasetSummary(BaseModel):
     fidelity_rank: int = Field(
         description=(
             "This tier's ordinal in the source hierarchy spec 03 3.7.1 ratifies, 0 being the "
-            "highest: a chest-strap RR capture this system reduces to rMSSD itself, degrading -- "
-            "at reduced confidence -- to a device-computed numeric resting rMSSD. **This is the "
+            "highest: a chest-strap RR capture this system reduces to rMSSD itself, degrading to a "
+            "device-computed numeric resting rMSSD, which research/00 HRV-04 admits at reduced "
+            "fidelity: this ordinal rank. **This is the "
             "sense of quality that arbitrates**: selection promotes the lowest rank among the "
             "judgeable datasets, so `selected_reason` is recomputable by hand from this field "
             "beside `established`, `week_days` and `last_read` (research/00 1.6). The *other* "
-            "sense -- the numeric per-tier **confidence weight** at which 3.7.1 admits the numeric "
-            "tiers -- is deliberately **not** here: 3.7.4 computes no confidence weight in this "
+            "sense -- a numeric per-tier **confidence weight**, at which HRV-04 never admits the "
+            "numeric tiers -- is deliberately **not** here: 3.7.4 computes no confidence weight in this "
             "section and defers the weighting to the readiness fusion of Section 6, so emitting "
             "one would mint a constant Section 3 does not own. Keeping the two apart is what "
             "prevents a recency-against-quality exchange rate from existing."
@@ -348,7 +351,7 @@ class DatasetSummary(BaseModel):
     )
     reset_on: datetime.date | None = Field(
         description=(
-            "This dataset's **own** reported re-establishment day, decided per dataset (F006 AC17, "
+            "This dataset's **own** reported reset day, decided per dataset (F006 AC17, "
             "T154): the global coverage gap's resumption when one fired -- the same on every "
             "dataset, since a gap measures the silence of the series as a whole -- else this "
             "dataset's own era boundary when that is reported, else null. `baseline.reset_on` is "
@@ -358,7 +361,7 @@ class DatasetSummary(BaseModel):
     )
     reset_reason: Literal[hrv_trend.REASON_COVERAGE_GAP, hrv_trend.REASON_TIER_CHANGE] | None = Field(
         description=(
-            "Why this dataset's re-establishment is reported, with the same meanings as "
+            "Why this dataset's reset is reported, with the same meanings as "
             "`baseline.reset_reason` and the same caveat: the report is not the clip. A dataset's "
             "baseline window is clipped by its era boundary whether or not the change is reported, "
             "and by an internal capture hole of more than gap_reset_days silent local days, which "
@@ -406,8 +409,9 @@ class HrvTrendResponse(BaseModel):
             "7-day mean sits: strictly below band.lo is hrv_suppressed, inside or above the band is "
             "hrv_normal. hrv_unavailable has six causes, and the response names which of them fired; "
             "judge evaluates them in this order and reports the first: when no resting-HRV reading of any "
-            'tier can sustain a trend -- the structural case, resolve_baseline_tier answering "no tier at '
-            'all"; when there are fewer than two baseline readings, so no band exists; when there are '
+            "tier can sustain a trend -- the structural case, the series holding no per-tier dataset: no "
+            "reading of any tier in [date-66, date] after the coverage-gap clip; when there are fewer "
+            "than two baseline readings, so no band exists; when there are "
             "fewer than min_window_readings (3) readings of baseline.tier in the judged week; when the "
             "judged week is not a fair sample of the dataset being judged, its readings all predating the "
             "athlete's return to, or first adoption of, another device (T125/T132); when there is a "
@@ -440,7 +444,8 @@ class HrvTrendResponse(BaseModel):
             "Negative Class row 'the verdict still cannot say why it is unavailable', closed by "
             "T137). `judge` evaluates four causes in a fixed order and reports the first that fires: "
             f"`{hrv_trend.REASON_NO_TIER}` (no resting-HRV reading of any tier can sustain a trend -- "
-            f"resolve_baseline_tier answered 'no tier at all') or `{hrv_trend.REASON_NO_BAND}` (a tier "
+            "the series holds no per-tier dataset: no reading of any tier in [date-66, date] after the "
+            f"coverage-gap clip) or `{hrv_trend.REASON_NO_BAND}` (a tier "
             "resolved, but its baseline holds fewer than two readings, so no band exists -- "
             "build_band answers null on fewer than two baseline readings, so no band exists to judge "
             f"the week against) whenever `band` is null; then `{hrv_trend.REASON_WEEK_TOO_THIN}` "
@@ -526,9 +531,12 @@ class HrvTrendResponse(BaseModel):
             "it. `disagreed_with` is empty there for the converse reason. Null when no dataset was "
             "selected, which is *either* that no dataset is "
             "judgeable *or* that every judgeable one was skipped as stale. In that case the "
-            "verdict is hrv_unavailable and `baseline`/`band` are still populated, from the "
-            "dataset the athlete was read on last (AC9's presentation fallback, F005's rule 3 "
-            "retained), so every field non-nullable before F006 still carries a value and this "
+            "verdict is hrv_unavailable and `baseline`/`band` are still populated, for presentation "
+            "only, from the dataset the presentation fallback names (AC9, F005's rule 3 retained; "
+            "research/00 HRV-24, HRV-59): the established dataset read last in the baseline window, "
+            "ties by `n` then fidelity; with none established, the densest by `n`; with no baseline "
+            "reading of any tier, the densest in the judged week, ties to fidelity throughout. So "
+            "every field non-nullable before F006 still carries a value and this "
             "addition stays additive (AC12). **The fallback presents; it never judges** -- no "
             "verdict is conferred by it, and `disagreed_with` is empty there even when the "
             "presented dataset's own week reads below its band, because a disagreement is with a "

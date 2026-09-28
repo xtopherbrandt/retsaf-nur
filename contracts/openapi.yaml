@@ -1412,8 +1412,9 @@ components:
             hrv_normal. hrv_unavailable has six causes, and the response names
             which of them fired; judge evaluates them in this order and reports
             the first: when no resting-HRV reading of any tier can sustain a trend
-            -- the structural case, resolve_baseline_tier answering "no tier at
-            all"; when there are fewer than two baseline readings, so no band
+            -- the structural case, the series holding no per-tier dataset: no
+            reading of any tier in [date-66, date] after the coverage-gap clip;
+            when there are fewer than two baseline readings, so no band
             exists; when there are fewer than min_window_readings (3) readings of
             baseline.tier in the judged week; when the judged week is not a fair
             sample of the dataset being judged, its readings all predating the athlete's
@@ -1448,7 +1449,8 @@ components:
             is unavailable", open since review cycle 4). judge evaluates four
             causes in a fixed order and reports the first that fires:
             no_tier_sustains_a_trend (no resting-HRV reading of any tier can
-            sustain a trend -- resolve_baseline_tier answered "no tier at all") or
+            sustain a trend -- the series holds no per-tier dataset: no reading
+            of any tier in [date-66, date] after the coverage-gap clip) or
             no_band (a tier resolved, but its baseline holds fewer than two
             readings, so no band exists -- build_band answers null on fewer than
             two baseline readings, so no band exists to judge the week against)
@@ -1525,8 +1527,8 @@ components:
               format: date
               nullable: true
               description: >
-                The day the current baseline era began, when the re-establishment
-                is reported. It says what the athlete is told, not how window was
+                The day the current baseline era began, when the reset that began
+                it is reported (see reset_reason). It says what the athlete is told, not how window was
                 built — a null reset_on does not mean the baseline spans the full
                 60 days; read window.
             reset_reason:
@@ -1534,7 +1536,9 @@ components:
               enum: [coverage_gap, tier_change]
               nullable: true
               description: >
-                Why the re-establishment is reported. The baseline clip is decided by the
+                Why the current baseline era's reset is reported: coverage_gap, the
+                only reset that re-establishes a baseline, or tier_change, an era
+                boundary that re-establishes none (research/00 HRV-34). The baseline clip is decided by the
                 era boundary alone, never by its report, so a null here can sit beside a
                 clipped `window`; and a third clip, per dataset and unreported, widens that
                 state: each dataset is also clipped at its last internal capture hole of
@@ -1678,14 +1682,15 @@ components:
                 description: >
                   This tier's ordinal in the source hierarchy spec/03 §3.7.1
                   ratifies, 0 being the highest: a chest-strap RR capture this
-                  system reduces to rMSSD itself, degrading — at reduced
-                  confidence — to a device-computed numeric resting rMSSD.
+                  system reduces to rMSSD itself, degrading to a
+                  device-computed numeric resting rMSSD, which research/00
+                  HRV-04 admits at reduced fidelity: this ordinal rank.
                   THIS is the sense of quality that arbitrates; selection
                   promotes the lowest rank among the judgeable datasets, so
                   `selected_reason` is recomputable by hand from this field
                   beside `established`, `week_days` and `last_read`. The other
-                  sense — the numeric per-tier CONFIDENCE WEIGHT at which
-                  §3.7.1 admits the numeric tiers — is deliberately not here:
+                  sense — a numeric per-tier CONFIDENCE WEIGHT, at which
+                  HRV-04 never admits the numeric tiers — is deliberately not here:
                   §3.7.4 computes no confidence weight in Section 3 and defers
                   the weighting to Section 6's readiness fusion, so emitting
                   one would mint a constant Section 3 does not own.
@@ -1737,7 +1742,7 @@ components:
                 format: date
                 nullable: true
                 description: >
-                  This dataset's OWN reported re-establishment day, decided per
+                  This dataset's OWN reported reset day, decided per
                   dataset (AC17): the global coverage gap's resumption when one
                   fired — the same on every dataset, since a gap measures the
                   silence of the series as a whole — else this dataset's own era
@@ -1749,7 +1754,7 @@ components:
                 enum: [coverage_gap, tier_change]
                 nullable: true
                 description: >
-                  Why this dataset's re-establishment is reported, with the same
+                  Why this dataset's reset is reported, with the same
                   meanings as `baseline.reset_reason` and the same caveat: the
                   report is not the clip. A dataset's baseline window is clipped
                   by its era boundary whether or not the change is reported, and
@@ -1776,9 +1781,13 @@ components:
             `disagreed_with` is empty there for the converse reason. Null when no dataset was
             selected, which is EITHER that no dataset is judgeable OR that every
             judgeable one was skipped as stale. In that case the verdict is
-            hrv_unavailable and `baseline`/`band` are still populated, from the
-            dataset the athlete was read on last (AC9's presentation fallback,
-            F005's rule 3 retained), so every field non-nullable before F006
+            hrv_unavailable and `baseline`/`band` are still populated, for
+            presentation only, from the dataset the presentation fallback names
+            (AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59): the
+            established dataset read last in the baseline window, ties by `n`
+            then fidelity; with none established, the densest by `n`; with no
+            baseline reading of any tier, the densest in the judged week, ties
+            to fidelity throughout. So every field non-nullable before F006
             still carries a value and this addition stays additive (AC12). The
             fallback PRESENTS; it never judges — no verdict is conferred by it,
             and `disagreed_with` is empty there even when the presented
