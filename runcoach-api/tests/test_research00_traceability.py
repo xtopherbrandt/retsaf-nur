@@ -22,6 +22,7 @@ committed tests: CI has no data dir, so every fact taken from them is frozen her
 """
 
 import ast
+import difflib
 import hashlib
 import importlib.util
 import json
@@ -1031,8 +1032,9 @@ HISTORY_SHA256 = {
 #: ``REVIEW_PROSE_SHA256`` (S3): the review file's lines outside its tables, in order (the title, the
 #: opening paragraph, the three group headings and the Glossary's, ``## Rounds``, its ``Round N:``
 #: paragraphs and the Final line), one digest each. Asserted by ``review_line_errors``, which names the
-#: first line that differs; a new round adds its entry before Final's and changes Final's (regenerated
-#: through ``frozen_literals()`` at T192 for round 7, at T194 for rounds 8 and 9).
+#: first line that differs; each new round adds its entry before Final's and changes Final's (regenerated
+#: through ``frozen_literals()`` at T192 for round 7, at T194 for rounds 8 and 9, and in review cycle 2
+#: for round 10).
 REVIEW_PROSE_SHA256 = (
     "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
@@ -1081,9 +1083,11 @@ _FROZEN_ROUNDS_PIN = {
 #: and reason together, keyed by its row (one per ``required_review_rows`` row: the rule rows, then T-01 to
 #: T-33, added at T192 step C1 from round 6). ``review_errors`` caught a flipped verdict, not a reason:
 #: PRIN-01's rewritten to "Not reviewed." stayed green. It also makes an edit to a verdict line's digest
-#: cell visible when the verdict and reason stay (T192). A new round updates these digests deliberately,
-#: and only for the rows that round names (``review_line_literal``); the verdict line's own digest cell is
-#: what binds the text. Asserted both ways by ``review_line_errors``.
+#: cell visible when the verdict and reason stay (T192). A new round updates these digests deliberately
+#: (``review_line_literal``): a changed or added entry only for a row whose verdict line's reason begins
+#: with that round's ``Round N:`` and whose paragraph names the row (``_rejudged``), and a dropped entry
+#: only for a row the paragraph says "removed <row>" of (``round_removals``); the verdict line's own
+#: digest cell is what binds the text. Asserted both ways by ``review_line_errors``.
 REVIEW_LINE_SHA256 = {
     "PRIN-01": "02d5c6065e90",
     "PRIN-01/Scope": "69d7dc23734b",
@@ -5266,7 +5270,8 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
     round re-opens nothing and reds on its own (``frozen_round_errors``); a changed or added verdict line
     counts as re-judged only when its reason begins ``Round N:`` for an unfrozen round N whose paragraph
     names the row (S2), so a round that mentions a row in passing does not clear a pasted digest cell;
-    and a frozen row whose verdict line is gone reds unless an unfrozen round names it (M1).
+    and a frozen row whose verdict line is gone reds unless an unfrozen round says "removed <row>" (M1;
+    iteration 2: a passing mention of the row no longer counts, ``round_removals``).
     ``review_line_literal`` regenerates ``REVIEW_LINE_SHA256`` with the same rule, so regenerating the
     literal clears only a row a critic's new round re-judged, or names as removed."""
     frozen = REVIEW_LINE_SHA256 if frozen is None else frozen
@@ -5283,7 +5288,7 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
                 f"round N under ## Rounds that is not in FROZEN_ROUNDS ({names}) and names {row}: only a critic "
                 f"round changes a verdict line (R7)") if row in present else
                (f"[frozen-review] {row}: its verdict line was removed and no round under ## Rounds that is not in "
-                f"FROZEN_ROUNDS ({names}) names {row}: only a critic round removes a verdict line (R7)")
+                f"FROZEN_ROUNDS ({names}) says 'removed {row}': only a critic round removes a verdict line (R7)")
                for row in unnamed]
     errors += frozen_round_errors(review_text, frozen_rounds)
     have = tuple(_cell_digest(line) for line in prose)
@@ -5298,9 +5303,12 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
 
 _ROUND_LINE = re.compile(r"^Round (?P<name>\d+[a-z]?): ")
 #: A review row named in a round's prose: a rule ID with an optional ``/Scope``, ``/Not`` or ``/Why``, or a
-#: T-NN; ``<A> to <B>`` with one prefix names every plain ID from A to B (Round 6's "T-01 to T-33").
-_ROUND_LABEL = re.compile(rf"\b(?:(?:{_P})-\d{{2,3}}(?:/(?:Scope|Not|Why)\b)?|T-\d{{2}})")
+#: T-NN; ``<A> to <B>`` with one prefix names every plain ID from A to B (Round 6's "T-01 to T-33"). No
+#: label is followed by a digit (review cycle 2, iteration 2), so "T-110" names no T-11.
+_ROUND_LABEL = re.compile(rf"\b(?:(?:{_P})-\d{{2,3}}(?!\d)(?:/(?:Scope|Not|Why)\b)?|T-\d{{2}}(?!\d))")
 _ROUND_RANGE = re.compile(rf"\b(?P<prefix>{_P}|T)-(?P<a>\d{{2,3}}) to (?P=prefix)-(?P<b>\d{{2,3}})\b")
+#: A row a round removes (review cycle 2, iteration 2): "removed " and the row's label, each label its own.
+_ROUND_REMOVED = re.compile(rf"\bremoved (?P<label>{_ROUND_LABEL.pattern})")
 
 
 def review_rounds(review_text: str) -> list[tuple[str, str]]:
@@ -5327,12 +5335,24 @@ def unfrozen_rounds(review_text: str, frozen_rounds=None) -> list[tuple[str, str
 def frozen_round_errors(review_text: str, frozen_rounds: dict[str, str] | None = None) -> list[str]:
     """Review cycle 2, S1 and M1: each round in ``frozen_rounds`` (``FROZEN_ROUNDS`` by default) is under
     ``## Rounds`` once, with its frozen digest, and no round name occurs twice. No message prints a digest,
-    and ``round_literal`` keeps the committed entries, so regenerating clears neither an edit nor a removal."""
+    and ``round_literal`` keeps the committed entries, so regenerating clears neither an edit nor a removal.
+    Iteration 2: each round is named a number above the round before it, in file order, with no leading
+    zero, so a new round is never "08" or "8b" beside a frozen 8, and it runs past every frozen round. The
+    names are read from the review, not from a literal, so no regeneration clears one. "3b" and "4b",
+    frozen before this rule, are the only lettered names (``_LETTERED_ROUNDS``)."""
     frozen = FROZEN_ROUNDS if frozen_rounds is None else frozen_rounds
     rounds = review_rounds(review_text)
     counts = Counter(name for name, _ in rounds)
     errors = [f"[frozen-review] Round {name} occurs {n} times under ## Rounds, not once"
               for name, n in counts.items() if n > 1]
+    before: tuple[int, str] = (0, "")
+    for name in counts:
+        key = (_round_number(name), name.lstrip("0123456789"))
+        if not (re.fullmatch(r"[1-9]\d*", name) or name in _LETTERED_ROUNDS) or key <= before:
+            errors.append(f"[frozen-review] Round {name} is not named a number above every round before it "
+                          f"({'none' if before == (0, '') else ''.join(map(str, before))}): a new round takes "
+                          "the next number, and 3b and 4b are the only lettered rounds (R7)")
+        before = max(before, key)
     changed = dict.fromkeys(name for name, line in rounds if name in frozen and _cell_digest(line) != frozen[name])
     errors += [f"[frozen-review] Round {name} is frozen in FROZEN_ROUNDS and its paragraph changed: a frozen round "
                "is never edited and names no row, so the edit re-opens no verdict line; a new finding goes in a new "
@@ -5375,6 +5395,22 @@ def round_literal(review_text: str, frozen_rounds: dict[str, str] | None = None)
     return literal
 
 
+#: The lettered round names frozen before review cycle 2, iteration 2, ruled every later name a plain number.
+_LETTERED_ROUNDS = frozenset({"3b", "4b"})
+
+
+def _round_number(name: str) -> int:
+    """A round name's leading digits as a number ("3b" is 3); 0 for a name with none."""
+    m = re.match(r"\d+", name)
+    return int(m.group()) if m else 0
+
+
+def round_removals(paragraph: str) -> set[str]:
+    """Every review row one round paragraph removes (review cycle 2, iteration 2): each label written
+    straight after "removed ". A label named any other way removes nothing."""
+    return {m.group("label") for m in _ROUND_REMOVED.finditer(paragraph)}
+
+
 def round_labels(paragraph: str) -> set[str]:
     """Every review row one round paragraph names (T192 step C1): each label token, and each ``A to B`` range."""
     named = set(_ROUND_LABEL.findall(paragraph))
@@ -5392,7 +5428,7 @@ def unfrozen_round_labels(review_text: str, frozen_rounds=None) -> set[str]:
 def _rejudged(row: str, lines: list[str], labels: dict[str, set[str]]) -> bool:
     """Review cycle 2, S2: a verdict line is re-judged when its reason (the fourth cell) begins ``Round N:``
     for an unfrozen round N (a key of ``labels``) whose paragraph names ``row``."""
-    cells = _split_cells(lines[0]) if len(lines) == 1 else []
+    cells = _split_cells(lines[0])
     m = _ROUND_LINE.match(cells[3]) if len(cells) == 4 else None
     return bool(m) and row in labels.get(m.group("name"), set())
 
@@ -5403,13 +5439,15 @@ def review_line_literal(review_text: str, frozen: dict[str, str],
     ``_keyed_digest`` when it equals ``frozen`` or the line is re-judged by an unfrozen round (``_rejudged``:
     its reason begins ``Round N:`` and round N names the row; review cycle 2, S2), otherwise the frozen
     digest kept (none for a new row), with the row listed. A frozen row with no verdict line is dropped only
-    when an unfrozen round names it; otherwise its frozen digest is kept and the row listed (M1).
-    Regenerating the literal therefore clears only a row a critic's new round re-judged or names as
-    removed; a pasted digest cell, and a deleted verdict line, stay red."""
+    when an unfrozen round says "removed <row>" (``round_removals``; iteration 2: a passing mention did
+    it before); otherwise its frozen digest is kept and the row listed (M1). Regenerating the literal
+    therefore clears only a row a critic's new round re-judged or removed; a pasted digest cell, and a
+    deleted verdict line, stay red."""
     labels: dict[str, set[str]] = {}
+    named: set[str] = set()
     for name, paragraph in unfrozen_rounds(review_text, frozen_rounds):
         labels.setdefault(name, set()).update(round_labels(paragraph))
-    named = set().union(*labels.values())
+        named |= round_removals(paragraph)
     literal, unnamed = {}, []
     entries = review_entries(review_text)[0]
     for row, lines in entries:
@@ -5953,7 +5991,7 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     changed = "[frozen-review] PRIN-01: the line changed; a verdict line changes only in a critic round"
     frozen_and_gone = "[frozen-review] HRV-07 is frozen in REVIEW_LINE_SHA256 and is not in 00-meaning-review.md"
     removed = ("[frozen-review] HRV-07: its verdict line was removed and no round under ## Rounds that is not in "
-               "FROZEN_ROUNDS (none) names HRV-07: only a critic round removes a verdict line (R7)")
+               "FROZEN_ROUNDS (none) says 'removed HRV-07': only a critic round removes a verdict line (R7)")
 
     def unnamed(label: str, round_names: str = "none") -> str:
         return (f"[frozen-review] {label}: its verdict line changed and its reason does not begin 'Round N:' for a "
@@ -6134,6 +6172,72 @@ def test_unfrozen_round_labels_reads_labels_and_ranges_from_every_unfrozen_round
     assert unfrozen_rounds("## Rounds\n\nNo round yet.\n", ()) == [] and unfrozen_round_labels("", ()) == set()
 
 
+def test_a_new_round_is_named_above_every_frozen_round_in_the_exact_form() -> None:
+    """Review cycle 2, iteration 2 (the advisories), on a synthetic review with round 1 frozen, each message
+    exactly after every literal is regenerated: PRIN-01's cell pasted with a reason naming a new round that
+    names it. ``Round 2:`` clears it. ``round 2:`` (lower case) and ``Round 2ab:`` are not rounds, so the row
+    stays red (the ``re.I`` and ``\\w+`` mutants of ``_ROUND_LINE`` cleared both). ``Round 01:`` and
+    ``Round 1b:`` are rounds not named a number above round 1, and a new ``Round 3:`` after a frozen round
+    5 is not above it, so each reds by name, after regeneration too, since the names are read from the
+    review. The committed "3b" and "4b" red nothing."""
+    required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
+    base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
+    entries, _prose = review_entries(base)
+    frozen, rounds = {k: _keyed_digest(v) for k, v in entries}, round_literal(base, {})
+    row = f"| PRIN-01 | same | {_SYNTHETIC_DIGEST} | A synthetic reason. |"
+
+    def rejudged_by(name: str, text: str = base) -> str:
+        pasted = f"| PRIN-01 | same | 0123456789ac | {name}: a new synthetic verdict. |"
+        return _one_edit(text, row, pasted) + f"\n{name}: a fresh critic re-reviewed PRIN-01.\n"
+    base_5 = base + "\nRound 5: a synthetic critic reviewed nothing new.\n"
+
+    changed = "[frozen-review] PRIN-01: the line changed; a verdict line changes only in a critic round"
+    unnamed = ("[frozen-review] PRIN-01: its verdict line changed and its reason does not begin 'Round N:' for a "
+               "round N under ## Rounds that is not in FROZEN_ROUNDS (none) and names PRIN-01: only a critic "
+               "round changes a verdict line (R7)")
+
+    def low(name: str, top: str = "1") -> str:
+        return (f"[frozen-review] Round {name} is not named a number above every round before it ({top}): a new "
+                "round takes the next number, and 3b and 4b are the only lettered rounds (R7)")
+    _check_cases(_regenerate, {
+        "round-2": ((rejudged_by("Round 2"), frozen, rounds), []),
+        "lower-case": ((rejudged_by("round 2"), frozen, rounds), [changed, unnamed]),
+        "two-letters": ((rejudged_by("Round 2ab"), frozen, rounds), [changed, unnamed]),
+        "zero-padded": ((rejudged_by("Round 01"), frozen, rounds), [low("01")]),
+        "lettered": ((rejudged_by("Round 1b"), frozen, rounds), [low("1b")]),
+        "below-a-frozen-round": ((rejudged_by("Round 3", base_5), frozen, round_literal(base_5, {})), [low("3", "5")]),
+    })
+    committed = review_rounds(_REAL_REVIEW.read_text(encoding="utf-8"))
+    print(f"[slice compared] committed round names {[n for n, _ in committed]}")
+    assert {"3b", "4b"} <= {n for n, _ in committed} <= set(FROZEN_ROUNDS)
+    assert frozen_round_errors(_REAL_REVIEW.read_text(encoding="utf-8")) == []
+
+
+def test_a_label_is_not_a_prefix_and_a_removal_is_written_as_one() -> None:
+    """Review cycle 2, iteration 2 (the advisories): a round names no row through a longer number ("T-110"
+    is not T-11, "HRV-2401" is not HRV-240), and a frozen row whose verdict line is gone is dropped from the
+    regenerated literal only when an unfrozen round says "removed <row>"; a passing mention kept it red
+    before and after (the mention cleared it at iteration 1)."""
+    assert round_labels("Round 2: a critic re-read T-110 and HRV-2401.") == set()
+    assert round_labels("Round 2: a critic re-read T-11, HRV-240 and PRIN-12/Why.") == {"T-11", "HRV-240", "PRIN-12/Why"}
+    assert round_removals("Round 2: a critic removed HRV-07 and removed T-110, and read PRIN-01.") == {"HRV-07"}
+    required = ["PRIN-01", "PRIN-01/Scope", "ARCH-01/Not", "HRV-07"]
+    base = _synthetic_review(required) + "## Rounds\n\nRound 1: a synthetic critic reviewed 4 rows.\n"
+    entries, _prose = review_entries(base)
+    frozen, rounds = {k: _keyed_digest(v) for k, v in entries}, round_literal(base, {})
+    dropped = _one_edit(base, f"| HRV-07 | same | {_SYNTHETIC_DIGEST} | A synthetic reason. |\n", "")
+    mention = dropped + "\nRound 2: a fresh critic re-read HRV-07's neighbours and returned 0 differs verdicts.\n"
+    removal = dropped + "\nRound 2: a fresh critic removed HRV-07 with its rule.\n"
+    gone = "[frozen-review] HRV-07 is frozen in REVIEW_LINE_SHA256 and is not in 00-meaning-review.md"
+    unsaid = ("[frozen-review] HRV-07: its verdict line was removed and no round under ## Rounds that is not in "
+              "FROZEN_ROUNDS (none) says 'removed HRV-07': only a critic round removes a verdict line (R7)")
+    print(f"[slice compared] mention {review_line_literal(mention, frozen, rounds)[1]}, "
+          f"removal {review_line_literal(removal, frozen, rounds)[1]}")
+    assert review_line_literal(mention, frozen, rounds) == (frozen, ["HRV-07"])
+    assert _regenerate(mention, frozen, rounds) == [gone, unsaid]
+    assert _regenerate(removal, frozen, rounds) == []
+
+
 # ---------------------------------------------------------------------------
 # A malformed inventory-ID cell is reported, not raised (T176's robustness finding)
 # ---------------------------------------------------------------------------
@@ -6205,8 +6309,14 @@ FROZEN_LITERALS = (
 )
 
 
+#: The literals ``derived_literals`` reads as its frozen side, not from the files: a regeneration keeps
+#: what they hold, and ``--against`` (``against_report``) passes a base commit's in their place.
+FROZEN_SIDE = ("INVENTORY_SENTENCE_SHA256", "REVIEW_LINE_SHA256", "FROZEN_ROUNDS")
+
+
 def derived_literals(research: str | None = None, rows: list[dict[str, str]] | None = None,
-                     review: str | None = None) -> tuple[dict[str, object], list[str]]:
+                     review: str | None = None,
+                     frozen: dict[str, object] | None = None) -> tuple[dict[str, object], list[str]]:
     """``({name: value}, notes)``: each of ``FROZEN_LITERALS`` as the committed files now give it, and
     what the derivation found (counts, and every line it could not key). The two maps are rulings drawn
     from the table: ``NON_C_AUTHORITIES`` holds each ``yes`` row citing a non-C token under a key whose
@@ -6221,12 +6331,29 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
     round re-judging it keeps its committed digest and is a problem, and so is a frozen row whose verdict
     line is gone (review cycle 2, M1). ``FROZEN_ROUNDS`` and its pin come from ``round_literal``, which
     keeps every committed round; an edited or removed frozen round is a problem (S1), and so is a verdict
-    line for a row that is not a required review row (C3)."""
+    line for a row that is not a required review row (C3).
+
+    Review cycle 2, iteration 2: ``INVENTORY_SENTENCE_SHA256`` is the frozen side's, never re-derived from
+    the table (S4): each table cell whose sentence differs is a problem, and no new digest is printed. The
+    review's shape errors are problems too. ``frozen`` replaces the ``FROZEN_SIDE`` literals, for
+    ``--against``."""
+    return _derive(research, rows, review, frozen)[:2]
+
+
+def _derive(research: str | None, rows: list[dict[str, str]] | None, review: str | None,
+            frozen: dict[str, object] | None) -> tuple[dict[str, object], list[str], list[str]]:
+    """``derived_literals`` with its problems as a list: ``(values, notes, problems)``."""
+    side = {name: globals()[name] for name in FROZEN_SIDE} | (frozen or {})
+    frozen_lines, frozen_rounds, sentences = (side["REVIEW_LINE_SHA256"], side["FROZEN_ROUNDS"],
+                                              side["INVENTORY_SENTENCE_SHA256"])
     committed_research, history, committed_rows = _real()
     research = committed_research if research is None else research
     rows = committed_rows if rows is None else rows
     review = _REAL_REVIEW.read_text(encoding="utf-8") if review is None else review
     inventory = [r for r in rows if not _is_blank(r["inventory ID"])]
+    in_table = {r["inventory ID"]: r["inventory sentence"] for r in inventory}
+    moved_sentences = [i for i, digest in sentences.items()
+                       if i not in in_table or _sentence_digest(in_table[i]) != digest]
     leads = {k: _lead_decision(e.decision) for k, e in _OM.OLD_MEANINGS.items()}
     tokens = sorted({t for t in leads.values() if t and not _C_ID.fullmatch(t)})
     authorities = {t: frozenset(r["inventory ID"] for r in inventory if r["meaning changed"] == "yes"
@@ -6245,11 +6372,11 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
     unreviewed = [label for label in blocks if label not in judged]
     changed = [label for label, line in blocks.items() if label in judged and _cell_digest(line) != judged[label]]
     orphans = [label for label in judged if label not in set(required_review_rows(research, rows))]
-    review_literal, unnamed = review_line_literal(review, REVIEW_LINE_SHA256, FROZEN_ROUNDS)
+    review_literal, unnamed = review_line_literal(review, frozen_lines, frozen_rounds)
     removed = [row for row in unnamed if row not in {k for k, _ in review_lines}]
-    rounds = round_literal(review, FROZEN_ROUNDS)
+    rounds = round_literal(review, frozen_rounds)
     values: dict[str, object] = {
-        "INVENTORY_SENTENCE_SHA256": {r["inventory ID"]: _sentence_digest(r["inventory sentence"]) for r in inventory},
+        "INVENTORY_SENTENCE_SHA256": dict(sentences),
         "GLOSSARY_TERMS": {m.group("id"): m.group("term") for _k, (line,) in glossary
                            if (m := _GLOSSARY_LINE.match(line))},
         "NON_C_AUTHORITIES": authorities,
@@ -6282,22 +6409,29 @@ def derived_literals(research: str | None = None, rows: list[dict[str, str]] | N
         (f"history: {len(history_lines)} keyed lines, {len({k for k, _ in history_lines})} unique keys, "
          f"unkeyable {history_problems}"),
         (f"review: {len(review_lines)} verdict lines, {len({k for k, _ in review_lines})} unique rows, "
-         f"{len(prose)} prose lines; rounds not in FROZEN_ROUNDS {[n for n, _ in unfrozen_rounds(review)]} "
-         f"naming {sorted(unfrozen_round_labels(review))}; verdict lines changed with no such round re-judging "
-         f"them {[row for row in unnamed if row not in removed]}; verdict lines removed with no such round naming "
-         f"them {removed}; verdicts for rows that are not required {orphans}"),
+         f"{len(prose)} prose lines; rounds not in FROZEN_ROUNDS {[n for n, _ in unfrozen_rounds(review, frozen_rounds)]} "
+         f"naming {sorted(unfrozen_round_labels(review, frozen_rounds))}; verdict lines changed with no such round "
+         f"re-judging them {[row for row in unnamed if row not in removed]}; verdict lines removed with no such "
+         f"round saying 'removed <row>' {removed}; verdicts for rows that are not required {orphans}"),
+        (f"inventory sentences: {len(sentences)} frozen, never regenerated; table cells that differ "
+         f"{moved_sentences}"),
     ]
     problems = glossary_problems + pinned_problems + history_problems + block_problems
+    problems += [f"{i}'s inventory sentence is not the 4e47d0e inventory's: INVENTORY_SENTENCE_SHA256 is never "
+                 f"regenerated" for i in moved_sentences]
+    problems += [f"{i} is an inventory ID that INVENTORY_SENTENCE_SHA256 does not hold" for i in in_table
+                 if i not in sentences]
     problems += [f"{label} needs a critic verdict" for label in unreviewed]
     problems += [f"{label} changed after its verdict" for label in changed]
     problems += [f"{label} has a verdict and is not a required review row" for label in orphans]
     problems += [f"{row}'s verdict line changed and no unfrozen round re-judged it" for row in unnamed
                  if row not in removed]
-    problems += [f"{row}'s verdict line was removed and no unfrozen round names it" for row in removed]
-    problems += [error.removeprefix("[frozen-review] ") for error in frozen_round_errors(review, FROZEN_ROUNDS)]
+    problems += [f"{row}'s verdict line was removed and no unfrozen round says 'removed {row}'" for row in removed]
+    problems += [error.removeprefix("[frozen-review] ") for error in frozen_round_errors(review, frozen_rounds)]
+    problems += [error.removeprefix("[frozen-review] ") for error in review_shape_errors(review)]
     problems += [f"{k} occurs more than once" for entries in (glossary, history_lines, review_lines)
                  for k, n in Counter(k for k, _ in entries).items() if n > 1]
-    return values, notes + [f"problems {problems}"]
+    return values, notes + [f"problems {problems}"], problems
 
 
 def _literal_source(name: str, value: object) -> list[str]:
@@ -6328,12 +6462,114 @@ def frozen_literals(**overrides: object) -> str:
     """The source of every literal in ``FROZEN_LITERALS``, as the committed files now give it, headed by
     what the derivation found. For a reviewed edit only: paste the entries the edit changed, and no
     others, so the diff of the literal shows what was approved. Run
-    ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``."""
+    ``uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py``. It
+    prints this file's own frozen side (``FROZEN_SIDE``) back, so it cannot see a hand edit to one of
+    those literals; ``--against <commit>`` (``against_report``) is the reviewer's check that can."""
     values, notes = derived_literals(**overrides)
     out = [f"# {note}" for note in notes]
     for name in FROZEN_LITERALS:
         out += ["", *_literal_source(name, values[name])]
     return "\n".join(out)
+
+
+#: This file, relative to the repository root, as ``git show <commit>:<path>`` names it.
+_THIS_FILE = "runcoach-api/tests/test_research00_traceability.py"
+
+
+def _literal_value(node: ast.expr) -> object:
+    """A frozen literal's value from its source expression: constants, dicts, tuples, lists, sets and
+    ``frozenset({...})``, nothing else. A base commit's source is parsed, never run."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "frozenset"
+            and len(node.args) <= 1 and not node.keywords):
+        return frozenset(_literal_value(node.args[0])) if node.args else frozenset()
+    if isinstance(node, ast.Dict) and None not in node.keys:
+        return {_literal_value(k): _literal_value(v) for k, v in zip(node.keys, node.values, strict=True)}
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        kind = {ast.Tuple: tuple, ast.List: list, ast.Set: set}[type(node)]
+        return kind(_literal_value(element) for element in node.elts)
+    return ast.literal_eval(node)
+
+
+def committed_literals(commit: str) -> dict[str, object]:
+    """``{name: value}`` of each ``FROZEN_LITERALS`` literal as ``commit`` holds it in this file, read with
+    ``git show`` and ``ast`` (review cycle 2, iteration 2, S1). A literal the commit lacks is absent."""
+    done = subprocess.run(["git", "show", f"{commit}:{_THIS_FILE}"], cwd=_REPO_ROOT, capture_output=True,
+                          check=False)
+    if done.returncode:
+        raise ValueError(f"git show {commit}:{_THIS_FILE} failed: {done.stderr.decode('utf-8', 'replace').strip()}")
+    values = {}
+    for node in ast.parse(done.stdout.decode("utf-8")).body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if (len(targets) == 1 and isinstance(targets[0], ast.Name) and targets[0].id in FROZEN_LITERALS
+                and node.value is not None):
+            values[targets[0].id] = _literal_value(node.value)
+    return values
+
+
+def _literal_changes(old: object, new: object) -> str:
+    """What changed from ``old`` to ``new``: keys for a map, positions (1-based) for a tuple, never a value."""
+    if isinstance(old, dict) and isinstance(new, dict):
+        common = [k for k in old if k in new]
+        parts = [f"{label} {keys}" for label, keys in (
+            ("changed", [k for k in common if old[k] != new[k]]), ("added", [k for k in new if k not in old]),
+            ("removed", [k for k in old if k not in new])) if keys]
+        if common != [k for k in new if k in old]:
+            parts.append("keys reordered")
+        return "; ".join(parts) or "unchanged"
+    if isinstance(old, tuple) and isinstance(new, tuple):
+        words = {"replace": "replaced by new", "delete": "deleted, new", "insert": "and new"}
+        parts = [f"old {i1 + 1}..{i2} {words[tag]} {j1 + 1}..{j2}" for tag, i1, i2, j1, j2
+                 in difflib.SequenceMatcher(a=old, b=new, autojunk=False).get_opcodes() if tag != "equal"]
+        return f"{len(old)} -> {len(new)} entries: {'; '.join(parts)}" if parts else "unchanged"
+    return "unchanged" if old == new else "changed"
+
+
+def against_report(base: dict[str, object], base_name: str, current: dict[str, object] | None = None,
+                   research: str | None = None, rows: list[dict[str, str]] | None = None,
+                   review: str | None = None) -> tuple[list[str], list[str]]:
+    """``(report lines, differences)`` of ``--against <commit>`` (review cycle 2, iteration 2, S1): the
+    reviewer's check. ``frozen_literals()`` derives against this file's own ``FROZEN_SIDE``, so a hand
+    edit to one of them is printed back as committed. Here the derivation runs over the current files
+    with ``base``'s ``FROZEN_SIDE`` (the base commit's), as the documented command ran for a round
+    written on that base, and each literal is reported by what changed from ``base`` (keys or positions,
+    never a value). A difference is each derivation problem; each literal of ``current`` (this file's, by
+    default) that is not the derived one; ``INVENTORY_SENTENCE_SHA256`` changed from ``base`` at all; and
+    ``REVIEW_PROSE_SHA256`` moved other than by one entry per new round, each before Final's, with
+    Final's changed exactly when a round is new."""
+    current = {name: globals()[name] for name in FROZEN_LITERALS} if current is None else current
+    missing = [name for name in FROZEN_LITERALS if name not in base]
+    if missing:
+        return ([f"# --against {base_name}: it defines no {missing}"],
+                [f"{base_name} defines no {missing}: --against needs a base with every frozen literal"])
+    review = _REAL_REVIEW.read_text(encoding="utf-8") if review is None else review
+    values, notes, problems = _derive(research, rows, review, {name: base[name] for name in FROZEN_SIDE})
+    differences = [f"the derivation against {base_name} finds: {problem}" for problem in problems]
+    report = [f"# --against {base_name}: the current files derived with {base_name}'s {', '.join(FROZEN_SIDE)} "
+              "as the frozen side", *(f"# {note}" for note in notes)]
+    for name in FROZEN_LITERALS:
+        mine = "the derived one" if current[name] == values[name] else (
+            f"not the derived one: {_literal_changes(values[name], current[name])}")
+        report.append(f"# {name}: from {base_name} {_literal_changes(base[name], values[name])}; this file's is {mine}")
+        if name == "INVENTORY_SENTENCE_SHA256":
+            if current[name] != base[name]:
+                differences.append(f"INVENTORY_SENTENCE_SHA256 changed from {base_name} "
+                                   f"({_literal_changes(base[name], current[name])}): it never changes")
+        elif current[name] != values[name]:
+            differences.append(f"{name} is not what the documented command derives against {base_name} "
+                               f"({_literal_changes(values[name], current[name])})")
+    new = [(name, line) for name, line in review_rounds(review) if name not in base["FROZEN_ROUNDS"]]
+    old, have = tuple(base["REVIEW_PROSE_SHA256"]), tuple(values["REVIEW_PROSE_SHA256"])
+    want = (*old[:-1], *(_cell_digest(line) for _name, line in new))
+    moved = [i + 1 for i in range(max(len(want), len(have) - 1))
+             if i >= len(want) or i >= len(have) - 1 or want[i] != have[i]]
+    if moved or not have or (have[-1] != old[-1]) != bool(new):
+        differences.append(
+            f"REVIEW_PROSE_SHA256 against {base_name}: the prose gains one entry per new round "
+            f"({[name for name, _ in new] or 'none'}), each before Final's, and Final's changes exactly when a round "
+            f"is new; nothing else moves. Moved: prose lines {moved} of {len(have)}; Final's "
+            f"{'changed' if have and have[-1] != old[-1] else 'unchanged'}")
+    report += [f"# difference: {difference}" for difference in differences] or ["# differences: none"]
+    return report, differences
 
 
 def test_frozen_literals_prints_every_frozen_literal_as_committed() -> None:
@@ -6400,7 +6636,7 @@ def test_frozen_literals_emits_no_digest_for_a_row_without_a_verdict() -> None:
     assert verdicts.endswith(f"needs a critic verdict {in_order!r}; changed after its verdict []")
     assert all(f"{label} needs a critic verdict" in notes[-1] for label in labels)
     assert "HRV-99 has a verdict and is not a required review row" in notes[-1]
-    assert f"{no_rule}'s verdict line was removed and no unfrozen round names it" in notes[-1]
+    assert f"{no_rule}'s verdict line was removed and no unfrozen round says 'removed {no_rule}'" in notes[-1]
     assert "Round 1 is frozen in FROZEN_ROUNDS and its paragraph changed" in notes[-1]
 
 
@@ -6458,6 +6694,107 @@ def test_an_added_rule_with_its_verdicts_and_round_is_green_with_the_regenerated
     assert [e for e in before if "its verdict line" in e] == [] and before
 
 
+def test_the_regeneration_never_prints_a_new_inventory_sentence_digest_and_names_the_shape() -> None:
+    """Review cycle 2, iteration 2, S4: ``INVENTORY_SENTENCE_SHA256`` was re-derived from the table, so a
+    ``no`` row's sentence edited in the table printed its new digest with no problem, and pasting it cleared
+    the gate. It is the frozen side's now: the printed literal is the committed one, the edited cell is a
+    problem, and its digest is printed nowhere. The data dir is not read. The review's shape errors are
+    problems too (a title removed)."""
+    research, _history, rows = _real()
+    edited = [dict(r) for r in rows]
+    row = next(r for r in edited if r["meaning changed"] == "no" and r["inventory ID"] in INVENTORY_SENTENCE_SHA256)
+    row["inventory sentence"] += " Edited."
+    source = frozen_literals(rows=edited)
+    printed: dict[str, object] = {}
+    exec(source, {}, printed)  # noqa: S102 -- the module's own generated source, run to prove it
+    notes = [line for line in source.splitlines() if line.startswith("# ")]
+    untitled = _one_edit(_REAL_REVIEW.read_text(encoding="utf-8"), REVIEW_TITLE + "\n", "")
+    shape = derived_literals(research=research, review=untitled)[1][-1]
+    print(f"[slice compared] {row['inventory ID']}: {notes[-2:]}; untitled review {shape[:300]}")
+    assert printed["INVENTORY_SENTENCE_SHA256"] == INVENTORY_SENTENCE_SHA256
+    assert notes[-1] == (f"# problems [\"{row['inventory ID']}'s inventory sentence is not the 4e47d0e inventory's: "
+                         "INVENTORY_SENTENCE_SHA256 is never regenerated\"]")
+    assert _sentence_digest(row["inventory sentence"]) not in source
+    assert "the review's prose runs [" in shape and "none of these lines is ever removed" in shape
+
+
+def test_against_names_every_hand_edit_the_regeneration_prints_back() -> None:
+    """Review cycle 2, iteration 2, S1: ``frozen_literals()`` prints this file's own ``FROZEN_SIDE`` back,
+    so a hand-edited literal came out as committed. ``against_report`` derives with the base commit's
+    literals instead; here the base is the committed literals (``--against HEAD~0`` in memory), and each
+    of the rule file's hand edits is named: a ``REVIEW_LINE_SHA256`` entry dropped by hand with its Why and
+    verdict lines deleted, a rule changed with its cell pasted and its entry set by hand, a frozen round
+    edited with ``FROZEN_ROUNDS``, its pin and ``REVIEW_PROSE_SHA256`` set by hand, and the opening
+    paragraph and Final edited with ``REVIEW_PROSE_SHA256`` regenerated. A new round with Final rewritten
+    and every literal regenerated against the base is named by nothing."""
+    research, _history, _rows = _real()
+    review = _REAL_REVIEW.read_text(encoding="utf-8")
+    base = {name: globals()[name] for name in FROZEN_LITERALS}
+
+    def line_of(text: str, prefix: str) -> str:
+        return next(line for line in _lines(text) if line.startswith(prefix))
+
+    def against(research_text: str, review_text: str, **hand: object) -> list[str]:
+        return against_report(base, "HEAD~0", {**base, **hand}, research=research_text, review=review_text)[1]
+    why_rule = next(r for r in required_review_rows(research, _rows) if r.endswith("/Why"))
+    why = next(line for line in rule_blocks(research)[why_rule.split("/")[0]].split("\n") if line.startswith("Why: "))
+    l1 = against(_one_edit(research, why + "\n", ""), _one_edit(review, line_of(review, f"| {why_rule} |") + "\n", ""),
+                 REVIEW_LINE_SHA256={k: v for k, v in REVIEW_LINE_SHA256.items() if k != why_rule})
+    rule = next(line for line in _lines(research) if line.startswith("**HRV-24.** "))
+    may = rule.replace(" MUST ", " MAY ", 1)
+    cells = _split_cells(line_of(review, "| HRV-24 |"))
+    pasted = f"| HRV-24 | {cells[1]} | {_cell_digest(may)} | {cells[3]} |"
+    l2 = against(_one_edit(research, rule, may), _one_edit(review, line_of(review, "| HRV-24 |"), pasted),
+                 REVIEW_LINE_SHA256={**REVIEW_LINE_SHA256, "HRV-24": _keyed_digest([pasted])})
+    round_7 = line_of(review, "Round 7: ")
+    edited_7 = _one_edit(review, round_7, round_7 + " An edit.")
+    hand_7 = {**FROZEN_ROUNDS, "7": _cell_digest(round_7 + " An edit.")}
+    prose_7 = review_entries(edited_7)[1]
+    l3 = against(research, edited_7, FROZEN_ROUNDS=hand_7, _FROZEN_ROUNDS_PIN=dict(hand_7),
+                 REVIEW_PROSE_SHA256=tuple(_cell_digest(p) for p in prose_7))
+    final = line_of(review, "Final: ")
+    edited_4 = _one_edit(_one_edit(review, final, final + " Edited."), prose_7[1], prose_7[1] + " Edited.")
+    l4 = against(research, edited_4, REVIEW_PROSE_SHA256=tuple(_cell_digest(p) for p in review_entries(edited_4)[1]))
+    name = str(max(_round_number(n) for n in FROZEN_ROUNDS) + 1)
+    legit = _one_edit(_one_edit(review, line_of(review, "| HRV-24 |"), pasted.replace(cells[3], f"Round {name}: MAY.")),
+                      final, f"Round {name}: a fresh critic re-judged HRV-24.\n\n{final} Round {name}.")
+    regenerated = derived_literals(research=_one_edit(research, rule, may), review=legit)[0]
+    clean = against(_one_edit(research, rule, may), legit, **regenerated)
+
+    def prose(moved: int, final_state: str) -> str:
+        return ("REVIEW_PROSE_SHA256 against HEAD~0: the prose gains one entry per new round (none), each before "
+                "Final's, and Final's changes exactly when a round is new; nothing else moves. Moved: prose lines "
+                f"[{moved}] of {len(prose_7)}; Final's {final_state}")
+    frozen_7 = [f"{n} is not what the documented command derives against HEAD~0 (changed ['7'])"
+                for n in ("FROZEN_ROUNDS", "_FROZEN_ROUNDS_PIN")]
+    print(f"[slice compared] L1 {l1}\nL2 {l2}\nL3 {l3}\nL4 {l4}\nround {name}: {clean}")
+    assert l1 == [f"the derivation against HEAD~0 finds: {why_rule}'s verdict line was removed and no unfrozen "
+                  f"round says 'removed {why_rule}'",
+                  f"REVIEW_LINE_SHA256 is not what the documented command derives against HEAD~0 (removed "
+                  f"['{why_rule}'])"]
+    assert l2 == ["the derivation against HEAD~0 finds: HRV-24's verdict line changed and no unfrozen round "
+                  "re-judged it",
+                  "REVIEW_LINE_SHA256 is not what the documented command derives against HEAD~0 (changed ['HRV-24'])"]
+    assert l3 == ["the derivation against HEAD~0 finds: Round 7 is frozen in FROZEN_ROUNDS and its paragraph "
+                  "changed: a frozen round is never edited and names no row, so the edit re-opens no verdict line; a "
+                  "new finding goes in a new round (R7)", *frozen_7,
+                  prose(prose_7.index(round_7 + " An edit.") + 1, "unchanged")]
+    assert l4 == [prose(2, "changed")]
+    assert clean == []
+
+
+def test_the_against_command_runs_from_the_documented_command() -> None:
+    """Review cycle 2, iteration 2, S1: the documented command with ``--against HEAD`` reads HEAD's literals
+    with ``git show`` and ``ast``, and over the committed files it names no difference and exits 0."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"}
+    done = subprocess.run([sys.executable, str(Path(__file__)), "--against", "HEAD"], capture_output=True, env=env,
+                          cwd=_REPO_ROOT, check=False, timeout=180)
+    out = done.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    print(f"[slice compared] exit {done.returncode}; {out.splitlines()[-3:]}; stderr {done.stderr[-300:]!r}")
+    assert done.returncode == 0, out[-2000:] + done.stderr.decode("utf-8", errors="replace")[-2000:]
+    assert "\n# REVIEW_LINE_SHA256: from HEAD " in out and out.endswith("\n# differences: none\n")
+
+
 @pytest.mark.parametrize(
     "io_encoding", [pytest.param(None, id="pythonioencoding-unset"), pytest.param("cp1252", id="pythonioencoding-cp1252")])
 def test_the_documented_regeneration_command_runs_with_piped_output(io_encoding: str | None) -> None:
@@ -6480,4 +6817,14 @@ def test_the_documented_regeneration_command_runs_with_piped_output(io_encoding:
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
+    if len(sys.argv) == 3 and sys.argv[1] == "--against":
+        try:
+            base_literals = committed_literals(sys.argv[2])
+        except ValueError as error:
+            sys.exit(str(error))
+        against_lines, against_differences = against_report(base_literals, sys.argv[2])
+        print("\n".join(against_lines))
+        sys.exit(1 if against_differences else 0)
+    if len(sys.argv) > 1:
+        sys.exit(f"usage: {Path(__file__).name} [--against <commit>]")
     print(frozen_literals())

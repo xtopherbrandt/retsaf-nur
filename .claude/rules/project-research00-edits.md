@@ -16,7 +16,8 @@ F011 edit these files through this procedure.
   regeneration of the test's literals clears a changed line; only a verdict line recording the new
   digest does. The verdict line is itself bound by `REVIEW_LINE_SHA256`, and regenerating that
   literal takes a changed verdict line only when a new round re-judged it (see Never). A line
-  deleted with its verdict line stays red after regeneration unless a new round names the row.
+  deleted with its verdict line stays red after regeneration unless a new round says "removed"
+  and the row's label, as in removed PRIN-12/Why; a passing mention of the row does not do it.
 - **Everything else** is a frozen literal in the test: Pinned lines (`PINNED_SHA256`); headings,
   terms and rule IDs in order (`RESEARCH_STRUCTURE`, `GLOSSARY_TERMS`); table rows, retirements and
   authorities (`TRACEABILITY_ROW_SHA256`, `RETIRED_IDS`, `NON_C_AUTHORITIES`, `KEY_OWNERS` and
@@ -24,7 +25,8 @@ F011 edit these files through this procedure.
   verdict line with its digest cell, and every prose line of the review (`REVIEW_LINE_SHA256`,
   `REVIEW_PROSE_SHA256`); and each frozen round by its name (`FROZEN_ROUNDS` and its pin).
 - **The inventory sentences** (`INVENTORY_SENTENCE_SHA256`) are the 4e47d0e inventory's and are
-  never regenerated.
+  never regenerated. The documented command prints the committed literal back, and names each table
+  cell that differs from it as a problem; it never prints a new digest for one.
 
 ## The sequence
 
@@ -34,13 +36,18 @@ F011 edit these files through this procedure.
 2. **The builder edits the rule text**, and the table, history or old meanings the change needs.
 3. **A fresh critic that built nothing** re-judges every changed row. It writes each new verdict line
    with the digest of the line it judged (`_cell_digest`: whitespace collapsed, first 12 hex of the
-   sha256) and a reason that begins with its round's name, a new round paragraph under the Rounds
-   heading with a name no earlier round has, naming every changed or removed row, and the Final
-   line. The builder never edits the meaning review.
+   sha256) and a reason that begins with its round's name, then a new round paragraph under the
+   Rounds heading, after the last round and before the Final line, and it rewrites the Final line.
+   The paragraph is one line, never wrapped: only the line that begins with its name is read for
+   labels, and a second line breaks the review's shape (`review_shape_errors`). Its name is a plain
+   number above every earlier round's, so the next round after round 10 is 11, never 08 or 10b
+   (3b and 4b are the only lettered rounds). It names every changed row, and says "removed" and
+   the label before each removed row. The builder never edits the meaning review.
 4. **Regenerate only the changed non-verdict literals**, plus `REVIEW_LINE_SHA256`,
    `REVIEW_PROSE_SHA256`, `FROZEN_ROUNDS` and its pin, from the one documented command. Its notes must
-   end with an empty problems list; paste the entries the edit changed and no others, so the diff
-   shows what was approved:
+   end with an empty problems list (a misnamed round, a changed inventory sentence and a broken review
+   shape are problems too); paste the entries the edit changed and no others, so the diff shows what
+   was approved:
 
    ```sh
    uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py
@@ -69,21 +76,46 @@ F011 edit these files through this procedure.
 - **Let a builder write verdicts.** The critic owns the meaning review; the builder's diff never
   touches it.
 
-## The known limit
+## The known limit, and the reviewer's check
 
-The gate cannot tell a regenerated literal from a hand-edited one. Each of these kept the
-traceability test file green on the real files at this commit: a Why line and its verdict line
-deleted, with the row's `REVIEW_LINE_SHA256` entry dropped by hand; a rule line changed, with its
-verdict line's digest cell pasted and the row's entry set by hand to the new line's digest; a
-frozen round's text edited, with its `FROZEN_ROUNDS` entry and pin set by hand (it still names no
-row); and the review's opening paragraph and Final line edited, with `REVIEW_PROSE_SHA256`
-regenerated. A removed title, paragraph, heading or Final line reds (`review_shape_errors`).
-For the first three, `frozen_literals()` prints the committed value, not the hand-edited one; the
-fourth is what it prints. So a reviewer compares every literal diff with what a legitimate round
-gives:
+The suite cannot tell a regenerated literal from a hand-edited one. Each of these keeps the
+traceability test file green on the real files:
 
-- `REVIEW_LINE_SHA256`: each changed or added entry's verdict line has a reason that begins with
-  the new round's name, and each removed entry is a row the new round names;
-- `REVIEW_PROSE_SHA256`: one entry added before the last one, and the last one (Final) changed;
-  nothing else moves;
-- `FROZEN_ROUNDS` and its pin: one new entry in each for each new round; no entry changes.
+1. a Why line and its verdict line deleted, with the row's `REVIEW_LINE_SHA256` entry dropped by
+   hand;
+2. a rule line changed, with its verdict line's digest cell pasted and the row's entry set by hand
+   to the new line's digest;
+3. a frozen round's text edited, with three literals set by hand: its `FROZEN_ROUNDS` entry, the
+   pin's entry and `REVIEW_PROSE_SHA256`. Done in one step, the edited round stays frozen and
+   names no row. Done in two, it clears a row: its name is dropped from `FROZEN_ROUNDS` and the pin
+   by hand, the literals are regenerated while the round, now unfrozen, names a row whose pasted
+   cell cites it, and the name is put back by hand with the new digest;
+4. the review's opening paragraph and Final line edited, with `REVIEW_PROSE_SHA256` regenerated.
+
+A removed title, paragraph, heading or Final line reds (`review_shape_errors`). The documented
+command derives against this file's own `REVIEW_LINE_SHA256`, `FROZEN_ROUNDS` and
+`INVENTORY_SENTENCE_SHA256`, so for the first three it prints the hand-edited value back, and for
+the fourth it prints what the file holds. The reviewer therefore runs it against the commit the
+change was written on, with `<base>` as that commit:
+
+```sh
+uv run --package runcoach-api python runcoach-api/tests/test_research00_traceability.py --against <base>
+```
+
+It reads the base's literals with `git show` and `ast`, and derives from the current files with the
+base's three literals in place of this file's. For each literal it prints what changed from the
+base, by key or position and never by value, and whether this file's literal is the derived one.
+It prints a line beginning `# difference:` for each of these, and exits 1 if there is one: a
+problem in the derivation; a literal that is not the derived one (routes 1 to 3, route 3 in one
+step or two);
+`INVENTORY_SENTENCE_SHA256` changed at all; and `REVIEW_PROSE_SHA256` moved other than as a
+legitimate round moves it (route 4). The change is approved only when it ends with
+`# differences: none`. A legitimate round gives:
+
+- `REVIEW_LINE_SHA256`: changed or added entries only for rows whose verdict line's reason begins
+  with a new round's name and whose paragraph names the row, and removed entries only for rows a
+  new round says "removed" of;
+- `REVIEW_PROSE_SHA256`: one entry per new round, each before Final's; Final's changed; nothing
+  else moves;
+- `FROZEN_ROUNDS` and its pin: one new entry in each for each new round; no entry changes;
+- `INVENTORY_SENTENCE_SHA256`: never changes.
