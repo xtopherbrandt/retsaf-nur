@@ -6897,6 +6897,25 @@ def test_the_against_command_runs_from_the_documented_command() -> None:
     assert code == want
 
 
+def test_the_against_cli_reports_code_changes_from_an_older_base() -> None:
+    """F011 AC6 (T196, spec review wave 1): ``--against HEAD`` on a clean tree expects no ``# code`` line, so
+    it passes even when the ``__main__`` path never hands ``against_report`` the base's source. Run the
+    documented command against ``a15610d``, which predates T196's own checker-code changes, so the lines
+    it prints must be ``code_changes(a15610d's source, this file)`` and must not be empty. Its exit code
+    judges the literals, not the code lines, so a later legitimate difference from ``a15610d`` may exit 1."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONIOENCODING"}
+    done = subprocess.run([sys.executable, str(Path(__file__)), "--against", "a15610d"], capture_output=True,
+                          env=env, cwd=_REPO_ROOT, check=False, timeout=180)
+    out = done.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    code = [line for line in out.splitlines() if line.startswith("# code ")]
+    want = code_changes(committed_source("a15610d"), Path(__file__).read_text(encoding="utf-8"))
+    print(f"[slice compared] exit {done.returncode}; code {code}; want {want}; stderr {done.stderr[-300:]!r}")
+    assert done.returncode in (0, 1), out[-2000:] + done.stderr.decode("utf-8", errors="replace")[-2000:]
+    assert out.startswith("# --against a15610d: the current files derived with ")
+    assert "# code changed: against_report" in want and "# code added: code_changes" in want
+    assert code == want
+
+
 @pytest.mark.parametrize(
     "io_encoding", [pytest.param(None, id="pythonioencoding-unset"), pytest.param("cp1252", id="pythonioencoding-cp1252")])
 def test_the_documented_regeneration_command_runs_with_piped_output(io_encoding: str | None) -> None:
