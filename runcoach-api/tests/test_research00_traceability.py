@@ -6490,15 +6490,21 @@ def _literal_value(node: ast.expr) -> object:
     return ast.literal_eval(node)
 
 
-def committed_literals(commit: str) -> dict[str, object]:
-    """``{name: value}`` of each ``FROZEN_LITERALS`` literal as ``commit`` holds it in this file, read with
-    ``git show`` and ``ast`` (review cycle 2, iteration 2, S1). A literal the commit lacks is absent."""
+def committed_source(commit: str) -> str:
+    """This file's source as ``commit`` holds it, read with ``git show``."""
     done = subprocess.run(["git", "show", f"{commit}:{_THIS_FILE}"], cwd=_REPO_ROOT, capture_output=True,
                           check=False)
     if done.returncode:
         raise ValueError(f"git show {commit}:{_THIS_FILE} failed: {done.stderr.decode('utf-8', 'replace').strip()}")
+    return done.stdout.decode("utf-8")
+
+
+def committed_literals(commit: str, source: str | None = None) -> dict[str, object]:
+    """``{name: value}`` of each ``FROZEN_LITERALS`` literal as ``commit`` holds it in this file, read with
+    ``git show`` and ``ast`` (review cycle 2, iteration 2, S1). A literal the commit lacks is absent.
+    ``source`` is the commit's source already read."""
     values = {}
-    for node in ast.parse(done.stdout.decode("utf-8")).body:
+    for node in ast.parse(committed_source(commit) if source is None else source).body:
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
         if (len(targets) == 1 and isinstance(targets[0], ast.Name) and targets[0].id in FROZEN_LITERALS
                 and node.value is not None):
@@ -6524,9 +6530,44 @@ def _literal_changes(old: object, new: object) -> str:
     return "unchanged" if old == new else "changed"
 
 
+def _top_level_code(source: str) -> dict[str, list[str]]:
+    """``{name: [ast.dump, ...]}`` of each top-level node of ``source`` outside ``FROZEN_LITERALS`` and the
+    ``if __name__ == "__main__"`` block. A function or class is keyed by its name, an assignment by its
+    targets, and any other node by its first source line."""
+    code: dict[str, list[str]] = {}
+    for node in ast.parse(source).body:
+        if (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+                and isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__"):
+            continue
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            name = node.name
+        elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            name = ", ".join(ast.unparse(target) for target in targets)
+            if name in FROZEN_LITERALS:
+                continue
+        else:
+            name = ast.unparse(node).splitlines()[0][:80]
+        code.setdefault(name, []).append(ast.dump(node))
+    return code
+
+
+def code_changes(base_source: str, current_source: str) -> list[str]:
+    """F011 AC6 (T196, S13): a ``# code changed``, ``# code added`` or ``# code removed`` line for each
+    top-level node of ``current_source`` (``_top_level_code``) whose ``ast.dump`` differs from
+    ``base_source``'s; changed and added in the current order, then removed in the base's. A node that
+    only moved is named by nothing. ``--against`` runs this file's checker code, so it cannot judge a
+    change to it; these lines make the change visible for the reviewer to read."""
+    base, current = _top_level_code(base_source), _top_level_code(current_source)
+    return ([f"# code {'changed' if name in base else 'added'}: {name}" for name, dumps in current.items()
+             if base.get(name) != dumps]
+            + [f"# code removed: {name}" for name in base if name not in current])
+
+
 def against_report(base: dict[str, object], base_name: str, current: dict[str, object] | None = None,
                    research: str | None = None, rows: list[dict[str, str]] | None = None,
-                   review: str | None = None) -> tuple[list[str], list[str]]:
+                   review: str | None = None, base_source: str | None = None,
+                   current_source: str | None = None) -> tuple[list[str], list[str]]:
     """``(report lines, differences)`` of ``--against <commit>`` (review cycle 2, iteration 2, S1): the
     reviewer's check. ``frozen_literals()`` derives against this file's own ``FROZEN_SIDE``, so a hand
     edit to one of them is printed back as committed. Here the derivation runs over the current files
@@ -6535,7 +6576,9 @@ def against_report(base: dict[str, object], base_name: str, current: dict[str, o
     never a value). A difference is each derivation problem; each literal of ``current`` (this file's, by
     default) that is not the derived one; ``INVENTORY_SENTENCE_SHA256`` changed from ``base`` at all; and
     ``REVIEW_PROSE_SHA256`` moved other than by one entry per new round, each before Final's, with
-    Final's changed exactly when a round is new."""
+    Final's changed exactly when a round is new. With ``base_source`` (the base commit's source of this
+    file), the report also names each checker-code change from it (``code_changes``) against
+    ``current_source`` (this file on disk, by default): report lines, never differences."""
     current = {name: globals()[name] for name in FROZEN_LITERALS} if current is None else current
     missing = [name for name in FROZEN_LITERALS if name not in base]
     if missing:
@@ -6568,6 +6611,9 @@ def against_report(base: dict[str, object], base_name: str, current: dict[str, o
             f"({[name for name, _ in new] or 'none'}), each before Final's, and Final's changes exactly when a round "
             f"is new; nothing else moves. Moved: prose lines {moved} of {len(have)}; Final's "
             f"{'changed' if have and have[-1] != old[-1] else 'unchanged'}")
+    if base_source is not None:
+        current_source = Path(__file__).read_text(encoding="utf-8") if current_source is None else current_source
+        report += code_changes(base_source, current_source)
     report += [f"# difference: {difference}" for difference in differences] or ["# differences: none"]
     return report, differences
 
@@ -6784,6 +6830,58 @@ def test_against_names_every_hand_edit_the_regeneration_prints_back() -> None:
     assert clean == []
 
 
+def test_against_reports_a_checker_code_change() -> None:
+    """F011 AC6 (T196, S13): ``--against`` compared only ``FROZEN_LITERALS`` and ran this file's checker
+    code, so a diff editing ``_rejudged`` ended ``# differences: none`` with nothing named. It now prints a
+    ``# code changed``, ``# code added`` or ``# code removed`` line for each top-level node outside
+    ``FROZEN_LITERALS`` and the ``__main__`` block whose ``ast.dump`` differs from the base's. These are
+    report lines, never differences: they change no exit code. A node that only moved is named by
+    nothing, and neither is a frozen literal's value or the ``__main__`` block."""
+    base_source = textwrap.dedent("""\
+        import os
+        A = 1
+        INVENTORY_SENTENCE_SHA256 = {"x": "1"}
+        def kept():
+            return 1
+        def changed():
+            return 1
+        def gone():
+            return 2
+        class K:
+            x = 1
+        if __name__ == "__main__":
+            print(1)
+        """)
+    current_source = textwrap.dedent("""\
+        import os
+        class K:
+            x = 1
+        A = 1
+        INVENTORY_SENTENCE_SHA256 = {"x": "2"}
+        def kept():
+            return 1
+        def changed():
+            return 2
+        def new():
+            return 3
+        if __name__ == "__main__":
+            print(2)
+        """)
+    synthetic = code_changes(base_source, current_source)
+    current = Path(__file__).read_text(encoding="utf-8")
+    head = "def _rejudged(row: str, lines: list[str], labels: dict[str, set[str]]) -> bool:\n"
+    base_file = _one_edit(current, head, head + '    """A base whose _rejudged body differs."""\n')
+    base = {name: globals()[name] for name in FROZEN_LITERALS}
+    report, differences = against_report(base, "HEAD~0", base_source=base_file, current_source=current)
+    code = [line for line in report if line.startswith("# code ")]
+    print(f"[slice compared] synthetic {synthetic}; real {code}; differences {differences}; last {report[-1]}")
+    assert synthetic == ["# code changed: changed", "# code added: new", "# code removed: gone"]
+    assert code_changes(current, current) == []
+    assert code == ["# code changed: _rejudged"]
+    assert differences == [] and report[-1] == "# differences: none"
+    assert [line for line in report if line.startswith("# difference:")] == []
+
+
 def test_the_against_command_runs_from_the_documented_command() -> None:
     """Review cycle 2, iteration 2, S1: the documented command with ``--against HEAD`` reads HEAD's literals
     with ``git show`` and ``ast``, and over the committed files it names no difference and exits 0."""
@@ -6791,9 +6889,12 @@ def test_the_against_command_runs_from_the_documented_command() -> None:
     done = subprocess.run([sys.executable, str(Path(__file__)), "--against", "HEAD"], capture_output=True, env=env,
                           cwd=_REPO_ROOT, check=False, timeout=180)
     out = done.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n")
-    print(f"[slice compared] exit {done.returncode}; {out.splitlines()[-3:]}; stderr {done.stderr[-300:]!r}")
+    code = [line for line in out.splitlines() if line.startswith("# code ")]
+    want = code_changes(committed_source("HEAD"), Path(__file__).read_text(encoding="utf-8"))
+    print(f"[slice compared] exit {done.returncode}; {out.splitlines()[-3:]}; code {code}; stderr {done.stderr[-300:]!r}")
     assert done.returncode == 0, out[-2000:] + done.stderr.decode("utf-8", errors="replace")[-2000:]
     assert "\n# REVIEW_LINE_SHA256: from HEAD " in out and out.endswith("\n# differences: none\n")
+    assert code == want
 
 
 @pytest.mark.parametrize(
@@ -6820,10 +6921,11 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) == 3 and sys.argv[1] == "--against":
         try:
-            base_literals = committed_literals(sys.argv[2])
+            base_text = committed_source(sys.argv[2])
         except ValueError as error:
             sys.exit(str(error))
-        against_lines, against_differences = against_report(base_literals, sys.argv[2])
+        against_lines, against_differences = against_report(committed_literals(sys.argv[2], base_text), sys.argv[2],
+                                                            base_source=base_text)
         print("\n".join(against_lines))
         sys.exit(1 if against_differences else 0)
     if len(sys.argv) > 1:

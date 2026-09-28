@@ -118,3 +118,9 @@ than as a legitimate round moves it (route 4). The change is approved only when 
   else moves;
 - `FROZEN_ROUNDS` and its pin: one new entry in each for each new round; no entry changes;
 - `INVENTORY_SENTENCE_SHA256`: never changes.
+
+`--against` runs this file's checker code, so it cannot judge a change to that code. It prints
+`# code changed: <name>`, `# code added: <name>` or `# code removed: <name>` for each top-level
+definition outside the frozen literals and the `__main__` block that differs from the base's. These
+are report lines, not differences, and do not change the exit code. The reviewer reads the diff of
+every name they list.
