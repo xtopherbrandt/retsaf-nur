@@ -161,7 +161,7 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         decision='C19',
     ),
     'C19-hrv-04-reduced-confidence': OldMeaning(
-        pattern='at reduced confidence',
+        pattern='rmssd(?:(?!\\. |;).)*?at reduced confidence|at reduced confidence(?:(?!\\. |;).)*?rmssd',
         example='degrading to a numeric resting rMSSD (Health Snapshot, then Health API overnight) at reduced confidence',
         source='specification/research/00-design-decisions.md:105@4e47d0e',
         decision='C19 (downstream: runcoach-api/src/runcoach_api/schemas.py:298)',
@@ -348,7 +348,24 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
     ),
 }
 
-EXCEPTIONS: tuple = ()
+EXCEPTIONS: tuple = (
+    # F009 (F011 S4): hrv_trend.py's old-meaning sites, which F009 AC5 fixes, deleting these triples in
+    # the same commit. Each excerpt occurs exactly once in the file, since an excerpt shelters every
+    # occurrence of itself (T218).
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'from ``D-7``. The constant is not published in ``thresholds``', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'there is no gap to report and this rule is the only one that acts', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'The comparison is between the candidates themselves, so a lone candidate is its own reference and is never struck',
+     'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'The comparison is between candidates, so a lone candidate is its own reference and is never struck', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'The constant is not published in ``thresholds`` ([[IDEA-070]]', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'research/00`` §5.4 (iii): "the dataset the athlete was read on last"', 'F009'),
+)
 
 _DROPPED = str.maketrans("", "", "\"'`*_“”‘’")
 

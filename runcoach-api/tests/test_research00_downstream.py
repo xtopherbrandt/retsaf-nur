@@ -42,7 +42,7 @@ import importlib.util
 import os
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType, ModuleType
 
@@ -464,23 +464,20 @@ def pending_tasks(hit: Hit, pending: dict[str, list[tuple[str, str]]]) -> list[s
 #: The planned owner of every ``(path, key)`` that hits at ``a15610d``/HEAD (T199's table, from the
 #: sprint-008 plan). Rows are ``(path glob, key, owner)``; the key is an exact ``OLD_MEANINGS`` name or
 #: ``*``. For a named key, rows naming that key win over ``*`` rows for the same path. The C19 and
-#: HRV-01 families are expanded to their exact names; the five C19 correct-prose hits T218 narrows are
-#: recorded as explicit T218 rows beside their family or ``*`` owner (spec/03:81 and :155, spec/04:123,
-#: spec/02:191, and rr_reconstruction.py:418). Hits outside every row fail the gate.
+#: HRV-01 families are expanded to their exact names. T218's rows are gone: it narrowed C19-hrv-04 off
+#: the five correct-prose sites (``NARROWED_FROM``), and ``EXCEPTIONS`` shelters ``hrv_trend.py`` for
+#: F009 (S4). Hits outside every row fail the gate.
 OWNERSHIP = (
     ("specification/spec/03-derived-metric-formulas.md", "*", "T202"),
     ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-03-tag-and-confidence", "T213"),
     ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence", "T213"),
     ("specification/spec/03-derived-metric-formulas.md", "HRV-01-R13-four-tier-hierarchy", "T213"),
-    ("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence", "T218"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-03-tag-and-confidence", "T203"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-04-reduced-confidence", "T203"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "HRV-01-R13-four-tier-hierarchy", "T203"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "PRIN-10-C19-reduced-confidence", "T203"),
-    ("specification/spec/02-canonical-data-schema-ingestion.md", "C19-hrv-04-reduced-confidence", "T218"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "*", "T214"),
     ("specification/spec/04-*", "*", "T204"),
-    ("specification/spec/04-physiological-state-model.md", "C19-hrv-04-reduced-confidence", "T218"),
     ("specification/spec/05-*", "*", "T204"),
     ("specification/spec/08-*", "*", "T204"),
     ("specification/spec/09-*", "*", "T204"),
@@ -497,8 +494,6 @@ OWNERSHIP = (
     ("runcoach-api/src/runcoach_api/schemas.py", "*", "T210"),
     ("runcoach-api/src/runcoach_api/main.py", "*", "T210"),
     ("runcoach-api/tests/test_hrv_no_regression_gate.py", "C05-gate02-worse-rate-reopens", "T212"),
-    ("runcoach-api/src/runcoach_api/metrics/hrv_trend.py", "*", "T218"),
-    ("runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py", "C19-hrv-04-reduced-confidence", "T218"),
 )
 
 
@@ -524,6 +519,84 @@ def stale_pending_rows(hits: list[Hit], pending: dict[str, list[tuple[str, str]]
     live = [h for h in hits if h.live]
     return [f"{task}.csv: {path},{key}" for task, rows in pending.items() for path, key in rows
             if not any(h.path == path and key in ("*", h.key) for h in live)]
+
+
+#: S4 and S11: each ``OLD_MEANINGS`` key whose pattern F011 narrowed, with the pattern it had before. A
+#: hit on correct prose is fixed by narrowing the key's pattern, never by an exception (S4), and the
+#: census records every site a narrowing stops matching as a ``narrowed`` row (S11). Frozen here, not
+#: read from git, so CI needs no history.
+#:
+#: - ``C19-hrv-04-reduced-confidence`` (T218, from ``b4479c4``): the bare phrase matched five sites of
+#:   correct prose that carry something other than a numeric rMSSD at reduced confidence (spec/03's
+#:   altitude-less features and CTL seed, spec/04's lone VO2max model, spec/02 §2.4.3 and
+#:   ``rr_reconstruction.py``'s low-valid-fraction series). The narrowed pattern needs rMSSD in the
+#:   same sentence, which every site of the old HRV-tier meaning names.
+NARROWED_FROM = MappingProxyType({
+    "C19-hrv-04-reduced-confidence": "at reduced confidence",
+})
+
+#: The paths of the sites each narrowing stopped matching, one entry per site, as T218 listed them
+#: before and after its narrowing (spec/02:191, spec/03:81 and :155, spec/04:123,
+#: ``rr_reconstruction.py``:418). Paths only, so a line moved by another task's edit does not red.
+NARROWED_SITE_PATHS = MappingProxyType({
+    "C19-hrv-04-reduced-confidence": (
+        "runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py",
+        "specification/spec/02-canonical-data-schema-ingestion.md",
+        "specification/spec/03-derived-metric-formulas.md",
+        "specification/spec/03-derived-metric-formulas.md",
+        "specification/spec/04-physiological-state-model.md",
+    ),
+})
+
+#: S11: the census T200 writes, columns ``key,path,excerpt,source``.
+CENSUS_PATH = Path(__file__).parent / "data" / "research00_census.csv"
+
+
+def narrowed_extras(repo_root: Path = _REPO_ROOT, narrowed_from=NARROWED_FROM, old_meanings=None) -> list[Hit]:
+    """The sites each narrowing stopped matching: every hit of a key's old pattern over the live files
+    of ``repo_root`` that overlaps no hit of its current pattern in the same file. Exceptions play no
+    part (a narrowing is judged on the text, sheltered or not)."""
+    old_meanings = OLD_MEANINGS if old_meanings is None else old_meanings
+    current = {key: old_meanings[key] for key in narrowed_from}
+    before = {key: replace(old_meanings[key], pattern=old) for key, old in narrowed_from.items()}
+    now = scan(repo_root, old_meanings=current, exceptions=())
+    was = scan(repo_root, old_meanings=before, exceptions=())
+    return [h for h in was if not any(n.path == h.path and n.key == h.key and n.start < h.end and h.start < n.end
+                                      for n in now)]
+
+
+def read_census(path: Path = CENSUS_PATH) -> list[dict[str, str]]:
+    """The census rows, as dicts keyed by its header. A missing census raises (T200 writes it)."""
+    with path.open(encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def narrowed_census_errors(extras: list[Hit], census_rows, narrowed_from=NARROWED_FROM,
+                           repo_root: Path = _REPO_ROOT) -> list[str]:
+    """S11 for each narrowed key: the census's ``narrowed`` rows for it name exactly the paths of its
+    old pattern's extra matches, one row per site, and each row's excerpt overlaps an extra match of
+    that key in that file."""
+    errors = []
+    for key in narrowed_from:
+        rows = [r for r in census_rows if r.get("key") == key and r.get("source") == "narrowed"]
+        want = sorted(h.path for h in extras if h.key == key)
+        got = sorted(Path(r["path"]).as_posix() for r in rows)
+        if want != got:
+            errors.append(f"{key}: the old pattern's extra matches are in {want}; "
+                          f"the census's narrowed rows name {got}")
+        for row in rows:
+            path = Path(row["path"]).as_posix()
+            if not (repo_root / path).is_file():
+                errors.append(f"{key}: narrowed row {path}: no such file")
+                continue
+            text = normalize((repo_root / path).read_text(encoding="utf-8"))
+            excerpt = normalize(row.get("excerpt") or "")
+            spans = [(m.start(), m.end()) for m in re.finditer(re.escape(excerpt), text)] if excerpt else []
+            if not any(a < h.end and h.start < b for a, b in spans
+                       for h in extras if h.key == key and h.path == path):
+                errors.append(f"{key}: narrowed row {path}: excerpt {row.get('excerpt')!r} overlaps none of "
+                              f"the old pattern's extra matches there")
+    return errors
 
 
 _REAL_SCAN: list[Hit] = []
@@ -1049,7 +1122,7 @@ def test_pending_file_parsing_and_coverage(tmp_path):
     assert gate_failures([whole], pending, ownership=(("spec/a.md", "*", "T900"),)) == []
     assert owners_of("specification/spec/03-derived-metric-formulas.md", "C03-return-is-free") == {"T202"}
     assert owners_of("specification/spec/03-derived-metric-formulas.md", "C19-hrv-04-reduced-confidence") == {
-        "T213", "T218"}
+        "T213"}
     assert owners_of("specification/spec/04-physiological-state-model.md", "*") == {"T204"}
     assert owners_of("specification/spec/01-scope-inputs-pace-target.md", "*") == set()
 
@@ -1111,3 +1184,92 @@ def test_read_pending_rejects_a_row_that_is_not_path_key(tmp_path, body):
     with pytest.raises(AssertionError, match="T900.csv: a row is not path,key") as raised:
         read_pending(tmp_path)
     print(f"[slice compared] {body!r} -> {raised.value}")
+
+
+# --------------------------------------------------------------------------------------------------
+# S4 and S11 (T218): narrowed patterns, and the F009 exceptions in hrv_trend.py.
+# --------------------------------------------------------------------------------------------------
+
+_HRV_TREND = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+
+
+def test_narrowed_from_names_real_keys_whose_old_pattern_was_wider():
+    """Each ``NARROWED_FROM`` entry names an ``OLD_MEANINGS`` key, its old pattern differs from the
+    current one, and both match the key's example (a narrowing keeps F008's positive control)."""
+    rows = {key: (old, OLD_MEANINGS[key].pattern if key in OLD_MEANINGS else None)
+            for key, old in NARROWED_FROM.items()}
+    print(f"[slice compared] NARROWED_FROM (old, current): {rows}")
+    assert sorted(NARROWED_FROM) == sorted(NARROWED_SITE_PATHS)
+    for key, (old, current) in rows.items():
+        assert current is not None and current != old, key
+        example = normalize(OLD_MEANINGS[key].example)
+        assert re.search(old, example) and re.search(current, example), key
+
+
+def test_narrowing_loses_exactly_the_named_correct_prose_sites():
+    """T218's AC: every hit the narrowing lost is one of the five named sites, and it lost all five."""
+    extras = narrowed_extras()
+    for hit in extras:
+        print(f"  lost {hit.key}: {hit.path}:{hit.line} {hit.matched!r}")
+    got = {key: tuple(sorted(h.path for h in extras if h.key == key)) for key in NARROWED_FROM}
+    print(f"[slice compared] lost paths per narrowed key {got} against NARROWED_SITE_PATHS")
+    assert got == {key: tuple(sorted(paths)) for key, paths in NARROWED_SITE_PATHS.items()}
+
+
+@pytest.mark.xfail(condition=not CENSUS_PATH.exists(), strict=True, reason="T200 writes the census")
+def test_narrowed_patterns_extra_matches_are_the_census_narrowed_rows():
+    """S11: re-run each old pattern over the live files; its extra matches are exactly the census's
+    ``narrowed`` rows for that key."""
+    extras = narrowed_extras()
+    rows = read_census()
+    errors = narrowed_census_errors(extras, rows)
+    print(f"[slice compared] {len(extras)} extra matches against "
+          f"{sum(r.get('source') == 'narrowed' for r in rows)} narrowed census rows: {errors}")
+    assert errors == []
+
+
+def test_narrowed_extras_and_census_rows_in_a_tmp_world(tmp_path):
+    """The two helpers on a planted world: the old pattern's extra match is the correct-prose site
+    only, and the census check reds on a missing row, a surplus row and an excerpt elsewhere."""
+    key = "C19-hrv-04-reduced-confidence"
+    old_site = f"Old: {OLD_MEANINGS[key].example}.\n"
+    correct = "A seed is flagged provisional, carried at reduced confidence until history accrues.\n"
+    _plant(tmp_path, "specification/spec/98-old.md", old_site)
+    _plant(tmp_path, "specification/spec/99-correct.md", correct)
+    extras = narrowed_extras(tmp_path)
+    print(f"[slice compared] extras {[(h.path, h.line, h.matched) for h in extras]}")
+    assert [(h.path, h.key) for h in extras] == [("specification/spec/99-correct.md", key)]
+    row = {"key": key, "path": "specification/spec/99-correct.md",
+           "excerpt": "carried at reduced confidence", "source": "narrowed"}
+    other = {"key": key, "path": "specification/spec/98-old.md", "excerpt": "at reduced confidence",
+             "source": "grep"}
+    cases = {
+        "exact": [row, other],
+        "missing": [other],
+        "surplus": [row, dict(row, path="specification/spec/98-old.md")],
+        "excerpt elsewhere": [dict(row, excerpt="A seed is flagged provisional")],
+    }
+    verdicts = {name: narrowed_census_errors(extras, rows, repo_root=tmp_path) for name, rows in cases.items()}
+    print(f"[slice compared] {verdicts}")
+    assert verdicts["exact"] == []
+    assert all(len(verdicts[name]) == 1 for name in ("missing", "excerpt elsewhere"))
+    assert len(verdicts["surplus"]) == 2
+
+
+def test_the_f009_exceptions_shelter_every_hrv_trend_hit_each_excerpt_once():
+    """S4 for F009: every hit in ``hrv_trend.py`` is sheltered, only by F009 triples; each F009 excerpt
+    occurs exactly once in the file (an excerpt shelters every occurrence of itself) and shelters a
+    hit; and no F009 triple names another file."""
+    exceptions = _OM.EXCEPTIONS
+    f009 = [i for i, e in enumerate(exceptions) if e[2] == "F009"]
+    text = normalize((_REPO_ROOT / _HRV_TREND).read_text(encoding="utf-8"))
+    counts = {i: text.count(normalize(exceptions[i][1])) for i in f009}
+    hits = [h for h in real_scan() if h.path == _HRV_TREND]
+    for hit in hits:
+        print(f"  {hit.path}:{hit.line} {hit.key} sheltered by {hit.sheltered_by}")
+    print(f"[slice compared] {len(f009)} F009 triples, excerpt counts {counts}; {len(hits)} hrv_trend.py hits")
+    assert f009 and hits
+    assert all(exceptions[i][0] == _HRV_TREND for i in f009)
+    assert all(count == 1 for count in counts.values()), counts
+    assert all(h.sheltered_by and set(h.sheltered_by) <= set(f009) for h in hits)
+    assert set(f009) <= {i for h in hits for i in h.sheltered_by}
