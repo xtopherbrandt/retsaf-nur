@@ -365,9 +365,7 @@ def test_scanner_walk_keeps_scanned_suffixes_and_drops_records_and_other_files(t
         "runcoach-api/src/runcoach_api/README.md",
         "runcoach-api/src/runcoach_api/config.yaml",
         "runcoach-api/tests/test_x.py",
-        "spec-mirror/features/F005-resting-hrv-trend.md",
-        "spec-mirror/references/F005-decision-log.md",
-        "spec-mirror/references/F006-sweep-findings.md",
+        *_REPO_RECORD_FILES.values(),
     ]
     files = live_files(_tree(tmp_path, live + dropped))
     walked = sorted(p for paths in files.values() for p in paths)
@@ -375,6 +373,83 @@ def test_scanner_walk_keeps_scanned_suffixes_and_drops_records_and_other_files(t
     assert walked == sorted(live)
     assert files["research"] == ("specification/research/01-physiology.md",
                                  "specification/research/06-landscape.md")
+
+
+#: S1's by-path list and F009 AC2's list, copied from the F011 decisions reference and the F009 feature
+#: file (2026-09-28, spec review wave 1), not from ``research00_records.py``. Each spec pattern is written
+#: in the module's prefix form (the row matches ``prefix + "*"``): ``F005-*`` is ``F005-``, ``sprints/
+#: sprint-*`` except ``current`` is ``sprints/sprint-``, and ``verify/*-verdict-cycle*.md`` is
+#: ``verify/*-verdict-cycle``.
+_SPEC_RECORD_ROWS = frozenset({
+    # S1, by path (repo); also F009 AC2's research/00 files, F005-* (spec-mirror) and F006 copies.
+    ("repo", "specification/research/00-history.md"),
+    ("repo", "specification/research/00-traceability.md"),
+    ("repo", "specification/research/00-meaning-review.md"),
+    ("repo", "spec-mirror/features/F005-"),
+    ("repo", "spec-mirror/references/F005-"),
+    ("repo", "spec-mirror/references/F006-research-draft-archived-2026-09-23.md"),
+    ("repo", "spec-mirror/references/F006-no-regression-report.md"),
+    ("repo", "spec-mirror/references/F006-sweep-findings.md"),
+    # F009 AC2, repo files outside F011's roots.
+    ("repo", "runcoach-api/tests/support/research00_old_meanings.py"),
+    ("repo", "runcoach-api/tests/test_research00_traceability.py"),
+    # F009 AC2, the data dir: F005-*, F006's three (both copies), the inventory, F008's decisions,
+    # sprints/sprint-* except current, verify/*-verdict-cycle*.md.
+    ("data", "spec/features/F005-"),
+    ("data", "spec/references/F005-"),
+    ("data", "spec/references/F006-research-draft-archived-2026-09-23.md"),
+    ("data", "spec/references/F006-no-regression-report.md"),
+    ("data", "spec/references/F006-sweep-findings.md"),
+    ("data", "spec/references/research00-rewrite-inventory.md"),
+    ("data", "spec/references/F008-rewrite-decisions.md"),
+    ("data", "sprints/sprint-"),
+    ("data", "verify/*-verdict-cycle"),
+})
+
+#: One planted file per repo-space row of ``_SPEC_RECORD_ROWS``, keyed by the row's prefix.
+_REPO_RECORD_FILES = {
+    "specification/research/00-history.md": "specification/research/00-history.md",
+    "specification/research/00-traceability.md": "specification/research/00-traceability.md",
+    "specification/research/00-meaning-review.md": "specification/research/00-meaning-review.md",
+    "spec-mirror/features/F005-": "spec-mirror/features/F005-resting-hrv-trend.md",
+    "spec-mirror/references/F005-": "spec-mirror/references/F005-decision-log.md",
+    "spec-mirror/references/F006-research-draft-archived-2026-09-23.md":
+        "spec-mirror/references/F006-research-draft-archived-2026-09-23.md",
+    "spec-mirror/references/F006-no-regression-report.md": "spec-mirror/references/F006-no-regression-report.md",
+    "spec-mirror/references/F006-sweep-findings.md": "spec-mirror/references/F006-sweep-findings.md",
+    "runcoach-api/tests/support/research00_old_meanings.py": "runcoach-api/tests/support/research00_old_meanings.py",
+    "runcoach-api/tests/test_research00_traceability.py": "runcoach-api/tests/test_research00_traceability.py",
+}
+
+
+def test_scanner_record_set_rows_are_exactly_s1_and_f009_ac2():
+    rows = [(space, prefix) for space, prefix, _reason in RECORD_SET]
+    missing = sorted(_SPEC_RECORD_ROWS - set(rows))
+    extra = sorted(set(rows) - _SPEC_RECORD_ROWS)
+    print(f"[slice compared] {len(rows)} RECORD_SET rows against {len(_SPEC_RECORD_ROWS)} spec rows; "
+          f"missing {missing}; extra {extra}")
+    assert len(rows) == len(set(rows)), "a RECORD_SET row is duplicated"
+    assert missing == [] and extra == []
+    assert sorted(_REPO_RECORD_FILES) == sorted(p for s, p in _SPEC_RECORD_ROWS if s == "repo")
+
+
+def test_scanner_walk_drops_each_repo_record_by_its_own_row(tmp_path, monkeypatch):
+    """Every repo-space record, planted, is dropped from the walk. Walked again with only its own row
+    removed, it comes back exactly when it lies under an F011 root (S1's five spec-mirror rows); the
+    research/00 files and the two test files lie outside every root (S2), so their rows guard F009 only."""
+    root = _tree(tmp_path, list(_REPO_RECORD_FILES.values()))
+    walked = sorted(p for paths in live_files(root).values() for p in paths)
+    returned = {}
+    for prefix, planted in _REPO_RECORD_FILES.items():
+        monkeypatch.setattr(_REC, "RECORD_SET", tuple(r for r in RECORD_SET if (r[0], r[1]) != ("repo", prefix)))
+        returned[planted] = sorted(p for paths in live_files(root).values() for p in paths)
+        monkeypatch.setattr(_REC, "RECORD_SET", RECORD_SET)
+    print(f"[slice compared] {len(_REPO_RECORD_FILES)} planted; walked with every row {walked}; "
+          f"walked without each file's own row {returned}")
+    assert walked == []
+    in_roots = sorted(planted for planted, again in returned.items() if again)
+    assert all(again in ([], [planted]) for planted, again in returned.items())
+    assert in_roots == sorted(planted for planted in _REPO_RECORD_FILES.values() if planted.startswith("spec-mirror/"))
 
 
 def test_scanner_floor_fails_for_a_root_below_it_and_for_a_missing_root(tmp_path):
