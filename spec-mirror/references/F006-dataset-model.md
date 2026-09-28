@@ -66,8 +66,9 @@ Three properties carried over from the shipped `_recency_struck`, deliberately a
 
 - the comparison is **between datasets**, not against `D` — the reference maximum is taken once,
   simultaneously, over every **established** dataset, those that are not judgeable and those about to
-  be skipped alike, while the **candidates** it strikes from are the judgeable ones, so a lone
-  **established** dataset is its own reference and is never skipped (AC7);
+  be skipped alike, while the **candidates** it strikes from are the judgeable ones, and an
+  established dataset that is not judgeable is never skipped but can hold the reference maximum
+  (AC7; `research/00` HRV-15, decision C10);
 - the bound is **strictly greater than** (AC7);
 - `RECENCY_TOLERANCE_DAYS` = 28 is **reused, not minted** — already measured with a justified band of
   [18, 44] and already reasoned against `gap_reset_days`.
@@ -107,7 +108,7 @@ had to patch it.
 | sense | what it is | role |
 |---|---|---|
 | **Fidelity rank** | the ordinal in `TIER_FIDELITY` / `_FIDELITY_RANK`; already shipped, ratified by §3.7.1 | **arbitrates selection** |
-| **Confidence weight** | the numeric per-tier weight §3.7.1 defines and §3.7.4 defers to Section 6 | **not emitted at all, and it never arbitrates** |
+| **Confidence weight** | a numeric per-tier weight, which Section 3 neither computes nor emits and which is deferred to Section 6's readiness fusion (`research/00` HRV-04, HRV-54, decision C19) | **not emitted at all, and it never arbitrates** |
 
 IDEA-071's cost 1 — a new recency × quality exchange rate — therefore never arises, which was the
 point of splitting them.
@@ -325,10 +326,12 @@ feature it re-derives.
 - **N is 3 in the enum and 2 in every real corpus.** `health_api_overnight` "is in the enum but is
   never written by the classifier" (`hrv_trend.py:218`). Every AC is exercised at N = 2; the
   3-dataset shape is **untested by construction** and must not be assumed covered.
-- **`RECENCY_TOLERANCE_DAYS` is inherited, not re-justified.** Its `[18, 44]` band was measured over
+- **`RECENCY_TOLERANCE_DAYS` is inherited, not re-justified.** Its `[18, 44]` bracket was measured over
   F005's 394 tests against the **fused** band; the upper end was "the July trial is re-admitted",
   which under F006 harms nothing because a stale trial is not judgeable. **Do not cite `[18, 44]` as
-  if it transferred** — AC19/AC21 must re-measure it. This is the same trap as the 2026-09-15
+  if it transferred**: the constant (28) rests on HRV-16's two reasons alone, (i) four judged weeks
+  and (ii) greater than `GAP_RESET_DAYS` (21), until a re-measurement against per-tier datasets is
+  recorded (`research/00` GATE-03, decision C37). This is the same trap as the 2026-09-15
   parameter-free measurement in §3.
 - **Pipeline order is verdict-determining.** Per-dataset clips → establishment → the simultaneous recency reference set, taken over the **established** datasets → judgeability, which fixes the
   candidates that reference strikes from → selection → promotion. (*Amended 2026-09-21 with §3: this read "establishment → judgeability → the simultaneous recency reference set" while the reference population was the judgeable datasets. Since T164 the reference does not depend on judgeability at all — `select_dataset` takes it over every established dataset and intersects the struck set with the judgeable ones.*) `judge` resolves `unavailable_reason`
@@ -340,10 +343,12 @@ feature it re-derives.
   IDEA-071's cost 1 from arising; pin it during task decomposition, along with "no new constant".
   *Done, 2026-09-19 (T156): `test_the_numeric_confidence_weight_never_participates_in_selection`;
   and no weight is emitted, `datasets[]` carrying `fidelity_rank` — §3.*
-- **`research/00` §5.4 must be amended first.** §3.7.3's main clause states that adopting or
-  abandoning the strap **is** a baseline re-establishment withholding any verdict; making a return
-  free contradicts it. The authority is amended before `spec/03` (project rule: `research_00`
-  governs), and the claim is swept tree-wide (`sweep-the-claim-not-the-diff`).
+- **`research/00` §5.4 is amended first.** §3.7.3's main clause stated that adopting or
+  abandoning the strap **is** a baseline re-establishment withholding any verdict; `research/00`
+  now states that a source change triggers no rule-level re-establishment and collapses no SWC
+  band, the coverage-gap reset being the only one that re-establishes (HRV-34, decision C03). The
+  authority is amended before `spec/03` (project rule: `research_00` governs), and the claim is
+  swept tree-wide (`sweep-the-claim-not-the-diff`).
 - **Assumption to test, not assume: the datasets may not be independent instruments.** The HRM-Pro-Plus
   broadcasts over ANT+ **to the same watch** that produces the `health_snapshot`. If a snapshot on a
   strap morning is computed from the same beats, `disagreed_with` measures vendor post-processing
@@ -370,7 +375,7 @@ the Negative Class had moved in full).
 
 | cost | direction and why it is accepted |
 |---|---|
-| **The §1.7 promotion exposure.** The selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band. A consumer reading `hrv_status` alone — every consumer today, and Section 6 as specified — is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** Accepted because quality-first promotes the *best available* instrument (~8× lower rMSSD error than PPG), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save AC21's one counted exception (`DEFERRED_EXCEPTION`, [[IDEA-087]]; T168) |
+| **The §1.7 promotion exposure.** The selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band. A consumer reading `hrv_status` alone — every consumer today, and Section 6 as specified — is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** It ships only as HRV-25's population, the named §1.7 exception PRIN-15 lists, owned by [[IDEA-099]], whose count and pin F009 produces, and it may not grow (`research/00` HRV-25, PRIN-15, decision C06). Quality-first explains why the selected dataset decides: it promotes the *best available* instrument (~8× lower rMSSD error than PPG), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save the exceptions PRIN-15 lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by [[IDEA-087]] (T168), and HRV-25's population |
 | **Same-tier device replacement (strap A → identical strap B) stays invisible** | Costs **0** silent days — holds the tier constant, fires no reset, opens no era boundary. Benign; what [[T141]] withdrew the composed-silence paragraph over |
 | **§3.7.3's device/firmware re-establishment clause stays unimplemented** | The column it points at carries the **watch's** firmware, so honouring it would re-establish a *strap* dataset when the *watch* updates — the wrong event. F007 persists the identity that would close it |
 | **The 18-day adoption silence, and `week_too_thin` on 16 of those days** | Out of scope by user decision, 2026-09-18. A never-used device holds no baseline under any scheme. Priced by [[T137]]/[[T138]], unchanged here |
@@ -393,7 +398,10 @@ All entries 2026-09-18, from `/ship-discuss IDEA-071`.
   selection form was re-opened rather than left measure-first.
 - **Selection is quality-first with a recency tolerance gate** — over recency × quality (mints an
   exchange rate), recency-only and coverage-first (both invert §3.7.1 precedence).
-- **Explicit hysteresis deferred**, now with a trigger it can actually fire (AC23).
+- **No hysteresis in dataset selection** (decided 2026-09-21, replacing the deferral this entry
+  first recorded): the system MUST NOT add hysteresis to dataset selection, and the worsened
+  dataset-flip set must remain the 80 pinned `walk_flips` cells at `car_density = 2wk` (AC23;
+  `research/00` GATE-02, decision C05).
 - **Retirement requires a three-valued pin** — corrected from a two-valued form that was
   **unsatisfiable**, since a pin over a retired qualifier's population is green on shipped F005 by
   construction.
@@ -418,14 +426,17 @@ Full detail in `spec/references/F006-dataset-model.md` — **read §9 and §10 b
 - **Dataset key is `hrv_source_tier`** — stored `source_device` is the *watch*; identity is F007.
   `health_api_overnight` is never written by the classifier, so N is 3 in the enum and **2 in every
   real corpus**, and the 3-dataset shape is untested by construction.
-- **`RECENCY_TOLERANCE_DAYS` (28) is inherited, not re-justified** — the `[18, 44]` band was measured
-  against the *fused* band. Do **not** cite it as transferring; AC19/AC21 re-measure it.
+- **`RECENCY_TOLERANCE_DAYS` (28) is inherited, not re-justified** — the `[18, 44]` bracket was measured
+  against the *fused* band and is **not** cited as transferring; the constant rests on HRV-16's two
+  reasons alone until a re-measurement against per-tier datasets is recorded (`research/00` GATE-03,
+  decision C37).
 - **Fidelity rank arbitrates; the confidence weight never does** — pinned since 2026-09-19 by
   `test_the_numeric_confidence_weight_never_participates_in_selection` (T156), behaviourally and
   structurally at once. No weight is emitted either: `datasets[]` carries `fidelity_rank`
   (`spec/03` §3.7.4; §3's table above, corrected 2026-09-21, T159).
-- **`research/00` §5.4 is amended FIRST** — §3.7.3's main clause makes adopting or abandoning the
-  strap a re-establishment, which a free return contradicts. Sweep the claim tree-wide.
+- **`research/00` §5.4 is amended FIRST** — it now states that a source change triggers no rule-level
+  re-establishment and collapses no SWC band, the coverage-gap reset being the only one that
+  re-establishes (HRV-34, decision C03). Sweep the claim tree-wide.
 
 
 ## 14. Decision log additions from sprint-006 planning (2026-09-18)
@@ -433,12 +444,17 @@ Full detail in `spec/references/F006-dataset-model.md` — **read §9 and §10 b
 - **AC17 split into two mechanisms** after the sprint analyst showed `_era_boundary(old, new, judged)`
   returns `None` when `old is new` (verified by direct call). The reported `tier_change_reset` stays
   cross-tier; a **new, unreported** per-dataset band clip cuts a dataset's band at an internal hole of
-  at least `GAP_RESET_DAYS`, reusing that constant rather than minting one. Chosen over naming the
+  more than `GAP_RESET_DAYS` (21) silent local days of its tier, so 21 does not clip and 22 does
+  (`research/00` HRV-37, decision C04), reusing that constant rather than minting one. Chosen over naming the
   residual and over dropping AC17 entirely.
 - **AC9 keeps a presentation fallback** (F005's rule 3): on an illness/holiday week `selected_dataset`
-  is null but `baseline`/`band` are populated from the dataset the athlete used last, so the
-  non-nullable contract fields carry a value and three shipped pins stay green.
-- **AC10 is taken literally**: a judgeable dataset reading below its own band is listed in
-  `disagreed_with` even when its own verdict is withheld by T125/T132.
+  is null but `baseline`/`band` are populated, for presentation only, from the dataset the
+  presentation fallback names (`research/00` HRV-24, HRV-59), so the non-nullable contract fields
+  carry a value and three shipped pins stay green.
+- **AC10's disagreement rule, as T167 fixed it (2026-09-21)**: a dataset with a computable band
+  whose judged-week mean reads on the other side of its own band from the selected dataset's, in
+  either direction, is named in `disagreed_with` whether or not it is judgeable, wherever a verdict
+  is conferred; whenever the served verdict is `hrv_unavailable`, for any cause, `disagreed_with` is
+  empty (`research/00` HRV-21, HRV-22, decision C16).
 - **AC6, not AC17, defends reference §9.** For the dataset that *is* `previous_tier`, clause (b)
   short-circuits and no clip ever fires. The two are sequential, not complementary.
