@@ -161,8 +161,9 @@ capture at 07:00 and a `health_snapshot` at 07:05, *when* datasets are built, *t
 one reading to each and neither is excluded as `off_baseline_tier`.
 
 **AC4 — per-day collapse still applies within a dataset.** *Given* two `chest_strap_raw` captures on one
-local day, *then* only the later is kept (`same_day_later_capture`) and the day counts once. Every count
-here is in **distinct local days** (T095, IDEA-047).
+local day, *then* only the earliest is kept, each later capture being excluded as `same_day_later_capture`,
+and the day counts once (`research/00` HRV-11, HRV-49; [[IDEA-079]]). Every count here is in **distinct
+local days** (T095, IDEA-047).
 
 **AC5 — selection promotes the highest fidelity judgeable dataset.** *Given* `chest_strap_raw` is judgeable
 and last read 2 days ago and `health_snapshot` is judgeable, *when* selection runs, *then*
@@ -179,8 +180,9 @@ reference §9.
 **AC7 — the gate boundary and its reference set.** *Given* a dataset exactly `RECENCY_TOLERANCE_DAYS`
 behind, *then* it is **not** skipped (strictly greater than). The reference maximum is taken **once,
 simultaneously, over every ESTABLISHED dataset — the ones that are not judgeable and the ones about to be
-skipped alike** — never iteratively; the **candidates** it strikes from remain the judgeable datasets, so a
-lone **established** dataset is its own reference and is never skipped. *Amended 2026-09-20 (T164,
+skipped alike** — never iteratively; the **candidates** it strikes from remain the judgeable datasets, and an
+established dataset that is not judgeable is never skipped but can hold the reference maximum (`research/00`
+HRV-15, decision C10). *Amended 2026-09-20 (T164,
 [[IDEA-080]] option 2, `research/00` §5.4 amended first): the reference was the judgeable datasets from
 2026-09-18, and T162 measured that narrowing at `hrv_normal` on an entirely pre-layoff band 1,896 → 3,705 of
 307,500 rectangle rows (×1.95) and 96 → 254 of 24,000 walk rows (×2.65) against shipped F005, whose own
@@ -199,8 +201,8 @@ over the **post-clip** baseline window (AC17).
 then, which AC7's 2026-09-20 widening made a strict subset: the fallback fires on `selection.selected is
 None`, and since the recency reference may be held by an established dataset that is not judgeable, every
 judgeable candidate can now be skipped at once*) — *then* `hrv_status` is `hrv_unavailable` and
-`selected_dataset` is `null`, **but `baseline` and `band` are still populated from the dataset the athlete
-used last** (F005's rule 3, retained) so the non-nullable `baseline.n`/`window`/`established` carry a value
+`selected_dataset` is `null`, **but `baseline` and `band` are still populated, for presentation only, from the
+dataset the presentation fallback names** (F005's rule 3, retained; `research/00` HRV-24, HRV-59) so the non-nullable `baseline.n`/`window`/`established` carry a value
 and no contract break occurs. **No verdict is conferred by the fallback, and it cannot be:** clause 1
 presents the **established** dataset read last, which holds the recency reference maximum and is therefore
 never struck by the gate — so had it been judgeable it would have survived as a candidate and been
@@ -212,14 +214,13 @@ pinned by `test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164`
 datasets satisfy different causes.
 
 **AC10 — disagreement is reported from any dataset with a computable band.** *Given* a dataset whose
-baseline holds at least two readings, so a band exists, and whose judged-week mean reads below that band,
-*then* — wherever a verdict is conferred (*amended 2026-09-21, T167; `research/00` §5.4 (iii) amended
+baseline holds at least two readings, so a band exists, and whose judged-week mean reads on the other side of
+its own band from the selected dataset's, in either direction (`research/00` HRV-21), *then* — wherever a verdict is conferred (*amended 2026-09-21, T167; `research/00` §5.4 (iii) amended
 first: where the served verdict is `hrv_unavailable`, for any cause, nobody is named*) — it is named in
 `disagreed_with` — **whether or not it is judgeable**. A dataset with fewer than two
 baseline readings has no band, cannot disagree, and is instead visible in `datasets[]` carrying its `n` and
-its judged-week count. Here "reads below" means reads the **other side of its own band from the selected
-dataset** (clarified 2026-09-19, T156, `research/00` §5.4): a dataset below its band beside a selected
-dataset that is also below its own agrees with it and is not named.
+its judged-week count. So a dataset below its band beside a selected dataset that is also below its own
+agrees with it and is not named (clarified 2026-09-19, T156, `research/00` §5.4).
 
 **AC11 — disagreement never overrides.** *Given* any number of judgeable datasets disagree with the selected
 one in **either** direction, *then* `hrv_status` is the selected dataset's verdict, unchanged. Both
@@ -250,8 +251,8 @@ shipped code and pinned by `test_a_gap_bridged_by_off_tier_readings_is_not_a_gap
 partition cannot silently make the clip per-dataset.
 
 **AC17 — the band clip and the reported reset are separated.** *Given* a dataset whose own baseline window
-spans an internal capture hole of at least `GAP_RESET_DAYS`, *then* that dataset's band is clipped at the
-hole — a **new, unreported** per-dataset clip. *And given* a genuine tier change, *then* `tier_change_reset`
+spans an internal capture hole of more than `GAP_RESET_DAYS` (21) silent local days of its tier, so 21
+does not clip and 22 does, *then* that dataset's band is clipped at the hole (`research/00` HRV-37) — a **new, unreported** per-dataset clip. *And given* a genuine tier change, *then* `tier_change_reset`
 still decides the **reported** `reset_reason`/`reset_on` by asking the existing cross-tier question once per
 dataset, with T129's stray population left **globally unclipped**. The two are distinct: `_era_boundary`
 requires an old-tier reading followed by a new-tier one, so on a single dataset it returns `None` (measured)
@@ -281,17 +282,20 @@ compared against F005 per AC21, and recorded in the Negative Class with its dire
 
 **AC23 — flip rate is scored against a criterion it can fail.** *Given* the selection form, *then* its
 dataset-flip rate per athlete-year is measured across the AC19 sweeps and compared against F005 per AC21;
-**a worse rate triggers the deferred hysteresis decision**.
+the system **MUST NOT add hysteresis** to dataset selection, and the worsened dataset-flip set must remain
+the 80 pinned `walk_flips` cells at `car_density = 2wk` (`research/00` GATE-02, decision C05).
 
-**AC24 — the withhold is retained at dataset scope.** *Given* a dataset that is **not** judgeable but holds
-at least `MIN_WINDOW_READINGS` judged-week days, every one later than every judged-week day of the selected
-dataset, *then* `hrv_status` is `hrv_unavailable` and no verdict is promoted. This is T125/T132's
+**AC24 — the withhold is retained at dataset scope.** *Given* a dataset that could not have been selected: not
+judgeable, or skipped by the recency gate (AC6, AC7), holding at least `MIN_WINDOW_READINGS` distinct
+judged-week days, every one later than every judged-week day of the dataset being judged, *then* the verdict
+of the dataset being judged is withheld (`week_not_representative`), so where it is the selected dataset
+`hrv_status` is `hrv_unavailable` and no verdict is promoted (`research/00` HRV-31, decisions C01 and C02).
+This is T125/T132's
 `verdict_withheld`, kept rather than retired: without it a brand-new device (zero baseline days, so never
 judgeable) leaves the outgoing dataset selected and promotes `hrv_normal` on its stale week — the sixth
 §1.7-forbidden population, which shipped F005 closes and AC21 therefore forbids regressing.
-*(Note, 2026-09-22, non-deciding: `verdict_withheld` as built asks this of every dataset that is not judgeable **or**
-was skipped by the recency gate; T125's own returning strap is judgeable and skipped, so "not judgeable" alone is
-narrower than the code. The criterion stands as written pending [[IDEA-083]]; this note chooses none of its options.)*
+*(Note: the criterion states `verdict_withheld` as built, which also reaches T125's own returning strap, a
+dataset that is judgeable and skipped; `research/00` HRV-31 states it so, as [[IDEA-083]]'s option 1 chose.)*
 
 ## Interface
 
@@ -316,7 +320,7 @@ Full table in reference §11; the governing row:
 
 | cost | direction and why it is accepted |
 |---|---|
-| **The §1.7 promotion exposure** — the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band, and a consumer reading `hrv_status` alone (every consumer today, and Section 6 as specified) is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** Accepted because quality-first promotes the *best available* instrument (~8× lower rMSSD error), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save AC21's one counted exception (`DEFERRED_EXCEPTION`, [[IDEA-087]]) |
+| **The §1.7 promotion exposure** — the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band, and a consumer reading `hrv_status` alone (every consumer today, and Section 6 as specified) is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** It ships only as HRV-25's population, the named §1.7 exception PRIN-15 lists, owned by [[IDEA-099]], whose count and pin F009 produces, and it may not grow (`research/00` HRV-25, PRIN-15, decision C06). Quality-first explains why the selected dataset decides: it promotes the *best available* instrument (~8× lower rMSSD error), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save the exceptions PRIN-15 lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by [[IDEA-087]], and HRV-25's population |
 
 Carried forward (§11): same-tier replacement invisible; §3.7.3's device/firmware clause
 unimplemented; the 18-day adoption silence and its wrong `week_too_thin` reason; the 3×/week
@@ -486,8 +490,9 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   rows, every one at `car_density = 2wk`, each 0 → 2 flips per 40-morning walk; AC21 compares per
   cell as well as marginally. The marginal, **18.47 → 9.36 per athlete-year** (600 against 1,184
   selection changes over 23,400 day-to-day transitions), is what **concealed** them, not what settles
-  it. Decided 2026-09-21, **no hysteresis**, and **conditional** ([[IDEA-089]], `status: conditional`):
-  `research/00` still says a worse rate *reopens* the decision and does not carry it, and
+  it. Decided 2026-09-21, **no hysteresis**, and `research/00` GATE-02 now carries the decision (decision
+  C05): the system MUST NOT add hysteresis to dataset selection, and the worsened flip set stays the 80
+  pinned cells. It is revisited only if [[IDEA-089]]'s part (b) shows harm, since
   `T130-overlap-sweep-harness.py`'s `era()` gives every tier the same value generator ("the band's
   dispersion is the same at every density"), so "no §1.7 rate moved" is true **by construction**.
   What the flips were traded for: **2,984 more `hrv_unavailable` mornings** over the same 24,000 walk
