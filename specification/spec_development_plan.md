@@ -14,7 +14,7 @@
 
 **What "approved" covers:** the outline (`spec_outline.md`) and all nine specification sections (`spec/01`–`spec/09`), together with the decision authority (`research/00`) and mechanism research (`research/01`–`research/06`) they rest on, and the dispositions recorded in `future/future-directions.md`.
 
-**The one thing still deliberately deferred (not a blocker):** the Section 6 CTL-rise band (§6.2.2) is ratified and live in the spec, but its `research/00` Part 3 register row is intentionally deferred until real field data refines the numeric band. Approval does not change that — it is a post-launch tuning item, not an unfinished spec item.
+**The one post-launch tuning item (not a blocker):** the Section 6 CTL-rise range (§6.2.2) is ratified and live in the spec, and the `research/00` Part 3 register carries it as a row marked PROVISIONAL (REG-19) until field data refines the numeric range. Approval does not change that — it is a post-launch tuning item, not an unfinished spec item.
 
 **Handing off to implementation:** an implementer should start at `research/00` (the constitution — Part 1 conflict rules, Part 2 architecture, Part 3 parameter register, Part 4 FTO guardrails), then read `spec/01`→`spec/09` in order (each section states what it owns, its boundaries, and its hand-offs). The closed loop is: inputs (§1) → raw data (§2) → derived metrics (§3) → state estimate (§4) → plan (§5) → adaptation (§6) → recovery/taper (§7) → conversational surface (§8) → loop closure / decision log / explainability (§9).
 
@@ -49,7 +49,7 @@ Session 2's change log claimed Sections 1 and 2 were saved to the project. **Nei
 | 3 | Derived-Metric Formulas | 2 | ✓ **Approved** | `spec/03-...`. Subagent review. Women's HR-TRIMP coefficient corrected in `research_05` §2.1. **User-approved 2026-08-31.** |
 | 4 | Physiological State Model | 3 | ✓ **Approved** | `spec/04-...`. Subagent review + 6 fixes. Cold-start estimators back-filled into `research_00` §3.2. **User-approved 2026-08-31.** |
 | 5 | Training-Plan Generation | 4 | ✓ **Approved** | `spec/05-...`. Subagent review + 6 fixes. Four register open items resolved/dispositioned; §5.7.1→§5.5.4 slip resolved. **User-approved 2026-08-31.** |
-| 6 | Adaptation Logic | 3,4,5 | ✓ **Approved** | `spec/06-...`. Subagent review + 5 fixes. Acclimation-block moved to future-directions; CTL-rise band fixed + provisionally ratified in-spec (§6.2.2), with the `research_00` register back-port deferred pending field data. **User-approved 2026-08-31.** |
+| 6 | Adaptation Logic | 3,4,5 | ✓ **Approved** | `spec/06-...`. Subagent review + 5 fixes. Acclimation-block moved to future-directions; CTL-rise range fixed + provisionally ratified in-spec (§6.2.2), carried in the `research_00` register as a PROVISIONAL row (REG-19) until field data refines it. **User-approved 2026-08-31.** |
 | 7 | Recovery and Taper | 6 | ✓ **Approved** | `spec/07-...`. Subagent review + 3 fixes. Recovery-week depth + race-day form band ratified + back-ported (`research_00` Part 3). **User-approved 2026-08-31.** |
 | 8 | Conversational Coach Interface + Autonomy Boundary | 6 | ✓ **Approved** | `spec/08-...`. Subagent review + 2 fixes. No open items. **User-approved 2026-08-31.** |
 | 9 | Loop Closure, Decision Log, Explainability | all | ✓ **Approved** | `spec/09-...`. Subagent review + 2 fixes. Both open items (sidecar-divergence surfacing threshold; retention granularity) ratified + back-ported (`research_00` Part 3). **User-approved 2026-08-31.** |
@@ -80,13 +80,13 @@ Every logged open item was worked across 2026-08-31 (the back-port batch + two f
 ### Resolved in the 2026-08-31 follow-ups
 
 - **Section 5 §5.7.1 → §5.5.4 cross-reference slip** — RESOLVED. §5.5.4 broadened to cover goal-race conditions; pointer corrected; Section 6 §6.9 aligned.
-- **Ramp-rate CTL-rise band (Section 6, §6.2.2)** — RESOLVED (fixed + provisionally ratified in-spec; register back-port deferred). ~+5 CTL/week soft target, band +3–7, hard ceiling +8 (Friel/TrainingPeaks-grounded). `research_00` Part 3 row deferred until field data refines it.
+- **Ramp-rate CTL-rise band (Section 6, §6.2.2)** — RESOLVED (fixed + provisionally ratified in-spec). ~+5 CTL/week soft target, range +3–7, hard ceiling +8 (Friel/TrainingPeaks-grounded). `research_00` Part 3 carries it as a row marked PROVISIONAL (REG-19) until field data refines it.
 - **Sidecar-divergence surfacing threshold (Section 9, §9.6)** — RESOLVED. `research_00` Part 3 (one own-estimate CI, or ~10%; governs only surfacing).
 - **Decision-log / raw-stream retention granularity (Section 9, §9.3.5)** — RESOLVED. `research_00` Part 3, engineering default (records indefinitely; raw streams on a tunable window).
 
-### The one deferred item (post-launch, not a blocker)
+### The one post-launch tuning item (not a blocker)
 
-- **Section 6 CTL-rise band register back-port** — the value is live and ratified in spec §6.2.2; its `research_00` Part 3 register row is intentionally deferred until field data refines the numeric band. Revisit once the product has real athlete data.
+- **Section 6 CTL-rise range** — the value is live and ratified in spec §6.2.2, and its `research_00` Part 3 register row is marked PROVISIONAL (REG-19) until field data refines the numeric range. Revisit once the product has real athlete data.
 
 ---
 
@@ -96,7 +96,7 @@ Every logged open item was worked across 2026-08-31 (the back-port batch + two f
 
 **Next steps (the user's call):**
 1. **Phase 3 — implementation.** The spec is ready for Claude Code to build from. A natural first move is a build plan / architecture pass that reads `research/00` then `spec/01`–`spec/09` and proposes the module/data-model breakdown; nothing in the spec needs further research to start.
-2. **Post-launch tuning back-port:** the Section 6 CTL-rise band register row, once field data exists.
+2. **Post-launch tuning:** refine the Section 6 CTL-rise range and its PROVISIONAL register row (REG-19) once field data exists.
 3. **Future iterations:** the `future/future-directions.md` backlog (only after v1 is tested with real athletes).
 
 **If the user requests changes to an approved section**, edit that section's doc in place (`project_read` → change → `project_write` the full content to the same path), re-verify the save, re-run the subagent review if the change is substantive (Sections 3/4/6 remain the review-required trio), and note that the change post-dates approval.
