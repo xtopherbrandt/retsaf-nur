@@ -273,8 +273,9 @@ return" states whether it means **days elapsed or mornings captured**.
 
 **AC21 — no regression against shipped F005.** *Given* every sweep in AC19, *then* it runs against **both**
 shipped F005 and F006 with both rates reported side by side, and **any §1.7 rate that worsens blocks
-release** (*amended 2026-09-22, T168; `research/00` §5.4 amended first*: except the one deferred rate
-carried as a named, counted exception — `DEFERRED_EXCEPTION`, 64 rows — pending [[IDEA-087]]).
+release** (*amended 2026-09-22, T168; `research/00` §5.4 amended first*: save the exceptions PRIN-15
+lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION` (64 rows), both
+owned by [[IDEA-087]], and HRV-25's population, owned by [[IDEA-099]]; `research/00` GATE-04, PRIN-15).
 
 **AC22 — the §1.7 promotion exposure is measured and priced.** *Given* the AC19 sweeps, *then* the rate at
 which `hrv_normal` is promoted while another judgeable dataset reads below its own band is measured,

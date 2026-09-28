@@ -203,7 +203,7 @@ Pulling §4.1 and the routes above together, for the specific goal of obtaining 
 - **Lowest daily burden, once partnered:** subscribe to the **Health API HRV Summary** (§5.1) for the passive overnight `lastNightAvg` rMSSD — no athlete action at all, but requires Developer-Program approval.
 - **Highest fidelity:** a **chest-strap** morning capture whose raw RR (`hrv` message) the system reduces to rMSSD itself, via FIT export (§5.2) or the Health API's Enhanced Beat-to-Beat feed (§5.1).
 
-These are not mutually exclusive — the ingestion layer should accept whichever is present and tag its tier/confidence (§4.1), subject to the per-source baseline discipline (`research/00` §3.3; spec §3.7).
+These are not mutually exclusive — the ingestion layer should accept whichever is present and tag its tier (§4.1; `research/00` HRV-04 admits the numeric tiers at reduced fidelity, an ordinal rank that selection reads, never at a numeric confidence weight), subject to the per-source baseline discipline (`research/00` §3.3; spec §3.7).
 
 ---
 

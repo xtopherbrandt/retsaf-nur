@@ -468,6 +468,18 @@ MANUAL_ROWS = (
     ("C16-hrv21-reads-below-that-band", F006DM, "a judgeable dataset reading below its own band is listed in disagreed_with even when its own verdict is withheld",
      ("AC2 names F006-dataset-model §14's disagreed_with sentence (T167): HRV-21 (other side, either "
       "direction) and HRV-22 (empty when unavailable)")),
+    # F011 wave-6 review (S11/S15): three sites no pattern reaches, pinned so the old wording coming
+    # back turns the gate red. Added after the census commit; the rows name the pre-work text.
+    ("C06-gate01-one-exception", F006, "except the one deferred rate carried as a named, counted exception",
+     ("F006 AC21 (C06): one counted exception; GATE-04 saves only the exceptions PRIN-15 lists, three "
+      "today (F005-parity and DEFERRED_EXCEPTION under IDEA-087, HRV-25's population under IDEA-099)")),
+    ("C19-hrv-04-reduced-confidence", R02,
+     "These are the studies the confidence weight for the numeric tiers should rest on",
+     ("research/02:113 (C19): a confidence weight for the numeric tiers; HRV-04 admits them at reduced "
+      "fidelity, an ordinal rank, never a numeric per-tier confidence weight (swept by T206)")),
+    ("C19-hrv-03-tag-and-confidence", R02, "should accept whichever is present and tag its tier/confidence",
+     ("research/02:206 (C19): a per-source tier and confidence tag; HRV-04 has a tier rank and no "
+      "per-tier confidence")),
 )
 
 

@@ -64,12 +64,15 @@ PRIN-08-C24-sidecar-ignored-by-default,specification/spec/09-loop-closure-decisi
 C32-band-without-floor,specification/spec_outline.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
 C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
+C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"except the one deferred rate carried as a named, counted exception",inventory
 C10-lone-candidate-never-struck,spec-mirror/features/F006-per-tier-hrv-datasets.md,so a lone **established** dataset is its own reference and is never skipped,inventory
 HRV-11-per-day-collapse-unspecified,spec-mirror/features/F006-per-tier-hrv-datasets.md,only the later is kept,inventory
 C16-hrv21-reads-below-that-band,spec-mirror/references/F006-dataset-model.md,a judgeable dataset reading below its own band is listed in `disagreed_with` even when its own verdict is withheld,inventory
 AUT-02-C23-override-outside-autonomy,specification/decisions/01-conversational-coach-interface.md,"and the **safety pathway**, neither of which the system decides unilaterally",inventory
 AUT-04-C20-two-purposes-only,specification/decisions/01-conversational-coach-interface.md,Its role is the two directions above and nothing more,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-coach-interface.md,"the athlete owns only the **goal contract** (target pace, race date)",inventory
+C19-hrv-03-tag-and-confidence,specification/research/02-wearable-data-garmin.md,should accept whichever is present and tag its tier/confidence,inventory
+C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,These are the studies the confidence weight for the numeric tiers should rest on,inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
