@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-25 through 2026-09-27 — Sprint 007: research/00 as current rules
+
+F008: `specification/research/00` is the decision authority. It is rewritten as 246 one-sentence
+rules under permanent IDs, plus a 33-term Glossary, and split into four files:
+
+- `00-design-decisions.md` holds the current rules only.
+- `00-history.md` holds H-01 to H-41, the dated record of what changed.
+- `00-traceability.md` maps every inventory row to its rule or rules. Each row records whether the
+  meaning changed, the authorizing decision, and the key of the old meaning.
+- `00-meaning-review.md` holds an independent critic's verdict on every rule block and Glossary
+  term: 822 rows, all `same`, over rounds 1 to 11. Each verdict is bound to the digest of the text
+  it judged.
+
+A gate, `runcoach-api/tests/test_research00_traceability.py`, holds all four files. A changed rule
+stays red until a new critic round names it. Edits follow
+`.claude/rules/project-research00-edits.md`. The decisions behind the rewrite are R1 to R13 in the
+F008 decisions reference.
+
+B-CR-001: each span guard of the claim sweep now probes or abstains by name, strips fenced blocks
+on markdown-it's fence tokens, and has a red case.
+
+There is no API or contract change, and no migration is required. The suite grew from 1659 to 1901
+tests, with 0 failed and 0 skipped. CI now checks out full history (`fetch-depth: 0`).
+
 ## 2026-09-18 through 2026-09-23 — Sprint 006: Per-Tier Resting-HRV Datasets
 
 F006: each resting-HRV source tier keeps its own baseline, band, `n` and `established`, and the
