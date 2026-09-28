@@ -182,6 +182,18 @@ candidate** (see the coach-in-the-loop entry above): a coach with a lab or
 field LT1 for the athlete can set it directly, side-stepping the measurement
 difficulty entirely.
 
+**Refining the boundary toward the athlete's own data** is part of this future
+determinant, not v1 behaviour. In v1 the Zone-1/Zone-2 boundary is a fixed
+fraction of threshold velocity and moves only with the threshold anchor
+(`research/00` LT1-01, `spec/05` §5.4.2). Moving it toward an LT1 surrogate the
+athlete's own data identifies — a heart-rate deflection, a habitual
+easy-pace/HR cluster, or a DFA-α1 crossing — waits for the LT1 determinant that
+`research/00` LT1-02 recommends for the future and keeps out of v1. Because
+DFA-α1 is computed from the RR series during running, adopting it first needs
+an explicit amendment of `research/00` HRV-05, which forbids in-activity HRV in
+v1 (decision C27, rule LT1-04). Once adopted, a per-athlete refinement would
+still apply only under the individualization rule (`research/00` §3.1).
+
 ### Structured strength and plyometric supporting work
 
 Give the system a real prescription for **strength and plyometric training** as

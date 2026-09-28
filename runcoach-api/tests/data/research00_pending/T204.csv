@@ -1,7 +1,0 @@
-path,key
-specification/spec/09-loop-closure-decision-log-explainability.md,*
-specification/spec/05-training-plan-generation.md,C28-lt1-surrogate-refinement
-specification/spec/08-conversational-coach-interface.md,GOAL-02-C22-goal-contract-two-fields
-specification/spec/04-physiological-state-model.md,DOC-06-C31-every-number-tunable
-specification/spec/05-training-plan-generation.md,DOC-06-C31-every-number-tunable
-specification/spec/07-recovery-and-taper.md,DOC-06-C31-every-number-tunable
