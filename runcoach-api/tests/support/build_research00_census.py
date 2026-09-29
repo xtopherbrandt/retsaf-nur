@@ -599,8 +599,9 @@ def _git_lines(path: str, commit: str = INVENTORY_COMMIT) -> list[str]:
 
 
 class File:
-    """One file's text as the gate reads it (``GATE.gate_source``: a ``.py`` file's comment markers
-    removed, T219) and its normalized form, with the map between them. ``raw`` keeps every newline, so
+    """One file's text as the gate reads it (``GATE.gate_source``: a ``.py``, ``.yaml`` or ``.yml``
+    file's comment markers and a ``.md`` file's blockquote markers removed, T219 and the sprint-008 F011
+    review) and its normalized form, with the map between them. ``raw`` keeps every newline, so
     line numbers are the file's, and an excerpt drawn from it matches the gate's text."""
 
     def __init__(self, rel: str, repo_root: Path = REPO_ROOT, text: str | None = None):

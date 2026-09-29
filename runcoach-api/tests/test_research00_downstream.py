@@ -18,11 +18,13 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   under the roots that carries the Decision Log heading is swept, and a test lists them.
 - **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span or a
   code span is quotation. Spans are found on the raw text, before ``normalize()``; they never cross a
-  blank line; a fenced block is code; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and
-  ``.yml`` are scanned whole.
-- **Wrapped ``#`` comments (T219).** In ``.py`` only, each comment line's marker (indentation, a ``#``
-  run, a ``#:`` colon) is removed before ``normalize()`` (``gate_text``), so a meaning wrapped over two
-  comment lines reads as one sentence. ``.md``, ``.yaml`` and ``.yml`` keep every ``#``. Every census and
+  blank line; a fenced block is code, and an unclosed fence or a backtick line whose info string holds
+  a backtick (CommonMark 4.5) opens none; a paragraph with an odd count of straight quotes pairs none of
+  them; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
+- **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
+  comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
+  (``gate_text``), so a meaning wrapped over two comment lines reads as one sentence; in ``.md`` each
+  blockquote line's ``>`` marker is removed for the same reason, and every ``#`` is kept. Every census and
   exception check compares against this same text.
 - **Hits (T199, AC1).** Each ``OLD_MEANINGS`` key's pattern is searched in every live file its
   ``KEY_ROOTS`` entry lets it reach (S12: the four T-07 keys reach ``.claude/rules/`` only). A hit is
@@ -205,22 +207,38 @@ def carries_decision_log(raw: str) -> list[int]:
 _FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
 
+def _fence_opener(text: str):
+    """``_FENCE``'s match on a line that opens a fence, else ``None``. CommonMark 4.5: the info string
+    after a backtick run may not contain a backtick, so "```x``` is the literal." opens nothing -- it is
+    a line beginning with a code span."""
+    match = _FENCE.match(text)
+    if match and match.group(1)[0] == "`" and "`" in text[match.end():]:
+        return None
+    return match
+
+
 def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
-    """Raw ranges of fenced code blocks, fence lines included. An unclosed fence runs to the end."""
+    """Raw ranges of fenced code blocks, fence lines included. An opener that never closes opens no
+    block: it and every later line stay prose, and the search for a fence resumes on the line after it
+    (sprint-008 F011 review: a block run to the end of the file sheltered all the prose after it)."""
+    lines = list(_lines_with_offsets(raw))
     blocks: list[tuple[int, int]] = []
-    opener = None
-    start = 0
-    for offset, line, text in _lines_with_offsets(raw):
-        match = _FENCE.match(text)
-        if opener is None:
-            if match:
-                opener, start = match.group(1), offset
-        elif match and match.group(1)[0] == opener[0] and len(match.group(1)) >= len(opener) \
-                and not text.strip().strip(opener[0]):
-            blocks.append((start, offset + len(line)))
-            opener = None
-    if opener is not None:
-        blocks.append((start, len(raw)))
+    i = 0
+    while i < len(lines):
+        start, _line, text = lines[i]
+        match = _fence_opener(text)
+        i += 1
+        if not match:
+            continue
+        opener = match.group(1)
+        for j in range(i, len(lines)):
+            offset, line, closing = lines[j]
+            close = _FENCE.match(closing)
+            if close and close.group(1)[0] == opener[0] and len(close.group(1)) >= len(opener) \
+                    and not closing.strip().strip(opener[0]):
+                blocks.append((start, offset + len(line)))
+                i = j + 1
+                break
     return blocks
 
 
@@ -241,30 +259,51 @@ def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]
     return paragraphs
 
 
+def _code_span_end(raw: str, i: int, end: int) -> tuple[int, bool]:
+    """At the backtick run starting at ``raw[i]``: ``(offset after the span, True)`` when a run of the
+    same length closes it before ``end``, else ``(offset after the opening run, False)``."""
+    run = i
+    while run < end and raw[run] == "`":
+        run += 1
+    close = re.compile(rf"(?<!`)`{{{run - i}}}(?!`)").search(raw, run, end)
+    return (close.end(), True) if close else (run, False)
+
+
+def _straight_quotes_pair(raw: str, start: int, end: int) -> bool:
+    """True when the paragraph ``raw[start:end]`` holds an even count of straight double quotes outside
+    its code spans. With an odd count one of them is stray, and greedy pairing would shelter the prose
+    between it and the next quote (sprint-008 F011 review), so none of them pairs."""
+    count = 0
+    i = start
+    while i < end:
+        if raw[i] == "`":
+            i, _closed = _code_span_end(raw, i, end)
+            continue
+        count += raw[i] == '"'
+        i += 1
+    return count % 2 == 0
+
+
 def quote_spans(raw: str) -> list[tuple[int, int]]:
     """S3 on the raw text, before ``normalize()``: raw ``(start, end)`` ranges, delimiters included,
     of straight (``"..."``) and curly (``“...”``) double-quoted spans, code spans (a backtick run to
     the next run of the same length), and fenced blocks. No span crosses a blank line; ``>`` opens
-    nothing, so a blockquote is not quotation. An unmatched opener is a literal character."""
+    nothing, so a blockquote is not quotation. An unmatched opener is a literal character, and a
+    paragraph with an odd count of straight quotes pairs none of them (``_straight_quotes_pair``)."""
     fenced = _fenced_blocks(raw)
     spans = list(fenced)
     for start, end in _paragraphs(raw, fenced):
+        closers = {'"': '"', "“": "”"} if _straight_quotes_pair(raw, start, end) else {"“": "”"}
         i = start
         while i < end:
             char = raw[i]
             if char == "`":
-                run = i
-                while run < end and raw[run] == "`":
-                    run += 1
-                width = run - i
-                close = re.compile(rf"(?<!`)`{{{width}}}(?!`)").search(raw, run, end)
-                if close:
-                    spans.append((i, close.end()))
-                    i = close.end()
-                else:
-                    i = run
+                after, closed = _code_span_end(raw, i, end)
+                if closed:
+                    spans.append((i, after))
+                i = after
                 continue
-            closer = {'"': '"', "“": "”"}.get(char)
+            closer = closers.get(char)
             if closer is not None:
                 j = raw.find(closer, i + 1, end)
                 if j != -1:
@@ -328,17 +367,35 @@ def hit_is_quoted(raw: str, norm_start: int, norm_end: int, offsets=None, spans=
 #: reads "... reference # and is never struck" and no pattern matches it.
 _WRAPPED_COMMENT = re.compile(r"^[ \t]*#+:?", re.MULTILINE)
 
+#: Sprint-008 F011 review: a Markdown blockquote line's marker -- up to three spaces of indentation and a
+#: run of ``>``, each with an optional following space or tab. ``normalize()`` keeps it, so a meaning
+#: wrapped over two ``>`` lines reads "... reference > and is never struck" and no pattern matches it. A
+#: blockquote stays swept, not quotation (S3); only its marker goes.
+_BLOCKQUOTE_MARKER = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)+", re.MULTILINE)
+
+
+def _line_markers(path: str):
+    """The line-marker pattern ``gate_source`` removes from the file ``path``: comment markers in ``.py``
+    (T219) and, since the sprint-008 F011 review, ``.yaml``/``.yml``; blockquote markers in ``.md``."""
+    if path.endswith((".py", ".yaml", ".yml")):
+        return _WRAPPED_COMMENT
+    if path.endswith(".md"):
+        return _BLOCKQUOTE_MARKER
+    return None
+
 
 def gate_source(path: str, raw: str) -> tuple[str, list[int]]:
-    """The file ``path``'s text before ``normalize()``, with each character's raw offset: for ``.py``,
-    ``raw`` with every comment line's marker (``_WRAPPED_COMMENT``) removed and each newline kept (so
-    line numbers hold); for ``.md``, ``.yaml`` and ``.yml``, ``raw`` itself."""
-    if not path.endswith(".py"):
+    """The file ``path``'s text before ``normalize()``, with each character's raw offset: ``raw`` with
+    every line marker ``_line_markers`` names removed and each newline kept (so line numbers hold) --
+    for ``.py``, ``.yaml`` and ``.yml`` each comment line's ``#`` marker (``_WRAPPED_COMMENT``), for
+    ``.md`` each blockquote line's ``>`` marker (``_BLOCKQUOTE_MARKER``)."""
+    markers = _line_markers(path)
+    if markers is None:
         return raw, list(range(len(raw)))
     pos = 0
     pieces: list[str] = []
     source_to_raw: list[int] = []
-    for marker in _WRAPPED_COMMENT.finditer(raw):
+    for marker in markers.finditer(raw):
         pieces.append(raw[pos:marker.start()])
         source_to_raw += range(pos, marker.start())
         pos = marker.end()
@@ -349,7 +406,7 @@ def gate_source(path: str, raw: str) -> tuple[str, list[int]]:
 
 def gate_text(path: str, raw: str) -> tuple[str, list[int]]:
     """The text the gate matches in the file ``path``, with each character's raw offset:
-    ``normalize_with_offsets`` of ``gate_source``. For ``.md``, ``.yaml`` and ``.yml`` that is
+    ``normalize_with_offsets`` of ``gate_source``. For a file with no line marker that is
     ``normalize_with_offsets(raw)`` unchanged. ``normalize()`` itself is shared with research/00's
     checker and is not touched (T219)."""
     source, source_to_raw = gate_source(path, raw)
@@ -1084,8 +1141,15 @@ def test_scanner_quote_spans_oracle():
         ('a "across\none newline" b', ['"across\none newline"']),
         ('> a blockquote line\n', []),
         ("text\n```\ncode \"x\"\n\nmore\n```\nafter", ["```\ncode \"x\"\n\nmore\n```\n"]),
-        ("text\n~~~py\nunclosed", ["~~~py\nunclosed"]),
+        # An unclosed fence is no block (sprint-008 F011 review): its lines are prose.
+        ("text\n~~~py\nunclosed", []),
+        # CommonMark 4.5: a backtick fence's info string holds no backtick, so this line is a code span.
+        ("```x``` is the literal.\n\nprose", ["```x```"]),
         ('an "unclosed quote', []),
+        # An odd count of straight quotes in a paragraph pairs none of them (sprint-008 F011 review).
+        ('a " stray and a "pair" here', []),
+        ('a " stray, a `"` in code and a "pair"', ['`"`']),
+        ('odd " here\n\nand "even" here', ['"even"']),
     ]
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
@@ -1336,17 +1400,105 @@ def test_wrapped_comment_py_example_split_over_two_hash_lines_is_a_hit(tmp_path)
     assert census_state({"path": rel, "excerpt": excerpt}, tmp_path, exceptions=()) == "present"
 
 
-@pytest.mark.parametrize("suffix", ["md", "yaml"])
-def test_wrapped_comment_markers_stay_in_md_and_yaml(tmp_path, suffix):
-    """T219: only ``.py`` loses its comment markers. The same text in ``.md`` or ``.yaml`` keeps the
-    ``#`` (a heading, a YAML comment), so the split example is no hit there, as before."""
-    rel, hits = _wrapped_world(tmp_path, suffix)
+def test_wrapped_comment_markers_stay_in_md(tmp_path):
+    """T219: ``.md`` keeps its ``#`` (a heading marker), so the split example is no hit there."""
+    rel, hits = _wrapped_world(tmp_path, "md")
     raw = (tmp_path / rel).read_text(encoding="utf-8")
     text, offsets = gate_text(rel, raw)
     print(f"[slice compared] {rel} gate text {text!r}; hits {hits}")
     assert (text, offsets) == normalize_with_offsets(raw)
     assert "reference #: and" in text
     assert hits == []
+
+
+@pytest.mark.parametrize("suffix", ["yaml", "yml"])
+def test_wrapped_comment_yaml_example_split_over_two_hash_lines_is_a_hit(tmp_path, suffix):
+    """Sprint-008 F011 review, changing T219's pin: a ``.yaml``/``.yml`` comment wraps like a ``.py`` one,
+    and with its ``#`` kept an old meaning split over two comment lines was no hit, a gate bypass. The
+    gate now removes the markers there too, keeping the map to the raw text."""
+    rel = f"contracts/planted.{suffix}"
+    _plant(tmp_path, rel, f"# {_WRAPPED_HEAD}\n# {_WRAPPED_TAIL}.\nx: 1\n")
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    raw = (tmp_path / rel).read_text(encoding="utf-8")
+    text, offsets = gate_text(rel, raw)
+    print(f"[slice compared] {rel} gate text {text!r}; hits {[(h.line, h.matched) for h in hits]}")
+    assert [(h.path, h.line, h.quoted) for h in hits] == [(rel, 1, False)]
+    assert raw[offsets[hits[0].start]:].startswith("lone candidate")
+    assert (rel, _WRAPPED_KEY) in [(h.path, h.key) for h in gate_failures(hits, {})]
+    # T219's body in a .yaml file: its indented "#" and "#:" markers go as in .py.
+    body, hits = _wrapped_world(tmp_path, "yaml")
+    assert [(h.path, h.line) for h in hits if h.path == body] == [(body, 3)]
+
+
+@pytest.mark.parametrize("marker", ["> ", ">", "> > ", "   > "])
+def test_a_blockquote_wrapped_example_is_a_hit(tmp_path, marker):
+    """S3: a ``>`` blockquote is swept, not quotation. Its markers survive ``normalize()``, so an old
+    meaning wrapped over two blockquote lines read "... reference > and is never struck" and was no hit
+    (sprint-008 F011 review). The gate removes them in ``.md``, keeping the map to the raw text."""
+    rel = "specification/spec/99-planted.md"
+    _plant(tmp_path, rel, f"Intro.\n\n{marker}{_WRAPPED_HEAD}\n{marker}{_WRAPPED_TAIL}.\n")
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    raw = (tmp_path / rel).read_text(encoding="utf-8")
+    text, offsets = gate_text(rel, raw)
+    print(f"[slice compared] {marker!r}: gate text {text!r}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert [(h.line, h.quoted) for h in hits] == [(3, False)]
+    assert raw[offsets[hits[0].start]:].startswith("lone candidate")
+    assert (rel, _WRAPPED_KEY) in [(h.path, h.key) for h in gate_failures(hits, {})]
+    assert "a > b" in gate_text(rel, "a > b\n")[0], "a > inside a line is text, not a marker"
+
+
+def test_a_prose_line_opening_with_an_inline_code_span_opens_no_fence(tmp_path):
+    """CommonMark 4.5: a backtick fence's info string may not contain a backtick, so "```x``` is the
+    literal." is a code span, not a fence. Read as a fence it never closed, and every later line of the
+    file was quotation (sprint-008 F011 review)."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = f"```x``` is the literal.\n\nLive prose: {example}.\n"
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    print(f"[slice compared] fenced {_fenced_blocks(raw)}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert _fenced_blocks(raw) == []
+    assert [(h.line, h.quoted) for h in hits] == [(3, False)]
+    assert (rel, _WRAPPED_KEY) in [(h.path, h.key) for h in gate_failures(hits, {})]
+
+
+def test_an_unclosed_fence_shelters_no_prose_and_a_closed_one_still_does(tmp_path):
+    """An unclosed fence is prose, not a block to the end of the file (sprint-008 F011 review): its
+    opener and every later line are swept, and a closed fence later in the file is still code."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = f"Intro.\n\n````\nnever closed\n\nLive prose: {example}.\n\n```\nIn code: {example}.\n```\n"
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    blocks = [raw[a:b] for a, b in _fenced_blocks(raw)]
+    print(f"[slice compared] fenced {blocks}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert blocks == [f"```\nIn code: {example}.\n```\n"]
+    assert [(h.line, h.quoted) for h in hits] == [(6, False), (9, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [6]
+
+
+def test_an_odd_count_of_straight_quotes_shelters_no_prose(tmp_path):
+    """S3's straight-quote pairing is greedy within a paragraph, so one stray ``"`` paired with the next
+    one and sheltered the live prose between them (sprint-008 F011 review). A paragraph with an odd
+    count of straight double quotes (outside code spans) pairs none: its prose is swept. A paragraph with
+    an even count still shelters its quotation."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = f'A stray " opens nothing. Live: {example}. Then "a pair".\n\nQuoted: "{example}".\n'
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    print(f"[slice compared] spans {_spans(raw)}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert [(h.line, h.quoted) for h in hits] == [(1, False), (3, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [1]
+
+
+def test_the_pending_directory_holds_no_csv():
+    """S15's end state, enforced by the suite and not only by the demo probe: every site task has
+    deleted its pending file, so ``research00_pending/`` holds no ``*.csv`` (an absent directory is the
+    same state). A file left there would turn its covered rows into strict xfails."""
+    left = sorted(p.name for p in PENDING_DIR.glob("*.csv")) if PENDING_DIR.is_dir() else []
+    print(f"[slice compared] {PENDING_DIR.name}/ is_dir={PENDING_DIR.is_dir()}: csv files {left}")
+    assert left == []
 
 
 def test_wrapped_comment_mutant_without_the_stripping_loses_the_py_hit(tmp_path, monkeypatch):
