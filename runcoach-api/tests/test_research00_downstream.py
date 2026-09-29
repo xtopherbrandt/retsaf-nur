@@ -26,7 +26,8 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   curly quotes that do not run ``“ ” “ ”``, pairs none of them, and a quote, straight or curly, pairs
   only a left-flanking opener with a right-flanking closer, flanking read on the paragraph's CommonMark
   content with CommonMark's whitespace. A code span in an image description holds its quote too, and an
-  escaped ``\\"`` counts but neither opens nor closes. A ``>`` blockquote is not quotation.
+  escaped ``\\"`` counts but neither opens nor closes, except in raw HTML or an autolink, where
+  CommonMark reads no escape. A ``>`` blockquote is not quotation.
   ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
 - **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
   comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
@@ -355,6 +356,23 @@ def _image_recording(state, silent: bool) -> bool:
     return True
 
 
+def _raw_recording(rule):
+    """markdown-it's CommonMark ``rule`` for raw HTML or autolinks, which also records on the token it
+    opens with -- ``html_inline``, or an autolink's ``link_open`` -- as ``token.meta["raw"]``, the
+    ``(start, end)`` of the whole ``<...>`` in the text the rule read. CommonMark 2.4 processes no
+    backslash escape inside either (``_quote_pairs``). A link's destination and title are not recorded:
+    CommonMark processes escapes there."""
+    def recording(state, silent: bool) -> bool:
+        start, count = state.pos, len(state.tokens)
+        if not rule(state, silent):
+            return False
+        opened = next((t for t in state.tokens[count:] if t.type in ("html_inline", "link_open")), None)
+        if opened is not None:
+            opened.meta["raw"] = (start, state.pos)
+        return True
+    return recording
+
+
 _COMMONMARK_BACKTICK = _markdown_inline_rules.backtick
 _COMMONMARK_IMAGE = _markdown_inline_rules.image
 for _name in ("paragraph", "heading", "lheading"):
@@ -362,6 +380,8 @@ for _name in ("paragraph", "heading", "lheading"):
                              {"alt": next(alt for name, _fn, alt in _markdown_block_rule_table if name == _name)})
 _MARKDOWN.inline.ruler.at("backticks", _code_span_recording)
 _MARKDOWN.inline.ruler.at("image", _image_recording)
+for _name in ("autolink", "html_inline"):
+    _MARKDOWN.inline.ruler.at(_name, _raw_recording(getattr(_markdown_inline_rules, _name)))
 
 
 def _gate_reading(raw: str) -> tuple[str, list[int], list]:
@@ -464,8 +484,8 @@ def _quote_roles(content: str, i: int, edges: tuple[str, str] = ("\n", "\n")) ->
     return left and (not right or punct(before)), right and (not left or punct(after))
 
 
-def _quote_pairs(content: str, code: list[tuple[int, int]],
-                 edges: tuple[str, str] = ("\n", "\n")) -> list[tuple[int, int]]:
+def _quote_pairs(content: str, code: list[tuple[int, int]], edges: tuple[str, str] = ("\n", "\n"),
+                 raw: list[tuple[int, int]] = ()) -> list[tuple[int, int]]:
     """S3's quote spans in a paragraph's or heading's inline ``content``, as ``(start, end)`` in it,
     delimiters included, never counting a quote inside one of its ``code`` spans (content offsets, backtick
     runs included). Straight quotes pair only with an even count of them: with an odd count one is stray,
@@ -476,21 +496,30 @@ def _quote_pairs(content: str, code: list[tuple[int, int]],
     count and sheltered the prose between them; iteration 3: a stray ``“`` and a ``5”`` did the same).
     ``edges`` are the content's outer neighbours (``_quote_roles``).
 
-    An escaped ``\\"`` -- a straight quote after an odd run of backslashes, outside a code span -- is a
-    literal quote to CommonMark 2.4 and never a delimiter, so it neither opens nor closes (iteration 8: the
-    backslash read as punctuation, and ``x\\"a`` opened where ``x"a`` cannot). It still counts toward the
-    parity and still stands between an opener and a later closer, as the ``"`` it renders as would. A curly
-    quote is not ASCII punctuation, so a backslash never escapes one."""
+    An escaped ``\\"`` -- a straight quote after an odd run of backslashes, outside a code span and outside
+    its ``raw`` ranges -- is literal text to CommonMark 2.4 and never a delimiter, so it neither opens nor
+    closes (iteration 8: the backslash read as punctuation, and ``x\\"a`` opened where ``x"a`` cannot). It
+    still counts toward the parity and still stands between an opener and a later closer, as the ``"`` it
+    renders as would. ``raw`` holds the content's raw HTML and autolinks (``_raw_ranges``), where
+    CommonMark 2.4 processes no escape: a quote there keeps its roles, backslash or not (iteration 9: read
+    as literal, it lost them, and a later quote opened and paired over the live line). A link destination
+    or title is not raw; CommonMark processes the escape there. A curly quote is not ASCII punctuation, so
+    a backslash never escapes one. A literal quote changes which quotes pair, so this reading can shelter
+    a line 8e2a08e left bare as well as bare one it sheltered: in ``a" x\\"b c)"(`` the ``"(`` opens,
+    as it does in the twin ``a" x"b c)"(``."""
     coded = [False] * len(content)
     for a, b in code:
         coded[a:b] = [True] * (b - a)
     quotes = [i for i, char in enumerate(content) if char in "\"“”" and not coded[i]]
+    unescaped = [False] * len(content)
+    for a, b in raw:
+        unescaped[a:b] = [True] * (b - a)
     literal = set()
     for i in quotes:
         run = i
         while run > 0 and content[run - 1] == "\\":
             run -= 1
-        if content[i] == '"' and (i - run) % 2:
+        if content[i] == '"' and (i - run) % 2 and not unescaped[i]:
             literal.add(i)
     curly = "".join(content[i] for i in quotes if content[i] != '"')
     closers = {}
@@ -530,6 +559,21 @@ def _image_code_spans(children, base: int = 0) -> list[tuple[int, int]]:
     return spans
 
 
+def _raw_ranges(children, base: int = 0) -> list[tuple[int, int]]:
+    """The raw HTML and autolinks among an inline token's ``children`` (``_raw_recording``), in image
+    descriptions at any depth too, as ``(start, end)`` in the text ``base`` places ``children`` in. Link
+    text is parsed on the inline token's own state, so one there is among its children; an image
+    description is parsed on a state of its own (``_image_code_spans``)."""
+    ranges: list[tuple[int, int]] = []
+    for child in children or ():
+        if "raw" in child.meta:
+            a, b = child.meta["raw"]
+            ranges.append((base + a, base + b))
+        if child.type == "image":
+            ranges += _raw_ranges(child.children, base + child.meta["at"])
+    return ranges
+
+
 def _raw_offset_map(text: str, starts: list[int]):
     """The map from an offset in markdown-it's ``src`` for ``text`` (line ends made ``\\n``) to the raw
     offset, over the same line numbers: markdown-it changes nothing else a line's length depends on."""
@@ -558,7 +602,8 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
       quote's neighbours are content characters, never a container marker (iteration 7). A quote in a
       code span of an image description is not counted either, and that code span is not listed as a
       span of its own (``_image_code_spans``). A content edge's neighbour is the character markdown-it's
-      strip removed there (iteration 8).
+      strip removed there (iteration 8). An escaped ``\\"`` is literal and never a delimiter, except in
+      raw HTML or an autolink, where CommonMark reads no escape (``_raw_ranges``; iteration 9).
 
     markdown-it keeps no offsets for inline content, so each paragraph's and heading's content carries
     the ``src`` offset of every character (``_source_recording``) and each code span its offsets in that
@@ -576,7 +621,7 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
         code = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1) for a, b in at]
         quoted = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1)
                   for a, b in _quote_pairs(token.content, at + _image_code_spans(token.children),
-                                           token.meta["edges"])]
+                                           token.meta["edges"], _raw_ranges(token.children))]
         spans += quoted + [(a, b) for a, b in code if not any(c <= a and b <= d for c, d in quoted)]
     return sorted(spans)
 
@@ -2422,7 +2467,7 @@ def test_a_code_span_in_an_image_description_holds_its_quote(tmp_path, template)
     code span there was not among the inline token's code spans, and its quote was counted: three straight
     quotes became an even four and paired over the live line. CommonMark reads it as a code span, and the
     quote inside is no delimiter. Code spans are now gathered from image descriptions too, at any depth
-    (``_inline_marks``)."""
+    (``_image_code_spans``)."""
     _iteration_4_verdict(tmp_path, template, 2)
 
 
@@ -2495,6 +2540,83 @@ def test_scanner_quote_spans_oracle_iteration_8():
         ('Say "a\nLive X.\nb"» c\n', ['"a\nLive X.\nb"']),
         ('Say "a\nLive X.\nb"\u2009c now.\n', ['"a\nLive X.\nb"']),
         ('Set \0"a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
+
+
+@pytest.mark.parametrize("template", [
+    'a" <x y=\'\\"\'> c)"(\nLive {EX}.\n)" d\n',
+    'a" <http://e.x/\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <!-- \\"( --> c)"(\nLive {EX}.\n)" d\n',
+    'a" <?p \\"( ?> c)"(\nLive {EX}.\n)" d\n',
+    'a" <![CDATA[ \\"( ]]> c)"(\nLive {EX}.\n)" d\n',
+    'a" [<x y=\'\\"\'>](u) c)"(\nLive {EX}.\n)" d\n',
+    'a" ![<http://e.x/\\"(>](i.png) c)"(\nLive {EX}.\n)" d\n',
+    'a" ![![<!-- \\"( -->](j.png)](i.png) c)"(\nLive {EX}.\n)" d\n',
+    # Controls: the unescaped twin in raw HTML, and plain prose.
+    'a" <x y=\'"\'> c)"(\nLive {EX}.\n)" d\n',
+    'Plain.\nLive {EX}.\n',
+], ids=["tag_attribute", "autolink", "comment", "processing_instruction", "cdata", "tag_in_link_text",
+        "autolink_in_image", "comment_in_nested_image", "unescaped_twin", "plain"])
+def test_a_backslash_quote_in_raw_html_or_an_autolink_keeps_its_roles(tmp_path, template):
+    """Sprint-008 F011 review, iteration 9 (R1): CommonMark 2.4 processes no backslash escape in raw HTML
+    or an autolink, so a ``\\"`` there is no escaped quote: S3 reads it with its flanking roles, as it did
+    before iteration 8. Iteration 8 read every quote after an odd backslash run outside code as literal,
+    raw HTML and autolinks included; without its roles the quote no longer paired with the ``a"`` before
+    it, and the ``"(`` after it opened and paired over the live line. Raw HTML and autolinks are now
+    recorded where markdown-it reads them (``_raw_recording``), in image descriptions too
+    (``_raw_ranges``), and an escape inside one is not read (``_quote_pairs``)."""
+    _iteration_4_verdict(tmp_path, template, 2)
+
+
+def test_scanner_quote_spans_oracle_iteration_9():
+    """Iteration 9's inputs as ``quote_spans`` oracle cases, "X" for the example, with controls: a
+    ``\\"`` in raw HTML or an autolink, at any depth of image descriptions, keeps its roles; a ``<...>``
+    that is neither stays text, and so does a link destination or title, where CommonMark processes the
+    escape; an escaped quote just before a tag is outside it. A2: the text escape ``x\\"b`` and its twin
+    ``x"b`` render byte-identically and pair the same quotes, which 8e2a08e did not."""
+    escaped, twin = 'a" x\\"b c)"(\nLive X.\n)" d\n', 'a" x"b c)"(\nLive X.\n)" d\n'
+    assert MarkdownIt("commonmark").render(escaped) == MarkdownIt("commonmark").render(twin)
+    over = ['"(\nLive X.\n)"']
+    cases = [
+        # R1: raw HTML (tag, comment, processing instruction, declaration, CDATA) and autolinks.
+        ('a" <x y=\'\\"\'> c)"(\nLive X.\n)" d\n', ['"\'> c)"']),
+        ('a" <http://e.x/\\"(> c)"(\nLive X.\n)" d\n', ['"(> c)"']),
+        ('a" <!-- \\"( --> c)"(\nLive X.\n)" d\n', ['"( --> c)"']),
+        ('a" <?p \\"( ?> c)"(\nLive X.\n)" d\n', ['"( ?> c)"']),
+        ('a" <!X \\"( > c)"(\nLive X.\n)" d\n', ['"( > c)"']),
+        ('a" <![CDATA[ \\"( ]]> c)"(\nLive X.\n)" d\n', ['"( ]]> c)"']),
+        # R1 in link text and image descriptions, nested.
+        ('a" [<x y=\'\\"\'>](u) c)"(\nLive X.\n)" d\n', ['"\'>](u) c)"']),
+        ('a" ![<x y=\'\\"\'>](i.png) c)"(\nLive X.\n)" d\n', ['"\'>](i.png) c)"']),
+        ('a" ![<http://e.x/\\"(>](i.png) c)"(\nLive X.\n)" d\n', ['"(>](i.png) c)"']),
+        ('a" [a ![<!-- \\"( -->](i.png)](u) c)"(\nLive X.\n)" d\n', ['"( -->](i.png)](u) c)"']),
+        ('a" ![![<!-- \\"( -->](j.png)](i.png) c)"(\nLive X.\n)" d\n', ['"( -->](j.png)](i.png) c)"']),
+        # Controls: the unescaped twin; plain prose.
+        ('a" <x y=\'"\'> c)"(\nLive X.\n)" d\n', ['"\'> c)"']),
+        ('Plain.\nLive X.\n', []),
+        # A2: the text escape and its twin pair the same quotes.
+        (escaped, over),
+        (twin, over),
+        # Controls: neither an autolink nor a tag, so the escape is processed.
+        ('a" <e.x/\\"(> c)"(\nLive X.\n)" d\n', over),
+        ('a" <1x \\"( > c)"(\nLive X.\n)" d\n', over),
+        # Controls: an escaped quote just before a tag or an autolink is outside it.
+        ('a" x\\"<b> c)"(\nLive X.\n)" d\n', over),
+        ('a" x\\"<http://e.x/> c)"(\nLive X.\n)" d\n', over),
+        # Controls: next to a tag in an image description, placed at the description's offset at each depth.
+        ('a" ![x\\"<b>](i.png) c)"(\nLive X.\n)" d\n', over),
+        ('a" ![<b>\\"(](i.png) c)"(\nLive X.\n)" d\n', over),
+        ('a" ![![<b>\\"(](j.png)](i.png) c)"(\nLive X.\n)" d\n', over),
+        # Controls: CommonMark processes escapes in link destinations and titles.
+        ('a" [t](u "\\"(") c)"(\nLive X.\n)" d\n', ['") c)"']),
+        ('a" [t](u \'\\"(\') c)"(\nLive X.\n)" d\n', over),
+        ('a" [t](u (\\"()) c)"(\nLive X.\n)" d\n', over),
+        ('a" [t](u\\"() c)"(\nLive X.\n)" d\n', over),
+        ('a" [t](<u\\"(>) c)"(\nLive X.\n)" d\n', over),
+        ('a" ![t](u \'\\"(\') c)"(\nLive X.\n)" d\n', over),
     ]
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
