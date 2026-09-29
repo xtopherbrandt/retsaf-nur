@@ -1532,7 +1532,7 @@ components:
                 built: a tier-change era boundary clips window whenever it exists, and is
                 reported here only when its stray readings fall on fewer than
                 min_window_readings (3) days of the judged week [date-6, date]
-                (research/00 HRV-78). So a null reset_on does not mean the baseline
+                (research/00 HRV-78, HRV-80). So a null reset_on does not mean the baseline
                 spans the full 60 days; read window.
             reset_reason:
               type: string

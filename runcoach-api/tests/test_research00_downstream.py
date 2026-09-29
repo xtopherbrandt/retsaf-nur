@@ -743,6 +743,11 @@ CENSUS_REMOVED = (
     ("C19-hrv-04-reduced-confidence", "spec-mirror/references/F006-dataset-model.md",
      "Fidelity rank arbitrates; the confidence weight never does",
      "correct: as the feature file's §13 note (HRV-04, HRV-54)"),
+    # F011 sprint-008 review, iteration 2: a MANUAL_ROWS row (a1eee93) keyed to a wording that is live.
+    ("HRV-40-R13-now-sustaining-tier", "runcoach-api/src/runcoach_api/schemas.py",
+     "was also not in use in the judged week [date-6, date]",
+     ("correct: the report condition as HRV-80 states it (the other tier not in use in the judged week), "
+      "which HRV-78's week half measures; it names no now-sustaining tier, and no other key fits")),
 )
 
 

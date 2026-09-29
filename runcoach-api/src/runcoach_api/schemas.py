@@ -110,7 +110,7 @@ class Baseline(BaseModel):
             "null. It says what the athlete is told, not how `window` was built: a tier-change era "
             "boundary clips `window` whenever it exists, and is reported here only when its stray "
             "readings fall on fewer than min_window_readings (3) days of the judged week [date-6, date] "
-            "(research/00 HRV-78). So a null reset_on does not mean the "
+            "(research/00 HRV-78, HRV-80). So a null reset_on does not mean the "
             "baseline spans the full 60 days -- read `window`. For `tier_change` it is the era's true "
             "first day and may precede window[0] (the window is clipped at date-66; the era is not, and "
             "reset_on does not slide as it ages). For `coverage_gap` it is "

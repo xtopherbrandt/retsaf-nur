@@ -73,7 +73,6 @@ C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the presentatio
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"resolved, but its baseline holds fewer than two readings, so no band exists",inventory
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,stays sustained by a tier other than the resolved one,inventory
 HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,presented dataset's tier still holds min_baseline_readings distinct days,inventory
-HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,"was also not in use in the judged week [date-6, date]",inventory
 C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
 C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"except the one deferred rate carried as a named, counted exception",inventory
@@ -92,13 +91,16 @@ HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
+C10-recency-only-rule-that-acts,specification/spec/02-canonical-data-schema-ingestion.md,chest-strap dataset is not judgeable or is skipped as stale,inventory
 C19-hrv-03-tag-and-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"at that tier's confidence, falling to a numeric",inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,whose confidence is set by its tier weight instead,inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"its reduced confidence is a property of the tier, applied at Section 6's readiness fusion",inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,Confidence and the anti-mixing rule.,inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
 C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
+C10-recency-only-rule-that-acts,specification/spec/03-derived-metric-formulas.md,chest-strap dataset is not judgeable or is skipped as stale,inventory
 C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over the same baseline window and judged week,inventory
+C17-hrv24-read-on-last,specification/spec/03-derived-metric-formulas.md,the fallback that restates F005's rule 3 over datasets,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,the reduced-confidence fallback,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,Its lower confidence (per the validation caveats,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory

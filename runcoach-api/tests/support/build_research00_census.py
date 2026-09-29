@@ -152,6 +152,14 @@ F006 = "spec-mirror/features/F006-per-tier-hrv-datasets.md"
 F006DM = "spec-mirror/references/F006-dataset-model.md"
 
 
+#: ``CENSUS_REMOVED`` rows that were ``MANUAL_ROWS`` rows, as ``(key, path, excerpt)``. No loose noun
+#: reaches them, so they are not loose resolutions: deleting the ``MANUAL_ROWS`` entry drops the row, and
+#: ``CENSUS_REMOVED`` records why (S11).
+MANUAL_REMOVED = frozenset({
+    ("HRV-40-R13-now-sustaining-tier", SCHEMAS, "was also not in use in the judged week [date-6, date]"),
+})
+
+
 def _in(loose_key, path, fragment, reason, key=None):
     return ("in", loose_key, path, fragment, reason, key or loose_key)
 
@@ -343,7 +351,7 @@ LOOSE_RESOLUTIONS = (
     # Rows removed after the census commit (T200 wave-4 review): the gate's frozen CENSUS_REMOVED
     # records each with its reason (S11: a row cannot be dropped silently).
     *(_out(key, path, excerpt, f"removed (CENSUS_REMOVED): {reason}")
-      for key, path, excerpt, reason in GATE.CENSUS_REMOVED),
+      for key, path, excerpt, reason in GATE.CENSUS_REMOVED if (key, path, excerpt) not in MANUAL_REMOVED),
     _out("*", HRV_TREND, None, F009_OWNS),
     _out("PRIN-12-R13-withheld-response-stays-reproducible", "*", None, F012_REPRODUCIBLE),
     _out("AUT-02-C23-override-outside-autonomy", "*", None,
@@ -537,9 +545,6 @@ MANUAL_ROWS = (
     ("HRV-40-R13-now-sustaining-tier", SCHEMAS,
      "presented dataset's tier still holds min_baseline_readings distinct days",
      "schemas reset_reason (R13): as the openapi copy (T-02, HRV-38 clause (a))"),
-    ("HRV-40-R13-now-sustaining-tier", SCHEMAS, "was also not in use in the judged week [date-6, date]",
-     ("schemas reset_on (R13): reported only when the other tier is not in use in the judged week; the "
-      "week half is fewer than 3 stray days (HRV-78)")),
     ("C19-hrv-04-reduced-confidence", S02, "**Confidence and the anti-mixing rule.**",
      "spec/02:212 (C19): the heading names confidence; fidelity is the only quality term Section 3 applies (T-21)"),
     ("T07-ctl-rise-band", S06, "Ramp-rate CTL-rise band — fixed and provisionally ratified",
@@ -550,6 +555,14 @@ MANUAL_ROWS = (
      "spec/06:277 (T-07): the +3-7 interval is REG-19's range"),
     ("T07-ctl-rise-band", DEVPLAN, "Ramp-rate CTL-rise band (Section 6, §6.2.2)",
      "spec_development_plan:83 (T-07): the CTL-rise range (REG-19)"),
+    # F011 sprint-008 review, iteration 2 (S11/S14): the stale and rule-3 vocabulary in spec/02 and spec/03.
+    ("C10-recency-only-rule-that-acts", S02, "chest-strap dataset is not judgeable or is skipped as stale",
+     "spec/02:216 (C10): 'skipped as stale'; the recency gate skips, stale is only the enum value (T-04)"),
+    ("C10-recency-only-rule-that-acts", S03, "chest-strap dataset is not judgeable or is skipped as stale",
+     "spec/03:247 (C10): §3.7.4's degradation sentence, 'skipped as stale' (T-04)"),
+    ("C17-hrv24-read-on-last", S03, "the fallback that restates F005's rule 3 over datasets",
+     ("spec/03:247 (C17): T156's two-level precedence cites the fallback as F005's rule 3, retired "
+      "vocabulary (T-32); HRV-24 and HRV-59 state it")),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

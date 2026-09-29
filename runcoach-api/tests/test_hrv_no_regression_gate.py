@@ -785,12 +785,12 @@ def test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pi
     this evidence is a worse rate over an entire sub-population: every
     worsened cell sits at ``car_density = 2wk``, the sub-daily carrier. The
     decision that trigger obliges was taken -- **no hysteresis** -- and it is
-    **conditional**, because the decision authority does not yet carry it and
-    the corpus pins tier dispersion equal so it cannot express the harm a flip
-    would cause. See the ``AC23_WORSENED_*`` block above and **IDEA-089**
-    (``status: conditional``). The decision is against the set *as measured on
-    2026-09-21*; it is not a licence for that set to grow, which is what this
-    test exists to detect.
+    **conditional**, because the corpus pins tier dispersion equal so it cannot
+    express the harm a flip would cause (the one condition still open; the
+    authority now carries the decision as research/00 GATE-02). See the
+    ``AC23_WORSENED_*`` block above and **IDEA-089** (``status: conditional``).
+    The decision is against the set *as measured on 2026-09-21*; it is not a
+    licence for that set to grow, which is what this test exists to detect.
 
     The marginal is printed beside the per-cell result on every run, because
     the two together are the finding: a rate can improve overall and worsen
