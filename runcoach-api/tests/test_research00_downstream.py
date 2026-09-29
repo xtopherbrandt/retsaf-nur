@@ -18,8 +18,9 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   under the roots that carries the Decision Log heading is swept, and a test lists them.
 - **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span or a
   code span is quotation. Spans are found before ``normalize()``, on the raw text with each unclosed
-  fence's opener run read as letters; they never cross a blank line (a ``>``-only line is blank) or the
-  edge of a block in any markdown-it reading of the text; a fenced block is code as CommonMark reads it
+  fence's opener line, info string included, read as letters from its fence run on; they never cross a
+  blank line (a ``>``-only line is blank) or the edge of a block in any markdown-it reading of the text;
+  a fenced block is code as CommonMark reads it
   (markdown-it's fence tokens), and a fence no closing line ends -- run to the end of the file, a
   blockquote or a list item -- is prose; a paragraph with an odd count of straight quotes, or curly
   quotes that do not run ``“ ” “ ”``, pairs none of them, and a quote, straight or curly, pairs only a
@@ -255,7 +256,10 @@ def _blank_line(text: str) -> bool:
 
 #: The leaf blocks of a markdown-it reading. No quote or code span leaves one (sprint-008 F011 review,
 #: iteration 4): CommonMark ends a paragraph at a fence line or a heading, and the blank-line paragraphs
-#: ran on through both.
+#: ran on through both. ``hr`` and ``fence`` are a second guard only: a thematic break holds no
+#: delimiter, and ``_block_reading`` leaves every fence line out of its regions, so neither changes a
+#: span (iteration 5). ``code_block`` and ``html_block`` keep the spans the blank-line paragraphs found
+#: in those blocks before iteration 4.
 _LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "fence", "code_block", "html_block", "hr"})
 
 
@@ -263,8 +267,12 @@ def _block_reading(raw: str) -> tuple[str, list[tuple[int, int]], list[tuple[int
     """``(text, fenced, regions)`` for the ``.md`` text ``raw``, as CommonMark reads it through markdown-it
     (``_MARKDOWN``), with offsets that are raw offsets.
 
-    ``text`` is ``raw`` with each unclosed fence's opener run read as letters of the same length (see
-    ``_fenced_blocks``), so it has ``raw``'s length and offsets. ``fenced`` holds the closed fences of the
+    ``text`` is ``raw`` with each unclosed fence's opener line read as letters of the same length from its
+    fence run to its line end (see ``_fenced_blocks``), so it has ``raw``'s length and offsets. The info
+    string is letters too (sprint-008 F011 review, iteration 5): CommonMark never reads an info string as
+    inline text, and with only the run as letters a backtick or quote in it survived, was cut off from its
+    partner before the line by the raw reading's block edge (the grouping below), and paired forward over
+    the unclosed fence's lines, which are prose. ``fenced`` holds the closed fences of the
     last reading, fence lines included. ``regions`` are the runs of lines a quote or code span may lie in:
     each line in a leaf block (``_LEAF_BLOCKS``) of the last reading, outside its fences and not blank
     (``_blank_line``), grouped by the leaf block that holds it in every reading taken, the first on the raw
@@ -291,7 +299,9 @@ def _block_reading(raw: str) -> tuple[str, list[tuple[int, int]], list[tuple[int
         if unclosed is None:
             break
         at = text.index(unclosed.markup, starts[unclosed.map[0]])
-        text = text[:at] + "x" * len(unclosed.markup) + text[at + len(unclosed.markup):]
+        line_end = _MARKDOWN_NEWLINE.search(text, at)
+        stop = line_end.start() if line_end else len(text)
+        text = text[:at] + "x" * (stop - at) + text[stop:]
     fence_lines = {line for t in fences for line in range(t.map[0], t.map[1])}
     regions: list[tuple[int, int]] = []
     first = held = None
@@ -319,8 +329,9 @@ def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
     A fence no closing line ends opens no block (sprint-008 F011 review: a block run to the end of the
     file sheltered all the prose after it). CommonMark runs it to the end of its container -- the
     document, a blockquote or a list item (``_fence_marking_closure`` tells which) -- and here its opener
-    is read as a prose line instead: its fence run becomes letters of the same length, the text is parsed
-    again, and so on until every fence left is closed (``_block_reading``). So its lines, and a list
+    is read as a prose line instead: the line from its fence run on, info string included, becomes letters
+    of the same length, the text is parsed again, and so on until every fence left is closed
+    (``_block_reading``). So its lines, and a list
     item's fence the item ends before any closer, stay prose, and a later closed fence is still code.
     Indented code blocks are not fenced blocks and shelter nothing, as before."""
     return _block_reading(raw)[1]
@@ -347,7 +358,17 @@ def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]
 def _span_regions(raw: str) -> tuple[str, list[tuple[int, int]], list[tuple[int, int]]]:
     """``(text, fenced, regions)`` as ``_block_reading`` gives them, each region cut further at the edges
     of the blank-line paragraphs (``_paragraphs``), so a region is never wider than the paragraph the gate
-    read before iteration 4: a span only loses shelter by it."""
+    read before iteration 4. The cut changes a region only inside one markdown-it line: ``str.splitlines``
+    (``_paragraphs``) also ends lines at ``\\v``, ``\\f``, ``\\x1c``-``\\x1e``, ``\\x85``, U+2028 and
+    U+2029, and can find a blank line between two of them. Every other paragraph edge is a blank or fence
+    line, which ``_block_reading`` already leaves out of every region (sprint-008 F011 review, iteration 5).
+
+    A narrower region does not only take shelter away. Straight-quote parity (``_paired_quotes``) is
+    counted per region, and code spans pair in order from the region's start, so a delimiter whose
+    partner lies past a region edge is left without it and can pair with the next one inside its region:
+    a span the wider paragraph did not have. The region edges are block edges of a markdown-it reading --
+    a list item, a heading, a fence line -- and CommonMark pairs inside a block the same way. (Iteration
+    4 wrote that a span could only lose shelter here; iteration 5 found that false.)"""
     text, fenced, blocks = _block_reading(raw)
     paragraphs = _paragraphs(raw, fenced)
     regions: list[tuple[int, int]] = []
@@ -456,7 +477,8 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
     unclosed one is prose (``_fenced_blocks``).
 
     Since sprint-008 F011 review iteration 4, spans are found on the text with each unclosed fence's
-    opener run read as letters, and inside one region of ``_span_regions``: a run of lines in one
+    opener line read as letters from its fence run on (its info string too, since iteration 5), and
+    inside one region of ``_span_regions``: a run of lines in one
     markdown-it leaf block in every reading and in one blank-line paragraph. On the raw text an unclosed
     opener's run closed a code span a stray run had opened before the fence line, and the blank-line
     paragraph ran on through that line and through ATX headings, which CommonMark reads as block edges."""
@@ -1971,6 +1993,76 @@ def test_scanner_quote_spans_oracle_iteration_4():
         ('Use ``` to open.\nThen "a\nquote" and ``` here.\n', ['``` to open.\nThen "a\nquote" and ```']),
         ("Use `a\r\nb` here\r\n```\r\ncode\r\n```\r\n", ["`a\r\nb`", "```\r\ncode\r\n```\r\n"]),
         ('A "x\ry" b\r\n\r\n```\ncode\r```\n"z"', ['"x\ry"', "```\ncode\r```\n", '"z"']),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
+
+
+@pytest.mark.parametrize("template", [
+    "The `x\n~~~ y` z\nLive {EX}.\nThen `code` here.\n",
+    "- The `x\n  ~~~ y` z\n  Live {EX}.\n  Then `code` here.\n- next\n",
+    "> The `x\n> ~~~ y` z\n> Live {EX}.\n> Then `code` here.\n\nAfter.\n",
+], ids=["plain", "list_item", "blockquote"])
+def test_an_unclosed_fence_info_string_backtick_opens_no_code_span(tmp_path, template):
+    """Sprint-008 F011 review, iteration 5 (M1), a regression in ca963a0: only an unclosed opener's fence
+    run was read as letters, so the backtick in its info string (``~~~ y` z``) survived. The raw reading's
+    block edge at the fence line cut it off from the ``x`` it pairs with in the gate's own reading, and it
+    paired forward with the next code span's opener and sheltered the live line, which lies inside the
+    unclosed fence and is prose. The whole opener line, info string included, is now letters: CommonMark
+    never reads an info string as inline text. 1e8444c was red here."""
+    _iteration_4_verdict(tmp_path, template, 3)
+
+
+def test_an_unclosed_fence_info_string_quote_opens_no_quote_span(tmp_path):
+    """Iteration 5 (M1), the straight-quote sibling: the info string's ``"`` survived, and the raw
+    reading's edge left it in a region of its own with ``end"`` -- an even count -- so the two paired
+    over the live line. The info string is letters now, and the region's one quote pairs with nothing."""
+    _iteration_4_verdict(tmp_path, 'A 5" strap.\n``` "z\nLive {EX}.\nend" now.\n', 3)
+
+
+def test_a_heading_in_an_unclosed_fence_ends_a_region_in_the_gates_own_reading(tmp_path):
+    """Iteration 5 (S1): pins the gate's own reading (the last) in ``_block_reading``'s grouping. The raw
+    reading holds all four lines in one fence; read with the opener as letters, line 2 is an ATX
+    heading, a block of its own, and the run opened in it pairs with nothing after it. Grouped by the raw
+    reading alone, the four lines were one region and the two runs sheltered the live line."""
+    _iteration_4_verdict(tmp_path, "```\n# The ` marker\nLive {EX}.\nThen ` again.\n", 3)
+
+
+def test_a_nested_unclosed_fence_info_string_closes_no_quote(tmp_path):
+    """Iteration 5 (S1), the scanner's middle-reading input: ```` opens a fence that ``` cannot close,
+    and read as prose it lets ``` x" open a second unclosed fence. The quote in that info string is
+    letters, so the quote opened on line 2 pairs with nothing."""
+    _iteration_4_verdict(tmp_path, '````\nA "quote opens\nLive {EX}.\n``` x"\n', 3)
+
+
+def test_a_nested_unclosed_fence_opener_is_a_block_edge_of_the_middle_reading(tmp_path):
+    """Iteration 5 (S1): pins a reading between the raw one and the gate's own. Only the second reading,
+    where ```` is letters and ``` x still opens a fence, has a block edge at line 3: the raw reading holds
+    every line in the ```` fence, and the last holds every line in one paragraph. Grouped by the raw and
+    last readings alone, the quotes on lines 2 and 5 paired over the live line."""
+    _iteration_4_verdict(tmp_path, '````\nA "quote opens\n``` x\nLive {EX}.\nend" now.\n', 4)
+
+
+def test_scanner_quote_spans_oracle_iteration_5():
+    """Iteration 5's inputs as ``quote_spans`` oracle cases, "X" for the example, with controls: a span
+    after an unclosed opener line still pairs, and a closed fence keeps its info string."""
+    cases = [
+        # M1: an unclosed opener's info string pairs with nothing.
+        ("The `x\n~~~ y` z\nLive X.\nThen `code` here.\n", ["`code`"]),
+        ("- The `x\n  ~~~ y` z\n  Live X.\n  Then `code` here.\n- next\n", ["`code`"]),
+        ("> The `x\n> ~~~ y` z\n> Live X.\n> Then `code` here.\n\nAfter.\n", ["`code`"]),
+        ('A 5" strap.\n``` "z\nLive X.\nend" now.\n', []),
+        # S1: every reading's block edges hold.
+        ("```\n# The ` marker\nLive X.\nThen ` again.\n", []),
+        ('````\nA "quote opens\nLive X.\n``` x"\n', []),
+        ('````\nA "quote opens\n``` x\nLive X.\nend" now.\n', []),
+        # A2: a line markdown-it does not end, but str.splitlines does, is still a paragraph edge.
+        ("The `a\u2028\u2028Live X.\u2028b` end\n", []),
+        # Controls.
+        ("~~~ y`\nLive `X.` here\n", ["`X.`"]),
+        ("~~~ y`\ncode\n~~~\nLive X.\n", ["~~~ y`\ncode\n~~~\n"]),
+        ('``` "z\nSay "c" d\n', ['"c"']),
     ]
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
