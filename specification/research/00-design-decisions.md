@@ -797,7 +797,7 @@ Pinned: none
 **DEC-01.** `decisions/01` (Conversational Coach Interface) IS a record that conforms to research/00 and is consistent with §1.5, §1.6 and the ladder.
 Scope: the whole of `decisions/01`.
 Not: a record that governs research/00, which it does not.
-Pinned: none (F011)
+Pinned: runcoach-api/tests/test_research00_downstream.py::test_decisions_01_conforms
 Why: decision C21 moves the reconciliation that described the record's earlier framing to history entry H-07.
 
 **DEC-02.** Any checkpoint framing that `decisions/01` records as superseded MUST be read through §1.8–§1.9.

@@ -797,7 +797,7 @@ PINNED_SHA256 = {
     "DOC-03/Pinned": "6f6a2e0e1e2d",
     "AUT-05/Pinned": "6f6a2e0e1e2d",
     "AUT-07/Pinned": "6f6a2e0e1e2d",
-    "DEC-01/Pinned": "f94658762ab1",
+    "DEC-01/Pinned": "f6f6ea7ed100",
     "DEC-02/Pinned": "6f6a2e0e1e2d",
     "DOC-02/Pinned": "6f6a2e0e1e2d",
     "DOC-09/Pinned": "6f6a2e0e1e2d",
