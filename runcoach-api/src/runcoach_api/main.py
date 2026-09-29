@@ -360,7 +360,7 @@ def _judge_days(
     returns one dataset per source tier, and ``judge`` takes one: the
     dataset handed to it and rendered is the one ``hrv_trend.select_dataset``
     selects for that day -- the highest-fidelity judgeable dataset, skipped
-    past on baseline-window staleness -- or the presentation fallback when
+    by the recency gate -- or the presentation fallback when
     none was selected (AC9), flattened onto the F005 series shape by
     ``hrv_trend.selected_view``. Nothing else here is a function of which
     dataset was chosen, and **that is why every point names its own**

@@ -563,6 +563,17 @@ MANUAL_ROWS = (
     ("C17-hrv24-read-on-last", S03, "the fallback that restates F005's rule 3 over datasets",
      ("spec/03:247 (C17): T156's two-level precedence cites the fallback as F005's rule 3, retired "
       "vocabulary (T-32); HRV-24 and HRV-59 state it")),
+    # F011 sprint-008 review, iteration 3 (S11/S14): the stale family left in main.py and spec/03 §3.7.3.
+    ("C10-recency-only-rule-that-acts", MAIN, "skipped past on baseline-window staleness",
+     ("main.py:363 (C10): _judge_days' selection 'skipped past on baseline-window staleness'; the recency "
+      "gate skips, stale is only the enum value and the >28-day band (T-04)")),
+    ("C10-recency-only-rule-that-acts", S03, "a device the recency condition has struck for staleness",
+     "spec/03:236 (C10): T125's return case, 'struck for staleness' (T-04)"),
+    ("C10-recency-only-rule-that-acts", S03, "when a candidate struck for staleness holds at least",
+     "spec/03:236 (C10): T125's bold rule, 'struck for staleness', the same bullet's second naming (T-04)"),
+    ("C10-recency-only-rule-that-acts", S03, "on three stale strap mornings",
+     ("spec/03:236 (C10): T132's reproduction calls the struck strap's mornings stale; stale is only the "
+      "enum value and the >28-day band (T-04)")),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still
