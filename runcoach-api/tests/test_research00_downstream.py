@@ -18,14 +18,17 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   under the roots that carries the Decision Log heading is swept, and a test lists them.
 - **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span or a
   code span is quotation. Spans are found on the raw text, before ``normalize()``; they never cross a
-  blank line; a fenced block is code, and an unclosed fence or a backtick line whose info string holds
-  a backtick (CommonMark 4.5) opens none; a paragraph with an odd count of straight quotes pairs none of
-  them; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
+  blank line, and a ``>``-only line is blank; a fenced block is code, an unclosed fence or a backtick
+  line whose info string holds a backtick (CommonMark 4.5) opens none, and a fence opened in a list
+  item ends with the item; a paragraph with an odd count of straight quotes, or curly quotes that do
+  not run ``“ ” “ ”``, pairs none of them, and a straight quote pairs only a left-flanking opener with
+  a right-flanking closer; a ``>`` blockquote is not quotation. ``.py``, ``.yaml`` and ``.yml`` are
+  scanned whole.
 - **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
   comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
   (``gate_text``), so a meaning wrapped over two comment lines reads as one sentence; in ``.md`` each
-  blockquote line's ``>`` marker is removed for the same reason, and every ``#`` is kept. Every census and
-  exception check compares against this same text.
+  blockquote line's ``>`` marker, after any indentation or list marker, is removed for the same reason,
+  and every ``#`` is kept. Every census and exception check compares against this same text.
 - **Hits (T199, AC1).** Each ``OLD_MEANINGS`` key's pattern is searched in every live file its
   ``KEY_ROOTS`` entry lets it reach (S12: the four T-07 keys reach ``.claude/rules/`` only). A hit is
   quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt overlapping it in that one file (S4), a
@@ -217,10 +220,54 @@ def _fence_opener(text: str):
     return match
 
 
+#: A line holding only blockquote markers: a blockquote's blank line (sprint-008 F011 review, iteration 2).
+_BARE_BLOCKQUOTE = re.compile(r"[ \t]*(?:>[ \t]*)+")
+
+#: A list item's marker line: up to three spaces, a bullet or an ordinal, then spaces or the line's end.
+_LIST_ITEM = re.compile(r"( {0,3})([-+*]|[0-9]{1,9}[.)])([ \t]+|$)")
+
+
+def _blank_line(text: str) -> bool:
+    """True for a blank line, and for a line holding only ``>`` markers -- a blank line inside a
+    blockquote (sprint-008 F011 review, iteration 2: read as text, it joined the paragraphs it
+    separates)."""
+    return not text.strip() or bool(_BARE_BLOCKQUOTE.fullmatch(text))
+
+
+def _indent(text: str) -> int:
+    """The line's leading whitespace in columns, a tab to the next multiple of four (CommonMark 2.2)."""
+    expanded = text.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip(" "))
+
+
+def _list_item_column(lines, i: int, indent: int) -> int | None:
+    """The content column of the list item that holds the fence opener on ``lines[i]``, indented
+    ``indent`` columns, else ``None``. Walking back over blank lines and lines indented at least
+    ``indent``, the first list-item line whose content column is at most ``indent`` holds it; a
+    shallower line of any other kind means the opener is not in a list item."""
+    for k in range(i - 1, -1, -1):
+        text = lines[k][2]
+        if _blank_line(text):
+            continue
+        item = _LIST_ITEM.match(text)
+        if item:
+            spaces = len(item.group(3).expandtabs(4))
+            column = len(item.group(1)) + len(item.group(2)) + (spaces if 1 <= spaces <= 4 else 1)
+            if column <= indent:
+                return column
+        if _indent(text) < indent:
+            return None
+    return None
+
+
 def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
     """Raw ranges of fenced code blocks, fence lines included. An opener that never closes opens no
     block: it and every later line stay prose, and the search for a fence resumes on the line after it
-    (sprint-008 F011 review: a block run to the end of the file sheltered all the prose after it)."""
+    (sprint-008 F011 review: a block run to the end of the file sheltered all the prose after it). A
+    fence opened inside a list item closes where the item ends (CommonMark 5.2): at the first line that
+    is not blank (``_blank_line``) and is indented less than the item's content column; the block runs
+    to the line before it, and the search resumes on that line, so the fence never pairs with a later
+    top-level one (sprint-008 F011 review, iteration 2)."""
     lines = list(_lines_with_offsets(raw))
     blocks: list[tuple[int, int]] = []
     i = 0
@@ -231,8 +278,13 @@ def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
         if not match:
             continue
         opener = match.group(1)
+        item_column = _list_item_column(lines, i - 1, _indent(text)) if _indent(text) else None
         for j in range(i, len(lines)):
             offset, line, closing = lines[j]
+            if item_column is not None and not _blank_line(closing) and _indent(closing) < item_column:
+                blocks.append((start, offset))
+                i = j
+                break
             close = _FENCE.match(closing)
             if close and close.group(1)[0] == opener[0] and len(close.group(1)) >= len(opener) \
                     and not closing.strip().strip(opener[0]):
@@ -243,12 +295,13 @@ def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
 
 
 def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Raw ranges of runs of non-blank lines outside fenced blocks: a span never leaves one."""
+    """Raw ranges of runs of non-blank lines outside fenced blocks: a span never leaves one. A line of
+    ``>`` markers alone is blank (``_blank_line``)."""
     paragraphs: list[tuple[int, int]] = []
     start = None
     for offset, line, text in _lines_with_offsets(raw):
         inside_fence = any(a <= offset < b for a, b in fenced)
-        if inside_fence or not text.strip():
+        if inside_fence or _blank_line(text):
             if start is not None:
                 paragraphs.append((start, offset))
                 start = None
@@ -269,31 +322,74 @@ def _code_span_end(raw: str, i: int, end: int) -> tuple[int, bool]:
     return (close.end(), True) if close else (run, False)
 
 
-def _straight_quotes_pair(raw: str, start: int, end: int) -> bool:
-    """True when the paragraph ``raw[start:end]`` holds an even count of straight double quotes outside
-    its code spans. With an odd count one of them is stray, and greedy pairing would shelter the prose
-    between it and the next quote (sprint-008 F011 review), so none of them pairs."""
-    count = 0
+def _paired_quotes(raw: str, start: int, end: int) -> dict[str, str]:
+    """The quote pairs, opener to closer, the paragraph ``raw[start:end]`` may pair, judged outside its
+    code spans. Straight quotes pair only with an even count of them: with an odd count one is stray, and
+    greedy pairing would shelter the prose between it and the next quote (sprint-008 F011 review). Curly
+    quotes pair only when they run strictly ``“ ” “ ”``: a stray ``“`` or ``”`` pairs none of them
+    (iteration 2)."""
+    straight = 0
+    curly: list[str] = []
     i = start
     while i < end:
         if raw[i] == "`":
             i, _closed = _code_span_end(raw, i, end)
             continue
-        count += raw[i] == '"'
+        straight += raw[i] == '"'
+        if raw[i] in "“”":
+            curly.append(raw[i])
         i += 1
-    return count % 2 == 0
+    pairs = {}
+    if straight % 2 == 0:
+        pairs['"'] = '"'
+    if "".join(curly) == "“”" * (len(curly) // 2):
+        pairs["“"] = "”"
+    return pairs
+
+
+def _quote_roles(raw: str, i: int, start: int, end: int) -> tuple[bool, bool]:
+    """``(can open, can close)`` for the straight quote ``raw[i]`` in the paragraph ``raw[start:end]``,
+    by CommonMark 6.2's delimiter rule as it reads ``_``: it can open when left-flanking and either not
+    right-flanking or preceded by punctuation, and close when right-flanking and either not left-flanking
+    or followed by punctuation. So ``5" strap`` can only close, and an intraword ``x"y`` is ambiguous and
+    can do neither. The paragraph's edges count as whitespace; a Unicode punctuation or symbol character
+    counts as punctuation."""
+    before = raw[i - 1] if i > start else "\n"
+    after = raw[i + 1] if i + 1 < end else "\n"
+
+    def punct(char: str) -> bool:
+        return unicodedata.category(char)[0] in "PS"
+
+    left = not after.isspace() and (not punct(after) or before.isspace() or punct(before))
+    right = not before.isspace() and (not punct(before) or after.isspace() or punct(after))
+    return left and (not right or punct(before)), right and (not left or punct(after))
+
+
+def _straight_pair_end(raw: str, i: int, start: int, end: int) -> int | None:
+    """The offset after the straight quote that closes the one at ``raw[i]``, else ``None``: the quote
+    must be able to open, and the next straight quote in the paragraph must be able to close
+    (``_quote_roles``); an ambiguous quote pairs nothing (sprint-008 F011 review, iteration 2: two stray
+    inch marks, ``5"`` and ``3"``, made an even count and sheltered the prose between them)."""
+    if not _quote_roles(raw, i, start, end)[0]:
+        return None
+    j = raw.find('"', i + 1, end)
+    if j == -1 or not _quote_roles(raw, j, start, end)[1]:
+        return None
+    return j + 1
 
 
 def quote_spans(raw: str) -> list[tuple[int, int]]:
     """S3 on the raw text, before ``normalize()``: raw ``(start, end)`` ranges, delimiters included,
     of straight (``"..."``) and curly (``“...”``) double-quoted spans, code spans (a backtick run to
     the next run of the same length), and fenced blocks. No span crosses a blank line; ``>`` opens
-    nothing, so a blockquote is not quotation. An unmatched opener is a literal character, and a
-    paragraph with an odd count of straight quotes pairs none of them (``_straight_quotes_pair``)."""
+    nothing, so a blockquote is not quotation. An unmatched opener is a literal character; a paragraph
+    with an odd count of straight quotes, or curly quotes that do not run ``“ ” “ ”``, pairs none of
+    them (``_paired_quotes``); and a straight quote pairs only a left-flanking opener with a
+    right-flanking closer (``_straight_pair_end``)."""
     fenced = _fenced_blocks(raw)
     spans = list(fenced)
     for start, end in _paragraphs(raw, fenced):
-        closers = {'"': '"', "“": "”"} if _straight_quotes_pair(raw, start, end) else {"“": "”"}
+        closers = _paired_quotes(raw, start, end)
         i = start
         while i < end:
             char = raw[i]
@@ -304,7 +400,13 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
                 i = after
                 continue
             closer = closers.get(char)
-            if closer is not None:
+            if closer == '"':
+                after = _straight_pair_end(raw, i, start, end)
+                if after is not None:
+                    spans.append((i, after))
+                    i = after
+                    continue
+            elif closer is not None:
                 j = raw.find(closer, i + 1, end)
                 if j != -1:
                     spans.append((i, j + 1))
@@ -370,8 +472,11 @@ _WRAPPED_COMMENT = re.compile(r"^[ \t]*#+:?", re.MULTILINE)
 #: Sprint-008 F011 review: a Markdown blockquote line's marker -- up to three spaces of indentation and a
 #: run of ``>``, each with an optional following space or tab. ``normalize()`` keeps it, so a meaning
 #: wrapped over two ``>`` lines reads "... reference > and is never struck" and no pattern matches it. A
-#: blockquote stays swept, not quotation (S3); only its marker goes.
-_BLOCKQUOTE_MARKER = re.compile(r"^[ \t]{0,3}(?:>[ \t]?)+", re.MULTILINE)
+#: blockquote stays swept, not quotation (S3); only its marker goes. Iteration 2: a ``>`` run after list
+#: markers (``- > ``, ``10. > ``) or after a continuation indent of any width (``    > ``) is a marker too. The
+#: ``item`` group holds the list markers, which stay; the indentation before a bare ``>`` run goes with it.
+_BLOCKQUOTE_MARKER = re.compile(
+    r"^(?P<item>[ \t]*(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)+)?[ \t]*(?:>[ \t]?)+", re.MULTILINE)
 
 
 def _line_markers(path: str):
@@ -388,7 +493,8 @@ def gate_source(path: str, raw: str) -> tuple[str, list[int]]:
     """The file ``path``'s text before ``normalize()``, with each character's raw offset: ``raw`` with
     every line marker ``_line_markers`` names removed and each newline kept (so line numbers hold) --
     for ``.py``, ``.yaml`` and ``.yml`` each comment line's ``#`` marker (``_WRAPPED_COMMENT``), for
-    ``.md`` each blockquote line's ``>`` marker (``_BLOCKQUOTE_MARKER``)."""
+    ``.md`` each blockquote line's ``>`` marker (``_BLOCKQUOTE_MARKER``), keeping any list marker before
+    it (its ``item`` group)."""
     markers = _line_markers(path)
     if markers is None:
         return raw, list(range(len(raw)))
@@ -396,8 +502,9 @@ def gate_source(path: str, raw: str) -> tuple[str, list[int]]:
     pieces: list[str] = []
     source_to_raw: list[int] = []
     for marker in markers.finditer(raw):
-        pieces.append(raw[pos:marker.start()])
-        source_to_raw += range(pos, marker.start())
+        cut = marker.end("item") if "item" in markers.groupindex and marker.group("item") else marker.start()
+        pieces.append(raw[pos:cut])
+        source_to_raw += range(pos, cut)
         pos = marker.end()
     pieces.append(raw[pos:])
     source_to_raw += range(pos, len(raw))
@@ -1155,6 +1262,19 @@ def test_scanner_quote_spans_oracle():
         ('a " stray and a "pair" here', []),
         ('a " stray, a `"` in code and a "pair"', ['`"`']),
         ('odd " here\n\nand "even" here', ['"even"']),
+        # Sprint-008 F011 review, iteration 2. A curly run that is not strictly “ ” “ ” pairs none.
+        ("A stray “ opens. Then “a pair”.", []),
+        ("a ” stray closer\n\nthen “one” and “two”", ["“one”", "“two”"]),
+        # A straight quote opens only left-flanking and closes only right-flanking; ambiguous pairs none.
+        ('The 5" strap and a 3" band', []),
+        ('x"y and z"w', []),
+        ('a ("paren") and "`code`" b', ['"paren"', '"`code`"']),
+        # Punctuation on both sides still lets a quote close (or open), as CommonMark reads "_".
+        ('asks ("why?", "how?") and ["**/*"]', ['"why?"', '"how?"', '"**/*"']),
+        # A ">"-only line is a blockquote's blank line: no span crosses it.
+        ('> He wrote "a\n>\n> b" ends.', []),
+        # A fence opened in a list item ends with the item and never pairs with a later top-level fence.
+        ("- item\n  ```\n  code\n\nprose\n\n```\nmore\n```\n", ["  ```\n  code\n\n", "```\nmore\n```\n"]),
     ]
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
@@ -1435,13 +1555,18 @@ def test_wrapped_comment_yaml_example_split_over_two_hash_lines_is_a_hit(tmp_pat
     assert [(h.path, h.line) for h in hits if h.path == body] == [(body, 3)]
 
 
-@pytest.mark.parametrize("marker", ["> ", ">", "> > ", "   > "])
-def test_a_blockquote_wrapped_example_is_a_hit(tmp_path, marker):
+@pytest.mark.parametrize("marker, continuation", [
+    ("> ", "> "), (">", ">"), ("> > ", "> > "), ("   > ", "   > "),
+    ("- > ", "    > "), ("10. > ", "    > "),
+], ids=["> ", ">", "> > ", "   > ", "- > ", "10. > "])
+def test_a_blockquote_wrapped_example_is_a_hit(tmp_path, marker, continuation):
     """S3: a ``>`` blockquote is swept, not quotation. Its markers survive ``normalize()``, so an old
     meaning wrapped over two blockquote lines read "... reference > and is never struck" and was no hit
-    (sprint-008 F011 review). The gate removes them in ``.md``, keeping the map to the raw text."""
+    (sprint-008 F011 review). The gate removes them in ``.md``, keeping the map to the raw text. A
+    blockquote inside a list item (``- > ``, ``10. > ``, continued under a 4-space indent) loses its
+    ``>`` run too, and keeps its list marker (sprint-008 F011 review, iteration 2)."""
     rel = "specification/spec/99-planted.md"
-    _plant(tmp_path, rel, f"Intro.\n\n{marker}{_WRAPPED_HEAD}\n{marker}{_WRAPPED_TAIL}.\n")
+    _plant(tmp_path, rel, f"Intro.\n\n{marker}{_WRAPPED_HEAD}\n{continuation}{_WRAPPED_TAIL}.\n")
     hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
     raw = (tmp_path / rel).read_text(encoding="utf-8")
     text, offsets = gate_text(rel, raw)
@@ -1495,6 +1620,74 @@ def test_an_odd_count_of_straight_quotes_shelters_no_prose(tmp_path):
     print(f"[slice compared] spans {_spans(raw)}; hits {[(h.line, h.quoted) for h in hits]}")
     assert [(h.line, h.quoted) for h in hits] == [(1, False), (3, True)]
     assert [h.line for h in gate_failures(hits, {})] == [1]
+
+
+def test_an_unbalanced_curly_quote_run_shelters_no_prose(tmp_path):
+    """The odd-count rule's curly twin (sprint-008 F011 review, iteration 2): a stray ``“`` paired with
+    the next ``”`` and sheltered the live prose between them. A paragraph whose curly quotes (outside
+    code spans) do not run strictly ``“ ” “ ”`` pairs none of them. A balanced run still shelters."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = f"A stray “ opens. Live: {example}. Then “a pair”.\n\nQuoted: “{example}”.\n"
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    print(f"[slice compared] spans {_spans(raw)}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert [(h.line, h.quoted) for h in hits] == [(1, False), (3, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [1]
+
+
+def test_a_straight_quote_pairs_only_a_left_flanking_opener_with_a_right_flanking_closer(tmp_path):
+    """CommonMark's delimiter rule (sprint-008 F011 review, iteration 2): two stray inch marks made an even
+    count, so ``5"`` paired with ``3"`` and sheltered the prose between them. A straight ``"`` opens only
+    when left-flanking and closes only when right-flanking, read as CommonMark reads ``_``
+    (``_quote_roles``), so an intraword ``x"y`` is ambiguous and pairs nothing. A real quotation still
+    shelters."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = (f'The 5" strap. Live: {example}. A 3" band.\n\n'
+           f'Both x"y. Live: {example}. Then z"w.\n\n'
+           f'Quoted: "{example}".\n')
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    print(f"[slice compared] spans {_spans(raw)}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert [(h.line, h.quoted) for h in hits] == [(1, False), (3, False), (5, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [1, 3]
+
+
+def test_a_bare_blockquote_marker_line_separates_paragraphs(tmp_path):
+    """A ``>``-only line is a blockquote's blank line (sprint-008 F011 review, iteration 2). Read as text
+    it joined three blockquote paragraphs into one, and a quote opened in the first and closed in the
+    third sheltered the live prose of the second. ``_paragraphs`` now breaks at it."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = f'> He wrote "a\n>\n> Live: {example}.\n>\n> b" ends.\n\n> Quoted: "{example}".\n'
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    paragraphs = [raw[a:b] for a, b in _paragraphs(raw, _fenced_blocks(raw))]
+    print(f"[slice compared] paragraphs {paragraphs}; spans {_spans(raw)}; "
+          f"hits {[(h.line, h.quoted) for h in hits]}")
+    assert paragraphs == ['> He wrote "a\n', f"> Live: {example}.\n", '> b" ends.\n',
+                          f'> Quoted: "{example}".\n']
+    assert [(h.line, h.quoted) for h in hits] == [(3, False), (7, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [3]
+
+
+def test_a_fence_opened_in_a_list_item_ends_with_the_item(tmp_path):
+    """CommonMark 5.2 (sprint-008 F011 review, iteration 2): a fence opened inside a list item closes
+    where the item ends, at the first non-blank line indented less than the item's content. Before, it
+    ran on past the item, paired with a later top-level fence and sheltered the prose between them. The
+    list item's code stays code, and so does the later top-level block."""
+    example = OLD_MEANINGS[_WRAPPED_KEY].example
+    rel = "specification/spec/99-planted.md"
+    raw = (f"- item\n  ```\n  In code: {example}.\n\nLive prose: {example}.\n\n"
+           f"```\nIn code: {example}.\n```\n")
+    _plant(tmp_path, rel, raw)
+    hits = [h for h in scan(tmp_path) if h.key == _WRAPPED_KEY]
+    blocks = [raw[a:b] for a, b in _fenced_blocks(raw)]
+    print(f"[slice compared] fenced {blocks}; hits {[(h.line, h.quoted) for h in hits]}")
+    assert blocks == [f"  ```\n  In code: {example}.\n\n", f"```\nIn code: {example}.\n```\n"]
+    assert [(h.line, h.quoted) for h in hits] == [(3, True), (5, False), (8, True)]
+    assert [h.line for h in gate_failures(hits, {})] == [5]
 
 
 def test_the_pending_directory_holds_no_csv():
