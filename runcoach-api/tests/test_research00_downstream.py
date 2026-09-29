@@ -5,7 +5,7 @@ in them is a record, and where the quotation spans lie. The hit test over ``OLD_
 the census rows (T200) and the presence rows (T201) read what is defined here.
 
 Authority: ``spec/references/F011-sweep-decisions.md`` S1-S3 and S15. CI has no data dir, so nothing
-here reads it: every fact taken from the decisions is frozen as a literal.
+here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen as a literal.
 
 - **Live files (S2).** The roots below, restricted to ``.md``, ``.py``, ``.yaml`` and ``.yml``
   (``runcoach-api/src/`` to ``.py``, never ``.pyc``), minus ``RECORD_SET`` (S1, in
@@ -34,6 +34,10 @@ here reads it: every fact taken from the decisions is frozen as a literal.
   paragraph holding the site's frozen anchor (``PRESENCE_ANCHORS``) states the string after
   ``normalize()``. A site or string that gets no row is in ``DROPPED_PRESENCE_ROWS`` with its reason.
   ``test_decisions_01_conforms`` (S9) and the no_regression comment's absence row sit beside them.
+- **IDEA end states (T215, AC3, S7).** ``IDEA_END_STATES`` freezes each IDEA's row; ``test_idea_end_state``
+  reads its file in the data dir (found as ``test_normative_mirror`` finds it) and skips, naming
+  ``IDEA_SKIP_REASON``, only where there is none. ``test_the_gate_runs_without_the_data_dir`` runs this
+  module in a copy of the tree with no data dir and holds those rows to be its only skips (AC5).
 
 **Blind spots, stated rather than argued away:**
 
@@ -2286,3 +2290,170 @@ def test_no_regression_comment_matcher_catches_each_spelling():
     assert verdicts.pop("clean") == []
     assert all(len(found) == 1 for found in verdicts.values()), verdicts
     assert comment_block_above("X = 1\nAC23_METRIC = 1\n", _NO_REGRESSION_ANCHOR) is None
+
+
+# --- AC3 (T215): the research/00 chain's IDEAs reach their end states ------------------------------
+#
+# The one part of this gate that reads the data dir: the IDEA files live only there. The rows are the
+# F008 decisions reference's "IDEA end states" table as S7 amends it, frozen here as literals. Where
+# the reference names an IDEA S7 does not (088, 102), the reference's row is taken as written. 070 is
+# not a row: F010 AC4 owns its end state.
+
+
+@dataclass(frozen=True)
+class IdeaEndState:
+    idea: str
+    status: str
+    #: A phrase a dated note in the file must name, or None where the row asserts the status only.
+    note: str | None
+    why: str
+
+
+IDEA_END_STATES = (
+    IdeaEndState("IDEA-048", "resolved", "F008", "resolved -> F008 (C19)"),
+    IdeaEndState("IDEA-079", "resolved", "F011", "fixed by F011 (T208, AC4's 'earliest')"),
+    IdeaEndState("IDEA-083", "resolved", "F008", "resolved -> F008 (C01/C02)"),
+    IdeaEndState("IDEA-085", "resolved", "F008", "resolved -> F008 (C04)"),
+    IdeaEndState("IDEA-087", "open", "R5", "also owns the F005-parity population (C06, R5)"),
+    IdeaEndState("IDEA-088", "open", None, "reference row: T-25 stays undefined until decided"),
+    IdeaEndState("IDEA-089", "open", "(a) resolved → F008 C05; (b) open", "conditional -> open (S7)"),
+    IdeaEndState("IDEA-090", "resolved", "F011", "fixed by F011 (T202, spec/03 §3.7.3)"),
+    IdeaEndState("IDEA-092", "open", "F011", "owns the two C09 questions (S7)"),
+    IdeaEndState("IDEA-093", "open", None, "owns C10's 22-28-day trailing-silence regime (S7)"),
+    IdeaEndState("IDEA-095", "open", "owned by F009 AC5", "F009 sets its end state (S7)"),
+    IdeaEndState("IDEA-099", "open", None, "owns HRV-25's population; F009 counts it (S7)"),
+    IdeaEndState("IDEA-102", "open", "F011", "reference row: owns every unserved verdict-affecting input"),
+    IdeaEndState("IDEA-103", "open", "F012", "owned by F012 (S7 as amended 2026-09-27)"),
+)
+
+#: The reason every ``test_idea_end_state`` row skips with where the data dir is absent (AC3, AC5).
+IDEA_SKIP_REASON = "AC3's IDEA end states live only in the Shipyard data dir, which is unreachable"
+_NOTE_DATE = re.compile(r"2026-09-2\d")
+_STATUS = re.compile(r"status:\s*[\"']?([A-Za-z_-]+)")
+
+
+def _mirror_data_dir() -> Path | None:
+    """The data dir exactly as ``test_normative_mirror._data_dir()`` finds it (``SHIPYARD_DATA_DIR``,
+    else the ``.shipyard`` breadcrumb), so the two data-dir gates cannot disagree about where it is."""
+    return _load_module("normative_mirror", Path(__file__).parent / "test_normative_mirror.py")._data_dir()
+
+
+def _ideas_dir_or_skip() -> Path:
+    data_dir = _mirror_data_dir()
+    if data_dir is None:
+        pytest.skip(f"{IDEA_SKIP_REASON}: neither $SHIPYARD_DATA_DIR nor {_REPO_ROOT / '.shipyard'} "
+                    f"names a directory with spec/features under it")
+    return data_dir / "spec" / "ideas"
+
+
+def idea_end_state_errors(ideas_dir: Path, row: IdeaEndState) -> list[str]:
+    """Why ``row``'s IDEA file is not at its end state: the frontmatter ``status`` differs, or no line
+    dated ``2026-09-2x`` names the row's note phrase (as a whole word). Empty when it is."""
+    files = sorted(ideas_dir.glob(f"{row.idea}-*.md"))
+    if len(files) != 1:
+        return [f"{row.idea}: {len(files)} files match {row.idea}-*.md in {ideas_dir}"]
+    lines = files[0].read_text(encoding="utf-8").splitlines()
+    closing = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
+    if not lines or lines[0].strip() != "---" or closing is None:
+        return [f"{row.idea}: no frontmatter"]
+    statuses = [m.group(1) for line in lines[1:closing] if (m := _STATUS.fullmatch(line.strip()))]
+    errors = []
+    if statuses != [row.status]:
+        errors.append(f"{row.idea}: frontmatter status {statuses}, row expects {row.status!r}")
+    if row.note is not None:
+        phrase = re.compile(rf"(?<!\w){re.escape(row.note)}(?!\w)")
+        if not any(_NOTE_DATE.search(line) and phrase.search(line) for line in lines):
+            errors.append(f"{row.idea}: no line dated 2026-09-2x names {row.note!r}")
+    return errors
+
+
+@pytest.mark.parametrize("row", IDEA_END_STATES, ids=[row.idea.replace("-", "_") for row in IDEA_END_STATES])
+def test_idea_end_state(row):
+    """F011 AC3 and S7: the IDEA's frontmatter ``status`` is its row's, and a dated note names the row's
+    phrase. Skips, with ``IDEA_SKIP_REASON``, only when the data dir is absent."""
+    ideas_dir = _ideas_dir_or_skip()
+    errors = idea_end_state_errors(ideas_dir, row)
+    path = next(iter(sorted(ideas_dir.glob(f"{row.idea}-*.md"))), None)
+    status = [line for line in (path.read_text(encoding="utf-8").splitlines() if path else [])
+              if line.startswith("status:")]
+    print(f"[slice compared] {path}: {status} vs {row.status!r}; note {row.note!r} ({row.why})")
+    assert errors == []
+
+
+def test_idea_end_state_check_fails_a_wrong_status_and_a_missing_note(tmp_path):
+    """The check's negative class: a wrong status, a status only in the body, an undated note, a note
+    naming a longer token, a missing file, a file with no frontmatter. The right file passes."""
+    row = IdeaEndState("IDEA-900", "resolved", "F011", "fixture")
+    good = "---\nid: IDEA-900\nstatus: resolved\n---\n\n**Resolved 2026-09-28 (F011, T215).**\n"
+    cases = {
+        "good": good,
+        "good, CRLF": good.replace("\n", "\r\n"),
+        "wrong status": good.replace("status: resolved", "status: open"),
+        "status in body only": good.replace("status: resolved\n", "") + "status: resolved\n",
+        "undated note": good.replace("2026-09-28", "later"),
+        "note names F0110": good.replace("F011,", "F0110,"),
+        "note dated a month early": good.replace("2026-09-28", "2026-08-28"),
+        "no frontmatter": good.replace("---\n", "", 1),
+    }
+    verdicts = {}
+    for name, text in cases.items():
+        ideas = tmp_path / slug(name)
+        ideas.mkdir()
+        (ideas / "IDEA-900-fixture.md").write_bytes(text.encode("utf-8"))
+        verdicts[name] = idea_end_state_errors(ideas, row)
+    (tmp_path / "empty").mkdir()
+    verdicts["missing file"] = idea_end_state_errors(tmp_path / "empty", row)
+    print(f"[slice compared] {verdicts}")
+    assert verdicts.pop("good") == [] and verdicts.pop("good, CRLF") == []
+    assert all(len(errors) == 1 for errors in verdicts.values()), verdicts
+
+
+def _copy_of_the_repo(dest: Path) -> Path:
+    """The working tree's tracked and unignored files, so no ``.shipyard`` breadcrumb, copied to ``dest``."""
+    import shutil
+    import subprocess
+
+    listed = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=_REPO_ROOT,
+                            capture_output=True, check=True).stdout.decode("utf-8").split("\0")
+    for rel in filter(None, listed):
+        source = _REPO_ROOT / rel
+        if source.is_file():
+            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest / rel)
+    return dest
+
+
+def test_the_gate_runs_without_the_data_dir(tmp_path):
+    """AC5 on CI: in a copy of the repo with no ``.shipyard``, ``SHIPYARD_DATA_DIR`` naming an empty
+    directory, this module runs with nothing failed, and the only skips are the ``test_idea_end_state``
+    rows, each naming ``IDEA_SKIP_REASON``."""
+    import subprocess
+    import sys
+    import xml.etree.ElementTree as ET
+
+    repo = _copy_of_the_repo(tmp_path / "repo")
+    assert not (repo / ".shipyard").exists()
+    (tmp_path / "no-data-dir").mkdir()
+    report = tmp_path / "report.xml"
+    env = {**os.environ, "SHIPYARD_DATA_DIR": str(tmp_path / "no-data-dir")}
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", "runcoach-api/tests/test_research00_downstream.py", "-q",
+         "-p", "no:cacheprovider", f"--junitxml={report}", "-k", "not test_the_gate_runs_without_the_data_dir"],
+        cwd=repo, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1500)
+    cases = ET.parse(report).getroot().iter("testcase")
+    outcomes = {}
+    for case in cases:
+        name = case.get("name")
+        bad = [child for child in case if child.tag in ("failure", "error")]
+        skipped = case.find("skipped")
+        outcomes[name] = ("failed" if bad else "skipped" if skipped is not None else "passed",
+                          "" if skipped is None else skipped.get("message", ""))
+    skipped = {name: why for name, (state, why) in outcomes.items() if state == "skipped"}
+    failed = [name for name, (state, _why) in outcomes.items() if state == "failed"]
+    print(f"[slice compared] rc={done.returncode}; {len(outcomes)} cases; failed {failed}; skipped {skipped}; "
+          f"tail {done.stdout.strip().splitlines()[-1:]}")
+    assert done.returncode == 0 and failed == []
+    expected = {f"test_idea_end_state[{row.idea.replace('-', '_')}]" for row in IDEA_END_STATES}
+    assert set(skipped) == expected
+    assert all(IDEA_SKIP_REASON in why for why in skipped.values()), skipped
+    assert sum(state == "passed" for state, _why in outcomes.values()) > len(expected)
