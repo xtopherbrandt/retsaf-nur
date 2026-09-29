@@ -48,6 +48,7 @@ RESET_COMPOSITION_WITHDRAWN = (
     "either reset collapses the baseline",
     "any reset collapses the baseline",
     "both resets collapse the baseline",
+    "a baseline re-establishment (a coverage gap or a source-tier change, §3.3) collapses the baseline deliberately",
 )
 
 THRESHOLDS_WITHDRAWN = (

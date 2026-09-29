@@ -1189,6 +1189,7 @@ WITHDRAWN_ORDER = (
     ("RESET_COMPOSITION_WITHDRAWN", 8, "3a2100b7e86f", "the either-reset quantifier composition"),
     ("RESET_COMPOSITION_WITHDRAWN", 9, "0a8bd6644939", "the any-reset quantifier composition"),
     ("RESET_COMPOSITION_WITHDRAWN", 10, "17628c8c2129", "the both-resets quantifier composition"),
+    ("RESET_COMPOSITION_WITHDRAWN", 11, "3ac56c9d3a23", "research/00's C14 parenthetical, the source-tier change that collapses"),
 )
 
 
@@ -1517,8 +1518,8 @@ def test_the_withdrawn_tuples_are_in_the_order_the_prose_names_them_by() -> None
             f"{name} has {len(tup)} entries against {len(pinned)} pinned rows: "
             f"every entry is pinned by exactly one row, and every row pins an entry"
         )
-    assert len(WITHDRAWN_ORDER) == 29, (
-        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 29: a row and its"
+    assert len(WITHDRAWN_ORDER) == 30, (
+        f"WITHDRAWN_ORDER has {len(WITHDRAWN_ORDER)} rows, not 30: a row and its"
         f"tuple entry dropped together leave every remaining digest correct"
     )
 
