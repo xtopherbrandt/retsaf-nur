@@ -2450,8 +2450,9 @@ def test_the_gate_runs_without_the_data_dir(tmp_path):
                           "" if skipped is None else skipped.get("message", ""))
     skipped = {name: why for name, (state, why) in outcomes.items() if state == "skipped"}
     failed = [name for name, (state, _why) in outcomes.items() if state == "failed"]
+    tail = [re.sub(r"(\d+) (\w+)", r"\2=\1", line) for line in done.stdout.strip().splitlines()[-1:]]
     print(f"[slice compared] rc={done.returncode}; {len(outcomes)} cases; failed {failed}; skipped {skipped}; "
-          f"tail {done.stdout.strip().splitlines()[-1:]}")
+          f"tail {tail}")
     assert done.returncode == 0 and failed == []
     expected = {f"test_idea_end_state[{row.idea.replace('-', '_')}]" for row in IDEA_END_STATES}
     assert set(skipped) == expected
