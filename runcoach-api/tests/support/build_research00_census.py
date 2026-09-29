@@ -585,6 +585,15 @@ MANUAL_ROWS = (
     ("C18-no-tier-from-resolver", SCHEMAS, "They are not all of tier resolution: it also applies",
      ("schemas Thresholds (C18): 'not all of tier resolution', retired resolver vocabulary (T-32, HRV-44); "
       "the recency gate acts in dataset selection")),
+    # F011 sprint-008 review, iteration 9 (S11/S14): F006's Negative Class still names the fallback as
+    # T093's rule-3 half, after AC9 (a1eee93) and spec/03 (2b1fe00) dropped it.
+    ("C17-hrv24-read-on-last", F006, "with its rule-3 half retained as AC9's presentation fallback (T156)",
+     ("F006:375 (C17): the Negative Class names the presentation fallback as T093's rule-3 half, retired "
+      "vocabulary (T-32); HRV-24 and HRV-59 state it")),
+    ("C17-hrv24-read-on-last", F006,
+     'Its *rule-3 half* — "when no candidate covers the week, the tier the athlete was read on last holds it"',
+     ("F006:406 (C17): the fallback as T093's rule-3 half, 'the tier the athlete was read on last holds "
+      "it', retired vocabulary (T-32: rule 1-4, the resolved tier); HRV-24 and HRV-59 state it")),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

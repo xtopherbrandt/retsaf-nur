@@ -372,10 +372,10 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   red is its own qualifier's — both off-diagonals are green. Everything else on IDEA-071's list is
   kept or redeployed and therefore has **no** three-valued pin, deliberately: T094/T095/T129
   re-derived at dataset scope (AC17, T154), T106 kept as a sub-mechanism of the era clip, T107 and
-  T116 retained, T093's week-coverage half subsumed by judgeability (AC8) with its rule-3 half
-  retained as AC9's presentation fallback (T156), T117 redeployed as AC6's gate, T125 and T132
-  retained (AC24, T158). **Two audit traps, priced because an auditor will hit them:** T106 carries
-  no task-labelled pin, so a grep-based retirement audit reports it unpinned and is wrong — its
+  T116 retained, T093's week-coverage half subsumed by judgeability (AC8) with its other half retained
+  as AC9's presentation fallback (`research/00` HRV-24, HRV-59; T156), T117 redeployed as AC6's gate,
+  T125 and T132 retained (AC24, T158). **Two audit traps, priced because an auditor will hit them:**
+  T106 carries no task-labelled pin, so a grep-based retirement audit reports it unpinned and is wrong — its
   cover is `test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of`
   (`test_hrv_trend_reset.py:1827`, the pin `research/00`:219 names) with
   `test_the_era_boundary_ordering_key_keeps_its_three_terms`
@@ -403,9 +403,9 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   a dataset is a candidate only when established and holding >= `min_window_readings` judged-week
   days, so the population the gate closed cannot be selected, and its pins are re-pointed at
   `is_judgeable` (`test_a_thin_tier_that_alone_covers_the_week_does_not_take_the_baseline`, green
-  unmoved). Its *rule-3 half* — "when no candidate covers the week, the tier the athlete was read on
-  last holds it" — is **retained, not retired**, as AC9's presentation fallback: with nothing
-  judgeable the response still carries `baseline`/`band` from the established dataset read last (ties
+  unmoved). Its *other half* — what the response presents when nothing is selected — is
+  **retained, not retired**, as AC9's presentation fallback (`research/00` HRV-24, HRV-59): the
+  response still carries `baseline`/`band` from the established dataset read last (ties
   `n` then fidelity; else densest by `n`; else densest in the week), so the non-nullable contract
   fields hold a value and the three illness-week pins stay green. What the fallback costs, in the
   tolerated direction: it presents, it never judges — `hrv_unavailable` with the presented dataset's

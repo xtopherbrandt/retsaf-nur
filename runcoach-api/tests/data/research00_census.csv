@@ -82,6 +82,8 @@ C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
 C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"except the one deferred rate carried as a named, counted exception",inventory
 C10-lone-candidate-never-struck,spec-mirror/features/F006-per-tier-hrv-datasets.md,so a lone **established** dataset is its own reference and is never skipped,inventory
+C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,with its rule-3 half retained as AC9's presentation fallback (T156),inventory
+C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,"Its *rule-3 half* — ""when no candidate covers the week, the tier the athlete was read on last holds it",inventory
 C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,"(F005's rule 3, retained; `research/00` HRV-24, HRV-59)",inventory
 HRV-11-per-day-collapse-unspecified,spec-mirror/features/F006-per-tier-hrv-datasets.md,only the later is kept,inventory
 C16-hrv21-reads-below-that-band,spec-mirror/references/F006-dataset-model.md,a judgeable dataset reading below its own band is listed in `disagreed_with` even when its own verdict is withheld,inventory
