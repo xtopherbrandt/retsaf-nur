@@ -24,7 +24,8 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   ``code_inline`` token of that reading; only a paragraph or a heading holds a span. Quotes pair once
   per paragraph or heading, never inside a code span: one with an odd count of straight quotes, or
   curly quotes that do not run ``“ ” “ ”``, pairs none of them, and a quote, straight or curly, pairs
-  only a left-flanking opener with a right-flanking closer; a ``>`` blockquote is not quotation.
+  only a left-flanking opener with a right-flanking closer, flanking read on the paragraph's CommonMark
+  content with CommonMark's whitespace; a ``>`` blockquote is not quotation.
   ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
 - **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
   comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
@@ -402,41 +403,51 @@ def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]
     return paragraphs
 
 
-def _quote_roles(raw: str, i: int, start: int, end: int) -> tuple[bool, bool]:
-    """``(can open, can close)`` for the straight or curly quote ``raw[i]`` in the paragraph
-    ``raw[start:end]``, by CommonMark 6.2's delimiter rule as it reads ``_``: it can open when
+def _quote_roles(content: str, i: int) -> tuple[bool, bool]:
+    """``(can open, can close)`` for the straight or curly quote ``content[i]`` in a paragraph's or
+    heading's inline content, by CommonMark 6.2's delimiter rule as it reads ``_``: it can open when
     left-flanking and either not right-flanking or preceded by punctuation, and close when right-flanking
     and either not left-flanking or followed by punctuation. So ``5" strap`` and ``5” strap`` can only
     close, a ``“`` between spaces can do neither, and an intraword ``x"y`` is ambiguous and can do
-    neither. The paragraph's edges count as whitespace; a Unicode punctuation or symbol character counts
-    as punctuation."""
-    before = raw[i - 1] if i > start else "\n"
-    after = raw[i + 1] if i + 1 < end else "\n"
+    neither.
+
+    A quote's neighbours are characters of the content markdown-it parses, never of the raw lines
+    (sprint-008 F011 review, iteration 7: in ``>"`` the blockquote marker read as punctuation before the
+    quote, where CommonMark's content has a line end). A line end and the content's edges are whitespace.
+    Whitespace is CommonMark's Unicode whitespace, the Zs category plus tab, line feed, form feed and
+    carriage return, not ``str.isspace`` (iteration 7: ``\\x0b``, ``\\x1c`` to ``\\x1f``, ``\\x85``,
+    U+2028 and U+2029 are not whitespace in CommonMark). Punctuation is CommonMark 0.31's Unicode
+    punctuation, the P and S categories, which hold every ASCII punctuation character."""
+    before = content[i - 1] if i > 0 else "\n"
+    after = content[i + 1] if i + 1 < len(content) else "\n"
+
+    def space(char: str) -> bool:
+        return char in "\t\n\f\r" or unicodedata.category(char) == "Zs"
 
     def punct(char: str) -> bool:
         return unicodedata.category(char)[0] in "PS"
 
-    left = not after.isspace() and (not punct(after) or before.isspace() or punct(before))
-    right = not before.isspace() and (not punct(before) or after.isspace() or punct(after))
+    left = not space(after) and (not punct(after) or space(before) or punct(before))
+    right = not space(before) and (not punct(before) or space(after) or punct(after))
     return left and (not right or punct(before)), right and (not left or punct(after))
 
 
-def _quote_pairs(text: str, start: int, end: int, code: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """S3's quote spans in the paragraph or heading ``text[start:end]`` (its source lines), delimiters
-    included, never counting a quote inside one of its ``code`` spans. Straight quotes pair only with an
-    even count of them: with an odd count one is stray, and greedy pairing would shelter the prose between
-    it and the next quote (sprint-008 F011 review). Curly quotes pair only when they run strictly
+def _quote_pairs(content: str, code: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """S3's quote spans in a paragraph's or heading's inline ``content``, as ``(start, end)`` in it,
+    delimiters included, never counting a quote inside one of its ``code`` spans (content offsets, backtick
+    runs included). Straight quotes pair only with an even count of them: with an odd count one is stray,
+    and greedy pairing would shelter the prose between it and the next quote (sprint-008 F011 review). Curly quotes pair only when they run strictly
     ``“ ” “ ”``: a stray ``“`` or ``”`` pairs none of them (iteration 2). A quote, straight or curly,
     pairs only a left-flanking opener with the next right-flanking closer (``_quote_roles``); an
     ambiguous quote pairs nothing (iteration 2: two stray inch marks, ``5"`` and ``3"``, made an even
     count and sheltered the prose between them; iteration 3: a stray ``“`` and a ``5”`` did the same)."""
-    coded = [False] * (end - start)
+    coded = [False] * len(content)
     for a, b in code:
-        coded[a - start:b - start] = [True] * (b - a)
-    quotes = [i for i in range(start, end) if text[i] in "\"“”" and not coded[i - start]]
-    curly = "".join(text[i] for i in quotes if text[i] != '"')
+        coded[a:b] = [True] * (b - a)
+    quotes = [i for i, char in enumerate(content) if char in "\"“”" and not coded[i]]
+    curly = "".join(content[i] for i in quotes if content[i] != '"')
     closers = {}
-    if sum(text[i] == '"' for i in quotes) % 2 == 0:
+    if sum(content[i] == '"' for i in quotes) % 2 == 0:
         closers['"'] = '"'
     if curly == "“”" * (len(curly) // 2):
         closers["“"] = "”"
@@ -444,10 +455,10 @@ def _quote_pairs(text: str, start: int, end: int, code: list[tuple[int, int]]) -
     k = 0
     while k < len(quotes):
         i = quotes[k]
-        closer = closers.get(text[i])
-        if closer is not None and _quote_roles(text, i, start, end)[0]:
-            m = next((m for m in range(k + 1, len(quotes)) if text[quotes[m]] == closer), None)
-            if m is not None and _quote_roles(text, quotes[m], start, end)[1]:
+        closer = closers.get(content[i])
+        if closer is not None and _quote_roles(content, i)[0]:
+            m = next((m for m in range(k + 1, len(quotes)) if content[quotes[m]] == closer), None)
+            if m is not None and _quote_roles(content, quotes[m])[1]:
                 pairs.append((i, quotes[m] + 1))
                 k = m + 1
                 continue
@@ -476,25 +487,28 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
       lengths (sprint-008 F011 review, iteration 6: a hand-written pairing opened a span on an escaped
       ``\\```). Only a paragraph or a heading holds one; an HTML block and an indented code block hold
       no span.
-    - Quote spans are paired once per paragraph or heading, over its source lines, never on a quote in a
-      code span (``_quote_pairs``). A blank line, a ``>``-only line and every other block edge end the
-      paragraph, as CommonMark reads it; ``>`` opens nothing, so a blockquote is not quotation.
+    - Quote spans are paired once per paragraph or heading, over the inline content markdown-it parses
+      (``token.content``: container markers and indentation cut, line ends ``\\n``), never on a quote in
+      a code span (``_quote_pairs``). A blank line, a ``>``-only line and every other block edge end the
+      paragraph, as CommonMark reads it; ``>`` opens nothing, so a blockquote is not quotation, and a
+      quote's neighbours are content characters, never a container marker (iteration 7).
 
     markdown-it keeps no offsets for inline content, so each paragraph's and heading's content carries
     the ``src`` offset of every character (``_source_recording``) and each code span its offsets in that
     content (``_code_span_recording``); a ``src`` offset maps back to ``raw`` over the same line numbers,
-    since markdown-it changes only line ends. A code span inside a quote span is not listed again."""
+    since markdown-it changes only line ends. Code and quote spans are found in the content and mapped
+    back through those offsets. A code span inside a quote span is not listed again."""
     text, starts, tokens = _gate_reading(raw)
     raw_offset = _raw_offset_map(text, starts)
-    lines = len(starts) - 1
     spans = _fence_ranges(starts, tokens)
     for token in tokens:
         if token.type != "inline":
             continue
         source = token.meta["source"]
-        code = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1)
-                for a, b in (child.meta["at"] for child in token.children if child.type == "code_inline")]
-        quoted = _quote_pairs(text, starts[token.map[0]], starts[min(token.map[1], lines)], code)
+        at = [child.meta["at"] for child in token.children if child.type == "code_inline"]
+        code = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1) for a, b in at]
+        quoted = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1)
+                  for a, b in _quote_pairs(token.content, at)]
         spans += quoted + [(a, b) for a, b in code if not any(c <= a and b <= d for c, d in quoted)]
     return sorted(spans)
 
@@ -2179,11 +2193,14 @@ def test_scanner_quote_spans_oracle_iteration_6():
         assert _spans(raw) == expected, raw
 
 
-#: Inputs whose inline content sits behind container markers, tabs and every line end markdown-it counts.
+#: Inputs whose inline content sits behind container markers, tabs and every line end markdown-it counts,
+#: and a BOM, which markdown-it keeps as content (iteration 7: a normalize that stripped it would shift
+#: every offset on its line, and this test would fail).
 _MAPPING_INPUTS = (
     "> a `b\r\n> c` d\r\n", "- a\n  - b `c\n    d` e\n", "-\ta `b\n\tc` d\n", "* a\n\tb `c` d\n",
     "> - a \"b\r>   c\" d\r", "1. a\r\n   b `c`\n\n   d\re\n", "# Head `x` ##\n", "Set `x`\r\n===\r\n",
     "a \u2028 `b`\n\u2028\n", "\x1c a `b`\n", "a \0 `b`\n", "  a\n\t\tb `c`\n",
+    "\ufeffa `b`\n\ufeffc `d`\n",
 )
 #: A line's leading run of container markers and indentation, which no content character maps into.
 _CONTAINER_PREFIX = re.compile(r"[ \t>]*(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t>]*)*")
@@ -2223,6 +2240,86 @@ def test_scanner_inline_content_maps_back_to_the_raw_text():
             blocks += 1
     print(f"[slice compared] {blocks} paragraphs and headings in {len(inputs)} inputs map back to the raw text")
     assert blocks > len(_MAPPING_INPUTS)
+
+
+@pytest.mark.parametrize("template", [
+    '> Say "a\n> Live {EX}.\n>" b\n',
+    '> Say “a\n> Live {EX}.\n>” b\n',
+    '- > Say "a\n  > Live {EX}.\n  >" b\n',
+    '> > Say "a\n> > Live {EX}.\n>>" b\n',
+], ids=["straight", "curly", "list_item_blockquote", "double_marker"])
+def test_a_container_marker_is_no_neighbour_of_a_quote(tmp_path, template):
+    """Sprint-008 F011 review, iteration 7 (B1): S3 read a quote's neighbours on the paragraph's raw source
+    lines, so in ``>"`` the blockquote marker was the character before the quote -- punctuation -- and the
+    quote could close. CommonMark's paragraph content has a line end there
+    (``Say "a\\nLive X.\\n" b``), and a line end is whitespace, so a quote after it and before a space is
+    neither left- nor right-flanking and closes nothing. Roles are now read on the content markdown-it
+    parses (``_quote_roles`` over ``token.content``)."""
+    _iteration_4_verdict(tmp_path, template, 2)
+
+
+@pytest.mark.parametrize("space", ["\x0b", "\u2028", "\x1f", "\x85"], ids=["vt", "u2028", "x1f", "x85"])
+def test_only_commonmark_whitespace_makes_a_quote_flanking(tmp_path, space):
+    """Iteration 7 (W): CommonMark's Unicode whitespace is the Zs category plus tab, line feed, form feed
+    and carriage return. Python's ``str.isspace`` also holds ``\\x0b``, ``\\x1c`` to ``\\x1f``, ``\\x85``,
+    U+2028 and U+2029, which read the ``b"`` before one as right-flanking. In CommonMark none of them is
+    whitespace, so that quote is intraword, ambiguous, and closes nothing."""
+    _iteration_4_verdict(tmp_path, 'Say "a\nLive {EX}.\nb"' + space + "c now.\n", 2)
+
+
+def test_an_unclosed_fence_opener_keeps_the_list_marker_before_its_fence_run(tmp_path):
+    """Iteration 7 (S1): pins "letters from its fence run" (``_gate_reading``). The opener line ``- ````
+    becomes ``- xxx``, so the list item still interrupts the paragraph on line 1, and the ``a`` run there
+    pairs with nothing. Read as letters from the line start, the list marker went too, the three lines
+    were one paragraph, and its code span sheltered the live line."""
+    _iteration_4_verdict(tmp_path, "Para `a\n- ```\n  Live {EX}. b` c\n", 3)
+
+
+def test_a_symbol_next_to_a_quote_counts_as_punctuation(tmp_path):
+    """Iteration 7 (A1): pins CommonMark 0.31's punctuation, the P and S categories (``_quote_roles``). A
+    quote after the symbol ``=`` and before a letter is left- and not right-flanking, so it opens and the
+    quotation shelters its line. Read as a letter, ``=`` made the quote ambiguous and it opened nothing."""
+    raw, hits = _iteration_3_world(tmp_path, 'Set ="a\nLive {EX}.\nb" c\n')
+    assert _spans(raw) == ['"a\nLive ' + OLD_MEANINGS[_WRAPPED_KEY].example + '.\nb"']
+    assert [(h.line, h.quoted) for h in hits] == [(2, True)]
+    assert gate_failures(hits, {}) == []
+
+
+def test_scanner_quote_spans_oracle_iteration_7():
+    """Iteration 7's inputs as ``quote_spans`` oracle cases, "X" for the example, with controls: a quote's
+    neighbours are the characters of CommonMark's paragraph content, a line end is whitespace, and
+    whitespace is CommonMark's."""
+    cases = [
+        # B1: a container marker is not a neighbour; the content has a line end there.
+        ('> Say "a\n> Live X.\n>" b\n', []),
+        ('> Say “a\n> Live X.\n>” b\n', []),
+        ('- > Say "a\n  > Live X.\n  >" b\n', []),
+        ('> > Say "a\n> > Live X.\n>>" b\n', []),
+        ('> Say "a\n> Live X.\n> " b\n', []),
+        ('Say "a\nLive X.\n" b\n', []),
+        # W: only Zs, tab, line feed, form feed and carriage return are whitespace.
+        ('Say "a\nLive X.\nb"\x0bc now.\n', []),
+        ('Say "a\nLive X.\nb"\u2028c now.\n', []),
+        ('Say "a\nLive X.\nb"\u2029c now.\n', []),
+        ('Say "a\nLive X.\nb"\x1cc now.\n', []),
+        ('Say "a\nLive X.\nb"\x85c now.\n', []),
+        # Controls: a content neighbour behind the marker, CommonMark whitespace, and ASCII and
+        # non-ASCII punctuation and symbols (=, ©, an em dash).
+        ('> Say "a\n> Live X.\n>b" c\n', ['"a\n> Live X.\n>b"']),
+        ('> > Say "a\n> > Live X.\n>>b" c\n', ['"a\n> > Live X.\n>>b"']),
+        ('Say "a\nLive X.\nb"\tc now.\n', ['"a\nLive X.\nb"']),
+        ('Say "a\nLive X.\nb"\fc now.\n', ['"a\nLive X.\nb"']),
+        ('Say "a\nLive X.\nb"\xa0c now.\n', ['"a\nLive X.\nb"']),
+        ('Say "a\nLive X.\nb"\u3000c now.\n', ['"a\nLive X.\nb"']),
+        ('Set ="a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('Set "a\nLive X.\nb"= c\n', ['"a\nLive X.\nb"']),
+        ('Set ©"a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('Say "a\nLive X.\nb"— c\n', ['"a\nLive X.\nb"']),
+        ('# A "b" ##\n', ['"b"']),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
 
 
 def test_the_pending_directory_holds_no_csv():
