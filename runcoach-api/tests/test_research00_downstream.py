@@ -16,16 +16,16 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
 - **Section records (S1).** Text under exactly ``^## Decision Log\\s*$`` in a ``SECTION_RECORD_FILES``
   file, and a CHANGELOG entry under a released ``## [x.y.z]`` heading, is not swept. Every other file
   under the roots that carries the Decision Log heading is swept, and a test lists them.
-- **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span or a
-  code span is quotation. Spans are found before ``normalize()``, on the raw text with each unclosed
-  fence's opener line, info string included, read as letters from its fence run on; they never cross a
-  blank line (a ``>``-only line is blank) or the edge of a block in any markdown-it reading of the text;
-  a fenced block is code as CommonMark reads it
-  (markdown-it's fence tokens), and a fence no closing line ends -- run to the end of the file, a
-  blockquote or a list item -- is prose; a paragraph with an odd count of straight quotes, or curly
-  quotes that do not run ``“ ” “ ”``, pairs none of them, and a quote, straight or curly, pairs only a
-  left-flanking opener with a right-flanking closer, never one inside a code span; a ``>`` blockquote
-  is not quotation. ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
+- **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span, a
+  code span or a fenced block is quotation. Spans are found before ``normalize()`` in one CommonMark
+  reading (markdown-it) of the raw text with each unclosed fence's opener line, info string included,
+  read as letters from its fence run on: a fence no closing line ends -- run to the end of the file, a
+  blockquote or a list item -- is prose. A fenced block is a closed fence token and a code span a
+  ``code_inline`` token of that reading; only a paragraph or a heading holds a span. Quotes pair once
+  per paragraph or heading, never inside a code span: one with an odd count of straight quotes, or
+  curly quotes that do not run ``“ ” “ ”``, pairs none of them, and a quote, straight or curly, pairs
+  only a left-flanking opener with a right-flanking closer; a ``>`` blockquote is not quotation.
+  ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
 - **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
   comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
   (``gate_text``), so a meaning wrapped over two comment lines reads as one sentence; in ``.md`` each
@@ -59,6 +59,7 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
 import csv
 import fnmatch
 import importlib.util
+import bisect
 import os
 import re
 import unicodedata
@@ -69,6 +70,7 @@ from types import MappingProxyType, ModuleType
 import pytest
 from markdown_it import MarkdownIt
 from markdown_it import rules_block as _markdown_block_rules
+from markdown_it import rules_inline as _markdown_inline_rules
 from markdown_it.parser_block import _rules as _markdown_block_rule_table
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -254,92 +256,137 @@ def _blank_line(text: str) -> bool:
     return not text.strip() or bool(_BARE_BLOCKQUOTE.fullmatch(text))
 
 
-#: The leaf blocks of a markdown-it reading. No quote or code span leaves one (sprint-008 F011 review,
-#: iteration 4): CommonMark ends a paragraph at a fence line or a heading, and the blank-line paragraphs
-#: ran on through both. ``hr`` and ``fence`` are a second guard only: a thematic break holds no
-#: delimiter, and ``_block_reading`` leaves every fence line out of its regions, so neither changes a
-#: span (iteration 5). ``code_block`` and ``html_block`` keep the spans the blank-line paragraphs found
-#: in those blocks before iteration 4.
-_LEAF_BLOCKS = frozenset({"paragraph_open", "heading_open", "fence", "code_block", "html_block", "hr"})
+def _lines_with_source(state, begin: int, end: int, indent: int) -> tuple[str, list[int]]:
+    """``state.getLines(begin, end, indent, False)`` -- the text markdown-it's paragraph and setext-heading
+    rules take as a block's content, container markers and indentation cut -- with the ``state.src``
+    offset of each of its characters. The loop is ``StateBlock.getLines``'s own; a space that a tab only
+    partly consumed by ``indent`` expands to takes the tab's offset. The result is asserted equal to
+    ``getLines``, so the offsets can never describe a different string from the one markdown-it parses."""
+    pieces: list[str] = []
+    where: list[int] = []
+    for line in range(begin, end):
+        column = 0
+        line_start = first = state.bMarks[line]
+        last = state.eMarks[line] + 1 if line + 1 < end else state.eMarks[line]
+        while first < last and column < indent:
+            char = state.src[first]
+            if char == "\t":
+                column += 4 - (column + state.bsCount[line]) % 4
+            elif char == " " or first - line_start < state.tShift[line]:
+                column += 1
+            else:
+                break
+            first += 1
+        if column > indent:
+            pieces.append(" " * (column - indent))
+            where += [first - 1] * (column - indent)
+        pieces.append(state.src[first:last])
+        where += range(first, last)
+    text = "".join(pieces)
+    assert text == state.getLines(begin, end, indent, False), "the line map drifted from getLines()"
+    return text, where
 
 
-def _block_reading(raw: str) -> tuple[str, list[tuple[int, int]], list[tuple[int, int]]]:
-    """``(text, fenced, regions)`` for the ``.md`` text ``raw``, as CommonMark reads it through markdown-it
-    (``_MARKDOWN``), with offsets that are raw offsets.
+def _source_recording(rule):
+    """markdown-it's paragraph, ATX-heading or setext-heading ``rule``, which also records on the inline
+    token it pushes, as ``token.meta["source"]``, the ``state.src`` offset of each character of its
+    ``content``: the text the rule took from the block's lines, stripped as the rule strips it. Only
+    ``state`` knows where each line's container markers end (``bMarks``) while the rule runs, and the
+    inline token keeps none of it."""
+    def recording(state, start_line: int, end_line: int, silent: bool) -> bool:
+        first = len(state.tokens)
+        if not rule(state, start_line, end_line, silent):
+            return False
+        if not silent:
+            token = next(t for t in state.tokens[first:] if t.type == "inline")
+            if rule is _markdown_block_rules.heading:
+                pos = state.bMarks[start_line] + state.tShift[start_line]
+                while pos < state.eMarks[start_line] and state.src[pos] == "#":
+                    pos += 1
+                text, where = state.src[pos:state.eMarks[start_line]], range(pos, state.eMarks[start_line])
+            else:
+                text, where = _lines_with_source(state, token.map[0], token.map[1], state.blkIndent)
+            lead = len(text) - len(text.lstrip())
+            assert text[lead:lead + len(token.content)] == token.content, "the content map drifted"
+            token.meta["source"] = list(where[lead:lead + len(token.content)])
+        return True
+    return recording
 
-    ``text`` is ``raw`` with each unclosed fence's opener line read as letters of the same length from its
-    fence run to its line end (see ``_fenced_blocks``), so it has ``raw``'s length and offsets. The info
-    string is letters too (sprint-008 F011 review, iteration 5): CommonMark never reads an info string as
-    inline text, and with only the run as letters a backtick or quote in it survived, was cut off from its
-    partner before the line by the raw reading's block edge (the grouping below), and paired forward over
-    the unclosed fence's lines, which are prose. ``fenced`` holds the closed fences of the
-    last reading, fence lines included. ``regions`` are the runs of lines a quote or code span may lie in:
-    each line in a leaf block (``_LEAF_BLOCKS``) of the last reading, outside its fences and not blank
-    (``_blank_line``), grouped by the leaf block that holds it in every reading taken, the first on the raw
-    text included. So no span crosses a block edge of any reading: the paragraph an unclosed fence's opener
-    line ends in the raw text stays ended when that line is read as prose (sprint-008 F011 review,
-    iteration 4). Lines are split on markdown-it's own line ends (``_MARKDOWN_NEWLINE``), so CRLF, CR and
-    mixed endings map as it counts them."""
+
+def _code_span_recording(state, silent: bool) -> bool:
+    """markdown-it's CommonMark backtick rule, which also records on each code span token it pushes, as
+    ``token.meta["at"]``, the span's ``(start, end)`` in the inline content, backtick runs included. The
+    rule owns escapes (``\\```), run-length matching and the rest of CommonMark 6.1; this only reads
+    where it stopped."""
+    start, count = state.pos, len(state.tokens)
+    if not _COMMONMARK_BACKTICK(state, silent):
+        return False
+    if len(state.tokens) > count and state.tokens[-1].type == "code_inline":
+        state.tokens[-1].meta["at"] = (start, state.pos)
+    return True
+
+
+_COMMONMARK_BACKTICK = _markdown_inline_rules.backtick
+for _name in ("paragraph", "heading", "lheading"):
+    _MARKDOWN.block.ruler.at(_name, _source_recording(getattr(_markdown_block_rules, _name)),
+                             {"alt": next(alt for name, _fn, alt in _markdown_block_rule_table if name == _name)})
+_MARKDOWN.inline.ruler.at("backticks", _code_span_recording)
+
+
+def _gate_reading(raw: str) -> tuple[str, list[int], list]:
+    """``(text, starts, tokens)``: the one CommonMark reading the gate takes of the ``.md`` text ``raw``.
+
+    ``text`` is ``raw`` with each unclosed fence's opener line read as letters of the same length, from
+    its fence run to its line end: markdown-it (``_MARKDOWN``) parses ``raw``, the first fence no closing
+    line ends (``_fence_marking_closure``) has its line turned to letters, and the text is parsed again,
+    until every fence left is closed. So ``text`` has ``raw``'s length and offsets, an unclosed fence and
+    its info string are prose, and a later closed fence is still code. ``tokens`` is markdown-it's
+    reading of ``text``, and every span the gate finds comes from it alone (sprint-008 F011 review,
+    iteration 6: the per-reading block grouping this replaced cut a delimiter off from its CommonMark
+    partner, and pairing restarted inside the narrower region). ``starts`` holds the raw offset of each
+    line's start over markdown-it's own line ends (``_MARKDOWN_NEWLINE``), and ``len(raw)`` last."""
     starts = [0] + [m.end() for m in _MARKDOWN_NEWLINE.finditer(raw)]
     if starts[-1] != len(raw):
         starts.append(len(raw))
-    lines = len(starts) - 1
     text = raw
-    readings: list[list[int | None]] = []
     while True:
         tokens = _MARKDOWN.parse(text)
-        reading: list[int | None] = [None] * lines
-        for index, token in enumerate(tokens):
-            if token.type in _LEAF_BLOCKS and token.map:
-                for line in range(token.map[0], min(token.map[1], lines)):
-                    reading[line] = index
-        readings.append(reading)
-        fences = [t for t in tokens if t.type == "fence"]
-        unclosed = next((t for t in fences if not t.meta["closed"]), None)
+        unclosed = next((t for t in tokens if t.type == "fence" and not t.meta["closed"]), None)
         if unclosed is None:
-            break
+            return text, starts, tokens
         at = text.index(unclosed.markup, starts[unclosed.map[0]])
         line_end = _MARKDOWN_NEWLINE.search(text, at)
         stop = line_end.start() if line_end else len(text)
         text = text[:at] + "x" * (stop - at) + text[stop:]
-    fence_lines = {line for t in fences for line in range(t.map[0], t.map[1])}
-    regions: list[tuple[int, int]] = []
-    first = held = None
-    for line in range(lines):
-        blocks = tuple(reading[line] for reading in readings)
-        inside = (blocks[-1] is not None and line not in fence_lines
-                  and not _blank_line(text[starts[line]:starts[line + 1]].rstrip("\r\n")))
-        if first is not None and (not inside or blocks != held):
-            regions.append((starts[first], starts[line]))
-            first = None
-        if inside and first is None:
-            first, held = line, blocks
-    if first is not None:
-        regions.append((starts[first], starts[lines]))
-    return text, [(starts[a], starts[b]) for a, b in (t.map for t in fences)], regions
 
 
 def _fenced_blocks(raw: str) -> list[tuple[int, int]]:
     """Raw ranges of fenced code blocks, fence lines included, as CommonMark reads them: markdown-it's
-    fence tokens on the raw text, container markers and all, each token's line range mapped back to raw
-    offsets over markdown-it's own line ends (``_MARKDOWN_NEWLINE``), so CRLF, CR and mixed endings map
-    as it counts them (sprint-008 F011 review, iteration 3: the hand-written parser missed fences behind
-    a list marker or a ``>``, and misread items, lazy lines, thematic breaks and indented closers).
+    fence tokens, container markers and all, each token's line range mapped back to raw offsets over
+    markdown-it's own line ends (``_MARKDOWN_NEWLINE``), so CRLF, CR and mixed endings map as it counts
+    them (sprint-008 F011 review, iteration 3: the hand-written parser missed fences behind a list marker
+    or a ``>``, and misread items, lazy lines, thematic breaks and indented closers).
 
     A fence no closing line ends opens no block (sprint-008 F011 review: a block run to the end of the
     file sheltered all the prose after it). CommonMark runs it to the end of its container -- the
     document, a blockquote or a list item (``_fence_marking_closure`` tells which) -- and here its opener
-    is read as a prose line instead: the line from its fence run on, info string included, becomes letters
-    of the same length, the text is parsed again, and so on until every fence left is closed
-    (``_block_reading``). So its lines, and a list
-    item's fence the item ends before any closer, stay prose, and a later closed fence is still code.
-    Indented code blocks are not fenced blocks and shelter nothing, as before."""
-    return _block_reading(raw)[1]
+    line is read as prose instead (``_gate_reading``). So its lines, and a list item's fence the item
+    ends before any closer, stay prose, and a later closed fence is still code. Indented code blocks are
+    not fenced blocks and shelter nothing, as before."""
+    _text, starts, tokens = _gate_reading(raw)
+    return _fence_ranges(starts, tokens)
+
+
+def _fence_ranges(starts: list[int], tokens) -> list[tuple[int, int]]:
+    """The raw range of each fence token of a reading, over its line ``starts``."""
+    lines = len(starts) - 1
+    return [(starts[a], starts[min(b, lines)]) for a, b in (t.map for t in tokens if t.type == "fence")]
 
 
 def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Raw ranges of runs of non-blank lines outside fenced blocks: a span never leaves one. A line of
-    ``>`` markers alone is blank (``_blank_line``)."""
+    """Raw ranges of runs of non-blank lines outside fenced blocks: the unit a presence row reads
+    (``presence_block``). A line of ``>`` markers alone is blank (``_blank_line``). Quote and code spans
+    are CommonMark's paragraphs and headings, not these (``quote_spans``)."""
     paragraphs: list[tuple[int, int]] = []
     start = None
     for offset, line, text in _lines_with_offsets(raw):
@@ -353,69 +400,6 @@ def _paragraphs(raw: str, fenced: list[tuple[int, int]]) -> list[tuple[int, int]
     if start is not None:
         paragraphs.append((start, len(raw)))
     return paragraphs
-
-
-def _span_regions(raw: str) -> tuple[str, list[tuple[int, int]], list[tuple[int, int]]]:
-    """``(text, fenced, regions)`` as ``_block_reading`` gives them, each region cut further at the edges
-    of the blank-line paragraphs (``_paragraphs``), so a region is never wider than the paragraph the gate
-    read before iteration 4. The cut changes a region only inside one markdown-it line: ``str.splitlines``
-    (``_paragraphs``) also ends lines at ``\\v``, ``\\f``, ``\\x1c``-``\\x1e``, ``\\x85``, U+2028 and
-    U+2029, and can find a blank line between two of them. Every other paragraph edge is a blank or fence
-    line, which ``_block_reading`` already leaves out of every region (sprint-008 F011 review, iteration 5).
-
-    A narrower region does not only take shelter away. Straight-quote parity (``_paired_quotes``) is
-    counted per region, and code spans pair in order from the region's start, so a delimiter whose
-    partner lies past a region edge is left without it and can pair with the next one inside its region:
-    a span the wider paragraph did not have. The region edges are block edges of a markdown-it reading --
-    a list item, a heading, a fence line -- and CommonMark pairs inside a block the same way. (Iteration
-    4 wrote that a span could only lose shelter here; iteration 5 found that false.)"""
-    text, fenced, blocks = _block_reading(raw)
-    paragraphs = _paragraphs(raw, fenced)
-    regions: list[tuple[int, int]] = []
-    k = 0
-    for a, b in blocks:
-        while k < len(paragraphs) and paragraphs[k][1] <= a:
-            k += 1
-        m = k
-        while m < len(paragraphs) and paragraphs[m][0] < b:
-            regions.append((max(a, paragraphs[m][0]), min(b, paragraphs[m][1])))
-            m += 1
-    return text, fenced, regions
-
-
-def _code_span_end(raw: str, i: int, end: int) -> tuple[int, bool]:
-    """At the backtick run starting at ``raw[i]``: ``(offset after the span, True)`` when a run of the
-    same length closes it before ``end``, else ``(offset after the opening run, False)``."""
-    run = i
-    while run < end and raw[run] == "`":
-        run += 1
-    close = re.compile(rf"(?<!`)`{{{run - i}}}(?!`)").search(raw, run, end)
-    return (close.end(), True) if close else (run, False)
-
-
-def _paired_quotes(raw: str, start: int, end: int) -> dict[str, str]:
-    """The quote pairs, opener to closer, the paragraph ``raw[start:end]`` may pair, judged outside its
-    code spans. Straight quotes pair only with an even count of them: with an odd count one is stray, and
-    greedy pairing would shelter the prose between it and the next quote (sprint-008 F011 review). Curly
-    quotes pair only when they run strictly ``“ ” “ ”``: a stray ``“`` or ``”`` pairs none of them
-    (iteration 2)."""
-    straight = 0
-    curly: list[str] = []
-    i = start
-    while i < end:
-        if raw[i] == "`":
-            i, _closed = _code_span_end(raw, i, end)
-            continue
-        straight += raw[i] == '"'
-        if raw[i] in "“”":
-            curly.append(raw[i])
-        i += 1
-    pairs = {}
-    if straight % 2 == 0:
-        pairs['"'] = '"'
-    if "".join(curly) == "“”" * (len(curly) // 2):
-        pairs["“"] = "”"
-    return pairs
 
 
 def _quote_roles(raw: str, i: int, start: int, end: int) -> tuple[bool, bool]:
@@ -437,72 +421,81 @@ def _quote_roles(raw: str, i: int, start: int, end: int) -> tuple[bool, bool]:
     return left and (not right or punct(before)), right and (not left or punct(after))
 
 
-def _next_outside_code(raw: str, char: str, i: int, end: int) -> int:
-    """The offset of the next ``char`` in ``raw[i:end]`` outside code spans, else ``-1``. It steps over
-    each backtick run as ``_paired_quotes`` counts (``_code_span_end``), so a quote inside a code span is
-    never a closer (sprint-008 F011 review, iteration 3: ``"x `"` y"`` closed on the coded quote, and the
-    span's orphaned closing backtick paired with a later one and sheltered the prose between)."""
-    while i < end:
-        if raw[i] == "`":
-            i, _closed = _code_span_end(raw, i, end)
-            continue
-        if raw[i] == char:
-            return i
-        i += 1
-    return -1
+def _quote_pairs(text: str, start: int, end: int, code: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """S3's quote spans in the paragraph or heading ``text[start:end]`` (its source lines), delimiters
+    included, never counting a quote inside one of its ``code`` spans. Straight quotes pair only with an
+    even count of them: with an odd count one is stray, and greedy pairing would shelter the prose between
+    it and the next quote (sprint-008 F011 review). Curly quotes pair only when they run strictly
+    ``“ ” “ ”``: a stray ``“`` or ``”`` pairs none of them (iteration 2). A quote, straight or curly,
+    pairs only a left-flanking opener with the next right-flanking closer (``_quote_roles``); an
+    ambiguous quote pairs nothing (iteration 2: two stray inch marks, ``5"`` and ``3"``, made an even
+    count and sheltered the prose between them; iteration 3: a stray ``“`` and a ``5”`` did the same)."""
+    coded = [False] * (end - start)
+    for a, b in code:
+        coded[a - start:b - start] = [True] * (b - a)
+    quotes = [i for i in range(start, end) if text[i] in "\"“”" and not coded[i - start]]
+    curly = "".join(text[i] for i in quotes if text[i] != '"')
+    closers = {}
+    if sum(text[i] == '"' for i in quotes) % 2 == 0:
+        closers['"'] = '"'
+    if curly == "“”" * (len(curly) // 2):
+        closers["“"] = "”"
+    pairs: list[tuple[int, int]] = []
+    k = 0
+    while k < len(quotes):
+        i = quotes[k]
+        closer = closers.get(text[i])
+        if closer is not None and _quote_roles(text, i, start, end)[0]:
+            m = next((m for m in range(k + 1, len(quotes)) if text[quotes[m]] == closer), None)
+            if m is not None and _quote_roles(text, quotes[m], start, end)[1]:
+                pairs.append((i, quotes[m] + 1))
+                k = m + 1
+                continue
+        k += 1
+    return pairs
 
 
-def _pair_end(raw: str, i: int, start: int, end: int, closer: str) -> int | None:
-    """The offset after the ``closer`` that closes the quote at ``raw[i]``, else ``None``: the quote must
-    be able to open, and the next ``closer`` outside code spans (``_next_outside_code``) must be able to
-    close (``_quote_roles``); an ambiguous quote pairs nothing (sprint-008 F011 review, iteration 2: two
-    stray inch marks, ``5"`` and ``3"``, made an even count and sheltered the prose between them). Curly
-    quotes follow the same rule since iteration 3: a stray ``“`` and a ``5”`` balanced each other."""
-    if not _quote_roles(raw, i, start, end)[0]:
-        return None
-    j = _next_outside_code(raw, closer, i + 1, end)
-    if j == -1 or not _quote_roles(raw, j, start, end)[1]:
-        return None
-    return j + 1
+def _raw_offset_map(text: str, starts: list[int]):
+    """The map from an offset in markdown-it's ``src`` for ``text`` (line ends made ``\\n``) to the raw
+    offset, over the same line numbers: markdown-it changes nothing else a line's length depends on."""
+    src_starts = [0] + [m.end() for m in re.finditer("\n", _MARKDOWN_NEWLINE.sub("\n", text))]
+
+    def raw_offset(offset: int) -> int:
+        line = bisect.bisect_right(src_starts, offset) - 1
+        return starts[line] + offset - src_starts[line]
+    return raw_offset
 
 
 def quote_spans(raw: str) -> list[tuple[int, int]]:
-    """S3 on the raw text, before ``normalize()``: raw ``(start, end)`` ranges, delimiters included,
-    of straight (``"..."``) and curly (``“...”``) double-quoted spans, code spans (a backtick run to
-    the next run of the same length), and fenced blocks. No span crosses a blank line; ``>`` opens
-    nothing, so a blockquote is not quotation. An unmatched opener is a literal character; a paragraph
-    with an odd count of straight quotes, or curly quotes that do not run ``“ ” “ ”``, pairs none of
-    them (``_paired_quotes``); and a quote, straight or curly, pairs only a left-flanking opener with the
-    next right-flanking closer outside code spans (``_pair_end``). Fenced blocks are CommonMark's, and an
-    unclosed one is prose (``_fenced_blocks``).
+    """S3 on the raw text, before ``normalize()``: raw ``(start, end)`` ranges, delimiters included, of
+    fenced blocks, code spans, and straight (``"..."``) and curly (``“...”``) double-quoted spans, all
+    read from the one CommonMark reading ``_gate_reading`` takes, where an unclosed fence is prose.
 
-    Since sprint-008 F011 review iteration 4, spans are found on the text with each unclosed fence's
-    opener line read as letters from its fence run on (its info string too, since iteration 5), and
-    inside one region of ``_span_regions``: a run of lines in one
-    markdown-it leaf block in every reading and in one blank-line paragraph. On the raw text an unclosed
-    opener's run closed a code span a stray run had opened before the fence line, and the blank-line
-    paragraph ran on through that line and through ATX headings, which CommonMark reads as block edges."""
-    text, fenced, regions = _span_regions(raw)
-    spans = list(fenced)
-    for start, end in regions:
-        closers = _paired_quotes(text, start, end)
-        i = start
-        while i < end:
-            char = text[i]
-            if char == "`":
-                after, closed = _code_span_end(text, i, end)
-                if closed:
-                    spans.append((i, after))
-                i = after
-                continue
-            closer = closers.get(char)
-            if closer is not None:
-                after = _pair_end(text, i, start, end, closer)
-                if after is not None:
-                    spans.append((i, after))
-                    i = after
-                    continue
-            i += 1
+    - Fenced blocks are its closed fence tokens (``_fenced_blocks``).
+    - Code spans are its ``code_inline`` tokens: markdown-it's backtick rule decides escapes and run
+      lengths (sprint-008 F011 review, iteration 6: a hand-written pairing opened a span on an escaped
+      ``\\```). Only a paragraph or a heading holds one; an HTML block and an indented code block hold
+      no span.
+    - Quote spans are paired once per paragraph or heading, over its source lines, never on a quote in a
+      code span (``_quote_pairs``). A blank line, a ``>``-only line and every other block edge end the
+      paragraph, as CommonMark reads it; ``>`` opens nothing, so a blockquote is not quotation.
+
+    markdown-it keeps no offsets for inline content, so each paragraph's and heading's content carries
+    the ``src`` offset of every character (``_source_recording``) and each code span its offsets in that
+    content (``_code_span_recording``); a ``src`` offset maps back to ``raw`` over the same line numbers,
+    since markdown-it changes only line ends. A code span inside a quote span is not listed again."""
+    text, starts, tokens = _gate_reading(raw)
+    raw_offset = _raw_offset_map(text, starts)
+    lines = len(starts) - 1
+    spans = _fence_ranges(starts, tokens)
+    for token in tokens:
+        if token.type != "inline":
+            continue
+        source = token.meta["source"]
+        code = [(raw_offset(source[a]), raw_offset(source[b - 1]) + 1)
+                for a, b in (child.meta["at"] for child in token.children if child.type == "code_inline")]
+        quoted = _quote_pairs(text, starts[token.map[0]], starts[min(token.map[1], lines)], code)
+        spans += quoted + [(a, b) for a, b in code if not any(c <= a and b <= d for c, d in quoted)]
     return sorted(spans)
 
 
@@ -1851,8 +1844,8 @@ def test_a_blockquote_fence_closes_on_a_longer_closer(tmp_path):
 @pytest.mark.parametrize("opener, closer", [('"', '"'), ("“", "”")], ids=["straight", "curly"])
 def test_a_quote_closer_inside_a_code_span_closes_nothing(tmp_path, opener, closer):
     """Iteration 3 (N5): the closer search found the quote inside a code span, and the span's orphaned
-    closing backtick then paired with a later one and sheltered the prose between. The search now steps
-    over code spans as ``_paired_quotes`` counts."""
+    closing backtick then paired with a later one and sheltered the prose between. A quote inside a code
+    span is never counted or paired (``_quote_pairs``)."""
     template = opener + "x `" + closer + "` y" + closer + " Live {EX}. `z`.\n"
     raw, hits = _iteration_3_world(tmp_path, template)
     assert _spans(raw) == [f"{opener}x `{closer}` y{closer}", "`z`"]
@@ -2000,9 +1993,9 @@ def test_scanner_quote_spans_oracle_iteration_4():
 
 
 @pytest.mark.parametrize("template", [
-    "The `x\n~~~ y` z\nLive {EX}.\nThen `code` here.\n",
-    "- The `x\n  ~~~ y` z\n  Live {EX}.\n  Then `code` here.\n- next\n",
-    "> The `x\n> ~~~ y` z\n> Live {EX}.\n> Then `code` here.\n\nAfter.\n",
+    "The x\n~~~ y` z\nLive {EX}.\nThen `code` here.\n",
+    "- The x\n  ~~~ y` z\n  Live {EX}.\n  Then `code` here.\n- next\n",
+    "> The x\n> ~~~ y` z\n> Live {EX}.\n> Then `code` here.\n\nAfter.\n",
 ], ids=["plain", "list_item", "blockquote"])
 def test_an_unclosed_fence_info_string_backtick_opens_no_code_span(tmp_path, template):
     """Sprint-008 F011 review, iteration 5 (M1), a regression in ca963a0: only an unclosed opener's fence
@@ -2010,22 +2003,29 @@ def test_an_unclosed_fence_info_string_backtick_opens_no_code_span(tmp_path, tem
     block edge at the fence line cut it off from the ``x`` it pairs with in the gate's own reading, and it
     paired forward with the next code span's opener and sheltered the live line, which lies inside the
     unclosed fence and is prose. The whole opener line, info string included, is now letters: CommonMark
-    never reads an info string as inline text. 1e8444c was red here."""
+    never reads an info string as inline text. 1e8444c was red here.
+
+    Iteration 6 re-points it: iteration 5's inputs opened ``The `x`` before the fence line, and in the
+    gate's one reading (``_gate_reading``) that run pairs with ``Then ``` -- markdown-it renders
+    ``<code>x xxxxxxxx Live X. Then </code>`` -- so the live line is a CommonMark code span and those
+    inputs are sheltered oracle cases now. Without the ``x`` run, only the info string's backtick could
+    pair with ``Then ```, and read as letters it pairs with nothing."""
     _iteration_4_verdict(tmp_path, template, 3)
 
 
 def test_an_unclosed_fence_info_string_quote_opens_no_quote_span(tmp_path):
     """Iteration 5 (M1), the straight-quote sibling: the info string's ``"`` survived, and the raw
     reading's edge left it in a region of its own with ``end"`` -- an even count -- so the two paired
-    over the live line. The info string is letters now, and the region's one quote pairs with nothing."""
+    over the live line. The info string is letters now, and the paragraph's two quotes, ``5"`` and ``end"``,
+    can only close, so they pair nothing."""
     _iteration_4_verdict(tmp_path, 'A 5" strap.\n``` "z\nLive {EX}.\nend" now.\n', 3)
 
 
 def test_a_heading_in_an_unclosed_fence_ends_a_region_in_the_gates_own_reading(tmp_path):
-    """Iteration 5 (S1): pins the gate's own reading (the last) in ``_block_reading``'s grouping. The raw
-    reading holds all four lines in one fence; read with the opener as letters, line 2 is an ATX
-    heading, a block of its own, and the run opened in it pairs with nothing after it. Grouped by the raw
-    reading alone, the four lines were one region and the two runs sheltered the live line."""
+    """Iteration 5 (S1): pins the gate's own reading (``_gate_reading``). The raw reading holds all four
+    lines in one fence; read with the opener as letters, line 2 is an ATX heading, a block of its own,
+    and the run opened in it pairs with nothing after it. Read by the raw text's blocks alone, the four
+    lines were one region and the two runs sheltered the live line."""
     _iteration_4_verdict(tmp_path, "```\n# The ` marker\nLive {EX}.\nThen ` again.\n", 3)
 
 
@@ -2036,12 +2036,17 @@ def test_a_nested_unclosed_fence_info_string_closes_no_quote(tmp_path):
     _iteration_4_verdict(tmp_path, '````\nA "quote opens\nLive {EX}.\n``` x"\n', 3)
 
 
-def test_a_nested_unclosed_fence_opener_is_a_block_edge_of_the_middle_reading(tmp_path):
-    """Iteration 5 (S1): pins a reading between the raw one and the gate's own. Only the second reading,
-    where ```` is letters and ``` x still opens a fence, has a block edge at line 3: the raw reading holds
-    every line in the ```` fence, and the last holds every line in one paragraph. Grouped by the raw and
-    last readings alone, the quotes on lines 2 and 5 paired over the live line."""
-    _iteration_4_verdict(tmp_path, '````\nA "quote opens\n``` x\nLive {EX}.\nend" now.\n', 4)
+def test_a_nested_unclosed_fence_opener_leaves_one_commonmark_paragraph_whose_quotes_pair(tmp_path):
+    """Iteration 5 (S1) pinned a middle reading's block edge at line 3 here, which kept the quotes on
+    lines 2 and 5 apart. Iteration 6 takes one reading, the gate's own, where ```` and ``` x are both
+    letters and markdown-it reads all five lines as one paragraph
+    (``<p>xxxx\\nA &quot;quote opens\\nxxxxx\\nLive X.\\nend&quot; now.</p>``); S3 pairs its two quotes,
+    so the live line is quotation. On the raw text CommonMark reads it inside the unclosed ```` fence
+    (``<pre>``). A reading that restored the middle edge would leave line 4 bare and fail here."""
+    raw, hits = _iteration_3_world(tmp_path, '````\nA "quote opens\n``` x\nLive {EX}.\nend" now.\n')
+    assert _spans(raw) == ['"quote opens\n``` x\nLive ' + OLD_MEANINGS[_WRAPPED_KEY].example + '.\nend"']
+    assert [(h.line, h.quoted) for h in hits] == [(4, True)]
+    assert gate_failures(hits, {}) == []
 
 
 def test_scanner_quote_spans_oracle_iteration_5():
@@ -2049,16 +2054,24 @@ def test_scanner_quote_spans_oracle_iteration_5():
     after an unclosed opener line still pairs, and a closed fence keeps its info string."""
     cases = [
         # M1: an unclosed opener's info string pairs with nothing.
-        ("The `x\n~~~ y` z\nLive X.\nThen `code` here.\n", ["`code`"]),
-        ("- The `x\n  ~~~ y` z\n  Live X.\n  Then `code` here.\n- next\n", ["`code`"]),
-        ("> The `x\n> ~~~ y` z\n> Live X.\n> Then `code` here.\n\nAfter.\n", ["`code`"]),
+        ("The x\n~~~ y` z\nLive X.\nThen `code` here.\n", ["`code`"]),
+        ("- The x\n  ~~~ y` z\n  Live X.\n  Then `code` here.\n- next\n", ["`code`"]),
+        ("> The x\n> ~~~ y` z\n> Live X.\n> Then `code` here.\n\nAfter.\n", ["`code`"]),
         ('A 5" strap.\n``` "z\nLive X.\nend" now.\n', []),
-        # S1: every reading's block edges hold.
+        # Iteration 6: with the opener line as letters, CommonMark pairs "The `x" with "Then `"
+        # (<code>x xxxxxxxx Live X. Then </code>); "`code`" was a span it does not have.
+        ("The `x\n~~~ y` z\nLive X.\nThen `code` here.\n", ["`x\n~~~ y` z\nLive X.\nThen `"]),
+        ("- The `x\n  ~~~ y` z\n  Live X.\n  Then `code` here.\n- next\n", ["`x\n  ~~~ y` z\n  Live X.\n  Then `"]),
+        ("> The `x\n> ~~~ y` z\n> Live X.\n> Then `code` here.\n\nAfter.\n", ["`x\n> ~~~ y` z\n> Live X.\n> Then `"]),
+        # S1: the gate's own reading's block edges hold.
         ("```\n# The ` marker\nLive X.\nThen ` again.\n", []),
         ('````\nA "quote opens\nLive X.\n``` x"\n', []),
-        ('````\nA "quote opens\n``` x\nLive X.\nend" now.\n', []),
-        # A2: a line markdown-it does not end, but str.splitlines does, is still a paragraph edge.
-        ("The `a\u2028\u2028Live X.\u2028b` end\n", []),
+        # Iteration 6: one reading, one paragraph (<p>xxxx\nA &quot;quote opens\nxxxxx\nLive X.\nend&quot;
+        # now.</p>), and S3 pairs its two quotes; no middle reading's edge keeps them apart.
+        ('````\nA "quote opens\n``` x\nLive X.\nend" now.\n', ['"quote opens\n``` x\nLive X.\nend"']),
+        # Iteration 6: markdown-it ends no line at U+2028, and reads one code span
+        # (<code>a\u2028\u2028Live X.\u2028b</code>); iteration 5 cut it at str.splitlines' blank line.
+        ("The `a\u2028\u2028Live X.\u2028b` end\n", ["`a\u2028\u2028Live X.\u2028b`"]),
         # Controls.
         ("~~~ y`\nLive `X.` here\n", ["`X.`"]),
         ("~~~ y`\ncode\n~~~\nLive X.\n", ["~~~ y`\ncode\n~~~\n"]),
@@ -2067,6 +2080,149 @@ def test_scanner_quote_spans_oracle_iteration_5():
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
         assert _spans(raw) == expected, raw
+
+
+@pytest.mark.parametrize("template", [
+    "See ````a\n~~~\nb ```` c\nLive {EX}.\nd ```` e\n",
+    "Run `ls\n```\nthen ` now\nLive {EX}.\nand `x` done\n",
+    'Say "a\n~~~\nx "c\nLive {EX}.\nd" e\n',
+    "Say “a\n```\nx “c\nLive {EX}.\nd” e\n",
+    "- See `a\n  ```\n  b ` c\n  Live {EX}.\n  d ` e\n",
+    "> See `a\n> ```\n> b ` c\n> Live {EX}.\n> d ` e\n",
+], ids=["code_run", "single_backtick", "straight", "curly", "list_item", "blockquote"])
+def test_a_delimiter_before_an_unclosed_fence_opener_keeps_its_commonmark_partner(tmp_path, template):
+    """Sprint-008 F011 review, iteration 6 (M1): the gate grouped lines by the leaf block of every
+    markdown-it reading, so the raw reading's edge at an unclosed opener line cut the delimiter on the
+    line before it off from its partner after it. CommonMark reads that text, the opener as letters, as
+    one paragraph and pairs the two; the region below the edge paired the partner forward instead and
+    sheltered the live line. Spans now come from the gate's own reading alone (``_gate_reading``), and
+    quotes pair once per CommonMark paragraph."""
+    _iteration_4_verdict(tmp_path, template, 4)
+
+
+@pytest.mark.parametrize("template", [
+    "Type \\`a\nLive {EX}.\nthen b` c\n",
+    "Type \\``a\nLive {EX}.\nthen b`` c\n",
+], ids=["single", "double_run"])
+def test_an_escaped_backtick_opens_no_code_span(tmp_path, template):
+    """Iteration 6 (M2): CommonMark 6.1 reads ``\\``` outside a code span as a literal backtick, never a
+    delimiter, so it opens no span, and with a double run the second backtick is a run of one that a
+    later ````` cannot close. The hand-written pairing opened a span at it and sheltered the live line.
+    Code spans are now markdown-it's ``code_inline`` tokens."""
+    _iteration_4_verdict(tmp_path, template, 2)
+
+
+@pytest.mark.parametrize("template, line", [
+    ('# A "x\nLive {EX}.\nb" c\n', 2),
+    ('A "x\n---\nLive {EX}.\nb" c\n', 3),
+    ('- A "x\n- Live {EX}.\n  b" c\n', 2),
+    ('A "x\n> Live {EX}.\n> b" c\n', 2),
+], ids=["atx_heading", "setext_heading", "list_item", "blockquote"])
+def test_a_quote_pairs_only_inside_its_commonmark_paragraph_or_heading(tmp_path, template, line):
+    """Iteration 6: S3 pairs once per CommonMark paragraph or heading, and a heading, a list item or a
+    blockquote ends one without a blank line. Each block here holds one quote, so none pairs; paired over
+    the blank-line paragraph, which runs through every such edge, the two sheltered the live line."""
+    _iteration_4_verdict(tmp_path, template, line)
+
+
+@pytest.mark.parametrize("template, line", [
+    ("<div>\nSay `a Live {EX}. b` and \"c Live {EX}. d\".\n</div>\n", 2),
+    ("Intro.\n\n    Say `a Live {EX}. b` and \"c Live {EX}. d\".\n", 3),
+], ids=["html_block", "indented_code_block"])
+def test_an_html_block_or_an_indented_code_block_holds_no_span(tmp_path, template, line):
+    """Iteration 6: only a paragraph or a heading holds a code or quote span, as markdown-it reads it: an
+    HTML block and an indented code block have no inline content. The gate never read either block as
+    quotation, and 4246643 still found spans in their lines; now it finds none, and both examples are
+    red (the F012-routed item, resolved in the stricter direction)."""
+    raw, hits = _iteration_3_world(tmp_path, template)
+    assert _spans(raw) == []
+    assert [(h.line, h.quoted) for h in hits] == [(line, False), (line, False)]
+    assert [h.line for h in gate_failures(hits, {})] == [line, line]
+
+
+def test_scanner_quote_spans_oracle_iteration_6():
+    """Iteration 6's inputs as ``quote_spans`` oracle cases, "X" for the example, with controls: code
+    spans are markdown-it's (escapes, run lengths), an HTML block or an indented code block holds no
+    span, and a span behind container markers or tabs maps back to exact raw offsets."""
+    cases = [
+        # M1: a delimiter before an unclosed opener line pairs with its CommonMark partner.
+        ("See ````a\n~~~\nb ```` c\nLive X.\nd ```` e\n", ["````a\n~~~\nb ````"]),
+        ("Run `ls\n```\nthen ` now\nLive X.\nand `x` done\n", ["`ls\n```\nthen `", "`x`"]),
+        ('Say "a\n~~~\nx "c\nLive X.\nd" e\n', []),
+        ("- See `a\n  ```\n  b ` c\n  Live X.\n  d ` e\n", ["`a\n  ```\n  b `"]),
+        # M2: an escaped backtick is a literal; inside a code span a backslash escapes nothing.
+        ("Type \\`a\nLive X.\nthen b` c\n", []),
+        ("Type \\``a\nLive X.\nthen b`` c\n", []),
+        ("Type `a\nLive X.\nthen b` c\n", ["`a\nLive X.\nthen b`"]),
+        ("Type `a\nLive X.\nthen b\\` c\n", ["`a\nLive X.\nthen b\\`"]),
+        ("A ``run with ` inside`` here\n", ["``run with ` inside``"]),
+        # S3 pairs once per paragraph or heading; a heading, an item or a blockquote ends one.
+        ('# A "x\nLive X.\nb" c\n', []),
+        ('A "x\n---\nLive X.\nb" c\n', []),
+        ('- A "x\n- Live X.\n  b" c\n', []),
+        ('A "x\n> Live X.\n> b" c\n', []),
+        # Only a paragraph or a heading holds a span.
+        ("<div>\n`a` and \"b\" here\n</div>\n", []),
+        ("    `a` and \"b\" here\n", []),
+        # Offsets behind blockquote and list markers, tabs, and CRLF, CR and mixed line ends.
+        ("> a `b\n> c` d\n", ["`b\n> c`"]),
+        ("- a\n  - b `c\n    d` e\n", ["`c\n    d`"]),
+        ("> - a \"b\n>   c\" d\n", ['"b\n>   c"']),
+        ("-\ta `b\n\tc` d\n", ["`b\n\tc`"]),
+        ("> x `a\r\n> b` y\r\n", ["`a\r\n> b`"]),
+        ("a `b\rc` \"d\r\ne\" f\n", ["`b\rc`", '"d\r\ne"']),
+        ("# Head `x` and \"y\" ##\n", ["`x`", '"y"']),
+        ("Set `x`\n===\n", ["`x`"]),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
+
+
+#: Inputs whose inline content sits behind container markers, tabs and every line end markdown-it counts.
+_MAPPING_INPUTS = (
+    "> a `b\r\n> c` d\r\n", "- a\n  - b `c\n    d` e\n", "-\ta `b\n\tc` d\n", "* a\n\tb `c` d\n",
+    "> - a \"b\r>   c\" d\r", "1. a\r\n   b `c`\n\n   d\re\n", "# Head `x` ##\n", "Set `x`\r\n===\r\n",
+    "a \u2028 `b`\n\u2028\n", "\x1c a `b`\n", "a \0 `b`\n", "  a\n\t\tb `c`\n",
+)
+#: A line's leading run of container markers and indentation, which no content character maps into.
+_CONTAINER_PREFIX = re.compile(r"[ \t>]*(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t>]*)*")
+
+
+def test_scanner_inline_content_maps_back_to_the_raw_text():
+    """``quote_spans`` places each code span through the ``src`` offsets ``_source_recording`` keeps for a
+    paragraph's or heading's content (sprint-008 F011 review, iteration 6). Over every live ``.md`` file
+    and ``_MAPPING_INPUTS``: each content character is the raw character at its mapped offset (``\\n`` a
+    line end's first character, a space a partly consumed tab, U+FFFD a NUL), the offsets never go back,
+    and every raw character the map skips inside the block is a line end or a line's leading container
+    markers and indentation (``_CONTAINER_PREFIX``). So the raw span with its prefixes removed is the
+    content markdown-it parsed."""
+    inputs = [("input", raw) for raw in _MAPPING_INPUTS]
+    inputs += [(path, (_REPO_ROOT / path).read_text(encoding="utf-8"))
+               for paths in live_files(_REPO_ROOT).values() for path in paths if path.endswith(".md")]
+    blocks = 0
+    for name, raw in inputs:
+        text, starts, tokens = _gate_reading(raw)
+        raw_offset = _raw_offset_map(text, starts)
+        for token in (t for t in tokens if t.type == "inline" and t.content):
+            where = [raw_offset(o) for o in token.meta["source"]]
+            assert len(where) == len(token.content), (name, token.map)
+            for k, (char, at) in enumerate(zip(token.content, where)):
+                found = raw[at]
+                assert found == char or (char == "\n" and found in "\r\n") or (char == " " and found == "\t") \
+                    or (char == "\ufffd" and found == "\0"), (name, token.map, k, char, found)
+                assert k == 0 or where[k - 1] < at or (at == where[k - 1] and found == "\t"), (name, token.map, k)
+            kept = set(where)
+            for line in range(token.map[0], token.map[1]):
+                a, b = max(starts[line], where[0]), min(starts[line + 1], where[-1] + 1)
+                skipped = "".join(raw[i] for i in range(a, b) if i not in kept)
+                lead = raw[a:next((i for i in range(a, b) if i in kept), b)]
+                assert _CONTAINER_PREFIX.fullmatch(lead.rstrip("\r\n")) or not lead.strip(" \t\r\n>") \
+                    or line == token.map[0], (name, line, lead)
+                assert skipped[len(lead):].strip("\r\n") == "", (name, line, skipped)
+            blocks += 1
+    print(f"[slice compared] {blocks} paragraphs and headings in {len(inputs)} inputs map back to the raw text")
+    assert blocks > len(_MAPPING_INPUTS)
 
 
 def test_the_pending_directory_holds_no_csv():
