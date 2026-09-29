@@ -2499,7 +2499,7 @@ ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
 #: pinned by ``test_the_endpoint_reports_every_input_that_produced_the_verdict``
 #: above and ``test_hrv_trend_band.test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses``.
 THRESHOLDS_CLAIMS = (
-    "the band, verdict and tier-resolution constants",
+    "the band, verdict and dataset-selection constants",
     "recency_tolerance_days, which this response does not echo",
     "derive a baseline.tier that disagrees with the reported one",
 )
@@ -2515,7 +2515,7 @@ THRESHOLDS_WITHDRAWN = _DECLARATIONS.THRESHOLDS_WITHDRAWN
 #: The run the two copies must state identically, from this anchor to the end.
 #: They differ only in the citation that ends the first sentence, so the anchor
 #: is the correction itself.
-THRESHOLDS_SHARED_ANCHOR = "they are not all of tier resolution"
+THRESHOLDS_SHARED_ANCHOR = "they are not all of dataset selection"
 
 
 #: Withdrawn by [[T141]] (review cycle 10, G-C10-2), the fifth withdrawal this
@@ -2991,7 +2991,7 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
     for label, block in (("contracts/openapi.yaml", published), ("schemas.Thresholds", served)):
         keys = set(block["properties"])
         assert applied & keys, (
-            f"{label}: the description calls these the band, verdict and tier-resolution "
+            f"{label}: the description calls these the band, verdict and dataset-selection "
             f"constants, but the tier rule applies none of the published keys {sorted(keys)}"
         )
         omitted = applied - keys

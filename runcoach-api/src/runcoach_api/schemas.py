@@ -184,9 +184,9 @@ class ExcludedReading(BaseModel):
 
 
 class Thresholds(BaseModel):
-    """The band, verdict and tier-resolution constants (spec 03 §3.7; construction reference).
+    """The band, verdict and dataset-selection constants (spec 03 §3.7; construction reference).
 
-    They are not all of tier resolution: it also applies recency_tolerance_days, which this
+    They are not all of dataset selection: the recency gate also applies recency_tolerance_days, which this
     response does not echo, so a client applying these six can derive a baseline.tier that
     disagrees with the reported one (IDEA-070, 2026-09-15).
     """

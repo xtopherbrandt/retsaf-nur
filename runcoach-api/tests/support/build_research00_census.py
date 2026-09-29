@@ -574,6 +574,17 @@ MANUAL_ROWS = (
     ("C10-recency-only-rule-that-acts", S03, "on three stale strap mornings",
      ("spec/03:236 (C10): T132's reproduction calls the struck strap's mornings stale; stale is only the "
       "enum value and the >28-day band (T-04)")),
+    # F011 sprint-008 review, iteration 4 (S11/S14): the thresholds description, in both contract copies.
+    ("C18-no-tier-from-resolver", OPENAPI, "The band, verdict and tier-resolution constants",
+     "openapi thresholds (C18): 'tier-resolution constants', retired resolver vocabulary (T-32, HRV-44)"),
+    ("C18-no-tier-from-resolver", OPENAPI, "They are not all of tier resolution: it also applies",
+     ("openapi thresholds (C18): 'not all of tier resolution', retired resolver vocabulary (T-32, HRV-44); "
+      "the recency gate acts in dataset selection")),
+    ("C18-no-tier-from-resolver", SCHEMAS, "The band, verdict and tier-resolution constants",
+     "schemas Thresholds (C18): 'tier-resolution constants', retired resolver vocabulary (T-32, HRV-44)"),
+    ("C18-no-tier-from-resolver", SCHEMAS, "They are not all of tier resolution: it also applies",
+     ("schemas Thresholds (C18): 'not all of tier resolution', retired resolver vocabulary (T-32, HRV-44); "
+      "the recency gate acts in dataset selection")),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

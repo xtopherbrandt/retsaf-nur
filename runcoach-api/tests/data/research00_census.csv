@@ -66,6 +66,8 @@ C10-recency-only-rule-that-acts,contracts/openapi.yaml,judgeable one was skipped
 C10-recency-only-rule-that-acts,contracts/openapi.yaml,"the recency gate skipped it as stale, so `baseline`/`band` come from a",inventory
 C17-hrv24-read-on-last,contracts/openapi.yaml,"(AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59)",inventory
 C18-no-tier-from-resolver,contracts/openapi.yaml,"no_band (a tier resolved, but its baseline holds fewer than two",inventory
+C18-no-tier-from-resolver,contracts/openapi.yaml,"The band, verdict and tier-resolution constants",inventory
+C18-no-tier-from-resolver,contracts/openapi.yaml,They are not all of tier resolution: it also applies,inventory
 HRV-40-R13-now-sustaining-tier,contracts/openapi.yaml,not any one of them alone: the presented dataset's tier still holds min_baseline_readings,inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/main.py,skipped past on baseline-window staleness,inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,judgeable one was skipped as stale,inventory
@@ -73,6 +75,8 @@ C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,"skippe
 C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the presentation fallback names (AC9, F005's rule 3 retained;",inventory
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"resolved, but its baseline holds fewer than two readings, so no band exists",inventory
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,stays sustained by a tier other than the resolved one,inventory
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"The band, verdict and tier-resolution constants",inventory
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,They are not all of tier resolution: it also applies,inventory
 HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,presented dataset's tier still holds min_baseline_readings distinct days,inventory
 C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
