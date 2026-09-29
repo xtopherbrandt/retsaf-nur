@@ -75,9 +75,15 @@ C19-hrv-03-tag-and-confidence,specification/research/02-wearable-data-garmin.md,
 C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,These are the studies the confidence weight for the numeric tiers should rest on,inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
+C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
+C19-hrv-03-tag-and-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"at that tier's confidence, falling to a numeric",inventory
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,whose confidence is set by its tier weight instead,inventory
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"its reduced confidence is a property of the tier, applied at Section 6's readiness fusion",inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
 C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
 C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over the same baseline window and judged week,inventory
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,the reduced-confidence fallback,inventory
+C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,Its lower confidence (per the validation caveats,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,Where the athlete's own data identifies an LT1 surrogate above the noise,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,The declared target pace and race date are the athlete's,inventory

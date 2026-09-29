@@ -19,7 +19,9 @@ The census has the columns ``key,path,excerpt,source``. ``source`` is:
 - ``grep``: a key's current pattern hits the site: the gate's own ``scan()``, honouring ``KEY_ROOTS``,
   outside quotation (S3). A hit sheltered by an F009 exception (S4, ``hrv_trend.py``) is a site too.
 - ``inventory``: no pattern reaches it, and either the inventory's "Code:"/"Code/tests:" line for the
-  key's C-item cites it, or F011 AC2 names it (``MANUAL_ROWS``).
+  key's C-item cites it, or F011 AC2 names it (``MANUAL_ROWS``), or a review found a site task's own
+  rewrite still stating the old meaning (``LATER_ROWS``: that text postdates the tree the builder runs
+  on, so it is read at the commit that wrote it).
 - ``loose``: no pattern reaches it; the key's distinctive nouns (``LOOSE_NOUNS``) do, and
   ``LOOSE_RESOLUTIONS`` resolves the hit as a site.
 - ``narrowed``: correct prose that a T218 narrowing stopped matching (``NARROWED_FROM`` in the gate).
@@ -391,8 +393,9 @@ LOOSE_RESOLUTIONS = (
     _out("C16-hrv21-reads-below-that-band", "*", None,
          "HRV-25's exposure (hrv_normal while another dataset reads below its own band) or HRV-22's empty "
          "dissent; neither defines disagreement"),
-    _out("C19-hrv-04-reduced-confidence", S02, "its reduced confidence is a property of the tier, applied at Section 6",
-         "defers the weighting to Section 6's readiness fusion (HRV-04, HRV-54)"),
+    # spec/02:191's "its reduced confidence is a property of the tier, applied at Section 6" was resolved
+    # out here as deferring the weight to Section 6; the wave-7 review found it names a per-tier
+    # confidence, and it is a MANUAL_ROWS row now, which covers the hit.
     _out("C19-hrv-04-reduced-confidence", R02, None,
          "research evidence for the weight Section 6's readiness fusion owns: HRV-04 defers the weight, it "
          "does not abolish it"),
@@ -480,6 +483,38 @@ MANUAL_ROWS = (
     ("C19-hrv-03-tag-and-confidence", R02, "should accept whichever is present and tag its tier/confidence",
      ("research/02:206 (C19): a per-source tier and confidence tag; HRV-04 has a tier rank and no "
       "per-tier confidence")),
+    # F011 wave-7 review (S11/S15): C19 sites in spec/02 and spec/03 that state a per-tier confidence,
+    # which HRV-04 rules out (reduced fidelity, an ordinal rank that selection reads, never a numeric
+    # confidence weight; any weight is Section 6's). The rows name the pre-work text.
+    ("C19-hrv-04-reduced-confidence", S03, "the reduced-confidence fallback",
+     ("spec/03:215 (C19): the numeric-rMSSD tiers' heading names a reduced-confidence fallback; HRV-04 "
+      "admits them at reduced fidelity, an ordinal rank")),
+    ("C19-hrv-04-reduced-confidence", S03, "Its lower confidence (per the validation caveats",
+     ("spec/03:215 (C19): the numeric tiers' lower confidence as a property applied where §3.7.4 says; "
+      "§3.7.4 states reduced fidelity and no confidence weight (HRV-04)")),
+    ("C19-hrv-04-reduced-confidence", S02, "whose confidence is set by its tier weight instead",
+     ("spec/02:76 (C19): rr_valid_fraction's row gives the numeric wrist tier a tier weight; HRV-04 "
+      "admits it at an ordinal rank, never a numeric per-tier confidence weight")),
+    ("C19-hrv-04-reduced-confidence", S02,
+     "its reduced confidence is a property of the tier, applied at Section 6's readiness fusion",
+     ("spec/02:191 (C19): the numeric tiers' reduced confidence applied at Section 6; HRV-04 names "
+      "reduced fidelity, with any numeric weight deferred to Section 6's readiness fusion")),
+    ("C19-hrv-03-tag-and-confidence", S02, "at that tier's confidence, falling to a numeric",
+     ("spec/02:216 (C19): the verdict taken at its tier's confidence; the trend emits it with the source "
+      "tier attached and no per-tier confidence (HRV-04, spec §3.7.4)")),
+)
+
+#: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still
+#: stating an old meaning. The builder runs on the pre-work tree, where that text does not exist yet, so
+#: the fragment is located in the file as it stands at ``commit`` (the task's commit) and the row is
+#: added after every other step. Source ``inventory``, as for ``MANUAL_ROWS``.
+LATER_ROWS = (
+    ("C03-return-is-free", S02,
+     "a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate",
+     "7e00d9b",
+     ("spec/02:212 (C03), T214's rewrite: re-selection once judgeable and not skipped, without HRV-68's "
+      "'by the fidelity order of HRV-14 (selection)', so a returning lower-fidelity dataset reads as "
+      "taking the verdict")),
 )
 
 
@@ -546,10 +581,16 @@ def keys_of_item(item: str) -> list[str]:
             if re.search(rf"(?:^|-){item}(?:-|$)", k) or re.match(rf"{item}\b", m.decision)]
 
 
-def _git_lines(path: str, commit: str = INVENTORY_COMMIT) -> list[str]:
+def _git_text(path: str, commit: str) -> str:
+    """``path`` as it stands at ``commit``. Run in a ``git archive`` of the pre-work tree, set
+    ``GIT_DIR`` to the checkout's ``.git``."""
     shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=REPO_ROOT, capture_output=True,
                            text=True, encoding="utf-8", check=True)
-    return shown.stdout.splitlines()
+    return shown.stdout
+
+
+def _git_lines(path: str, commit: str = INVENTORY_COMMIT) -> list[str]:
+    return _git_text(path, commit).splitlines()
 
 
 # --------------------------------------------------------------------------------------------------
@@ -562,9 +603,10 @@ class File:
     removed, T219) and its normalized form, with the map between them. ``raw`` keeps every newline, so
     line numbers are the file's, and an excerpt drawn from it matches the gate's text."""
 
-    def __init__(self, rel: str, repo_root: Path = REPO_ROOT):
+    def __init__(self, rel: str, repo_root: Path = REPO_ROOT, text: str | None = None):
         self.rel = rel
-        self.raw, _to_raw = GATE.gate_source(rel, (repo_root / rel).read_text(encoding="utf-8"))
+        source = (repo_root / rel).read_text(encoding="utf-8") if text is None else text
+        self.raw, _to_raw = GATE.gate_source(rel, source)
         self.text, self.offsets = GATE.normalize_with_offsets(self.raw)
 
     def raw_span(self, start: int, end: int) -> tuple[int, int]:
@@ -607,6 +649,8 @@ class Census:
         self.rows: list[dict[str, str]] = []
         self.log: list[str] = []
         self.files: dict[str, File] = {}
+        #: ``LATER_ROWS``' files at their commits, by ``(key, path, normalized excerpt)``.
+        self.later: dict[tuple[str, str, str], File] = {}
 
     def file(self, rel: str) -> File:
         if rel not in self.files:
@@ -745,6 +789,15 @@ def build() -> Census:
     if unresolved or stale:
         raise SystemExit("unresolved loose hits:\n  " + "\n  ".join(unresolved)
                          + f"\nresolutions that matched no loose hit: {stale}")
+
+    # 6. later: a site task's own rewrite a review found stating an old meaning, read at its commit.
+    for key, path, fragment, commit, reason in LATER_ROWS:
+        f = File(path, text=_git_text(path, commit))
+        start, end = f.locate(fragment)
+        excerpt = f.excerpt(*f.raw_span(start, end))
+        census.add(key, path, excerpt, "inventory")
+        census.later[(key, path, normalize(excerpt))] = f
+        census.log.append(f"later in: {path}:{f.line_of(start)}@{commit} {key} -- {reason}")
     return census
 
 
@@ -783,8 +836,10 @@ def check(census: Census) -> list[str]:
             errors.append(f"{where}: source {row['source']!r}")
         if row["path"] not in live and row["path"] != TEST_COMMENT_ROW:
             errors.append(f"{where}: outside S2's roots")
-        elif census.file(row["path"]).count(row["excerpt"]) != 1:
-            errors.append(f"{where}: excerpt occurs {census.file(row['path']).count(row['excerpt'])} times")
+        else:
+            f = census.later.get((row["key"], row["path"], normalize(row["excerpt"]))) or census.file(row["path"])
+            if f.count(row["excerpt"]) != 1:
+                errors.append(f"{where}: excerpt occurs {f.count(row['excerpt'])} times")
         if "\n" in row["excerpt"] or "\r" in row["excerpt"]:
             errors.append(f"{where}: excerpt spans lines")
     return errors
