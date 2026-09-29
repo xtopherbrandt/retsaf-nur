@@ -502,6 +502,54 @@ MANUAL_ROWS = (
     ("C19-hrv-03-tag-and-confidence", S02, "at that tier's confidence, falling to a numeric",
      ("spec/02:216 (C19): the verdict taken at its tier's confidence; the trend emits it with the source "
       "tier attached and no per-tier confidence (HRV-04, spec §3.7.4)")),
+    # F011 sprint-008 review, iteration 1 (S11/S14): sites no pattern reaches that state retired
+    # vocabulary or an old rule. The rows name the pre-work text.
+    ("C19-hrv-04-reduced-confidence", F006DM,
+     "and degrades — at reduced confidence — to a device-computed numeric resting rMSSD",
+     ("F006-dataset-model:100 (C19): quotes spec/03 §3.7 as degrading at reduced confidence; §3.7 admits "
+      "the numeric tiers at reduced fidelity, an ordinal rank in selection (HRV-04)")),
+    ("C17-hrv24-read-on-last", F006DM, "**AC9 keeps a presentation fallback** (F005's rule 3):",
+     "F006-dataset-model:450 (C17): the fallback as F005's rule 3, retired vocabulary (T-32); HRV-59 states it"),
+    ("HRV-01-R13-four-tier-hierarchy", R02, "a genuinely different and higher tier than HRV Status",
+     "research/02:161 (R13): HRV Status as a lower tier; it is quarantined and never a tier (HRV-01, T-05)"),
+    ("C18-no-tier-from-resolver", OPENAPI, "no_band (a tier resolved, but its baseline holds fewer than two",
+     "openapi no_band (C18): 'a tier resolved', retired resolver vocabulary (T-32, HRV-44)"),
+    ("C18-no-tier-from-resolver", SCHEMAS,
+     "resolved, but its baseline holds fewer than two readings, so no band exists",
+     "schemas no_band (C18): 'a tier resolved', retired resolver vocabulary (T-32, HRV-44)"),
+    ("C18-no-tier-from-resolver", SCHEMAS, "stays sustained by a tier other than the resolved one",
+     ("schemas reset_reason (C18): the lifetime against 'the resolved one'; clause (b) compares the reported "
+      "dataset's own tier (HRV-38, T-32)")),
+    ("C10-recency-only-rule-that-acts", OPENAPI, "judgeable one was skipped as stale",
+     "openapi selected_dataset (C10): 'skipped as stale'; the recency gate skips, stale is only the enum value (T-04)"),
+    ("C10-recency-only-rule-that-acts", SCHEMAS, "judgeable one was skipped as stale",
+     "schemas selected_dataset (C10): 'skipped as stale' (T-04)"),
+    ("C10-recency-only-rule-that-acts", OPENAPI,
+     "the recency gate skipped it as stale, so `baseline`/`band` come from a",
+     "openapi selected_reason (C10): 'skipped it as stale' (T-04)"),
+    ("C10-recency-only-rule-that-acts", SCHEMAS,
+     "skipped it as stale, so `baseline`/`band` come from a lower-fidelity instrument",
+     "schemas selected_reason (C10): 'skipped it as stale' (T-04)"),
+    ("HRV-40-R13-now-sustaining-tier", OPENAPI,
+     "not any one of them alone: the presented dataset's tier still holds min_baseline_readings",
+     ("openapi reset_reason (R13): liveness on the presented dataset's tier; the report is the reported "
+      "dataset's, selected or else presented (T-02, HRV-38 clause (a))")),
+    ("HRV-40-R13-now-sustaining-tier", SCHEMAS,
+     "presented dataset's tier still holds min_baseline_readings distinct days",
+     "schemas reset_reason (R13): as the openapi copy (T-02, HRV-38 clause (a))"),
+    ("HRV-40-R13-now-sustaining-tier", SCHEMAS, "was also not in use in the judged week [date-6, date]",
+     ("schemas reset_on (R13): reported only when the other tier is not in use in the judged week; the "
+      "week half is fewer than 3 stray days (HRV-78)")),
+    ("C19-hrv-04-reduced-confidence", S02, "**Confidence and the anti-mixing rule.**",
+     "spec/02:212 (C19): the heading names confidence; fidelity is the only quality term Section 3 applies (T-21)"),
+    ("T07-ctl-rise-band", S06, "Ramp-rate CTL-rise band — fixed and provisionally ratified",
+     "spec/06:277 (T-07): the CTL-rise interval is a range (REG-19); band is the HRV SWC band's"),
+    ("T07-ctl-rise-band", S06, "now ships a concrete weekly-CTL-rise band",
+     "spec/06:277 (T-07): as above, the item's second naming"),
+    ("T07-ctl-rise-band", S06, "working band ~+3–7",
+     "spec/06:277 (T-07): the +3-7 interval is REG-19's range"),
+    ("T07-ctl-rise-band", DEVPLAN, "Ramp-rate CTL-rise band (Section 6, §6.2.2)",
+     "spec_development_plan:83 (T-07): the CTL-rise range (REG-19)"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still
@@ -515,6 +563,14 @@ LATER_ROWS = (
      ("spec/02:212 (C03), T214's rewrite: re-selection once judgeable and not skipped, without HRV-68's "
       "'by the fidelity order of HRV-14 (selection)', so a returning lower-fidelity dataset reads as "
       "taking the verdict")),
+    # F011 sprint-008 review, iteration 1: T210's and T208's rewrites cite the fallback as F005's rule 3,
+    # retired vocabulary (T-32); HRV-24 and HRV-59 state it.
+    ("C17-hrv24-read-on-last", OPENAPI, "(AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59)", "c4c33d2",
+     "openapi selected_dataset (C17), T210's rewrite: the fallback cited as F005's rule 3 (T-32)"),
+    ("C17-hrv24-read-on-last", SCHEMAS, "the presentation fallback names (AC9, F005's rule 3 retained;", "c4c33d2",
+     "schemas selected_dataset (C17), T210's rewrite: the fallback cited as F005's rule 3 (T-32)"),
+    ("C17-hrv24-read-on-last", F006, "(F005's rule 3, retained; `research/00` HRV-24, HRV-59)", "05e6605",
+     "F006 AC9 (C17), T208's rewrite: the fallback cited as F005's rule 3 (T-32)"),
 )
 
 

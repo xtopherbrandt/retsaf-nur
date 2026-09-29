@@ -1451,8 +1451,8 @@ components:
             no_tier_sustains_a_trend (no resting-HRV reading of any tier can
             sustain a trend -- the series holds no per-tier dataset: no reading
             of any tier in [date-66, date] after the coverage-gap clip) or
-            no_band (a tier resolved, but its baseline holds fewer than two
-            readings, so no band exists -- build_band answers null on fewer than
+            no_band (a dataset was selected or presented, but its baseline holds
+            fewer than two readings, so no band exists -- build_band answers null on fewer than
             two baseline readings, so no band exists to judge the week against)
             whenever band is null; then week_too_thin (fewer than
             min_window_readings (3) readings of baseline.tier in the judged week;
@@ -1529,8 +1529,11 @@ components:
               description: >
                 The day the current baseline era began, when the reset that began
                 it is reported (see reset_reason). It says what the athlete is told, not how window was
-                built — a null reset_on does not mean the baseline spans the full
-                60 days; read window.
+                built: a tier-change era boundary clips window whenever it exists, and is
+                reported here only when its stray readings fall on fewer than
+                min_window_readings (3) days of the judged week [date-6, date]
+                (research/00 HRV-78). So a null reset_on does not mean the baseline
+                spans the full 60 days; read window.
             reset_reason:
               type: string
               enum: [coverage_gap, tier_change]
@@ -1553,7 +1556,8 @@ components:
                 stretch is conditional, not promised: a reported `tier_change` sits beside
                 an un-clipped `window` only once date-66 has reached R, and then only on
                 the days the report is still live. Liveness is rule 4's three conditions
-                together, not any one of them alone: the presented dataset's tier still
+                together, not any one of them alone: the reported dataset's tier
+                (selected, or presented when none is) still
                 holds min_baseline_readings distinct days in the baseline window, the
                 previous window [date-126, date-67] is still sustained by a tier other
                 than that one, and the two eras still do not interleave -- the era
@@ -1780,10 +1784,10 @@ components:
             computed from — a producer of the response, not a claim about it.
             `disagreed_with` is empty there for the converse reason. Null when no dataset was
             selected, which is EITHER that no dataset is judgeable OR that every
-            judgeable one was skipped as stale. In that case the verdict is
+            judgeable one was skipped by the recency gate. In that case the verdict is
             hrv_unavailable and `baseline`/`band` are still populated, for
             presentation only, from the dataset the presentation fallback names
-            (AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59): the
+            (AC9; research/00 HRV-24, HRV-59): the
             established dataset read last in the baseline window, ties by `n`
             then fidelity; with none established, the densest by `n`; with no
             baseline reading of any tier, the densest in the judged week, ties
@@ -1804,7 +1808,7 @@ components:
             Why `selected_dataset` is the one, drawn from a closed enum:
             `highest_fidelity_judgeable` — no judgeable dataset outranks it;
             `higher_fidelity_skipped_stale` — one did, and the recency gate
-            skipped it as stale, so `baseline`/`band` come from a
+            skipped it, so `baseline`/`band` come from a
             lower-fidelity instrument — and, wherever a verdict is conferred, so
             does the verdict — and the response says so rather than leaving that
             fall invisible. Where `verdict` is hrv_unavailable (T125's returning

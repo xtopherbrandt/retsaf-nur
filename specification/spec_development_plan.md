@@ -80,7 +80,7 @@ Every logged open item was worked across 2026-08-31 (the back-port batch + two f
 ### Resolved in the 2026-08-31 follow-ups
 
 - **Section 5 §5.7.1 → §5.5.4 cross-reference slip** — RESOLVED. §5.5.4 broadened to cover goal-race conditions; pointer corrected; Section 6 §6.9 aligned.
-- **Ramp-rate CTL-rise band (Section 6, §6.2.2)** — RESOLVED (fixed + provisionally ratified in-spec). ~+5 CTL/week soft target, range +3–7, hard ceiling +8 (Friel/TrainingPeaks-grounded). `research_00` Part 3 carries it as a row marked PROVISIONAL (REG-19) until field data refines it.
+- **Ramp-rate CTL-rise range (Section 6, §6.2.2)** — RESOLVED (fixed + provisionally ratified in-spec). ~+5 CTL/week soft target, range +3–7, hard ceiling +8 (Friel/TrainingPeaks-grounded). `research_00` Part 3 carries it as a row marked PROVISIONAL (REG-19) until field data refines it.
 - **Sidecar-divergence surfacing threshold (Section 9, §9.6)** — RESOLVED. `research_00` Part 3 (one own-estimate CI, or ~10%; governs only surfacing).
 - **Decision-log / raw-stream retention granularity (Section 9, §9.3.5)** — RESOLVED. `research_00` Part 3, engineering default (records indefinitely; raw streams on a tunable window).
 

@@ -202,7 +202,7 @@ then, which AC7's 2026-09-20 widening made a strict subset: the fallback fires o
 None`, and since the recency reference may be held by an established dataset that is not judgeable, every
 judgeable candidate can now be skipped at once*) — *then* `hrv_status` is `hrv_unavailable` and
 `selected_dataset` is `null`, **but `baseline` and `band` are still populated, for presentation only, from the
-dataset the presentation fallback names** (F005's rule 3, retained; `research/00` HRV-24, HRV-59) so the non-nullable `baseline.n`/`window`/`established` carry a value
+dataset the presentation fallback names** (`research/00` HRV-24, HRV-59) so the non-nullable `baseline.n`/`window`/`established` carry a value
 and no contract break occurs. **No verdict is conferred by the fallback, and it cannot be:** clause 1
 presents the **established** dataset read last, which holds the recency reference maximum and is therefore
 never struck by the gate — so had it been judgeable it would have survived as a candidate and been

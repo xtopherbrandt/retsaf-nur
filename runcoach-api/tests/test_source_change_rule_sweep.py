@@ -246,9 +246,9 @@ SITES = (
         "**Graceful degradation across tiers, then unavailable.**",
     ),
     Site(
-        "spec/02 Sec 2.4.5 confidence and the anti-mixing rule",
+        "spec/02 Sec 2.4.5 fidelity and the anti-mixing rule",
         "specification/spec/02-canonical-data-schema-ingestion.md",
-        "**Confidence and the anti-mixing rule.**",
+        "**Fidelity and the anti-mixing rule.**",
     ),
     Site(
         "spec/02 Sec 2.4.5 degradation",

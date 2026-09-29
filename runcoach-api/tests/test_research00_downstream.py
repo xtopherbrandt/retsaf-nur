@@ -2078,7 +2078,7 @@ PRESENCE_ANCHORS = (
      "at an internal hole of at least `GAP_RESET_DAYS", "**AC17 split into two mechanisms**"),
     ("specification/spec/02-canonical-data-schema-ingestion.md", "C32-band-without-floor",
      "the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",
-     "**Confidence and the anti-mixing rule.**"),
+     "**Fidelity and the anti-mixing rule.**"),
     ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
      "up-regulation on weak evidence, which §1.7 forbids",
      "**Either position on a baseline that is not yet established**"),

@@ -62,23 +62,40 @@ C32-band-without-floor,specification/spec/06-adaptation-logic.md,±0.5·SD(ln rM
 C24-arch06-ignores-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,coaching logic ignores by default,grep
 PRIN-08-C24-sidecar-ignored-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,sidecar the coaching logic ignores by default,grep
 C32-band-without-floor,specification/spec_outline.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
+C10-recency-only-rule-that-acts,contracts/openapi.yaml,judgeable one was skipped as stale,inventory
+C10-recency-only-rule-that-acts,contracts/openapi.yaml,"the recency gate skipped it as stale, so `baseline`/`band` come from a",inventory
+C17-hrv24-read-on-last,contracts/openapi.yaml,"(AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59)",inventory
+C18-no-tier-from-resolver,contracts/openapi.yaml,"no_band (a tier resolved, but its baseline holds fewer than two",inventory
+HRV-40-R13-now-sustaining-tier,contracts/openapi.yaml,not any one of them alone: the presented dataset's tier still holds min_baseline_readings,inventory
+C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,judgeable one was skipped as stale,inventory
+C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,"skipped it as stale, so `baseline`/`band` come from a lower-fidelity instrument",inventory
+C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the presentation fallback names (AC9, F005's rule 3 retained;",inventory
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"resolved, but its baseline holds fewer than two readings, so no band exists",inventory
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,stays sustained by a tier other than the resolved one,inventory
+HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,presented dataset's tier still holds min_baseline_readings distinct days,inventory
+HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,"was also not in use in the judged week [date-6, date]",inventory
 C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
 C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"except the one deferred rate carried as a named, counted exception",inventory
 C10-lone-candidate-never-struck,spec-mirror/features/F006-per-tier-hrv-datasets.md,so a lone **established** dataset is its own reference and is never skipped,inventory
+C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,"(F005's rule 3, retained; `research/00` HRV-24, HRV-59)",inventory
 HRV-11-per-day-collapse-unspecified,spec-mirror/features/F006-per-tier-hrv-datasets.md,only the later is kept,inventory
 C16-hrv21-reads-below-that-band,spec-mirror/references/F006-dataset-model.md,a judgeable dataset reading below its own band is listed in `disagreed_with` even when its own verdict is withheld,inventory
+C17-hrv24-read-on-last,spec-mirror/references/F006-dataset-model.md,AC9 keeps a presentation fallback** (F005's rule 3):,inventory
+C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,and degrades — at reduced confidence — to a device-computed numeric resting rMSSD,inventory
 AUT-02-C23-override-outside-autonomy,specification/decisions/01-conversational-coach-interface.md,"and the **safety pathway**, neither of which the system decides unilaterally",inventory
 AUT-04-C20-two-purposes-only,specification/decisions/01-conversational-coach-interface.md,Its role is the two directions above and nothing more,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-coach-interface.md,"the athlete owns only the **goal contract** (target pace, race date)",inventory
 C19-hrv-03-tag-and-confidence,specification/research/02-wearable-data-garmin.md,should accept whichever is present and tag its tier/confidence,inventory
 C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,These are the studies the confidence weight for the numeric tiers should rest on,inventory
+HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,a genuinely different and higher tier than HRV Status,inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
 C19-hrv-03-tag-and-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"at that tier's confidence, falling to a numeric",inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,whose confidence is set by its tier weight instead,inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"its reduced confidence is a property of the tier, applied at Section 6's readiness fusion",inventory
+C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,Confidence and the anti-mixing rule.,inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
 C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
 C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over the same baseline window and judged week,inventory
@@ -87,7 +104,11 @@ C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,I
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,Where the athlete's own data identifies an LT1 surrogate above the noise,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,The declared target pace and race date are the athlete's,inventory
+T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,Ramp-rate CTL-rise band — fixed and provisionally ratified,inventory
+T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,now ships a concrete weekly-CTL-rise band,inventory
+T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,working band ~+3–7,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/08-conversational-coach-interface.md,The goal contract** — the declared target pace and race date — is the athlete's,inventory
+T07-ctl-rise-band,specification/spec_development_plan.md,"Ramp-rate CTL-rise band (Section 6, §6.2.2)",inventory
 PRIN-08-C25-rule-file-short-list,.claude/rules/project-domain-and-spec-fidelity.md,"Body Battery, Training Readiness, VO2max estimate, and Performance Condition are display-only",loose
 T07-acwr-band,.claude/rules/project-domain-and-spec-fidelity.md,"the ACWR band, taper duration",loose
 C15-tier-change-called-re-establishment,contracts/openapi.yaml,"The day the current baseline era began, when the re-establishment is reported",loose

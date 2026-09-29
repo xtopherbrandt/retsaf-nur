@@ -97,8 +97,9 @@ the athlete pays in silence, roughly **3,600 more silent rectangle mornings** (`
 243,326 → 246,944 of 307,500) and 316 more on the walk (15,996 → 16,312 of 24,000).
 
 **This is §3.7.1's ratified hierarchy preserved, not a new precedence.** §3.7.1: *"the system prefers
-a chest-strap RR capture it reduces to rMSSD itself, and degrades — at reduced confidence — to a
-device-computed numeric resting rMSSD before it treats HRV as unavailable."* What the reframe changes
+a chest-strap RR capture it reduces to rMSSD itself, and degrades to a device-computed numeric
+resting rMSSD, admitted at reduced fidelity (an ordinal rank in selection), before it treats HRV as
+unavailable."* What the reframe changes
 is that the loser keeps its own band. That is precisely what made the hierarchy unsafe before:
 striking a tier destroyed the only yardstick, which is why T117's gate had to exist and why T125 then
 had to patch it.
@@ -447,7 +448,7 @@ Full detail in `spec/references/F006-dataset-model.md` — **read §9 and §10 b
   more than `GAP_RESET_DAYS` (21) silent local days of its tier, so 21 does not clip and 22 does
   (`research/00` HRV-37, decision C04), reusing that constant rather than minting one. Chosen over naming the
   residual and over dropping AC17 entirely.
-- **AC9 keeps a presentation fallback** (F005's rule 3): on an illness/holiday week `selected_dataset`
+- **AC9 keeps a presentation fallback**: on an illness/holiday week `selected_dataset`
   is null but `baseline`/`band` are populated, for presentation only, from the dataset the
   presentation fallback names (`research/00` HRV-24, HRV-59), so the non-nullable contract fields
   carry a value and three shipped pins stay green.

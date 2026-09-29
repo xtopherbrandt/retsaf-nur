@@ -2401,7 +2401,7 @@ VERDICT_WITHDRAWN = _DECLARATIONS.VERDICT_WITHDRAWN
 UNAVAILABLE_REASON_CLAIMS = (
     "null whenever it is not",
     "reports the first that fires",
-    "a tier resolved, but its baseline holds fewer than two readings, so no band exists",
+    "a dataset was selected or presented, but its baseline holds fewer than two readings, so no band exists",
     "is decided at the route, after judge, and overrides whichever of the other five",
 )
 
