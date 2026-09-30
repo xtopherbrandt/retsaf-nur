@@ -150,6 +150,9 @@ MAIN = "runcoach-api/src/runcoach_api/main.py"
 RULE = ".claude/rules/project-domain-and-spec-fidelity.md"
 F006 = "spec-mirror/features/F006-per-tier-hrv-datasets.md"
 F006DM = "spec-mirror/references/F006-dataset-model.md"
+S01 = "specification/spec/01-scope-inputs-pace-target.md"
+S09 = "specification/spec/09-loop-closure-decision-log-explainability.md"
+FUTURE = "specification/future/future-directions.md"
 
 
 #: ``CENSUS_REMOVED`` rows that were ``MANUAL_ROWS`` rows, as ``(key, path, excerpt)``. No loose noun
@@ -594,6 +597,54 @@ MANUAL_ROWS = (
      'Its *rule-3 half* — "when no candidate covers the week, the tier the athlete was read on last holds it"',
      ("F006:406 (C17): the fallback as T093's rule-3 half, 'the tier the athlete was read on last holds "
       "it', retired vocabulary (T-32: rule 1-4, the resolved tier); HRV-24 and HRV-59 state it")),
+    # F011 sprint-008 review, iteration 12 (S11/S14): the critic's and sweeps' live old-meaning sites. C23:
+    # the system applies the safety override and issues the pathway (AUT-08, T-30); the athlete owns only
+    # the clinical action and the return-to-run clearance on it, and the goal contract (AUT-02, GOAL-02).
+    ("AUT-02-C23-override-outside-autonomy", S08, "the athlete owns only the goal and the safety pathway",
+     ("spec/08:14 (C23): the §8.1 boundary's heading gives the athlete the safety pathway; AUT-02 leaves "
+      "the athlete only the clinical action and clearance on it")),
+    ("AUT-02-C23-override-outside-autonomy", S08,
+     "The only two matters that sit outside the engine's autonomous authority are the **goal contract** and "
+     "the **safety pathway**",
+     ("spec/08:14 (C23): the safety pathway outside the engine's authority; the system applies the override "
+      "and issues the pathway (AUT-08)")),
+    ("AUT-02-C23-override-outside-autonomy", S08,
+     "the only two athlete-owned matters are the goal contract and the safety pathway",
+     "spec/08:78 (C23): §8.5's summary names the safety pathway as athlete-owned (AUT-02, AUT-08)"),
+    ("AUT-02-C23-override-outside-autonomy", S08,
+     "The only athlete-owned matters: the goal contract and the safety pathway",
+     "spec/08:84 (C23): §8.5.2's heading, as spec/08:78"),
+    ("AUT-02-C23-override-outside-autonomy", S08,
+     "the **only two matters the athlete owns are the goal contract and the safety pathway**",
+     "spec/08:86 (C23): §8.5.2's lead, as spec/08:78"),
+    ("AUT-02-C23-override-outside-autonomy", S08,
+     "Everything else — the plan — sits inside the system's autonomous authority",
+     ("spec/08:91 (C23): only the plan inside the system's authority, which leaves the safety override "
+      "outside it (AUT-08)")),
+    ("AUT-02-C23-override-outside-autonomy", S09,
+     "distinguishing the two non-owned matters (the goal contract, §6.8; the safety pathway, §6.4)",
+     ("spec/09:72 (C23): athlete_owned_flag names the safety pathway a non-owned matter; the system issues "
+      "it, and the athlete owns the clinical action and clearance (AUT-02, AUT-08)")),
+    ("AUT-02-C23-override-outside-autonomy", OUTLINE,
+     "the only athlete-owned matters are the goal contract and the safety pathway",
+     "spec_outline:81 (C23): Section 8's summary, as spec/08:78"),
+    ("AUT-02-C23-override-outside-autonomy", R05,
+     "reserving athlete decision only for the goal contract and the safety pathway, neither of which the "
+     "system owns",
+     "research/05:236 (C23): the resolution read as the athlete deciding the safety pathway (AUT-02, AUT-08)"),
+    ("AUT-02-C23-override-outside-autonomy", FUTURE,
+     "alongside the athlete-owned goal contract and safety pathway",
+     "future-directions:110 (C23): the safety pathway as athlete-owned beside the goal contract (AUT-02)"),
+    ("AUT-02-C23-override-outside-autonomy", S07,
+     "the only athlete-owned matters remain the two the constitution names — the goal contract (the race "
+     "date that anchors the taper's timing) and the safety pathway",
+     "spec/07:14 (C23): the safety pathway as athlete-owned (AUT-02, AUT-08)"),
+    # C21: decisions/01 conforms to research/00 and has no "Bonus" section left to supersede (DEC-01).
+    ("C21-dec01-bonus-section", S08, 'supersede the `decisions/01` "Bonus" wording',
+     ("spec/08:3 (C21): research/00 superseding decisions/01's Bonus wording; the record conforms "
+      "(DEC-01) and H-07 holds the history")),
+    ("C21-dec01-bonus-section", OUTLINE, 'supersedes the `decisions_01` "Bonus" wording',
+     "spec_outline:83 (C21): as spec/08:3"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

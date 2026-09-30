@@ -92,9 +92,11 @@ C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,and d
 AUT-02-C23-override-outside-autonomy,specification/decisions/01-conversational-coach-interface.md,"and the **safety pathway**, neither of which the system decides unilaterally",inventory
 AUT-04-C20-two-purposes-only,specification/decisions/01-conversational-coach-interface.md,Its role is the two directions above and nothing more,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-coach-interface.md,"the athlete owns only the **goal contract** (target pace, race date)",inventory
+AUT-02-C23-override-outside-autonomy,specification/future/future-directions.md,alongside the athlete-owned goal contract and safety pathway,inventory
 C19-hrv-03-tag-and-confidence,specification/research/02-wearable-data-garmin.md,should accept whichever is present and tag its tier/confidence,inventory
 C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,These are the studies the confidence weight for the numeric tiers should rest on,inventory
 HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,a genuinely different and higher tier than HRV Status,inventory
+AUT-02-C23-override-outside-autonomy,specification/research/05-data-to-adaptation.md,"reserving athlete decision only for the goal contract and the safety pathway, neither of which the system owns",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
@@ -119,8 +121,19 @@ GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,T
 T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,Ramp-rate CTL-rise band — fixed and provisionally ratified,inventory
 T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,now ships a concrete weekly-CTL-rise band,inventory
 T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,working band ~+3–7,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/07-recovery-and-taper.md,the only athlete-owned matters remain the two the constitution names — the goal contract (the race date that anchors the taper's timing) and the safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,the athlete owns only the goal and the safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,The only two matters that sit outside the engine's autonomous authority are the **goal contract** and the **safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,the only two athlete-owned matters are the goal contract and the safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,The only athlete-owned matters: the goal contract and the safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,the **only two matters the athlete owns are the goal contract and the safety pathway,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,Everything else — the plan — sits inside the system's autonomous authority,inventory
+C21-dec01-bonus-section,specification/spec/08-conversational-coach-interface.md,"supersede the `decisions/01` ""Bonus"" wording",inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/08-conversational-coach-interface.md,The goal contract** — the declared target pace and race date — is the athlete's,inventory
+AUT-02-C23-override-outside-autonomy,specification/spec/09-loop-closure-decision-log-explainability.md,"distinguishing the two non-owned matters (the goal contract, §6.8; the safety pathway, §6.4)",inventory
 T07-ctl-rise-band,specification/spec_development_plan.md,"Ramp-rate CTL-rise band (Section 6, §6.2.2)",inventory
+AUT-02-C23-override-outside-autonomy,specification/spec_outline.md,the only athlete-owned matters are the goal contract and the safety pathway,inventory
+C21-dec01-bonus-section,specification/spec_outline.md,"supersedes the `decisions_01` ""Bonus"" wording",inventory
 PRIN-08-C25-rule-file-short-list,.claude/rules/project-domain-and-spec-fidelity.md,"Body Battery, Training Readiness, VO2max estimate, and Performance Condition are display-only",loose
 T07-acwr-band,.claude/rules/project-domain-and-spec-fidelity.md,"the ACWR band, taper duration",loose
 C15-tier-change-called-re-establishment,contracts/openapi.yaml,"The day the current baseline era began, when the re-establishment is reported",loose

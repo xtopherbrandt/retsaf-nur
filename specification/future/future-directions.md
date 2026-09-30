@@ -108,8 +108,9 @@ value is coach-asserted rather than data-derived, and how conflicts between a
 coach setting and a strong contrary data signal are surfaced and resolved. The
 autonomy boundary of `research/00` §1.8–§1.9 is the natural place to add a
 third, *optional* authority (the coach) alongside the athlete-owned goal
-contract and safety pathway — with the important constraint that a coach input
-must never be able to disable a safety hard-flag.
+contract and the athlete's clinical action and return-to-run clearance on the
+safety pathway (`research/00` AUT-02, AUT-06) — with the important constraint
+that a coach input must never be able to disable a safety hard-flag.
 
 The parameters flagged during the Phase-2 spec build as the leading
 coach-specification candidates — each currently a flagged default in the spec,

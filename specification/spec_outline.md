@@ -78,9 +78,9 @@
 
 ## Section 8 — Conversational Coach Interface and Autonomy Boundary
 
-**Defines.** The natural-language I/O layer on top of the deterministic closed loop: LLM translates athlete free-text into structured engine inputs (life constraints → weekly loop; injury/soreness/subjective reports → the `research_03` instruments) and turns the decision log into plain-language explanation. The hard boundary: chat is not a second adaptation path and not a gating mechanism; safety hard-flags fire deterministically regardless of framing; the only athlete-owned matters are the goal contract and the safety pathway.
+**Defines.** The natural-language I/O layer on top of the deterministic closed loop: LLM translates athlete free-text into structured engine inputs (life constraints → weekly loop; injury/soreness/subjective reports → the `research_03` instruments) and turns the decision log into plain-language explanation. The hard boundary: chat is not a second adaptation path and not a gating mechanism; safety hard-flags fire deterministically regardless of framing; the system applies the safety override and issues the safety pathway itself, and the only athlete-owned matters are the goal contract and the athlete's clinical action and return-to-run clearance on that pathway (`research_00` AUT-02, AUT-08).
 
-**Cites.** `decisions_01` (conversational coach interface); `research_00` §1.8–1.9 (autonomy resolved, plan-vs-goal ownership; supersedes the `decisions_01` "Bonus" wording), §1.5, §1.6.
+**Cites.** `decisions_01` (conversational coach interface); `research_00` §1.8–1.9 (autonomy resolved, plan-vs-goal ownership; `decisions_01` conforms to it and records its own earlier checkpoint framing as superseded, DEC-01), §1.5, §1.6.
 
 **Depends on.** §6 (the engine whose inputs/outputs this layer wraps).
 
