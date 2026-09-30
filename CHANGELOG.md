@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-28 through 2026-09-30 — Sprint 008: research/00 downstream sweep
+
+F011: every live document under the downstream roots now states research/00's current rules. No
+live document states a meaning F008 changed.
+
+- A census of every old-meaning site came first: `runcoach-api/tests/data/research00_census.csv`,
+  now 228 rows, each red on its old text and green after the fix. It covers spec/01 to spec/09,
+  research/02, 05 and 06, decisions/01, the development plan and outline, future-directions,
+  `.claude/rules/`, the F006 pair and its mirror, the contract (both copies, description-only),
+  and src comments.
+- `test_research00_downstream.py` scans 58 live files against 54 old-meaning keys, with
+  per-feature EXCEPTIONS (F009 owns `metrics/hrv_trend.py`). It reads quotation as CommonMark
+  0.31.2 via markdown-it: code spans, fences, S3 quote pairing per paragraph, raw HTML and
+  autolinks by the spec grammar. The gate proves verbatim absence. Review added a paraphrase
+  sweep of all 54 keys, which found and fixed about 30 further sites.
+- `--against` now reports checker-code edits as `# code` lines, and the EXCEPTIONS pin checks
+  shape instead of being empty.
+- decisions/01 conforms and is pinned from research/00 DEC-01.
+
+There is no API behaviour change, and `info.version` is unchanged; contract edits are
+descriptions only. The suite grew from 1901 to 2761 tests, with 0 failed and 0 skipped.
+Residuals are routed to F012 (IDEA-106, AC6) and F009 (AC5).
+
 ## 2026-09-25 through 2026-09-27 — Sprint 007: research/00 as current rules
 
 F008: `specification/research/00` is the decision authority. It is rewritten as 246 one-sentence
