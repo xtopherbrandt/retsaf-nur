@@ -359,8 +359,8 @@ def _judge_days(
     **Selection runs per judged day** (F006, T155; AC14). ``build_series``
     returns one dataset per source tier, and ``judge`` takes one: the
     dataset handed to it and rendered is the one ``hrv_trend.select_dataset``
-    selects for that day -- the highest-fidelity judgeable dataset, skipped
-    by the recency gate -- or the presentation fallback when
+    selects for that day -- the highest-fidelity judgeable dataset the recency
+    gate did not skip -- or the presentation fallback when
     none was selected (AC9), flattened onto the F005 series shape by
     ``hrv_trend.selected_view``. Nothing else here is a function of which
     dataset was chosen, and **that is why every point names its own**
