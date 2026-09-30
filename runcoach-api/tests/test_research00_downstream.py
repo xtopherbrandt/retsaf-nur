@@ -3569,6 +3569,8 @@ _PINNED_REASON = ("a Pinned line is research/00's own rule-block field, and F009
                   "no downstream prose states it, so the row could never pass")
 _T125_RESIDUAL_REASON = ("T125's residual ships inside one PRIN-15 exception, the F005-parity population "
                          "(IDEA-087), which the site names; the other two exceptions are not this bullet's")
+_CONTRACT_REASON = ("a .yaml or .py description, which T201 does not build a block for; the census row's absence "
+                    "check covers the site, whose fix names HRV-25, PRIN-15 and IDEA-099")
 
 #: S6: what gets no presence row, as ``(path, decision, locator, string, reason)``. With string ``*`` the
 #: locator is a census excerpt and the whole census row is dropped; otherwise the locator is an anchor of
@@ -3627,6 +3629,14 @@ DROPPED_PRESENCE_ROWS = (
     ("specification/spec/03-derived-metric-formulas.md", "C06",
      "**A judged week that is not a fair sample of the tier being judged**", "Pinned: none (F009)",
      _PINNED_REASON),
+    ("contracts/openapi.yaml", "C06", "This is the response's one report of the exposure F006 accepts", "*",
+     _CONTRACT_REASON),
+    ("contracts/openapi.yaml", "C06",
+     "forbidden direction, accepted and measured against shipped F005 rather than denied", "*", _CONTRACT_REASON),
+    ("runcoach-api/src/runcoach_api/schemas.py", "C06",
+     "This is the response's one report of the exposure F006 accepts", "*", _CONTRACT_REASON),
+    ("runcoach-api/src/runcoach_api/schemas.py", "C06",
+     "forbidden direction, accepted, measured against shipped F005 rather than denied", "*", _CONTRACT_REASON),
 )
 
 

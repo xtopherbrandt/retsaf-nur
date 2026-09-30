@@ -696,6 +696,18 @@ MANUAL_ROWS = (
     # C37: 28 rests on HRV-16's two reasons alone; [18, 44] is not cited (GATE-03, GATE-07).
     ("C37-gate03-remeasured-not-cited", F006DM, "already measured with a justified band of [18, 44]",
      "F006-dataset-model:73 (C37): cites the [18, 44] bracket for 28; GATE-07 bars it, GATE-03 grounds 28"),
+    # C06/PRIN-15 in the contract: HRV-25's population is PRIN-15's named exception, owned by IDEA-099, and
+    # may not grow; the disagreed_with description called it an exposure F006 accepts.
+    ("C06-hrv-25-accepted-cost", OPENAPI, "This is the response's one report of the exposure F006 accepts",
+     "openapi disagreed_with (C06): HRV-25's population as an exposure F006 accepts (PRIN-15, HRV-25)"),
+    ("C06-hrv-25-accepted-cost", OPENAPI,
+     "forbidden direction, accepted and measured against shipped F005 rather than denied",
+     "openapi disagreed_with (C06): the forbidden direction accepted and measured, not a named exception"),
+    ("C06-hrv-25-accepted-cost", SCHEMAS, "This is the response's one report of the exposure F006 accepts",
+     "schemas disagreed_with (C06): as the openapi copy"),
+    ("C06-hrv-25-accepted-cost", SCHEMAS,
+     "forbidden direction, accepted, measured against shipped F005 rather than denied",
+     "schemas disagreed_with (C06): as the openapi copy"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

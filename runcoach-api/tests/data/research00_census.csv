@@ -63,6 +63,8 @@ C32-band-without-floor,specification/spec/06-adaptation-logic.md,±0.5·SD(ln rM
 C24-arch06-ignores-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,coaching logic ignores by default,grep
 PRIN-08-C24-sidecar-ignored-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,sidecar the coaching logic ignores by default,grep
 C32-band-without-floor,specification/spec_outline.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
+C06-hrv-25-accepted-cost,contracts/openapi.yaml,This is the response's one report of the exposure F006 accepts,inventory
+C06-hrv-25-accepted-cost,contracts/openapi.yaml,"forbidden direction, accepted and measured against shipped F005 rather than denied",inventory
 C10-recency-only-rule-that-acts,contracts/openapi.yaml,judgeable one was skipped as stale,inventory
 C10-recency-only-rule-that-acts,contracts/openapi.yaml,"the recency gate skipped it as stale, so `baseline`/`band` come from a",inventory
 C17-hrv24-read-on-last,contracts/openapi.yaml,"(AC9, F005's rule 3 retained; research/00 HRV-24, HRV-59)",inventory
@@ -71,6 +73,8 @@ C18-no-tier-from-resolver,contracts/openapi.yaml,"The band, verdict and tier-res
 C18-no-tier-from-resolver,contracts/openapi.yaml,They are not all of tier resolution: it also applies,inventory
 HRV-40-R13-now-sustaining-tier,contracts/openapi.yaml,not any one of them alone: the presented dataset's tier still holds min_baseline_readings,inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/main.py,skipped past on baseline-window staleness,inventory
+C06-hrv-25-accepted-cost,runcoach-api/src/runcoach_api/schemas.py,This is the response's one report of the exposure F006 accepts,inventory
+C06-hrv-25-accepted-cost,runcoach-api/src/runcoach_api/schemas.py,"forbidden direction, accepted, measured against shipped F005 rather than denied",inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,judgeable one was skipped as stale,inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,"skipped it as stale, so `baseline`/`band` come from a lower-fidelity instrument",inventory
 C17-hrv24-read-on-last,runcoach-api/src/runcoach_api/schemas.py,"the presentation fallback names (AC9, F005's rule 3 retained;",inventory

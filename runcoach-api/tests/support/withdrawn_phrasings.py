@@ -65,7 +65,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "accepted, measured against shipped F005 rather than denied",
+        "which ships only as the named exception PRIN-15 lists, owned by IDEA-099",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",

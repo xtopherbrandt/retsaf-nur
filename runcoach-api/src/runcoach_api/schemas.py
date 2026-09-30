@@ -591,9 +591,10 @@ class HrvTrendResponse(BaseModel):
             "`datasets[]` still carries every dataset's own `below` on those days, so the state "
             "stays legible without being called a disagreement, and `selected_dataset`, "
             "`selected_reason` and the retained `baseline`/`band` are kept as computed. "
-            "This is the response's one report of the exposure F006 accepts: hrv_normal "
+            "This is the response's one report of HRV-25's population: hrv_normal "
             "can be promoted from the best available instrument while another dataset reads below "
-            "its own band, and a consumer reading `verdict` alone is not told (research/00 1.7's "
-            "forbidden direction, accepted, measured against shipped F005 rather than denied)."
+            "its own band, and a consumer reading `verdict` alone is not told. That is research/00 "
+            "1.7's forbidden direction, which ships only as the named exception PRIN-15 lists, "
+            "owned by IDEA-099, and that population may not grow (research/00 HRV-25, PRIN-15)."
         )
     )
