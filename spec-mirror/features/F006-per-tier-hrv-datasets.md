@@ -250,11 +250,13 @@ together, which justifies `RECENCY_TOLERANCE_DAYS` (28) > `GAP_RESET_DAYS` (21).
 shipped code and pinned by `test_a_gap_bridged_by_off_tier_readings_is_not_a_gap`; it is stated so the N-way
 partition cannot silently make the clip per-dataset.
 
-**AC17 — the band clip and the reported reset are separated.** *Given* a dataset whose own baseline window
+**AC17 — the hole clip is separate from the era clip and its reported reset.** *Given* a dataset whose own baseline window
 spans an internal capture hole of more than `GAP_RESET_DAYS` (21) silent local days of its tier, so 21
 does not clip and 22 does, *then* that dataset's band is clipped at the hole (`research/00` HRV-37) — a **new, unreported** per-dataset clip. *And given* a genuine tier change, *then* `tier_change_reset`
-still decides the **reported** `reset_reason`/`reset_on` by asking the existing cross-tier question once per
-dataset, with T129's stray population left **globally unclipped**. The two are distinct: `_era_boundary`
+asks the existing cross-tier question once per dataset: its era boundary clips that dataset's pre-boundary
+readings from its band unconditionally, and it decides the **reported** `reset_reason`/`reset_on` only
+under the density tolerance (`research/00` HRV-38, HRV-40, HRV-80), with T129's stray population left
+**globally unclipped**. The two are distinct clips (`research/00` HRV-76): `_era_boundary`
 requires an old-tier reading followed by a new-tier one, so on a single dataset it returns `None` (measured)
 and cannot see an internal hole. **AC6, not this criterion, is what defends the reference §9 series** — for
 the dataset that *is* `previous_tier`, clause (b) short-circuits and no clip ever fires.
@@ -342,13 +344,15 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
 
 - **The withhold is retained, not retired (T158, AC24).** T125/T132's `verdict_withheld` stays,
   restated at dataset scope: a dataset that could not be selected — not judgeable, or skipped by the
-  recency gate — holding >= `MIN_WINDOW_READINGS` judged-week days every one later than the selected
-  dataset's withholds the verdict (`hrv_unavailable`, `week_not_representative`). Without it a
+  recency gate — holding >= `MIN_WINDOW_READINGS` judged-week days, every one later than every
+  judged-week day of the dataset being judged, withholds that dataset's verdict (`hrv_unavailable`,
+  `week_not_representative`; `research/00` HRV-31). Without it a
   brand-new device (zero baseline days) leaves the outgoing dataset selected and promotes
   `hrv_normal` on its stale week — the sixth §1.7-forbidden population, which shipped F005 closes.
   **What widened, priced:** T132's form B touched only a zero-baseline-day tier; at dataset scope a
   dataset with 1..13 baseline days and a full later week withholds too — `hrv_normal ->
-  hrv_unavailable`, the freely tolerated direction, measured as one row of T130's matched table (era
+  hrv_unavailable`, which asserts no verdict and is not the forbidden direction but is a net cost
+  until Section 6 exists (`research/00` ARCH-13), measured as one row of T130's matched table (era
   10: shipped `TP 16 / FN 1` at `c = 0` -> `TP 17 / FN 0`) and no other verdict in the HRV suites.
   **Carried unchanged:** T130's carrier-overlap disarm (one carrier morning inside the return and
   the clause is false; `0 of 17` at every `c >= 1`), pinned as the current fact and swept by
@@ -407,8 +411,8 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   **retained, not retired**, as AC9's presentation fallback (`research/00` HRV-24, HRV-59): the
   response still carries `baseline`/`band` from the established dataset read last (ties
   `n` then fidelity; else densest by `n`; else densest in the week), so the non-nullable contract
-  fields hold a value and the three illness-week pins stay green. What the fallback costs, in the
-  tolerated direction: it presents, it never judges — `hrv_unavailable` with the presented dataset's
+  fields hold a value and the three illness-week pins stay green. What the fallback costs, a net cost
+  until Section 6 exists (`research/00` ARCH-13): it presents, it never judges — `hrv_unavailable` with the presented dataset's
   own cause, no dissenter named — so an athlete whose new device already holds a full unestablished
   week beside a silent established strap is told `week_too_thin` on the strap's `n`, the T138 18-day
   adoption silence, unchanged and still carried above. Who notices: nobody from `hrv_status`;
@@ -470,7 +474,9 @@ up-regulation on a stale band when the layoff crosses `D-7`, the AC6 boundary ID
   suppressed F006 is better at every `c` (3,625 → 3,497) and the T130-comparable subset goes **128 →
   0**. Whether they are independent is unmeasured and, from the recorded corpus, unmeasurable
   (IDEA-087), so this regression's *sign* is unknown and it is not repriced on an assumption. It is
-  carried as the release gate's one named, counted and conditioned exception — 64 gated rows, pinned
+  carried as `DEFERRED_EXCEPTION` (`research/00` GATE-05), one of the three named exceptions PRIN-15
+  lists (the F005-parity population and `DEFERRED_EXCEPTION`, both owned by [[IDEA-087]], and HRV-25's
+  population, owned by [[IDEA-099]]), each of which may not grow — 64 gated rows, pinned
   by row count, by marginal total and by the requirement that the correlated side stay no worse — in
   `runcoach-api/tests/test_hrv_no_regression_gate.py`, which reds if any of those move. Mechanism:
   T153's hole clip leaves the returning dataset unestablished past the seventh morning back while

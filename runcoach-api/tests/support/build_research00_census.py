@@ -654,6 +654,48 @@ MANUAL_ROWS = (
      "spec/04:142 (C26): §4.4.4 counts an HRV capture among the seed's inputs (COLD-08)"),
     ("C26-cold01-hrv-input", S01, "its inputs (`resting_hr_bpm`, HRV if available, demographics)",
      "spec/01:75 (C26): the cold-start seed's inputs include HRV (COLD-01, COLD-08)"),
+    # C13: the era question left deciding only the report; its boundary also clips the dataset's band
+    # unconditionally (HRV-38, HRV-40), as a clip separate from the hole clip (HRV-37, HRV-76).
+    ("C13-era-clip-becomes-hole-clip", S02,
+     "the cross-tier question decides only the *reported* `tier_change` reset",
+     "spec/02:216 (C13): the era question decides only the report; spec/03:247's fixed wording is the model"),
+    ("C13-era-clip-becomes-hole-clip", F006, "the band clip and the reported reset are separated",
+     "F006 AC17 (C13): the hole clip called the band clip, as if the era boundary clipped no band (HRV-40)"),
+    ("C13-era-clip-becomes-hole-clip", F006,
+     "still decides the **reported** `reset_reason`/`reset_on` by asking the existing cross-tier question "
+     "once per",
+     "F006 AC17 (C13): the era question given only the report (HRV-38, HRV-40, HRV-76)"),
+    # C08/PRIN-16: silence as a freely tolerated direction; it is a net cost until Section 6 (ARCH-13).
+    ("PRIN-16-C08-silence-tolerated-freely", F006, "hrv_unavailable`, the freely tolerated direction",
+     "F006:350 (C08): the widened withhold's silence as the freely tolerated direction (ARCH-12, ARCH-13)"),
+    ("PRIN-16-C08-silence-tolerated-freely", F006, "What the fallback costs, in the tolerated direction:",
+     "F006:410 (C08): the presentation fallback's silence in the tolerated direction (ARCH-13)"),
+    # C02: the withhold compares against the dataset being judged, not the selected one (HRV-31).
+    ("C02-withhold-against-selected", F006, "judged-week days every one later than the selected dataset's",
+     "F006:345 (C02): the withhold against the selected dataset's days; HRV-31 compares the dataset being judged"),
+    # C06: the deferred rate is one of PRIN-15's three exceptions (GATE-05, IDEA-087), not the gate's one.
+    ("C06-gate01-one-exception", F006,
+     "carried as the release gate's one named, counted and conditioned exception",
+     ("F006:473 (C06): DEFERRED_EXCEPTION as the release gate's one exception; PRIN-15 lists three "
+      "(GATE-04, GATE-05)")),
+    # C06/PRIN-15 and C01 in spec/03's T125 bullet.
+    ("PRIN-15-C06-accepted-as-priced", S03,
+     "The accepted cost and the residual at one and two mornings back, which no measured form closes, are "
+     "priced in F005's Negative Class",
+     ("spec/03:236 (C06): the forbidden-direction residual priced beside the accepted cost; it ships only "
+      "inside the F005-parity population (PRIN-15, PRIN-25, IDEA-087)")),
+    ("C01-withhold-not-judgeable-only", S03,
+     'word the set as "not judgeable" alone; the skipped arm is T125\'s own returning strap, judgeable and '
+     "skipped, and that wording gap is open as [[IDEA-083]]",
+     "spec/03:236 (C01): HRV-31 and AC24 said to word the set as not judgeable alone; both state both arms"),
+    # C18: no_tier_sustains_a_trend fires only when no reading of any tier is in [D-66, D] (HRV-30).
+    ("C18-no-tier-from-resolver", S06,
+     "the structural case, reached when the capture was skipped or failed the §2.4.3 valid-fraction gate",
+     ("spec/06:74 (C18): cause (6) reached by a skipped or failed capture; HRV-30 fires only when the series "
+      "holds no per-tier dataset")),
+    # C37: 28 rests on HRV-16's two reasons alone; [18, 44] is not cited (GATE-03, GATE-07).
+    ("C37-gate03-remeasured-not-cited", F006DM, "already measured with a justified band of [18, 44]",
+     "F006-dataset-model:73 (C37): cites the [18, 44] bracket for 28; GATE-07 bars it, GATE-03 grounds 28"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

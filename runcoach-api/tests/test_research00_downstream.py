@@ -3546,12 +3546,29 @@ PRESENCE_ANCHORS = (
      "(default ± 0.5 × SD(ln rMSSD), the sample standard deviation", "**Morning ln rMSSD trend**"),
     ("specification/research/05-data-to-adaptation.md", "C32-band-without-floor",
      "Default:* ± 0.5·SD(ln rMSSD) — the sample SD", "**HRV-guided training rule — ADOPT.**"),
+    # F011 review iteration 12: rows added by the iteration's MANUAL_ROWS.
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C02-withhold-against-selected",
+     "judged-week days every one later than the selected dataset's",
+     "**The withhold is retained, not retired (T158, AC24).**"),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06-gate01-one-exception",
+     "carried as the release gate's one named, counted and conditioned exception",
+     "**The withhold is retained, not retired (T158, AC24).**"),
+    ("specification/spec/03-derived-metric-formulas.md", "PRIN-15-C06-accepted-as-priced",
+     "The accepted cost and the residual at one and two mornings back, which no measured form closes, are "
+     "priced in F005's Negative Class",
+     "**A judged week that is not a fair sample of the tier being judged**"),
+    ("specification/spec/03-derived-metric-formulas.md", "C01-withhold-not-judgeable-only",
+     'word the set as "not judgeable" alone; the skipped arm is T125\'s own returning strap, judgeable and '
+     "skipped, and that wording gap is open as [[IDEA-083]]",
+     "**A judged week that is not a fair sample of the tier being judged**"),
 )
 
 _C33_REASON = ("C33's prose and its EXCEPTIONS are F010's, not F011's (F011 Not in scope); this site is "
                "hrv_trend.py (F009's, sheltered by EXCEPTIONS) and a .py block, which T201 does not build")
 _PINNED_REASON = ("a Pinned line is research/00's own rule-block field, and F009 replaces 'none (F009)'; "
                   "no downstream prose states it, so the row could never pass")
+_T125_RESIDUAL_REASON = ("T125's residual ships inside one PRIN-15 exception, the F005-parity population "
+                         "(IDEA-087), which the site names; the other two exceptions are not this bullet's")
 
 #: S6: what gets no presence row, as ``(path, decision, locator, string, reason)``. With string ``*`` the
 #: locator is a census excerpt and the whole census row is dropped; otherwise the locator is an anchor of
@@ -3597,6 +3614,19 @@ DROPPED_PRESENCE_ROWS = (
      "IDEA-087", "S6: already in the cost table at HEAD"),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
      "Pinned: none (F009)", _PINNED_REASON),
+    # F011 review iteration 12.
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06",
+     "**The withhold is retained, not retired (T158, AC24).**", "Pinned: none (F009)", _PINNED_REASON),
+    ("specification/spec/03-derived-metric-formulas.md", "C06",
+     "**A judged week that is not a fair sample of the tier being judged**", "DEFERRED_EXCEPTION",
+     _T125_RESIDUAL_REASON),
+    ("specification/spec/03-derived-metric-formulas.md", "C06",
+     "**A judged week that is not a fair sample of the tier being judged**", "HRV-25", _T125_RESIDUAL_REASON),
+    ("specification/spec/03-derived-metric-formulas.md", "C06",
+     "**A judged week that is not a fair sample of the tier being judged**", "IDEA-099", _T125_RESIDUAL_REASON),
+    ("specification/spec/03-derived-metric-formulas.md", "C06",
+     "**A judged week that is not a fair sample of the tier being judged**", "Pinned: none (F009)",
+     _PINNED_REASON),
 )
 
 

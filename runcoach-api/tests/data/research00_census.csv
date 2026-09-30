@@ -80,16 +80,23 @@ C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,"The band, ve
 C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/schemas.py,They are not all of tier resolution: it also applies,inventory
 HRV-40-R13-now-sustaining-tier,runcoach-api/src/runcoach_api/schemas.py,presented dataset's tier still holds min_baseline_readings distinct days,inventory
 C05-gate02-worse-rate-reopens,runcoach-api/tests/test_hrv_no_regression_gate.py,"still reads ""a worse rate **reopens** the deferred hysteresis decision"",",inventory
+C02-withhold-against-selected,spec-mirror/features/F006-per-tier-hrv-datasets.md,judged-week days every one later than the selected dataset's,inventory
 C05-gate02-worse-rate-reopens,spec-mirror/features/F006-per-tier-hrv-datasets.md,a worse rate triggers the deferred hysteresis decision,inventory
 C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"except the one deferred rate carried as a named, counted exception",inventory
+C06-gate01-one-exception,spec-mirror/features/F006-per-tier-hrv-datasets.md,"carried as the release gate's one named, counted and conditioned exception",inventory
 C10-lone-candidate-never-struck,spec-mirror/features/F006-per-tier-hrv-datasets.md,so a lone **established** dataset is its own reference and is never skipped,inventory
+C13-era-clip-becomes-hole-clip,spec-mirror/features/F006-per-tier-hrv-datasets.md,the band clip and the reported reset are separated,inventory
+C13-era-clip-becomes-hole-clip,spec-mirror/features/F006-per-tier-hrv-datasets.md,still decides the **reported** `reset_reason`/`reset_on` by asking the existing cross-tier question once per,inventory
 C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,with its rule-3 half retained as AC9's presentation fallback (T156),inventory
 C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,"Its *rule-3 half* — ""when no candidate covers the week, the tier the athlete was read on last holds it",inventory
 C17-hrv24-read-on-last,spec-mirror/features/F006-per-tier-hrv-datasets.md,"(F005's rule 3, retained; `research/00` HRV-24, HRV-59)",inventory
 HRV-11-per-day-collapse-unspecified,spec-mirror/features/F006-per-tier-hrv-datasets.md,only the later is kept,inventory
+PRIN-16-C08-silence-tolerated-freely,spec-mirror/features/F006-per-tier-hrv-datasets.md,"hrv_unavailable`, the freely tolerated direction",inventory
+PRIN-16-C08-silence-tolerated-freely,spec-mirror/features/F006-per-tier-hrv-datasets.md,"What the fallback costs, in the tolerated direction:",inventory
 C16-hrv21-reads-below-that-band,spec-mirror/references/F006-dataset-model.md,a judgeable dataset reading below its own band is listed in `disagreed_with` even when its own verdict is withheld,inventory
 C17-hrv24-read-on-last,spec-mirror/references/F006-dataset-model.md,AC9 keeps a presentation fallback** (F005's rule 3):,inventory
 C19-hrv-04-reduced-confidence,spec-mirror/references/F006-dataset-model.md,and degrades — at reduced confidence — to a device-computed numeric resting rMSSD,inventory
+C37-gate03-remeasured-not-cited,spec-mirror/references/F006-dataset-model.md,"already measured with a justified band of [18, 44]",inventory
 AUT-02-C23-override-outside-autonomy,specification/decisions/01-conversational-coach-interface.md,"and the **safety pathway**, neither of which the system decides unilaterally",inventory
 AUT-04-C20-two-purposes-only,specification/decisions/01-conversational-coach-interface.md,Its role is the two directions above and nothing more,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/decisions/01-conversational-coach-interface.md,"the athlete owns only the **goal contract** (target pace, race date)",inventory
@@ -103,11 +110,13 @@ C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:*
 C26-cold01-hrv-input,specification/spec/01-scope-inputs-pace-target.md,"its inputs (`resting_hr_bpm`, HRV if available, demographics)",inventory
 C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
 C10-recency-only-rule-that-acts,specification/spec/02-canonical-data-schema-ingestion.md,chest-strap dataset is not judgeable or is skipped as stale,inventory
+C13-era-clip-becomes-hole-clip,specification/spec/02-canonical-data-schema-ingestion.md,the cross-tier question decides only the *reported* `tier_change` reset,inventory
 C19-hrv-03-tag-and-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"at that tier's confidence, falling to a numeric",inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,whose confidence is set by its tier weight instead,inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"its reduced confidence is a property of the tier, applied at Section 6's readiness fusion",inventory
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,Confidence and the anti-mixing rule.,inventory
 C32-band-without-floor,specification/spec/02-canonical-data-schema-ingestion.md,"the SWC band the trend already uses — ±0.5·SD(ln rMSSD), the sample SD",inventory
+C01-withhold-not-judgeable-only,specification/spec/03-derived-metric-formulas.md,"word the set as ""not judgeable"" alone; the skipped arm is T125's own returning strap, judgeable and skipped, and that wording gap is open as [[IDEA-083]]",inventory
 C10-lone-candidate-never-struck,specification/spec/03-derived-metric-formulas.md,so a lone candidate is never struck,inventory
 C10-recency-only-rule-that-acts,specification/spec/03-derived-metric-formulas.md,chest-strap dataset is not judgeable or is skipped as stale,inventory
 C10-recency-only-rule-that-acts,specification/spec/03-derived-metric-formulas.md,a device the recency condition has struck for staleness,inventory
@@ -117,10 +126,12 @@ C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over t
 C17-hrv24-read-on-last,specification/spec/03-derived-metric-formulas.md,the fallback that restates F005's rule 3 over datasets,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,the reduced-confidence fallback,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,Its lower confidence (per the validation caveats,inventory
+PRIN-15-C06-accepted-as-priced,specification/spec/03-derived-metric-formulas.md,"The accepted cost and the residual at one and two mornings back, which no measured form closes, are priced in F005's Negative Class",inventory
 C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,"the resting-capture HRV level (ln rMSSD, §3.7) when a morning chest-strap capture is available",inventory
 C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,"no `resting_hr_bpm`, no HRV capture, no usable demographics",inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,Where the athlete's own data identifies an LT1 surrogate above the noise,inventory
+C18-no-tier-from-resolver,specification/spec/06-adaptation-logic.md,"the structural case, reached when the capture was skipped or failed the §2.4.3 valid-fraction gate",inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,The declared target pace and race date are the athlete's,inventory
 T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,Ramp-rate CTL-rise band — fixed and provisionally ratified,inventory
 T07-ctl-rise-band,specification/spec/06-adaptation-logic.md,now ships a concrete weekly-CTL-rise band,inventory

@@ -70,8 +70,9 @@ Three properties carried over from the shipped `_recency_struck`, deliberately a
   established dataset that is not judgeable is never skipped but can hold the reference maximum
   (AC7; `research/00` HRV-15, decision C10);
 - the bound is **strictly greater than** (AC7);
-- `RECENCY_TOLERANCE_DAYS` = 28 is **reused, not minted** — already measured with a justified band of
-  [18, 44] and already reasoned against `gap_reset_days`.
+- `RECENCY_TOLERANCE_DAYS` = 28 is **reused, not minted** — it rests on HRV-16's two reasons alone,
+  (i) four judged weeks and (ii) greater than `gap_reset_days` (21); the `[18, 44]` bracket was measured
+  against the fused band and is not cited for per-tier datasets (`research/00` GATE-03, GATE-07).
 
 **Amended 2026-09-21 (T164, following `research/00` §5.4 (ii)'s amendment of 2026-09-20, then
 `spec/03` §3.7.3/§3.7.4, then AC6/AC7 — this reference was missed in that sweep).** The rule and
