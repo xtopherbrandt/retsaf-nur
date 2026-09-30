@@ -1218,7 +1218,13 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 473  # re-measured 2026-09-22 (sprint-006 code review cycle 2,
+SCOPED_SUITE_COLLECTED = 475  # re-measured 2026-09-30 (T221, sprint-009), as the last action
+#                              # before the commit: +2. One parametrized pin added to this file,
+#                              # F010 AC3's recency boundary (two cases, exactly the tolerance
+#                              # and one past it), the test PRIN-12 and HRV-17 now name on their
+#                              # Pinned lines. Nothing publishes this literal; the previous
+#                              # value's own note follows.
+# SCOPED_SUITE_COLLECTED = 473  # re-measured 2026-09-22 (sprint-006 code review cycle 2,
 #                              # iteration 1), as the last action before the commit: +1. One pin
 #                              # added to this file, S4's conferred-suppressed dissent pin (a
 #                              # ``verdict != VERDICT_NORMAL`` predicate emptied the list on a
@@ -3462,6 +3468,118 @@ def test_a_dataset_with_no_band_is_visible_carrying_its_n_and_its_judged_week_co
     assert datasets[SNAPSHOT]["week_days"] == 7
     assert body["selected_dataset"] == SNAPSHOT
     assert body["selected_reason"] == hrv_trend.SELECTED_HIGHEST_FIDELITY
+
+
+# ---------------------------------------------------------------------------
+# F010 AC3 (T221): the recency skip is recomputable from the response alone,
+# at the exact boundary, pinned by PRIN-12 and HRV-17
+# ---------------------------------------------------------------------------
+
+
+#: The two boundary geometries, as ``behind`` days between the strap's latest
+#: baseline-window read and the snapshot's: exactly the tolerance is kept, one
+#: day past it is skipped. They are the only two points where ``>`` and ``>=``
+#: disagree, so a served tolerance of any other value fails one of them.
+RECENCY_BOUNDARY_CASES = (
+    (hrv_trend.RECENCY_TOLERANCE_DAYS, False),
+    (hrv_trend.RECENCY_TOLERANCE_DAYS + 1, True),
+)
+
+
+def _recompute_selection(body: dict, tolerance: int) -> tuple[str | None, str | None, dict[str, int]]:
+    """``(selected_dataset, selected_reason, gap per tier)`` recomputed from
+    ``datasets[]`` and ``tolerance`` alone, as HRV-15 and HRV-19 state the
+    rule: candidates are the judgeable datasets (established, and at least
+    ``min_window_readings`` judged-week days); the reference is the latest
+    ``last_read`` over every **established** dataset; a candidate whose gap
+    is strictly more than ``tolerance`` is skipped; the highest-fidelity
+    survivor is selected, ``higher_fidelity_skipped_stale`` when a skipped
+    candidate outranks it and ``highest_fidelity_judgeable`` otherwise."""
+    datasets = body["datasets"]
+    established = [d for d in datasets if d["established"]]
+    reference = max(date.fromisoformat(d["last_read"]) for d in established)
+    gaps = {d["tier"]: (reference - date.fromisoformat(d["last_read"])).days for d in established}
+    judgeable = [
+        d for d in sorted(datasets, key=lambda d: d["fidelity_rank"])
+        if d["established"] and d["week_days"] >= body["thresholds"]["min_window_readings"]
+    ]
+    skipped_first = False
+    for d in judgeable:
+        if gaps[d["tier"]] > tolerance:
+            skipped_first = True
+            continue
+        reason = hrv_trend.SELECTED_HIGHER_FIDELITY_STALE if skipped_first else hrv_trend.SELECTED_HIGHEST_FIDELITY
+        return d["tier"], reason, gaps
+    return None, None, gaps
+
+
+@pytest.mark.parametrize(("behind", "expect_skipped"), RECENCY_BOUNDARY_CASES, ids=["exactly_the_tolerance", "one_past_it"])
+def test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary(
+    configure, seeder, behind: int, expect_skipped: bool
+) -> None:
+    """F010 AC3, the Pinned test of PRIN-12 and HRV-17: with the tolerance
+    served as ``thresholds.recency_tolerance_days``, a reader holding only
+    ``datasets[].last_read`` and that one number reproduces ``selected_dataset``
+    and ``selected_reason`` at the exact boundary in both directions.
+
+    The geometry is ``test_the_gate_boundary_is_strictly_greater_than_the_tolerance``
+    (the series suite) through ``db.persist`` and ``GET /metrics/hrv``: a
+    daily snapshot ``D-66..D``, the strap on ``D-66..strap_last`` plus the
+    three week days ``D-4, D-2, D`` (judgeable), with ``strap_last`` exactly
+    ``behind`` days before the snapshot's ``D-7``. The gap is measured on the
+    **baseline window's** last reads, never the judged week, which is what
+    ``last_read`` serves. Exactly the tolerance behind is kept (the strap,
+    ``highest_fidelity_judgeable``); one day further is skipped (the snapshot,
+    ``higher_fidelity_skipped_stale``), so the two cases differ.
+
+    **Perturbation clause** (AC3's last line): the same recomputation with
+    ``tolerance - 1`` or ``tolerance + 1`` no longer matches what was served
+    in at least one of the two cases, so a served tolerance of any value but
+    the module constant fails this test rather than passing it vacuously."""
+    configure("UTC")
+    strap_last = D - timedelta(days=7) - timedelta(days=behind)
+    seeder.snapshots(days(D - timedelta(days=66), D), baseline_values(67))
+    straps_at(seeder, days(D - timedelta(days=66), strap_last))
+    straps_at(seeder, [D - timedelta(days=4), D - timedelta(days=2), D])
+    seeder.persist()
+
+    with TestClient(app) as client:
+        response = get(client, to=D.isoformat())
+    assert response.status_code == 200, response.text
+    body = response.json()
+    datasets = _by_tier(body)
+
+    tolerance = body["thresholds"]["recency_tolerance_days"]
+    assert isinstance(tolerance, int) and not isinstance(tolerance, bool), body["thresholds"]
+    # Both tiers judgeable by construction; the strap's baseline-window last
+    # read is exactly ``behind`` days before the snapshot's.
+    assert datasets[STRAP]["established"] is True and datasets[STRAP]["week_days"] == 3, datasets[STRAP]
+    assert datasets[SNAPSHOT]["established"] is True and datasets[SNAPSHOT]["week_days"] == 7, datasets[SNAPSHOT]
+    assert datasets[STRAP]["last_read"] == strap_last.isoformat(), datasets[STRAP]
+    assert datasets[SNAPSHOT]["last_read"] == (D - timedelta(days=7)).isoformat(), datasets[SNAPSHOT]
+
+    selected, reason, gaps = _recompute_selection(body, tolerance)
+    served = (body["selected_dataset"], body["selected_reason"])
+    outcome = "skipped" if selected == SNAPSHOT else "kept"
+    print(f"[slice compared] tolerance={tolerance} gap={gaps[STRAP]} -> {outcome}; served={served}")
+
+    assert gaps[STRAP] == behind, gaps
+    assert (selected, reason) == served, (selected, reason, served, gaps)
+    expected = (SNAPSHOT, hrv_trend.SELECTED_HIGHER_FIDELITY_STALE) if expect_skipped else (STRAP, hrv_trend.SELECTED_HIGHEST_FIDELITY)
+    assert served == expected, (served, expected, gaps)
+    # The two parametrized cases are opposite outcomes: the boundary is
+    # strict on the served number, not somewhere near it.
+    assert {skipped for _, skipped in RECENCY_BOUNDARY_CASES} == {False, True}
+
+    # Perturbation: one of tolerance +- 1 flips this case's recomputation away
+    # from what was served (tolerance - 1 flips the kept case, tolerance + 1
+    # the skipped one), so the served value is the only one this test accepts.
+    flipped = {
+        t: _recompute_selection(body, t)[:2] != served for t in (tolerance - 1, tolerance + 1)
+    }
+    print(f"[perturbation] {flipped}")
+    assert flipped[tolerance - 1 if not expect_skipped else tolerance + 1] is True, flipped
+    assert any(flipped.values()), flipped
 
 
 def test_selected_reason_is_null_exactly_when_selected_dataset_is_and_the_fallback_still_populates(

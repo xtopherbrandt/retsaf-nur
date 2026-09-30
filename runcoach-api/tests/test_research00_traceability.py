@@ -695,7 +695,7 @@ PINNED_SHA256 = {
     "PRIN-20/Pinned": "6f6a2e0e1e2d",
     "PRIN-21/Pinned": "6f6a2e0e1e2d",
     "PRIN-11/Pinned": "6f6a2e0e1e2d",
-    "PRIN-12/Pinned": "6b459de01b1d",
+    "PRIN-12/Pinned": "397791298134",
     "PRIN-22/Pinned": "6f6a2e0e1e2d",
     "PRIN-23/Pinned": "6f6a2e0e1e2d",
     "PRIN-24/Pinned": "6f6a2e0e1e2d",
@@ -832,7 +832,7 @@ PINNED_SHA256 = {
     "HRV-14/Pinned": "92597a74acb6",
     "HRV-15/Pinned": "51606625db95",
     "HRV-16/Pinned": "6f6a2e0e1e2d",
-    "HRV-17/Pinned": "6b459de01b1d",
+    "HRV-17/Pinned": "397791298134",
     "HRV-18/Pinned": "6f6a2e0e1e2d",
     "HRV-19/Pinned": "068d30b2b1f3",
     "HRV-20/Pinned": "6f6a2e0e1e2d",
@@ -1973,7 +1973,8 @@ OPERATIVE = {
     "C32": ("HRV-07", ("max(0.5 · SD(ln rMSSD), 0.01)",)),
     "C33": ("PRIN-12", (
         "baseline_days", "min_baseline_readings", "min_window_readings", "gap_reset_days", "band_floor",
-        "swc_factor", "recency_tolerance_days", "Pinned: none (F010)",
+        "swc_factor", "recency_tolerance_days",
+        "Pinned: runcoach-api/tests/test_hrv_trend_endpoint.py::test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary",
     )),
     "C38": ("DOC-09", ("only current rules", "dated summary")),
 }
@@ -3738,7 +3739,8 @@ _WORLD_BODIES = {
     "GATE-02": "Rule GATE-02 MUST hold every day, and the system MUST NOT add hysteresis.",
 }
 _WORLD_PINNED = {
-    "PRIN-12": ("Pinned: none (F010)",),
+    "PRIN-12": (("Pinned: runcoach-api/tests/test_hrv_trend_endpoint.py::"
+                "test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary"),),
     "PRIN-15": ("Pinned: none (F009)",),
     "GATE-02": (("Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
                 "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned"),),

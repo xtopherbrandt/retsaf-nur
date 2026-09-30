@@ -171,7 +171,7 @@ Pinned: none
 **PRIN-12.** Every derived verdict MUST be reproducible by hand from its response, whose `thresholds` block MUST serve `baseline_days`, `min_baseline_readings`, `min_window_readings`, `gap_reset_days`, `band_floor`, `swc_factor` and `recency_tolerance_days`, and every unserved verdict-affecting input, such as `window_days` and the withhold's day order, each named in PRIN-24, IS an OPEN exception.
 Scope: each response read on its own, including its `selected_reason`.
 Not: the formulas themselves, which the spec states in full under PRIN-11 (transparent formulas).
-Pinned: none (F010)
+Pinned: runcoach-api/tests/test_hrv_trend_endpoint.py::test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary
 Why: decision C33 reads the transparency rule at the response level and makes `recency_tolerance_days` served, which F010 carries out, reversing the narrower promise recorded at H-17.
 
 **PRIN-22.** Every applied adaptation or decision MUST be logged with its inputs and the rule that fired.
@@ -919,7 +919,7 @@ Pinned: none
 **HRV-17.** The response's `thresholds` block MUST publish `recency_tolerance_days`.
 Scope: every HRV trend response.
 Not: the other verdict-affecting constants, which PRIN-12 (the served constants) names.
-Pinned: none (F010)
+Pinned: runcoach-api/tests/test_hrv_trend_endpoint.py::test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary
 Why: decision C33 reads §1.6 at the response level, so the constant that decides `selected_reason` is served, and F010 publishes it.
 
 **HRV-18.** Selection MUST run per judged day and read nothing from earlier days, and every point of the series MUST name the per-tier dataset its SWC band came from.
