@@ -2970,8 +2970,9 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
     ``recency_tolerance_days`` (the state this replaces); the tier rule starts
     applying a second constant the response does not echo; and the block gains
     ``recency_tolerance_days`` as a key, which the decision refused -- the
-    remainder then empties and this is red, so the shape is held from this side
-    too.
+    remainder then empties and, before T220, this was red, so the shape was
+    held from this side too (since T220 the empty remainder is the asserted
+    state; see the inversion below).
 
     **T125 (2026-09-16) moved the constant and this followed it.** Form 2
     factored rule 1's gate into ``hrv_trend._recency_struck`` so the struck set
@@ -2985,8 +2986,9 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
     ``judge``'s and ``build_series``'s constants are still outside it. All
     three failure modes were re-demonstrated against the widened oracle on
     2026-09-16, one at a time, each reverted: a seventh ``thresholds`` key
-    (``recency_tolerance_days`` published in both copies) -- red, remainder
-    empty; a second unpublished constant entering the tier rule
+    (``recency_tolerance_days`` published in both copies) -- red until T220,
+    remainder empty (since T220 that is the asserted state); a second
+    unpublished constant entering the tier rule
     (``WINDOW_DAYS`` applied in ``_recency_struck`` -- deliberately in the
     **factored helper**, where the pre-T125 oracle could not have seen it) --
     red, remainder ``['recency_tolerance_days', 'window_days']``; and the name struck
