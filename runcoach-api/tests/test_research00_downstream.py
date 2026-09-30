@@ -385,7 +385,9 @@ def _raw_recording(rule):
 #: refuses ``\x01`` to ``\x1f``, where 0.31.2 refuses only spaces, tabs, line endings, quotes, ``=``, ``<``,
 #: ``>`` and a backtick; and its comment refuses ``<!-- a--->``, where 0.31.2 takes any text up to the first
 #: ``-->`` (or ``<!-->`` or ``<!--->``). Before an attribute at least one space, tab or line ending stands.
-_HTML_SPACE = r"[ \t]*\n?[ \t]*"
+#: The whitespace splits one way only: ``[ \t]*\n?[ \t]*`` read one space two ways, and tag-shaped prose
+#: with no ``>`` backtracked 2^n (iteration 11).
+_HTML_SPACE = r"[ \t]*(?:\n[ \t]*)?"
 _HTML_TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
 _HTML_ATTRIBUTE = (r"(?=[ \t\n])" + _HTML_SPACE + r"[A-Za-z_:][A-Za-z0-9_.:-]*"
                    r"(?:" + _HTML_SPACE + "=" + _HTML_SPACE + r"""(?:[^ \t\n\r"'=<>`]+|'[^']*'|"[^"]*"))?""")
@@ -2854,6 +2856,78 @@ def test_scanner_quote_spans_oracle_iteration_10():
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
         assert _spans(raw) == expected, raw
+
+
+def test_scanner_quote_spans_oracle_iteration_11():
+    """Iteration 11's rows: each 0.31.2 grammar clause and HTML-block condition the iteration-10 rows left
+    unpinned, as ``quote_spans`` oracle cases. Every row agrees with oracle10h, which shares no code with
+    the gate; each is red when the clause its comment names is broken."""
+    over = ['"(\nLive X.\n)"']
+    cases = [
+        # A closing tag takes whitespace before its ">", so a whole line of one starts a type-7 block.
+        ('</x >\nSay "a\nLive X.\nb" c\n', []),
+        # A comment, a processing instruction and a CDATA section run over a line ending.
+        ('a" <!-- x\n\\"( --> c)"(\nLive X.\n)" d\n', ['"( --> c)"']),
+        ('a" <?p x\n\\"( ?> c)"(\nLive X.\n)" d\n', ['"( ?> c)"']),
+        ('a" <![CDATA[ x\n\\"( ]]> c)"(\nLive X.\n)" d\n', ['"( ]]> c)"']),
+        # An attribute name starts with a letter, "_" or ":", so a digit makes the tag text.
+        ('a" <x 1y=\'\\"(\'> c)"(\nLive X.\n)" d\n', over),
+        # An inline declaration starts on any ASCII letter.
+        ('a" <!x \\"( > c)"(\nLive X.\n)" d\n', ['"( > c)"']),
+        # Whitespace, and one line ending, stand on either side of "=".
+        ('a" <x y = \'\\"(\'> c)"(\nLive X.\n)" d\n', ['"(\'> c)"']),
+        ('a" <x y\n=\'\\"(\'> c)"(\nLive X.\n)" d\n', ['"(\'> c)"']),
+        # A type-1 end folds ASCII case only, and is searched on the start line too.
+        ('<style>\n</\u017ftyle>\n\nSay "a\nLive X.\nb" c\n', []),
+        ('<style>\n</STYLE>\n\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<style>a</style>\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<!-- a -->\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        # A type-6 name folds ASCII case only.
+        ('<d\u0131v "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        # A type-7 tag may be followed by spaces or tabs.
+        ('<a> \nSay "a\nLive X.\nb" c\n', []),
+        # Types 2, 3 and 5 start a block.
+        ('<!--\nSay "a\nLive X.\nb" c\n-->\n', []),
+        ('<?p\nSay "a\nLive X.\nb" c\n?>\n', []),
+        ('<![CDATA[\nSay "a\nLive X.\nb" c\n]]>\n', []),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
+
+
+@pytest.mark.parametrize("raw", [
+    "Say <a" + " word" * 200 + ", end\n",
+    "<a" + " word" * 200 + "> x\n",
+    "<a" + " " * 20000,
+    "Say <a" + " " * 20000 + "b, end\n",
+    "Say </a" + " " * 60000 + "b, end\n",
+], ids=["attributes_inline", "attributes_html_block", "spaces_html_block", "spaces_inline", "spaces_closing_tag"])
+def test_tag_shaped_prose_is_read_in_linear_time(raw):
+    """Iteration 11 (S1): ``_HTML_SPACE`` read ``[ \\t]*\\n?[ \\t]*``, so one run of spaces split two ways, and
+    ``<a`` followed by attribute-shaped words and no ``>`` backtracked 2^n (20 words took 2.5s, 30 about 40
+    minutes); ``<a`` and 20000 spaces was quadratic, and ``</a`` and 60000 took about 2s. The inline rule
+    and the type-7 block condition share it. ``quote_spans`` runs in a child process, killed at 60s so a
+    blow-up cannot hang the suite, and must take under 0.5s."""
+    import subprocess
+    import sys
+
+    here = Path(__file__).resolve()
+    child = ("import sys, time\n"
+             f"sys.path.insert(0, {str(here.parent)!r})\n"
+             f"import {here.stem} as gate\n"
+             "raw = sys.stdin.buffer.read().decode('utf-8')\n"
+             "start = time.perf_counter()\n"
+             "gate.quote_spans(raw)\n"
+             "print(time.perf_counter() - start)\n")
+    try:
+        done = subprocess.run([sys.executable, "-c", child], input=raw.encode("utf-8"), capture_output=True,
+                              cwd=here.parent, timeout=60, check=False)
+        elapsed = float(done.stdout.decode("utf-8").split()[-1])
+    except subprocess.TimeoutExpired:
+        elapsed = None
+    print(f"[slice compared] {raw[:12]!r}... ({len(raw)} characters): quote_spans took {elapsed}s")
+    assert elapsed is not None and elapsed < 0.5
 
 
 def test_the_pending_directory_holds_no_csv():
