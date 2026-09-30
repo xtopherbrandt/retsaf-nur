@@ -310,16 +310,18 @@ def _withhold_future(
     intact baseline, so left alone it says ``hrv_suppressed`` about a day
     that has not happened (sprint-005 review, M1 -- the only future-date
     test used ``D + 400``, where every row is ``outside_windows`` and the
-    verdict is unavailable for an unrelated reason). The verdict and
-    ``below_by`` are withheld; everything that *produced* them -- the band,
+    verdict is unavailable for an unrelated reason). The verdict is replaced
+    with ``hrv_unavailable`` (``day_not_happened``) and ``below_by`` with
+    ``None``; everything that *produced* them -- the band,
     the baseline, ``readings_in_window``, the week's mean -- is left as
     computed, because the band is a property of the baseline ``[d-66, d-7]``
     (which lies wholly in the past) and the contract's ``points[]`` draws it
-    on days with no reading (T091), and because the response must still be
-    reproducible by hand (``research/00`` §1.6).
+    on days with no reading (T091), and because the verdict must remain
+    reproducible by hand from the response (``research/00`` PRIN-12; the
+    inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24).
 
     **``unavailable_reason`` (T137).** Overridden to ``REASON_DAY_NOT_HAPPENED``
-    whenever this withholds, regardless of whichever of ``judge``'s own four
+    whenever this replaces the verdict, regardless of whichever of ``judge``'s own four
     causes the pure rule reported (including ``None``, on a day that would
     otherwise have read ``hrv_normal`` or ``hrv_suppressed``): the fields that
     would explain those causes are still reported as computed, so the only
@@ -506,14 +508,16 @@ def _disagreed_with(
       returning athlete, the population F006 exists for, and it is the state
       ``B-CR-002`` found uncovered: ``withheld`` is computed per dataset
       independent of judgeability, so a selected dataset can be withheld and
-      the response carried a named dissenter beside the withheld verdict;
+      the response carried a named dissenter beside its ``hrv_unavailable``
+      (``week_not_representative``);
     * a day that has not happened -- ``day_not_happened``. ``_withhold_future``
       is the one place a verdict is replaced *after* ``judge`` has spoken, and
       the selection never sees the clock, so left alone this named a dissenter
       there too (sprint-006 review iteration 1, M2, which guarded this state
       alone and is what T167 generalises).
 
-    Only the *claim* is withheld. ``selected_dataset`` and ``selected_reason``
+    Only the *claim* is replaced, by ``hrv_unavailable`` with its reason.
+    ``selected_dataset`` and ``selected_reason``
     are kept as computed, for ``_withhold_future``'s own stated reason:
     everything that **produced** the verdict is left alone, so the response
     keeps what ``research/00`` PRIN-12 asks a verdict to be reproduced from by
@@ -563,7 +567,8 @@ def _trend_response(
     apart here. ``verdict`` is the one of the four that ``_withhold_future``
     may already have replaced, and the split that follows is
     ``_disagreed_with``'s: the dissent list is a claim *about* a verdict and
-    is withheld with it, while ``selected_dataset``, ``selected_reason`` and
+    is emptied wherever that verdict is ``hrv_unavailable``, while
+    ``selected_dataset``, ``selected_reason`` and
     ``datasets[]`` produced the retained ``baseline``/``band`` and are kept as
     computed. On that null the presentation fallback still populates
     ``baseline``/``band``, which is what keeps this addition additive:

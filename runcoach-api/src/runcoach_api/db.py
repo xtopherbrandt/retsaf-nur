@@ -582,8 +582,9 @@ def read_hrv_rows(conn: sqlite3.Connection, start_iso: str, end_iso: str) -> lis
     and ``resting_rmssd_ms`` both null) or inside the pre-amendment window
     (``PRE_AMENDMENT_WINDOW_PREDICATE``) is returned too: the trend lists such
     rows as *excluded with a reason* rather than never seeing them, because
-    ``research/00`` §1.6 requires a verdict to be reproducible from what it
-    reports. Selection is the consumer's decision.
+    ``research/00`` PRIN-12 requires a verdict to be reproducible by hand from
+    its response, the unserved inputs being PRIN-12's OPEN exceptions
+    (PRIN-24). Selection is the consumer's decision.
 
     No index serves this scan -- the only composite index is
     ``UNIQUE (source_device, start_time)``, whose leading column is not

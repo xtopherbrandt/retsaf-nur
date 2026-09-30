@@ -646,8 +646,10 @@ paths:
         own 60-day baseline [d-66, d-7], plus the verdict blocks for `to` — the
         mean, the band, the baseline, every reading that fed the mean and every
         stored row that fed nothing, with its reason — so the verdict can be
-        recomputed by hand (research/00 §1.6). Both parameters are optional as
-        built (F005/T091, 2026-09-09): `to` defaults to the athlete's local
+        recomputed by hand from the response, as research/00 PRIN-12 asks; the
+        inputs it does not serve are PRIN-12's OPEN exceptions (PRIN-24). Both
+        parameters are optional as built (F005/T091, 2026-09-09): `to` defaults
+        to the athlete's local
         today in the configured zone and `from` to `to`, so a bare call yields
         one point. Unauthenticated today like every as-built route.
       parameters:
@@ -1348,8 +1350,10 @@ components:
         Owner spec/03 §3.7; as-built runcoach-api F005 (2026-09-09), per-tier
         datasets F006 (2026-09-21). `points[]` is the chart's series, which
         gains one field (`dataset`, AC14); everything else is the verdict for
-        `to` and every input that produced it, added additively so the response
-        is reproducible by hand (research/00 §1.6). `baseline`, `band`,
+        `to` and the inputs that produced it, added additively so the verdict
+        is reproducible by hand from the response (research/00 PRIN-12; the
+        inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24).
+        `baseline`, `band`,
         `verdict` and `below_by` keep their names and now mean THE SELECTED
         DATASET'S; `datasets[]`, `selected_dataset`, `selected_reason` and
         `disagreed_with` are added beside them and nothing non-nullable became
@@ -1366,7 +1370,9 @@ components:
             day is judged against its OWN baseline [d-66, d-7]; the band is a
             property of that baseline, so a day with no reading still carries
             it, and an unestablished-but-computable baseline (2 ≤ n < 14) still
-            carries it while the day's verdict is withheld. The last entry
+            carries it while the day's verdict is hrv_unavailable
+            (unavailable_reason baseline_unestablished, unless a cause before it
+            fired first). The last entry
             describes `to` and its band equals `band`.
           items:
             type: object
@@ -1422,8 +1428,9 @@ components:
             return to, or first adoption of, another device (T125/T132); when
             there is a baseline below min_baseline_readings (14), reported as
             established: false -- any week judged against an unestablished
-            baseline (below, inside or above the band alike: 3.7.3 withholds the
-            suppression there, and hrv_normal there would tell a consumer
+            baseline (below, inside or above the band alike: 3.7.3 serves
+            hrv_unavailable there rather than hrv_suppressed, and hrv_normal
+            there would tell a consumer
             readiness is intact on evidence this same response reports
             unestablished, the up-regulating direction research/00 1.7 forbids);
             and when the judged day is after the athlete's local today in
@@ -1522,7 +1529,7 @@ components:
                 assume window[0] ≤ window[1].
             n: { type: integer, description: "Baseline readings, one per local day on `tier`." }
             tier: { type: string, nullable: true, description: "The source tier the baseline and window are built on." }
-            established: { type: boolean, description: "n ≥ min_baseline_readings. Below it both verdicts are withheld — hrv_suppressed and hrv_normal alike — and hrv_unavailable is the only verdict emitted (see verdict)." }
+            established: { type: boolean, description: "n ≥ min_baseline_readings. Below it neither hrv_suppressed nor hrv_normal is asserted — hrv_unavailable is the only verdict emitted (see verdict), with unavailable_reason baseline_unestablished unless a cause before it fired first." }
             reset_on:
               type: string
               format: date

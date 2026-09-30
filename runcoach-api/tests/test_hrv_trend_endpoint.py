@@ -2441,8 +2441,8 @@ UNAVAILABLE_REASON_SHARED_ANCHOR = (
 #:
 #: Authorship (``contract-tables-need-an-independent-oracle``): these are not
 #: transcriptions of the paragraph. They are the three things a client reading
-#: ``established`` can act on -- what the flag *is*, that **both** verdicts and
-#: not just the suppression are withheld beneath it, and what is emitted
+#: ``established`` can act on -- what the flag *is*, that **neither** verdict,
+#: not just the suppression, is asserted beneath it, and what is emitted
 #: instead -- taken from the 2026-09-15 user decision and ``research/00`` §1.7,
 #: the same source ``VERDICT_CLAIMS`` is constrained by. Each is reproduced
 #: against ``judge`` by a named behavioural pin rather than by this file:
@@ -2452,9 +2452,9 @@ UNAVAILABLE_REASON_SHARED_ANCHOR = (
 #: for ``hrv_unavailable`` being what is emitted in its place.
 ESTABLISHED_CLAIMS = (
     "n >= min_baseline_readings",
-    "below it both verdicts are withheld",
-    "hrv_suppressed and hrv_normal alike",
+    "below it neither hrv_suppressed nor hrv_normal is asserted",
     "hrv_unavailable is the only verdict emitted",
+    "unavailable_reason baseline_unestablished",
 )
 
 #: Withdrawn by T116 and retracted from both copies by T120: the asymmetric
@@ -2470,7 +2470,7 @@ ESTABLISHED_WITHDRAWN = _DECLARATIONS.ESTABLISHED_WITHDRAWN
 #: It is what makes a correction landed in one copy alone red, and it is only
 #: comparable at all because ``_flat`` folds the typography the two copies
 #: differ in -- see ``_TYPOGRAPHY``.
-ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
+ESTABLISHED_SHARED_ANCHOR = "below it neither hrv_suppressed nor hrv_normal is asserted"
 
 
 #: The same treatment for ``thresholds``, added by review cycle 8 iteration 3

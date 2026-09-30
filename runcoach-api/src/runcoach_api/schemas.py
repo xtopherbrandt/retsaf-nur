@@ -19,8 +19,9 @@ class IngestResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # GET /metrics/hrv (F005, T085)
 #
-# The response is reproducibility-critical (``research/00`` §1.6): a reader
-# must be able to recompute the verdict by hand from what it carries, which is
+# The response is reproducibility-critical (``research/00`` PRIN-12): a reader
+# must be able to recompute the verdict by hand from what it carries (the
+# inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24), which is
 # why the thresholds, the band's own mean and half-width, and every excluded
 # row with its reason are in the payload rather than only in the docs. The
 # field descriptions below are the documentation the contract (T091) and the
@@ -99,8 +100,9 @@ class Baseline(BaseModel):
     )
     established: bool = Field(
         description=(
-            "n >= min_baseline_readings. Below it both verdicts are withheld -- hrv_suppressed "
-            "and hrv_normal alike -- and hrv_unavailable is the only verdict emitted (see verdict)."
+            "n >= min_baseline_readings. Below it neither hrv_suppressed nor hrv_normal is asserted "
+            "-- hrv_unavailable is the only verdict emitted (see verdict), with unavailable_reason "
+            "baseline_unestablished unless a cause before it fired first."
         )
     )
     reset_on: datetime.date | None = Field(
@@ -208,10 +210,11 @@ class HrvPoint(BaseModel):
     The band is a property of the baseline (IDEA-044), so its three fields
     are null *together*, and only when that day's baseline holds fewer than
     two readings. A baseline that is computable but not established
-    (2 <= n < 14) still carries its band here even though the verdict for
-    that day is withheld: the chart may draw it, and the day's verdict is
-    withheld -- no verdict of any kind is asserted on it, not merely no
-    suppression (T116). ``ln_rmssd`` is independent of the band: null whenever the
+    (2 <= n < 14) still carries its band here even though that day's verdict
+    is ``hrv_unavailable`` (``baseline_unestablished``, unless a cause before
+    it fired first): the chart may draw it, and no verdict of any kind is
+    asserted on the day, not merely no suppression (T116). ``ln_rmssd`` is
+    independent of the band: null whenever the
     post-exclusion series has no reading that day, with or without a band.
     """
 
@@ -420,8 +423,9 @@ class HrvTrendResponse(BaseModel):
             "judged week is not a fair sample of the dataset being judged, its readings all predating the "
             "athlete's return to, or first adoption of, another device (T125/T132); when there is a "
             "baseline below min_baseline_readings (14), reported as established: false -- any week judged "
-            "against an unestablished baseline (below, inside or above the band alike: 3.7.3 withholds "
-            "the suppression there, and hrv_normal there would tell a consumer readiness is intact on "
+            "against an unestablished baseline (below, inside or above the band alike: 3.7.3 serves "
+            "hrv_unavailable there rather than hrv_suppressed, and hrv_normal there would tell a "
+            "consumer readiness is intact on "
             "evidence this same response reports unestablished, the up-regulating direction research/00 "
             "1.7 forbids); and when the judged day is after the athlete's local today in timezone, which "
             "is decided at the route and overrides whichever of the other five would otherwise have "
@@ -443,8 +447,9 @@ class HrvTrendResponse(BaseModel):
         | None
     ) = Field(
         description=(
-            "Why `verdict` is hrv_unavailable; null whenever it is not (research/00 1.6: the response "
-            "must be reproducible by hand, and this was the one place that invariant failed -- F005's "
+            "Why `verdict` is hrv_unavailable; null whenever it is not (research/00 PRIN-12: the verdict "
+            "must be reproducible by hand from the response, its unserved inputs being PRIN-12's OPEN "
+            "exceptions (PRIN-24), and this was the one place that rule failed -- F005's "
             "Negative Class row 'the verdict still cannot say why it is unavailable', closed by "
             "T137). `judge` evaluates four causes in a fixed order and reports the first that fires: "
             f"`{hrv_trend.REASON_NO_TIER}` (no resting-HRV reading of any tier can sustain a trend -- "
