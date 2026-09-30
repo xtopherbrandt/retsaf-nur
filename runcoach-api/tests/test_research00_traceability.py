@@ -7083,8 +7083,13 @@ def test_against_reports_a_removed_row_named_never_keys_reordered() -> None:
     printed "from HEAD~0 keys reordered" for ``REVIEW_LINE_SHA256`` though nothing was reordered. The
     kept row now stays at its frozen position: with HRV-24/Scope's verdict line deleted and its entry
     dropped by hand (the rule file's route 1), the report line names the row as ``removed
-    ['HRV-24/Scope']`` and says "keys reordered" nowhere, and the derived literal's keys are the base's
-    in the base's order."""
+    ['HRV-24/Scope']``, neither it nor any difference says "keys reordered", and the derived literal's
+    keys are the base's in the base's order.
+
+    Wave-1 test-fix: the sweep was over the whole report, and on the merged tree T223's hand-inserted
+    ``KEY_OWNERS`` and ``_KEY_OWNERS_PIN`` keys sit out of the derivation's sorted order, so those two
+    literals' own report lines say "from HEAD~0 keys reordered" (a report line, never a difference) and
+    the sweep read another literal's order as this row's. The property is ``REVIEW_LINE_SHA256``'s."""
     research, review, base, _final = _against_world()
     verdict = next(line for line in _lines(review) if line.startswith("| HRV-24/Scope |"))
     edited = _one_edit(review, verdict + "\n", "")
@@ -7092,11 +7097,13 @@ def test_against_reports_a_removed_row_named_never_keys_reordered() -> None:
     report, differences = against_report(base, "HEAD~0", dropped, research=research, review=edited)
     line = next(line for line in report if line.startswith("# REVIEW_LINE_SHA256: "))
     derived = _derive(research, None, edited, {name: base[name] for name in FROZEN_SIDE})[0]["REVIEW_LINE_SHA256"]
+    reordered = [l for l in report if "keys reordered" in l]
     print(f"[slice compared] {line}; differences {differences}; derived keys as base's "
-          f"{list(derived) == list(REVIEW_LINE_SHA256)}")
+          f"{list(derived) == list(REVIEW_LINE_SHA256)}; report lines saying keys reordered {reordered}")
     assert line == ("# REVIEW_LINE_SHA256: from HEAD~0 unchanged; this file's is not the derived one: "
                     "removed ['HRV-24/Scope']")
-    assert "keys reordered" not in "\n".join(report)
+    assert "keys reordered" not in line and not any("keys reordered" in d for d in differences)
+    assert not any(l.startswith("# REVIEW_LINE_SHA256") or l.startswith("# difference") for l in reordered)
     assert list(derived) == list(REVIEW_LINE_SHA256) and derived == REVIEW_LINE_SHA256
     assert differences[-1] == ("REVIEW_LINE_SHA256 is not what the documented command derives against HEAD~0 "
                                "(removed ['HRV-24/Scope'])")
