@@ -27,7 +27,8 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   only a left-flanking opener with a right-flanking closer, flanking read on the paragraph's CommonMark
   content with CommonMark's whitespace. A code span in an image description holds its quote too, and an
   escaped ``\\"`` counts but neither opens nor closes, except in raw HTML or an autolink, where
-  CommonMark reads no escape. A ``>`` blockquote is not quotation.
+  CommonMark reads no escape. Raw HTML, autolinks and HTML blocks are read by CommonMark 0.31.2's
+  grammar, not markdown-it's, and every link destination is a link's. A ``>`` blockquote is not quotation.
   ``.py``, ``.yaml`` and ``.yml`` are scanned whole.
 - **Wrapped line markers (T219; sprint-008 F011 review).** In ``.py``, ``.yaml`` and ``.yml``, each
   comment line's marker (indentation, a ``#`` run, a ``#:`` colon) is removed before ``normalize()``
@@ -74,6 +75,9 @@ import pytest
 from markdown_it import MarkdownIt
 from markdown_it import rules_block as _markdown_block_rules
 from markdown_it import rules_inline as _markdown_inline_rules
+from markdown_it.common.html_blocks import block_names as _markdown_block_names
+from markdown_it.common.utils import isLinkClose as _markdown_is_link_close
+from markdown_it.common.utils import isLinkOpen as _markdown_is_link_open
 from markdown_it.parser_block import _rules as _markdown_block_rule_table
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -357,11 +361,12 @@ def _image_recording(state, silent: bool) -> bool:
 
 
 def _raw_recording(rule):
-    """markdown-it's CommonMark ``rule`` for raw HTML or autolinks, which also records on the token it
-    opens with -- ``html_inline``, or an autolink's ``link_open`` -- as ``token.meta["raw"]``, the
-    ``(start, end)`` of the whole ``<...>`` in the text the rule read. CommonMark 2.4 processes no
-    backslash escape inside either (``_quote_pairs``). A link's destination and title are not recorded:
-    CommonMark processes escapes there."""
+    """The ``rule`` for raw HTML (``_commonmark_html_inline``) or markdown-it's for autolinks, which also
+    records on the token it opens with -- ``html_inline``, or an autolink's ``link_open`` -- as
+    ``token.meta["raw"]``, the ``(start, end)`` of the whole ``<...>`` in the text the rule read. CommonMark
+    2.4 processes no backslash escape inside either (``_quote_pairs``). The token is found by its type:
+    ``push()`` first flushes any pending text as a token of its own. A link's destination and title are not
+    recorded: CommonMark processes escapes there."""
     def recording(state, silent: bool) -> bool:
         start, count = state.pos, len(state.tokens)
         if not rule(state, silent):
@@ -373,6 +378,103 @@ def _raw_recording(rule):
     return recording
 
 
+#: CommonMark 0.31.2's raw HTML (6.6), in markdown-it's ``src``, where every line end is ``\n``. markdown-it's
+#: own grammar (``common/html_re.py``) departs from it (sprint-008 F011 review, iteration 10): between a tag's
+#: parts it takes Python's ``\s``, which also holds U+00A0, ``\x0b``, ``\x0c``, ``\x1c`` to ``\x1f``, ``\x85``,
+#: U+2028 and more, where 0.31.2 allows spaces, tabs and at most one line ending; its unquoted attribute value
+#: refuses ``\x01`` to ``\x1f``, where 0.31.2 refuses only spaces, tabs, line endings, quotes, ``=``, ``<``,
+#: ``>`` and a backtick; and its comment refuses ``<!-- a--->``, where 0.31.2 takes any text up to the first
+#: ``-->`` (or ``<!-->`` or ``<!--->``). Before an attribute at least one space, tab or line ending stands.
+_HTML_SPACE = r"[ \t]*\n?[ \t]*"
+_HTML_TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
+_HTML_ATTRIBUTE = (r"(?=[ \t\n])" + _HTML_SPACE + r"[A-Za-z_:][A-Za-z0-9_.:-]*"
+                   r"(?:" + _HTML_SPACE + "=" + _HTML_SPACE + r"""(?:[^ \t\n\r"'=<>`]+|'[^']*'|"[^"]*"))?""")
+_HTML_OPEN_TAG = "<" + _HTML_TAG_NAME + "(?:" + _HTML_ATTRIBUTE + ")*" + _HTML_SPACE + "/?>"
+_HTML_CLOSING_TAG = "</" + _HTML_TAG_NAME + _HTML_SPACE + ">"
+_HTML_RAW = re.compile("|".join([_HTML_OPEN_TAG, _HTML_CLOSING_TAG, r"<!-->", r"<!--->", r"<!--[\s\S]*?-->",
+                                 r"<\?[\s\S]*?\?>", r"<![A-Za-z][^>]*>", r"<!\[CDATA\[[\s\S]*?\]\]>"]))
+
+
+def _commonmark_html_inline(state, silent: bool) -> bool:
+    """markdown-it's html_inline rule (``rules_inline/html_inline.py``) with CommonMark 0.31.2's raw-HTML
+    grammar (``_HTML_RAW``) in place of markdown-it's. The rest is the rule's own: it matches from
+    ``state.pos`` as the rule does, and counts an ``<a ...>`` or ``</a>`` toward ``state.linkLevel``."""
+    pos = state.pos
+    if state.src[pos] != "<" or pos + 2 >= state.posMax:
+        return False
+    match = _HTML_RAW.match(state.src, pos)
+    if not match:
+        return False
+    if not silent:
+        token = state.push("html_inline", "", 0)
+        token.content = match.group(0)
+        if _markdown_is_link_open(token.content):
+            state.linkLevel += 1
+        if _markdown_is_link_close(token.content):
+            state.linkLevel -= 1
+    state.pos = match.end()
+    return True
+
+
+#: CommonMark 0.31.2's HTML-block conditions (4.6) as markdown-it's html_block rule reads them: a start
+#: pattern matched at the line's first non-indent character, an end pattern searched in each line, and
+#: whether the block may interrupt a paragraph. markdown-it's own (``rules_block/html_block.py``) departs
+#: from 0.31.2 (iteration 10): it starts a declaration block (type 4) only on an uppercase letter; it takes
+#: Python's ``\s`` after a type-1 or type-6 name and after a type-7 tag, where 0.31.2 takes a space or a
+#: tab; its type-7 tag is its own tag grammar (``_HTML_RAW`` holds 0.31.2's); its type 7 takes a ``pre``,
+#: ``script``, ``style`` or ``textarea`` tag, which 0.31.2 leaves to type 1 alone; and its case-insensitive
+#: names match non-ASCII letters (``<ſtyle``), where 0.31.2 folds ASCII case only.
+_HTML_RAW_TEXT_NAMES = r"(?:pre|script|style|textarea)"
+_HTML_BLOCK_CONDITIONS = [
+    (re.compile("<" + _HTML_RAW_TEXT_NAMES + r"(?:[ \t>]|$)", re.I | re.A),
+     re.compile("</" + _HTML_RAW_TEXT_NAMES + ">", re.I | re.A), True),
+    (re.compile(r"<!--"), re.compile(r"-->"), True),
+    (re.compile(r"<\?"), re.compile(r"\?>"), True),
+    (re.compile(r"<![A-Za-z]"), re.compile(r">"), True),
+    (re.compile(r"<!\[CDATA\["), re.compile(r"\]\]>"), True),
+    (re.compile(r"</?(?:" + "|".join(_markdown_block_names) + r")(?:[ \t]|/?>|$)", re.I | re.A),
+     re.compile(r"^$"), True),
+    (re.compile(r"(?!</?" + _HTML_RAW_TEXT_NAMES + r"(?![A-Za-z0-9-]))(?:" + _HTML_OPEN_TAG + "|"
+                + _HTML_CLOSING_TAG + r")[ \t]*$", re.I | re.A), re.compile(r"^$"), False),
+]
+
+
+def _commonmark_html_block(state, start_line: int, end_line: int, silent: bool) -> bool:
+    """markdown-it's html_block rule (``rules_block/html_block.py``) with CommonMark 0.31.2's start and end
+    conditions (``_HTML_BLOCK_CONDITIONS``) in place of markdown-it's. The rest is the rule's own: the
+    start line and each later line are read from their first non-indent character, a block ends at the
+    first line meeting its end condition (that line included, unless blank) or where its container ends,
+    and in silent mode it answers whether it may interrupt a paragraph."""
+    if state.is_code_block(start_line):
+        return False
+    pos = state.bMarks[start_line] + state.tShift[start_line]
+    line_text = state.src[pos:state.eMarks[start_line]]
+    if not line_text.startswith("<"):
+        return False
+    condition = next((c for c in _HTML_BLOCK_CONDITIONS if c[0].match(line_text)), None)
+    if condition is None:
+        return False
+    if silent:
+        return condition[2]
+    next_line = start_line + 1
+    if not condition[1].search(line_text):
+        while next_line < end_line:
+            if state.sCount[next_line] < state.blkIndent:
+                break
+            pos = state.bMarks[next_line] + state.tShift[next_line]
+            line_text = state.src[pos:state.eMarks[next_line]]
+            if condition[1].search(line_text):
+                if line_text:
+                    next_line += 1
+                break
+            next_line += 1
+    state.line = next_line
+    token = state.push("html_block", "", 0)
+    token.map = [start_line, next_line]
+    token.content = state.getLines(start_line, next_line, state.blkIndent, True)
+    return True
+
+
 _COMMONMARK_BACKTICK = _markdown_inline_rules.backtick
 _COMMONMARK_IMAGE = _markdown_inline_rules.image
 for _name in ("paragraph", "heading", "lheading"):
@@ -380,8 +482,13 @@ for _name in ("paragraph", "heading", "lheading"):
                              {"alt": next(alt for name, _fn, alt in _markdown_block_rule_table if name == _name)})
 _MARKDOWN.inline.ruler.at("backticks", _code_span_recording)
 _MARKDOWN.inline.ruler.at("image", _image_recording)
-for _name in ("autolink", "html_inline"):
-    _MARKDOWN.inline.ruler.at(_name, _raw_recording(getattr(_markdown_inline_rules, _name)))
+_MARKDOWN.block.ruler.at("html_block", _commonmark_html_block,
+                         {"alt": next(alt for name, _fn, alt in _markdown_block_rule_table if name == "html_block")})
+_MARKDOWN.inline.ruler.at("autolink", _raw_recording(_markdown_inline_rules.autolink))
+_MARKDOWN.inline.ruler.at("html_inline", _raw_recording(_commonmark_html_inline))
+#: markdown-it refuses a ``javascript:``, ``vbscript:``, ``file:`` or non-image ``data:`` link, autolink or
+#: image, a guard for rendering. CommonMark reads each as one, and the gate never renders (iteration 10).
+_MARKDOWN.validateLink = lambda url: True
 
 
 def _gate_reading(raw: str) -> tuple[str, list[int], list]:
@@ -603,7 +710,9 @@ def quote_spans(raw: str) -> list[tuple[int, int]]:
       code span of an image description is not counted either, and that code span is not listed as a
       span of its own (``_image_code_spans``). A content edge's neighbour is the character markdown-it's
       strip removed there (iteration 8). An escaped ``\\"`` is literal and never a delimiter, except in
-      raw HTML or an autolink, where CommonMark reads no escape (``_raw_ranges``; iteration 9).
+      raw HTML or an autolink, where CommonMark reads no escape (``_raw_ranges``; iteration 9). Raw HTML
+      and HTML blocks are read by CommonMark 0.31.2's grammar, and every link destination is a link's
+      (``_commonmark_html_inline``, ``_commonmark_html_block``; iteration 10).
 
     markdown-it keeps no offsets for inline content, so each paragraph's and heading's content carries
     the ``src`` offset of every character (``_source_recording``) and each code span its offsets in that
@@ -2617,6 +2726,130 @@ def test_scanner_quote_spans_oracle_iteration_9():
         ('a" [t](u\\"() c)"(\nLive X.\n)" d\n', over),
         ('a" [t](<u\\"(>) c)"(\nLive X.\n)" d\n', over),
         ('a" ![t](u \'\\"(\') c)"(\nLive X.\n)" d\n', over),
+    ]
+    for raw, expected in cases:
+        print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
+        assert _spans(raw) == expected, raw
+
+
+@pytest.mark.parametrize("template", [
+    'a" <javascript:x\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <VBScript:x\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <file:///x\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <data:text/html,\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <!-- \\"( a---> c)"(\nLive {EX}.\n)" d\n',
+    'a" <!-- \\"( a----> c)"(\nLive {EX}.\n)" d\n',
+    'a" <x y=q\x01 z=\'\\"(\'> c)"(\nLive {EX}.\n)" d\n',
+    'Say "a [t](javascript:`"`) b\nLive {EX}.\nc" d\n',
+    # Controls: an autolink and a comment markdown-it already read as CommonMark does.
+    'a" <http://e.x/\\"(> c)"(\nLive {EX}.\n)" d\n',
+    'a" <!-- \\"( a --> c)"(\nLive {EX}.\n)" d\n',
+], ids=["javascript_autolink", "vbscript_autolink", "file_autolink", "data_autolink", "comment_ending_3_dashes",
+        "comment_ending_4_dashes", "unquoted_value_with_a_control_character", "javascript_link_destination",
+        "http_autolink", "comment"])
+def test_raw_html_and_links_markdown_it_refuses_are_read_as_commonmark_reads_them(tmp_path, template):
+    """Sprint-008 F011 review, iteration 10 (D1): markdown-it's ``validateLink`` refuses ``javascript:``,
+    ``vbscript:``, ``file:`` and ``data:`` destinations, and its raw-HTML grammar refuses a comment ending
+    ``--->`` and an unquoted attribute value holding ``\\x01`` to ``\\x1f``. CommonMark 0.31.2 reads an
+    autolink, a comment and a tag there, where no escape is processed, so the ``\\"`` keeps its roles and
+    pairs before the live line. The gate read text, made the ``\\"`` literal, and the ``"(`` after it opened
+    over the live line; in a refused link the destination's code span held a quote CommonMark counts. The
+    gate's parser now accepts every link destination and reads raw HTML by 0.31.2's grammar
+    (``_commonmark_html_inline``)."""
+    _iteration_4_verdict(tmp_path, template, 2)
+
+
+@pytest.mark.parametrize("template", [
+    '[r]: <javascript:x>\n"a\nLive {EX}.\nb"\n',
+    '[r]: data:x\n"a\nLive {EX}.\nb"\n',
+], ids=["javascript", "data"])
+def test_a_link_reference_definition_markdown_it_refuses_holds_no_span(tmp_path, template):
+    """Iteration 10 (D1): ``validateLink`` also gates markdown-it's link reference definitions. CommonMark
+    reads ``[r]: <javascript:x>`` and its title on the next lines as a definition, which renders nothing and
+    holds no span; markdown-it read a paragraph, and the title's quotes paired over the live line."""
+    _iteration_4_verdict(tmp_path, template, 3)
+
+
+@pytest.mark.parametrize("space", ["\x1f", "\xa0", "\x0c", "\x85", "\u2028", "\x0b"],
+                         ids=["x1f", "nbsp", "form_feed", "x85", "u2028", "vertical_tab"])
+def test_a_tag_spaced_by_what_commonmark_calls_no_whitespace_is_text(tmp_path, space):
+    """Iteration 10 (D2): markdown-it's tag grammar takes Python's ``\\s`` between a tag's name and its
+    attributes, where CommonMark 0.31.2 allows only spaces, tabs and at most one line ending. So
+    ``<a\\x1fb='\\"'>`` was raw HTML to the gate and text to CommonMark: the gate kept the ``\\"``'s roles,
+    and it paired over the live line, where CommonMark reads an escaped quote that pairs nothing."""
+    _iteration_4_verdict(tmp_path, "Say <a" + space + "b='\\\"'>\nLive {EX}.\nc\" d\n", 2)
+
+
+@pytest.mark.parametrize("template", [
+    '<!x\nSay "a\nLive {EX}.\nb" c\n>\n',
+    '<a b=q\x01>\nSay "a\nLive {EX}.\nb" c\n',
+    # Control: markdown-it already reads an uppercase declaration as an HTML block.
+    '<!X\nSay "a\nLive {EX}.\nb" c\n>\n',
+], ids=["lowercase_declaration", "open_tag_with_a_control_character", "uppercase_declaration"])
+def test_an_html_block_commonmark_starts_holds_no_span(tmp_path, template):
+    """Iteration 10: markdown-it's HTML-block rule starts a declaration block only on ``<!`` and an uppercase
+    letter, and reads a whole-line tag by its own tag grammar. CommonMark 0.31.2 starts one on any ASCII
+    letter (type 4) and on a tag its grammar accepts (type 7), so these lines are an HTML block, which holds
+    no span; markdown-it read a paragraph, and its quotes paired over the live line. The gate's parser now
+    starts and ends HTML blocks by 0.31.2 (``_commonmark_html_block``)."""
+    _iteration_4_verdict(tmp_path, template, 3)
+
+
+def test_scanner_quote_spans_oracle_iteration_10():
+    """Iteration 10's inputs as ``quote_spans`` oracle cases, "X" for the example, with controls: raw HTML,
+    autolinks and HTML blocks are read by CommonMark 0.31.2's grammar, not markdown-it's, and every link
+    destination is a link's. S1: a pending text token that ``push()`` flushes before the raw token is not
+    the token the range is recorded on (``_raw_recording``); recorded there, an escape before it made
+    ``text_join`` drop the range, and the ``"(`` opened over the live line."""
+    over = ['"(\nLive X.\n)"']
+    cases = [
+        # S1: the text before a tag is flushed as its own token first.
+        ('a" \\*x <x y=\'\\"\'> c)"(\nLive X.\n)" d\n', ['"\'> c)"']),
+        # D1a: every autolink and link destination, and in an image description.
+        ('a" <javascript:x\\"(> c)"(\nLive X.\n)" d\n', ['"(> c)"']),
+        ('a" ![<data:x,\\"(>](i.png) c)"(\nLive X.\n)" d\n', ['"(>](i.png) c)"']),
+        ('Say "a [t](javascript:`"`) b\nLive X.\nc" d\n', []),
+        ('Say "a [t](http:`"`) b\nLive X.\nc" d\n', []),
+        ('[r]: <javascript:x>\n"a\nLive X.\nb"\n', []),
+        ('[r]: http:x\n"a\nLive X.\nb"\n', []),
+        ('[r]: javascript:x\n"a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        # D1b: a comment is any text up to the first -->, or <!--> or <!--->.
+        ('a" <!-- \\"( a---> c)"(\nLive X.\n)" d\n', ['"( a---> c)"']),
+        ('a" <!-- x ---> \\"( --> c)"(\nLive X.\n)" d\n', over),
+        ('a" <!--> \\"( --> c)"(\nLive X.\n)" d\n', over),
+        ('a" <!---> \\"( --> c)"(\nLive X.\n)" d\n', over),
+        ('a" <!---- \\"( --> c)"(\nLive X.\n)" d\n', ['"( --> c)"']),
+        # D2: tag whitespace is spaces, tabs and at most one line ending, wherever the grammar has it.
+        ("Say <a\x1fb='\\\"'>\nLive X.\nc\" d\n", []),
+        ("Say <a b\x0c='\\\"'>\nLive X.\nc\" d\n", []),
+        ("Say <a b=\xa0'\\\"'>\nLive X.\nc\" d\n", []),
+        ("Say <a b='\\\"'\x0c>\nLive X.\nc\" d\n", []),
+        ('a" <x y=q\x01 z=\'\\"(\'> c)"(\nLive X.\n)" d\n', ['"(\'> c)"']),
+        # An attribute needs whitespace before it; an unquoted value holds no quote and no space.
+        ('a" <x:y=\'\\"(\'> c)"(\nLive X.\n)" d\n', over),
+        ('a" <x y=q\\"(> c)"(\nLive X.\n)" d\n', over),
+        ('a" <x y=a . z=\'\\"(\'> c)"(\nLive X.\n)" d\n', over),
+        # Controls: a space, a tab, a line ending and a space-line-space are tag whitespace.
+        ("Say <a b='\\\"'>\nLive X.\nc\" d\n", ['"\'>\nLive X.\nc"']),
+        ("Say <a\tb='\\\"'>\nLive X.\nc\" d\n", ['"\'>\nLive X.\nc"']),
+        ("Say <a\nb='\\\"'>\nLive X.\nc\" d\n", ['"\'>\nLive X.\nc"']),
+        ("Say <a \n b = '\\\"' />\nLive X.\nc\" d\n", ['"\' />\nLive X.\nc"']),
+        # HTML blocks: 0.31.2's start conditions, in both directions.
+        ('<!x\nSay "a\nLive X.\nb" c\n>\n', []),
+        ('<a b=q\x01>\nSay "a\nLive X.\nb" c\n', []),
+        ('<div\x0c "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<pre\x0c "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<\u017ftyle "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<pre/>\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        ('<a>\xa0\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        # Controls: blocks markdown-it and 0.31.2 both start.
+        ('<!X\nSay "a\nLive X.\nb" c\n>\n', []),
+        ('<div "a\nLive X.\nb" c\n', []),
+        ('<a b="c">\nSay "a\nLive X.\nb" c\n', []),
+        ('<pre>\nSay "a\n\nLive X.\nb" c\n</pre>\n', []),
+        ('<!-- a\nb --> "Live X." c\n', []),
+        # Control: a whole-line tag (type 7) interrupts no paragraph, in markdown-it and 0.31.2 alike.
+        ('Say "a\n<b>\nLive X.\nb" c\n', ['"a\n<b>\nLive X.\nb"']),
     ]
     for raw, expected in cases:
         print(f"[slice compared] {raw!r} -> {_spans(raw)!r}")
