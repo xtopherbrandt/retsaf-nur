@@ -645,6 +645,15 @@ MANUAL_ROWS = (
       "(DEC-01) and H-07 holds the history")),
     ("C21-dec01-bonus-section", OUTLINE, 'supersedes the `decisions_01` "Bonus" wording',
      "spec_outline:83 (C21): as spec/08:3"),
+    # C26: the non-exercise seed takes only COLD-08's inputs (HR_max and resting HR; age, sex, BMI or %BF
+    # and an activity rating), no HRV. spec/04:110 is a grep row: the widened pattern reaches it.
+    ("C26-cold01-hrv-input", S04,
+     "the resting-capture HRV level (ln rMSSD, §3.7) when a morning chest-strap capture is available",
+     "spec/04:112 (C26): §4.4.2's Inputs list an HRV level; COLD-08 takes no HRV input"),
+    ("C26-cold01-hrv-input", S04, "no `resting_hr_bpm`, no HRV capture, no usable demographics",
+     "spec/04:142 (C26): §4.4.4 counts an HRV capture among the seed's inputs (COLD-08)"),
+    ("C26-cold01-hrv-input", S01, "its inputs (`resting_hr_bpm`, HRV if available, demographics)",
+     "spec/01:75 (C26): the cold-start seed's inputs include HRV (COLD-01, COLD-08)"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

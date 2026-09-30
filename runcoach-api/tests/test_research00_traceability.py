@@ -609,7 +609,7 @@ OLD_MEANING_SHA256 = {
     "C19-hrv-04-reduced-confidence": "5854f4095bc2.7ec3fdac444a.700a5baf5724.aae16350d9be",
     "C21-dec01-bonus-section": "02834eedae78.6bc22b93b0fd.ecc48cc297fe.abb23d0d25cd",
     "C24-arch06-ignores-by-default": "d22a4b5bede7.aeac417e7a2c.16bd7814bc5b.133d22d98524",
-    "C26-cold01-hrv-input": "e56a9c2c97b7.d2aeea8a5c8e.d03fa426dc05.31c65e049802",
+    "C26-cold01-hrv-input": "1c4bef7f91ca.d2aeea8a5c8e.d03fa426dc05.31c65e049802",
     "C27-in-activity-hrv-not-computed-at-all": "410e49bf0f47.d1dcfde1a753.84e7c78e5b2a.2fbe87fe5a12",
     "C27-lt1-picked-up-without-amendment": "8c68cf241bd9.3a281279449a.94a35c825035.2fbe87fe5a12",
     "C28-lt1-surrogate-refinement": "008db5a8005c.46ad84e349f4.d0587e831403.9a58d8421888",

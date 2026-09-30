@@ -58,6 +58,7 @@ HRV-01-R13-four-tier-hierarchy,specification/spec/03-derived-metric-formulas.md,
 HRV-40-R13-now-sustaining-tier,specification/spec/03-derived-metric-formulas.md,the now-sustaining tier that,grep
 HRV-40-R13-now-sustaining-tier,specification/spec/03-derived-metric-formulas.md,the now-sustaining tier's,grep
 PRIN-14-C07-weak-evidence-only,specification/spec/03-derived-metric-formulas.md,"up-regulation on weak evidence, which §1.7 forbids",grep
+C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,"inferred from resting heart rate, HRV, and demographics",grep
 C32-band-without-floor,specification/spec/06-adaptation-logic.md,±0.5·SD(ln rMSSD) smallest-worthwhile-change band,grep
 C24-arch06-ignores-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,coaching logic ignores by default,grep
 PRIN-08-C24-sidecar-ignored-by-default,specification/spec/09-loop-closure-decision-log-explainability.md,sidecar the coaching logic ignores by default,grep
@@ -99,6 +100,7 @@ HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md
 AUT-02-C23-override-outside-autonomy,specification/research/05-data-to-adaptation.md,"reserving athlete decision only for the goal contract and the safety pathway, neither of which the system owns",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
+C26-cold01-hrv-input,specification/spec/01-scope-inputs-pace-target.md,"its inputs (`resting_hr_bpm`, HRV if available, demographics)",inventory
 C03-return-is-free,specification/spec/02-canonical-data-schema-ingestion.md,a dataset the athlete established before is selected again once it is judgeable and not skipped by the recency gate,inventory
 C10-recency-only-rule-that-acts,specification/spec/02-canonical-data-schema-ingestion.md,chest-strap dataset is not judgeable or is skipped as stale,inventory
 C19-hrv-03-tag-and-confidence,specification/spec/02-canonical-data-schema-ingestion.md,"at that tier's confidence, falling to a numeric",inventory
@@ -115,6 +117,8 @@ C12-same-baseline-window,specification/spec/03-derived-metric-formulas.md,over t
 C17-hrv24-read-on-last,specification/spec/03-derived-metric-formulas.md,the fallback that restates F005's rule 3 over datasets,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,the reduced-confidence fallback,inventory
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,Its lower confidence (per the validation caveats,inventory
+C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,"the resting-capture HRV level (ln rMSSD, §3.7) when a morning chest-strap capture is available",inventory
+C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,"no `resting_hr_bpm`, no HRV capture, no usable demographics",inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,refined toward the athlete's own data where an LT1 surrogate is identifiable,inventory
 C28-lt1-surrogate-refinement,specification/spec/05-training-plan-generation.md,Where the athlete's own data identifies an LT1 surrogate above the noise,inventory
 GOAL-02-C22-goal-contract-two-fields,specification/spec/06-adaptation-logic.md,The declared target pace and race date are the athlete's,inventory

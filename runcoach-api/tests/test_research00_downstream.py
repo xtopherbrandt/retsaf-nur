@@ -1021,6 +1021,9 @@ OWNERSHIP = (
     # T200: the census found spec/07's preamble (DOC-06, the sentence T204 fixes in spec/04 and spec/05).
     ("specification/spec/07-*", "*", "T204"),
     ("specification/future/future-directions.md", "*", "T204"),
+    # F011 review iteration 12: spec/01's cold-start sentence (C26), the sibling of T204's spec/04 site. The
+    # row names the key, so spec/01 stays outside the table for every other key.
+    ("specification/spec/01-*", "C26-cold01-hrv-input", "T204"),
     ("specification/spec/06-adaptation-logic.md", "*", "T205"),
     ("specification/spec_outline.md", "*", "T205"),
     # T200: the census found C30 in the development plan, spec_outline's spec_* sibling.

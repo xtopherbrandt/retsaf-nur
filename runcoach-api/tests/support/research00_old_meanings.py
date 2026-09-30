@@ -179,7 +179,7 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         decision='C24',
     ),
     'C26-cold01-hrv-input': OldMeaning(
-        pattern='inferred from resting hr, hrv, and demographics',
+        pattern='inferred from resting (?:hr|heart rate), hrv, and demographics',
         example='VO2max inferred from resting HR, HRV, and demographics',
         source='specification/research/00-design-decisions.md:132@4e47d0e',
         decision='C26',
