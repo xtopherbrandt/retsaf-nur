@@ -177,8 +177,8 @@ constant-load or >60-minute efforts. Those are exactly the conditions a field
 product cannot control. When picked up, future research would need to establish
 the RR-quality gating DFA-α1 requires (which the `spec/02` pipeline already
 partly enforces), validate the 0.75 cut-off in the target population including
-women, and decide how a DFA-α1 LT1 estimate is blended with (or bounded by) the
-threshold-anchored default. This is also a strong **human-coach-specification
+women, decide how a DFA-α1 LT1 estimate is blended with (or bounded by) the
+threshold-anchored default, and amend `research/00` HRV-05 (see below). This is also a strong **human-coach-specification
 candidate** (see the coach-in-the-loop entry above): a coach with a lab or
 field LT1 for the athlete can set it directly, side-stepping the measurement
 difficulty entirely.

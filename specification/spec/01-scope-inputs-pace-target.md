@@ -33,7 +33,7 @@ The goal race is supplied as a structured object at program start. It is the *co
 | `course_profile` | course-geometry reference | see §1.2.1 | Yes | Cumulative distance-versus-elevation series for the course. Drives the grade modifier (§1.4.4). |
 | `expected_conditions` | environmental object | see §1.2.2 | Yes | Expected race-day temperature, humidity, and wind. Drives the environmental modifiers (§1.4.4). |
 | `start_time_local` | time | local clock time | Optional | Used, when present, to refine the expected-conditions estimate (e.g. a dawn start in a hot climate). Absent → conditions taken as supplied. |
-| `goal_pace_target` | pace | seconds per kilometre | Optional | The athlete's declared target, if they have one. When present it becomes the goal contract the system tracks its projection against (`research/00` §1.9). When absent, the system's own projection (§1.4) stands in until the athlete declares one. |
+| `goal_pace_target` | pace | seconds per kilometre | Optional | The athlete's declared target, if they have one. When present it becomes the pace field of the goal contract the system tracks its projection against (`research/00` GOAL-02). When absent, the system's own projection (§1.4) stands in until the athlete declares one. |
 
 ### 1.2.1 Course profile
 

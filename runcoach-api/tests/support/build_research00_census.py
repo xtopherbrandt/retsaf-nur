@@ -153,6 +153,8 @@ F006DM = "spec-mirror/references/F006-dataset-model.md"
 S01 = "specification/spec/01-scope-inputs-pace-target.md"
 S09 = "specification/spec/09-loop-closure-decision-log-explainability.md"
 FUTURE = "specification/future/future-directions.md"
+MODELS = "runcoach-api/src/runcoach_api/models.py"
+RR = "runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py"
 
 
 #: ``CENSUS_REMOVED`` rows that were ``MANUAL_ROWS`` rows, as ``(key, path, excerpt)``. No loose noun
@@ -708,6 +710,15 @@ MANUAL_ROWS = (
     ("C06-hrv-25-accepted-cost", SCHEMAS,
      "forbidden direction, accepted, measured against shipped F005 rather than denied",
      "schemas disagreed_with (C06): as the openapi copy"),
+    # C19: the tier enum read by a tier weighting; §3 ranks tiers by fidelity and keeps them apart (HRV-04,
+    # HRV-54, T-21), and no per-tier weight exists in Section 3.
+    ("C19-hrv-04-reduced-confidence", MODELS, "what §3's tier weighting reads",
+     "models.py:99 (C19): a comment names §3's tier weighting; §3 has a fidelity rank and no weight (HRV-54)"),
+    ("C19-hrv-04-reduced-confidence", RR, "that is the value §3's tier weighting reads",
+     "rr_reconstruction.py:53 (C19): the module docstring names §3's tier weighting, as models.py"),
+    # C31/DOC-06: 42/7 ship and stay; per-athlete fitting is a later enhancement (REG-20, IND-01).
+    ("C31-ind01-remains-tunable", R05, "*Default:* ship 42/7, expose for per-athlete tuning",
+     "research/05:218 (C31): 42/7 exposed for per-athlete tuning; REG-20 defers fitting to a later enhancement"),
 )
 
 #: ``(key, path, fragment, commit, reason)``: a site a site task rewrote and a later review found still

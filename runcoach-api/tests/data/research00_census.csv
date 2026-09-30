@@ -72,7 +72,9 @@ C18-no-tier-from-resolver,contracts/openapi.yaml,"no_band (a tier resolved, but 
 C18-no-tier-from-resolver,contracts/openapi.yaml,"The band, verdict and tier-resolution constants",inventory
 C18-no-tier-from-resolver,contracts/openapi.yaml,They are not all of tier resolution: it also applies,inventory
 HRV-40-R13-now-sustaining-tier,contracts/openapi.yaml,not any one of them alone: the presented dataset's tier still holds min_baseline_readings,inventory
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,that is the value §3's tier weighting reads,inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/main.py,skipped past on baseline-window staleness,inventory
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/models.py,what §3's tier weighting reads,inventory
 C06-hrv-25-accepted-cost,runcoach-api/src/runcoach_api/schemas.py,This is the response's one report of the exposure F006 accepts,inventory
 C06-hrv-25-accepted-cost,runcoach-api/src/runcoach_api/schemas.py,"forbidden direction, accepted, measured against shipped F005 rather than denied",inventory
 C10-recency-only-rule-that-acts,runcoach-api/src/runcoach_api/schemas.py,judgeable one was skipped as stale,inventory
@@ -109,6 +111,7 @@ C19-hrv-03-tag-and-confidence,specification/research/02-wearable-data-garmin.md,
 C19-hrv-04-reduced-confidence,specification/research/02-wearable-data-garmin.md,These are the studies the confidence weight for the numeric tiers should rest on,inventory
 HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,a genuinely different and higher tier than HRV Status,inventory
 AUT-02-C23-override-outside-autonomy,specification/research/05-data-to-adaptation.md,"reserving athlete decision only for the goal contract and the safety pathway, neither of which the system owns",inventory
+C31-ind01-remains-tunable,specification/research/05-data-to-adaptation.md,"Default:* ship 42/7, expose for per-athlete tuning",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,"(default ± 0.5 × SD(ln rMSSD), the sample standard deviation",inventory
 C32-band-without-floor,specification/research/05-data-to-adaptation.md,Default:* ± 0.5·SD(ln rMSSD) — the sample SD,inventory
 C26-cold01-hrv-input,specification/spec/01-scope-inputs-pace-target.md,"its inputs (`resting_hr_bpm`, HRV if available, demographics)",inventory

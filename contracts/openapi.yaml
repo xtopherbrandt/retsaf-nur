@@ -273,9 +273,10 @@ paths:
     put:
       tags: [Goal]
       operationId: setGoal
-      summary: Set or confirm the goal contract (an athlete-owned gate)
+      summary: Set or confirm the goal contract (an exception to autonomy, not a gate)
       description: >
-        The goal is one of the two athlete-owned gates (research/00 §1.9). Setting
+        The goal contract is one of the two athlete-owned exceptions to the system's
+        autonomy, not a gate (research/00 AUT-02, AUT-03, GOAL-02). Setting
         it is an explicit athlete confirmation and triggers (re-)periodization;
         the plan itself is then applied without any further gate.
       x-readiness: planned

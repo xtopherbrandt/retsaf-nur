@@ -1037,6 +1037,9 @@ OWNERSHIP = (
     ("contracts/openapi.yaml", "*", "T210"),
     ("runcoach-api/src/runcoach_api/schemas.py", "*", "T210"),
     ("runcoach-api/src/runcoach_api/main.py", "*", "T210"),
+    # F011 review iteration 12: two C19 comments in src, siblings of T210's; each row names the key.
+    ("runcoach-api/src/runcoach_api/models.py", "C19-hrv-04-reduced-confidence", "T210"),
+    ("runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py", "C19-hrv-04-reduced-confidence", "T210"),
     ("runcoach-api/tests/test_hrv_no_regression_gate.py", "C05-gate02-worse-rate-reopens", "T212"),
 )
 
