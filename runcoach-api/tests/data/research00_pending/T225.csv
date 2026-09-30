@@ -1,0 +1,6 @@
+path,key
+contracts/openapi.yaml,PRIN-12-R13-reproducible-by-hand-without-exceptions
+contracts/openapi.yaml,HRV-31-R13-broad-withhold-of-any-verdict
+runcoach-api/src/runcoach_api/main.py,PRIN-12-R13-reproducible-by-hand-without-exceptions
+runcoach-api/src/runcoach_api/main.py,HRV-31-R13-broad-withhold-of-any-verdict
+runcoach-api/src/runcoach_api/schemas.py,HRV-31-R13-broad-withhold-of-any-verdict

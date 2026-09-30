@@ -48,7 +48,9 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
 - **IDEA end states (T215, AC3, S7).** ``IDEA_END_STATES`` freezes each IDEA's row; ``test_idea_end_state``
   reads its file in the data dir (found as ``test_normative_mirror`` finds it) and skips, naming
   ``IDEA_SKIP_REASON``, only where there is none. ``test_the_gate_runs_without_the_data_dir`` runs this
-  module in a copy of the tree with no data dir and holds those rows to be its only skips (AC5).
+  module in a copy of the tree with no data dir and holds those rows, plus the strict xfails S15's
+  pending files put on it (``pending_xfail_case_ids``, derived from the same parametrizers), to be its
+  only skips (AC5); with no pending file that is the IDEA rows alone.
 
 **Blind spots, stated rather than argued away:**
 
@@ -1041,6 +1043,30 @@ OWNERSHIP = (
     ("runcoach-api/src/runcoach_api/models.py", "C19-hrv-04-reduced-confidence", "T210"),
     ("runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py", "C19-hrv-04-reduced-confidence", "T210"),
     ("runcoach-api/tests/test_hrv_no_regression_gate.py", "C05-gate02-worse-rate-reopens", "T212"),
+    # T223 (F012 AC1, D6-D8): the three keys with sites, each row naming its key so the `*` rows above keep
+    # their own owners. T224 owns the spec root's sites, T225 the contract's and src's; ``db.py`` and
+    # ``spec/02`` hold no hit of these patterns today (T225 and T224 reword them by hand, IDEA-103 item 8).
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "HRV-42-R13-reset-in-force-persists-through-it", "T224"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T224"),
+    ("specification/spec/02-canonical-data-schema-ingestion.md", "HRV-31-R13-broad-withhold-of-any-verdict", "T224"),
+    ("specification/spec/03-derived-metric-formulas.md", "HRV-42-R13-reset-in-force-persists-through-it", "T224"),
+    ("specification/spec/03-derived-metric-formulas.md", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T224"),
+    ("specification/spec/03-derived-metric-formulas.md", "HRV-31-R13-broad-withhold-of-any-verdict", "T224"),
+    ("specification/spec/06-adaptation-logic.md", "HRV-42-R13-reset-in-force-persists-through-it", "T224"),
+    ("specification/spec/06-adaptation-logic.md", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T224"),
+    ("specification/spec/06-adaptation-logic.md", "HRV-31-R13-broad-withhold-of-any-verdict", "T224"),
+    ("contracts/openapi.yaml", "HRV-42-R13-reset-in-force-persists-through-it", "T225"),
+    ("contracts/openapi.yaml", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T225"),
+    ("contracts/openapi.yaml", "HRV-31-R13-broad-withhold-of-any-verdict", "T225"),
+    ("runcoach-api/src/runcoach_api/schemas.py", "HRV-42-R13-reset-in-force-persists-through-it", "T225"),
+    ("runcoach-api/src/runcoach_api/schemas.py", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T225"),
+    ("runcoach-api/src/runcoach_api/schemas.py", "HRV-31-R13-broad-withhold-of-any-verdict", "T225"),
+    ("runcoach-api/src/runcoach_api/db.py", "HRV-42-R13-reset-in-force-persists-through-it", "T225"),
+    ("runcoach-api/src/runcoach_api/db.py", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T225"),
+    ("runcoach-api/src/runcoach_api/db.py", "HRV-31-R13-broad-withhold-of-any-verdict", "T225"),
+    ("runcoach-api/src/runcoach_api/main.py", "HRV-42-R13-reset-in-force-persists-through-it", "T225"),
+    ("runcoach-api/src/runcoach_api/main.py", "PRIN-12-R13-reproducible-by-hand-without-exceptions", "T225"),
+    ("runcoach-api/src/runcoach_api/main.py", "HRV-31-R13-broad-withhold-of-any-verdict", "T225"),
 )
 
 
@@ -2936,10 +2962,39 @@ def test_tag_shaped_prose_is_read_in_linear_time(raw):
     assert elapsed is not None and elapsed < 0.5
 
 
+def _marked(marks):
+    def decorate(func):
+        for mark in marks:
+            func = mark(func)
+        return func
+    return decorate
+
+
+#: The site tasks ``OWNERSHIP`` names, as pending file names (S15, T223).
+_PENDING_OWNERS = frozenset(f"{owner}.csv" for _path, _key, owner in OWNERSHIP)
+
+
+def _pending_dir_marks(pending=None) -> tuple:
+    """S15's end-state test: a strict xfail naming the site tasks whose pending files are still there,
+    while every one of them is an ``OWNERSHIP`` owner; none once the directory is empty or absent, and
+    none when a file's stem owns nothing (the test is then plainly red). ``pending`` is as
+    ``read_pending()`` returns it, the checkout's when ``None``."""
+    pending = read_pending() if pending is None else pending
+    left = sorted(f"{task}.csv" for task in pending)
+    if not left or not set(left) <= _PENDING_OWNERS:
+        return ()
+    return (pytest.mark.xfail(strict=True,
+                              reason=f"{', '.join(name[:-4] for name in left)} delete their pending files (S15)"),)
+
+
+@_marked(_pending_dir_marks())
 def test_the_pending_directory_holds_no_csv():
     """S15's end state, enforced by the suite and not only by the demo probe: every site task has
     deleted its pending file, so ``research00_pending/`` holds no ``*.csv`` (an absent directory is the
-    same state). A file left there would turn its covered rows into strict xfails."""
+    same state). A file left there would turn its covered rows into strict xfails. While a site task
+    named in ``OWNERSHIP`` still has its file (T223 recreated the directory for T224 and T225), this test
+    is a strict xfail naming it, as T218's census test was until T200 wrote the census; a file whose
+    stem owns nothing keeps it red."""
     left = sorted(p.name for p in PENDING_DIR.glob("*.csv")) if PENDING_DIR.is_dir() else []
     print(f"[slice compared] {PENDING_DIR.name}/ is_dir={PENDING_DIR.is_dir()}: csv files {left}")
     assert left == []
@@ -3459,6 +3514,70 @@ def test_narrowed_row_is_red_only_under_its_own_key_current_pattern(tmp_path):
 
 
 # --------------------------------------------------------------------------------------------------
+# F012 AC1 (T223): the four keys of D6-D8, each proved on a planted world.
+# --------------------------------------------------------------------------------------------------
+
+#: Each T223 key with the correct prose its pattern must miss (T223's negative controls): HRV-42's
+#: current rule line (T-16); PRIN-12's own "from its response" and the sibling key's example, which the
+#: D7 family must not reach; spec/03:247's narrow "whose verdict is withheld because a returning
+#: dataset's judged week is entirely later" and HRV-31's rule line, both naming
+#: ``week_not_representative`` in the sentence; and the rule file's ladder line as 8646fd0 fixed it.
+F012_KEY_CONTROLS = MappingProxyType({
+    "HRV-42-R13-reset-in-force-persists-through-it": (
+        "What an empty judged week holds MUST neither create, move nor end a reported reset (T-16).",
+    ),
+    "PRIN-12-R13-reproducible-by-hand-without-exceptions": (
+        "Every derived verdict MUST be reproducible by hand from its response, whose `thresholds` block "
+        "MUST serve `baseline_days`, and every unserved verdict-affecting input IS an OPEN exception.",
+        "§1.6, the response stays reproducible by hand",
+    ),
+    "HRV-31-R13-broad-withhold-of-any-verdict": (
+        "a dataset that **is** selected whose verdict is **withheld** because a returning dataset's judged "
+        "week is entirely later than its own (`week_not_representative`, `research/00` §5.4 (v)); and a "
+        "day that has not yet happened (`day_not_happened`).",
+        "A per-tier dataset's verdict MUST be withheld (`week_not_representative`) when another dataset "
+        "that could not have been selected holds at least `min_window_readings` later judged-week days.",
+    ),
+    "T-27-ladder-order-for-the-loop": (
+        "This is the fixed precedence order the ladder applies when signals from the five timescale loops "
+        "(ARCH-03) conflict; do not reorder or shortcut it.",
+    ),
+})
+
+
+@pytest.mark.parametrize(("key", "suffix"), [
+    pytest.param(key, suffix, id=f"{key}-{suffix}") for key in F012_KEY_CONTROLS for suffix in ("md", "py")
+])
+def test_f012_key_example_planted_in_a_tmp_world_is_a_hit(tmp_path, key, suffix):
+    """T223: each new key's verbatim example, planted in a ``.md`` and in a ``.py`` file under a root, is
+    one live hit of that key and nothing else in the world."""
+    rel = _plant_path(key, suffix)
+    _plant(tmp_path, rel, _PLANT_BODY[suffix].format(example=OLD_MEANINGS[key].example))
+    hits = scan(tmp_path, old_meanings={key: OLD_MEANINGS[key]})
+    print(f"[slice compared] {rel} holding {key}'s example: "
+          f"{[(h.path, h.line, h.matched[:70], h.live) for h in hits]}")
+    assert [(h.path, h.key, h.live) for h in hits] == [(rel, key, True)]
+
+
+@pytest.mark.parametrize(("key", "control"), [
+    pytest.param(key, control, id=f"{key}-{i}")
+    for key, controls in F012_KEY_CONTROLS.items() for i, control in enumerate(controls, start=1)
+])
+def test_f012_key_negative_control_planted_in_a_tmp_world_is_no_hit(tmp_path, key, control):
+    """T223: the correct prose each key must miss, planted in a ``.md`` and a ``.py`` file, gives no hit
+    of that key at all -- not a quoted one either -- while the same world with the example in place of
+    the control does (the control's counterpart, so the world itself is not what keeps it green)."""
+    for suffix in ("md", "py"):
+        _plant(tmp_path, _plant_path(key, suffix), _PLANT_BODY[suffix].format(example=control))
+    hits = scan(tmp_path, old_meanings={key: OLD_MEANINGS[key]})
+    print(f"[slice compared] {key} over {control[:70]!r}: hits {[(h.path, h.matched[:70]) for h in hits]}")
+    assert hits == []
+    for suffix in ("md", "py"):
+        _plant(tmp_path, _plant_path(key, suffix), _PLANT_BODY[suffix].format(example=OLD_MEANINGS[key].example))
+    assert len(scan(tmp_path, old_meanings={key: OLD_MEANINGS[key]})) == 2
+
+
+# --------------------------------------------------------------------------------------------------
 # S6 and S9 (T201): presence rows, decisions/01's conformance and the no_regression comment.
 # --------------------------------------------------------------------------------------------------
 
@@ -3762,14 +3881,6 @@ def red_presence_sites(rows) -> list[tuple[str, str]]:
     return [(r.path, k) for r in plan if presence_state(r) != "present" for k in r.census_keys]
 
 
-def _marked(marks):
-    def decorate(func):
-        for mark in marks:
-            func = mark(func)
-        return func
-    return decorate
-
-
 @pytest.mark.parametrize("row", _presence_params())
 def test_presence_row(row):
     """F011 AC2 and S6: the site's block states its rule's F008 AC7 operative string after ``normalize()``.
@@ -4059,10 +4170,43 @@ def _copy_of_the_repo(dest: Path) -> Path:
     return dest
 
 
+#: The reason S15 puts on a pending strict xfail: ``_hit_params``, ``_census_site_params``,
+#: ``_pending_marks`` and ``_pending_dir_marks`` write nothing else.
+_PENDING_XFAIL_REASON = re.compile(
+    r"T\d+(?:, T\d+)* (?:fixes these sites|fix these sites|delete their pending files \(S15\))")
+
+
+def pending_xfail_case_ids(pending=None) -> set[str]:
+    """The junit ``name`` of every case this module marks as a strict xfail under S15's pending files
+    (``pending`` as ``read_pending()`` returns it, the checkout's when ``None``): the hit, census-row and
+    presence rows a pending file covers under an ``OWNERSHIP`` owner, the two module-level tests under
+    ``_pending_marks``, and the end-state test while every pending file's stem is an owner. Each comes
+    from the parametrizer its test uses, with the same ``pending``, so nothing is listed by hand and the
+    set is empty once the pending directory is (S15's end state)."""
+    pending = read_pending() if pending is None else pending
+    names: set[str] = set()
+    for test, params in ((test_live_hit_states_an_old_meaning, _hit_params(pending=pending)),
+                         (test_census_row_excerpt_is_gone_or_sheltered,
+                          _census_site_params(marked=True, pending=pending)),
+                         (test_presence_row, _presence_params(pending=pending))):
+        names.update(f"{test.__name__}[{param.id}]" for param in params
+                     if any(mark.name == "xfail" for mark in param.marks))
+    for test, marks in ((test_decisions_01_conforms, _pending_marks(_decisions_01_pairs(), pending)),
+                        (test_no_regression_comment_drops_reopen,
+                         _pending_marks([(_NO_REGRESSION, "C05-gate02-worse-rate-reopens")], pending)),
+                        (test_the_pending_directory_holds_no_csv, _pending_dir_marks(pending))):
+        if marks:
+            names.add(test.__name__)
+    return names
+
+
 def test_the_gate_runs_without_the_data_dir(tmp_path):
     """AC5 on CI: in a copy of the repo with no ``.shipyard``, ``SHIPYARD_DATA_DIR`` naming an empty
     directory, this module runs with nothing failed, and the only skips are the ``test_idea_end_state``
-    rows, each naming ``IDEA_SKIP_REASON``."""
+    rows, each naming ``IDEA_SKIP_REASON``, plus the strict xfails the checkout's pending files put on
+    it (``pending_xfail_case_ids``, each naming its site task; junit records an xfail as a skip). The
+    pending half is derived, not listed: with no pending file it is empty, and the expectation is the
+    IDEA rows alone again."""
     import subprocess
     import sys
     import xml.etree.ElementTree as ET
@@ -4087,10 +4231,16 @@ def test_the_gate_runs_without_the_data_dir(tmp_path):
     skipped = {name: why for name, (state, why) in outcomes.items() if state == "skipped"}
     failed = [name for name, (state, _why) in outcomes.items() if state == "failed"]
     tail = [re.sub(r"(\d+) (\w+)", r"\2=\1", line) for line in done.stdout.strip().splitlines()[-1:]]
-    print(f"[slice compared] rc={done.returncode}; {len(outcomes)} cases; failed {failed}; skipped {skipped}; "
-          f"tail {tail}")
+    idea_rows = {f"test_idea_end_state[{row.idea.replace('-', '_')}]" for row in IDEA_END_STATES}
+    pending_rows = pending_xfail_case_ids()
+    expected = idea_rows | pending_rows
+    print(f"[slice compared] rc={done.returncode}; {len(outcomes)} cases; failed {failed}; "
+          f"{len(skipped)} skipped against {len(expected)} expected = {len(idea_rows)} IDEA rows + "
+          f"{len(pending_rows)} pending xfails under {sorted(read_pending())} (with no pending file: "
+          f"{len(pending_xfail_case_ids(pending={}))}); skipped {skipped}; tail {tail}")
     assert done.returncode == 0 and failed == []
-    expected = {f"test_idea_end_state[{row.idea.replace('-', '_')}]" for row in IDEA_END_STATES}
+    assert pending_xfail_case_ids(pending={}) == set()
     assert set(skipped) == expected
-    assert all(IDEA_SKIP_REASON in why for why in skipped.values()), skipped
+    assert all(IDEA_SKIP_REASON in skipped[name] for name in idea_rows), skipped
+    assert all(_PENDING_XFAIL_REASON.fullmatch(skipped[name]) for name in pending_rows), skipped
     assert sum(state == "passed" for state, _why in outcomes.values()) > len(expected)

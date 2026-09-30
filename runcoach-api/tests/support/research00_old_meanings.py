@@ -268,6 +268,25 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         source='specification/research/00-design-decisions.md:218@4e47d0e',
         decision='R13 (the clip names the dataset\'s tier, clause (a); T-13 keeps "sustains" for clause (b))',
     ),
+    'HRV-31-R13-broad-withhold-of-any-verdict': OldMeaning(
+        pattern=(r'(?:^|(?<=\. )|(?<=;))(?:(?!\. |;|weeknotrepresentative).)*?'
+                 r'(?:both verdicts are withheld|verdicts? (?:is|are) withheld'
+                 r'|withh(?:eld|olds?) (?:any|every|both) verdicts?|withheld verdict)'
+                 r'(?:(?!\. |;|weeknotrepresentative).)*(?:\. |;|$)'),
+        example="withheld every verdict until the new tier's baseline was established",
+        source='specification/research/00-design-decisions.md:230@4e47d0e',
+        decision=('R13 (T-11: the withhold is HRV-31\'s verdict_withheld alone, served as week_not_representative; '
+                  'the broad sense, any hrv_unavailable, is retired. Sentence-bounded like C19-hrv-04, and a '
+                  'sentence naming week_not_representative states the narrow one; D6)'),
+    ),
+    'HRV-42-R13-reset-in-force-persists-through-it': OldMeaning(
+        pattern='(?:already )?in force(?: must)? persists? through it',
+        example='it begins no re-establishment, and one already in force persists through it',
+        source='specification/research/00-design-decisions.md:216@4e47d0e',
+        decision=('R13 (HRV-42 states what an empty judged week holds causally: it neither creates, moves nor ends '
+                  'a reported reset, T-16; "persists through it" is false read day by day, since the windows slide '
+                  'on any day, T194)'),
+    ),
     'PRIN-05-C06-conservative-wins-unscoped': OldMeaning(
         pattern='or when the state estimate is low-confidence, the more conservative reading wins',
         example='or when the state estimate is low-confidence, the **more conservative reading wins**',
@@ -303,6 +322,15 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         example='§1.6, the response stays reproducible by hand',
         source='specification/research/00-design-decisions.md:230@4e47d0e',
         decision='R13 (the withhold is a second OPEN exception to PRIN-12, owned by IDEA-102)',
+    ),
+    'PRIN-12-R13-reproducible-by-hand-without-exceptions': OldMeaning(
+        pattern=(r'reproducible by hand from what the (?:same )?response reports'
+                 r'|(?:is|be|are) (?:still )?(?:reproducible|recomputed) by hand \((?:research/00 )?§ ?1\.6\)'
+                 r'|reproducibility by hand \(research/00 §1\.6\)'),
+        example='§1.6 requires a derived verdict to be reproducible by hand from what the response reports',
+        source='specification/research/00-design-decisions.md:226@4e47d0e',
+        decision=('R13 (a bare reproducible-by-hand promise omits PRIN-12\'s OPEN exceptions, the unserved '
+                  'verdict-affecting inputs PRIN-24 names; PRIN-12\'s own "from its response" is not the promise; D7)'),
     ),
     'PRIN-14-C07-weak-evidence-only': OldMeaning(
         pattern='up-regulation on weak evidence, which §1\\.7 forbids',
@@ -346,6 +374,14 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         source='specification/research/00-design-decisions.md:120@4e47d0e',
         decision='T-07; downstream reach is .claude/rules/ only (R9, F011 S12)',
     ),
+    'T-27-ladder-order-for-the-loop': OldMeaning(
+        pattern='precedence order for the five-timescale adaptation loop',
+        example='This is the fixed precedence order for the five-timescale adaptation loop',
+        source='.claude/rules/project-domain-and-spec-fidelity.md:21@4e47d0e',
+        decision=('T-27 (the ladder\'s rungs are ladder positions, not ARCH-03\'s loops: the ladder arbitrates '
+                  'between the loops, so it is not the order "for the loop"; the rule file\'s site, fixed at 8646fd0; '
+                  'IDEA-106 item 22, D8)'),
+    ),
 }
 
 EXCEPTIONS: tuple = (
@@ -373,6 +409,14 @@ EXCEPTIONS: tuple = (
      "says the now-sustaining tier's pre-boundary readings are *never* in the band", 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'one structural (``resolve_baseline_tier`` answering "no tier at all")', 'F009'),
+    # T223 (F012 AC1): the hits of the four D6-D8 keys in this file -- HRV-42's :864, PRIN-12's :1782 and
+    # the withhold's :2026 -- which F009 AC5 fixes with the rest.
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'a reset already in force persists through it', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'so the verdict is reproducible by hand (``research/00`` §1.6)', 'F009'),
+    ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
+     'T116 withheld both verdicts when the *baseline* is too thin to support either', 'F009'),
 )
 
 _DROPPED = str.maketrans("", "", "\"'`*_“”‘’")

@@ -227,3 +227,18 @@ C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingest
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence —,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence until,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/04-physiological-state-model.md,at reduced confidence,narrowed
+HRV-42-R13-reset-in-force-persists-through-it,specification/spec/03-derived-metric-formulas.md,"an empty week begins no re-establishment, and one already in force persists through it",grep
+HRV-42-R13-reset-in-force-persists-through-it,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,while a reset already in force persists through it,grep
+HRV-31-R13-broad-withhold-of-any-verdict,specification/spec/03-derived-metric-formulas.md,and withheld **any** verdict — the below-band suppression and the within-or-above normal alike,grep
+HRV-31-R13-broad-withhold-of-any-verdict,specification/spec/03-derived-metric-formulas.md,what the gate does with a withheld verdict that arrives with a band beside it,grep
+HRV-31-R13-broad-withhold-of-any-verdict,contracts/openapi.yaml,still carries it while the day's verdict is withheld,grep
+HRV-31-R13-broad-withhold-of-any-verdict,contracts/openapi.yaml,Below it both verdicts are withheld — hrv_suppressed and hrv_normal alike,grep
+HRV-31-R13-broad-withhold-of-any-verdict,runcoach-api/src/runcoach_api/main.py,the response carried a named dissenter beside the withheld verdict,grep
+HRV-31-R13-broad-withhold-of-any-verdict,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,T116 withheld both verdicts when the *baseline* is too thin to support either,grep
+HRV-31-R13-broad-withhold-of-any-verdict,runcoach-api/src/runcoach_api/schemas.py,Below it both verdicts are withheld -- hrv_suppressed,grep
+HRV-31-R13-broad-withhold-of-any-verdict,runcoach-api/src/runcoach_api/schemas.py,still carries its band here even though the verdict for that day is withheld,grep
+PRIN-12-R13-reproducible-by-hand-without-exceptions,specification/spec/06-adaptation-logic.md,for reproducibility by hand (`research/00` §1.6),grep
+PRIN-12-R13-reproducible-by-hand-without-exceptions,contracts/openapi.yaml,so the verdict can be recomputed by hand (research/00 §1.6),grep
+PRIN-12-R13-reproducible-by-hand-without-exceptions,contracts/openapi.yaml,added additively so the response is reproducible by hand (research/00 §1.6),grep
+PRIN-12-R13-reproducible-by-hand-without-exceptions,runcoach-api/src/runcoach_api/main.py,because the response must still be reproducible by hand (``research/00`` §1.6),grep
+PRIN-12-R13-reproducible-by-hand-without-exceptions,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,so the verdict is reproducible by hand (``research/00`` §1.6),grep
