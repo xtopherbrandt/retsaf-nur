@@ -609,6 +609,7 @@ def _trend_response(
             gap_reset_days=hrv_trend.GAP_RESET_DAYS,
             band_floor=hrv_trend.BAND_FLOOR,
             swc_factor=hrv_trend.SWC_FACTOR,
+            recency_tolerance_days=hrv_trend.RECENCY_TOLERANCE_DAYS,
         ),
         datasets=_datasets(series),
         selected_dataset=None if selected is None else selected.tier,

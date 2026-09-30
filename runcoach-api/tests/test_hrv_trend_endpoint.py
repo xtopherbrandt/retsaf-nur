@@ -291,6 +291,7 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
         "gap_reset_days": 21,
         "band_floor": 0.01,
         "swc_factor": 0.5,
+        "recency_tolerance_days": hrv_trend.RECENCY_TOLERANCE_DAYS,
     }
     reasons = {entry["session_id"]: entry["reason"] for entry in body["excluded"]}
     # F006 (T152): the strap capture feeds the strap's own dataset and is in
@@ -2498,10 +2499,17 @@ ESTABLISHED_SHARED_ANCHOR = "below it both verdicts are withheld"
 #: the reported tier is the snapshot. The block's six keys and their values are
 #: pinned by ``test_the_endpoint_reports_every_input_that_produced_the_verdict``
 #: above and ``test_hrv_trend_band.test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses``.
+#:
+#: **Inverted 2026-09-30 (T220, F010; C33 of 2026-09-23 reversed IDEA-070).**
+#: The block now carries ``recency_tolerance_days`` as its seventh key, so
+#: claims 2 and 3 state the new two-copy promise -- the tolerance is served
+#: here and the selection is recomputable from the response -- in place of the
+#: narrowing they pinned from 2026-09-15 to 2026-09-30. Claim 1 is unchanged.
+#: The oracle below now requires the tier rule's remainder to be **empty**.
 THRESHOLDS_CLAIMS = (
     "the band, verdict and dataset-selection constants",
-    "recency_tolerance_days, which this response does not echo",
-    "derive a baseline.tier that disagrees with the reported one",
+    "the tolerance of the recency gate is served here as recency_tolerance_days",
+    "selected_reason and baseline.tier are recomputable from the response alone",
 )
 
 #: Retracted by [[IDEA-070]] in each copy's own spelling, and **positional**:
@@ -2514,8 +2522,9 @@ THRESHOLDS_WITHDRAWN = _DECLARATIONS.THRESHOLDS_WITHDRAWN
 
 #: The run the two copies must state identically, from this anchor to the end.
 #: They differ only in the citation that ends the first sentence, so the anchor
-#: is the correction itself.
-THRESHOLDS_SHARED_ANCHOR = "they are not all of dataset selection"
+#: is the second sentence's opening. Re-anchored 2026-09-30 (T220): the old
+#: anchor, "they are not all of dataset selection", was the retracted narrowing.
+THRESHOLDS_SHARED_ANCHOR = "the tolerance of the recency gate is served here"
 
 
 #: Withdrawn by [[T141]] (review cycle 10, G-C10-2), the fifth withdrawal this
@@ -2851,6 +2860,14 @@ def test_the_two_copies_of_the_thresholds_contract_publish_the_same_claims() -> 
     else the walk reads it in the spelling its own copy used; (3) the
     correction landed in one copy only, which the shared run catches while both
     copies still carry every claim.
+
+    **Inverted 2026-09-30 (T220, F010).** C33 (2026-09-23) reversed IDEA-070:
+    the constant is published as the block's seventh key, so ``THRESHOLDS_CLAIMS``
+    now states that promise and ``THRESHOLDS_SHARED_ANCHOR`` starts the new
+    second sentence. The three failure modes above are unchanged in shape;
+    ``THRESHOLDS_WITHDRAWN`` still holds the pre-IDEA-070 "heuristic constants"
+    promise, which remains retracted -- the block is not every heuristic the
+    verdict uses, it is the seven the band, the verdict and the tier rule apply.
     """
     target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
     contract = _flat(target["components"]["schemas"]["HrvTrend"]["properties"]["thresholds"]["description"])
@@ -2975,6 +2992,18 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
     red, remainder ``['recency_tolerance_days', 'window_days']``; and the name struck
     from the served description -- red on ``schemas.Thresholds`` -- and from the
     YAML copy -- red on ``contracts/openapi.yaml``.
+
+    **Inverted 2026-09-30 (T220, F010).** C33 (2026-09-23) reversed IDEA-070 and
+    the block gained ``recency_tolerance_days`` as its seventh key, so the
+    remainder the oracle computes -- the constants the tier rule applies less
+    the keys the block publishes -- must now be **empty** in both copies. The
+    oracle is unchanged: it still walks the tier rule's call graph, so it
+    reddens on a second unpublished constant entering the rule (the
+    ``WINDOW_DAYS`` mutation above still fires) and on the seventh key being
+    struck from either copy, which is the state this inversion replaced. The
+    description check is kept in its published form: both copies must name the
+    served key, so a block that carries the key and describes it as absent is
+    red too.
     """
     applied = {name.lower() for name in _tier_resolution_constants()}
     assert applied, "no module constant was read out of the tier rule's source"
@@ -2995,17 +3024,16 @@ def test_the_thresholds_description_names_the_tier_constant_the_block_omits() ->
             f"constants, but the tier rule applies none of the published keys {sorted(keys)}"
         )
         omitted = applied - keys
-        assert omitted == {"recency_tolerance_days"}, (
+        assert omitted == set(), (
             f"{label}: the tier rule ({', '.join(sorted(reached))}) applies {sorted(applied)} "
             f"and the block publishes {sorted(keys)}, so the constants it applies and does not "
-            f"echo are {sorted(omitted)} -- not the one the description names"
+            f"echo are {sorted(omitted)} -- since T220 (C33) the block serves every one of them"
         )
         description = _flat(block["description"])
-        for name in omitted:
-            assert name in description, (
-                f"{label} applies {name} to resolve baseline.tier and neither publishes it "
-                f"nor names it: the block's description is a false account of what it carries"
-            )
+        assert "recency_tolerance_days" in description, (
+            f"{label} serves recency_tolerance_days but its description does not name it: the "
+            f"block's description is a false account of what it carries"
+        )
 
 
 def _row(day: date, hh: int, tier: str | None, value: float | None, session_id: str) -> dict:
@@ -3516,8 +3544,10 @@ def test_the_response_says_the_verdict_fell_to_a_lower_tier_and_the_gate_is_repr
     The gate itself is recomputed here from the rendered fields alone --
     ``last_read`` per dataset, ``established``, ``week_days`` -- which is the
     ``research/00`` §1.6 obligation the response carries for every other rule
-    it applies. The response does not echo ``recency_tolerance_days``
-    (IDEA-070), so the constant is read from the module."""
+    it applies. The tolerance is read here from the module constant; since T220
+    (C33, 2026-09-23, reversing IDEA-070) the response serves the same value as
+    ``thresholds.recency_tolerance_days``, pinned equal to the module constant by
+    ``test_the_endpoint_reports_every_input_that_produced_the_verdict``."""
     configure("UTC")
     straps_at(seeder, days(D - timedelta(days=66), D - timedelta(days=40)))
     straps_at(seeder, days(D - timedelta(days=2), D))

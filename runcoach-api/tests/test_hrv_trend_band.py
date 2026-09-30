@@ -666,6 +666,7 @@ def test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses()
     assert hrv_trend.MIN_WINDOW_READINGS == 3
     assert hrv_trend.MIN_BASELINE_READINGS == 14
     assert hrv_trend.BASELINE_DAYS == 60
+    assert hrv_trend.RECENCY_TOLERANCE_DAYS == 28  # served since T220 (F010, C33)
     assert (hrv_trend.VERDICT_NORMAL, hrv_trend.VERDICT_SUPPRESSED, hrv_trend.VERDICT_UNAVAILABLE) == (
         NORMAL,
         SUPPRESSED,

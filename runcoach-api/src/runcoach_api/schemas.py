@@ -186,9 +186,10 @@ class ExcludedReading(BaseModel):
 class Thresholds(BaseModel):
     """The band, verdict and dataset-selection constants (spec 03 §3.7; construction reference).
 
-    They are not all of dataset selection: the recency gate also applies recency_tolerance_days, which this
-    response does not echo, so a client applying these six can derive a baseline.tier that
-    disagrees with the reported one (IDEA-070, 2026-09-15).
+    The tolerance of the recency gate is served here as recency_tolerance_days, beside the six
+    the band, the verdict and the tier rule apply, so selected_reason and baseline.tier are
+    recomputable from the response alone (research/00 §1.6; C33, 2026-09-23, which reversed
+    IDEA-070's narrowing of 2026-09-15).
     """
 
     baseline_days: int
@@ -197,6 +198,7 @@ class Thresholds(BaseModel):
     gap_reset_days: int
     band_floor: float
     swc_factor: float
+    recency_tolerance_days: int
 
 
 class HrvPoint(BaseModel):
@@ -319,8 +321,8 @@ class DatasetSummary(BaseModel):
             "which a dataset whose readings all sit in the judged week has. The gate is "
             "reproducible from this field: a **judgeable** dataset more than recency_tolerance_days "
             "behind the greatest `last_read` among the **established** datasets is skipped, "
-            "strictly greater than, so a dataset exactly at the tolerance is kept. The response "
-            "does not echo recency_tolerance_days (IDEA-070)."
+            "strictly greater than, so a dataset exactly at the tolerance is kept. The tolerance "
+            "is served as thresholds.recency_tolerance_days (C33, reversing IDEA-070)."
         )
     )
     week_days: int = Field(

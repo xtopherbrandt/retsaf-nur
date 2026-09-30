@@ -1607,9 +1607,10 @@ components:
           type: object
           description: >
             The band, verdict and dataset-selection constants (spec/03 §3.7).
-            They are not all of dataset selection: the recency gate also applies recency_tolerance_days, which this
-            response does not echo, so a client applying these six can derive a baseline.tier that
-            disagrees with the reported one (IDEA-070, 2026-09-15).
+            The tolerance of the recency gate is served here as recency_tolerance_days, beside the six
+            the band, the verdict and the tier rule apply, so selected_reason and baseline.tier are
+            recomputable from the response alone (research/00 §1.6; C33, 2026-09-23, which reversed
+            IDEA-070's narrowing of 2026-09-15).
           properties:
             baseline_days: { type: integer }
             min_baseline_readings: { type: integer }
@@ -1617,6 +1618,7 @@ components:
             gap_reset_days: { type: integer }
             band_floor: { type: number }
             swc_factor: { type: number }
+            recency_tolerance_days: { type: integer }
         datasets:
           type: array
           description: >
@@ -1712,7 +1714,8 @@ components:
                   than recency_tolerance_days behind the greatest `last_read`
                   among the ESTABLISHED datasets is skipped, strictly greater
                   than, so a dataset exactly at the tolerance is kept. The
-                  response does not echo recency_tolerance_days (IDEA-070).
+                  tolerance is served as thresholds.recency_tolerance_days
+                  (C33, reversing IDEA-070).
               week_days:
                 type: integer
                 description: >
