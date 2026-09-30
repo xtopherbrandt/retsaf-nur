@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+F010: `/metrics/hrv` responses serve `thresholds.recency_tolerance_days` (28, read from
+`hrv_trend.RECENCY_TOLERANCE_DAYS`), so `selected_reason = higher_fidelity_skipped_stale` can be
+recomputed from `datasets[].last_read` and the response alone (research/00 §1.6, C33). Additive:
+both contract copies describe the new key identically and `info.version` is unchanged. This
+reverses IDEA-070's 2026-09-15 decision to narrow the `thresholds` promise instead.
+
 ## 2026-09-28 through 2026-09-30 — Sprint 008: research/00 downstream sweep
 
 F011: every live document under the downstream roots now states research/00's current rules. No
