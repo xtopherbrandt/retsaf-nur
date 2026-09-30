@@ -1088,7 +1088,8 @@ _FROZEN_ROUNDS_PIN = {
 #: cell visible when the verdict and reason stay (T192). A new round updates these digests deliberately
 #: (``review_line_literal``): a changed or added entry only for a row whose verdict line's reason begins
 #: with that round's ``Round N:`` and whose paragraph names the row (``_rejudged``), and a dropped entry
-#: only for a row the paragraph says "removed <row>" of (``round_removals``); the verdict line's own
+#: only for a row the paragraph says "; removed <row>" or ". Removed <row>" of, as its own clause
+#: (``round_removals``, T227); the verdict line's own
 #: digest cell is what binds the text. Asserted both ways by ``review_line_errors``.
 REVIEW_LINE_SHA256 = {
     "PRIN-01": "02d5c6065e90",
@@ -5333,8 +5334,9 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
     round re-opens nothing and reds on its own (``frozen_round_errors``); a changed or added verdict line
     counts as re-judged only when its reason begins ``Round N:`` for an unfrozen round N whose paragraph
     names the row (S2), so a round that mentions a row in passing does not clear a pasted digest cell;
-    and a frozen row whose verdict line is gone reds unless an unfrozen round says "removed <row>" (M1;
-    iteration 2: a passing mention of the row no longer counts, ``round_removals``).
+    and a frozen row whose verdict line is gone reds unless an unfrozen round says "; removed <row>" or
+    ". Removed <row>" as its own clause (M1; iteration 2: a passing mention of the row no longer counts;
+    T227: only the clause form counts, ``round_removals``).
     ``review_line_literal`` regenerates ``REVIEW_LINE_SHA256`` with the same rule, so regenerating the
     literal clears only a row a critic's new round re-judged, or names as removed."""
     frozen = REVIEW_LINE_SHA256 if frozen is None else frozen
@@ -5351,7 +5353,8 @@ def review_line_errors(review_text: str, frozen: dict[str, str] | None = None,
                 f"round N under ## Rounds that is not in FROZEN_ROUNDS ({names}) and names {row}: only a critic "
                 f"round changes a verdict line (R7)") if row in present else
                (f"[frozen-review] {row}: its verdict line was removed and no round under ## Rounds that is not in "
-                f"FROZEN_ROUNDS ({names}) says 'removed {row}': only a critic round removes a verdict line (R7)")
+                f"FROZEN_ROUNDS ({names}) says '; removed {row}' or '. Removed {row}' as its own clause: only a "
+                "critic round removes a verdict line (R7)")
                for row in unnamed]
     errors += frozen_round_errors(review_text, frozen_rounds)
     have = tuple(_cell_digest(line) for line in prose)
@@ -5370,8 +5373,10 @@ _ROUND_LINE = re.compile(r"^Round (?P<name>\d+[a-z]?): ")
 #: label is followed by a digit (review cycle 2, iteration 2), so "T-110" names no T-11.
 _ROUND_LABEL = re.compile(rf"\b(?:(?:{_P})-\d{{2,3}}(?!\d)(?:/(?:Scope|Not|Why)\b)?|T-\d{{2}}(?!\d))")
 _ROUND_RANGE = re.compile(rf"\b(?P<prefix>{_P}|T)-(?P<a>\d{{2,3}}) to (?P=prefix)-(?P<b>\d{{2,3}})\b")
-#: A row a round removes (review cycle 2, iteration 2): "removed " and the row's label, each label its own.
-_ROUND_REMOVED = re.compile(rf"\bremoved (?P<label>{_ROUND_LABEL.pattern})")
+#: A row a round removes (review cycle 2, iteration 2; T227, IDEA-103 item 4): the removal form as its own
+#: clause, ``; removed <label>`` or ``. Removed <label>``, one label per clause. The word anywhere else
+#: ("nothing was removed PRIN-12/Why stays", ", removed", "removed A and B" for B) removes nothing.
+_ROUND_REMOVED = re.compile(rf"(?:; removed|\. Removed) (?P<label>{_ROUND_LABEL.pattern})")
 
 
 def review_rounds(review_text: str) -> list[tuple[str, str]]:
@@ -5469,8 +5474,10 @@ def _round_number(name: str) -> int:
 
 
 def round_removals(paragraph: str) -> set[str]:
-    """Every review row one round paragraph removes (review cycle 2, iteration 2): each label written
-    straight after "removed ". A label named any other way removes nothing."""
+    """Every review row one round paragraph removes (review cycle 2, iteration 2; T227): each label written
+    in the removal form as its own clause, ``; removed <label>`` or ``. Removed <label>`` (``_ROUND_REMOVED``).
+    A label named any other way removes nothing: before T227 any "removed <label>" did, so "nothing was
+    removed PRIN-12/Why stays" removed the row (IDEA-103 item 4)."""
     return {m.group("label") for m in _ROUND_REMOVED.finditer(paragraph)}
 
 
@@ -5502,8 +5509,9 @@ def review_line_literal(review_text: str, frozen: dict[str, str],
     ``_keyed_digest`` when it equals ``frozen`` or the line is re-judged by an unfrozen round (``_rejudged``:
     its reason begins ``Round N:`` and round N names the row; review cycle 2, S2), otherwise the frozen
     digest kept (none for a new row), with the row listed. A frozen row with no verdict line is dropped only
-    when an unfrozen round says "removed <row>" (``round_removals``; iteration 2: a passing mention did
-    it before); otherwise its frozen digest is kept and the row listed (M1). Regenerating the literal
+    when an unfrozen round says "; removed <row>" or ". Removed <row>" as its own clause (``round_removals``;
+    iteration 2: a passing mention did it before, and until T227 any "removed <row>" did); otherwise its
+    frozen digest is kept at its frozen position and the row listed (M1; T227). Regenerating the literal
     therefore clears only a row a critic's new round re-judged or removed; a pasted digest cell, and a
     deleted verdict line, stay red."""
     labels: dict[str, set[str]] = {}
@@ -5521,12 +5529,16 @@ def review_line_literal(review_text: str, frozen: dict[str, str],
             unnamed.append(row)
             if row in frozen:
                 literal[row] = frozen[row]
-    present = {row for row, _lines_of_row in entries}
-    for row in frozen:
-        if row not in present and row not in named:
+    order = [row for row, _lines_of_row in entries]
+    for i, row in enumerate(frozen):
+        if row not in order and row not in named:
+            # T227 (IDEA-103 item 7): the kept row stays at its frozen position, after the nearest frozen row
+            # before it that the literal holds; appended after every present row, it read as "keys reordered".
+            earlier = [k for k in list(frozen)[:i] if k in literal]
+            order.insert(order.index(earlier[-1]) + 1 if earlier else 0, row)
             literal[row] = frozen[row]
             unnamed.append(row)
-    return literal, unnamed
+    return {row: literal[row] for row in order if row in literal}, unnamed
 
 
 #: The judged digest a synthetic verdict line carries when a test does not bind it to a block line.
@@ -5573,7 +5585,8 @@ def _gone_red(label: str) -> str:
 
 def _removed_red(label: str) -> str:
     return (f"[frozen-review] {label}: its verdict line was removed and no round under ## Rounds that is not in "
-            f"FROZEN_ROUNDS (none) says 'removed {label}': only a critic round removes a verdict line (R7)")
+            f"FROZEN_ROUNDS (none) says '; removed {label}' or '. Removed {label}' as its own clause: only a "
+            "critic round removes a verdict line (R7)")
 
 
 def _round_changed_red(name: str) -> str:
@@ -6112,7 +6125,7 @@ def test_review_line_errors_names_a_rewritten_reason_and_a_changed_round() -> No
     # Regenerating as frozen_literals() does: the pasted digest cell keeps its committed digest, even with a
     # round 2 that names PRIN-01 (S2); the row round 2 re-judged takes its new one; the dropped row keeps its
     # frozen digest (M1) until a round names it.
-    drop_named = dropped + "\nRound 2: a fresh critic removed HRV-07 with its rule.\n"
+    drop_named = dropped + "\nRound 2: a fresh critic read HRV-07's rule; removed HRV-07.\n"
     for name, text, want in (("digest-cell", _one_edit(base, row, pasted), (frozen, ["PRIN-01"])),
                              ("named-by-round-2", named, (frozen, ["PRIN-01"])),
                              ("round-2-rejudged", renamed, ({**frozen, "PRIN-01": _cell_digest(rejudged)}, [])),
@@ -6282,15 +6295,16 @@ def test_a_new_round_is_named_above_every_frozen_round_in_the_exact_form() -> No
 def test_a_label_is_not_a_prefix_and_a_removal_is_written_as_one() -> None:
     """Review cycle 2, iteration 2 (the advisories): a round names no row through a longer number ("T-110"
     is not T-11, "HRV-2401" is not HRV-240), and a frozen row whose verdict line is gone is dropped from the
-    regenerated literal only when an unfrozen round says "removed <row>"; a passing mention kept it red
-    before and after (the mention cleared it at iteration 1)."""
+    regenerated literal only when an unfrozen round says "; removed <row>" or ". Removed <row>" as its own
+    clause (T227: the clause form); a passing mention kept it red before and after (the mention cleared it
+    at iteration 1)."""
     assert round_labels("Round 2: a critic re-read T-110 and HRV-2401.") == set()
     assert round_labels("Round 2: a critic re-read T-11, HRV-240 and PRIN-12/Why.") == {"T-11", "HRV-240", "PRIN-12/Why"}
-    assert round_removals("Round 2: a critic removed HRV-07 and removed T-110, and read PRIN-01.") == {"HRV-07"}
+    assert round_removals("Round 2: a critic read PRIN-01; removed HRV-07; removed T-110.") == {"HRV-07"}
     frozen, _prose, rounds = _frozen_of(_ROUND_1_REVIEW)
     dropped = _one_edit(_ROUND_1_REVIEW, f"| HRV-07 | same | {_SYNTHETIC_DIGEST} | A synthetic reason. |\n", "")
     mention = dropped + "\nRound 2: a fresh critic re-read HRV-07's neighbours and returned 0 differs verdicts.\n"
-    removal = dropped + "\nRound 2: a fresh critic removed HRV-07 with its rule.\n"
+    removal = dropped + "\nRound 2: a fresh critic read HRV-07's rule; removed HRV-07.\n"
     gone, unsaid = _gone_red("HRV-07"), _removed_red("HRV-07")
     print(f"[slice compared] mention {review_line_literal(mention, frozen, rounds)[1]}, "
           f"removal {review_line_literal(removal, frozen, rounds)[1]}")
@@ -6473,7 +6487,8 @@ def _derive(research: str | None, rows: list[dict[str, str]] | None, review: str
          f"{len(prose)} prose lines; rounds not in FROZEN_ROUNDS {[n for n, _ in unfrozen_rounds(review, frozen_rounds)]} "
          f"naming {sorted(unfrozen_round_labels(review, frozen_rounds))}; verdict lines changed with no such round "
          f"re-judging them {[row for row in unnamed if row not in removed]}; verdict lines removed with no such "
-         f"round saying 'removed <row>' {removed}; verdicts for rows that are not required {orphans}"),
+         f"round saying '; removed <row>' or '. Removed <row>' as its own clause {removed}; verdicts for rows that "
+         f"are not required {orphans}"),
         (f"inventory sentences: {len(sentences)} frozen, never regenerated; table cells that differ "
          f"{moved_sentences}"),
     ]
@@ -6487,7 +6502,8 @@ def _derive(research: str | None, rows: list[dict[str, str]] | None, review: str
     problems += [f"{label} has a verdict and is not a required review row" for label in orphans]
     problems += [f"{row}'s verdict line changed and no unfrozen round re-judged it" for row in unnamed
                  if row not in removed]
-    problems += [f"{row}'s verdict line was removed and no unfrozen round says 'removed {row}'" for row in removed]
+    problems += [f"{row}'s verdict line was removed and no unfrozen round says '; removed {row}' or '. Removed {row}' "
+                 "as its own clause" for row in removed]
     problems += [error.removeprefix("[frozen-review] ") for error in frozen_round_errors(review, frozen_rounds)]
     problems += [error.removeprefix("[frozen-review] ") for error in review_shape_errors(review)]
     problems += [f"{k} occurs more than once" for entries in (glossary, history_lines, review_lines)
@@ -6749,7 +6765,8 @@ def test_frozen_literals_emits_no_digest_for_a_row_without_a_verdict() -> None:
     assert verdicts.endswith(f"needs a critic verdict {in_order!r}; changed after its verdict []")
     assert all(f"{label} needs a critic verdict" in notes[-1] for label in labels)
     assert "HRV-99 has a verdict and is not a required review row" in notes[-1]
-    assert f"{no_rule}'s verdict line was removed and no unfrozen round says 'removed {no_rule}'" in notes[-1]
+    assert (f"{no_rule}'s verdict line was removed and no unfrozen round says '; removed {no_rule}' or "
+            f"'. Removed {no_rule}' as its own clause") in notes[-1]
     assert "Round 1 is frozen in FROZEN_ROUNDS and its paragraph changed" in notes[-1]
 
 
@@ -6877,7 +6894,7 @@ def test_against_names_every_hand_edit_the_regeneration_prints_back() -> None:
                 for n in ("FROZEN_ROUNDS", "_FROZEN_ROUNDS_PIN")]
     print(f"[slice compared] L1 {l1}\nL2 {l2}\nL3 {l3}\nL4 {l4}\nround {name}: {clean}")
     assert l1 == [f"the derivation against HEAD~0 finds: {why_rule}'s verdict line was removed and no unfrozen "
-                  f"round says 'removed {why_rule}'",
+                  f"round says '; removed {why_rule}' or '. Removed {why_rule}' as its own clause",
                   f"REVIEW_LINE_SHA256 is not what the documented command derives against HEAD~0 (removed "
                   f"['{why_rule}'])"]
     assert l2 == ["the derivation against HEAD~0 finds: HRV-24's verdict line changed and no unfrozen round "
@@ -6941,6 +6958,132 @@ def test_against_reports_a_checker_code_change() -> None:
     assert code == ["# code changed: _rejudged"]
     assert differences == [] and report[-1] == "# differences: none"
     assert [line for line in report if line.startswith("# difference:")] == []
+
+
+def _against_world() -> tuple[str, str, dict[str, object], str]:
+    """``(research, review, base, Final line)`` of a ``--against HEAD~0`` world over the committed files
+    (T227): the base is this file's own literals, the review is the committed one."""
+    research, _history, _rows = _real()
+    review = _REAL_REVIEW.read_text(encoding="utf-8")
+    base = {name: globals()[name] for name in FROZEN_LITERALS}
+    final = next(line for line in _lines(review) if line.startswith("Final: "))
+    return research, review, base, final
+
+
+def test_against_reports_a_final_only_edit_as_one_difference() -> None:
+    """F012 AC4 (T227, IDEA-103 item 2a): the Final line edited alone, with ``REVIEW_PROSE_SHA256``
+    regenerated (the rule file's route 4 without the opening paragraph, so nothing before Final moves),
+    is exactly one difference: the prose branch's, saying no round is new and Final's changed. Every
+    earlier test of that branch moved a prose line too, so the branch's Final clause had no killing
+    test: the mutant ``if moved or not have:`` (the clause ``(have[-1] != old[-1]) != bool(new)`` dropped
+    from the condition in ``against_report``) reports zero differences for this world and turns this
+    test red; the committed condition reports one."""
+    research, review, base, final = _against_world()
+    edited = _one_edit(review, final, final + " Edited.")
+    regenerated = derived_literals(research=research, review=edited)[0]
+    report, differences = against_report(base, "HEAD~0", {**base, **regenerated}, research=research, review=edited)
+    prose = review_entries(edited)[1]
+    print(f"[slice compared] Final-only world: {len(prose)} prose lines; differences {differences}; last {report[-1]}")
+    assert regenerated["REVIEW_PROSE_SHA256"] == (*REVIEW_PROSE_SHA256[:-1], _cell_digest(final + " Edited."))
+    assert len(differences) == 1
+    assert differences == [
+        "REVIEW_PROSE_SHA256 against HEAD~0: the prose gains one entry per new round (none), each before Final's, "
+        "and Final's changes exactly when a round is new; nothing else moves. Moved: prose lines [] of "
+        f"{len(prose)}; Final's changed"]
+    assert report[-1] == f"# difference: {differences[0]}"
+
+
+def test_against_reports_a_leading_zero_round_name_as_a_difference() -> None:
+    """F012 AC4 (T227, IDEA-103 item 2b): a new round named with a leading zero (``012`` after round 11),
+    Final rewritten and every literal regenerated against the base, is a difference: the derivation's
+    ``frozen_round_errors`` message that the round is not named a number above every round before it.
+    ``_derive`` surfaced it before T227 and nothing asserted it. The same world with the round named
+    ``12`` is named by nothing, so the difference is the zero's."""
+    research, review, base, final = _against_world()
+    last = max(_round_number(n) for n in FROZEN_ROUNDS)
+
+    def world(name: str) -> tuple[list[str], list[str]]:
+        edited = _one_edit(review, final, f"Round {name}: a fresh critic read HRV-24 and left it same.\n\n"
+                                          f"{final} Round {name}.")
+        regenerated = derived_literals(research=research, review=edited)[0]
+        return against_report(base, "HEAD~0", {**base, **regenerated}, research=research, review=edited)
+    zero_report, zero = world(f"0{last + 1}")
+    _plain_report, plain = world(str(last + 1))
+    print(f"[slice compared] last frozen round {last}; 0{last + 1} -> {zero}; {last + 1} -> {plain}; "
+          f"last {zero_report[-1]}")
+    assert zero == [f"the derivation against HEAD~0 finds: Round 0{last + 1} is not named a number above every "
+                    f"round before it ({last}): a new round takes the next number, and 3b and 4b are the only "
+                    "lettered rounds (R7)"]
+    assert zero_report[-1] == f"# difference: {zero[0]}"
+    assert plain == []
+
+
+def test_round_removals_take_only_the_removal_form_as_its_own_clause() -> None:
+    """F012 AC4 (T227, IDEA-103 item 4): ``round_removals`` read every label straight after the word
+    "removed", so a round saying "nothing was removed PRIN-12/Why stays" removed the row. It now takes
+    only the clause form: ``; removed <label>`` or ``. Removed <label>``, the word at a clause boundary
+    with lower-case ``removed`` after a semicolon and ``Removed`` after a full stop, one label per
+    clause; a comma, the wrong case, the round's opening clause ("Round 99: removed ...") and a second
+    label after "and" are not the form. In a world, a Why line and its verdict line deleted with a new
+    round naming the row in passing stays a difference, and the message names the form; the clause form
+    clears it and the regenerated literal drops the row."""
+    passing = "Round 99: nothing was removed PRIN-12/Why stays as it is."
+    clause = "Round 99: re-judged PRIN-12; removed PRIN-12/Why."
+    sentence = "Round 99: re-judged PRIN-12. Removed PRIN-12/Why. Removed HRV-24/Scope; removed T-11."
+    wrong_case = ["Round 99: re-judged PRIN-12; Removed PRIN-12/Why.", "Round 99: re-judged PRIN-12. removed PRIN-12/Why.",
+                  "Round 99: re-judged PRIN-12, removed PRIN-12/Why.", "Round 99: removed PRIN-12/Why.",
+                  "Round 99: re-judged PRIN-12; removed PRIN-12/Why and HRV-24/Scope."]
+    research, review, base, final = _against_world()
+    why_rule = next(r for r in required_review_rows(research, _real()[2]) if r.endswith("/Why"))
+    why = next(line for line in rule_blocks(research)[why_rule.split("/")[0]].split("\n") if line.startswith("Why: "))
+    verdict = next(line for line in _lines(review) if line.startswith(f"| {why_rule} |"))
+    cut_research, cut_review = _one_edit(research, why + "\n", ""), _one_edit(review, verdict + "\n", "")
+    name = str(max(_round_number(n) for n in FROZEN_ROUNDS) + 1)
+
+    def world(paragraph: str) -> tuple[dict[str, object], list[str]]:
+        edited = _one_edit(cut_review, final, f"Round {name}: {paragraph}\n\n{final} Round {name}.")
+        regenerated = derived_literals(research=cut_research, review=edited)[0]
+        return regenerated, against_report(base, "HEAD~0", {**base, **regenerated}, research=cut_research,
+                                           review=edited)[1]
+    passing_literal, in_passing = world(f"nothing was removed {why_rule} stays as it is.")
+    clause_literal, as_clause = world(f"re-judged {why_rule.split('/')[0]}; removed {why_rule}.")
+    print(f"[slice compared] passing {round_removals(passing)}; clause {round_removals(clause)}; sentence "
+          f"{round_removals(sentence)}; wrong case {[round_removals(p) for p in wrong_case]}; world {why_rule}: "
+          f"in passing {in_passing}; as a clause {as_clause}")
+    assert round_removals(passing) == set()
+    assert round_removals(clause) == {"PRIN-12/Why"}
+    assert round_removals(sentence) == {"PRIN-12/Why", "HRV-24/Scope", "T-11"}
+    assert [round_removals(p) for p in wrong_case] == [set(), set(), set(), set(), {"PRIN-12/Why"}]
+    assert in_passing == [f"the derivation against HEAD~0 finds: {why_rule}'s verdict line was removed and no "
+                          f"unfrozen round says '; removed {why_rule}' or '. Removed {why_rule}' as its own clause"]
+    assert why_rule in passing_literal["REVIEW_LINE_SHA256"]
+    assert as_clause == [] and why_rule not in clause_literal["REVIEW_LINE_SHA256"]
+
+
+def test_against_reports_a_removed_row_named_never_keys_reordered() -> None:
+    """F012 AC4 (T227, IDEA-103 item 7): ``review_line_literal`` kept a frozen row whose verdict line was
+    deleted with no round removing it, but appended it after every present row, so ``against_report``
+    printed "from HEAD~0 keys reordered" for ``REVIEW_LINE_SHA256`` though nothing was reordered. The
+    kept row now stays at its frozen position: with HRV-24/Scope's verdict line deleted and its entry
+    dropped by hand (the rule file's route 1), the report line names the row as ``removed
+    ['HRV-24/Scope']`` and says "keys reordered" nowhere, and the derived literal's keys are the base's
+    in the base's order."""
+    research, review, base, _final = _against_world()
+    verdict = next(line for line in _lines(review) if line.startswith("| HRV-24/Scope |"))
+    edited = _one_edit(review, verdict + "\n", "")
+    dropped = {**base, "REVIEW_LINE_SHA256": {k: v for k, v in REVIEW_LINE_SHA256.items() if k != "HRV-24/Scope"}}
+    report, differences = against_report(base, "HEAD~0", dropped, research=research, review=edited)
+    line = next(line for line in report if line.startswith("# REVIEW_LINE_SHA256: "))
+    derived = _derive(research, None, edited, {name: base[name] for name in FROZEN_SIDE})[0]["REVIEW_LINE_SHA256"]
+    print(f"[slice compared] {line}; differences {differences}; derived keys as base's "
+          f"{list(derived) == list(REVIEW_LINE_SHA256)}")
+    assert line == ("# REVIEW_LINE_SHA256: from HEAD~0 unchanged; this file's is not the derived one: "
+                    "removed ['HRV-24/Scope']")
+    assert "keys reordered" not in "\n".join(report)
+    assert list(derived) == list(REVIEW_LINE_SHA256) and derived == REVIEW_LINE_SHA256
+    assert differences[-1] == ("REVIEW_LINE_SHA256 is not what the documented command derives against HEAD~0 "
+                               "(removed ['HRV-24/Scope'])")
+    assert any("HRV-24/Scope's verdict line was removed and no unfrozen round says" in d for d in differences)
 
 
 def test_the_against_command_runs_from_the_documented_command() -> None:
