@@ -37,9 +37,10 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   and every ``#`` is kept. Every census and exception check compares against this same text.
 - **Hits (T199, AC1).** Each ``OLD_MEANINGS`` key's pattern is searched in every live file its
   ``KEY_ROOTS`` entry lets it reach (S12: the four T-07 keys reach ``.claude/rules/`` only). A hit is
-  quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt overlapping it in that one file (S4), a
-  pending site (S15: ``tests/data/research00_pending/<task id>.csv``, strict xfail, owned per
-  ``OWNERSHIP``), or a failure.
+  quotation (S3), sheltered by an ``EXCEPTIONS`` excerpt that spans the whole of it in that one file
+  (S4; IDEA-106 item 8: an excerpt that overlaps a hit by a character shelters nothing, and a census
+  row is ``sheltered`` only when every occurrence of its excerpt lies inside one), a pending site (S15:
+  ``tests/data/research00_pending/<task id>.csv``, strict xfail, owned per ``OWNERSHIP``), or a failure.
 - **Presence rows (T201, S6).** Each census site whose key cites a decision in F008 AC7's ``OPERATIVE``
   (read from the traceability test by path, never copied) has one row per operative string: the ``.md``
   paragraph holding the site's frozen anchor (``PRESENCE_ANCHORS``) states the string after
@@ -60,6 +61,26 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
 - **Test comments and docstrings (S2).** ``runcoach-api/tests/`` is not a root, so comments and
   docstrings in the test files are not swept. The spec critic found keyed phrases in 7 test files;
   only the ``test_hrv_no_regression_gate.py`` comment has a row (S6).
+- **What survives ``normalize()`` (IDEA-106 items 5 and 6; T229).** ``normalize()`` is NFKC, the dropped
+  characters, the typography folds, a whitespace collapse and a casefold, and no more. A zero-width
+  character (U+200B, U+200C, U+200D, U+2060, U+FEFF), a soft hyphen (U+00AD), a hard-break backslash at
+  a line end, a ``[text](url)`` link's brackets and destination, and an HTML entity (``&amp;``,
+  ``&#39;``) all survive it, so a site that spells a key's phrase with one of them splits the phrase
+  and no pattern reaches it. ``_paragraphs`` uses ``str.splitlines``, which also breaks a paragraph on
+  ``\\x0c`` and ``\\x85``, where CommonMark reads neither as a line ending. A stray single backtick
+  pairs with the next code span's opener, as CommonMark reads it, so the prose between them is a code
+  span and any hit inside it is quotation. T219's user decision stands: these are named here, not fixed.
+- **Census phrases (IDEA-106 item 10).** A census row's ``excerpt`` is a literal of the old text, matched
+  after ``normalize()`` and nothing else; a rewording that keeps the old meaning but changes a word reads
+  as ``gone``, and only a key whose pattern still reaches the new wording turns the site red. The
+  ``PRESENCE_ANCHORS`` paragraphs are literals too: a heading or a lead sentence rewritten in place
+  breaks the anchor, which fails loudly rather than passing (``test_presence_anchors_resolve_to_one_paragraph_each``).
+- **Paraphrases (IDEA-106 item 25; sprint-009 D8).** The gate and the census prove that the exact old
+  phrasings ``OLD_MEANINGS`` encodes are absent from the live files, not that paraphrases of them are.
+  At sprint-008's review 13 of 13 real paraphrases passed every pattern, and a read-only sweep of all 54
+  keys found about 30 live sites (fixed in ``99dcc1f..f212d42``). A paraphrase family per key is
+  T231's and a periodic paraphrase sweep is the control D8 files as an IDEA; a green gate is not a
+  statement that no live document paraphrases a changed meaning.
 """
 
 import csv
@@ -895,7 +916,7 @@ class Hit:
     """One match of one key's pattern in one live file, outside every section record. ``n`` counts
     the key's matches in that file from 1; ``start`` and ``end`` are offsets into the file's
     ``normalize()``d text. ``quoted`` is S3; ``sheltered_by`` lists the ``EXCEPTIONS`` indexes whose
-    excerpt overlaps the hit in this file (S4)."""
+    excerpt spans the whole hit in this file (S4; IDEA-106 item 8: an overlap shelters nothing)."""
     path: str
     key: str
     n: int
@@ -962,7 +983,8 @@ def scan(repo_root: Path = _REPO_ROOT, old_meanings=None, exceptions=None,
                     path=path, key=key, n=n, line=raw.count("\n", 0, raw_start) + 1,
                     start=start, end=end, matched=match.group(0),
                     quoted=spans is not None and hit_is_quoted(raw, start, end, offsets, spans),
-                    sheltered_by=tuple(sorted({i for i, a, b in excerpts if start < b and a < end})),
+                    # IDEA-106 item 8 (T229): an excerpt shelters a hit only when it spans the whole hit.
+                    sheltered_by=tuple(sorted({i for i, a, b in excerpts if a <= start and end <= b})),
                 ))
     return hits
 
@@ -1218,8 +1240,8 @@ def _occurrences(text: str, excerpt: str) -> list[tuple[int, int]]:
 
 def census_state(row, repo_root: Path = _REPO_ROOT, exceptions=None) -> str:
     """Where a census row stands now: ``missing`` (no such file), ``gone`` (its excerpt no longer
-    occurs), ``sheltered`` (every occurrence overlaps an ``EXCEPTIONS`` excerpt in that file, S4), or
-    ``present`` -- the site still states what it did."""
+    occurs), ``sheltered`` (every occurrence lies wholly inside an ``EXCEPTIONS`` excerpt in that file,
+    S4; IDEA-106 item 8), or ``present`` -- the site still states what it did."""
     exceptions = _OM.EXCEPTIONS if exceptions is None else exceptions
     path = Path(row["path"]).as_posix()
     if not (repo_root / path).is_file():
@@ -1229,7 +1251,7 @@ def census_state(row, repo_root: Path = _REPO_ROOT, exceptions=None) -> str:
     if not found:
         return "gone"
     sheltering = _excerpt_ranges(text, path, exceptions)
-    if all(any(a < e and s < b for _i, a, b in sheltering) for s, e in found):
+    if all(any(a <= s and e <= b for _i, a, b in sheltering) for s, e in found):
         return "sheltered"
     return "present"
 
@@ -2891,9 +2913,9 @@ def test_scanner_quote_spans_oracle_iteration_10():
 
 
 def test_scanner_quote_spans_oracle_iteration_11():
-    """Iteration 11's rows: each 0.31.2 grammar clause and HTML-block condition the iteration-10 rows left
-    unpinned, as ``quote_spans`` oracle cases. Every row agrees with oracle10h, which shares no code with
-    the gate; each is red when the clause its comment names is broken."""
+    """Iteration 11's 17 rows: each 0.31.2 grammar clause and HTML-block condition the iteration-10 rows
+    left unpinned, as ``quote_spans`` oracle cases. Every row agrees with oracle10h, which shares no code
+    with the gate; each is red when the clause its comment names is broken (IDEA-106 item 2 counts them)."""
     over = ['"(\nLive X.\n)"']
     cases = [
         # A closing tag takes whitespace before its ">", so a whole line of one starts a type-7 block.
@@ -2913,6 +2935,7 @@ def test_scanner_quote_spans_oracle_iteration_11():
         ('<style>\n</\u017ftyle>\n\nSay "a\nLive X.\nb" c\n', []),
         ('<style>\n</STYLE>\n\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
         ('<style>a</style>\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
+        # A type-2 end is searched on the start line too.
         ('<!-- a -->\nSay "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
         # A type-6 name folds ASCII case only.
         ('<d\u0131v "a\nLive X.\nb" c\n', ['"a\nLive X.\nb"']),
@@ -2955,10 +2978,17 @@ def test_tag_shaped_prose_is_read_in_linear_time(raw):
     try:
         done = subprocess.run([sys.executable, "-c", child], input=raw.encode("utf-8"), capture_output=True,
                               cwd=here.parent, timeout=60, check=False)
-        elapsed = float(done.stdout.decode("utf-8").split()[-1])
     except subprocess.TimeoutExpired:
-        elapsed = None
-    print(f"[slice compared] {raw[:12]!r}... ({len(raw)} characters): quote_spans took {elapsed}s")
+        returncode, tail, elapsed = None, "killed at 60s", None
+    else:
+        # IDEA-106 item 1 (T229): a child that crashes shows its return code and stderr, not an IndexError.
+        returncode = done.returncode
+        tail = done.stderr.decode("utf-8", "replace")[-600:]
+        printed = done.stdout.decode("utf-8").split()
+        elapsed = float(printed[-1]) if returncode == 0 and printed else None
+    print(f"[slice compared] {raw[:12]!r}... ({len(raw)} characters): quote_spans took {elapsed}s, "
+          f"child returncode {returncode}")
+    assert returncode == 0, f"quote_spans child exited with returncode {returncode}; stderr tail:\n{tail}"
     assert elapsed is not None and elapsed < 0.5
 
 
@@ -3045,6 +3075,91 @@ def test_an_exception_that_shelters_nothing_turns_the_gate_red(tmp_path):
         errors, red = verdicts[name]
         assert len(errors) == 1 and errors[0].startswith("EXCEPTIONS #0 shelters no hit")
         assert red == ["specification_spec_98_a_md__C05_gate02_worse_rate_reopens__1"]
+
+
+# IDEA-106's gate items (T229; F012 AC6, D9). Each test was red on the unfixed gate.
+
+def test_idea106_item1_the_timing_pin_fails_on_a_child_that_exits_non_zero(monkeypatch):
+    """IDEA-106 item 1: the timing pin's child prints its elapsed time last, so a child that exits
+    non-zero after printing must fail the pin with its return code and stderr tail in the message,
+    not pass on the number it printed."""
+    import subprocess
+
+    stderr = b"Traceback (most recent call last):\n  File \"<string>\", line 6\nIndexError: list index out of range\n"
+
+    def exited_non_zero(args, **_kwargs):
+        return subprocess.CompletedProcess(args, returncode=1, stdout=b"0.001\n", stderr=stderr)
+
+    monkeypatch.setattr(subprocess, "run", exited_non_zero)
+    with pytest.raises(AssertionError) as info:
+        test_tag_shaped_prose_is_read_in_linear_time("Say <a word, end\n")
+    message = str(info.value)
+    print(f"[slice compared] {message!r}")
+    assert "returncode 1" in message and "IndexError: list index out of range" in message
+
+
+def test_idea106_item2_the_iteration_11_oracle_rows_are_counted_and_each_comment_sits_over_its_rows():
+    """IDEA-106 item 2: the iteration-11 oracle's docstring states its row count, which matches the
+    rows; every row under the type-1 comment is a ``<style>`` block, and the ``<!-- a -->`` row (type 2)
+    sits under a comment naming type 2."""
+    import inspect
+
+    source = inspect.getsource(test_scanner_quote_spans_oracle_iteration_11)
+    body = re.search(r"cases = \[\n(.*?)\n    \]", source, re.S).group(1)
+    groups: dict[str, list[str]] = {}
+    comment = None
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("#"):
+            comment = line
+        elif line.startswith("("):
+            groups.setdefault(comment, []).append(line)
+    rows = sum(len(v) for v in groups.values())
+    stated = re.search(r"(?<![-\d])(\d+) rows", inspect.getdoc(test_scanner_quote_spans_oracle_iteration_11) or "")
+    print(f"[slice compared] {rows} rows, docstring states {stated and stated.group(1)}; "
+          f"groups {[(c, len(v)) for c, v in groups.items()]}")
+    assert stated is not None and int(stated.group(1)) == rows
+    type_1 = [c for c in groups if c and "type-1" in c]
+    assert len(type_1) == 1 and all(r.startswith("('<style>") for r in groups[type_1[0]]), groups[type_1[0]]
+    comment_row = [c for c, v in groups.items() if any(r.startswith("('<!-- a -->") for r in v)]
+    assert len(comment_row) == 1 and "type-2" in comment_row[0], comment_row
+
+
+def test_idea106_item4_markdown_it_py_is_bounded_below_five_and_the_installed_one_fits():
+    """IDEA-106 item 4: this gate wraps markdown-it's private block and inline rule tables, so the
+    package declares ``markdown-it-py>=4,<5`` (``runcoach-api/pyproject.toml``, the dev group); the
+    installed version sits inside the bound."""
+    import tomllib
+
+    import markdown_it
+
+    data = tomllib.loads((_REPO_ROOT / "runcoach-api" / "pyproject.toml").read_text(encoding="utf-8"))
+    declared = [d for d in data["dependency-groups"]["dev"] if d.startswith("markdown-it-py")]
+    print(f"[slice compared] declared {declared}; installed markdown-it-py {markdown_it.__version__}")
+    assert len(declared) == 1 and re.fullmatch(r"markdown-it-py>=4(\.0)?,<5", declared[0]), declared
+    assert int(markdown_it.__version__.split(".")[0]) == 4
+
+
+def test_idea106_item8_a_one_character_overlap_is_not_sheltered(tmp_path):
+    """IDEA-106 item 8: an exception excerpt, and the census ``sheltered`` state, cover a hit only when
+    the excerpt spans the whole hit; an excerpt that reaches one character into the hit leaves it live
+    and the census row ``present``."""
+    rel = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+    key = "C10-lone-candidate-never-struck"
+    example = OLD_MEANINGS[key].example
+    _plant(tmp_path, rel, f"# Lead-in text: {example}.\nVALUE = 1\n")
+    text = gate_normal(rel, (tmp_path / rel).read_text(encoding="utf-8"))
+    (hit,) = scan(tmp_path, exceptions=())
+    excerpts = {"one-character overlap": text[:hit.start + 1], "whole hit": text[:hit.end]}
+    row = {"key": key, "path": rel, "excerpt": hit.matched, "source": "grep"}
+    verdicts = {}
+    for name, excerpt in excerpts.items():
+        exceptions = ((rel, excerpt, "F009"),)
+        verdicts[name] = ([h.sheltered_by for h in scan(tmp_path, exceptions=exceptions)],
+                          census_state(row, tmp_path, exceptions))
+    print(f"[slice compared] hit [{hit.start}, {hit.end}) of {text!r}; {verdicts}")
+    assert verdicts["whole hit"] == ([(0,)], "sheltered")
+    assert verdicts["one-character overlap"] == ([()], "present")
 
 
 def test_a_root_below_its_floor_turns_the_gate_red(tmp_path):

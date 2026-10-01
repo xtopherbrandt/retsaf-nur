@@ -35,8 +35,10 @@ dev = [
     "pyyaml>=6.0",
     # sprint-007 code review (F008): the claim sweep strips fenced blocks on
     # markdown-it's CommonMark fence tokens (tests/test_source_change_rule_sweep.py).
-    # Declared here so it does not rely on the transitive rich install.
-    "markdown-it-py>=4.0",
+    # Declared here so it does not rely on the transitive rich install. IDEA-106
+    # item 4 (T229): tests/test_research00_downstream.py wraps markdown-it's
+    # private block and inline rule tables, so a new major is held out.
+    "markdown-it-py>=4.0,<5",
 ]
 
 [build-system]

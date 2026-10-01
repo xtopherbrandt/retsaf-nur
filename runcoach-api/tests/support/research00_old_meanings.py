@@ -387,24 +387,25 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
 EXCEPTIONS: tuple = (
     # F009 (F011 S4): hrv_trend.py's old-meaning sites, which F009 AC5 fixes, deleting these triples in
     # the same commit. Each excerpt occurs exactly once in the file, since an excerpt shelters every
-    # occurrence of itself (T218).
+    # occurrence of itself (T218), and spans the whole of every hit and census excerpt it shelters
+    # (IDEA-106 item 8, T229: seven excerpts were widened by the words an overlap had left uncovered).
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'from ``D-7``. The constant is not published in ``thresholds``', 'F009'),
+     'from ``D-7``. The constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15).', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'there is no gap to report and this rule is the only one that acts', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'The comparison is between the candidates themselves, so a lone candidate is its own reference and is never struck',
+     'The comparison is between the candidates themselves, so a lone candidate is its own reference and is never struck,',
      'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'The comparison is between candidates, so a lone candidate is its own reference and is never struck', 'F009'),
+     'The comparison is between candidates, so a lone candidate is its own reference and is never struck. The', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'struck. The constant is not published in ``thresholds`` ([[IDEA-070]]', 'F009'),
+     'struck. The constant is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15). 2.', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'research/00`` §5.4 (iii): "the dataset the athlete was read on last"', 'F009'),
     # T219: sites wrapped over ``#`` comment lines, which the gate now reads with the markers removed,
     # so each excerpt is written without them.
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'never to ``D-7``, so a lone candidate is its own reference and is never struck', 'F009'),
+     'never to ``D-7``, so a lone candidate is its own reference and is never struck. Factored', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      "says the now-sustaining tier's pre-boundary readings are *never* in the band", 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
@@ -412,11 +413,11 @@ EXCEPTIONS: tuple = (
     # T223 (F012 AC1): the hits of the four D6-D8 keys in this file -- HRV-42's :864, PRIN-12's :1782 and
     # the withhold's :2026 -- which F009 AC5 fixes with the rest.
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'a reset already in force persists through it', 'F009'),
+     'while a reset already in force persists through it', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
      'so the verdict is reproducible by hand (``research/00`` §1.6)', 'F009'),
     ('runcoach-api/src/runcoach_api/metrics/hrv_trend.py',
-     'T116 withheld both verdicts when the *baseline* is too thin to support either', 'F009'),
+     'T116 withheld both verdicts when the *baseline* is too thin to support either. T125', 'F009'),
 )
 
 _DROPPED = str.maketrans("", "", "\"'`*_“”‘’")
