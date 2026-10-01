@@ -36,8 +36,9 @@ role ``research/00``:219 states normatively and whose real cover is
 ``test_hrv_trend_reset.py::test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of``
 plus ``test_hrv_tier_change_per_dataset.py::test_the_era_boundary_ordering_key_keeps_its_three_terms``;
 neither carries the literal token ``T106``, so a grep-based retirement audit
-reports it unpinned and is **wrong**), T107/T116, T093's rule-3 fallback
-(T156), T117 (redeployed as AC6's gate) and T125/T132 (T158, AC24).
+reports it unpinned and is **wrong**), T107/T116, the presentation fallback
+(``_presentation_fallback``, T156), T117 (redeployed as AC6's gate) and
+T125/T132 (T158, AC24).
 
 How state 2 is reached without touching the worktree's source
 -------------------------------------------------------------

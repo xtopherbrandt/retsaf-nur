@@ -1703,8 +1703,8 @@ components:
                   promotes the lowest rank among the judgeable datasets, so
                   `selected_reason` is recomputable by hand from this field
                   beside `established`, `week_days` and `last_read`. The other
-                  sense — a numeric per-tier CONFIDENCE WEIGHT, at which
-                  HRV-04 never admits the numeric tiers — is deliberately not here:
+                  sense — a numeric per-tier CONFIDENCE WEIGHT, which HRV-04
+                  rules out for the numeric tiers — is deliberately not here:
                   §3.7.4 computes no confidence weight in Section 3 and defers
                   the weighting to Section 6's readiness fusion, so emitting
                   one would mint a constant Section 3 does not own.

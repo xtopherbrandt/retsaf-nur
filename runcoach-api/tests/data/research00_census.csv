@@ -223,6 +223,11 @@ DOC-06-C31-every-number-tunable,specification/spec/07-recovery-and-taper.md,"Eve
 C30-ctl-rise-row-deferred,specification/spec_development_plan.md,register row is intentionally deferred until real field data,loose
 C30-ctl-rise-row-deferred,specification/spec_development_plan.md,register row is intentionally deferred until field data refines,loose
 PRIN-08-C25-rule-file-short-list,specification/spec_outline.md,"VO2max, Training Status, Training Readiness, Body Battery, Performance Condition — ingested",loose
+C18-no-tier-from-resolver,runcoach-api/src/runcoach_api/main.py,sustained-tier-change rule (T092) resolves the tier,loose
+HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md,"4. **HRV Status classification** (Balanced/Unbalanced/Low) — black box, quarantined beside the three tiers",loose
+DOC-06-C31-every-number-tunable,specification/spec/03-derived-metric-formulas.md,"tunable per athlete only under the individualization rule, when the athlete's own data identify it and are enough to beat the population default, while a design invariant is never tuned",loose
+C19-hrv-04-reduced-confidence,contracts/openapi.yaml,"CONFIDENCE WEIGHT, at which HRV-04 never admits the numeric tiers",loose
+C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/schemas.py,"**confidence weight**, at which HRV-04 never admits the",loose
 C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,at reduced confidence,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,carried at reduced confidence rather,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence —,narrowed

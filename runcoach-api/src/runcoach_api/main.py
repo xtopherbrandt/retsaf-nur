@@ -230,8 +230,9 @@ def delete_session(session_id: str) -> Response:
 #: deliberately does no day arithmetic; the padding is the caller's.
 _HRV_READ_PADDING = datetime.timedelta(hours=26)
 #: The route reads back to ``from - 126`` local days, not ``from - 66``: the
-#: sustained-tier-change rule (T092) resolves the tier over the *previous*
-#: baseline window ``[D-126, D-67]`` and compares, and a read that stops at
+#: sustained-tier-change rule (T092) reads the highest-fidelity tier with
+#: >= 14 days in the *previous* baseline window ``[D-126, D-67]`` (HRV-38,
+#: clause (b)) and compares, and a read that stops at
 #: ``D-66`` leaves that window empty -- which reads as "thin", never as a
 #: change, so ``reset_reason: tier_change`` would be silently unreachable
 #: through the endpoint (IDEA-045). The extra rows come back from

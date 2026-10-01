@@ -309,7 +309,7 @@ class DatasetSummary(BaseModel):
             "sense of quality that arbitrates**: selection promotes the lowest rank among the "
             "judgeable datasets, so `selected_reason` is recomputable by hand from this field "
             "beside `established`, `week_days` and `last_read` (research/00 1.6). The *other* "
-            "sense -- a numeric per-tier **confidence weight**, at which HRV-04 never admits the "
+            "sense -- a numeric per-tier **confidence weight**, which HRV-04 rules out for the "
             "numeric tiers -- is deliberately **not** here: 3.7.4 computes no confidence weight in this "
             "section and defers the weighting to the readiness fusion of Section 6, so emitting "
             "one would mint a constant Section 3 does not own. Keeping the two apart is what "
