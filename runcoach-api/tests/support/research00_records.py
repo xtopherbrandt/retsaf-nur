@@ -50,6 +50,12 @@ RECORD_SET = (
      "it holds research/00's old meanings as the literals the sweeps search for (R4)"),
     ("repo", "runcoach-api/tests/test_research00_traceability.py",
      "F008's checker quotes old rules as its fixtures and frozen literals (R4)"),
+    # F009 AC2 under sprint-009 D13: the two literal-bearing support modules. Both lie under
+    # ``runcoach-api/tests/``, outside every F011 root, so no ``ROOT_FLOORS`` entry moves.
+    ("repo", "runcoach-api/tests/support/build_research00_census.py",
+     "search literals and census excerpts"),
+    ("repo", "runcoach-api/tests/support/withdrawn_phrasings.py",
+     "search literals and census excerpts"),
     # F009 AC2, the data list. Records only: the downstream gate never scans the data dir (S2).
     ("data", "spec/features/F005-",
      "F005's feature file, a shipped record F008 superseded (R5)"),

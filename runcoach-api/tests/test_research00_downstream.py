@@ -14,7 +14,8 @@ here reads it but AC3's IDEA rows: every fact taken from the decisions is frozen
   (58 in all; rules 13). A walk that stops descending reports all-clear over nothing; a root below its
   floor turns the gate red. A record added inside a root lowers that root's floor in the same commit.
 - **Section records (S1).** Text under exactly ``^## Decision Log\\s*$`` in a ``SECTION_RECORD_FILES``
-  file, and a CHANGELOG entry under a released ``## [x.y.z]`` heading, is not swept. Every other file
+  file, and a CHANGELOG entry under a released ``## [x.y.z]`` heading or a dated sprint heading
+  (``## <date> through <date> — Sprint NNN``, sprint-009 D11), is not swept. Every other file
   under the roots that carries the Decision Log heading is swept, and a test lists them.
 - **Quotation (S3).** In ``.md`` only, a hit wholly inside a straight or curly double-quoted span, a
   code span or a fenced block is quotation. Spans are found before ``normalize()`` in one CommonMark
@@ -199,7 +200,10 @@ def floor_shortfalls(files: dict[str, tuple[str, ...]], floors=ROOT_FLOORS) -> l
 # --------------------------------------------------------------------------------------------------
 
 _DECISION_LOG = re.compile(r"## Decision Log\s*")
-_RELEASED_ENTRY = re.compile(r"## \[\d+\.\d+\.\d+\].*")
+#: A released CHANGELOG entry: ``## [x.y.z]``, or this repo's dated sprint heading ``## <date> through
+#: <date> — Sprint NNN`` (sprint-009 D11; sprints 001-004 carry one date). Only ``## Unreleased`` is live.
+_RELEASED_ENTRY = re.compile(
+    r"## \[\d+\.\d+\.\d+\].*|## 20\d\d-\d\d-\d\d(?: through 20\d\d-\d\d-\d\d)? — Sprint \d{3}\b.*")
 _SECTION_END = re.compile(r"#{1,2} \S.*")
 
 
@@ -213,8 +217,9 @@ def _lines_with_offsets(raw: str):
 def record_ranges(rel_path: str, raw: str) -> list[tuple[int, int]]:
     """Raw ``(start, end)`` ranges of ``raw`` that are section records and are not swept: text under
     exactly ``^## Decision Log\\s*$`` when ``rel_path`` is in ``SECTION_RECORD_FILES``, and a
-    ``CHANGELOG.md`` entry under a released ``## [x.y.z]`` heading. A section runs from its heading to
-    the next level-1 or level-2 heading, or to the end of the file."""
+    ``CHANGELOG.md`` entry under a released ``## [x.y.z]`` or dated ``## <date> through <date> — Sprint
+    NNN`` heading (``_RELEASED_ENTRY``, D11). A section runs from its heading to the next level-1 or
+    level-2 heading, or to the end of the file."""
     if rel_path in SECTION_RECORD_FILES:
         opens = _DECISION_LOG
     elif rel_path.rsplit("/", 1)[-1] == "CHANGELOG.md":
@@ -1465,7 +1470,8 @@ def test_scanner_walk_keeps_scanned_suffixes_and_drops_records_and_other_files(t
 
 
 #: S1's by-path list and F009 AC2's list, copied from the F011 decisions reference and the F009 feature
-#: file (2026-09-28, spec review wave 1), not from ``research00_records.py``. Each spec pattern is written
+#: file (2026-09-28, spec review wave 1; sprint-009 D13's two modules added 2026-09-30 by T232), not from
+#: ``research00_records.py``. Each spec pattern is written
 #: in the module's prefix form (the row matches ``prefix + "*"``): ``F005-*`` is ``F005-``, ``sprints/
 #: sprint-*`` except ``current`` is ``sprints/sprint-``, and ``verify/*-verdict-cycle*.md`` is
 #: ``verify/*-verdict-cycle``.
@@ -1482,6 +1488,9 @@ _SPEC_RECORD_ROWS = frozenset({
     # F009 AC2, repo files outside F011's roots.
     ("repo", "runcoach-api/tests/support/research00_old_meanings.py"),
     ("repo", "runcoach-api/tests/test_research00_traceability.py"),
+    # F009 AC2 under sprint-009 D13: the two literal-bearing support modules, outside F011's roots.
+    ("repo", "runcoach-api/tests/support/build_research00_census.py"),
+    ("repo", "runcoach-api/tests/support/withdrawn_phrasings.py"),
     # F009 AC2, the data dir: F005-*, F006's three (both copies), the inventory, F008's decisions,
     # sprints/sprint-* except current, verify/*-verdict-cycle*.md.
     ("data", "spec/features/F005-"),
@@ -1508,6 +1517,8 @@ _REPO_RECORD_FILES = {
     "spec-mirror/references/F006-sweep-findings.md": "spec-mirror/references/F006-sweep-findings.md",
     "runcoach-api/tests/support/research00_old_meanings.py": "runcoach-api/tests/support/research00_old_meanings.py",
     "runcoach-api/tests/test_research00_traceability.py": "runcoach-api/tests/test_research00_traceability.py",
+    "runcoach-api/tests/support/build_research00_census.py": "runcoach-api/tests/support/build_research00_census.py",
+    "runcoach-api/tests/support/withdrawn_phrasings.py": "runcoach-api/tests/support/withdrawn_phrasings.py",
 }
 
 
@@ -1593,6 +1604,32 @@ def test_scanner_changelog_released_entries_are_records_and_unreleased_is_swept(
     assert covered == "## [1.2.0] - 2026-09-01\nold\n## [1.1.0]\nolder\n"
     assert "new live" not in covered
     assert record_ranges("specification/spec/notes.md", raw) == []
+
+
+def test_scanner_changelog_dated_sprint_heading_is_a_released_entry():
+    """Sprint-009 D11: this repo's CHANGELOG dates its releases (``## 2026-09-28 through 2026-09-30 —
+    Sprint 008: ...``; sprints 001-004 carry one date) instead of ``## [x.y.z]``, so those entries are
+    released records too. Only an ``## Unreleased`` section is live. A heading that is dated but names no
+    sprint, or a sprint heading at level 3, opens no record."""
+    raw = ("# Changelog\n\n## Unreleased\nnew live §1.7\n\n"
+           "## 2026-09-28 through 2026-09-30 — Sprint 008: research/00 downstream sweep\nold §1.7\n"
+           "### detail\nstill old\n"
+           "## 2026-09-07 — Sprint 004: Resting-HRV Capture, cycle 2\nolder\n"
+           "## 2026-09-06 notes without a sprint\nlive note\n"
+           "### 2026-09-05 — Sprint 002: level three\nlive too\n")
+    ranges = record_ranges("CHANGELOG.md", raw)
+    covered = "".join(raw[a:b] for a, b in ranges)
+    print(f"[slice compared] dated CHANGELOG record ranges {ranges}: {ascii(covered)}")
+    assert covered == ("## 2026-09-28 through 2026-09-30 — Sprint 008: research/00 downstream sweep\nold §1.7\n"
+                       "### detail\nstill old\n"
+                       "## 2026-09-07 — Sprint 004: Resting-HRV Capture, cycle 2\nolder\n")
+    assert "new live" not in covered and "live note" not in covered and "live too" not in covered
+    real = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    real_ranges = record_ranges("CHANGELOG.md", real)
+    first_record = real[real_ranges[0][0]:].splitlines()[0] if real_ranges else None
+    print(f"[slice compared] the checkout's CHANGELOG: {len(real_ranges)} record ranges, first {first_record!r}")
+    assert len(real_ranges) >= 8 and real_ranges[-1][1] == len(real)
+    assert real.index("## Unreleased") < real_ranges[0][0]
 
 
 def test_scanner_lists_and_sweeps_every_other_file_with_a_decision_log():
