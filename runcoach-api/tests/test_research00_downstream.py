@@ -4243,7 +4243,7 @@ IDEA_END_STATES = (
     IdeaEndState("IDEA-095", "open", "owned by F009 AC5", "F009 sets its end state (S7)"),
     IdeaEndState("IDEA-099", "open", None, "owns HRV-25's population; F009 counts it (S7)"),
     IdeaEndState("IDEA-102", "open", "F011", "reference row: owns every unserved verdict-affecting input"),
-    IdeaEndState("IDEA-103", "open", "F012", "owned by F012 (S7 as amended 2026-09-27)"),
+    IdeaEndState("IDEA-103", "resolved", "F012", "owned by F012 (S7 as amended 2026-09-27); open -> resolved (T228)"),
 )
 
 #: The reason every ``test_idea_end_state`` row skips with where the data dir is absent (AC3, AC5).
