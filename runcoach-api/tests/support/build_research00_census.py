@@ -758,6 +758,10 @@ _ITEM = re.compile(r"^\*\*(C\d+)\. ")
 _CODE_LINE = re.compile(r"^- Code(?:/tests)?: ")
 #: A backticked citation: ``file.py:<lines>`` or a bare ``:<lines>`` (the last-named file's).
 _CITATION = re.compile(r"`(?:([\w./-]+\.(?:py|md|ya?ml)):|:)(\d[\d, -]*)`")
+_BACKTICKED = re.compile(r"`([^`]*)`")
+#: A backticked token shaped like a citation (``name:<digit>`` or ``:<digit>``), whether or not
+#: ``_CITATION`` reads it: one it does not read raises (IDEA-106 item 12).
+_CITATION_LIKE = re.compile(r"(?:[\w./-]+)?:\d")
 
 
 def _ranges(lines: list[int]) -> str:
@@ -774,7 +778,9 @@ def _ranges(lines: list[int]) -> str:
 def inventory_citations(inventory: Path = INVENTORY) -> list[tuple[str, str, list[int], str]]:
     """``(C-number, short file name, cited line numbers, the Code line)`` for each file citation on a
     "Code:"/"Code/tests:" line of the inventory's Section 2. A bare ``:n`` citation belongs to the file
-    named before it on the line."""
+    named before it on the line. A citation the builder cannot read -- a bare ``:n`` with no file named
+    before it on its line, or a ``name:n`` token whose name ``_CITATION`` does not know -- raises: the
+    module docstring promises that nothing is dropped silently (IDEA-106 item 12)."""
     citations = []
     item = None
     for line in inventory.read_text(encoding="utf-8").splitlines():
@@ -783,12 +789,15 @@ def inventory_citations(inventory: Path = INVENTORY) -> list[tuple[str, str, lis
             item = head.group(1)
         if item is None or not _CODE_LINE.match(line):
             continue
+        for token in _BACKTICKED.findall(line):
+            if _CITATION_LIKE.match(token) and not _CITATION.fullmatch(f"`{token}`"):
+                raise SystemExit(f"{item}: unparsed citation `{token}` on {line!r}")
         current = None
         for name, numbers in _CITATION.findall(line):
             if name:
                 current = name
-            if current is None or not numbers:
-                continue
+            if current is None:
+                raise SystemExit(f"{item}: bare citation `:{numbers}` names no file before it on {line!r}")
             lines = []
             for part in numbers.split(","):
                 part = part.strip()
@@ -807,8 +816,8 @@ def keys_of_item(item: str) -> list[str]:
 
 
 def _git_text(path: str, commit: str) -> str:
-    """``path`` as it stands at ``commit``. Run in a ``git archive`` of the pre-work tree, set
-    ``GIT_DIR`` to the checkout's ``.git``."""
+    """``path`` as it stands at ``commit``: ``git show`` run in the main checkout (``REPO_ROOT``), which
+    holds every commit the builder reads (the inventory's, and each ``LATER_ROWS`` commit)."""
     shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=REPO_ROOT, capture_output=True,
                            text=True, encoding="utf-8", check=True)
     return shown.stdout
@@ -924,6 +933,16 @@ def _matching(f: File, key: str, start: int, end: int, line: int):
     return overlap + same_line + whole
 
 
+def unresolved_citations(deferred, hits) -> list[str]:
+    """IDEA-106 item 11: each inventory citation step 4 left to the loose grep (``deferred``:
+    ``(where, key, path, line)``) that no loose hit reaches -- a hit of the same key in the same file
+    on the same line (``hits``: ``loose_hits()``'s rows). Step 5 resolves every loose hit in or out, so
+    a citation a hit reaches is resolved; one no hit reaches would be dropped silently, and is
+    reported instead."""
+    reached = {(key, path, line) for key, path, _start, _end, line, _quoted in hits}
+    return [where for where, key, path, line in deferred if (key, path, line) not in reached]
+
+
 def build() -> Census:
     census = Census()
 
@@ -948,7 +967,9 @@ def build() -> Census:
         census.add(key, path, f.excerpt(*f.raw_span(start, end)), "inventory")
         census.log.append(f"manual in: {path}:{f.line_of(start)} {key} -- {reason}")
 
-    # 4. inventory: the "Code:"/"Code/tests:" citations.
+    # 4. inventory: the "Code:"/"Code/tests:" citations. A citation inside S2's roots is left to the
+    # loose grep, and step 5 checks that a loose hit reaches it (``unresolved_citations``).
+    deferred = []
     for item, name, lines, _line in inventory_citations():
         where = f"{item} {name}:{_ranges(lines)}"
         path = INVENTORY_PATHS.get(name)
@@ -973,7 +994,8 @@ def build() -> Census:
             stripped = re.sub(r"^\s*(?:#:?|\"\"\"|\*)?\s*", "", raw).strip()
             if path != TEST_COMMENT_ROW:
                 census.log.append(f"inventory: {item} {name}:{n} {key} {stripped[:60]!r} -- an S2 root, so "
-                                  f"the loose grep reaches it and resolves it below")
+                                  f"the loose grep reaches it and resolves it below (checked)")
+                deferred.append((f"{item} {name}:{n} {key}", key, path, n))
                 continue
             # Outside the roots neither grep reaches the line, so the key's own pattern stands in for
             # the grep: S6 names the one comment that quotes the old meaning.
@@ -989,7 +1011,9 @@ def build() -> Census:
     # 5. loose: each key's distinctive nouns.
     used = set()
     unresolved = []
-    for key, path, start, end, line, is_quoted in loose_hits():
+    hits = loose_hits()
+    missed = unresolved_citations(deferred, hits)
+    for key, path, start, end, line, is_quoted in hits:
         where = f"{path}:{line} {key}"
         if is_quoted:
             census.log.append(f"loose out: {where} -- quotation (S3)")
@@ -1012,9 +1036,11 @@ def build() -> Census:
         else:
             unresolved.append(f"{where} {f.raw[f.offsets[start]:f.offsets[end - 1] + 1]!r}")
     stale = [LOOSE_RESOLUTIONS[i][1:4] for i in range(len(LOOSE_RESOLUTIONS)) if i not in used]
-    if unresolved or stale:
+    if unresolved or stale or missed:
         raise SystemExit("unresolved loose hits:\n  " + "\n  ".join(unresolved)
-                         + f"\nresolutions that matched no loose hit: {stale}")
+                         + f"\nresolutions that matched no loose hit: {stale}"
+                         + "\ninventory citations left to the loose grep that no loose hit reaches:\n  "
+                         + "\n  ".join(missed))
 
     # 6. later: a site task's own rewrite a review found stating an old meaning, read at its commit.
     for key, path, fragment, commit, reason in LATER_ROWS:
@@ -1111,13 +1137,16 @@ def main() -> int:
         return 1
     order = {s: i for i, s in enumerate(SOURCES)}
     rows = sorted(census.rows, key=lambda r: (order[r["source"]], r["path"], r["key"]))
+    # ``append_pending`` can SystemExit partway (a row with no single owner); the CSV is written only
+    # once every row has its pending owner, so a failed run leaves no census (IDEA-106 item 13).
+    appended = append_pending(rows)
     with CENSUS_PATH.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=HEADER, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     counts = {s: sum(r["source"] == s for r in rows) for s in SOURCES}
     print(f"wrote {len(rows)} rows to {CENSUS_PATH.relative_to(REPO_ROOT).as_posix()}: {counts}")
-    for line in append_pending(rows):
+    for line in appended:
         print(f"pending appended: {line}")
     return 0
 

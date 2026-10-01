@@ -4417,3 +4417,81 @@ def test_the_gate_runs_without_the_data_dir(tmp_path):
     assert all(IDEA_SKIP_REASON in skipped[name] for name in idea_rows), skipped
     assert all(_PENDING_XFAIL_REASON.fullmatch(skipped[name]) for name in pending_rows), skipped
     assert sum(state == "passed" for state, _why in outcomes.values()) > len(expected)
+
+
+# --------------------------------------------------------------------------------------------------
+# T230 (IDEA-106 items 11-13): the one-time census builder fails loud on what it cannot read.
+# --------------------------------------------------------------------------------------------------
+
+_BUILDER_MODULE: list[ModuleType] = []
+
+
+def _census_builder() -> ModuleType:
+    """``support/build_research00_census.py``, loaded once and lazily: it loads this file under its
+    own name (``GATE``) at import, so a module-level load here would recurse."""
+    if not _BUILDER_MODULE:
+        _BUILDER_MODULE.append(_load_module("research00_census_builder", _SUPPORT / "build_research00_census.py"))
+    return _BUILDER_MODULE[0]
+
+
+@pytest.mark.parametrize("citation", ["`:792`", "`hrv_trend.txt:12`"],
+                         ids=["bare-before-any-file", "unmapped-suffix"])
+def test_builder_unparsed_citation_raises(tmp_path, citation):
+    """IDEA-106 item 12: a citation on a Code line that the parser cannot read -- a bare ``:n`` with no
+    file named before it on the line, or a ``name:n`` whose suffix the citation pattern does not know --
+    raises instead of being skipped silently (the builder's docstring: every dropped candidate is
+    printed with its reason). A well-formed line beside it still parses."""
+    builder = _census_builder()
+    inventory = tmp_path / "inventory.md"
+    bad = f"- Code: the skipped arm ({citation}) and `hrv_trend.py:1450-1453`."
+    inventory.write_text(f"**C01. An item**\n{bad}\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=re.escape(citation.strip("`"))):
+        builder.inventory_citations(inventory)
+    good = "- Code: `hrv_trend.py:1450-1453` and `:792`."
+    (tmp_path / "parsed.md").write_text(f"**C01. An item**\n{good}\n", encoding="utf-8")
+    parsed = builder.inventory_citations(tmp_path / "parsed.md")
+    print(f"[slice compared] unparsed {citation} raises; parsed {parsed}")
+    assert parsed == [("C01", "hrv_trend.py", [1450, 1451, 1452, 1453], good), ("C01", "hrv_trend.py", [792], good)]
+
+
+def test_builder_loose_grep_must_reach_a_deferred_inventory_citation(tmp_path, monkeypatch):
+    """IDEA-106 item 11: step 4 leaves an S2-root inventory citation to the loose grep, saying it
+    "reaches it and resolves it below". The builder now checks that: a deferred citation that no loose
+    hit reaches (same key, path and line) is reported, not dropped. On a tmp world of one file: line 1
+    holds the key's loose noun, line 2 does not."""
+    builder = _census_builder()
+    key = "C03-return-is-free"
+    (tmp_path / "x.md").write_text("A return is free here.\nThe code the item describes.\n", encoding="utf-8")
+    monkeypatch.setattr(builder.GATE, "live_files", lambda repo_root=None: {"root": ("x.md",)})
+    hits = builder.loose_hits(tmp_path, {key: builder.LOOSE_NOUNS[key]})
+    reached = (f"C03 x.md:1 {key}", key, "x.md", 1)
+    missed = (f"C03 x.md:2 {key}", key, "x.md", 2)
+    verdicts = {"reached": builder.unresolved_citations([reached], hits),
+                "reached and missed": builder.unresolved_citations([reached, missed], hits)}
+    print(f"[slice compared] hits {[(k, p, line) for k, p, _s, _e, line, _q in hits]}; {verdicts}")
+    assert [(k, p, line) for k, p, _s, _e, line, _q in hits] == [(key, "x.md", 1)]
+    assert verdicts == {"reached": [], "reached and missed": [missed[0]]}
+
+
+def test_builder_writes_after_pending_appends(tmp_path, monkeypatch):
+    """IDEA-106 item 13: ``append_pending`` can SystemExit partway (a row with no single owner), so the
+    CSV is written only after it returns. On a tmp world: one loose row with no owner; ``main()``
+    exits and leaves no census file."""
+    builder = _census_builder()
+    census = builder.Census()
+    census.add("C03-return-is-free", "specification/spec/02-canonical-data-schema-ingestion.md",
+               "a return is free", "loose")
+    (tmp_path / "inventory.md").write_text("**C03. An item**\n", encoding="utf-8")
+    monkeypatch.setattr(builder, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(builder, "INVENTORY", tmp_path / "inventory.md")
+    monkeypatch.setattr(builder, "CENSUS_PATH", tmp_path / "census.csv")
+    monkeypatch.setattr(builder, "build", lambda: census)
+    monkeypatch.setattr(builder, "check", lambda _census: [])
+    monkeypatch.setattr(builder.GATE, "PENDING_DIR", tmp_path / "pending")
+    monkeypatch.setattr(builder.GATE, "read_pending", lambda *_a, **_k: {})
+    monkeypatch.setattr(builder.GATE, "owners_of", lambda *_a, **_k: set())
+    with pytest.raises(SystemExit, match="no owner"):
+        builder.main()
+    print(f"[slice compared] after SystemExit: census.csv exists={(tmp_path / 'census.csv').exists()}; "
+          f"pending dir exists={(tmp_path / 'pending').exists()}")
+    assert not (tmp_path / "census.csv").exists()
