@@ -89,7 +89,7 @@ routes discussed in `research/02`).
 Add an optional **coach-in-the-loop** mode in which a qualified human coach can
 directly specify, confirm, or override parameters the v1 system currently
 ships as transparent defaults derived under scientific uncertainty. The v1
-design is deliberately fully autonomous (`research/00` §1.8): where the science
+design is deliberately fully autonomous (`research/00` AUT-01): where the science
 does not pin a value down, the system adopts a documented default, flags it,
 and tunes it from the athlete's own data over time. That is the right posture
 for a self-serve product, but several of those determinations are exactly the
@@ -106,7 +106,7 @@ interacts with the system's own continuous re-estimation (does the coach value
 pin the parameter, seed it, or bound it?), how confidence is represented when a
 value is coach-asserted rather than data-derived, and how conflicts between a
 coach setting and a strong contrary data signal are surfaced and resolved. The
-autonomy boundary of `research/00` §1.8–§1.9 is the natural place to add a
+autonomy boundary of `research/00` AUT-01 and GOAL-01 is the natural place to add a
 third, *optional* authority (the coach) alongside the athlete-owned goal
 contract and the athlete's clinical action and return-to-run clearance on the
 safety pathway (`research/00` AUT-02, AUT-06) — with the important constraint
@@ -118,7 +118,7 @@ each cross-referenced to its open item in `spec_development_plan.md` — are:
 
 - **The non-exercise cold-start fitness seed** (`spec/04` §4.4.2). The v1 seed
   is built from open published estimators (Uth–Sørensen heart-rate-ratio and a
-  Jackson-form non-exercise regression; now cited in `research/00` §3.2). A
+  Jackson-form non-exercise regression; now cited in `research/00` COLD-03). A
   coach can often supply a far better day-one fitness estimate from a recent
   race, a lab VO₂max, or direct knowledge of the athlete — a natural override.
 - **The aerobic-threshold (LT1) / Zone-1–Zone-2 boundary** (`spec/05` §5.4.2,
@@ -128,14 +128,14 @@ each cross-referenced to its open item in `spec_development_plan.md` — are:
 - **The determinant-addressability scoring weights** (`spec/05` §5.7.2) — how
   the planner ranks which physiological determinant a training block should
   target. The multiplicative default (gap × trainability × time-to-race ×
-  confidence) is now ratified in `research/00` Part 3, but a coach's read of
+  confidence) is now ratified in `research/00` REG-13, but a coach's read of
   *which* limiter to attack, and when, is a classic coaching judgement.
 - **The base/build/peak phase-length split** (`spec/05` §5.5.1). The v1 default
-  (~50/30/20 of non-taper weeks) is now ratified in `research/00` Part 3, but
+  (~50/30/20 of non-taper weeks) is now ratified in `research/00` REG-14, but
   the shape of a macrocycle is something coaches routinely tailor to the athlete
   and the race.
 - **Recovery-week depth and the race-day target form band** (`spec/07` §7.2.2,
-  §7.4.1). Both are now ratified spec defaults (`research/00` Part 3), and both
+  §7.4.1). Both are now ratified spec defaults (`research/00` REG-15, REG-16), and both
   are strongly individual — a coach who knows an athlete peaks best a little
   fresh or a little loaded, or who fades on a shallow down week, is well placed
   to set them.
@@ -186,14 +186,14 @@ difficulty entirely.
 **Refining the boundary toward the athlete's own data** is part of this future
 determinant, not v1 behaviour. In v1 the Zone-1/Zone-2 boundary is a fixed
 fraction of threshold velocity and moves only with the threshold anchor
-(`research/00` LT1-01, `spec/05` §5.4.2). Moving it toward an LT1 surrogate the
+(`spec/05` §5.4.2; `research/00` LT1-01). Moving it toward an LT1 surrogate the
 athlete's own data identifies — a heart-rate deflection, a habitual
 easy-pace/HR cluster, or a DFA-α1 crossing — waits for the LT1 determinant that
 `research/00` LT1-02 recommends for the future and keeps out of v1. Because
 DFA-α1 is computed from the RR series during running, adopting it first needs
-an explicit amendment of `research/00` HRV-05, which forbids in-activity HRV in
+an explicit amendment of `research/00` HRV-05, which rules out in-activity HRV in
 v1 (decision C27, rule LT1-04). Once adopted, a per-athlete refinement would
-still apply only under the individualization rule (`research/00` §3.1).
+still apply only under the individualization rule (`research/00` IND-01).
 
 ### Structured strength and plyometric supporting work
 

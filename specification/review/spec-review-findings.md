@@ -6,7 +6,7 @@
 
 ## Finding 1 — Gap remedy should propose a change of goal *pace*, not goal *date*
 
-**Locus:** `spec/01-scope-inputs-pace-target.md` §1.4.6 (and the underlying rule in `research/00` §1.9, which §1.4.6 defers to as the decision authority for the goal-contract change).
+**Locus:** `spec/01-scope-inputs-pace-target.md` §1.4.6, which defers to the decision authority for the goal-contract change (the underlying rule is GOAL-02 in `research/00`).
 
 **Status:** resolved — ordering applied across the decision authority and every spec locus that surfaces the proposal (2026-08-31).
 
@@ -19,9 +19,9 @@
 1. **Primary — propose a revised goal pace** that the current projection can support, so the goal becomes achievable on the existing date.
 2. **Secondary — propose a change of goal race date** (more training time), offered as an available-but-costlier alternative for athletes for whom it is feasible.
 
-This ordering should be stated wherever the gap-triggered proposal is defined — §1.4.6 and, as the decision authority, `research/00` §1.9 — so the two stay consistent. (Note: `distance_m` is a third contract field; the review is not asking to make distance change a proposed remedy — flagging only that the ordering language should be precise about *which* fields the system proposes to move and in what order.)
+This ordering should be stated wherever the gap-triggered proposal is defined — §1.4.6 and, as the decision authority, `research/00` GOAL-03 — so the two stay consistent. (Note: `distance_m` is a third contract field; the review is not asking to make distance change a proposed remedy — flagging only that the ordering language should be precise about *which* fields the system proposes to move and in what order.)
 
-**Resolution (applied 2026-08-31).** The ordering of remedies is now stated as the decision authority in **`research/00` §1.9** — primary: a revised goal pace on the existing date; secondary: a later race date; `distance_m` explicitly excluded as a proposed remedy; the ordering governs only what the *system proposes*, not which field the athlete may elect to move. A reconciliation note was added to `research/00` §5.4. The same ordering was then stated at every point the gap-triggered proposal is surfaced, all deferring to §1.9:
+**Resolution (applied 2026-08-31).** The ordering of remedies is now stated as the decision authority in **`research/00` GOAL-03 and GOAL-04** — primary: a revised goal pace on the existing date; secondary: a later race date; `distance_m` explicitly excluded as a proposed remedy; the ordering governs only what the *system proposes*, not which field the athlete may elect to move. A reconciliation note was added to `research/00` (now GOAL-06). The same ordering was then stated at every point the gap-triggered proposal is surfaced, all deferring to GOAL-03:
 
 - **`spec/01` §1.4.6** — the pace-target output now states the primary/secondary ordering and the distance exclusion where it defines the gap-triggered proposal.
 - **`spec/06` §6.8** (goal-contract exception) — the goal-contract bullet now states the pace-first ordering when Section 6 proposes a change.
@@ -48,4 +48,4 @@ Cross-references were verified consistent: no remaining locus frames a race-date
 
 When the review is complete, the findings are triaged together: overlaps reconciled, any conflicts between a proposed change and `research/00` (the decision authority) surfaced, and a single consolidated set of edits planned so the spec's cross-references stay coherent. Only then are changes applied and statuses moved to **resolved**.
 
-**Batch status (2026-08-31): worked and closed.** Both findings are resolved. Finding 1 was applied as a single consolidated edit set — the ordering fixed in the decision authority (`research/00` §1.9) and then stated at every spec locus that surfaces the proposal (`spec/01` §1.4.6, `spec/06` §6.8 and §6.4.4, `spec/08` §8.5.2) — with cross-references verified consistent. Finding 2's disposition (route to `future/future-directions.md`, do not specify now) was confirmed carried out. No conflicts with `research/00` remained after the batch.
+**Batch status (2026-08-31): worked and closed.** Both findings are resolved. Finding 1 was applied as a single consolidated edit set — the ordering fixed in the decision authority (`research/00` GOAL-03) and then stated at every spec locus that surfaces the proposal (`spec/01` §1.4.6, `spec/06` §6.8 and §6.4.4, `spec/08` §8.5.2) — with cross-references verified consistent. Finding 2's disposition (route to `future/future-directions.md`, do not specify now) was confirmed carried out. No conflicts with `research/00` remained after the batch.

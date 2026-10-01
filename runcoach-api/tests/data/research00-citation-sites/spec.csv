@@ -1,1 +1,193 @@
 space,file,line,old_citation,new_id
+repo,specification/decisions/01-conversational-coach-interface.md,5,§1.8,AUT-01
+repo,specification/decisions/01-conversational-coach-interface.md,5,§1.9,GOAL-01
+repo,specification/decisions/01-conversational-coach-interface.md,5,§5.3,DOC-03
+repo,specification/decisions/01-conversational-coach-interface.md,5,§5.4,DEC-01
+repo,specification/decisions/01-conversational-coach-interface.md,33,§1.8,AUT-01
+repo,specification/decisions/01-conversational-coach-interface.md,33,§1.9,GOAL-01
+repo,specification/research/06-competitive-landscape-patents.md,199,§1.8,AUT-03
+repo,specification/review/spec-review-findings.md,9,§1.9,GOAL-02
+repo,specification/review/spec-review-findings.md,22,§1.9,GOAL-03
+repo,specification/review/spec-review-findings.md,24,§1.9,GOAL-03
+repo,specification/review/spec-review-findings.md,24,§5.4,GOAL-06
+repo,specification/review/spec-review-findings.md,51,§1.9,GOAL-03
+repo,specification/spec_outline.md,13,§1.1,PRIN-01
+repo,specification/spec_outline.md,23,Part 2,ARCH-01
+repo,specification/spec_outline.md,23,Part 2,ARCH-06
+repo,specification/spec_outline.md,23,Part 3,REG-09
+repo,specification/spec_outline.md,23,§1.5,PRIN-07
+repo,specification/spec_outline.md,23,§1.5,PRIN-08
+repo,specification/spec_outline.md,31,§5.4,HRV-07
+repo,specification/spec_outline.md,33,Part 3,REG-03
+repo,specification/spec_outline.md,33,Part 3,REG-01
+repo,specification/spec_outline.md,33,Part 3,HRV-07
+repo,specification/spec_outline.md,33,Part 3,REG-02
+repo,specification/spec_outline.md,33,Part 3,REG-06
+repo,specification/spec_outline.md,43,§3.1,IND-01
+repo,specification/spec_outline.md,43,§3.2,COLD-01
+repo,specification/spec_outline.md,43,Part 2,ARCH-02
+repo,specification/spec_outline.md,43,Part 2,ARCH-08
+repo,specification/spec_outline.md,53,Part 2,ARCH-04
+repo,specification/spec_outline.md,63,§1.2,ARB-01
+repo,specification/spec_outline.md,63,§1.4,PRIN-05
+repo,specification/spec_outline.md,63,§1.7,PRIN-13
+repo,specification/spec_outline.md,63,§1.8,AUT-01
+repo,specification/spec_outline.md,63,Part 2,ARCH-03
+repo,specification/spec_outline.md,73,Part 3,REG-08
+repo,specification/spec_outline.md,83,§1.8–1.9,AUT-01
+repo,specification/spec_outline.md,83,§1.8–1.9,GOAL-01
+repo,specification/spec_outline.md,83,§1.5,PRIN-07
+repo,specification/spec_outline.md,83,§1.6,PRIN-11
+repo,specification/spec_outline.md,93,§1.6,PRIN-22
+repo,specification/spec_outline.md,93,Part 2,ARCH-08
+repo,specification/spec_outline.md,103,Part 3,DOC-07
+repo,specification/spec_outline.md,104,Part 4,FTO-01
+repo,specification/spec_development_plan.md,17,Part 3,REG-19
+repo,specification/spec_development_plan.md,19,Part 1,ARB-01
+repo,specification/spec_development_plan.md,19,Part 2,ARCH-00
+repo,specification/spec_development_plan.md,19,Part 3,DOC-07
+repo,specification/spec_development_plan.md,19,Part 4,FTO-01
+repo,specification/spec_development_plan.md,47,Part 3,REG-10
+repo,specification/spec_development_plan.md,48,Part 3,REG-11
+repo,specification/spec_development_plan.md,48,Part 3,REG-12
+repo,specification/spec_development_plan.md,50,§3.2,COLD-02
+repo,specification/spec_development_plan.md,53,Part 3,REG-15
+repo,specification/spec_development_plan.md,53,Part 3,REG-16
+repo,specification/spec_development_plan.md,55,Part 3,REG-17
+repo,specification/spec_development_plan.md,55,Part 3,REG-18
+repo,specification/spec_development_plan.md,67,Part 3,REG-10
+repo,specification/spec_development_plan.md,68,Part 3,REG-11
+repo,specification/spec_development_plan.md,68,§3.3,HRV-01
+repo,specification/spec_development_plan.md,69,Part 3,REG-12
+repo,specification/spec_development_plan.md,71,§3.2,COLD-02
+repo,specification/spec_development_plan.md,72,§3.4,LT1-01
+repo,specification/spec_development_plan.md,72,§3.4,LT1-02
+repo,specification/spec_development_plan.md,73,Part 3,REG-13
+repo,specification/spec_development_plan.md,74,Part 3,REG-14
+repo,specification/spec_development_plan.md,77,Part 3,REG-15
+repo,specification/spec_development_plan.md,78,Part 3,REG-16
+repo,specification/spec_development_plan.md,83,Part 3,REG-19
+repo,specification/spec_development_plan.md,84,Part 3,REG-17
+repo,specification/spec_development_plan.md,84,Part 3,REG-28
+repo,specification/spec_development_plan.md,85,Part 3,REG-18
+repo,specification/spec_development_plan.md,85,Part 3,REG-29
+repo,specification/spec_development_plan.md,89,Part 3,REG-19
+repo,specification/spec_development_plan.md,95,Part 3,DOC-18
+repo,specification/spec_development_plan.md,119,Part 3,DOC-18
+repo,specification/spec_development_plan.md,119,Part 3,REG-17
+repo,specification/spec_development_plan.md,119,§3.2,COLD-02
+repo,specification/spec_development_plan.md,119,§3.4,LT1-02
+repo,specification/future/future-directions.md,92,§1.8,AUT-01
+repo,specification/future/future-directions.md,109,§1.8,AUT-01
+repo,specification/future/future-directions.md,109,§1.9,GOAL-01
+repo,specification/future/future-directions.md,121,§3.2,COLD-03
+repo,specification/future/future-directions.md,131,Part 3,REG-13
+repo,specification/future/future-directions.md,134,Part 3,REG-14
+repo,specification/future/future-directions.md,138,Part 3,REG-15
+repo,specification/future/future-directions.md,138,Part 3,REG-16
+repo,specification/future/future-directions.md,189,,LT1-01
+repo,specification/future/future-directions.md,196,§3.1,IND-01
+repo,specification/research/02-wearable-data-garmin.md,113,§3.3,HRV-01
+repo,specification/research/02-wearable-data-garmin.md,169,§3.3,HRV-01
+repo,specification/research/02-wearable-data-garmin.md,169,Part 3,REG-09
+repo,specification/research/02-wearable-data-garmin.md,169,Part 3,HRV-07
+repo,specification/research/02-wearable-data-garmin.md,207,§3.3,HRV-06
+repo,specification/research/02-wearable-data-garmin.md,236,§3.3,HRV-01
+repo,specification/research/05-data-to-adaptation.md,3,Part 3,DOC-06
+repo,specification/research/05-data-to-adaptation.md,3,§3.1,IND-01
+repo,specification/research/05-data-to-adaptation.md,46,,REG-04
+repo,specification/research/05-data-to-adaptation.md,81,§5.4,HRV-07
+repo,specification/research/05-data-to-adaptation.md,124,§3.2,COLD-07
+repo,specification/research/05-data-to-adaptation.md,124,§3.2,COLD-02
+repo,specification/research/05-data-to-adaptation.md,219,§5.4,HRV-07
+repo,specification/research/05-data-to-adaptation.md,236,§1.8,AUT-01
+repo,specification/research/05-data-to-adaptation.md,236,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,9,§1.1,PRIN-01
+repo,specification/spec/01-scope-inputs-pace-target.md,13,§1.1,PRIN-02
+repo,specification/spec/01-scope-inputs-pace-target.md,15,Part 2,ARCH-11
+repo,specification/spec/01-scope-inputs-pace-target.md,27,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,36,,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,70,§3.2,COLD-02
+repo,specification/spec/01-scope-inputs-pace-target.md,75,§3.2,COLD-01
+repo,specification/spec/01-scope-inputs-pace-target.md,106,§3.1,IND-01
+repo,specification/spec/01-scope-inputs-pace-target.md,106,Part 3,REG-05
+repo,specification/spec/01-scope-inputs-pace-target.md,119,Part 3,REG-06
+repo,specification/spec/01-scope-inputs-pace-target.md,125,Part 2,ARCH-05
+repo,specification/spec/01-scope-inputs-pace-target.md,135,Part 3,DOC-07
+repo,specification/spec/01-scope-inputs-pace-target.md,143,Part 3,REG-10
+repo,specification/spec/01-scope-inputs-pace-target.md,147,§1.6,PRIN-11
+repo,specification/spec/01-scope-inputs-pace-target.md,147,Part 2,ARCH-11
+repo,specification/spec/01-scope-inputs-pace-target.md,157,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,159,§1.9,GOAL-03
+repo,specification/spec/01-scope-inputs-pace-target.md,164,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,174,Part 3,REG-10
+repo,specification/spec/07-recovery-and-taper.md,3,§1.1,PRIN-01
+repo,specification/spec/07-recovery-and-taper.md,3,Part 3,REG-08
+repo,specification/spec/07-recovery-and-taper.md,3,§1.7,PRIN-13
+repo,specification/spec/07-recovery-and-taper.md,3,§3.1,IND-01
+repo,specification/spec/07-recovery-and-taper.md,3,Part 3,DOC-06
+repo,specification/spec/07-recovery-and-taper.md,14,§1.7,PRIN-13
+repo,specification/spec/07-recovery-and-taper.md,14,§1.8,AUT-01
+repo,specification/spec/07-recovery-and-taper.md,42,Part 3,REG-08
+repo,specification/spec/07-recovery-and-taper.md,64,§3.1,IND-01
+repo,specification/spec/07-recovery-and-taper.md,81,Part 2,ARCH-07
+repo,specification/spec/07-recovery-and-taper.md,83,§1.4,PRIN-05
+repo,specification/spec/07-recovery-and-taper.md,89,Part 3,REG-08
+repo,specification/spec/07-recovery-and-taper.md,89,§3.1,IND-01
+repo,specification/spec/07-recovery-and-taper.md,93,§3.1,IND-01
+repo,specification/spec/07-recovery-and-taper.md,105,§1.7,PRIN-13
+repo,specification/spec/07-recovery-and-taper.md,105,§1.8,AUT-01
+repo,specification/spec/07-recovery-and-taper.md,114,§3.1,IND-01
+repo,specification/spec/07-recovery-and-taper.md,122,§1.1,PRIN-01
+repo,specification/spec/07-recovery-and-taper.md,134,Part 3,REG-15
+repo,specification/spec/07-recovery-and-taper.md,134,Part 3,REG-16
+repo,specification/spec/08-conversational-coach-interface.md,3,§1.8,AUT-01
+repo,specification/spec/08-conversational-coach-interface.md,3,§1.9,GOAL-01
+repo,specification/spec/08-conversational-coach-interface.md,3,§1.5,PRIN-07
+repo,specification/spec/08-conversational-coach-interface.md,3,§1.6,PRIN-11
+repo,specification/spec/08-conversational-coach-interface.md,11,§1.8,AUT-05
+repo,specification/spec/08-conversational-coach-interface.md,11,§1.5,AUT-07
+repo,specification/spec/08-conversational-coach-interface.md,12,§1.8,AUT-03
+repo,specification/spec/08-conversational-coach-interface.md,12,§1.8,AUT-03
+repo,specification/spec/08-conversational-coach-interface.md,16,§1.5,PRIN-08
+repo,specification/spec/08-conversational-coach-interface.md,27,§1.5,PRIN-07
+repo,specification/spec/08-conversational-coach-interface.md,27,§1.6,PRIN-11
+repo,specification/spec/08-conversational-coach-interface.md,33,§1.6,PRIN-22
+repo,specification/spec/08-conversational-coach-interface.md,46,§1.5,PRIN-07
+repo,specification/spec/08-conversational-coach-interface.md,72,§1.4,PRIN-06
+repo,specification/spec/08-conversational-coach-interface.md,72,§1.4,PRIN-18
+repo,specification/spec/08-conversational-coach-interface.md,78,§1.8,AUT-02
+repo,specification/spec/08-conversational-coach-interface.md,78,§1.9,GOAL-02
+repo,specification/spec/08-conversational-coach-interface.md,82,§1.2,ARB-02
+repo,specification/spec/08-conversational-coach-interface.md,82,§1.8,ARB-07
+repo,specification/spec/08-conversational-coach-interface.md,86,§1.9,GOAL-01
+repo,specification/spec/08-conversational-coach-interface.md,88,§1.9,GOAL-02
+repo,specification/spec/08-conversational-coach-interface.md,88,§1.9,GOAL-03
+repo,specification/spec/08-conversational-coach-interface.md,95,§1.8,AUT-01
+repo,specification/spec/08-conversational-coach-interface.md,101,Part 2,ARCH-08
+repo,specification/spec/08-conversational-coach-interface.md,101,Part 2,ARCH-11
+repo,specification/spec/08-conversational-coach-interface.md,101,§1.6,PRIN-11
+repo,specification/spec/08-conversational-coach-interface.md,103,Part 2,ARCH-07
+repo,specification/spec/08-conversational-coach-interface.md,103,Part 2,ARCH-07
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,§1.6,PRIN-22
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,§1.5,PRIN-07
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,Part 2,ARCH-08
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,9,§1.6,PRIN-22
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,14,§1.5,PRIN-19
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,16,§1.5,PRIN-19
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,47,§1.6,PRIN-11
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,53,§1.6,PRIN-22
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,79,§1.6,PRIN-22
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,110,Part 3,REG-18
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,120,§1.5,PRIN-07
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,128,Part 2,ARCH-08
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,128,Part 2,ARCH-11
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,128,§1.6,PRIN-11
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,132,Part 2,ARCH-07
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,138,§1.5,PRIN-08
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,140,§1.5,PRIN-08
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,142,§1.5,PRIN-08
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,144,Part 3,REG-17
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,154,§1.1,PRIN-01
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-17
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-18

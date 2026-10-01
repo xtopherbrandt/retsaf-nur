@@ -36,7 +36,7 @@ RE is multifactorial. Contributing factors include neuromuscular and biomechanic
 
 ### 1.5 Fractional utilization (%VO₂max)
 
-Fractional utilization is the percentage of VO₂max that can be sustained for the duration of the event [1][3]. It is not an independent tissue property so much as an emergent consequence of where the thresholds sit relative to VO₂max and of how long the event lasts. As a rough guide, well-trained runners sustain approximately: ~95–100% VO₂max for ~3K–5K (10–15 min), ~90–95% for 10K, ~85–90% for the half marathon, and ~75–85% for the marathon (~2–4+ h) [1][3]. The longer the race, the lower the sustainable fraction — this decline with duration is the quantitative bridge between physiology and pace (§4). The marathon fraction in particular is strongly individual and is exactly where durability (§1.6) intervenes.
+Fractional utilization is the percentage of VO₂max that can be sustained for the duration of the event [1][3]. It is not an independent tissue property so much as an emergent consequence of where the thresholds sit relative to VO₂max and of how long the event lasts. As a rough guide, well-trained runners sustain approximately: ~95–100% VO₂max for ~3K–5K (10–15 min), ~90–95% for 10K, ~85–90% for the half marathon, and ~75–85% for the marathon (~2–4+ h) [1][3]. The longer the race, the lower the sustainable fraction — this decline with duration is the quantitative bridge between physiology and pace (§4). The marathon fraction in particular is strongly individual and is exactly where durability (Section 1.6) intervenes.
 
 ### 1.6 Durability / fatigue resistance (emerging construct)
 
@@ -121,11 +121,11 @@ The two-parameter CS model describes the hyperbolic relationship between running
 
 **t = W′ / (P − CP)**, or in running terms distance = CS·t + D′,
 
-where **CS (critical speed)** is the sustainable asymptote and **D′ (or W′)** is a fixed distance (energy) capacity usable above CS [8][9]. CS is estimated from two or more maximal efforts of different durations (e.g., 3-min and 12-min, or a set of time trials) [8][9]. CS approximates the highest steady-state pace and therefore anchors sustainable pace for events lasting up to ~30–60 min; races longer than that are run *below* CS, and the gap grows with duration [8][9]. **Known limitations, which the spec must acknowledge:** the model assumes CS is a fixed boundary, but CS itself declines during prolonged exercise (this is precisely the durability phenomenon, §1.6); D′ is not a cleanly emptying "anaerobic battery"; and estimates are sensitive to the choice and quality of the test efforts [9][11]. CS is best treated as an accurate anchor for short-to-middle events and a *drifting* one for the marathon.
+where **CS (critical speed)** is the sustainable asymptote and **D′ (or W′)** is a fixed distance (energy) capacity usable above CS [8][9]. CS is estimated from two or more maximal efforts of different durations (e.g., 3-min and 12-min, or a set of time trials) [8][9]. CS approximates the highest steady-state pace and therefore anchors sustainable pace for events lasting up to ~30–60 min; races longer than that are run *below* CS, and the gap grows with duration [8][9]. **Known limitations, which the spec must acknowledge:** the model assumes CS is a fixed boundary, but CS itself declines during prolonged exercise (this is precisely the durability phenomenon, Section 1.6); D′ is not a cleanly emptying "anaerobic battery"; and estimates are sensitive to the choice and quality of the test efforts [9][11]. CS is best treated as an accurate anchor for short-to-middle events and a *drifting* one for the marathon.
 
 ### 4.3 The %VO₂max–duration relationship and endurance exponents
 
-For events too long for the CS model, the empirical relationship between sustainable %VO₂max and duration (§1.5) governs pace: as duration rises, the sustainable fraction falls [1][3]. The most usable engineering form of this is the **Riegel endurance model**, which relates times over two distances by a power law:
+For events too long for the CS model, the empirical relationship between sustainable %VO₂max and duration (Section 1.5) governs pace: as duration rises, the sustainable fraction falls [1][3]. The most usable engineering form of this is the **Riegel endurance model**, which relates times over two distances by a power law:
 
 **T₂ = T₁ · (D₂ / D₁)^b**,
 
