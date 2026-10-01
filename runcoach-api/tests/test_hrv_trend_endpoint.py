@@ -1218,7 +1218,13 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 475  # re-measured 2026-09-30 (T221, sprint-009), as the last action
+SCOPED_SUITE_COLLECTED = 476  # re-measured 2026-10-01 (sprint-009 wave 3 test-fix, IDEA-072),
+#                              # as the last action before the commit: +1. One pin added to this
+#                              # file, the walk's nested-checkout prune
+#                              # (test_the_walk_prunes_a_nested_checkout_but_not_the_directory_around_it).
+#                              # No identity elsewhere changed. Nothing publishes this literal;
+#                              # the previous value's own note follows.
+# SCOPED_SUITE_COLLECTED = 475  # re-measured 2026-09-30 (T221, sprint-009), as the last action
 #                              # before the commit: +2. One parametrized pin added to this file,
 #                              # F010 AC3's recency boundary (two cases, exactly the tolerance
 #                              # and one past it), the test PRIN-12 and HRV-17 now name on their
@@ -1636,6 +1642,27 @@ SCAN_EXCLUDED_DIR_PREFIXES = (
     (".shipyard", "the data-dir breadcrumb under any name, renamed or not; never corpus"),
 )
 
+#: Machinery a third way, matched on **what a directory holds** rather than on
+#: what it is called: a directory that carries this entry is a nested git
+#: checkout -- a second copy of the tree at some commit -- and the walk does
+#: not descend into it. IDEA-072 is the measurement: the ``.mut-`` row above
+#: already records that a second copy of the tree is never corpus, and the
+#: builder worktrees Shipyard dispatches into ``.claude/worktrees/<agent>/``
+#: are the same thing under a name no row knew, so a wave whose suite ran in
+#: the main checkout while one builder was still live reported every
+#: retraction quote in that builder's ``CHANGELOG.md`` and every literal in
+#: its ``withdrawn_phrasings.py`` as a phantom offender (23 in T128's run, 37
+#: in sprint-009 wave 3's). ``.claude`` itself is not pruned, because
+#: ``.claude/rules/`` holds the graduated learnings and is live prose the
+#: walk must keep reaching; what is pruned is the checkout, wherever it sits
+#: and whatever it is called. The root's own ``.git`` is a file in a worktree
+#: and a directory in the main checkout; neither is a child directory the
+#: walk would descend into, so the root is never mistaken for a nested one.
+SCAN_EXCLUDED_CHECKOUT_MARKER = (
+    ".git",
+    "a nested git checkout (a builder worktree, a mutation worktree, a clone): a second copy of the tree",
+)
+
 #: Historical record. ``sweep-the-claim-not-the-diff`` step 3 says a completed
 #: task file, a raw transcript and a dated verdict legitimately quote a
 #: withdrawn phrasing *as the thing that was withdrawn*, and are to be left
@@ -1732,9 +1759,14 @@ def _walk(root: Path) -> tuple[Path, ...]:
     prune tables can be exercised against a tree built for the purpose."""
     pruned = {name for name, _reason in SCAN_EXCLUDED_DIR_NAMES}
     prefixes = tuple(prefix for prefix, _reason in SCAN_EXCLUDED_DIR_PREFIXES)
+    marker, _marker_reason = SCAN_EXCLUDED_CHECKOUT_MARKER
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in pruned and not d.startswith(prefixes)]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in pruned and not d.startswith(prefixes) and not (Path(dirpath) / d / marker).exists()
+        ]
         for name in filenames:
             if Path(name).suffix.lower() in SCAN_SUFFIXES:
                 found.append(Path(dirpath) / name)
@@ -2081,6 +2113,39 @@ def test_the_walk_prunes_the_breadcrumb_under_any_name(tmp_path: Path) -> None:
     (tmp_path / "nested" / ".shipyard.moved").mkdir(parents=True)
     (tmp_path / "nested" / ".shipyard.moved" / "history.md").write_text("never corpus\n", encoding="utf-8")
     assert _walk(tmp_path) == (tmp_path / "live.md",)
+
+
+def test_the_walk_prunes_a_nested_checkout_but_not_the_directory_around_it(tmp_path: Path) -> None:
+    """IDEA-072's pin. A builder worktree under ``.claude/worktrees/<agent>/``
+    is a whole second copy of the tree, ``CHANGELOG.md`` and the declaration
+    module included, and the walk reading it from the main checkout reported
+    every quoted retraction in it as a live offender (sprint-009 wave 3, 37
+    phantom hits in one builder's copy). The rule is on what a directory
+    holds, not what it is called: a child carrying ``.git`` -- the file a
+    worktree has, or the directory a clone has -- is pruned wherever it sits,
+    and the directory around it is not, because ``.claude/rules/`` is live
+    prose the walk must keep reaching. Built against a tree of its own so the
+    assertion is on the prune rule and not on which builders happen to be
+    live on this machine."""
+    marker, _reason = SCAN_EXCLUDED_CHECKOUT_MARKER
+    (tmp_path / "live.md").write_text("corpus\n", encoding="utf-8")
+    (tmp_path / ".claude" / "rules").mkdir(parents=True)
+    (tmp_path / ".claude" / "rules" / "learning.md").write_text("corpus\n", encoding="utf-8")
+    worktree = tmp_path / ".claude" / "worktrees" / "agent-0123456789abcdef0"
+    worktree.mkdir(parents=True)
+    (worktree / marker).write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (worktree / "CHANGELOG.md").write_text("never corpus\n", encoding="utf-8")
+    (worktree / "deep" / "tests").mkdir(parents=True)
+    (worktree / "deep" / "tests" / "withdrawn.py").write_text("'never corpus'\n", encoding="utf-8")
+    clone = tmp_path / "elsewhere" / "clone"
+    (clone / marker).mkdir(parents=True)
+    (clone / "CHANGELOG.md").write_text("never corpus\n", encoding="utf-8")
+    (tmp_path / "elsewhere" / "sibling.md").write_text("corpus\n", encoding="utf-8")
+    assert _walk(tmp_path) == (
+        tmp_path / ".claude" / "rules" / "learning.md",
+        tmp_path / "elsewhere" / "sibling.md",
+        tmp_path / "live.md",
+    )
 
 
 def test_an_anchored_file_that_is_absent_fails_the_reach_walk_rather_than_skipping(monkeypatch) -> None:
