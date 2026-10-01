@@ -16,8 +16,8 @@ F011 edit these files through this procedure.
   regeneration of the test's literals clears a changed line; only a verdict line recording the new
   digest does. The verdict line is itself bound by `REVIEW_LINE_SHA256`, and regenerating that
   literal takes a changed verdict line only when a new round re-judged it (see Never). A line
-  deleted with its verdict line stays red after regeneration unless a new round says "removed"
-  and the row's label, as in removed PRIN-12/Why; a passing mention of the row does not do it.
+  deleted with its verdict line stays red after regeneration unless a new round removes it in the
+  clause form of step 3, as in `; removed PRIN-12/Why`; a passing mention of the row does not do it.
 - **Everything else** is a frozen literal in the test: Pinned lines (`PINNED_SHA256`); headings,
   terms and rule IDs in order (`RESEARCH_STRUCTURE`, `GLOSSARY_TERMS`); table rows, retirements and
   authorities (`TRACEABILITY_ROW_SHA256`, `RETIRED_IDS`, `NON_C_AUTHORITIES`, `KEY_OWNERS` and
@@ -32,8 +32,13 @@ F011 edit these files through this procedure.
 
 1. **A ruling first, for any meaning change.** The user rules (R3, R13), and the ruling is recorded
    as a new R-entry, or a dated bullet under one, in the F008 decisions reference. A rewording that
-   keeps the meaning still goes through steps 2 to 5.
+   keeps the meaning still goes through steps 2 to 5. A Pinned-line, history-line, structure or
+   old-meanings change that touches no rule, Scope, Not, Why or Glossary line needs no critic round:
+   steps 2, 4 and 5 only, as T221 and T223 did.
 2. **The builder edits the rule text**, and the table, history or old meanings the change needs.
+   History lines and dated notes use the vocabulary in force when they are edited; the period
+   wording is recoverable from git (sprint-009 D3), so a history entry reworded to the current terms
+   is not restored.
 3. **A fresh critic that built nothing** re-judges every changed row. It writes each new verdict line
    with the digest of the line it judged (`_cell_digest`: whitespace collapsed, first 12 hex of the
    sha256) and a reason that begins with its round's name, then a new round paragraph under the
@@ -41,8 +46,13 @@ F011 edit these files through this procedure.
    The paragraph is one line, never wrapped: only the line that begins with its name is read for
    labels, and a second line breaks the review's shape (`review_shape_errors`). Its name is a plain
    number above every earlier round's, so the next round after round 11 is 12, never 012 or 11b
-   (3b and 4b are the only lettered rounds). It names every changed row, and says "removed" and
-   the label before each removed row. The builder never edits the meaning review.
+   (3b and 4b are the only lettered rounds). It names every row it read, including the neighbours
+   it left `same`; a round that counts its neighbours without naming them records nothing (sprint-009
+   D4). A removal is its own clause, the lower-case `; removed <label>` after a semicolon or
+   `. Removed <label>` after a full stop, one label per clause, as in
+   `re-judged PRIN-12; removed PRIN-12/Why.`; a comma before it, `; Removed`, `. removed`, the
+   round's opening clause and a second label after "and" remove nothing. The builder never edits
+   the meaning review.
 4. **Regenerate only the changed non-verdict literals**, plus `REVIEW_LINE_SHA256`,
    `REVIEW_PROSE_SHA256`, `FROZEN_ROUNDS` and its pin, from the one documented command. Its notes must
    end with an empty problems list (a misnamed round, a changed inventory sentence and a broken review
@@ -123,4 +133,6 @@ than as a legitimate round moves it (route 4). The change is approved only when 
 `# code changed: <name>`, `# code added: <name>` or `# code removed: <name>` for each top-level
 definition outside the frozen literals and the `__main__` block that differs from the base's. These
 are report lines, not differences, and do not change the exit code. The reviewer reads the diff of
-every name they list.
+every name they list. The suite also cannot tell a critic from a builder: a round is written and
+committed by a subagent that built nothing in that task, named as the critic in that commit's author
+or body, and the reviewer checks that the commit's diff touches only the meaning review.
