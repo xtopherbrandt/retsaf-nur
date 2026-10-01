@@ -191,3 +191,247 @@ repo,specification/spec/09-loop-closure-decision-log-explainability.md,144,Part 
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,154,§1.1,PRIN-01
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-17
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-18
+repo,specification/spec/02-canonical-data-schema-ingestion.md,3,§1.5,PRIN-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,3,Part 2,ARCH-06
+repo,specification/spec/02-canonical-data-schema-ingestion.md,3,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,3,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,3,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,11,§1.5,PRIN-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,11,§1.5,PRIN-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,11,§3.3,PRIN-21
+repo,specification/spec/02-canonical-data-schema-ingestion.md,13,Part 2,ARCH-06
+repo,specification/spec/02-canonical-data-schema-ingestion.md,15,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,43,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,66,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,74,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,78,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,78,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,80,,HRV-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,92,Part 2,ARCH-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,149,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,163,§1.5,PRIN-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,163,§3.3,HRV-04
+repo,specification/spec/02-canonical-data-schema-ingestion.md,169,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,173,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,184,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,191,Part 4,FTO-03
+repo,specification/spec/02-canonical-data-schema-ingestion.md,197,Part 2,ARCH-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,203,Part 3,HRV-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,203,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,205,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,207,,HRV-02
+repo,specification/spec/02-canonical-data-schema-ingestion.md,212,§1.5,PRIN-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,212,§5.4,HRV-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,216,§5.4,HRV-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,216,§5.4,HRV-51
+repo,specification/spec/02-canonical-data-schema-ingestion.md,216,§5.4,HRV-14
+repo,specification/spec/02-canonical-data-schema-ingestion.md,216,§1.4,PRIN-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,216,Part 2,ARCH-12
+repo,specification/spec/02-canonical-data-schema-ingestion.md,218,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,224,Part 2,ARCH-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,236,Part 2,ARCH-06
+repo,specification/spec/02-canonical-data-schema-ingestion.md,252,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,280,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,280,Part 3,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,290,Part 3,REG-11
+repo,specification/spec/02-canonical-data-schema-ingestion.md,290,§3.3,HRV-01
+repo,specification/spec/04-physiological-state-model.md,3,§1.5,PRIN-07
+repo,specification/spec/04-physiological-state-model.md,3,§1.5,PRIN-09
+repo,specification/spec/04-physiological-state-model.md,3,§3.1,IND-01
+repo,specification/spec/04-physiological-state-model.md,3,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,3,Part 3,DOC-06
+repo,specification/spec/04-physiological-state-model.md,9,Part 2,ARCH-02
+repo,specification/spec/04-physiological-state-model.md,15,§1.5,PRIN-08
+repo,specification/spec/04-physiological-state-model.md,15,§1.5,PRIN-09
+repo,specification/spec/04-physiological-state-model.md,15,§3.2,COLD-10
+repo,specification/spec/04-physiological-state-model.md,39,Part 2,ARCH-04
+repo,specification/spec/04-physiological-state-model.md,52,Part 3,REG-06
+repo,specification/spec/04-physiological-state-model.md,78,Part 3,DOC-06
+repo,specification/spec/04-physiological-state-model.md,84,Part 2,ARCH-08
+repo,specification/spec/04-physiological-state-model.md,84,Part 2,ARCH-11
+repo,specification/spec/04-physiological-state-model.md,88,§1.4,PRIN-06
+repo,specification/spec/04-physiological-state-model.md,94,research/00 §3.2,COLD-07
+repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-11
+repo,specification/spec/04-physiological-state-model.md,110,§1.5,PRIN-09
+repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-10
+repo,specification/spec/04-physiological-state-model.md,112,,COLD-08
+repo,specification/spec/04-physiological-state-model.md,132,§3.2,COLD-11
+repo,specification/spec/04-physiological-state-model.md,134,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,134,§1.5,PRIN-07
+repo,specification/spec/04-physiological-state-model.md,134,Part 4,FTO-02
+repo,specification/spec/04-physiological-state-model.md,138,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,148,§3.1,IND-01
+repo,specification/spec/04-physiological-state-model.md,152,§3.1,IND-01
+repo,specification/spec/04-physiological-state-model.md,156,§3.1,IND-06
+repo,specification/spec/04-physiological-state-model.md,164,Part 2,ARCH-11
+repo,specification/spec/04-physiological-state-model.md,168,§1.7,PRIN-13
+repo,specification/spec/04-physiological-state-model.md,183,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,183,Part 3,DOC-08
+repo,specification/spec/05-training-plan-generation.md,3,§1.1,PRIN-01
+repo,specification/spec/05-training-plan-generation.md,3,Part 2,ARCH-04
+repo,specification/spec/05-training-plan-generation.md,3,Part 3,REG-07
+repo,specification/spec/05-training-plan-generation.md,3,§3.1,IND-01
+repo,specification/spec/05-training-plan-generation.md,3,Part 2,ARCH-11
+repo,specification/spec/05-training-plan-generation.md,3,§1.9,GOAL-01
+repo,specification/spec/05-training-plan-generation.md,3,Part 3,DOC-06
+repo,specification/spec/05-training-plan-generation.md,11,§1.2,ARB-01
+repo,specification/spec/05-training-plan-generation.md,41,Part 2,ARCH-04
+repo,specification/spec/05-training-plan-generation.md,82,,IND-01
+repo,specification/spec/05-training-plan-generation.md,114,Part 2,ARCH-04
+repo,specification/spec/05-training-plan-generation.md,118,Part 2,ARCH-11
+repo,specification/spec/05-training-plan-generation.md,124,§3.4,LT1-01
+repo,specification/spec/05-training-plan-generation.md,124,§3.4,LT1-02
+repo,specification/spec/05-training-plan-generation.md,124,§3.3,HRV-05
+repo,specification/spec/05-training-plan-generation.md,124,§3.4,LT1-04
+repo,specification/spec/05-training-plan-generation.md,128,§3.1,IND-02
+repo,specification/spec/05-training-plan-generation.md,147,Part 3,REG-08
+repo,specification/spec/05-training-plan-generation.md,149,Part 3,REG-08
+repo,specification/spec/05-training-plan-generation.md,149,Part 3,REG-14
+repo,specification/spec/05-training-plan-generation.md,157,§1.2,ARB-01
+repo,specification/spec/05-training-plan-generation.md,157,§1.7,PRIN-13
+repo,specification/spec/05-training-plan-generation.md,161,Part 2,ARCH-11
+repo,specification/spec/05-training-plan-generation.md,169,Part 3,REG-07
+repo,specification/spec/05-training-plan-generation.md,190,§1.7,PRIN-13
+repo,specification/spec/05-training-plan-generation.md,190,§3.1,IND-01
+repo,specification/spec/05-training-plan-generation.md,190,Part 2,ARCH-11
+repo,specification/spec/05-training-plan-generation.md,194,§1.7,PRIN-13
+repo,specification/spec/05-training-plan-generation.md,194,Part 2,ARCH-11
+repo,specification/spec/05-training-plan-generation.md,196,Part 3,REG-13
+repo,specification/spec/05-training-plan-generation.md,217,§1.8,AUT-04
+repo,specification/spec/05-training-plan-generation.md,233,§1.2,ARB-01
+repo,specification/spec/05-training-plan-generation.md,239,§3.4,LT1-01
+repo,specification/spec/05-training-plan-generation.md,239,§3.4,LT1-02
+repo,specification/spec/05-training-plan-generation.md,241,Part 3,REG-13
+repo,specification/spec/05-training-plan-generation.md,245,Part 3,REG-14
+repo,specification/spec/06-adaptation-logic.md,3,§1.2,ARB-01
+repo,specification/spec/06-adaptation-logic.md,3,§1.3,PRIN-04
+repo,specification/spec/06-adaptation-logic.md,3,§1.4,PRIN-05
+repo,specification/spec/06-adaptation-logic.md,3,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,3,§1.8,AUT-01
+repo,specification/spec/06-adaptation-logic.md,3,§1.9,GOAL-01
+repo,specification/spec/06-adaptation-logic.md,3,Part 3,DOC-06
+repo,specification/spec/06-adaptation-logic.md,13,§1.9,GOAL-01
+repo,specification/spec/06-adaptation-logic.md,13,§1.8,AUT-01
+repo,specification/spec/06-adaptation-logic.md,14,§1.6,PRIN-22
+repo,specification/spec/06-adaptation-logic.md,16,§1.5,PRIN-08
+repo,specification/spec/06-adaptation-logic.md,16,§1.8,AUT-07
+repo,specification/spec/06-adaptation-logic.md,22,Part 2,ARCH-03
+repo,specification/spec/06-adaptation-logic.md,33,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,43,Part 3,REG-19
+repo,specification/spec/06-adaptation-logic.md,46,Part 3,REG-02
+repo,specification/spec/06-adaptation-logic.md,64,§5.4,HRV-07
+repo,specification/spec/06-adaptation-logic.md,73,§1.4,PRIN-06
+repo,specification/spec/06-adaptation-logic.md,73,§1.4,PRIN-18
+repo,specification/spec/06-adaptation-logic.md,74,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,74,§5.4,FIG-01
+repo,specification/spec/06-adaptation-logic.md,78,Part 2,ARCH-01
+repo,specification/spec/06-adaptation-logic.md,83,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,117,§1.2,ARB-02
+repo,specification/spec/06-adaptation-logic.md,140,§1.2,ARB-02
+repo,specification/spec/06-adaptation-logic.md,159,§1.9,GOAL-02
+repo,specification/spec/06-adaptation-logic.md,159,§1.9,GOAL-03
+repo,specification/spec/06-adaptation-logic.md,165,§1.2,ARB-01
+repo,specification/spec/06-adaptation-logic.md,179,§1.2,ARB-01
+repo,specification/spec/06-adaptation-logic.md,187,§1.1,PRIN-01
+repo,specification/spec/06-adaptation-logic.md,187,§1.2,PRIN-03
+repo,specification/spec/06-adaptation-logic.md,191,§1.3,PRIN-04
+repo,specification/spec/06-adaptation-logic.md,195,§1.6,PRIN-22
+repo,specification/spec/06-adaptation-logic.md,201,§1.4,PRIN-05
+repo,specification/spec/06-adaptation-logic.md,212,§1.4,PRIN-06
+repo,specification/spec/06-adaptation-logic.md,212,§1.4,PRIN-18
+repo,specification/spec/06-adaptation-logic.md,214,§1.4,PRIN-05
+repo,specification/spec/06-adaptation-logic.md,220,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,231,§1.7,PRIN-13
+repo,specification/spec/06-adaptation-logic.md,231,Part 2,ARCH-11
+repo,specification/spec/06-adaptation-logic.md,237,§1.8,AUT-01
+repo,specification/spec/06-adaptation-logic.md,237,§1.9,GOAL-01
+repo,specification/spec/06-adaptation-logic.md,239,§1.8,AUT-02
+repo,specification/spec/06-adaptation-logic.md,239,§1.9,GOAL-02
+repo,specification/spec/06-adaptation-logic.md,242,§1.9,GOAL-02
+repo,specification/spec/06-adaptation-logic.md,242,§1.9,GOAL-03
+repo,specification/spec/06-adaptation-logic.md,244,§1.6,PRIN-22
+repo,specification/spec/06-adaptation-logic.md,244,§1.8,AUT-03
+repo,specification/spec/06-adaptation-logic.md,248,§1.8,AUT-03
+repo,specification/spec/06-adaptation-logic.md,253,§1.2,ARB-02
+repo,specification/spec/06-adaptation-logic.md,253,§1.8,ARB-07
+repo,specification/spec/06-adaptation-logic.md,261,§3.1,IND-01
+repo,specification/spec/06-adaptation-logic.md,277,Part 3,REG-19
+repo,specification/spec/03-derived-metric-formulas.md,3,§1.5,PRIN-07
+repo,specification/spec/03-derived-metric-formulas.md,3,§1.6,PRIN-11
+repo,specification/spec/03-derived-metric-formulas.md,3,Part 2,ARCH-05
+repo,specification/spec/03-derived-metric-formulas.md,3,Part 3,DOC-07
+repo,specification/spec/03-derived-metric-formulas.md,3,§3.3,HRV-01
+repo,specification/spec/03-derived-metric-formulas.md,3,Part 3,DOC-06
+repo,specification/spec/03-derived-metric-formulas.md,12,§1.5,PRIN-09
+repo,specification/spec/03-derived-metric-formulas.md,12,§3.3,PRIN-10
+repo,specification/spec/03-derived-metric-formulas.md,13,Part 2,ARCH-05
+repo,specification/spec/03-derived-metric-formulas.md,35,Part 2,ARCH-05
+repo,specification/spec/03-derived-metric-formulas.md,89,Part 3,REG-03
+repo,specification/spec/03-derived-metric-formulas.md,101,§3.1,IND-02
+repo,specification/spec/03-derived-metric-formulas.md,118,Part 2,ARCH-07
+repo,specification/spec/03-derived-metric-formulas.md,122,Part 3,REG-03
+repo,specification/spec/03-derived-metric-formulas.md,126,Part 3,REG-21
+repo,specification/spec/03-derived-metric-formulas.md,129,Part 3,REG-21
+repo,specification/spec/03-derived-metric-formulas.md,155,research/00 §3.2,COLD-01
+repo,specification/spec/03-derived-metric-formulas.md,159,Part 3,REG-01
+repo,specification/spec/03-derived-metric-formulas.md,161,§3.1,IND-01
+repo,specification/spec/03-derived-metric-formulas.md,161,§3.1,IND-06
+repo,specification/spec/03-derived-metric-formulas.md,170,§3.1,REG-20
+repo,specification/spec/03-derived-metric-formulas.md,200,§1.4,PRIN-06
+repo,specification/spec/03-derived-metric-formulas.md,208,§3.3,HRV-01
+repo,specification/spec/03-derived-metric-formulas.md,208,Part 3,HRV-05
+repo,specification/spec/03-derived-metric-formulas.md,227,Part 3,HRV-07
+repo,specification/spec/03-derived-metric-formulas.md,231,§5.4,HRV-07
+repo,specification/spec/03-derived-metric-formulas.md,235,§5.4,HRV-27
+repo,specification/spec/03-derived-metric-formulas.md,235,§1.7,PRIN-14
+repo,specification/spec/03-derived-metric-formulas.md,235,§5.4,FIG-01
+repo,specification/spec/03-derived-metric-formulas.md,235,§5.4,FIG-02
+repo,specification/spec/03-derived-metric-formulas.md,236,§5.4,HRV-31
+repo,specification/spec/03-derived-metric-formulas.md,236,§1.7,PRIN-14
+repo,specification/spec/03-derived-metric-formulas.md,236,§5.4,HRV-67
+repo,specification/spec/03-derived-metric-formulas.md,236,§5.4 (v),HRV-63
+repo,specification/spec/03-derived-metric-formulas.md,238,§3.3,HRV-06
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-10
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-51
+repo,specification/spec/03-derived-metric-formulas.md,238,§1.7,PRIN-14
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-21
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-24
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-60
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-09
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-15
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-38
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-39
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-72
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-77
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-78
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-41
+repo,specification/spec/03-derived-metric-formulas.md,238,§3.3,HRV-14
+repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-81
+repo,specification/spec/03-derived-metric-formulas.md,240,Part 3,HRV-07
+repo,specification/spec/03-derived-metric-formulas.md,240,§5.4,HRV-07
+repo,specification/spec/03-derived-metric-formulas.md,240,Part 4,FTO-03
+repo,specification/spec/03-derived-metric-formulas.md,240,Part 4,FTO-07
+repo,specification/spec/03-derived-metric-formulas.md,246,§1.4,PRIN-06
+repo,specification/spec/03-derived-metric-formulas.md,246,§1.4,PRIN-18
+repo,specification/spec/03-derived-metric-formulas.md,246,§5.4,HRV-32
+repo,specification/spec/03-derived-metric-formulas.md,246,§5.4,HRV-41
+repo,specification/spec/03-derived-metric-formulas.md,246,§5.4,HRV-67
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4,HRV-14
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4,HRV-51
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4,HRV-21
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4 (v),HRV-31
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4 (iii),HRV-23
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4 (iii),HRV-58
+repo,specification/spec/03-derived-metric-formulas.md,247,Part 2,ARCH-12
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4,HRV-28
+repo,specification/spec/03-derived-metric-formulas.md,247,§5.4,HRV-61
+repo,specification/spec/03-derived-metric-formulas.md,257,Part 3,REG-06
+repo,specification/spec/03-derived-metric-formulas.md,261,Part 3,REG-06
+repo,specification/spec/03-derived-metric-formulas.md,273,Part 3,REG-06
+repo,specification/spec/03-derived-metric-formulas.md,281,Part 3,REG-02
+repo,specification/spec/03-derived-metric-formulas.md,289,Part 3,REG-02
+repo,specification/spec/03-derived-metric-formulas.md,302,§1.2,ARB-02
+repo,specification/spec/03-derived-metric-formulas.md,316,research/00 §3.3,HRV-01
+repo,specification/spec/03-derived-metric-formulas.md,215,,HRV-04
+repo,specification/spec/03-derived-metric-formulas.md,310,,IND-01
