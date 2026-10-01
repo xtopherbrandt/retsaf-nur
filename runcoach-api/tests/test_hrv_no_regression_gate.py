@@ -1,6 +1,6 @@
-"""T162 -- the release gate: no §1.7 rate of F006 is worse than shipped F005's.
+"""T162 -- the release gate: no forbidden-direction rate (PRIN-14) of F006 is worse than shipped F005's.
 
-F006 AC21 says "any §1.7 rate that worsens **blocks release**". A markdown
+F006 AC21 (GATE-04) says a forbidden-direction (PRIN-14) rate that worsens **blocks release**. A markdown
 report cannot say that: a document asserting an invariant is a restatement of
 it, and this project has already paid for that once
 (``.claude/rules/learnings/a-published-invariant-needs-a-test-that-can-break-it.md``,
@@ -35,7 +35,7 @@ moved a number cannot leave a stale copy behind it.
 measured evidence**, not a live invariant over the rule. Every assertion
 below is over rows in a committed CSV, and that file changes only when
 someone re-runs the ~13-minute ``t162-gate`` harness and re-commits its
-output. So "no §1.7 rate worsens" is proved of the rule **as it stood when
+output. So "no forbidden-direction rate (PRIN-14) worsens" is proved of the rule **as it stood when
 the sweep last ran** -- and of nothing else. A change to
 ``metrics/hrv_trend.py`` that reintroduces a regression does not redden a
 single row here, because no row is recomputed: the wave-7 mutation pass
@@ -61,7 +61,7 @@ own axes (``sweep``, ``overlap``, ``ret_density``, ``car_density``, ``c``,
 axes-held-constant tables beside them. The report is
 ``spec/references/F006-no-regression-report.md``.
 
-**What is gated and what is only surfaced.** ``gated`` is 1 on the §1.7
+**What is gated and what is only surfaced.** ``gated`` is 1 on the forbidden-direction (PRIN-14)
 rates AC21 blocks release on -- every one counts an ``hrv_normal`` promoted
 on evidence that is not the athlete's own current reading -- and on AC22's
 promotion-with-a-dissenter exposure. It is 0 on AC23's dataset-flip rate,
@@ -134,7 +134,7 @@ _COUNTS = ("f005", "f006", "denom")
 #: -------------------------------------------------------------------------
 #: The one measured regression this gate does **not** block release on, named.
 #:
-#: **What it is.** The §1.7-forbidden rate -- the athlete's own return is
+#: **What it is.** The forbidden-direction rate (PRIN-14) -- the athlete's own return is
 #: suppressed (25 ms) and ``hrv_normal`` is promoted from the overlapping
 #: carrier's week -- is worse on F006 than on shipped F005 at ``c = 4`` and
 #: ``c = 5`` only: rectangle 22,217 -> 22,232 in total (+15 of 307,500,
@@ -171,8 +171,8 @@ _COUNTS = ("f005", "f006", "denom")
 #: worse than its successor, which on this population happens to land on the
 #: right answer.
 DEFERRED_EXCEPTION = (
-    "the §1.7-forbidden rate (a suppressed return promoted hrv_normal from the carrier's week) "
-    "at c = 4 and c = 5, under the independent-instruments fixture only -- deferred pending IDEA-087"
+    "the PRIN-14 forbidden-direction rate (a suppressed return promoted hrv_normal from the carrier's "
+    "week) at c = 4 and c = 5, under the independent-instruments fixture only -- deferred pending IDEA-087"
 )
 
 #: Exactly how many gated rows the exception covers. Re-measured by T164 on
@@ -243,14 +243,14 @@ PAID_BY_T164 = {
 #: question; neither is it a closed one.
 #:
 #: **What it was decided on.** Measured at ``car_density = 2wk`` -- the exact
-#: axis value every worsened cell sits on -- not one §1.7 forbidden family
+#: axis value every worsened cell sits on -- not one PRIN-14 forbidden family
 #: moved: all nine of them are equal across all 850 family×cell rows
 #: (370 cells). AC22 promotion exposure *improved* there, 52 better and
 #: 0 worse (``ac22_below`` 18,
 #: ``ac22_literal`` 18, ``walk_ac22_below`` 16; an earlier record said 34,
 #: which silently dropped ``ac22_literal`` -- 52 is the figure the stated
 #: filter produces). The marginal halved, 18.4684 -> 9.359. The reasoning: a
-#: flip is a **proxy**, and what §1.7 forbids is a **harm** -- a wrong
+#: flip is a **proxy**, and what PRIN-14 forbids is a **harm** -- a wrong
 #: verdict in the up-regulating direction. Here the flips buy withheld days,
 #: the cautious direction, while every forbidden family is byte-identical to
 #: shipped F005.
@@ -271,11 +271,11 @@ PAID_BY_T164 = {
 #: 2. **The corpus cannot express the harm.** ``spec/references/T130-overlap-sweep-harness.py``'s
 #:    ``era()`` gives every tier the same value generator -- its own docstring:
 #:    "the band's dispersion is the same at every density" -- so both tiers
-#:    carry statistically identical bands. "No §1.7 rate moved where the flips
+#:    carry statistically identical bands. "No forbidden-direction (PRIN-14) rate moved where the flips
 #:    worsened" is therefore true **by construction**: a property of the
 #:    fixtures, not a finding about the rule. Under a real dispersion gap
-#:    (§3.3: 2.16% strap vs 17.49% PPG) the snapshot band is wider, so a flip
-#:    makes ``hrv_normal`` strictly more likely -- §1.7's forbidden direction.
+#:    (HRV-06, F006: 2.16% strap vs 17.49% PPG) the snapshot band is wider, so a flip
+#:    makes ``hrv_normal`` strictly more likely -- PRIN-14's forbidden direction.
 #:    No row of the CSV can show that, because SD is pinned equal across tiers.
 #:
 #: Until both are met AC23 is **PARTIAL, not MET**, and this pin is what keeps
@@ -388,7 +388,7 @@ def name(row: dict[str, str]) -> str:
 
 
 def worsened(rows: list[dict[str, str]]) -> list[str]:
-    """Every worsened gated row, named -- the raw §1.7 direction, exception
+    """Every worsened gated row, named -- the raw PRIN-14 direction, exception
     included. The *gate* asserts on ``unexcused`` below; this is what the
     three-valued perturbation pin exercises, and what the exception is
     partitioned out of."""
@@ -451,7 +451,7 @@ def provenance() -> dict:
 def test_the_rows_were_measured_against_this_checkouts_rule() -> None:
     """**The provenance pin.** Everything else in this module asserts over a
     committed CSV that changes only when someone re-runs a ~13-minute sweep.
-    That makes the gate a ratchet on evidence: it proves "no §1.7 rate
+    That makes the gate a ratchet on evidence: it proves "no forbidden-direction (PRIN-14) rate
     worsens" of the rule **as it stood when the sweep last ran**, and of
     nothing else.
 
@@ -573,7 +573,7 @@ def test_the_rows_are_the_population_the_gate_needs() -> None:
     gated = [row for row in rows if row["gated"] == "1"]
     assert len(gated) > 500, f"only {len(gated)} gated rows: AC21 has almost nothing to gate on"
     assert {row["criterion"] for row in gated} == {"AC21", "AC22"}, (
-        "the gated set is AC21's §1.7 rates and AC22's promotion exposure, and nothing else"
+        "the gated set is AC21's PRIN-14 rates and AC22's promotion exposure, and nothing else"
     )
     for metric in ("forbidden", "forbidden_ret_week_ge3", "normal_stale_band",
                    "ac22_below", "ac22_below_min_window", "walk_forbidden"):
@@ -614,7 +614,7 @@ def test_the_paired_comparison_is_actually_paired() -> None:
 
 
 def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
-    """**The gate** (F006 AC21). Any §1.7 rate -- ``hrv_normal`` promoted
+    """**The gate** (F006 AC21). Any forbidden-direction rate (PRIN-14) -- ``hrv_normal`` promoted
     while the athlete's own return is suppressed, whether via the carrier's
     week or a band every reading of which predates the layoff; ``hrv_normal``
     on a stale band at all; ``hrv_normal`` promoted while another dataset
@@ -654,7 +654,7 @@ def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
 
     regressions = unexcused(rows)
     assert not regressions, (
-        f"{len(regressions)} §1.7 rate(s) are worse on F006 than on shipped F005 and are NOT "
+        f"{len(regressions)} PRIN-14 rate(s) are worse on F006 than on shipped F005 and are NOT "
         f"covered by the deferred exception, so AC21 blocks release: " + "; ".join(regressions[:40])
     )
 
@@ -945,7 +945,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
     to be handed -- and so that the deferred exception cannot swallow a
     regression it was not written for.
 
-    On the rows as measured the **raw** §1.7 comparison is still red: T164's
+    On the rows as measured the **raw** PRIN-14 comparison is still red: T164's
     re-measurement leaves 64 worsened gated rows, every one of them the
     deferred exception (T162 found 548 before the reference-set change). The
     *gate* is green on them, because ``unexcused`` partitions those 64 out.
@@ -961,7 +961,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
        names **exactly** that row, on the gate's own predicate;
     3. **green again** -- that same copy with that row *lowered* by one (an
        improvement, the tolerated direction) names none, so the predicate is
-       on the §1.7 direction and not on any difference.
+       on the PRIN-14 direction and not on any difference.
 
     Then the two states the exception itself needs:
 
@@ -1024,7 +1024,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
     better_copy = [dict(row) for row in clamped]
     better_copy[victim_index]["f006"] = str(max(0.0, float(victim["f005"]) - 1))
     assert not unexcused(better_copy), (
-        "state 3: a rate that IMPROVES was reported as a regression -- the gate is on the §1.7 "
+        "state 3: a rate that IMPROVES was reported as a regression -- the gate is on the PRIN-14 "
         "direction, not on any difference"
     )
     print("state 3 (that copy, the same rate LOWERED by one): 0 regressions")
@@ -1039,7 +1039,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
 
     inside_copy = [dict(row) for row in clamped]
     inside_copy[excepted_index]["f006"] = str(float(excepted_victim["f005"]) + 1)
-    assert worsened(inside_copy), "state 4: the raw §1.7 comparison must still see the excepted row"
+    assert worsened(inside_copy), "state 4: the raw PRIN-14 comparison must still see the excepted row"
     assert not unexcused(inside_copy), (
         "state 4: a worsened row inside the exception's shape reached the gate, so the deferral is "
         "not actually partitioned out"

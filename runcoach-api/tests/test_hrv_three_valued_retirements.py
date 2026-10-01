@@ -75,15 +75,15 @@ days, >= 3 judged-week days, higher fidelity); F006 selects the strap dataset
 What each pin asserts, and why it is that qualifier's pin
 ---------------------------------------------------------
 ``_pin_the_band_belongs_to_one_tier`` -- **no reading of one tier contributes
-to another tier's band** (F006 AC1; ``research/00`` 5.4 (i) "the anti-mixing
-constraint of 3.3 is honoured by construction"). Shipped F005 honours it
+to another tier's band** (F006 AC1; ``research/00`` HRV-06, the anti-mixing
+constraint, honoured by construction). Shipped F005 honours it
 *through* the arbitration: one tier owns the band and every other tier's
 readings are filtered out. F006 honours it *by construction*: each dataset is
 built from its own tier's readings alone. That is exactly a retirement -- the
 property survives, the mechanism does not -- and deleting the arbitration from
 shipped F005 breaks the property.
 
-``_pin_every_stored_row_is_accounted_for_exactly_once`` -- ``research/00`` 1.6,
+``_pin_every_stored_row_is_accounted_for_exactly_once`` -- ``research/00`` PRIN-23,
 restated as F006 AC15. Shipped F005 accounts for the non-baseline tier's rows
 by listing them ``off_baseline_tier: <tier>``; F006 accounts for them in their
 own dataset's series, excluded nowhere. Deleting the exclusion leaves them in
@@ -349,7 +349,7 @@ def _pin_the_band_belongs_to_one_tier(module: ModuleType, label: str, target: da
 
     assert len(tiers) == 1, (
         f"the band mixes tiers: readings of {tiers} are all in one baseline of "
-        f"{len(view.baseline)} days -- the anti-mixing rule (AC1, research/00 5.4 (i)) is broken. {witness}"
+        f"{len(view.baseline)} days -- the anti-mixing rule (AC1, research/00 HRV-06) is broken. {witness}"
     )
     assert tiers[0] == view.tier, f"the band is not the presented tier's. {witness}"
     assert math.isclose(observed, expected_mean(tiers[0]), rel_tol=0, abs_tol=1e-12), (
@@ -366,7 +366,7 @@ def _pin_every_stored_row_is_accounted_for_exactly_once(
 ) -> str:
     """**Every stored row inside ``[D-66, D]`` is accounted for exactly once**
     -- in the series (F005) or some dataset's series (F006), or in
-    ``excluded`` (``research/00`` 1.6, restated as F006 AC15).
+    ``excluded`` (``research/00`` PRIN-23, restated as F006 AC15).
 
     Green on shipped F005 (the other tier's rows are listed
     ``off_baseline_tier: <tier>``), red on shipped F005 with that exclusion
@@ -390,7 +390,7 @@ def _pin_every_stored_row_is_accounted_for_exactly_once(
 
     assert not missing, (
         f"{len(missing)} stored rows are in neither the series nor excluded -- "
-        f"research/00 1.6's partition is broken; first three: {missing[:3]}. {witness}"
+        f"research/00 PRIN-23's partition is broken; first three: {missing[:3]}. {witness}"
     )
     assert not doubled, f"{len(doubled)} stored rows are listed twice; first three: {doubled[:3]}. {witness}"
     assert set(counted) == set(stored), f"a row nobody stored was accounted for. {witness}"
@@ -487,7 +487,7 @@ def test_the_one_tier_band_pin_is_red_on_f005_with_the_tier_arbitration_deleted(
     print(f"[state 2] {path.name} -- the failing assertion:\n{text}")
     assert text.startswith("the band mixes tiers: "), text
     assert f"readings of ['{STRAP}', '{SNAPSHOT}']" in text, text
-    assert "the anti-mixing rule (AC1, research/00 5.4 (i)) is broken" in text, text
+    assert "the anti-mixing rule (AC1, research/00 HRV-06) is broken" in text, text
     # ... and the mixture is the pooled series, which is what the arbitration
     # existed to prevent: 30 strap mornings and 30 snapshot ones.
     _raw, view, _kept = _partition(module, corpus(), D)
@@ -551,7 +551,7 @@ def test_the_exhaustive_partition_pin_is_red_on_f005_with_the_off_baseline_tier_
     ``off_baseline_tier`` exclusion deleted and nothing else changed: the
     filter still removes every snapshot reading from the series, but nothing
     records that it did, so 67 stored rows are in neither list and
-    ``research/00`` 1.6's partition is broken."""
+    ``research/00`` PRIN-23's partition is broken."""
     module, path = states[STATE_MINUS_OFF_BASELINE_TIER]
     print(_origin(STATE_MINUS_OFF_BASELINE_TIER, states))
 
@@ -563,7 +563,7 @@ def test_the_exhaustive_partition_pin_is_red_on_f005_with_the_off_baseline_tier_
     text = str(excinfo.value)
     print(f"[state 2] {path.name} -- the failing assertion:\n{text}")
     assert text.startswith("67 stored rows are in neither the series nor excluded"), text
-    assert "research/00 1.6's partition is broken" in text, text
+    assert "research/00 PRIN-23's partition is broken" in text, text
     assert "first three: ['snapshot-2026-07-04', 'snapshot-2026-07-05', 'snapshot-2026-07-06']" in text, text
 
 

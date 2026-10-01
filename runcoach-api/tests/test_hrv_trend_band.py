@@ -21,21 +21,21 @@ reference "The band"; decision log rows "Thin and degenerate data" and
 - **every verdict but ``hrv_unavailable`` requires an established baseline**
   (T116, 2026-09-15, a behaviour change). Neither cell the spec's text left
   unnamed -- below the band on an unestablished baseline, and inside or above
-  it on one -- reads as a verdict: both are **unavailable**. §3.7.3 says the
+  it on one -- reads as a verdict: both are **unavailable**. spec/03 §3.7.3 says the
   suppression is *withheld* until the baseline is established, and
   ``hrv_normal`` would tell Section 6 that readiness is intact on the
   strength of a baseline the same response reports unestablished -- up-
-  regulating on weak evidence, which ``research/00`` §1.7 forbids.
+  regulating on weak evidence, which ``research/00`` PRIN-14 forbids.
   ``hrv_unavailable`` makes the readiness logic widen its guardrails instead.
 - **The asymmetry was the defect** ([[IDEA-062]]). Until T116 this docstring
-  argued §1.7 for the below-band cell alone and the table returned ``normal``
+  argued the cautious reading (PRIN-14) for the below-band cell alone and the table returned ``normal``
   regardless of establishment for its two neighbours, so a week judged
   against a band built from 2 to 13 readings reported ``hrv_normal`` -- and
   that is reachable after a **coverage-gap** reset, which collapses the
   baseline, so the athlete then traverses 20 unestablished days, 12 of which
   used to read ``hrv_normal`` (``R+8 .. R+19``; the first eight had no band)
   -- **corrected in place 2026-09-18 ([[T142]]), following ``research/00``
-  §5.4: until now this said the cell was reachable after *every* reset, naming
+  HRV-34: until now this said the cell was reachable after *every* reset, naming
   a gap reset and a tier change alike as collapsing the baseline, and that is
   false of a tier change. A clean source-tier change does not collapse the
   baseline at all (``established`` stays true, ``n`` decays 60 -> 47), so it
@@ -508,7 +508,7 @@ def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
     exactly as the suppression is. Five baseline readings and a week sitting
     inside their band read ``hrv_unavailable`` -- ``hrv_normal`` here would
     tell Section 6 readiness is intact on a baseline the same response
-    reports unestablished, the up-regulating direction ``research/00`` §1.7
+    reports unestablished, the up-regulating direction ``research/00`` PRIN-14
     forbids, and it is reachable after every **coverage-gap** reset the
     feature performs -- corrected in place 2026-09-18 ([[T142]]) from "after
     every reset the feature performs", which is false of a tier change: a
@@ -578,7 +578,7 @@ def test_too_few_readings_this_week_is_unavailable_not_normal() -> None:
 
 
 def test_two_window_readings_far_below_the_band_are_still_unavailable() -> None:
-    """The window minimum is §3.7.4's trends-not-single-readings rule: two
+    """The window minimum is spec/03 §3.7.4's trends-not-single-readings rule: two
     bad mornings are not a trend, however bad."""
     result = verdict_for(alternating(41), [20.0, 20.0])
 
@@ -659,7 +659,7 @@ def test_ln_is_not_guarded_here_so_a_non_positive_value_surfaces_as_a_defect() -
 
 
 def test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses() -> None:
-    """``research/00`` §1.6: the verdict must be reproducible from what the
+    """``research/00`` PRIN-12: the verdict must be reproducible from what the
     response reports, so the constants are module-level and named."""
     assert hrv_trend.SWC_FACTOR == 0.5
     assert hrv_trend.BAND_FLOOR == 0.01
@@ -700,7 +700,7 @@ def expected_row(baseline_n: int, window_n: int, position: str) -> tuple[str, bo
         # withheld for the same reason -- ``hrv_normal`` on a 2-to-13-reading
         # baseline asserts intact readiness on evidence the same response
         # calls unestablished, the up-regulating direction ``research/00``
-        # §1.7 forbids. Both are ``hrv_unavailable``, and the band is still
+        # PRIN-14 forbids. Both are ``hrv_unavailable``, and the band is still
         # reported so the consumer can see what was withheld.
         return UNAVAILABLE, True, False, False
     if position == BELOW:
@@ -948,7 +948,7 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     mornings of the week -- it is the only judgeable dataset, so it is its
     own recency reference and is selected, and the verdict is the return's
     own three mornings earlier than at ``r = 8``. That is ``research/00``
-    §5.4 (iv): a return to a dataset the athlete established before is
+    HRV-71: a return to a dataset the athlete established before is
     **free**, its band was never destroyed. ``r = 1..4`` are unchanged --
     there the carrier is judgeable and the returning tier, once judgeable at
     ``r = 3``, is 33+ days behind it in the baseline window and skipped (AC6,
@@ -984,9 +984,9 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     (23 / 22 / 21), ``hrv_suppressed`` on a suppressed return and
     ``hrv_normal`` on a healthy one from the fifth morning back.* That last
     value is the row T162 priced: ``hrv_normal`` on a band every reading of
-    which is 36 to 66 days old, §1.7's forbidden direction, and it is the
+    which is 36 to 66 days old, PRIN-14's forbidden direction, and it is the
     walk's own contribution to the 96 -> 254 stale-band regression AC21
-    blocked release on. ``research/00`` §5.4 (iv)'s "a return is free" is
+    blocked release on. ``research/00`` HRV-71's "a return is free" is
     unchanged in itself -- the return's band was never destroyed -- but it is
     not free *of the recency gate* while a dataset the athlete is still being
     read on is established.
@@ -1326,7 +1326,7 @@ def test_the_withhold_reaches_a_never_used_tier_bought_this_week() -> None:
     ``True`` -- ``hrv_normal``. The athlete is told readiness is intact on a
     mean of three mornings he did not live, while his own three
     brand-new-device mornings -- the ones actually suppressed -- are
-    silently excluded as ``off_baseline_tier``. ``research/00`` §1.7's
+    silently excluded as ``off_baseline_tier``. ``research/00`` PRIN-14's
     forbidden direction: up-regulating (staying silent about suppression)
     on weak evidence.
 

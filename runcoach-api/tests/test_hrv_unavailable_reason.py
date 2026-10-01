@@ -451,7 +451,7 @@ def test_the_schema_refuses_an_unavailable_reason_outside_the_six() -> None:
 
 # ---------------------------------------------------------------------------
 # T156: the precedence across datasets, and the presentation fallback (F006
-# AC9; ``research/00`` section 5.4 (iii) as amended 2026-09-19)
+# AC9; ``research/00`` HRV-59, HRV-61)
 #
 # With N datasets, different datasets satisfy different causes at once, and
 # ``judge``'s single-series guard order says nothing about which one the

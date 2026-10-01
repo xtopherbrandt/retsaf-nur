@@ -187,11 +187,11 @@ class ExcludedReading(BaseModel):
 
 
 class Thresholds(BaseModel):
-    """The band, verdict and dataset-selection constants (spec 03 §3.7; construction reference).
+    """The band, verdict and dataset-selection constants (spec/03 §3.7; construction reference).
 
     The tolerance of the recency gate is served here as recency_tolerance_days, beside the six
     the band and the verdict apply, so selected_reason and baseline.tier are
-    recomputable from the response alone (research/00 §1.6; C33, 2026-09-23, which reversed
+    recomputable from the response alone (research/00 PRIN-12; C33, 2026-09-23, which reversed
     IDEA-070's narrowing of 2026-09-15).
     """
 
@@ -312,7 +312,7 @@ class DatasetSummary(BaseModel):
             "fidelity: this ordinal rank. **This is the "
             "sense of quality that arbitrates**: selection promotes the lowest rank among the "
             "judgeable datasets, so `selected_reason` is recomputable by hand from this field "
-            "beside `established`, `week_days` and `last_read` (research/00 1.6). The *other* "
+            "beside `established`, `week_days` and `last_read` (research/00 PRIN-12). The *other* "
             "sense -- a numeric per-tier **confidence weight**, which HRV-04 rules out for the "
             "numeric tiers -- is deliberately **not** here: 3.7.4 computes no confidence weight in this "
             "section and defers the weighting to the readiness fusion of Section 6, so emitting "
@@ -433,7 +433,7 @@ class HrvTrendResponse(BaseModel):
             "hrv_unavailable there rather than hrv_suppressed, and hrv_normal there would tell a "
             "consumer readiness is intact on "
             "evidence this same response reports unestablished, the up-regulating direction research/00 "
-            "1.7 forbids); and when the judged day is after the athlete's local today in timezone, which "
+            "PRIN-14 forbids); and when the judged day is after the athlete's local today in timezone, which "
             "is decided at the route and overrides whichever of the other five would otherwise have "
             "applied -- whatever the window holds, no verdict is asserted about a day that has not "
             "happened, and the other fields are still reported as computed. The band is still reported "
@@ -526,7 +526,7 @@ class HrvTrendResponse(BaseModel):
             "date] by sprint-006 spec review, 2026-09-21). Every reading inside the span is in "
             "exactly one dataset "
             "here or in `excluded` with a reason -- never in neither, never in both (AC15, "
-            "research/00 1.6): a reading of a tier the verdict was not taken from is corroboration "
+            "research/00 PRIN-23): a reading of a tier the verdict was not taken from is corroboration "
             "in its own dataset, not a discarded row. Empty only when no reading of any tier "
             "exists in the span."
         )
@@ -538,7 +538,7 @@ class HrvTrendResponse(BaseModel):
             "highest-fidelity **judgeable** dataset the recency gate did not skip (F006 "
             "AC5-AC8). The scope on that second half is every verdict-free state on a selected "
             "dataset: its judged week withheld as unrepresentative (`week_not_representative`, "
-            "research/00 5.4 (v)), and the withheld future day, where for a `to` after the "
+            "research/00 HRV-31), and the withheld future day, where for a `to` after the "
             "athlete's local today the verdict is replaced with hrv_unavailable / "
             "`day_not_happened`. In both the verdict is hrv_unavailable and `below_by` is null, so "
             "those two describe no dataset, while this field still names the one the retained "
@@ -569,8 +569,8 @@ class HrvTrendResponse(BaseModel):
             "than leaving that fall invisible. Where `verdict` is "
             f"`{hrv_trend.VERDICT_UNAVAILABLE}` (T125's returning athlete is served this value beside "
             f"`{hrv_trend.REASON_WEEK_NOT_REPRESENTATIVE}`) no verdict is taken from any dataset: the "
-            "value still says which dataset was presented and why, kept as computed (research/00 5.4 "
-            "(iii)), and makes no claim about a verdict. Non-null **exactly "
+            "value still says which dataset was presented and why, kept as computed (research/00 HRV-57"
+            "), and makes no claim about a verdict. Non-null **exactly "
             "when** `selected_dataset` is non-null, null with null: it is derived from the "
             "selection rather than stored beside it, so it cannot disagree with which datasets "
             "were skipped. The enum is the module's own tuple, rendered rather than transcribed, "
@@ -588,7 +588,7 @@ class HrvTrendResponse(BaseModel):
             "baseline readings and a week of one can name a dataset here -- so `week_days` is what "
             "a consumer weighs the name by. **Disagreement never overrides**: `verdict` is the "
             "selected dataset's, unchanged, whatever is listed here. **Empty whenever `verdict` is "
-            "`hrv_unavailable`, for any cause** (research/00 5.4 (iii), amended 2026-09-21): a "
+            "`hrv_unavailable`, for any cause** (research/00 HRV-22, amended 2026-09-21): a "
             "disagreement is a claim *about* a verdict and none was conferred, so naming a "
             "dissenter would report a contradiction of a claim never made. That is one condition "
             "over all three verdict-free states -- `selected_dataset` null, where the presentation "
@@ -607,7 +607,7 @@ class HrvTrendResponse(BaseModel):
             "This is the response's one report of HRV-25's population: hrv_normal "
             "can be promoted from the best available instrument while another dataset reads below "
             "its own band, and a consumer reading `verdict` alone is not told. That is research/00 "
-            "1.7's forbidden direction, which ships only as the named exception PRIN-15 lists, "
+            "PRIN-14's forbidden direction, which ships only as the named exception PRIN-15 lists, "
             "owned by IDEA-099, and that population may not grow (research/00 HRV-25, PRIN-15)."
         )
     )

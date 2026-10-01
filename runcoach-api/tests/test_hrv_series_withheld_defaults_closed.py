@@ -6,7 +6,7 @@ series became N per-tier datasets, and the pin moved with it. ``hrv_trend.py``'s
 appears there once), and it always passes the computed ``withheld`` value -- so the dataclass
 field's own default was, before T134, unreached in practice but *permissive* in direction: a
 future construction path that omitted the argument would silently manufacture a dataset
-eligible for ``hrv_normal``, the one direction ``research/00`` Section 1.7 forbids on weak
+eligible for ``hrv_normal``, the one direction ``research/00`` PRIN-14 forbids on weak
 evidence. ``band`` (``None``) and ``established`` (``False``) both default toward
 ``hrv_unavailable`` in this same module; ``withheld`` was the odd one out.
 

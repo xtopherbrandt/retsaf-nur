@@ -10,7 +10,7 @@ by a property sweep, not by the absence of one string"* -- that
 smallest-worthwhile-change band as **SWC_FACTOR * SD(ln rMSSD)**, never as
 **SWC_FACTOR * CV(ln rMSSD)** -- the form the 2026-09-09 sweep withdrew
 across those same seven files (``research/00-history.md`` H-09, which F008
-moved there from ``research/00`` Sec 5.4).
+moved there out of ``research/00``).
 
 The **behavioural** half of this is solid and pinned:
 ``hrv_trend.build_band``, ``SWC_FACTOR``,
@@ -203,7 +203,7 @@ def test_the_quotation_guard_tells_a_live_claim_from_a_historical_quotation() ->
     over all of them, verified directly rather than assumed."""
     live = "The SWC band is defined as 0.5·CV(ln rMSSD) in this release."
     quoted = 'the register originally read "0.5·CV(ln rMSSD)", since clarified 2026-09-09.'
-    code_span = "spec §3.7.3 transcribed it as `0.5 · CV(ln rMSSD)`."
+    code_span = "spec/03 §3.7.3 transcribed it as `0.5 · CV(ln rMSSD)`."
 
     assert _live_cv_claims(live), (
         "an unquoted, unhedged CV claim was not flagged: the classifier would never catch a "
@@ -276,7 +276,7 @@ SCAN_ROOT_FLOORS = (15, 6)
 #: The one historical-record exception ([[sweep-the-claim-not-the-diff]]
 #: step 3, and test_hrv_trend_endpoint.py's own SCAN_EXCLUDED_HISTORY):
 #: research/00-history.md's H-09 entry (the 2026-09-09 reconciliation, moved
-#: out of research/00 Sec 5.4 by F008 and kept verbatim there) states two numerical
+#: out of research/00 by F008 and kept verbatim there) states two numerical
 #: comparisons -- "0.5*CV of the *raw* rMSSD series is 0.0525" and "the
 #: literal 0.5*CV(ln rMSSD) is 0.0138" -- neither wrapped in a quote or a
 #: code span, both there only to argue the withdrawn form was numerically
@@ -345,7 +345,7 @@ def test_band_reconciliation_the_withdrawn_cv_form_is_absent_from_every_swept_do
                 offenders.append(f"{rel}: {hits}")
     assert not offenders, (
         f"the withdrawn {SWC_FACTOR}·CV(ln rMSSD) form (clarified away 2026-09-09, "
-        f"research/00 Sec 5.4) is back, unquoted, in: " + "; ".join(offenders)
+        f"research/00-history.md H-09) is back, unquoted, in: " + "; ".join(offenders)
     )
 
 

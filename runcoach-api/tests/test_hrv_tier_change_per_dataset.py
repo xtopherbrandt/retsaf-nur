@@ -132,7 +132,7 @@ def slice_of(series: hrv_trend.HrvSeries, label: str = "") -> str:
 
 
 def accounted_once(rows: list[dict], series: hrv_trend.HrvSeries) -> None:
-    """research/00 §1.6 under F006 (AC15): every row inside ``[D-66, D]`` is
+    """research/00 PRIN-23 under F006 (AC15): every row inside ``[D-66, D]`` is
     in exactly one dataset's ``series`` or in ``excluded``, never both."""
     listed = [r.session_id for d in series.datasets for r in d.series] + [
         e.session_id for e in series.excluded

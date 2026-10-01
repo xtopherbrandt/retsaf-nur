@@ -1437,7 +1437,7 @@ components:
             hrv_unavailable there rather than hrv_suppressed, and hrv_normal
             there would tell a consumer
             readiness is intact on evidence this same response reports
-            unestablished, the up-regulating direction research/00 1.7 forbids);
+            unestablished, the up-regulating direction research/00 PRIN-14 forbids);
             and when the judged day is after the athlete's local today in
             timezone, which is decided at the route and overrides whichever of the
             other five would otherwise have applied -- whatever the window holds,
@@ -1622,7 +1622,7 @@ components:
             The band, verdict and dataset-selection constants (spec/03 §3.7).
             The tolerance of the recency gate is served here as recency_tolerance_days, beside the six
             the band and the verdict apply, so selected_reason and baseline.tier are
-            recomputable from the response alone (research/00 §1.6; C33, 2026-09-23, which reversed
+            recomputable from the response alone (research/00 PRIN-12; C33, 2026-09-23, which reversed
             IDEA-070's narrowing of 2026-09-15).
           properties:
             baseline_days: { type: integer }

@@ -116,7 +116,7 @@ _ARTEFACT_WINDOW = 11
 # that simply starts or ends at a different level.
 #
 # M2 (sprint-002 review): neither `research/02` (checked directly --
-# §3.2 says only "filtering physiologically impossible RR jumps", no
+# Section 3.2 says only "filtering physiologically impossible RR jumps", no
 # ratio or tolerance) nor `research/00` names a specific
 # integer-ratio/tolerance test for missed/doubled-beat detection at a
 # series boundary, unlike the sibling constants in this module (the 20%

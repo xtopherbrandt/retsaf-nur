@@ -240,7 +240,7 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     capture, one real strap capture (off the baseline tier), one ordinary run
     (no tier) and one pre-amendment row -- persisted through the real path.
     The response must carry the verdict and everything needed to recompute
-    it by hand (``research/00`` §1.6), and every exclusion names a reason.
+    it by hand (``research/00`` PRIN-12), and every exclusion names a reason.
     Red: the route does not exist (404)."""
     configure("UTC")
     values = baseline_values(20)
@@ -431,7 +431,7 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
     ``disagreed_with`` is withheld with the verdict it is a claim about, and
     ``datasets[]``/``selected_dataset``/``selected_reason`` are kept as
     computed because they are what produced the retained ``baseline``/``band``
-    (``research/00`` 1.6, reproducible by hand). On this single-tier fixture
+    (``research/00`` PRIN-12, reproducible by hand). On this single-tier fixture
     the dissent list is empty on every day including ``D``, so the
     ``disagreed_with`` clause below is a *consistency* check only; the one
     that can tell the rule from the fixture is
@@ -1013,7 +1013,7 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 #: implementation it exists to constrain cannot detect an implementation
 #: defect by construction (``contract-tables-need-an-independent-oracle``;
 #: ``project-domain-and-spec-fidelity`` names ``research/00`` the authority).
-#: The entries are **constrained by ``research/00`` §5.4 and F005** -- rule
+#: The entries are **constrained by ``research/00`` HRV-38 and F005** -- rule
 #: 4's three conditions, the clip-versus-report split of decision log D4 --
 #: and were *checked against* ``build_series``, which is a reproduction, not
 #: a derivation. What T109 got right is that they are no longer transcribed
@@ -1410,7 +1410,7 @@ BAND_CORPUS_WHEN_MEASURED = 394
 def test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_published() -> None:
     """The count three normative documents used to publish, as an assertion.
 
-    ``RECENCY_TOLERANCE_DAYS``' comment, ``research/00`` §5.4, F005's Negative
+    ``RECENCY_TOLERANCE_DAYS``' comment, ``research/00`` GATE-07, F005's Negative
     Class row and the construction reference's constants table each scope the
     ``[18, 44]`` band to the tests of the five HRV suites that predate T117's
     tolerance pin. Until ``acfebae`` that scope was carried by a transcribed literal
@@ -2264,7 +2264,7 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     prose inherits whatever is wrong with the prose and promotes it to an
     enforced invariant. The pattern is right; the authorship was not, which
     is G-C5-7's no-independent-oracle shape again. The entries are
-    constrained by ``research/00`` §5.4 and F005 rather than by the sentence
+    constrained by ``research/00`` HRV-38 and F005 rather than by the sentence
     they pin, and each was reproduced against ``build_series`` -- the runs
     are listed above ``RESET_REASON_CLAIMS`` (T109; the stated authorship
     corrected by T112, which found it claiming the entries were *derived
@@ -2397,7 +2397,7 @@ def test_the_two_copies_of_the_window_contract_publish_the_same_claims() -> None
 #: Authorship (``contract-tables-need-an-independent-oracle``, and T109's
 #: correction of this pattern): these fragments are **not** transcriptions of
 #: the paragraph. They are the four things a client can act on, taken from the
-#: user decision of 2026-09-15 and from ``research/00`` §1.7, and each is
+#: user decision of 2026-09-15 and from ``research/00`` PRIN-14, and each is
 #: reproduced against ``judge`` by a named behavioural pin rather than by this
 #: file: entry 1 and entry 3 by
 #: ``test_hrv_trend_band.test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``
@@ -2419,8 +2419,8 @@ VERDICT_CLAIMS = (
 #: T122 (review cycle 7) moved this tuple into ``withdrawn_phrasings.py`` and
 #: into the walk. Until then it was read against the **two contract copies
 #: only**, while ``RESET_REASON_WITHDRAWN`` was read against all 265 walked
-#: files -- so a restored asymmetric sentence in ``research/00`` §5.4, spec
-#: §3.7.3, the construction reference or any docstring was invisible to it *by
+#: files -- so a restored asymmetric sentence in ``research/00`` HRV-34,
+#: spec/03 §3.7.3, the construction reference or any docstring was invisible to it *by
 #: construction*, which is precisely the gap T111 found for ``reset_reason``
 #: and T119 then closed by replacing the allowlist with a walk. Measured
 #: before the move: no live copy existed anywhere in the 265, so this is a
@@ -2480,7 +2480,7 @@ UNAVAILABLE_REASON_CLAIMS = (
 #: The run the two copies must state identically, from this anchor to the end.
 #: It starts at the ordering sentence and not at the field's first word
 #: **because the two copies genuinely differ before it**: the YAML parenthesis
-#: cites ``research/00`` 1.6 and dates the closure, the schema copy states the
+#: cites ``research/00`` PRIN-12 and dates the closure, the schema copy states the
 #: reproduce-it-by-hand property that section is about. Both are true, neither
 #: is the rule. Everything from here on is the rule, and it is identical once
 #: flattened -- which it was not before T140: the two copies punctuated the
@@ -2508,7 +2508,7 @@ UNAVAILABLE_REASON_SHARED_ANCHOR = (
 #: transcriptions of the paragraph. They are the three things a client reading
 #: ``established`` can act on -- what the flag *is*, that **neither** verdict,
 #: not just the suppression, is asserted beneath it, and what is emitted
-#: instead -- taken from the 2026-09-15 user decision and ``research/00`` §1.7,
+#: instead -- taken from the 2026-09-15 user decision and ``research/00`` PRIN-14,
 #: the same source ``VERDICT_CLAIMS`` is constrained by. Each is reproduced
 #: against ``judge`` by a named behavioural pin rather than by this file:
 #: ``test_hrv_trend_band.test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``
@@ -2603,7 +2603,7 @@ THRESHOLDS_SHARED_ANCHOR = "the tolerance of the recency gate is served here"
 #: false *quantity*. T138 answered the cycle-9 critic's question -- at what
 #: point does a rule that mostly says nothing stop being conservative -- by
 #: composing this feature's four silences against a rate, and published the
-#: total into ``research/00`` §5.4 and F005's Negative Class. Entry 1 is the
+#: total into ``research/00`` (since withdrawn: FIG-05) and F005's Negative Class. Entry 1 is the
 #: scenario that produced the largest term of that total: a same-tier device
 #: replacement, which the rule **cannot detect** -- ``tier_change_reset`` keys
 #: on ``hrv_source_tier`` and there is no notion of device identity anywhere in
@@ -2664,8 +2664,8 @@ SILENCE_RATE_WITHDRAWN = _DECLARATIONS.SILENCE_RATE_WITHDRAWN
 #: kinds are not named at all.
 #:
 #: What they must not match, checked by running the walk: the corrected
-#: sentences now live in ``judge``, ``research/00`` §5.4 and ``spec/03``
-#: §3.7.3; the module docstring's *true* line 7, which joins the two reset
+#: sentences now live in ``judge``, ``research/00`` HRV-72, HRV-73 and
+#: ``spec/03`` §3.7.3; the module docstring's *true* line 7, which joins the two reset
 #: rules as the two things this module implements ("a baseline after a
 #: coverage gap or a sustained tier change") and is why no entry here is the
 #: bare conjunction; and the records that quote the claim as the thing being
@@ -3728,7 +3728,7 @@ def test_the_response_says_the_verdict_fell_to_a_lower_tier_and_the_gate_is_repr
 
     The gate itself is recomputed here from the rendered fields alone --
     ``last_read`` per dataset, ``established``, ``week_days`` -- which is the
-    ``research/00`` §1.6 obligation the response carries for every other rule
+    ``research/00`` PRIN-12 obligation the response carries for every other rule
     it applies. The tolerance is read here from the module constant; since T220
     (C33, 2026-09-23, reversing IDEA-070) the response serves the same value as
     ``thresholds.recency_tolerance_days``, pinned equal to the module constant by
@@ -3784,14 +3784,14 @@ def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weigh
     the naming (AC10, taken literally).
 
     ``verdict`` is ``hrv_normal`` in both: **disagreement never overrides**
-    (AC11). This is HRV-25's population -- the named §1.7 exception PRIN-15
+    (AC11). This is HRV-25's population -- the named exception PRIN-15
     lists, owned by IDEA-099 -- rendered rather than denied: up-regulation
     while contrary evidence exists, and ``disagreed_with``
     is the whole of what the response says about it, which is why the count
     matters: one 25 ms morning and seven of them are very different evidence
     behind the same name.
 
-    The dissent is recomputable by hand from the block (``research/00`` §1.6):
+    The dissent is recomputable by hand from the block (``research/00`` PRIN-12):
     the snapshot's ``week_mean`` is strictly below its own ``band.lo`` while
     the strap's is not below its own."""
     configure("UTC")
@@ -3825,7 +3825,7 @@ def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weigh
 
 def test_a_conferred_suppressed_verdict_names_a_dissenter_too(configure, seeder) -> None:
     """Cycle-2 review, S4: the served dissent rule is keyed on **no verdict
-    conferred** (``research/00`` §5.4 (iii) as amended 2026-09-21, T167), not
+    conferred** (``research/00`` HRV-22, amended 2026-09-21, T167), not
     on the verdict being ``hrv_normal``. Every other served non-empty
     ``disagreed_with`` pin sits on an ``hrv_normal`` day, so a predicate
     over-broadened to ``verdict != VERDICT_NORMAL`` -- which also empties the
@@ -3872,8 +3872,8 @@ def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
 
     **One of three, not the rule itself (T167, ``B-CR-002``, 2026-09-21).** The
     served list is empty wherever ``verdict`` is ``hrv_unavailable``, for any
-    cause -- ``research/00`` §5.4 (iii) as amended, restated in ``spec/03``
-    §3.7.4. M2 guarded this state alone and left the neighbouring one, a
+    cause -- ``research/00`` HRV-22 as amended, restated in
+    ``spec/03`` §3.7.4. M2 guarded this state alone and left the neighbouring one, a
     **selected** dataset whose verdict is withheld (``week_not_representative``),
     naming a dissenter; that state is pinned by
     ``test_hrv_dataset_populations.test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does``.
@@ -3905,7 +3905,7 @@ def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
       ``_withhold_future``'s own justification is that everything which
       *produced* the verdict (band, baseline, ``readings_in_window``, week
       mean) is left alone so the response stays reproducible by hand
-      (``research/00`` 1.6), and these two identify which dataset the retained
+      (``research/00`` PRIN-12), and these two identify which dataset the retained
       ``baseline``/``band`` came from. They are producers, not claims.
 
     The fixture is the dissent fixture, not a thin one: on ``to = D`` the
@@ -4106,7 +4106,7 @@ def test_a_tier_read_only_before_a_coverage_gap_is_absent_from_datasets_and_whol
     because the pre-gap tier is rendered as a dataset of its own (``n`` 0,
     ``band`` null). Green again on restore.
 
-    The §1.6 / AC15 partition is asserted over the rendered body rather than
+    The PRIN-23 / AC15 partition is asserted over the rendered body rather than
     assumed, because that is the half the correction is asking a consumer to
     rely on: the 27 excluded strap rows, plus the surviving dataset's own
     ``n`` and ``week_days``, account for all 42 stored rows inside the span,
@@ -4157,7 +4157,7 @@ def test_a_tier_read_only_before_a_coverage_gap_is_absent_from_datasets_and_whol
     assert sorted(excluded) == sorted(strap_ids), excluded
     assert {excluded[session_id] for session_id in strap_ids} == {"before_reset: coverage_gap"}
 
-    # research/00 §1.6 / AC15 across ``datasets[]`` u ``excluded``: the
+    # research/00 PRIN-23 / AC15 across ``datasets[]`` u ``excluded``: the
     # surviving dataset's own counts cover the whole snapshot era (8 baseline
     # days [D-14, D-7] and 7 judged-week days), none of it is excluded, and
     # the two lists together are the 42 stored rows exactly once each.
@@ -4168,7 +4168,7 @@ def test_a_tier_read_only_before_a_coverage_gap_is_absent_from_datasets_and_whol
     accounted = survivor["n"] + survivor["week_days"] + len(excluded)
     assert accounted == len(strap_ids) + len(snapshot_ids) == 42, (
         f"{accounted} rows accounted for against {len(strap_ids) + len(snapshot_ids)} stored: "
-        f"research/00 §1.6's partition is broken over datasets[] u excluded"
+        f"research/00 PRIN-23's partition is broken over datasets[] u excluded"
     )
     assert len(body["excluded"]) == len({entry["session_id"] for entry in body["excluded"]})
 

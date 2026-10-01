@@ -14,7 +14,7 @@ fires on **more than** ``GAP_RESET_DAYS`` of them -- 22 clips, 21 does not --
 which is exactly how ``coverage_gap_reset`` counts and what
 ``test_a_22_day_gap_resets_and_a_21_day_gap_does_not`` already pins for the
 constant. AC17's "at least ``GAP_RESET_DAYS``" is read as that rule and not as
-``>= 21``: the constant has one meaning (research/00 §5.4: "21 does not reset
+``>= 21``: the constant has one meaning (research/00 HRV-73: "21 does not reset
 and 22 does"), and a per-dataset clip that fired one day earlier than the
 global gap would make two rules disagree about the same number of days.
 Pinned below by ``test_the_hole_is_counted_exactly_as_the_global_gap_counts_it``.
@@ -22,7 +22,7 @@ Pinned below by ``test_the_hole_is_counted_exactly_as_the_global_gap_counts_it``
 **What the clip sets and does not set.** It moves ``baseline_window[0]`` to
 the resumption (composing with the gap and era clips as the later first day),
 lists the pre-hole readings ``before_reset: coverage_gap`` out of the
-dataset's ``series`` (research/00 §1.6: every non-contributing row is listed
+dataset's ``series`` (research/00 PRIN-23: every non-contributing row is listed
 exactly once), and so rebuilds ``baseline``, ``band``, ``n`` and
 ``established`` from the post-hole readings. It sets **no** ``reset_on`` and
 **no** ``reset_reason``: the reported reset is the global gap's or
@@ -125,7 +125,7 @@ def slice_of(series: hrv_trend.HrvSeries, tier: str) -> str:
 
 
 def accounted_once(rows: list[dict], series: hrv_trend.HrvSeries) -> None:
-    """research/00 §1.6 under F006 (AC15): every row inside ``[D-66, D]`` is
+    """research/00 PRIN-23 under F006 (AC15): every row inside ``[D-66, D]`` is
     in exactly one dataset's ``series`` or in ``excluded``, never both."""
     listed = [r.session_id for d in series.datasets for r in d.series] + [e.session_id for e in series.excluded]
     assert sorted(listed) == sorted(r["session_id"] for r in rows), "every row listed exactly once"

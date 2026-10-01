@@ -61,7 +61,7 @@ _CADENCE_LOCK_MIN_CONSECUTIVE = 30
 #
 # S1 (sprint-002 review): spec §2.4.4 says altitude is smoothed "before
 # grade is taken" but fixes no window size, and neither `research/02`
-# §3.4 nor `research/00` names one either (checked directly -- both
+# Section 3.4 nor `research/00` names one either (checked directly -- both
 # describe barometric drift as a phenomenon, not a smoothing-window
 # formula). Accepted as an explicit spec-introduced implementation
 # default, tunable -- not a citable formula constant -- matching the

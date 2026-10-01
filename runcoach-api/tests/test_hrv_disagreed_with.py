@@ -1,6 +1,6 @@
 """T157 -- ``disagreed_with`` names any dataset with a computable band that reads the
-other way from the selected one, judgeable or not (F006 AC10/AC11; ``research/00`` §5.4
-amended 2026-09-18 (iii): "any dataset with a computable band whose judged-week mean reads
+other way from the selected one, judgeable or not (F006 AC10/AC11; ``research/00`` HRV-21,
+as amended 2026-09-18: "any dataset with a computable band whose judged-week mean reads
 below that band is named as disagreeing, in either direction, never overriding").
 
 **The predicate under test** is ``hrv_trend.disagreed_with``, exposed on
@@ -18,7 +18,7 @@ any other -- AC10 taken literally.
 **``withheld`` is a different matter, and the rule changed (T167, ``B-CR-002``, 2026-09-21).**
 This docstring read "``established``, ``MIN_WINDOW_READINGS`` **and ``withheld``** gate the
 verdict, not the report", and that is no longer true of the *served* report.
-``research/00`` §5.4 (iii) as amended now states one condition for the whole of
+``research/00`` HRV-22 as amended now states one condition for the whole of
 ``disagreed_with``: wherever the served ``verdict`` is ``hrv_unavailable``, for any cause,
 nothing is named, because a disagreement is a claim *about* a verdict and a withheld verdict
 makes no claim to contradict. A withheld dataset's verdict **is** ``hrv_unavailable``
@@ -184,7 +184,7 @@ def test_disagreement_never_overrides_the_selected_datasets_verdict(strap_value:
     the verdict through ``selected_view`` equals the verdict of the same strap rows
     judged **with the dissenting snapshot removed from the series entirely**, and it is
     the value the strap's own reading says it is. The ``hrv_normal`` row is HRV-25's
-    population, the named §1.7 exception PRIN-15 lists (owned by IDEA-099, and it may
+    population, the named exception PRIN-15 lists (owned by IDEA-099, and it may
     not grow; F006 reference §4): promoted while contrary evidence exists, and the
     contrary evidence is reported beside it, not acted on."""
     strap_rows = dataset(STRAP, 14, strap_value)
@@ -386,7 +386,7 @@ def test_probe_every_dataset_disagreeing_names_all_of_them_in_fidelity_order() -
     """Asserts: when every other dataset dissents, all are named, in ``TIER_FIDELITY``
     order, and the selected one is not. Degenerate because it is the maximum the list
     can hold (N - 1) and the case where a consumer reading ``hrv_status`` alone is
-    most wrong -- the §1.7 exposure at full strength, reported and still not acted on:
+    most wrong -- the HRV-25 exposure at full strength, reported and still not acted on:
     the verdict is ``hrv_normal``."""
     rows = dataset(STRAP, 14, WITHIN) + dataset(OVERNIGHT, 14, BELOW) + dataset(SNAPSHOT, 3, BELOW)
     selection = select(rows)
@@ -436,7 +436,7 @@ def test_probe_no_selected_dataset_means_nothing_to_disagree_with() -> None:
 def test_probe_a_single_judged_week_reading_is_a_mean_and_can_disagree() -> None:
     """Asserts: a dataset with one judged-week reading has a week mean (``judge``
     reports ``ln_rmssd_7d_mean`` on any non-empty week) and is named when it reads
-    below. Degenerate because §3.7.4's "fewer than three readings is unavailable,
+    below. Degenerate because spec/03 §3.7.4's "fewer than three readings is unavailable,
     whatever they say" is a rule about the **verdict** and is honoured there
     (``MIN_WINDOW_READINGS``); AC10 says "whether or not judgeable" and a one-reading
     week is the least judgeable a week with a mean can be. Recorded as the argument,

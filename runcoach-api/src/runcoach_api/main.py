@@ -489,13 +489,13 @@ def _disagreed_with(
     Order and candidate membership are the selection's, rendered rather than
     re-derived from ``Selection.disagreed_with``. Emptiness is not the
     selection's alone: it **also depends on the served verdict**
-    (``research/00`` §5.4 (iii)), so the served list is empty on a withheld
+    (``research/00`` HRV-22), so the served list is empty on a withheld
     selected dataset and on ``day_not_happened`` even where
     ``Selection.disagreed_with`` still names a dataset.
 
-    **Empty wherever no verdict was conferred** -- ``research/00`` §5.4 (iii)
-    as amended 2026-09-21 (T167, ``B-CR-002``), restated in ``spec/03``
-    §3.7.4. The predicate is one condition, ``verdict == VERDICT_UNAVAILABLE``,
+    **Empty wherever no verdict was conferred** -- ``research/00`` HRV-22
+    as amended 2026-09-21 (T167, ``B-CR-002``), restated in
+    ``spec/03`` §3.7.4. The predicate is one condition, ``verdict == VERDICT_UNAVAILABLE``,
     and it subsumes all **three** states in which no claim is made:
 
     * nothing selected -- the AC9 presentation fallback, already decided in
@@ -503,8 +503,8 @@ def _disagreed_with(
       verdict, and the presentation fallback confers none; naming a dissenter
       against ``hrv_unavailable`` would report a contradiction of a claim
       never made";
-    * a dataset that **is** selected whose verdict is **withheld** under §5.4
-      (v) because a returning dataset's judged week is entirely later than
+    * a dataset that **is** selected whose verdict is **withheld** under HRV-31
+      because a returning dataset's judged week is entirely later than
       its own -- served as ``week_not_representative``. This is T125's
       returning athlete, the population F006 exists for, and it is the state
       ``B-CR-002`` found uncovered: ``withheld`` is computed per dataset
@@ -629,7 +629,7 @@ def get_hrv_trend(
     from_: datetime.date | None = Query(None, alias="from"),  # noqa: B008 -- FastAPI's parameter idiom
     to: datetime.date | None = Query(None),  # noqa: B008
 ) -> HrvTrendResponse:
-    """The resting-HRV trend verdict for local day ``to`` (F005, spec §3.7)
+    """The resting-HRV trend verdict for local day ``to`` (F005, spec/03 §3.7)
     and the contract's per-day ``points[]`` over ``[from, to]``, on the
     UI<->engine contract's path (``operationId: getHrvTrend``).
 

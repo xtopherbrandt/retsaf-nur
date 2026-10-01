@@ -152,7 +152,7 @@ def _endpoint_withholders() -> tuple[str, ...]:
     Until then this matched *any* mention of the attribute, which conflated
     writing the value with reading it. ``main._disagreed_with`` now asks
     ``verdict.verdict == VERDICT_UNAVAILABLE`` -- the one condition
-    ``research/00`` §5.4 (iii) states for the dissent list, which **empties a
+    ``research/00`` HRV-22 states for the dissent list, which **empties a
     report** on a verdict something else already withheld and confers no
     cause of its own. Counted as a withholder it put a cause in this oracle
     that no spec block can enumerate, because there is none.
@@ -708,7 +708,7 @@ def test_f005_prices_t116_and_t126_as_net_cost_until_e007() -> None:
     at the corrected duration by T126; narrowed from "every reset" on
     2026-09-17 by T138, which measured the other reset kind at 18 days and by
     a different mechanism) -- and both acceptances rest on the same sentence: that
-    down-regulation is the direction ``research/00`` §1.7 tolerates freely,
+    down-regulation is the direction ``research/00`` PRIN-13 leaves free,
     because §6 widens its guardrails rather than being told readiness is
     intact.
 
@@ -771,7 +771,7 @@ CLOSED_FORM = _flat("min_baseline_readings + 7 - min_window_readings")
 
 COST_SITES = (
     Site(
-        label="research/00 5.4 FIG-01 and FIG-02",
+        label="research/00 FIG-01 and FIG-02",
         root_index=0,
         rel="specification/research/00-design-decisions.md",
         lead="**FIG-01.** After a coverage-gap re-establishment",
@@ -808,7 +808,7 @@ def test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure(site: 
       ago was exactly a corrected figure landing in one document and not its
       neighbours;
     * the **closed form**, so the number is recomputable rather than quoted
-      (``research/00`` §1.6's reproduce-it-by-hand property, applied to the
+      (``research/00`` PRIN-12's reproduce-it-by-hand property, applied to the
       feature's own cost table);
     * both reset kinds named in the block, because the defect being fixed is
       one figure standing for two mechanisms.

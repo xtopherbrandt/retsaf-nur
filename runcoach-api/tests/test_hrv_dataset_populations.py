@@ -232,8 +232,8 @@ def test_shipped_f005s_confusion_table_over_matched_era_lengths(c: int) -> None:
     (or skipped), not only of a struck candidate or a zero-day tier, and a 10-day strap
     era is unestablished and so not judgeable -- the athlete's three later strap
     mornings withhold the carrier's stale week exactly as they do at era 15..90. That
-    is ``hrv_normal -> hrv_unavailable`` on one row, the direction §1.7 tolerates
-    freely; ``TP 17 FN 0``, ``detail[0] == "10:W."``. Nothing else in the table moves:
+    is ``hrv_normal -> hrv_unavailable`` on one row, the direction ARCH-13 prices as a
+    net cost, not a wrong verdict; ``TP 17 FN 0``, ``detail[0] == "10:W."``. Nothing else in the table moves:
     ``c`` >= 1 stays ``0 of 17`` (the T130 disarm, pinned below and in
     ``test_hrv_trend_series.py``), and ``FP`` stays 0 at every ``c``.
 
@@ -260,7 +260,7 @@ def test_one_carrier_morning_inside_the_return_disarms_the_withhold_on_shipped_f
     ``week_not_representative``. ``c`` = 1: the carrier also captures ``D-2`` -- the order
     clause is false, nothing is withheld, and the week is judged on the carrier's own
     38/44 ms mornings against the carrier's own band: ``hrv_normal`` on a week whose
-    strap mornings read 25 ms. That is the forbidden flip (``research/00`` §1.7), and it
+    strap mornings read 25 ms. That is the forbidden flip (``research/00`` PRIN-14), and it
     is the current fact F006 AC21 measures against.
 
     Held constant: era length 30, everything ``inter_rows`` fixes. Varied: ``c``, 0 -> 1."""
@@ -417,7 +417,7 @@ def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
     """T167, fixing ``B-CR-002``: ``disagreed_with`` is empty in **every** state in
     which no verdict is conferred, not only the two the code happened to guard.
 
-    ``research/00`` §5.4 (iii) as amended 2026-09-21 (T167): "whenever the served
+    ``research/00`` HRV-22 (amended 2026-09-21, T167): "whenever the served
     verdict is ``hrv_unavailable``, for any cause whatever, nothing is named as
     disagreeing ... because a disagreement is a claim *about* a verdict and a
     withheld verdict makes no claim to contradict". Before this task the endpoint
@@ -570,7 +570,7 @@ def test_week_not_representative_is_served_with_nothing_selected_and_names_no_di
     """T168, section 4: ``week_not_representative`` is **not** a sign that a dataset is
     selected. The contract used to pair that reason with "a dataset that IS selected";
     it is also served when **nothing** is selected and the dataset the AC9 fallback
-    presents is itself withheld under ``research/00`` §5.4 (v) -- ``unavailable_reason``
+    presents is itself withheld under ``research/00`` HRV-31 -- ``unavailable_reason``
     is the *presented* dataset's first-firing guard (T156), and ``verdict_withheld`` is
     asked of every dataset, selected or not.
 

@@ -3,14 +3,14 @@ happens when the athlete's resting-HRV source tier changes states the
 **per-tier dataset** form, and none of them still states the superseded
 single-baseline re-establishment.
 
-T149 (F006, sprint-006). ``research/00`` Sec 3.3 said that when the primary
+T149 (F006, sprint-006). ``research/00`` said, until H-24 (history file), that when the primary
 source tier changes -- the athlete adopts or abandons the chest strap -- the
 system *treats it as a baseline re-establishment*: one baseline, owned by one
 tier, every other tier's readings excluded ``off_baseline_tier``, every
 verdict withheld until the new tier's baseline is established. F006 gives
 each tier its own baseline and band, so a *return* to an already-established
 dataset is free, which contradicts that clause directly. The authority is
-amended first (``research/00`` Sec 5.4), then ``spec/03`` Sec 3.7.3/3.7.4 and
+amended first (``research/00`` HRV-34), then ``spec/03`` Sec 3.7.3/3.7.4 and
 ``spec/02`` Sec 2.4.5 are restated to match (project rule: ``research_00``
 governs), and this module is the witness that the claim was swept tree-wide
 and not just at the sites the diff happened to touch
@@ -30,7 +30,7 @@ two-root walk with a floor per root:
   newline is invisible to a line-oriented scan and three of the seven
   ``SUPERSEDED_FORMS`` are longer than the column at which one scan root is
   wrapped (sprint-006 review iteration 1, S1; ``_flat_text``).
-  ``research/00``'s Sec 5.4 entries
+  ``research/00``'s amendment entries
   quoted the withdrawn form as the thing that was amended away until F008
   (sprint-007 T175) moved them to ``research/00-history.md``, which
   paraphrases; a mention inside a markdown quote (``"..."``) or a code span
@@ -64,7 +64,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # The two forms: the one every surface must state, the ones none may
 # ---------------------------------------------------------------------------
 
-#: The per-tier-dataset form, as research/00 Sec 5.4's 2026-09-18 amendment
+#: The per-tier-dataset form, as research/00 HRV-34 (the 2026-09-18 amendment)
 #: names it and as the task's acceptance probe greps for it. Matched on the
 #: normalised (lowercased, emphasis-stripped) text, so "per-tier datasets"
 #: and "**per-tier dataset** model" both count.
@@ -137,7 +137,7 @@ def _live_superseded_claims(text: str) -> list[str]:
 
 
 def test_the_quotation_guard_tells_a_live_claim_from_a_historical_quotation() -> None:
-    """Checked on text it did not come from: research/00 Sec 5.4 must be able
+    """Checked on text it did not come from: research/00-history.md must be able
     to quote the superseded clause as the thing it amended, and a bare
     restatement anywhere must still be caught."""
     live = "When the primary source tier changes the system treats it as a baseline re-establishment."
@@ -387,7 +387,7 @@ def test_every_surface_states_the_per_tier_dataset_form(site: Site) -> None:
     print(f"[slice compared] {_slice(site.rel, offset, paragraph)}")
     assert REQUIRED_FORM.search(paragraph), (
         f"{site.label} ({site.rel}@{offset}) does not state the source-change rule in its "
-        f"per-tier dataset form (research/00 Sec 5.4, 2026-09-18): it still describes one baseline"
+        f"per-tier dataset form (research/00 HRV-34, 2026-09-18): it still describes one baseline"
     )
 
 
@@ -1037,7 +1037,7 @@ def test_the_scan_of_every_file_can_still_see_a_claim() -> None:
     assert not leaked, (
         "a claim spliced into the middle of a quoted span was reported as live in these "
         "files, so the quotation guard is suppressing nothing and the arm above is vacuous "
-        "-- research/00 Sec 5.4's historical reproductions would be flagged next: "
+        "-- research/00-history.md's reproductions would be flagged next: "
         + "; ".join(leaked)
     )
 
@@ -1457,7 +1457,7 @@ def test_the_single_baseline_form_is_absent_from_every_swept_document() -> None:
           f"flattened whole-file, {sum(len(_flat_text(path)) for path in files)} characters read")
     assert not offenders, (
         "the superseded single-baseline re-establishment (amended away 2026-09-18, research/00 "
-        "Sec 5.4) is stated as a live claim in: " + "; ".join(offenders)
+        "HRV-34) is stated as a live claim in: " + "; ".join(offenders)
     )
 
 
@@ -1480,6 +1480,6 @@ def test_every_off_baseline_tier_mention_is_marked_retired() -> None:
     )
     unmarked = [f"{rel}:{number}" for rel, number, line in mentions if not _RETIRED_MARK.search(line)]
     assert not unmarked, (
-        f"{RETIRED_EXCLUSION} is named without being marked retired (T152, research/00 Sec 5.4 "
+        f"{RETIRED_EXCLUSION} is named without being marked retired (T152, research/00 HRV-44, "
         f"2026-09-18) at: {unmarked}"
     )

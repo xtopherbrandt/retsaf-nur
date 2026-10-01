@@ -458,7 +458,7 @@ def test_the_in_python_window_predicate_agrees_with_the_published_sql() -> None:
 
 def test_a_null_tier_row_is_excluded_with_its_reason() -> None:
     """An ordinary run (tier and value both null) inside the range is listed,
-    not silently absent -- ``research/00`` §1.6 wants the verdict reproducible
+    not silently absent -- ``research/00`` PRIN-12 wants the verdict reproducible
     from what the response reports."""
     run = row(local(D - timedelta(days=1), 17), None, None, "plain-run")
     result = build(readings(STRAP, baseline_days(14)) + [run])
@@ -555,7 +555,7 @@ def test_thirteen_strap_readings_are_not_a_candidate_even_when_the_strap_covers_
 def test_an_occasional_higher_tier_capture_does_not_demote_an_established_baseline() -> None:
     """45 snapshots and one borrowed strap: the baseline stays on
     ``health_snapshot`` (n=45), and the strap reading is corroboration, listed
-    as off-tier -- §3.7.3's "never merged into the same band"."""
+    as off-tier -- spec/03 §3.7.3's "never merged into the same band"."""
     days = baseline_days(45)
     borrowed = row(local(days[20], 6), STRAP, 55.0, "borrowed-strap")
     result = build(readings(SNAPSHOT, days, hh=7) + [borrowed])
@@ -621,7 +621,7 @@ def test_among_candidates_read_last_on_the_same_day_the_tie_falls_to_count_then_
 def test_health_api_overnight_ranks_between_the_strap_and_the_snapshot() -> None:
     """``health_api_overnight`` is in the enum but never written by the
     classifier; the ordering still ranks it. The order follows the authority
-    (``research/00`` §3.3 and register row: chest-strap raw RR, then Health
+    (``research/00`` HRV-01 and register row: chest-strap raw RR, then Health
     Snapshot, then Health API overnight), which is also §2.4.5's own numbered
     list."""
     assert hrv_trend.TIER_FIDELITY == (STRAP, SNAPSHOT, OVERNIGHT)
@@ -1101,7 +1101,7 @@ def test_rule_1s_recency_admits_a_candidate_up_to_the_tolerance_and_strikes_it_p
     ``test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days``
     below, so neither this paragraph nor the list further down can be the
     only thing carrying it again.
-    Both rows stand behind the ordering claim in ``research/00`` §5.4 and in
+    Both rows stand behind the ordering claim in ``research/00`` HRV-16 and in
     ``resolve_baseline_tier``'s docstring.
 
     Distinct failure modes, each run before this was kept: the filter
@@ -1422,7 +1422,7 @@ def test_fourteen_strap_captures_on_seven_days_are_not_a_candidate() -> None:
     0891061 the 14 captures made the strap a candidate, the three week
     days covered the week, and the response reported ``chest_strap_raw``,
     ``n`` 7, ``established: false`` and ``hrv_normal`` -- a verdict in the
-    up-regulating direction ``research/00`` §1.7 tolerates least, on a
+    up-regulating direction ``research/00`` PRIN-14 forbids, on a
     baseline the same response said was not established, while the
     snapshot's real suppression went unreported. Seven distinct days are
     not 14: the strap is not a candidate, the snapshot keeps the baseline
@@ -1659,7 +1659,7 @@ def test_build_series_returns_a_dataset_per_tier_each_with_its_own_band_and_n() 
     **both** tiers carry a non-null band and an independent ``n``. Under F005
     the resolved tier (the strap: highest fidelity, covers the week) owned the
     only band and the snapshot's 57 days were ``off_baseline_tier`` with no
-    band at all. Each band is built from that tier's readings alone (§3.7.3
+    band at all. Each band is built from that tier's readings alone (spec/03 §3.7.3
     anti-mixing, honoured by construction): the strap's mean is ``ln 60`` and
     the snapshot's ``ln 40``, and a band over the union would be neither."""
     series = hrv_trend.build_series(_two_tier_history(), AUCKLAND, D)
@@ -1825,7 +1825,7 @@ def _every_screen_history() -> list[dict]:
 
 
 def test_every_stored_row_in_the_span_is_accounted_for_exactly_once_across_datasets_and_excluded() -> None:
-    """AC15 (``research/00`` §1.6): every stored row inside ``[D-66, D]`` is
+    """AC15 (``research/00`` PRIN-23): every stored row inside ``[D-66, D]`` is
     in exactly one place -- some dataset's ``series`` or the ``excluded``
     list -- and nothing is in two. Under F005 the rows of every non-resolved
     tier were the ``off_baseline_tier`` members of that list; under the
@@ -1860,7 +1860,7 @@ def local_day_of(stored_row: dict) -> str:
 
 # ---------------------------------------------------------------------------
 # F006 / T155 -- selection: the highest-fidelity judgeable dataset, skipped
-# past on baseline-window staleness (research/00 5.4 amended 2026-09-18 (ii);
+# by the recency gate (research/00 HRV-14, HRV-15;
 # F006 AC5-AC8; reference section 9 for the series a first draft got wrong)
 #
 # Every pin below prints the slice it compared -- which datasets were
@@ -2400,7 +2400,7 @@ def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> 
 # ---------------------------------------------------------------------------
 # T158: the withhold (T125/T132) retained at dataset scope (AC24)
 #
-# ``research/00`` section 5.4 (v): a dataset that could not be selected -- not
+# ``research/00`` HRV-31: a dataset that could not be selected -- not
 # judgeable, or skipped by the recency gate -- and that holds at least
 # MIN_WINDOW_READINGS judged-week days, every one later than every judged-week
 # day of the selected dataset, withholds the verdict. ``build_series`` asks it
@@ -2444,7 +2444,7 @@ def test_a_brand_new_device_on_the_selected_datasets_stale_week_withholds_the_ve
     so never judgeable. Without the withhold the strap's stale four mornings
     promote ``hrv_normal`` while the athlete's own three mornings, the ones
     actually suppressed, sit in a dataset no verdict reads: the sixth
-    §1.7-forbidden population, which shipped F005 closes (T132) and AC21
+    PRIN-14 forbidden-direction population, which shipped F005 closes (T132) and AC21
     forbids regressing.
 
     Three-valued (``retiring-a-ratified-behaviour-needs-a-three-valued-pin``,
@@ -2721,7 +2721,7 @@ def _within_baseline(series: hrv_trend.HrvSeries) -> tuple[hrv_trend.Reading, ..
 
 # ---------------------------------------------------------------------------
 # T156: the presentation fallback, formalised (F006 AC9; F005's rule 3 over
-# datasets, ``research/00`` 5.4 (iii))
+# datasets, ``research/00`` HRV-59)
 #
 # When no dataset is judgeable, ``selected_view`` presents one so that
 # ``baseline`` / ``band`` carry a value and no verdict is conferred. The

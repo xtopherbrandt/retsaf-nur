@@ -34,7 +34,7 @@ this module red before a spec block is ever opened.
 
 **What this cannot see.** It is silent on every other claim these two
 paragraphs make (the establishment gate's symmetry, the up-regulation
-argument, `research/00` §1.7); those are review's, not this oracle's.
+argument, `research/00` PRIN-14); those are review's, not this oracle's.
 """
 
 from __future__ import annotations
@@ -203,7 +203,7 @@ class Site:
 
 SITES = (
     Site(
-        label="research/00 5.4 FIG-01 the authority",
+        label="research/00 FIG-01 the authority",
         rel="specification/research/00-design-decisions.md",
         lead="**FIG-01.** After a coverage-gap re-establishment",
     ),

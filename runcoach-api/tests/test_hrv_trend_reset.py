@@ -67,7 +67,7 @@ THIN = 5
 # the judged week's mean -- when there is one -- sits exactly on the band's own
 # mean. The verdict is therefore a function of one thing only: how many of the
 # judged week's days the **resolved tier** read. Fewer than ``WALK_MIN_WINDOW``
-# is ``hrv_unavailable`` (§3.7.4, "two bad mornings are not a trend"), and
+# is ``hrv_unavailable`` (spec/03 §3.7.4, "two bad mornings are not a trend"), and
 # anything else on an established baseline is ``hrv_normal``.
 WALK_VALUE = 40.0
 WALK_MIN_WINDOW = 3
@@ -152,7 +152,7 @@ def in_dataset(result: hrv_trend.SingleDatasetView, tier: str) -> set[str]:
 
 
 def every_listed(result: hrv_trend.SingleDatasetView) -> list[str]:
-    """``research/00`` 1.6's one list, under F006: every dataset's series
+    """``research/00`` PRIN-23's one list, under F006: every dataset's series
     plus the exclusions. Under F005 it was the one resolved series plus the
     exclusions, the other tiers' rows being ``off_baseline_tier`` members
     of the latter (T152 re-pointed the exhaustiveness pins here)."""
@@ -756,7 +756,7 @@ def test_the_documented_tier_oscillation_is_not_a_reset_in_either_direction() ->
 
 
 def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_baseline() -> None:
-    """G3 (§3.7.3 "abandons the chest strap"). An owning strap daily to
+    """G3 (spec/03 §3.7.3 "abandons the chest strap"). An owning strap daily to
     ``T``, a daily snapshot from ``T+1``, nothing else. Through ``T+20`` the
     strap is the only candidate and keeps the baseline (no strap reading
     in the week: ``hrv_unavailable``, never a reset -- the previous window
@@ -804,7 +804,7 @@ def test_the_reverse_transition_resets_the_day_the_snapshot_first_owns_the_basel
     after the resolved tier's. T132's widening therefore withholds here too,
     and ``judge`` reports ``hrv_unavailable`` where it read ``hrv_normal``
     before. **This is the same trade T125 made, one axis over, and the
-    direction is the one ``research/00`` §1.7 tolerates freely**: in this
+    direction is the one ``research/00`` ARCH-13 prices as a net cost**: in this
     fixture both eras read 40.0 ms -- a healthy athlete who has simply
     switched devices -- so the lost verdict is a correct ``hrv_normal``,
     replaced by silence, not a wrong verdict replaced by a right one. Two
@@ -1474,7 +1474,7 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
     apart, so the per-dataset internal-hole clip now cuts the 14 side at
     ``D-29`` too, **unreported**: window ``(D-29, D-7)``, ``n`` 23, the
     same window and ``n`` as the 13 side. The report is still ``None``
-    and the cliff research/00 §5.4 (2026-09-13) prices is, on this
+    and the cliff research/00 FIG-01 prices is, on this
     geometry, closed by the hole clip rather than crossed. The survivor's
     death certificate is re-pointed to what still separates the mutant from
     the rule: the mutant finds an era boundary and lists the trial
@@ -1673,7 +1673,7 @@ def test_the_band_does_not_step_when_the_judged_week_slides_past_the_old_tiers_c
     ``base+1`` and ``base+2`` (``lo`` 3.4791, ``n`` 43) and
     ``hrv_suppressed`` from ``base+3`` (``lo`` 3.6459, ``n`` 36) once the
     week had slid past the captures -- the under-calling direction
-    ``research/00`` §1.7 tolerates least and ``judge``'s own docstring
+    ``research/00`` PRIN-14 forbids and ``judge``'s own docstring
     names as forbidden.
 
     Under D4a the clip is unconditional -- of the report here, and of a
@@ -1903,7 +1903,7 @@ def test_the_era_boundary_tie_on_stray_days_goes_to_the_later_boundary() -> None
     whose strays the judged week is clear of is taken first, then the one
     with the fewest stray days -- the switch that explains the most
     readings -- **ties to the later one, the younger baseline being the
-    cautious reading** (``research/00`` §1.7).
+    cautious reading** (``research/00`` PRIN-14).
 
     The cycle-4 critic's series, target ``D``: a daily snapshot to
     ``E`` = ``D-70`` = 2026-06-30, a daily strap from ``E+1`` = 07-01, and
@@ -1948,7 +1948,7 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
     reading carrying 50 ms where every later one carries 25.
 
     Ties to the later boundary -- the younger baseline being the cautious
-    reading (``research/00`` §1.7) -- so the era begins on ``E+2`` =
+    reading (``research/00`` PRIN-14) -- so the era begins on ``E+2`` =
     08-01, ``baseline`` is clipped to ``[08-01, D-7]``, and the 50 ms
     reading of 07-31 is *before* the reset: 32 readings, all 25 ms, a flat
     band.
@@ -1958,7 +1958,7 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
     ``tier_change on 2026-07-31``, ``baseline_window`` ``(07-31, D-7)``,
     ``baseline_n`` 33 and ``band_lo`` 3.1796 rather than
     ``ln(25) - 0.01``, because the day whose era is in dispute is drawn
-    into the band. That is the §1.7 asymmetry in one series: the earlier
+    into the band. That is PRIN-14's asymmetry in one series: the earlier
     boundary can only *add* a reading whose era is unknown to the baseline
     the athlete is judged against, and a baseline pulled down by a foreign
     era reads a suppressed week as normal."""
@@ -2149,7 +2149,7 @@ def test_a_retaken_morning_in_the_judged_week_is_two_old_tier_days_not_three() -
 # never called, no era boundary was computed and **nothing was clipped** --
 # three lines below a comment reading "D4a (T098): the clip is
 # unconditional". The clip and the report are two consequences of the era
-# boundary (``research/00`` §5.4), and only the *report* was ever the gap's
+# boundary (``research/00`` HRV-72), and only the *report* was ever the gap's
 # to win. The existing precedence pin,
 # ``test_a_gap_reset_takes_precedence_over_a_tier_change``, puts the
 # resumption and the switch on the **same day**, where the two clips
@@ -2222,10 +2222,10 @@ def test_a_coverage_gap_does_not_cancel_the_era_clip() -> None:
       08-13 .. 08-31, ``n`` 19, ``band.lo`` 3.6771, ``hrv_suppressed``.
 
     The 7-day mean is 3.6636 on both. The six 26 ms readings of a strap
-    trial the athlete abandoned in August -- readings ``research/00`` §5.4
+    trial the athlete abandoned in August -- readings ``research/00`` HRV-40
     says are **never** in the band -- were pulled back into it by the gap
-    alone, and a genuinely suppressed week read ``hrv_normal``: §1.7's
-    least-tolerated direction, through a door neither G-C4-1 nor G-C5-1
+    alone, and a genuinely suppressed week read ``hrv_normal``: PRIN-14's
+    forbidden direction, through a door neither G-C4-1 nor G-C5-1
     touched and with **no threshold to cross**.
 
     *If the rule were what the gate at ``hrv_trend.py:554`` implemented* --
@@ -2281,7 +2281,7 @@ def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
     they are the gap's alone -- which is what makes this a pin on the
     composition and not on either clip standing in for both.
 
-    ``research/00`` §1.6's "each reading in exactly one list" is asserted
+    ``research/00`` PRIN-23's "each reading in exactly one list" is asserted
     too, over every stored row in ``[D-66, D]``: the gap branch moves
     readings out of the pre-filter ``readings`` it rebinds, and the era
     branch out of the collapsed ``series`` built from what the gap left,
@@ -2325,7 +2325,7 @@ def test_the_gap_keeps_the_report_while_the_era_keeps_the_clip() -> None:
     assert pre_gap and all(session_id.startswith("snap-") for session_id in pre_gap)
     assert max(session_id[len("snap-") :] for session_id in pre_gap) < str(GAP_AND_SWITCH_RESUMPTION)
 
-    # research/00 §1.6: exactly one list, over every stored row in [D-66, D].
+    # research/00 PRIN-23: exactly one list, over every stored row in [D-66, D].
     in_windows = {
         r["session_id"]
         for r in rows
@@ -2704,7 +2704,7 @@ def test_the_gap_created_era_boundary_keeps_on_tier_days_at_the_resumption() -> 
     # hole of its dataset, so its band is clipped at the resumption,
     # unreported -- the same window, n and band.lo as the gapped side, the
     # trial listed ``before_reset: coverage_gap`` on both, and the verdict
-    # hrv_suppressed on both (down-regulation, the direction §1.7 tolerates).
+    # hrv_suppressed on both (down-regulation, which PRIN-13 leaves free).
     # Only the report now tells the two series apart.
     assert judged_control.report == (STRAP, None, None)
     assert judged_control.baseline_window == (GAP_MAKES_ERA_RESUMPTION, ago(7, GAP_MAKES_ERA_D))
@@ -2787,7 +2787,7 @@ def unclipped_stray_witness() -> list[dict]:
 
 def test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary() -> None:
     """**The witness G-C7-3's acceptance was withdrawn on** (T129, closing the
-    `research/00` §1.7 violation T123 measured). One capture history, one
+    `research/00` PRIN-14 violation T123 measured). One capture history, one
     judged week, one week mean -- and two different verdicts, decided by
     nothing but whether the gap clip was allowed to hide five readings from
     rule 4's stray count.
@@ -3359,7 +3359,7 @@ def test_clause_a_lapsing_nulls_the_report_while_clause_b_and_the_week_half_stil
 
     Authorship (``contract-tables-need-an-independent-oracle``): the series,
     the day counts and the expected null come from the task text and
-    ``research/00`` §5.4's three conditions, not from reading
+    ``research/00`` HRV-38's three conditions, not from reading
     ``build_series``. The two clause-(b) facts below are computed from the
     **fixture's own rows** -- the very list handed to ``build_series`` on the
     line above, not a second copy of the generator's span (T113, gap G-C7-9:
@@ -3454,12 +3454,12 @@ def test_the_reset_constants_are_the_construction_references() -> None:
 # thick enough to judge, but the new tier has taken it over -- and week
 # coverage on the outgoing tier silences ``R+4 .. R+19``, once the old tier
 # holds fewer than ``MIN_WINDOW_READINGS`` days of ``[D-6, D]``. That is
-# ``research/00`` 5.4's "``week_not_representative`` on two of them and
+# ``research/00`` FIG-07's "``week_not_representative`` on two of them and
 # ``week_too_thin`` on the other sixteen", and F005's reporting-lag row says
 # the same; ``DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS`` and
 # ``DOCUMENTED_TIER_CHANGE_THIN_DAYS`` below are those two numbers, pinned.
 #
-# ``research/00`` 5.4 and spec/03 3.7.3, which say a re-establishment
+# ``research/00`` FIG-01 and spec/03 3.7.3, which say a re-establishment
 # "(a coverage gap or a source-tier change)" puts the athlete "20 days
 # beneath ``min_baseline_readings``", are therefore true of the gap and
 # false of the switch in both particulars.
@@ -3472,7 +3472,7 @@ def test_the_reset_constants_are_the_construction_references() -> None:
 R_TIER_SWITCH = date(2026, 9, 1)
 
 #: The published figures. Literals **on purpose**: these are the numbers
-#: ``research/00`` 5.4, spec/03 3.7.3 and F005's verdict cost table state, and
+#: ``research/00`` FIG-02, spec/03 3.7.3 and F005's verdict cost table state, and
 #: this section's job is to prove the shipped constants still produce them.
 #: The derived side below is computed from ``hrv_trend``'s constants, so
 #: moving ``MIN_BASELINE_READINGS`` or ``MIN_WINDOW_READINGS`` moves the
@@ -3482,7 +3482,7 @@ R_TIER_SWITCH = date(2026, 9, 1)
 DOCUMENTED_TIER_CHANGE_SILENCE_DAYS = 18
 DOCUMENTED_TIER_CHANGE_REPORTING_LAG_DAYS = 20
 
-#: How the 18 divides by cause (T143). ``research/00`` 5.4 (ii) and F005's
+#: How the 18 divides by cause (T143). ``research/00`` FIG-07 and F005's
 #: reporting-lag row publish it as "``week_not_representative`` on two of
 #: them and ``week_too_thin`` on the other sixteen" -- an invariant that,
 #: until T143, no test could break. Same discipline as the 18 itself: the
@@ -3679,7 +3679,7 @@ def test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_t
     # The derivation, and the number the documents publish because of it.
     assert len(silent) == tier_change_silence_days()
     assert tier_change_silence_days() == DOCUMENTED_TIER_CHANGE_SILENCE_DAYS, (
-        "research/00 5.4, spec/03 3.7.3 and F005's cost table state "
+        "research/00 FIG-02, spec/03 3.7.3 and F005's cost table state "
         f"{DOCUMENTED_TIER_CHANGE_SILENCE_DAYS} days of tier-change silence; these constants now "
         f"produce {tier_change_silence_days()}. Amend the documents in authority order, or restore "
         "the constant -- the figure is a consequence of MIN_BASELINE_READINGS, MIN_WINDOW_READINGS "
@@ -3715,13 +3715,13 @@ def test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_t
     )
     assert too_thin == list(range(week_thins_at(), first_reported_day())), (
         "and becomes week_too_thin once the outgoing tier holds fewer than MIN_WINDOW_READINGS days "
-        "of [D-6, D] -- told to an athlete who captured every single morning (research/00 5.4 (ii))"
+        "of [D-6, D] -- told to an athlete who captured every single morning (research/00 FIG-07)"
     )
     assert (len(withheld), len(too_thin)) == (
         DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS,
         DOCUMENTED_TIER_CHANGE_THIN_DAYS,
     ), (
-        "research/00 5.4 (ii) and F005's reporting-lag row publish the split as "
+        "research/00 FIG-07 and F005's reporting-lag row publish the split as "
         f"week_not_representative on {DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS} of the silent days and "
         f"week_too_thin on the other {DOCUMENTED_TIER_CHANGE_THIN_DAYS}; these constants now produce "
         f"{len(withheld)} and {len(too_thin)}. Amend the documents in authority order, or restore "
@@ -3767,7 +3767,7 @@ def test_the_tier_change_delay_reports_the_switch_twenty_days_after_it_happened(
     assert silent_on_the_reset == list(range(first_reported_day())), (
         "every day from the switch up to the day before the report says no reset happened"
     )
-    # research/00 5.4 (i) publishes *both* reset fields as null through the
+    # research/00 HRV-82 publishes *both* reset fields as null through the
     # lag, and ``reset_on`` is the one a consumer would read to date the
     # move. T143 replaced a tautology here -- the old line recomputed
     # ``R + report.k`` from ``report.k`` and subtracted ``reset_on``, which
