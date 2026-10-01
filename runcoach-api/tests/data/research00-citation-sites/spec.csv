@@ -435,3 +435,6 @@ repo,specification/spec/03-derived-metric-formulas.md,302,§1.2,ARB-02
 repo,specification/spec/03-derived-metric-formulas.md,316,research/00 §3.3,HRV-01
 repo,specification/spec/03-derived-metric-formulas.md,215,,HRV-04
 repo,specification/spec/03-derived-metric-formulas.md,310,,IND-01
+repo,specification/spec/03-derived-metric-formulas.md,235,PRIN-24,PRIN-27
+repo,specification/spec/03-derived-metric-formulas.md,236,PRIN-24,PRIN-27
+repo,specification/spec/06-adaptation-logic.md,74,PRIN-24,PRIN-27

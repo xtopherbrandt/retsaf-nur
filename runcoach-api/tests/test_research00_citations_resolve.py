@@ -36,7 +36,9 @@ is ``tests/data/research00-citation-sites/<root>.csv`` (columns ``space,file,lin
 T233-T236 and T238 write the rows); the gate consumes every ``*.csv`` in the directory. ``new_id`` is a
 rule ID that must resolve to a rule line of research/00, or ``literal``: a search pattern, census excerpt
 or printed witness (D13), which is **accepted, not resolved, and exempt from the old-token assertion** and
-from every other per-line check on that one line. A live file with a citation token (``§1.x``, ``§3.x``,
+from every other per-line check on that one line. An empty `old_citation` records a line that mentions
+research/00 and carries the spec's own section token, read and judged not a research/00 citation; the
+old-token check skips it (T233's rows; stated at T246). A live file with a citation token (``§1.x``, ``§3.x``,
 ``§5.4`` or ``Part N``) on a live line and no row in any CSV is **unlisted**. So is one live line of a
 **listed** file that carries the ``research[_/]00`` mention and a section or Part token with no row of its
 own (T245): listing one line does not list the file. A bare token with no mention on such a line is not a

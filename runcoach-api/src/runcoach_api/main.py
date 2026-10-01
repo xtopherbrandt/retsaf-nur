@@ -319,7 +319,7 @@ def _withhold_future(
     (which lies wholly in the past) and the contract's ``points[]`` draws it
     on days with no reading (T091), and because the verdict must remain
     reproducible by hand from the response (``research/00`` PRIN-12; the
-    inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24).
+    inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-27).
 
     **``unavailable_reason`` (T137).** Overridden to ``REASON_DAY_NOT_HAPPENED``
     whenever this replaces the verdict, regardless of whichever of ``judge``'s own four
@@ -522,7 +522,7 @@ def _disagreed_with(
     are kept as computed, for ``_withhold_future``'s own stated reason:
     everything that **produced** the verdict is left alone, so the response
     keeps what ``research/00`` PRIN-12 asks a verdict to be reproduced from by
-    hand (the inputs it does not serve are PRIN-24's OPEN exceptions, owned by
+    hand (the inputs it does not serve are PRIN-27's OPEN exceptions, owned by
     IDEA-102), and those two identify
     which dataset the retained ``baseline``/``band`` came from. They are
     producers, not claims. ``datasets[]`` is kept for the same reason and
