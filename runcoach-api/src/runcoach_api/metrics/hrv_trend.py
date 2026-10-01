@@ -1,11 +1,11 @@
-"""The resting-HRV trend (F005, spec §3.7): the series, the band and verdict, and the resets.
+"""The resting-HRV trend (F005, spec/03 §3.7): the series, the band and verdict, and the resets.
 
 This module turns stored ``sessions`` rows into **one clean one-reading-per-
 local-day dataset per source tier present** (``build_series``, T083; N
 datasets since F006/T151), judges one dataset's target date against the SWC
-band built over its baseline (``judge``, T084), and clips or re-establishes
-a baseline after a coverage gap or a sustained tier change
-(``coverage_gap_reset`` / ``tier_change_reset``, T092). The three sections
+band built over its baseline (``judge``, T084), and re-establishes a
+baseline after a coverage gap or clips one at an era boundary (T-16, HRV-34;
+``coverage_gap_reset`` / ``tier_change_reset``, T092). The three sections
 follow in that order. The window constants and every exclusion and
 reset reason are declared together at the top, because ``build_series``
 reads them all; the band's own constants sit with the band.
@@ -33,7 +33,7 @@ dicts and no database. Rows are read **by key** (``session_id``,
    post-exclusion readings and the first day of every dataset's window
    alike, before any tier is looked at.
 3. **Partition** the readings by tier -- one ``HrvDataset`` per tier
-   present (F006, ``research/00`` §5.4 amended 2026-09-18; T151). A morning
+   present (F006, ``research/00`` HRV-10, HRV-48; T151). A morning
    carrying two tiers' captures feeds both datasets.
 4. **Collapse** to one reading per local day **within each dataset**: the
    earliest capture of the day on that tier; every later one is
@@ -49,8 +49,8 @@ a usable reading of this tier existed, and ``readings_in_window`` decides
 ``hrv_unavailable`` -- so the order is outcome-determining, not cosmetic.
 
 **Which dataset is judged is decided by ``select_dataset``, after the
-series is built** (F006, T155; ``research/00`` §5.4 amended 2026-09-18
-(ii)). F005 resolved *the* baseline tier inside ``build_series``
+series is built** (F006, T155; ``research/00`` HRV-14). F005 resolved
+*the* baseline tier inside ``build_series``
 (``resolve_baseline_tier``: rule 1's candidacy in distinct local days with
 T117's recency gate, rule 2's week coverage, rule 3's last-used candidate;
 T093/T094/T095/T117). F006 selects among the datasets instead: the
@@ -124,8 +124,8 @@ GAP_RESET_DAYS = 21
 #: day of any candidate is struck from the candidate set before rule 2 is
 #: asked (``resolve_baseline_tier``; T117, 2026-09-15, closing IDEA-064).
 #: The comparison is between candidates, not against an absolute offset
-#: from ``D-7``. The constant is not published in ``thresholds``
-#: ([[IDEA-070]], 2026-09-15).
+#: from ``D-7``. HRV-17 has ``thresholds`` publish the constant (F010, closing
+#: [[IDEA-070]]; PRIN-12).
 #:
 #: Why 28, and not any other value in the measured green band
 #: ``[18, 44]``, measured 2026-09-15 and **scoped to the 394 tests the five
@@ -161,7 +161,7 @@ GAP_RESET_DAYS = 21
 #:
 #: * **28 = 4 x ``WINDOW_DAYS``** -- four judged weeks. Stated in the
 #:   rule's own unit, it says a tier read at least once in any four
-#:   consecutive judged weeks is never struck for staleness.
+#:   consecutive judged weeks is never struck by the recency gate (HRV-16).
 #: * **28 > ``GAP_RESET_DAYS`` (21)**, which is the load-bearing half.
 #:   The two mechanisms answer different questions and must not overlap:
 #:   ``coverage_gap_reset`` measures the silence of the series as a whole
@@ -201,18 +201,18 @@ GAP_RESET_DAYS = 21
 #:   21 row is not yet. That relation is asserted, not just stated, by
 #:   ``test_the_seam_row_is_the_only_one_whose_red_onset_is_at_gap_reset_days``.
 #:
-#: Which of the two fires first is not a race but a partition, and it is
-#: decided by *where the readings are*, not by 28 against 21. When the
+#: Which of the two fires first is not a race but a partition (HRV-52), and
+#: it is decided by *where the readings are*, not by 28 against 21. When the
 #: whole series goes silent for more than 21 days, the gap reset clips
 #: ``[D-66, gap_reset_on)`` out of the window before any tier is counted,
 #: so the pre-gap era never reaches candidacy and this rule is never
 #: consulted. When one tier goes silent while another carries the series,
-#: there is no gap to report and this rule is the only one that acts. The
-#: gap reset therefore always fires first *where it fires at all* -- and
-#: the exception, the case where neither applies, is a lone tier with no
-#: rival: it is its own most recent candidate, so its gap is zero and it
-#: is never struck however old it is (that is the coverage gap's
-#: population, not this one).
+#: there is no gap to report, and the hole clip (HRV-37) and then this gate
+#: cover that dataset's silence (the 22..28-day trailing regime is OPEN,
+#: HRV-53). The gap reset therefore always fires first *where it fires at
+#: all* -- and the exception, the case where neither applies, is a lone tier
+#: with no rival: nothing is read later than it, so this gate never strikes
+#: it (that is the coverage gap's population, not this one).
 #:
 #: **Since F006 (T155) this same constant, through the same
 #: ``_recency_struck``, is the selection gate** (``select_dataset``; AC6/
@@ -223,24 +223,25 @@ GAP_RESET_DAYS = 21
 #: an entirely pre-layoff band against shipped F005 -- 1,896 -> 3,705 of
 #: 307,500 -- because a stopped or weekless carrier left the reference set;
 #: shipped F005's own rule-1 reference was every established tier). The
-#: constant is inherited, not re-justified: the ``[18, 44]`` band above
+#: constant is inherited, not re-justified: the ``[18, 44]`` bracket above
 #: was measured against the *fused* band, and its upper end no longer
-#: binds because a stale trial is not judgeable -- do not cite it as if it
-#: transferred (reference §10; T161/T162 re-measure it).
+#: binds because an abandoned trial is not judgeable -- do not cite it for
+#: per-tier datasets (GATE-07); the constant rests on HRV-16's two reasons
+#: alone until a re-measurement is recorded (GATE-03; reference §10).
 RECENCY_TOLERANCE_DAYS = 28
 
 #: The tier enum (``models.Session.hrv_source_tier``), highest fidelity first.
-#: The order is the authority's (``research/00`` §3.3 and its register row:
-#: chest-strap raw RR, then Health Snapshot, then Health API overnight) and
-#: §2.4.5's own numbered list. ``health_api_overnight`` is in the enum but is
+#: The order is the authority's (``research/00`` HRV-01, the three input tiers
+#: of T-26: chest-strap raw RR, then Health Snapshot, then Health API overnight) and
+#: spec/02 §2.4.5's own numbered list. ``health_api_overnight`` is in the enum but is
 #: never written by the classifier; it is ranked all the same.
 TIER_FIDELITY: tuple[str, ...] = ("chest_strap_raw", "health_snapshot", "health_api_overnight")
 _FIDELITY_RANK = {tier: rank for rank, tier in enumerate(TIER_FIDELITY)}
 
 # Exclusion reasons. Each stored row inside ``[D-66, D]`` that is not in the
-# series is listed with exactly one of these, so a verdict is reproducible
-# from what the response reports (``research/00`` §1.6). The parameterised
-# ones carry their argument after ``": "``.
+# series is listed with exactly one of these (``research/00`` PRIN-23), so a
+# verdict is reproducible from its response (PRIN-12, less PRIN-24's OPEN
+# exceptions). The parameterised ones carry their argument after ``": "``.
 REASON_OUTSIDE_WINDOWS = "outside_windows"
 REASON_PRE_AMENDMENT_WINDOW = "pre_amendment_window"
 REASON_NULL_TIER = "null_tier"
@@ -253,7 +254,7 @@ REASON_UNUSABLE_VALUE = "unusable_value"
 REASON_SAME_DAY_LATER_CAPTURE = "same_day_later_capture"
 #: A reading inside ``[D-66, D]`` that predates the day the current
 #: baseline era began (T092): it contributed to neither the baseline nor
-#: the window, and ``research/00`` §1.6 wants it listed rather than
+#: the window, and ``research/00`` PRIN-23 wants it listed rather than
 #: silently dropped. Parameterised with the reason the era began:
 #: ``before_reset: coverage_gap`` for a resumption after a silence, and
 #: ``before_reset: tier_change`` for the readings of a dataset's tier that
@@ -294,7 +295,7 @@ class Exclusion:
 @dataclass(frozen=True)
 class HrvDataset:
     """One source tier's dataset for one target date (F006, T151;
-    ``research/00`` §5.4 as amended 2026-09-18, spec §3.7.3's per-tier
+    ``research/00`` HRV-10, HRV-48; spec/03 §3.7.3's per-tier
     dataset model).
 
     ``series`` is one reading per local day **on this tier**, in date order,
@@ -341,7 +342,7 @@ class HrvDataset:
     #: and whether or not a gap fired (T107).
     reset_on: date | None = None
     reset_reason: str | None = None
-    #: T125/T132 at dataset scope (T158, AC24; ``research/00`` §5.4 (v)),
+    #: T125/T132 at dataset scope (T158, AC24; ``research/00`` HRV-31, HRV-63),
     #: asked of this dataset as if it were the selected one: the judged week
     #: is not a fair sample of it because a dataset that could not have been
     #: selected -- not judgeable, or skipped by the recency gate -- holds
@@ -354,8 +355,8 @@ class HrvDataset:
     #: (``None``) and ``established`` (``False``) default toward
     #: ``hrv_unavailable``; an unset ``withheld`` must too, or a construction
     #: site that forgets the argument silently manufactures a dataset
-    #: eligible for ``hrv_normal`` -- the direction ``research/00`` Section
-    #: 1.7 forbids on weak evidence. ``build_series`` always passes the
+    #: eligible for ``hrv_normal`` -- the forbidden direction (T-24, which
+    #: ``research/00`` PRIN-14 forbids). ``build_series`` always passes the
     #: computed value; the default exists for the call site that does not
     #: yet exist, and ``test_hrv_series_withheld_defaults_closed.py`` pins it.
     withheld: bool = True
@@ -377,7 +378,7 @@ class HrvSeries:
     contributed to nothing, and why: the screens, ``before_reset:
     coverage_gap`` for the readings the global clip removed, and each
     dataset's own ``same_day_later_capture`` and ``before_reset:
-    tier_change`` -- every row exactly once (``research/00`` §1.6; the
+    tier_change`` -- every row exactly once (``research/00`` PRIN-23; the
     per-dataset ``included``/``excluded`` partition is T152's).
 
     **The two clips are not symmetric in what they rebind, deliberately.**
@@ -484,7 +485,7 @@ def judged_window(target_date: date) -> tuple[date, date]:
 def previous_window(target_date: date) -> tuple[date, date]:
     """The closed local-date interval ``[D-126, D-67]``: the 60-day baseline
     window immediately before ``baseline_window(target_date)``. The
-    sustained-tier-change rule (T092) resolves the tier here and compares."""
+    era rule (HRV-38, T092) reads the tier that sustains this window, clause (b)."""
     last = target_date - timedelta(days=WINDOW_DAYS + BASELINE_DAYS)
     return last - timedelta(days=BASELINE_DAYS - 1), last
 
@@ -594,14 +595,14 @@ def _last_read(readings: Iterable[Reading]) -> dict[str, date]:
 
 
 def _recency_struck(candidates: Sequence[str], last_read: Mapping[str, date]) -> set[str]:
-    """Rule 1's recency gate (T117), as the **set it strikes** rather than the
+    """The recency gate (T117; ``research/00`` HRV-15), as the **set it strikes** rather than the
     set it keeps.
 
     A candidate whose latest day in ``last_read`` falls more than
     ``RECENCY_TOLERANCE_DAYS`` behind the latest day of any candidate is
-    struck. The comparison is between the candidates themselves, so a lone
-    candidate is its own reference and is never struck, and an empty candidate
-    list strikes nothing.
+    struck. The reference is the maximum over ``candidates`` as given -- every
+    established dataset from ``select_dataset`` (HRV-15, HRV-51) -- and an empty
+    candidate list strikes nothing.
 
     **Why this is a function and not four lines inside
     ``resolve_baseline_tier``** (T125, 2026-09-16). ``build_series`` needs the
@@ -642,7 +643,7 @@ def verdict_withheld(
     """Whether the judged week is too unrepresentative of the athlete *now*
     for any verdict to be asserted on ``dataset`` -- T125's order clause
     (2026-09-16, form 2; widened T132, form B), **retained at dataset scope**
-    (T158, 2026-09-19; F006 AC24; ``research/00`` §5.4 (v)).
+    (T158, 2026-09-19; F006 AC24; ``research/00`` HRV-31, HRV-63).
 
     True when another dataset **that could not have been selected** -- one
     that is not judgeable (``is_judgeable``: unestablished, or fewer than
@@ -679,12 +680,12 @@ def verdict_withheld(
     is just as unread either way. That is the **one verdict this
     restatement moves**: a non-judgeable dataset with 1..13 baseline days
     and a full later week now withholds (``hrv_normal ->
-    hrv_unavailable``, §1.7's freely tolerated direction; T130's era-10
+    hrv_unavailable``, silence as a net cost (``research/00`` ARCH-13); T130's era-10
     row in ``test_hrv_dataset_populations.py`` is the measured instance,
     shipped's single ``FN`` at ``c = 0``). The strict day-order clause is
     unchanged to the character. A judgeable dataset that is **not**
     skipped is never in the set: it could have been selected and lost on
-    fidelity rank alone, the selected dataset decides (§5.4 (iii)) and its
+    fidelity rank alone, the selected dataset decides (HRV-20) and its
     disagreement is reported (AC10) -- withholding on it would be the
     withhold-on-disagreement form the decision log rejected.
 
@@ -771,13 +772,13 @@ def verdict_withheld(
     first ``MIN_WINDOW_READINGS`` days, a **legitimate, permanent** device
     switch is the *same shape* as T132's forbidden geometry: an
     un-established dataset holding ``>= MIN_WINDOW_READINGS`` week days,
-    every one later than the selected dataset's. Nothing in the two
+    every one later than the judged dataset's (HRV-31). Nothing in the two
     datasets' windows separates "a device he will never use again" from "a
     device he bought yesterday and will use forever". This widening
     therefore also silences ``hrv_normal`` on a permanent switch's third and
     fourth mornings at daily or 4/wk-clustered capture (T132/T145/T147,
     pinned in ``test_hrv_trend_band.test_the_return_residual_turns_on_capture_spacing_not_weekly_count``)
-    -- the *freely tolerated* direction (``research/00`` §1.7), accepted as
+    -- silence as a net cost (``research/00`` ARCH-13), accepted as
     two days of silence per permanent device switch in exchange for closing
     the forbidden direction on a brand-new device that goes unused again.
     ``tier_change_reset`` and, under F006, the new dataset's own
@@ -846,9 +847,10 @@ def resolve_baseline_tier(
        in ``baseline_counts`` **and read recently enough**: a tier whose
        latest day in ``last_read`` falls more than ``RECENCY_TOLERANCE_DAYS``
        behind the latest day of any candidate is struck (T117, 2026-09-15,
-       closing IDEA-064). The comparison is between candidates, so a lone
-       candidate is its own reference and is never struck. The constant
-       is not published in ``thresholds`` ([[IDEA-070]], 2026-09-15).
+       closing IDEA-064). Here the reference is the candidates themselves --
+       F005's retired arbitration (HRV-44); the live gate reads every
+       established dataset (HRV-15, HRV-51), and ``thresholds`` publishes the
+       constant (HRV-17; F010, closing [[IDEA-070]]).
     2. If any candidate holds at least ``MIN_WINDOW_READINGS`` in
        ``week_counts``, the baseline tier is the highest-fidelity such
        candidate.
@@ -859,10 +861,10 @@ def resolve_baseline_tier(
        window, then by fidelity. When there is no candidate at all, the
        tier with the most days in ``baseline_counts``, ties to the higher
        fidelity (``_densest_tier``). Either way a week with no readings of
-       any tier reads ``hrv_unavailable`` and **begins no reset** -- rule
-       4 reads nothing inside the judged week that an empty week could
-       change -- while a reset already in force persists through it
-       unchanged (T095, review cycle 3 G11: "keeps the tier stable with no
+       any tier reads ``hrv_unavailable``, and what it holds neither creates,
+       moves nor ends a reported reset (``research/00`` HRV-42, T-16): the era
+       rule reads nothing inside the judged week that an empty week could
+       change (T095, review cycle 3 G11: "keeps the tier stable with no
        reset" was true only of beginning one). ``None`` when the baseline
        window holds no readings at all.
 
@@ -880,7 +882,7 @@ def resolve_baseline_tier(
     readings", not "highest present", when nothing is a candidate: an
     athlete with 45 Health Snapshot readings who borrows a chest strap once
     keeps the established snapshot baseline, and the strap capture is
-    corroboration (§3.7.3). The accepted costs, named in F005's Negative
+    corroboration (spec/03 §3.7.3). The accepted costs, named in F005's Negative
     Class: a strap worn two or three days a week takes and loses the
     baseline whenever its count in the sliding judged week crosses 3 --
     the oscillation, which the recency condition deliberately does **not**
@@ -923,9 +925,10 @@ def resolve_baseline_tier(
     candidates = [tier for tier in TIER_FIDELITY if baseline_counts.get(tier, 0) >= MIN_BASELINE_READINGS]
     last_read = last_read or {}
     # Rule 1's recency condition (T117): relative to the candidates
-    # themselves, never to ``D-7``, so a lone candidate is its own reference
-    # and is never struck. Factored into ``_recency_struck`` by T125, which
-    # needs the struck set itself at the verdict; the gate is unchanged.
+    # themselves, never to ``D-7`` -- F005's retired arbitration (HRV-44); the
+    # live gate's reference is every established dataset (HRV-15, HRV-51).
+    # Factored into ``_recency_struck`` by T125, which needs the struck set
+    # itself at the verdict; the gate is unchanged.
     struck = _recency_struck(candidates, last_read)
     candidates = [tier for tier in candidates if tier not in struck]
     for tier in candidates:
@@ -1006,7 +1009,7 @@ def build_series(
     every request, and the two clips compose as the later of their first
     days -- ``[max(D-66, <the resumption>, <the era's first day>), D-7]``
     -- because neither pre-gap nor pre-boundary readings may be in the
-    band (``research/00`` §5.4). Until T107 this branch sat behind ``if
+    band (``research/00`` HRV-40, HRV-74). Until T107 this branch sat behind ``if
     reset_on is None``, so any gap in ``[D-66, D]`` meant no boundary was
     computed and nothing was clipped at all. ``rows``
     must span ``[D-126, D]`` for the rule to be able to
@@ -1137,9 +1140,9 @@ def build_series(
         if boundary is not None:
             # D4a (T098), made true of a gapped series by T107 (review cycle
             # 6, G-C6-5): the clip is unconditional -- on the report *and* on
-            # the coverage gap. ``research/00`` §5.4 says the now-sustaining
-            # tier's pre-boundary readings are *never* in the band; only the
-            # *report* was ever the gap's to win.
+            # the coverage gap. ``research/00`` HRV-40 says the pre-boundary
+            # readings of this dataset's tier are *never* in its band; only the
+            # *report* was ever the gap's to win (HRV-36).
             #
             # The two clips compose as the **later** first day. Each says
             # the same kind of thing -- these readings are not of this
@@ -1150,7 +1153,7 @@ def build_series(
             # three. The era may have begun before D-66 (T094: ``first_day``
             # is its true first day, not the first inside the window).
             #
-            # Nothing is listed twice (``research/00`` §1.6). The gap branch
+            # Nothing is listed twice (``research/00`` PRIN-23). The gap branch
             # rebinds ``readings`` before the partition, so ``series`` holds
             # only what it kept; this branch excludes out of ``series``. A
             # boundary earlier than the resumption removes nothing here
@@ -1183,7 +1186,7 @@ def build_series(
         # ``before_reset: coverage_gap`` -- the dataset's own coverage gap,
         # an already-published reason -- so the band, ``n`` and
         # ``established`` are the post-hole era's (AC8 counts established
-        # post-clip) and every row is still listed once (§1.6). Nothing is
+        # post-clip) and every row is still listed once (PRIN-23). Nothing is
         # **reported**: ``reset_on`` / ``reset_reason`` stay whatever the
         # global gap or ``tier_change_reset`` decided, which can leave
         # ``window[0]`` after ``reset_on`` (a state T107 already allows).
@@ -1213,7 +1216,7 @@ def build_series(
             )
         )
 
-    # T125/T132 at dataset scope (T158, AC24; ``research/00`` §5.4 (v)),
+    # T125/T132 at dataset scope (T158, AC24; ``research/00`` HRV-31, HRV-63),
     # asked of every dataset as if it were the selected one: the set the
     # order clause is asked about is every dataset that could not have been
     # selected -- not judgeable, or skipped by the recency gate. The gate is
@@ -1277,7 +1280,7 @@ PRESENTATIONS: tuple[str, ...] = (
 class Selection:
     """Which dataset is promoted into ``baseline``/``band``/``hrv_status``
     for one target date, and the facts it was decided on (F006, T155;
-    ``research/00`` §5.4 amended 2026-09-18 (ii); AC5-AC8).
+    ``research/00`` HRV-14, HRV-15; AC5-AC8).
 
     ``judgeable`` are the tiers of the candidate datasets, in fidelity
     order; ``skipped`` the subset the recency gate struck, in the same
@@ -1296,10 +1299,16 @@ class Selection:
     ``band_readings`` is every dataset read against its **own** band
     (``read_against_band``, T157), in fidelity order, judgeable or not;
     ``disagreed_with`` the tiers among them on the other side of their band
-    from ``selected`` (``disagreed_with``; AC10/AC11). Empty when nothing is
-    selected: a disagreement is with a verdict, and the presentation
-    fallback confers none (IDEA-082, settled by T156: the reading that
-    keeps the field's name honest and the fallback verdict-free).
+    from ``selected`` (``disagreed_with``; AC10/AC11; ``research/00`` HRV-21,
+    HRV-56). Empty when nothing is selected: a disagreement is with a verdict,
+    and the presentation fallback confers none (IDEA-082, settled by T156: the
+    reading that keeps the field's name honest and the fallback verdict-free).
+    **Candidate dissent, not the served list.** It still names dissenters
+    beside a selected dataset whose verdict the withhold silenced (T-11,
+    HRV-23) and on a day that has not happened (HRV-29); ``main._disagreed_with``
+    empties it whenever the served verdict is ``hrv_unavailable`` (T167,
+    B-CR-002; HRV-22), and any other consumer of ``Selection`` must apply
+    HRV-22 itself (IDEA-095).
     ``selected_reason`` is AC13's closed enum, derived from ``skipped``.
     """
 
@@ -1358,8 +1367,8 @@ class Selection:
 
 def select_dataset(series: HrvSeries) -> Selection:
     """The dataset the verdict is taken from: the highest-fidelity
-    **judgeable** dataset, skipped past on baseline-window staleness (F006,
-    T155; ``research/00`` §5.4 amended 2026-09-18 (ii); spec §3.7.4).
+    **judgeable** dataset, skipped by the recency gate (F006, T155;
+    ``research/00`` HRV-14, HRV-15; spec/03 §3.7.4).
 
     1. **Candidates are the judgeable datasets** (AC8): ``established`` --
        at least ``MIN_BASELINE_READINGS`` distinct local days in the
@@ -1368,17 +1377,16 @@ def select_dataset(series: HrvSeries) -> Selection:
        ``MIN_WINDOW_READINGS`` distinct judged-week days. F005's rule 2
        ("covers the week") and the count half of its rule 1 are this one
        condition, stated once.
-    2. **The highest fidelity rank wins** (AC5; ``_FIDELITY_RANK``, §3.7.1's
-       ratified hierarchy preserved: chest-strap raw RR over the numeric
-       tiers). The numeric confidence weight §3.7.1 defines is **never**
-       consulted here (reference §3, the two senses of quality split), so no
+    2. **The highest fidelity rank wins** (AC5; ``_FIDELITY_RANK``; ``research/00``
+       HRV-19, with spec/03 §3.7.1's ratified hierarchy: chest-strap raw RR over
+       the numeric tiers). No confidence weight is computed or emitted in
+       Section 3 (HRV-54; reference §3, the two senses of quality split), so no
        recency-against-quality exchange rate exists -- and T159 does not
-       render it either: §3.7.4 defers it to Section 6's readiness fusion and
-       states that no confidence weight is computed in this section today, so
-       emitting one would mint a constant Section 3 does not own. What
-       ``datasets[]`` reports is this **rank** (``fidelity_rank``), the
+       render one either: the weighting is deferred to Section 6's readiness
+       fusion, so emitting one would mint a constant Section 3 does not own.
+       What ``datasets[]`` reports is this **rank** (``fidelity_rank``), the
        quantity that actually arbitrates, which is what makes
-       ``selected_reason`` recomputable by hand (``research/00`` §1.6).
+       ``selected_reason`` recomputable by hand from its response (PRIN-12).
     3. **A candidate is skipped** (AC6/AC7) when its latest reading **within
        the baseline window** ``[D-66, D-7]`` falls more than
        ``RECENCY_TOLERANCE_DAYS`` behind the latest baseline-window reading
@@ -1389,12 +1397,12 @@ def select_dataset(series: HrvSeries) -> Selection:
        computed here). The reference maximum is taken **once,
        simultaneously**, over every **established** dataset -- the ones that
        are not judgeable and the ones about to be skipped alike -- while the
-       *candidates* struck from it stay the judgeable datasets, so a lone
-       established dataset is its own reference and the dataset holding the
-       maximum can never be skipped.
+       *candidates* struck from it stay the judgeable datasets (HRV-51), so
+       the dataset holding the maximum can never be skipped, and a lone
+       judgeable dataset can be (T164, below).
 
        **Why the population is the established datasets** (T164, 2026-09-20;
-       ``research/00`` 5.4 amended first, then spec 3.7.3/3.7.4, then AC6/
+       ``research/00`` HRV-15, HRV-51 amended first, then spec/03 §3.7.3, spec/03 §3.7.4, then AC6/
        AC7). T155 took the reference over the judgeable datasets alone.
        Shipped F005's rule 1 took its equivalent over every **established**
        tier, so a carrier that had stopped -- or whose judged week was too
@@ -1403,7 +1411,7 @@ def select_dataset(series: HrvSeries) -> Selection:
        rows and 24,000 walk rows, on both modules and under both overlap
        variants: ``hrv_normal`` on an entirely pre-layoff band rose **1,896 ->
        3,705** (x1.95) and **96 -> 254** (x2.65), worse at every ``c``, on 82
-       of 150 cells -- 1.7's forbidden direction on the population AC6 exists
+       of 150 cells -- the forbidden direction (T-24, PRIN-14) on the population AC6 exists
        to close, reopened at AC7 (IDEA-080). Widening the population restores
        F005's rate. The cost, knowingly re-imported: a **lone judgeable**
        dataset is no longer automatically its own reference -- an established
@@ -1416,15 +1424,15 @@ def select_dataset(series: HrvSeries) -> Selection:
     established and judgeable and the highest fidelity; its *latest*
     reading is ``D-0``, gap 0, and an unqualified gate selects it and judges
     the athlete against a band every reading of which is 36 to 66 days old
-    and entirely pre-layoff -- ``hrv_normal`` on a stale band, §1.7's
-    forbidden direction, on the exact mechanism T125 closed. Its latest
+    and entirely pre-layoff -- ``hrv_normal`` on a stale band, the forbidden
+    direction (T-24, PRIN-14), on the exact mechanism T125 closed. Its latest
     reading *in the window* is ``D-36``, 29 behind the snapshot's ``D-7``,
     and it is skipped. Per-tier baselining removed every clip that checked
     the *baseline's* recency; this gate is what puts the question back.
 
     Selection runs per local day (the route calls this per judged day, AC14)
     and reads nothing from yesterday: it is path-independent by
-    construction, which is what the deferred hysteresis (AC23) would give up.
+    construction (HRV-18), which hysteresis would give up (GATE-02 refuses it; AC23).
     ``withheld`` is not consulted here -- it is ``judge``'s, at dataset scope
     (T158). Two datasets of one tier cannot come out of ``build_series``
     (the dataset key is the tier, reference §1) and are refused rather than
@@ -1516,7 +1524,7 @@ def read_against_band(dataset: HrvDataset) -> BandReading:
 def disagreed_with(selected: HrvDataset | None, readings: Iterable[BandReading]) -> tuple[str, ...]:
     """The tiers whose reading against their own band is on the **other
     side** from the selected dataset's (F006, T157; AC10/AC11;
-    ``research/00`` §5.4 amended 2026-09-18 (iii)), in the order given --
+    ``research/00`` HRV-21, HRV-56), in the order given --
     fidelity order from ``select_dataset``.
 
     Both directions (AC11): a dataset reading below while the selected one
@@ -1532,6 +1540,13 @@ def disagreed_with(selected: HrvDataset | None, readings: Iterable[BandReading])
     verdict; naming a dissenter against ``hrv_unavailable`` would report a
     contradiction of a claim never made. ``band_readings`` still carries
     every dataset's reading on that day.
+
+    **Candidate dissent only.** The same reason covers the other two no-verdict
+    states (HRV-23) -- the selected dataset whose verdict the withhold silenced
+    (T-11) and a day that has not happened (HRV-29) -- but this function does
+    not see them: it reads the selection alone. ``main._disagreed_with`` applies
+    HRV-22 at the rendering seam (T167, B-CR-002), and a second consumer of
+    ``Selection`` must apply it too (IDEA-095, option 2).
     """
     if selected is None:
         return ()
@@ -1553,9 +1568,9 @@ class Presentation:
 
 def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> Presentation | None:
     """The dataset ``baseline``/``band`` are populated from when **no
-    dataset is selected** -- F005's rule 3, retained for presentation only
-    (F006 AC9; ``research/00`` §5.4 (iii): "the dataset the athlete was
-    read on last"; formalised by T156, keeping the clause order T155 built
+    dataset is selected** -- F005's last-read tie-break, retained for
+    presentation only (F006 AC9; ``research/00`` HRV-24, HRV-59, HRV-45;
+    formalised by T156, keeping the clause order T155 built
     provisionally).
 
     **The precondition is ``selection.selected is None``**, which is wider
@@ -1566,7 +1581,7 @@ def _presentation_fallback(series: HrvSeries, last_read: Mapping[str, date]) -> 
     dataset, so an established but weekless dataset read later can strike
     every candidate at once and "judgeable non-empty, all skipped" reaches
     here too. AC9's *given* was restated on 2026-09-21 to say "no dataset
-    is **selected**" (``research/00`` §5.4 (iii) amended first). The code
+    is **selected**" (``research/00`` HRV-24 amended first). The code
     never changed -- ``selected_view`` has only ever asked this when
     ``selected`` is ``None`` -- and the newly reachable state is pinned by
     ``test_probe_every_judgeable_dataset_can_be_skipped_at_once_since_t164``.
@@ -1706,8 +1721,8 @@ def selected_view(series: HrvSeries) -> SingleDatasetView:
 # ---------------------------------------------------------------------------
 
 #: The register's shipped smallest-worthwhile-change width: the band is the
-#: baseline mean +/- ``SWC_FACTOR * SD(ln rMSSD)`` (``research/00`` register
-#: row, as clarified by F005's amendment).
+#: baseline mean +/- ``SWC_FACTOR * SD(ln rMSSD)`` (``research/00`` HRV-07, as
+#: clarified by F005's amendment).
 SWC_FACTOR = 0.5
 #: The smallest half-width the band may have. A metronomic athlete would
 #: otherwise get a razor-thin band and be punished for consistency. **0.01,
@@ -1717,8 +1732,9 @@ SWC_FACTOR = 0.5
 #: case. At 0.01 the floor fires only for a genuinely degenerate series
 #: (daily readings within about +/-2%), and both branches are testable.
 BAND_FLOOR = 0.01
-#: §3.7.4's trends-not-single-readings rule, made testable: fewer readings
-#: than this in the judged week is ``hrv_unavailable``, whatever they say.
+#: The trends-not-single-readings rule (``research/00`` PRIN-06; spec/03 §3.7.4),
+#: made testable: fewer readings than this in the judged week is
+#: ``hrv_unavailable``, whatever they say.
 MIN_WINDOW_READINGS = 3
 
 VERDICT_NORMAL = "hrv_normal"
@@ -1729,12 +1745,12 @@ VERDICT_UNAVAILABLE = "hrv_unavailable"
 #: Negative Class row "the verdict still cannot say *why* it is unavailable",
 #: open since cycle 4). Six causes in all -- T128's AST oracle
 #: (``test_hrv_unavailable_causes.py``) derives the same six from ``judge``,
-#: ``main.py`` and ``resolve_baseline_tier`` independently of this module, and
+#: ``main.py`` and ``_presentation_fallback`` (T156) independently of this module, and
 #: is the authority if the two ever disagree. The first four are ``judge``'s
 #: own guards, evaluated in the fixed order stated in its docstring; the last
 #: two exist outside the pure rule -- one at the route
-#: (``main._withhold_future``), one structural (``resolve_baseline_tier``
-#: answering "no tier at all"). ``HrvVerdict.unavailable_reason`` is exactly
+#: (``main._withhold_future``), one structural (the series holds no dataset,
+#: HRV-30; ``selected_view``'s empty view). ``HrvVerdict.unavailable_reason`` is exactly
 #: one of these, or ``None`` whenever ``verdict`` is not ``hrv_unavailable``.
 REASON_NO_TIER = "no_tier_sustains_a_trend"
 REASON_NO_BAND = "no_band"
@@ -1779,7 +1795,8 @@ class HrvVerdict:
 
     ``ln_rmssd_7d_mean`` is the mean of the judged window's readings, or
     ``None`` when the window is empty; it is reported whenever there is one
-    so the verdict is reproducible by hand (``research/00`` §1.6), even when
+    so the verdict is reproducible by hand from its response (``research/00``
+    PRIN-12, less PRIN-24's OPEN exceptions), even when
     ``readings_in_window`` is below the minimum and the verdict is
     unavailable. ``below_by`` is ``band.lo - mean`` when suppressed, else
     ``None``. ``band`` is ``None`` when the baseline holds fewer than two
@@ -1808,8 +1825,8 @@ class HrvVerdict:
         toward ``hrv_unavailable``, and the note there asks any field on this
         path to do likewise. This one cannot, and the difference is in the
         type rather than in the reasoning: ``withheld`` is a ``bool`` with a
-        safe conservative value -- ``True`` says *nothing*, the direction
-        ``research/00`` Section 1.7 tolerates freely. ``unavailable_reason``
+        safe conservative value -- ``True`` says *nothing*, silence as a net
+        cost (``research/00`` ARCH-13), not a false claim. ``unavailable_reason``
         has no such value. Each of its six members names a **specific** cause,
         so a sentinel default would have to assert one, and publishing a cause
         that did not fire is not silence on weak evidence, it is a second
@@ -1897,7 +1914,7 @@ def _unavailable_reason(
     fixed order ``judge`` evaluates them (its docstring's order): no band,
     then a week too thin to mean anything, then a week withheld as
     unrepresentative (T125/T132), then an unestablished baseline (T116).
-    ``None`` once none of them fire -- the verdict is asserted, not withheld.
+    ``None`` once none of them fire -- a verdict is asserted (HRV-26).
 
     A separate function, not a rewrite of ``judge``'s own ``if``, **on
     purpose**: T128's oracle (``test_hrv_unavailable_causes.py``) parses
@@ -1909,16 +1926,16 @@ def _unavailable_reason(
 
     The ``no band`` guard is one cause in ``judge`` and two in the enum: T128
     names the **structural** case -- no dataset at all, the empty view
-    ``selected_view`` builds when the series holds none (F005: ``resolve_
-    baseline_tier`` answering "no tier at all") -- separately from a
+    ``selected_view`` builds when the series holds none (HRV-30; under F005
+    the retired resolver answered it, HRV-44) -- separately from a
     selected dataset whose baseline is merely too thin, because
     ``series.tier is None`` implies ``band is None`` (the empty view has an
     empty ``series.baseline``) but not the converse, and the two are told
     apart here rather than folding the structural case silently into
     ``no_band``.
 
-    **The precedence across datasets** (F006 AC9; ``research/00`` §5.4
-    (iii); T156). This function reads one dataset, and with N datasets the
+    **The precedence across datasets** (F006 AC9; ``research/00`` HRV-59,
+    HRV-61; T156). This function reads one dataset, and with N datasets the
     question "which dataset's cause is named?" is answered *before* it is
     asked, by ``selected_view``: (1) which dataset speaks -- the selected
     dataset (``select_dataset``), else the presentation fallback
@@ -1932,7 +1949,7 @@ def _unavailable_reason(
     snapshot's ``baseline_unestablished`` on a baseline the reader cannot
     see. And ``no_tier_sustains_a_trend`` fires only when the series holds
     no dataset at all: a null *selection* on an ordinary illness or holiday
-    week presents the dataset the athlete used last and names its cause.
+    week presents the established dataset read last (HRV-59) and names its cause.
     Pinned in ``test_hrv_unavailable_reason.py`` (T156 section).
     """
     if band is None:
@@ -1956,7 +1973,7 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     The band is built over ``series.baseline`` (``[D-66, D-7]``) and the
     week's mean over ``series.window`` (``[D-6, D]``); because the slices do
     not overlap, a suppressed week cannot lower its own band and self-clear
-    (§3.7.4: a single good morning does not clear an accumulated
+    (``research/00`` PRIN-18: a single good morning does not clear an accumulated
     suppression). In order:
 
     - no band (fewer than two baseline readings) -> ``hrv_unavailable``;
@@ -1971,14 +1988,14 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
       **or above** the band -> ``hrv_normal``.
 
     **The establishment gate is symmetric, and that is a 2026-09-15 change**
-    (T116, [[IDEA-062]]). §3.7.3 says the suppression is *withheld* until the
-    baseline is adequately established; it does not say the week reads
-    normal, and until T116 it did. Either verdict on a 2-to-13-reading
+    (T116, [[IDEA-062]]; ``research/00`` HRV-27). Before T116 only the
+    suppression waited for an established baseline, and the week read
+    normal. Either verdict on a 2-to-13-reading
     baseline tells Section 6 something on evidence the same response reports
-    unestablished, and the ``hrv_normal`` direction is the forbidden one:
-    it says readiness is intact, so a planned hard session stands on weak
-    evidence -- up-regulating on weak evidence, which ``research/00`` §1.7
-    forbids. So the honest verdict is that there is none, and the response
+    unestablished, and the ``hrv_normal`` direction is the forbidden one
+    (T-24): readiness is intact, on evidence the same response reports as
+    insufficient, which ``research/00`` PRIN-14 forbids and HRV-27 closes
+    from both sides. So the honest verdict is that there is none, and the response
     carries ``baseline_n`` and ``established`` to say why. This is reachable
     after a **coverage-gap** reset, which collapses the baseline
     deliberately: the athlete then traverses 20 unestablished days --
@@ -2013,7 +2030,7 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     separately, on a walked clean switch, by
     ``test_the_tier_change_silence_is_eighteen_days_and_names_no_reset_on_any_of_them``
     in ``test_hrv_trend_reset.py``, and both figures are stated beside
-    each other in ``research/00`` 5.4 and spec 3.7.3 (pinned by
+    each other in ``research/00`` FIG-01, FIG-02 and spec/03 §3.7.3 (pinned by
     ``test_the_tier_change_silence_is_stated_beside_the_coverage_gap_figure``).
 
     Pinned by ``test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``,
@@ -2022,13 +2039,14 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     in ``test_hrv_trend_band.py``, and by the contract table there.
 
     **The withhold is the same argument as the establishment gate, one window
-    over** (T125, 2026-09-16; ``research/00`` §5.4, spec §3.7.3/§3.7.4). T116
-    withheld both verdicts when the *baseline* is too thin to support either.
-    T125 withholds both when the *week* is not the athlete's: rule 1's recency
-    gate struck the tier he is currently recording on, so the mean is computed
-    from the surviving tier's last few days before he came back, and its
-    ``hrv_normal`` direction is §1.7's forbidden one -- readiness is intact, on
-    a week the athlete did not live. The condition is computed in
+    over** (T125, 2026-09-16; ``research/00`` HRV-31, HRV-27; spec/03 §3.7.3,
+    spec/03 §3.7.4). T116 asserts no verdict of either kind when the *baseline*
+    is too thin to support either (HRV-27). T125 asserts none when the *week*
+    is not the athlete's (T-11, the withhold): the recency gate struck the tier
+    he is currently recording on, so the mean is computed from the surviving
+    tier's last few days before he came back, and its ``hrv_normal`` direction
+    is the forbidden one (T-24, PRIN-14) -- readiness is intact, on a week the
+    athlete did not live. The condition is computed in
     ``build_series`` (``verdict_withheld``, at dataset scope since T158: the
     set asked is every dataset that could not have been selected), not here,
     because it is a statement about the order of two datasets' judged-week
@@ -2050,8 +2068,8 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
     ``_unavailable_reason`` reads exactly the same four values this function
     computed, so it can never disagree with what actually happened here. Two
     more causes exist outside this pure function: the structural one -- no
-    dataset at all, ``selected_view``'s empty view (F005: ``resolve_
-    baseline_tier`` answering "no tier at all") -- is folded into the ``no
+    dataset at all, ``selected_view``'s empty view (HRV-30; F005's retired
+    resolver answered it, HRV-44) -- is folded into the ``no
     band`` guard's report (``series.tier is None`` implies ``band is None``,
     so the two share a guard here and are told apart by name only),
     and the day-not-happened one is the route's (``main._withhold_future``),
@@ -2103,7 +2121,7 @@ def judge(series: HrvDataset | SingleDatasetView) -> HrvVerdict:
 
 
 # ---------------------------------------------------------------------------
-# Baseline re-establishment: the coverage gap and the sustained tier change
+# Resets (T-16): the coverage-gap re-establishment and the era boundary
 # (T092)
 #
 # ``build_series`` calls into this section at two points: the gap rule before
@@ -2243,10 +2261,11 @@ def _exclude_before_reset(
     populations cannot overlap either,
     because the gap branch **rebinds** ``readings`` and the series is built
     from what it kept, so a reading the gap excluded is not there for the
-    era clip to exclude again (``research/00`` §1.6's "exactly one list"). Until T098 the tier-change branch narrowed
-    ``baseline`` without moving anything, so the readings it dropped were
-    in neither list and the contract's ``before_reset: tier_change`` was
-    unreachable (review cycle 4, G-C4-3)."""
+    era clip to exclude again (``research/00`` PRIN-23: exactly one dataset or
+    one listed reason). Until T098 the tier-change branch narrowed ``baseline``
+    without moving anything, so the readings it dropped were in neither list
+    and the contract's ``before_reset: tier_change`` was unreachable (review
+    cycle 4, G-C4-3)."""
     kept = [r for r in readings if r.date >= reset_on]
     dropped = [
         Exclusion(r.date, r.session_id, f"{REASON_BEFORE_RESET}: {reason}")
@@ -2363,7 +2382,7 @@ def _era_boundary(
       absent from the judged week (``_isolated``, the tolerance's week
       half) first, then the one with the fewest stray days -- the switch
       that explains the most readings -- ties to the later one, the
-      younger baseline being the cautious reading (``research/00`` §1.7);
+      younger baseline being the cautious reading (``research/00`` HRV-78);
     * that boundary's ``B_start`` day is where ``new``'s era
       begins, **always**: ``build_series`` clips ``baseline`` there
       whether or not anything is reported, because the era boundary is a
@@ -2550,7 +2569,7 @@ def tier_change_reset(
 
     What each clause refuses to call a change. (a): a thin new tier is not
     yet "dense enough to sustain a baseline" (F005), and a single off-tier
-    capture is corroboration (§3.7.3); a tier the judged week chose while
+    capture is corroboration (spec/03 §3.7.3); a tier the judged week chose while
     another sustains the window is not a change of baseline either. (b):
     a resolution that differs only because the previous window is thin
     (five snapshot readings there, a strap baseline now) is the athlete's
@@ -2600,9 +2619,9 @@ def tier_change_reset(
 
     *Clause (a)* took, under F005, the tier ``build_series`` had already
     resolved, so the recency gate had been applied before this function was
-    called and a tier struck for staleness never arrived here as ``tier``.
+    called and a tier the gate struck never arrived here as ``tier``.
     Under F006 (T154) the gate is ``select_dataset``'s and runs *after*
-    this: every dataset is asked, stale or not, and its answer is its own
+    this: every dataset is asked, skipped or not, and its answer is its own
     report; the gate then decides only whose report the route presents. A
     skipped dataset's report is still the true account of the band it
     clipped, so restating the gate in (a) would be a second copy of one rule
@@ -2642,7 +2661,7 @@ def tier_change_reset(
     stands unchanged.
 
     **What that clip does to clause (c): nothing, since T129** (2026-09-16,
-    ``research/00`` §5.4, resolving G-C7-3 **by change**). The clip decides
+    ``research/00`` HRV-41, resolving G-C7-3 **by change**). The clip decides
     which readings enter the **band**; it does not decide which readings
     ``_era_boundary`` may **see** when it counts strays. So this rule takes
     a ``stray_population`` -- every reading of every tier inside
@@ -2670,7 +2689,7 @@ def tier_change_reset(
     the boundary, 4,466 of those held ``baseline_n >= 14``, 702 were
     flip-reachable and **5 flipped** ``hrv_suppressed`` to ``hrv_normal``
     on an identical week mean with the baseline established on both sides
-    -- up-regulation on weak evidence, which ``research/00`` §1.7 forbids.
+    -- ``hrv_normal`` in the forbidden direction (T-24; ``research/00`` PRIN-14).
     At the fix the flip class is **0 of 26,360**. Pinned at both levels by
     ``test_the_gap_clip_moves_the_era_boundary_later_than_the_full_history_finds``
     (one history, the boundary dated 2026-07-03 on the full population and

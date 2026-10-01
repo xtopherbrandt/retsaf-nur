@@ -23,8 +23,8 @@ this task delivers (task Technical Notes, corroborated across waves 2-6):
 
 1. ``resolve_baseline_tier``'s **role** as "one tier owns the only band" --
    the cross-tier arbitration. The function itself survives (it is still
-   pinned directly in ``test_hrv_trend_series.py``, and its rule-3 tie order
-   is redeployed in ``_presentation_fallback``); what retires is its ownership
+   pinned directly in ``test_hrv_trend_series.py``, and its last-read tie-break
+   is redeployed in ``_presentation_fallback``, HRV-59); what retires is its ownership
    of the band, which ``build_series`` no longer asks it for at all
    (``test_hrv_tier_change_per_dataset.py`` pins the absent call).
 2. The ``off_baseline_tier`` exclusion (T152).

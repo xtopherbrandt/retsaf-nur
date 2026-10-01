@@ -3362,23 +3362,21 @@ def test_narrowed_extras_and_census_rows_in_a_tmp_world(tmp_path):
     assert len(verdicts["surplus"]) == 2
 
 
-def test_the_f009_exceptions_shelter_every_hrv_trend_hit_each_excerpt_once():
-    """S4 for F009: every hit in ``hrv_trend.py`` is sheltered, only by F009 triples; each F009 excerpt
-    occurs exactly once in the file (an excerpt shelters every occurrence of itself) and shelters a
-    hit; and no F009 triple names another file."""
+def test_hrv_trend_py_yields_no_hits_and_the_f009_exceptions_are_gone():
+    """S4 for F009 after T238 (F009 AC5): the single ``hrv_trend.py`` commit rewrote every sheltered
+    site, so the real scan yields **zero** hits in the file and ``EXCEPTIONS`` is empty -- no F009
+    triple remains, and F010 never held one here. Until T238 this test
+    (``test_the_f009_exceptions_shelter_every_hrv_trend_hit_each_excerpt_once``) asserted the
+    sheltered state: 11, then 12, triples each sheltering a hit and occurring once in the file."""
     exceptions = _OM.EXCEPTIONS
-    f009 = [i for i, e in enumerate(exceptions) if e[2] == "F009"]
-    text = gate_normal(_HRV_TREND, (_REPO_ROOT / _HRV_TREND).read_text(encoding="utf-8"))
-    counts = {i: text.count(normalize(exceptions[i][1])) for i in f009}
+    f009 = [e for e in exceptions if e[2] == "F009"]
     hits = [h for h in real_scan() if h.path == _HRV_TREND]
     for hit in hits:
-        print(f"  {hit.path}:{hit.line} {hit.key} sheltered by {hit.sheltered_by}")
-    print(f"[slice compared] {len(f009)} F009 triples, excerpt counts {counts}; {len(hits)} hrv_trend.py hits")
-    assert f009 and hits
-    assert all(exceptions[i][0] == _HRV_TREND for i in f009)
-    assert all(count == 1 for count in counts.values()), counts
-    assert all(h.sheltered_by and set(h.sheltered_by) <= set(f009) for h in hits)
-    assert set(f009) <= {i for h in hits for i in h.sheltered_by}
+        print(f"  {hit.path}:{hit.line} {hit.key} {hit.matched!r} sheltered by {hit.sheltered_by}")
+    print(f"[slice compared] {len(exceptions)} EXCEPTIONS triples ({len(f009)} F009); "
+          f"{len(hits)} hrv_trend.py hits in the real scan")
+    assert exceptions == ()
+    assert hits == []
 
 
 def test_narrowed_census_row_excerpt_must_overlap_an_extra_match_in_its_own_file(tmp_path):
@@ -4240,7 +4238,8 @@ IDEA_END_STATES = (
     IdeaEndState("IDEA-090", "resolved", "F011", "fixed by F011 (T202, spec/03 §3.7.3)"),
     IdeaEndState("IDEA-092", "open", "F011", "owns the two C09 questions (S7)"),
     IdeaEndState("IDEA-093", "open", None, "owns C10's 22-28-day trailing-silence regime (S7)"),
-    IdeaEndState("IDEA-095", "open", "owned by F009 AC5", "F009 sets its end state (S7)"),
+    IdeaEndState("IDEA-095", "resolved", "F009",
+                 "resolved -> F009 (T238: option 2, the docstring cross-reference; S7)"),
     IdeaEndState("IDEA-099", "open", None, "owns HRV-25's population; F009 counts it (S7)"),
     IdeaEndState("IDEA-102", "open", "F011", "reference row: owns every unserved verdict-affecting input"),
     IdeaEndState("IDEA-103", "resolved", "F012", "owned by F012 (S7 as amended 2026-09-27); open -> resolved (T228)"),
@@ -4248,7 +4247,7 @@ IDEA_END_STATES = (
 
 #: The reason every ``test_idea_end_state`` row skips with where the data dir is absent (AC3, AC5).
 IDEA_SKIP_REASON = "AC3's IDEA end states live only in the Shipyard data dir, which is unreachable"
-_NOTE_DATE = re.compile(r"2026-09-2\d")
+_NOTE_DATE = re.compile(r"2026-(?:09-2\d|10-\d\d)")
 _STATUS = re.compile(r"status:\s*[\"']?([A-Za-z_-]+)")
 
 
@@ -4268,7 +4267,8 @@ def _ideas_dir_or_skip() -> Path:
 
 def idea_end_state_errors(ideas_dir: Path, row: IdeaEndState) -> list[str]:
     """Why ``row``'s IDEA file is not at its end state: the frontmatter ``status`` differs, or no line
-    dated ``2026-09-2x`` names the row's note phrase (as a whole word). Empty when it is."""
+    dated ``2026-09-2x`` or ``2026-10-xx`` (T238 widened it: F009's notes are October's) names the
+    row's note phrase (as a whole word). Empty when it is."""
     files = sorted(ideas_dir.glob(f"{row.idea}-*.md"))
     if len(files) != 1:
         return [f"{row.idea}: {len(files)} files match {row.idea}-*.md in {ideas_dir}"]
@@ -4283,7 +4283,7 @@ def idea_end_state_errors(ideas_dir: Path, row: IdeaEndState) -> list[str]:
     if row.note is not None:
         phrase = re.compile(rf"(?<!\w){re.escape(row.note)}(?!\w)")
         if not any(_NOTE_DATE.search(line) and phrase.search(line) for line in lines):
-            errors.append(f"{row.idea}: no line dated 2026-09-2x names {row.note!r}")
+            errors.append(f"{row.idea}: no line dated 2026-09-2x or 2026-10-xx names {row.note!r}")
     return errors
 
 
