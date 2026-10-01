@@ -183,9 +183,10 @@ def test_disagreement_never_overrides_the_selected_datasets_verdict(strap_value:
     """AC11: ``hrv_status`` is the selected dataset's verdict, unchanged. Pinned two ways:
     the verdict through ``selected_view`` equals the verdict of the same strap rows
     judged **with the dissenting snapshot removed from the series entirely**, and it is
-    the value the strap's own reading says it is. The ``hrv_normal`` row is the §1.7
-    exposure F006 accepts (reference §4): promoted while contrary evidence exists, and
-    the contrary evidence is reported beside it, not acted on."""
+    the value the strap's own reading says it is. The ``hrv_normal`` row is HRV-25's
+    population, the named §1.7 exception PRIN-15 lists (owned by IDEA-099, and it may
+    not grow; F006 reference §4): promoted while contrary evidence exists, and the
+    contrary evidence is reported beside it, not acted on."""
     strap_rows = dataset(STRAP, 14, strap_value)
     other_value = BELOW if strap_value == WITHIN else WITHIN
     with_dissent = hrv_trend.build_series(strap_rows + dataset(SNAPSHOT, 14, other_value), AUCKLAND, D)

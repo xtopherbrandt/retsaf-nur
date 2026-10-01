@@ -142,7 +142,8 @@ class Baseline(BaseModel):
             "rule's. The three clips -- era boundary, coverage gap, internal hole -- compose as the latest "
             "first day, and only the first two are ever reported here. A reported `tier_change` is always "
             "clipped, though once the era's first day is date-66 or older the clip `max(date-66, R)` is a "
-            "no-op and `window` is indistinguishable from the un-clipped [date-66, date-7]. "
+            "no-op and `window` is indistinguishable from the nominal baseline window [date-66, date-7] "
+            "before any clip (research/00 T-09). "
             "That no-op stretch is conditional, not promised: a reported `tier_change` sits beside an "
             "un-clipped `window` only once date-66 has reached R, and then only on the days the report is "
             "still live. Liveness is rule 4's three conditions together, not any one of them alone: the "
@@ -205,7 +206,8 @@ class Thresholds(BaseModel):
 
 class HrvPoint(BaseModel):
     """One local day of the chart's series (the UI contract's ``HrvTrend.points[]``),
-    judged against **its own** baseline ``[date-66, date-7]`` -- not against `to`'s.
+    judged against **its own** dataset baseline window -- the nominal ``[date-66, date-7]``
+    clipped on that day (``research/00`` HRV-12, T-09) -- not against `to`'s.
 
     The band is a property of the baseline (IDEA-044), so its three fields
     are null *together*, and only when that day's baseline holds fewer than
@@ -227,7 +229,9 @@ class HrvPoint(BaseModel):
     )
     baseline: float | None = Field(
         description=(
-            "Mean of ln rMSSD over that day's own baseline [date-66, date-7]. Null together with swc_low "
+            "Mean of ln rMSSD over that day's own dataset baseline window, the nominal [date-66, date-7] "
+            "clipped at the latest of the coverage-gap resumption, the era boundary and the last internal "
+            "hole (research/00 HRV-12, T-09). Null together with swc_low "
             "and swc_high only when that baseline holds fewer than two readings; an unestablished but "
             "computable baseline (2 <= n < min_baseline_readings) still carries all three."
         )
@@ -318,8 +322,9 @@ class DatasetSummary(BaseModel):
     )
     last_read: datetime.date | None = Field(
         description=(
-            "The latest local day this tier was read on **inside the baseline window** "
-            "[date-66, date-7] -- the slice the recency gate is normative over (F006 AC6), not the "
+            "The latest local day this tier was read on **inside the series baseline window**, the "
+            "nominal [date-66, date-7] clipped at the coverage-gap resumption (research/00 HRV-15, T-09) "
+            "-- the slice the recency gate is normative over (F006 AC6), not the "
             "latest reading overall. Null when this tier has no reading in that window at all, "
             "which a dataset whose readings all sit in the judged week has. The gate is "
             "reproducible from this field: a **judgeable** dataset more than recency_tolerance_days "
@@ -373,7 +378,8 @@ class DatasetSummary(BaseModel):
             "baseline window is clipped by its era boundary whether or not the change is reported, "
             "and by an internal capture hole of more than gap_reset_days silent local days, which "
             "is never reported at all -- so a null here can sit beside an `n` far below what the "
-            "60 days of [date-66, date-7] would hold."
+            "nominal 60-day window [date-66, date-7] would hold, since `n` counts this dataset's clipped "
+            "baseline window (research/00 HRV-12, T-09)."
         )
     )
 

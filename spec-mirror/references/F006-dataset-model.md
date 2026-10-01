@@ -169,7 +169,7 @@ consumer today, and Section 6 as specified) is **not** told about `disagreed_wit
 is legible afterward, not acted on.
 
 **This rate is newly measurable.** Under the fused rule the losing tier had no band, so it could not
-be computed at all. AC20 requires it swept and priced before release.
+be computed at all. AC20 requires it swept before release, and it ships only as HRV-25's population — the named §1.7 exception PRIN-15 lists, owned by IDEA-099, which may not grow (`research/00` HRV-25, PRIN-15).
 
 ## 5. Stability — the two flip triggers
 
@@ -316,10 +316,12 @@ feature it re-derives.
 - **AC7** fixes the reference set as simultaneous, not iterative — and, since T164 (2026-09-20, `research/00` §5.4 (ii) amended first), as every **established** dataset rather than the judgeable ones, the candidates it strikes from staying the judgeable ones; see §3.
 - **AC17** keeps the era clip (T094/T095/T129) at **dataset** scope rather than retiring it — it is
   the only mechanism that ever removed a stale era from a band.
-- **AC16** keeps `coverage_gap_reset` **global**, preserving the ratified *"not a race but a
-  partition"* justification for `RECENCY_TOLERANCE_DAYS` (28) > `GAP_RESET_DAYS` (21). A per-dataset
-  gap reset would make both rules measure one dataset's silence, turning the partition into a genuine
-  race and voiding the reasoning that set 28.
+- **AC16** keeps `coverage_gap_reset` **global**. The partition is by scope (`research/00` HRV-52): the
+  coverage-gap reset (HRV-35) covers the silence of the whole series, while the hole clip (HRV-37) and then
+  the recency gate (HRV-15) cover one dataset's silence while another dataset carries the series — the
+  ratified *"not a race but a partition"* justification for `RECENCY_TOLERANCE_DAYS` (28) >
+  `GAP_RESET_DAYS` (21). A per-dataset gap reset would put a second reset on one dataset's silence, beside
+  the hole clip and the gate, voiding the reasoning that set 28.
 - **AC21** requires every sweep to run against shipped F005 too, so "no worse" is a gate and not a
   hope.
 
@@ -379,7 +381,7 @@ the Negative Class had moved in full).
 |---|---|
 | **The §1.7 promotion exposure.** The selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band. A consumer reading `hrv_status` alone — every consumer today, and Section 6 as specified — is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** It ships only as HRV-25's population, the named §1.7 exception PRIN-15 lists, owned by [[IDEA-099]], whose count and pin F009 produces, and it may not grow (`research/00` HRV-25, PRIN-15, decision C06). Quality-first explains why the selected dataset decides: it promotes the *best available* instrument (~8× lower rMSSD error than PPG), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save the exceptions PRIN-15 lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by [[IDEA-087]] (T168), and HRV-25's population |
 | **Same-tier device replacement (strap A → identical strap B) stays invisible** | Costs **0** silent days — holds the tier constant, fires no reset, opens no era boundary. Benign; what [[T141]] withdrew the composed-silence paragraph over |
-| **§3.7.3's device/firmware re-establishment clause stays unimplemented** | The column it points at carries the **watch's** firmware, so honouring it would re-establish a *strap* dataset when the *watch* updates — the wrong event. F007 persists the identity that would close it |
+| **§3.7.3's device/firmware re-establishment clause is retired, not pending** | `research/00` HRV-34: a source change never triggers a rule-level re-establishment, and only the coverage-gap reset (HRV-73) re-establishes. The column the clause pointed at carries the **watch's** firmware, so honouring it would have re-established a *strap* dataset when the *watch* updated — the wrong event. F007 persists the identity the clause assumed |
 | **The 18-day adoption silence, and `week_too_thin` on 16 of those days** | Out of scope by user decision, 2026-09-18. A never-used device holds no baseline under any scheme. Priced by [[T137]]/[[T138]], unchanged here |
 | **A 3×/week wearer's dataset flips for seven days on one missed session** | Pre-existing (`CRITIC-F005` priority 3), inherited identically by every form, un-fixable without re-opening §3.7.4's count rule. AC14 makes it visible in `points[]`; AC23 gates it against F005 |
 | **A hole of at most `GAP_RESET_DAYS` silent days, or one whose resumption is after `D-7`, is not clipped** (AC17, T153) | The first still mixes the eras either side of it — bounded by three weeks of silence, either direction, unreported; the second leaves the pre-layoff band in place, unreported, and hands the question to AC6, which does not skip a dataset fewer than 29 days behind the latest-read **established** dataset (the reference population as widened by T164, 2026-09-20; §3). Accepted because the constant has one meaning (`coverage_gap_reset`'s) and a per-dataset clip firing earlier than the global gap would make two rules disagree about the same number of days (the 28 > 21 partition); the straddling case is AC6's population by AC17's own text. Who notices: nobody from `hrv_status`; `baseline.window` shows the first, `datasets[]` (T159) will show the second |

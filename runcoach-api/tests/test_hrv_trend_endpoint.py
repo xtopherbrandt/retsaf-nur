@@ -3719,8 +3719,9 @@ def test_disagreed_with_names_the_dissenter_and_the_judged_week_count_that_weigh
     the naming (AC10, taken literally).
 
     ``verdict`` is ``hrv_normal`` in both: **disagreement never overrides**
-    (AC11). This is F006's accepted §1.7 exposure rendered rather than denied
-    -- up-regulation while contrary evidence exists -- and ``disagreed_with``
+    (AC11). This is HRV-25's population -- the named §1.7 exception PRIN-15
+    lists, owned by IDEA-099 -- rendered rather than denied: up-regulation
+    while contrary evidence exists, and ``disagreed_with``
     is the whole of what the response says about it, which is why the count
     matters: one 25 ms morning and seven of them are very different evidence
     behind the same name.

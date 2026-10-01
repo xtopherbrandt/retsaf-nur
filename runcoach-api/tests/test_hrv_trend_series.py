@@ -2499,13 +2499,15 @@ def test_probe_zero_baseline_days_versus_one_at_dataset_scope(
     exactly as shipped -- **not** withheld, the strap's stale week promoted
     ``hrv_normal``. Measured on the build before this task (T151 carrying
     F005's predicate), 2026-09-19: one baseline day -> ``withheld=False``,
-    ``hrv_normal``; thirteen -> the same. AC24 / ``research/00`` §5.4 (v)
-    asks the order clause of every dataset that is **not judgeable**, which
+    ``hrv_normal``; thirteen -> the same. AC24 / ``research/00`` HRV-31
+    asks the order clause of every dataset that could not have been
+    selected -- **not judgeable**, or skipped by the recency gate -- which
     is the honest dataset-scope restatement: a watch with one baseline
     reading is no more able to carry a verdict than one with none, and the
     athlete's suppressed week is just as unread. So zero, one and thirteen
     all withhold here; **this is the one verdict this task moves**
-    (``hrv_normal -> hrv_unavailable``, §1.7's freely tolerated direction),
+    (``hrv_normal -> hrv_unavailable``: the ``hrv_unavailable`` that
+    ``research/00`` PRIN-14 requires where the evidence is insufficient),
     and the confusion-table pin in ``test_hrv_dataset_populations.py``
     records the same move on T130's era-10 row.
 
@@ -2513,7 +2515,7 @@ def test_probe_zero_baseline_days_versus_one_at_dataset_scope(
     established, holds three week days, is judgeable and is **not** skipped
     (both datasets read on ``D-7``), so it could have been selected and lost
     only on fidelity rank. It is not in the set: the selected dataset
-    decides (§5.4 (iii)), the watch's own reading is reported in
+    decides (``research/00`` HRV-14, HRV-20), the watch's own reading is reported in
     ``disagreed_with`` (AC10), and withholding on a dataset that could have
     spoken would be withhold-on-disagreement, the form the decision log
     rejected. Degenerate because 13 -> 14 is the establishment gate itself

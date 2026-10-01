@@ -228,6 +228,22 @@ HRV-01-R13-four-tier-hierarchy,specification/research/02-wearable-data-garmin.md
 DOC-06-C31-every-number-tunable,specification/spec/03-derived-metric-formulas.md,"tunable per athlete only under the individualization rule, when the athlete's own data identify it and are enough to beat the population default, while a design invariant is never tuned",loose
 C19-hrv-04-reduced-confidence,contracts/openapi.yaml,"CONFIDENCE WEIGHT, at which HRV-04 never admits the numeric tiers",loose
 C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/schemas.py,"**confidence weight**, at which HRV-04 never admits the",loose
+PRIN-15-C06-accepted-as-priced,spec-mirror/features/F006-per-tier-hrv-datasets.md,the §1.7 promotion exposure is measured and priced,loose
+PRIN-15-C06-accepted-as-priced,spec-mirror/references/F006-dataset-model.md,AC20 requires it swept and priced before release,loose
+C10-recency-only-rule-that-acts,spec-mirror/references/F006-dataset-model.md,"A per-dataset gap reset would make both rules measure one dataset's silence, turning the partition into a genuine race",loose
+C15-tier-change-called-re-establishment,spec-mirror/features/F006-per-tier-hrv-datasets.md,§3.7.3's device/firmware clause unimplemented,loose
+C15-tier-change-called-re-establishment,spec-mirror/references/F006-dataset-model.md,device/firmware re-establishment clause stays unimplemented,loose
+C12-same-baseline-window,contracts/openapi.yaml,"Mean of ln rMSSD over [d-66, d-7]",loose
+C12-same-baseline-window,contracts/openapi.yaml,"indistinguishable from the un-clipped [date-66, date-7]",loose
+C12-same-baseline-window,contracts/openapi.yaml,"baseline window [date-66, date-7] — the slice the recency",loose
+C12-same-baseline-window,contracts/openapi.yaml,"60 days of [date-66, date-7] would hold",loose
+C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"indistinguishable from the un-clipped [date-66, date-7]",loose
+C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"judged against **its own** baseline ``[date-66, date-7]`` -- not against `to`'s",loose
+C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"Mean of ln rMSSD over that day's own baseline [date-66, date-7]",loose
+C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"[date-66, date-7] -- the slice the recency gate is normative over",loose
+C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"60 days of [date-66, date-7] would hold",loose
+AUT-02-C23-override-outside-autonomy,specification/spec/08-conversational-coach-interface.md,surfaced and negotiated,loose
+C26-cold01-hrv-input,specification/spec/04-physiological-state-model.md,in the style of the Polar OwnIndex,loose
 C19-hrv-04-reduced-confidence,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,at reduced confidence,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/02-canonical-data-schema-ingestion.md,carried at reduced confidence rather,narrowed
 C19-hrv-04-reduced-confidence,specification/spec/03-derived-metric-formulas.md,carried at reduced confidence —,narrowed

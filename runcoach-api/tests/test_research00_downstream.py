@@ -3835,6 +3835,11 @@ PRESENCE_ANCHORS = (
      'word the set as "not judgeable" alone; the skipped arm is T125\'s own returning strap, judgeable and '
      "skipped, and that wording gap is open as [[IDEA-083]]",
      "**A judged week that is not a fair sample of the tier being judged**"),
+    # T231 (F012 AC6, IDEA-106 item 23a): the "measured/swept and priced" sites now name HRV-25's population.
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "PRIN-15-C06-accepted-as-priced",
+     "the §1.7 promotion exposure is measured and priced", "**AC22 —"),
+    ("spec-mirror/references/F006-dataset-model.md", "PRIN-15-C06-accepted-as-priced",
+     "AC20 requires it swept and priced before release", "**This rate is newly measurable.**"),
 )
 
 _C33_REASON = ("C33's prose and its EXCEPTIONS are F010's, not F011's (F011 Not in scope); this site is "
@@ -3843,6 +3848,8 @@ _PINNED_REASON = ("a Pinned line is research/00's own rule-block field, and F009
                   "no downstream prose states it, so the row could never pass")
 _T125_RESIDUAL_REASON = ("T125's residual ships inside one PRIN-15 exception, the F005-parity population "
                          "(IDEA-087), which the site names; the other two exceptions are not this bullet's")
+_ONE_EXCEPTION_REASON = ("T231: the site states HRV-25's population alone (HRV-25, IDEA-099, 'may not grow'); "
+                         "the other two PRIN-15 exceptions are AC21's and the cost table's, whose rows carry them")
 _CONTRACT_REASON = ("a .yaml or .py description, which T201 does not build a block for; the census row's absence "
                     "check covers the site, whose fix names HRV-25, PRIN-15 and IDEA-099")
 
@@ -3911,6 +3918,20 @@ DROPPED_PRESENCE_ROWS = (
      "This is the response's one report of the exposure F006 accepts", "*", _CONTRACT_REASON),
     ("runcoach-api/src/runcoach_api/schemas.py", "C06",
      "forbidden direction, accepted, measured against shipped F005 rather than denied", "*", _CONTRACT_REASON),
+    # T231 (IDEA-106 item 23a): the two "priced" sites.
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "F005-parity", _ONE_EXCEPTION_REASON),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "DEFERRED_EXCEPTION",
+     _ONE_EXCEPTION_REASON),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "IDEA-087", _ONE_EXCEPTION_REASON),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "Pinned: none (F009)", _PINNED_REASON),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**", "F005-parity",
+     _ONE_EXCEPTION_REASON),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**",
+     "DEFERRED_EXCEPTION", _ONE_EXCEPTION_REASON),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**", "IDEA-087",
+     _ONE_EXCEPTION_REASON),
+    ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**",
+     "Pinned: none (F009)", _PINNED_REASON),
 )
 
 

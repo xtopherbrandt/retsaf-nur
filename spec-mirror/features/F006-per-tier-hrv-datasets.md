@@ -279,9 +279,11 @@ release** (*amended 2026-09-22, T168; `research/00` §5.4 amended first*: save t
 lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION` (64 rows), both
 owned by [[IDEA-087]], and HRV-25's population, owned by [[IDEA-099]]; `research/00` GATE-04, PRIN-15).
 
-**AC22 — the §1.7 promotion exposure is measured and priced.** *Given* the AC19 sweeps, *then* the rate at
+**AC22 — the §1.7 promotion exposure is measured, and ships only as PRIN-15's named exception.** *Given* the AC19 sweeps, *then* the rate at
 which `hrv_normal` is promoted while another judgeable dataset reads below its own band is measured,
-compared against F005 per AC21, and recorded in the Negative Class with its direction.
+compared against F005 per AC21, and recorded in the Negative Class with its direction, as HRV-25's
+population — the §1.7 exception PRIN-15 lists, owned by [[IDEA-099]], which may not grow (`research/00`
+HRV-25, PRIN-15).
 
 **AC23 — flip rate is scored against a criterion it can fail.** *Given* the selection form, *then* its
 dataset-flip rate per athlete-year is measured across the AC19 sweeps and compared against F005 per AC21;
@@ -325,8 +327,8 @@ Full table in reference §11; the governing row:
 |---|---|
 | **The §1.7 promotion exposure** — the selected dataset decides, so `hrv_normal` can be promoted while another judgeable dataset reads below its own band, and a consumer reading `hrv_status` alone (every consumer today, and Section 6 as specified) is not told about `disagreed_with` | **Up-regulation while contrary evidence exists — the direction §1.7 forbids.** It ships only as HRV-25's population, the named §1.7 exception PRIN-15 lists, owned by [[IDEA-099]], whose count and pin F009 produces, and it may not grow (`research/00` HRV-25, PRIN-15, decision C06). Quality-first explains why the selected dataset decides: it promotes the *best available* instrument (~8× lower rMSSD error), and suppressed-wins lets a noisier dataset veto a good week. **Newly measurable** — under the fused rule the losing tier had no band. AC21/AC22 gate it: any worsening against F005 blocks release, save the exceptions PRIN-15 lists, each of which may not grow: the F005-parity population and `DEFERRED_EXCEPTION`, both owned by [[IDEA-087]], and HRV-25's population |
 
-Carried forward (§11): same-tier replacement invisible; §3.7.3's device/firmware clause
-unimplemented; the 18-day adoption silence and its wrong `week_too_thin` reason; the 3×/week
+Carried forward (§11): same-tier replacement invisible; §3.7.3's device/firmware clause, retired by
+`research/00` HRV-34 (no source change re-establishes); the 18-day adoption silence and its wrong `week_too_thin` reason; the 3×/week
 seven-day flip.
 
 **New, from AC17 (T153):** a dataset's internal hole of **at most** `GAP_RESET_DAYS` silent local

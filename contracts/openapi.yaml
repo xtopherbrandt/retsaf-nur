@@ -1385,7 +1385,7 @@ components:
               baseline:
                 type: number
                 nullable: true
-                description: Mean of ln rMSSD over [d-66, d-7]; null together with swc_low/swc_high only when that baseline holds fewer than two readings.
+                description: Mean of ln rMSSD over that day's own dataset baseline window, the nominal [date-66, date-7] clipped at the latest of the coverage-gap resumption, the era boundary and the last internal hole (research/00 HRV-12, T-09); null together with swc_low/swc_high only when that baseline holds fewer than two readings.
               swc_low: { type: number, nullable: true, description: "That day's band.lo; null iff baseline is null." }
               swc_high: { type: number, nullable: true, description: "That day's band.hi; null iff baseline is null." }
               dataset:
@@ -1560,7 +1560,8 @@ components:
                 latest first day, and only the first two are ever reported here. A
                 reported `tier_change` is always clipped, though once the era's first day
                 is date-66 or older the clip `max(date-66, R)` is a no-op and `window` is
-                indistinguishable from the un-clipped [date-66, date-7]. That no-op
+                indistinguishable from the nominal baseline window [date-66, date-7]
+                before any clip (research/00 T-09). That no-op
                 stretch is conditional, not promised: a reported `tier_change` sits beside
                 an un-clipped `window` only once date-66 has reached R, and then only on
                 the days the report is still live. Liveness is rule 4's three conditions
@@ -1714,8 +1715,10 @@ components:
                 nullable: true
                 description: >
                   The latest local day this tier was read on INSIDE the
-                  baseline window [date-66, date-7] — the slice the recency
-                  gate is normative over (AC6), not the latest reading overall.
+                  series baseline window, the nominal [date-66, date-7] clipped at
+                  the coverage-gap resumption (research/00 HRV-15, T-09) — the
+                  slice the recency gate is normative over (AC6), not the latest
+                  reading overall.
                   Null when this tier has no reading in that window at all. The
                   gate is reproducible from this field: a judgeable dataset more
                   than recency_tolerance_days behind the greatest `last_read`
@@ -1775,8 +1778,9 @@ components:
                   by its era boundary whether or not the change is reported, and
                   by an internal capture hole of more than gap_reset_days silent
                   local days, which is never reported at all — so a null here
-                  can sit beside an `n` far below what the 60 days of
-                  [date-66, date-7] would hold.
+                  can sit beside an `n` far below what the nominal 60-day
+                  window [date-66, date-7] would hold, since `n` counts this
+                  dataset's clipped baseline window (research/00 HRV-12, T-09).
         selected_dataset:
           type: string
           nullable: true
