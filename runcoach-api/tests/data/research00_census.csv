@@ -237,6 +237,8 @@ C12-same-baseline-window,contracts/openapi.yaml,"Mean of ln rMSSD over [d-66, d-
 C12-same-baseline-window,contracts/openapi.yaml,"indistinguishable from the un-clipped [date-66, date-7]",loose
 C12-same-baseline-window,contracts/openapi.yaml,"baseline window [date-66, date-7] — the slice the recency",loose
 C12-same-baseline-window,contracts/openapi.yaml,"60 days of [date-66, date-7] would hold",loose
+C12-same-baseline-window,contracts/openapi.yaml,"own 60-day baseline [d-66, d-7]",loose
+C12-same-baseline-window,contracts/openapi.yaml,"judged against its OWN baseline [d-66, d-7]",loose
 C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"indistinguishable from the un-clipped [date-66, date-7]",loose
 C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"judged against **its own** baseline ``[date-66, date-7]`` -- not against `to`'s",loose
 C12-same-baseline-window,runcoach-api/src/runcoach_api/schemas.py,"Mean of ln rMSSD over that day's own baseline [date-66, date-7]",loose

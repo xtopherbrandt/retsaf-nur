@@ -37,7 +37,10 @@ T233-T236 and T238 write the rows); the gate consumes every ``*.csv`` in the dir
 rule ID that must resolve to a rule line of research/00, or ``literal``: a search pattern, census excerpt
 or printed witness (D13), which is **accepted, not resolved, and exempt from the old-token assertion** and
 from every other per-line check on that one line. A live file with a citation token (``§1.x``, ``§3.x``,
-``§5.4`` or ``Part N``) on a live line and no row in any CSV is **unlisted**.
+``§5.4`` or ``Part N``) on a live line and no row in any CSV is **unlisted**. So is one live line of a
+**listed** file that carries the ``research[_/]00`` mention and a section or Part token with no row of its
+own (T245): listing one line does not list the file. A bare token with no mention on such a line is not a
+finding here (see the blind spots).
 
 **Pending markers (S15 shape).** While ``pending-<root>.marker`` exists, that root's test is a strict
 xfail: unlisted files, AC3 clause 3 and the AC4 checks are expected red until the migrating task deletes
@@ -56,10 +59,11 @@ PRIN-14; a live line that says the direction is "tolerated" cites neither PRIN-1
   ``spec/``-only data walk they are dead: nothing under ``sprints/`` or ``verify/`` is read. The nine
   ``verify/`` files that do not match the cycle glob are irrelevant for the same reason.
 - The gate does not classify a citation by regex: a bare ``§5.4`` may name spec/05's own section. The CSV
-  is the by-reading record and the gate checks it (unlisted files, old token gone, new ID present and
-  resolving). A remaining bare ``§`` token in a live ``.md`` is therefore judged by the migrating task,
-  not here; in a live ``.py`` under ``runcoach-api/`` AC3 clause 3 applies (a ``spec/0N`` prefix or a
-  ``literal`` row).
+  is the by-reading record and the gate checks it (unlisted files and lines, old token gone, new ID
+  present and resolving). A remaining bare ``§`` token in a live ``.md`` is therefore judged by the
+  migrating task, not here (a token beside the ``research/00`` mention on a row-less line of a listed file
+  is, since T245); in a live ``.py`` under ``runcoach-api/`` AC3 clause 3 applies (a ``spec/0N`` prefix
+  or a ``literal`` row).
 - ``runcoach-api/tests/data/research00_census.csv`` (T200's committed census) is live under ``misc``:
   its excerpts quote old tokens and old IDs. D13 named the two support modules only; the misc task
   (T236) lists its rows as ``literal`` or asks for a ruling.
@@ -306,6 +310,9 @@ class World:
     def literal_lines(self) -> set[str]:
         return {f"{r.space}:{r.file}:{r.line}" for r in self.rows if r.new_id == LITERAL}
 
+    def listed_lines(self) -> set[str]:
+        return {f"{r.space}:{r.file}:{r.line}" for r in self.rows}
+
 
 def read_rows(sites_dir: Path) -> tuple[Row, ...]:
     """Every row of every ``*.csv`` under ``sites_dir``; a header that is not ``CSV_COLUMNS`` is an error."""
@@ -359,13 +366,15 @@ def _cites(line: str) -> bool:
 
 def root_findings(world: World, root: str) -> dict[str, list[str]]:
     """The root's red, by family. ``unlisted``: a live file with a citation token on a live line and no
-    CSV row. ``clause3`` (AC3, ``.py`` under ``runcoach-api/``): a ``§1.x``/``§3.x``/``§5.4`` token on a
+    CSV row, or a live line of a listed file carrying the ``research/00`` mention and a section or Part
+    token with no row of its own (T245; a bare token with no mention is the migrating task's). ``clause3``
+    (AC3, ``.py`` under ``runcoach-api/``): a ``§1.x``/``§3.x``/``§5.4`` token on a
     live line without a ``spec/0N`` prefix and not a ``literal`` row. ``resolve`` (AC4): a rule ID on a
     live line that is no rule line of research/00 (a retired ID passes on a line that says "retired").
     ``forbidden`` (AC4): a line citing research/00 that names the forbidden direction and not PRIN-14.
     ``tolerated`` (AC4): a line saying "tolerated" that cites PRIN-14 or a retired ID. A ``literal``
     row's line is exempt from every per-line family."""
-    listed, literal = world.listed(), world.literal_lines()
+    listed, literal, listed_lines = world.listed(), world.literal_lines(), world.listed_lines()
     findings: dict[str, list[str]] = {"unlisted": [], "clause3": [], "resolve": [], "forbidden": [], "tolerated": []}
     for site in world.live(root):
         cites_a_section = False
@@ -376,6 +385,10 @@ def root_findings(world: World, root: str) -> dict[str, list[str]]:
                 cites_a_section = True
             if where in literal:
                 continue
+            if site.ident in listed and where not in listed_lines and _MENTION.search(line) and (
+                    _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line)):
+                findings["unlisted"].append(
+                    f"{where}: cites research/00 with a section token and has no row in any CSV")
             if is_py_under_api and _SECTION_TOKEN.search(line) and not _SPEC_PREFIX.search(line):
                 findings["clause3"].append(f"{where}: bare {_show(_SECTION_TOKEN.search(line).group(0))} without a spec/0N prefix")
             for rule_id in _RULE_ID.findall(line):
@@ -662,6 +675,26 @@ def test_marker_gone_hard_fails_on_an_unlisted_live_file(tmp_path):
     assert pending.pending == frozenset(ROOTS) and gone.pending == frozenset()
     with pytest.raises(AssertionError):
         assert all(items == [] for items in findings.values())
+
+
+def test_an_unlisted_line_in_a_listed_file_is_a_finding(tmp_path):
+    """T245 (the CSV contract per line): listing one line of a file does not list the file. A second live
+    line carrying the ``research/00`` mention and a section token with no row is ``unlisted``; the same
+    line under a ``literal`` row is exempt; a bare token with no mention stays with the migrating task."""
+    spec_file = "specification/spec/06-adaptation-logic.md"
+    text = "# spec\n\nPRIN-14 governs this (research/00).\n\nresearch/00 §1.7 governs that too.\n\n§1.7 alone.\n"
+    listed_row = ("repo", spec_file, "3", "§1.7", "PRIN-14")
+    one = _world(tmp_path / "one", repo={spec_file: text}, rows={"spec": [listed_row]})
+    both = _world(tmp_path / "both", repo={spec_file: text},
+                  rows={"spec": [listed_row, ("repo", spec_file, "5", "§1.7", LITERAL)]})
+    one_root, both_root = root_findings(one, "spec"), root_findings(both, "spec")
+    print(f"[slice compared] one row listed: {_show(one_root)}, rows {row_findings(one)}; line 5 literal: "
+          f"{_show(both_root)}, rows {row_findings(both)}")
+    assert row_findings(one) == [] and row_findings(both) == []
+    assert one_root["unlisted"] == [
+        f"repo:{spec_file}:5: cites research/00 with a section token and has no row in any CSV"]
+    assert both_root["unlisted"] == []
+    assert one_root["clause3"] == [] and one_root["resolve"] == [] and one_root["forbidden"] == []
 
 
 def test_the_gate_fails_rather_than_skips_without_a_data_dir(tmp_path):

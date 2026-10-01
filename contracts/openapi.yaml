@@ -643,7 +643,10 @@ paths:
       x-story: [view-state]
       description: >
         One point per athlete-local day in [from, to], each judged against its
-        own 60-day baseline [d-66, d-7], plus the verdict blocks for `to` — the
+        own dataset baseline window, the nominal [date-66, date-7] clipped on
+        that day at the latest of the coverage-gap resumption, the era boundary
+        and the last internal hole (research/00 HRV-12, T-09), plus the verdict
+        blocks for `to` — the
         mean, the band, the baseline, every reading that fed the mean and every
         stored row that fed nothing, with its reason — so the verdict can be
         recomputed by hand from the response, as research/00 PRIN-12 asks; the
@@ -1367,7 +1370,9 @@ components:
           type: array
           description: >
             One entry per athlete-local day in [from, to], in date order. Each
-            day is judged against its OWN baseline [d-66, d-7]; the band is a
+            day is judged against its OWN dataset baseline window, the nominal
+            [date-66, date-7] clipped on that day (research/00 HRV-12, T-09);
+            the band is a
             property of that baseline, so a day with no reading still carries
             it, and an unestablished-but-computable baseline (2 ≤ n < 14) still
             carries it while the day's verdict is hrv_unavailable
