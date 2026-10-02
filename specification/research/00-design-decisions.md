@@ -213,18 +213,18 @@ Why: decision C07 writes into this section the weak-evidence clause that more th
 Scope: every population that the forbidden direction of PRIN-14 reaches, measured or not.
 Not: the HRV verdict logic itself, which HRV-14 to HRV-31 state, since this rule governs only which of its populations may ship.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
-Pinned: none (F009)
+Pinned: runcoach-api/tests/test_hrv25_population.py::test_hrv_25_population_is_counted_and_does_not_grow
 Why: decision C06 makes the forbidden direction absolute but for named exceptions, and the refinements count three of them, not two (H-39, H-41).
 
 **PRIN-25.** The F005-parity population IS the rows that T162's `forbidden` metric counts at F005 parity, 22,217 of 307,500 rectangle rows and 1,104 of 24,000 walk rows, and `DEFERRED_EXCEPTION` IS the 64 worsened gated rows at c = 4 and 5 that GATE-05 names.
 Scope: the two IDEA-087 exceptions of PRIN-15, as T162 measured them.
-Not: HRV-25's population, whose count F009 produces.
+Not: HRV-25's population, whose count PRIN-26 states.
 Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::test_the_deferred_forbidden_rate_exception_is_exactly_the_rows_it_names
 
-**PRIN-26.** An exception MAY be named before it is counted only while a feature owns its count, as F009 owns the count and pin of HRV-25's population, whose count is OPEN.
+**PRIN-26.** An exception MAY be named before it is counted only while a feature owns its count, as F009 owns the count and pin of HRV-25's population, whose count `runcoach-api/tests/test_hrv25_population.py::test_hrv_25_population_is_counted_and_does_not_grow` pins at 24,099 of 307,500 healthy-overlap rectangle rows, 9,923 suppressed, 3,315 inter, 126 switch and 1,494 and 494 walk rows.
 Scope: every exception PRIN-15 names before it is counted, of which HRV-25's population is the one today.
 Not: an uncounted exception that no feature owns, which may not ship.
-Pinned: none (F009)
+Pinned: runcoach-api/tests/test_hrv25_population.py::test_hrv_25_population_is_counted_and_does_not_grow
 
 ### 1.8 Autonomy posture
 
@@ -966,7 +966,7 @@ Pinned: none
 **HRV-25.** The selected per-tier dataset MAY serve `hrv_normal` while another reported dataset reads below its own SWC band only as the named §1.7 exception that PRIN-15 (the §1.7 exceptions) lists, owned by IDEA-099, and that population MUST NOT grow.
 Scope: every response whose selected dataset serves `hrv_normal` beside a dataset that reads below its own SWC band.
 Not: a veto by the dataset that reads below, which selection never grants (HRV-14).
-Pinned: none (F009)
+Pinned: runcoach-api/tests/test_hrv25_population.py::test_hrv_25_population_is_counted_and_does_not_grow
 Why: decision C06 makes §1.7 absolute, so this population ships only as a named exception whose count and pin F009 produces.
 
 **HRV-26.** `judge` MUST judge one per-tier dataset in this fixed order: no SWC band (fewer than two baseline readings) → `week_too_thin` (fewer than `min_window_readings` in the judged week) → `week_not_representative` (withheld, HRV-31) → `baseline_unestablished` → otherwise `hrv_suppressed` iff the 7-day mean is strictly below `band.lo`, else `hrv_normal` (inside or above).

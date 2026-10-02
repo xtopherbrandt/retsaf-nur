@@ -1979,7 +1979,7 @@ OPERATIVE = {
     "C05": ("GATE-02", ("MUST NOT add hysteresis",)),
     "C06": ("PRIN-15", (
         "may not grow", "F005-parity", "DEFERRED_EXCEPTION", "IDEA-087", "HRV-25", "IDEA-099",
-        "Pinned: none (F009)",
+        "Pinned: runcoach-api/tests/test_hrv25_population.py::test_hrv_25_population_is_counted_and_does_not_grow",
     )),
     "C07": ("PRIN-14", ("forbidden direction",)),
     "C32": ("HRV-07", ("max(0.5 · SD(ln rMSSD), 0.01)",)),
@@ -3753,7 +3753,8 @@ _WORLD_BODIES = {
 _WORLD_PINNED = {
     "PRIN-12": (("Pinned: runcoach-api/tests/test_hrv_trend_endpoint.py::"
                 "test_the_recency_skip_is_recomputable_from_the_response_at_the_exact_boundary"),),
-    "PRIN-15": ("Pinned: none (F009)",),
+    "PRIN-15": (("Pinned: runcoach-api/tests/test_hrv25_population.py::"
+                "test_hrv_25_population_is_counted_and_does_not_grow"),),
     "GATE-02": (("Pinned: runcoach-api/tests/test_hrv_no_regression_gate.py::"
                 "test_the_ac23_flip_rate_comparison_is_asserted_and_its_worsened_cells_are_pinned"),),
 }
