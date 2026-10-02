@@ -702,9 +702,9 @@ PINNED_SHA256 = {
     "PRIN-27/Pinned": "6f6a2e0e1e2d",
     "PRIN-13/Pinned": "6f6a2e0e1e2d",
     "PRIN-14/Pinned": "6f6a2e0e1e2d",
-    "PRIN-15/Pinned": "b4566a98f730.e89bfe873864",
+    "PRIN-15/Pinned": "b4566a98f730.7da163e13d9d",
     "PRIN-25/Pinned": "b4566a98f730",
-    "PRIN-26/Pinned": "e89bfe873864",
+    "PRIN-26/Pinned": "7da163e13d9d",
     "AUT-01/Pinned": "6f6a2e0e1e2d",
     "AUT-02/Pinned": "6f6a2e0e1e2d",
     "AUT-03/Pinned": "6f6a2e0e1e2d",
@@ -841,7 +841,7 @@ PINNED_SHA256 = {
     "HRV-22/Pinned": "477b63dda640",
     "HRV-23/Pinned": "6f6a2e0e1e2d",
     "HRV-24/Pinned": "6f6a2e0e1e2d",
-    "HRV-25/Pinned": "e89bfe873864",
+    "HRV-25/Pinned": "7da163e13d9d",
     "HRV-26/Pinned": "c66a808d4242",
     "HRV-27/Pinned": "aa7abdc0d2c8",
     "HRV-28/Pinned": "55df02f3086b",
@@ -1053,7 +1053,7 @@ REVIEW_PROSE_SHA256 = (
     "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
-    "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "2341b381535f",
+    "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "9cd974867f32",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1076,6 +1076,7 @@ FROZEN_ROUNDS = {
     "10": "a4e5252f9b6e",
     "11": "4cf8113a2480",
     "12": "a99cc87f595b",
+    "13": "76a184b14c1b",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1095,6 +1096,7 @@ _FROZEN_ROUNDS_PIN = {
     "10": "a4e5252f9b6e",
     "11": "4cf8113a2480",
     "12": "a99cc87f595b",
+    "13": "76a184b14c1b",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1211,8 +1213,8 @@ REVIEW_LINE_SHA256 = {
     "PRIN-15/Why": "47f18f7da28a",
     "PRIN-25": "7a21460cdba8",
     "PRIN-25/Scope": "27460e4ffe23",
-    "PRIN-25/Not": "2a02fc1bc1b2",
-    "PRIN-26": "b63a97bdfc6f",
+    "PRIN-25/Not": "43bc89eaa4dd",
+    "PRIN-26": "fc6223419653",
     "PRIN-26/Scope": "04b4b671a188",
     "PRIN-26/Not": "84e3d5e044b0",
     "AUT-01": "14b005f66b8b",
