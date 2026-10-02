@@ -149,15 +149,15 @@ repo,runcoach-api/tests/test_research00_citations_resolve.py,695,§1.7,literal
 repo,runcoach-api/tests/test_research00_citations_resolve.py,714,§1.7,literal
 repo,runcoach-api/tests/test_research00_citations_resolve.py,715,§1.7,literal
 repo,runcoach-api/tests/test_research00_citations_resolve.py,718,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,1614,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,1615,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,1623,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3682,§1.6,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3686,§5.4 (v),literal
-repo,runcoach-api/tests/test_research00_downstream.py,3796,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3802,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3813,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3838,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,1627,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,1628,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,1636,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3737,§1.6,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3741,§5.4 (v),literal
+repo,runcoach-api/tests/test_research00_downstream.py,3851,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3857,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3868,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3893,§1.7,literal
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,13,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,67,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,390,Sec 5.4,HRV-34

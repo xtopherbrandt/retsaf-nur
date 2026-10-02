@@ -102,15 +102,15 @@ data,spec/ideas/IDEA-099-hrv-25s-forbidden-direction-population-is-named-but-not
 data,spec/ideas/IDEA-099-hrv-25s-forbidden-direction-population-is-named-but-not-counted.md,23,§1.7,PRIN-14
 data,spec/ideas/IDEA-103-f008-review-residuals-for-f011.md,27,§1.7,literal
 data,spec/ideas/IDEA-105-hrv-trend-loose-census-candidates-for-f009.md,33,§1.7,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,152,Part 3,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,155,Part 3,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,199,§1.7,PRIN-14
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,222,§3.2,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,225,§5.4 (v),literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,226,tolerated,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,227,§5.4 (iii),literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,228,§1.7,literal
-data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,229,§1.7,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,158,Part 3,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,161,Part 3,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,205,§1.7,PRIN-14
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,228,§3.2,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,231,§5.4 (v),literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,232,tolerated,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,233,§5.4 (iii),literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,234,§1.7,literal
+data,spec/ideas/IDEA-106-f011-review-residuals-for-f012.md,235,§1.7,literal
 data,spec/references/F003-canonical-schema.md,15,,COLD-08
 data,spec/references/F004-decision-log.md,23,,HRV-07
 data,spec/references/F006-dataset-model.md,77,§5.4 (ii),HRV-51
