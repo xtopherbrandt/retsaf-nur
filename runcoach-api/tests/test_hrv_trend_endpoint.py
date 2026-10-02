@@ -1410,10 +1410,12 @@ BAND_CORPUS_WHEN_MEASURED = 394
 def test_the_scoped_suite_count_the_band_was_measured_over_is_pinned_not_published() -> None:
     """The count three normative documents used to publish, as an assertion.
 
-    ``RECENCY_TOLERANCE_DAYS``' comment, ``research/00`` GATE-07, F005's Negative
-    Class row and the construction reference's constants table each scope the
-    ``[18, 44]`` band to the tests of the five HRV suites that predate T117's
-    tolerance pin. Until ``acfebae`` that scope was carried by a transcribed literal
+    ``RECENCY_TOLERANCE_DAYS``' comment, F005's Negative Class row and the
+    construction reference's constants table each scope the ``[18, 44]``
+    bracket to the tests of the five HRV suites that predate T117's tolerance
+    pin, as ``research/00`` did until F008 (its GATE-07 now says only that the
+    bracket must not be cited for per-tier datasets). Until ``acfebae`` that
+    scope was carried by a transcribed literal
     at every one of those sites and by no assertion anywhere, so when ``140dfff``
     added a test to ``test_hrv_trend_endpoint.py`` -- one commit after the
     batch that wrote the literal, in the same batch -- all four went stale and

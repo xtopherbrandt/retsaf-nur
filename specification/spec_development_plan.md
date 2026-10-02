@@ -92,7 +92,7 @@ Every logged open item was worked across 2026-08-31 (the back-port batch + two f
 
 ## Resume-here note
 
-**Phase 2 is complete and USER-APPROVED (2026-08-31); the specification is build-ready.** All nine sections (`spec/01`–`spec/09`) are drafted, subagent-reviewed, open-items-resolved, and approved. the `research_00` register carries eleven ratified spec-introduced defaults (DOC-18); `research_05` §2.1 is corrected; `future/future-directions.md` holds the deferred ideas (LT1 future determinant, strength/plyometric supporting work, heat/altitude acclimation blocks out-of-scope for v1, and a consolidated coach-in-the-loop entry).
+**Phase 2 is complete and USER-APPROVED (2026-08-31); the specification is build-ready.** All nine sections (`spec/01`–`spec/09`) are drafted, subagent-reviewed, open-items-resolved, and approved. the `research_00` register carries the ratified spec-introduced defaults, the rows and split rules DOC-18 names; `research_05` §2.1 is corrected; `future/future-directions.md` holds the deferred ideas (LT1 future determinant, strength/plyometric supporting work, heat/altitude acclimation blocks out-of-scope for v1, and a consolidated coach-in-the-loop entry).
 
 **Next steps (the user's call):**
 1. **Phase 3 — implementation.** The spec is ready for Claude Code to build from. A natural first move is a build plan / architecture pass that reads `research/00` then `spec/01`–`spec/09` and proposes the module/data-model breakdown; nothing in the spec needs further research to start.

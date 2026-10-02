@@ -51,8 +51,8 @@ fixed **tier** enum (``chest_strap_ecg`` / ``overnight_ppg`` /
 ``health_snapshot_ppg`` / ``other``), and §2.3.4 step 4 says to set
 ``rr_source = chest_strap_ecg`` when a raw RR stream is present in an
 activity file -- that is the tier §3 ranks by fidelity and never mixes
-within one band (research/00 HRV-04, T-21). §2.3.4 step 3 separately
-asks which *carrier* supplied the series; that is
+within one band (research/00 HRV-04, HRV-06, T-21). §2.3.4 step 3
+separately asks which *carrier* supplied the series; that is
 recorded in ``rr_carrier``, a distinct field, so the tier enum is not
 overloaded with non-enum values (a prior revision of this module wrote
 ``"hrv"`` into ``rr_source``, which no downstream tier check would

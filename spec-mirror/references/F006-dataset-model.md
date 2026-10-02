@@ -135,11 +135,13 @@ weight that "it is reported per dataset and left to Section 6". That document is
 authority above `spec/03`, so this reference, which sits below both, did not amend it; the conflict
 was recorded here for the next reader instead of being resolved from underneath, as
 `project-domain-and-spec-fidelity` requires of a research-corpus conflict. HRV-54 now states what
-shipped — the fidelity rank arbitrates and is what `datasets[]` carries, **no** confidence weight is
-emitted or computed in Section 3, and the weighting is deferred to Section 6's readiness fusion
-(§3.7.4) — so the exchange rate still never arises, and now for the stronger reason that there is
-no weight to trade recency against. The authority preserves the superseded half in place and in a
-dated correction bullet of its own; nothing in the code or in any pin moved.
+shipped — `datasets[]` carries `fidelity_rank`, **no** confidence weight is emitted or computed in
+Section 3, and the weighting is deferred to Section 6's readiness fusion (§3.7.4), while HRV-19 has
+the fidelity rank alone arbitrate selection — so the exchange rate still never arises, and now for
+the stronger reason that there is no weight to trade recency against. Until F008 the authority
+preserved the superseded half in place and in a dated correction bullet of its own; it now states
+only the current rule, and the dated summary is H-30 in `research/00-history.md`. Nothing in the
+code or in any pin moved.
 
 ### Forms considered and rejected, with the reason
 

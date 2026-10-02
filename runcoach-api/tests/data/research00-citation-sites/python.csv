@@ -69,46 +69,46 @@ repo,runcoach-api/tests/test_hrv_trend_band.py,1334,§1.7,PRIN-14
 repo,runcoach-api/tests/test_hrv_trend_endpoint.py,243,§1.6,PRIN-12
 repo,runcoach-api/tests/test_hrv_trend_endpoint.py,434,1.6,PRIN-12
 repo,runcoach-api/tests/test_hrv_trend_endpoint.py,1016,§5.4,HRV-38
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,1413,§5.4,GATE-07
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2267,§5.4,HRV-38
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2400,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2422,§5.4,HRV-34
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2483,1.6,PRIN-12
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2511,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2606,§5.4,FIG-05
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2667,§5.4,HRV-72
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3731,§1.6,PRIN-12
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3787,§1.7,PRIN-15
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3794,§1.6,PRIN-12
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3828,§5.4 (iii),HRV-22
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3875,§5.4 (iii),HRV-22
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3908,1.6,PRIN-12
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4109,§1.6,PRIN-23
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4160,§1.6,PRIN-23
-repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4171,§1.6,PRIN-23
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,1416,§5.4,GATE-07
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2269,§5.4,HRV-38
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2402,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2424,§5.4,HRV-34
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2485,1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2513,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2608,§5.4,FIG-05
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2669,§5.4,HRV-72
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3733,§1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3789,§1.7,PRIN-15
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3796,§1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3830,§5.4 (iii),HRV-22
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3877,§5.4 (iii),HRV-22
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,3910,1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4111,§1.6,PRIN-23
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4162,§1.6,PRIN-23
+repo,runcoach-api/tests/test_hrv_trend_endpoint.py,4173,§1.6,PRIN-23
 repo,runcoach-api/tests/test_hrv_trend_reset.py,155,1.6,PRIN-23
 repo,runcoach-api/tests/test_hrv_trend_reset.py,807,§1.7,ARCH-13
-repo,runcoach-api/tests/test_hrv_trend_reset.py,1477,§5.4,FIG-01
-repo,runcoach-api/tests/test_hrv_trend_reset.py,1676,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,1906,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,1951,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,1961,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2152,§5.4,HRV-72
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2225,§5.4,HRV-40
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2227,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2284,§1.6,PRIN-23
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2328,§1.6,PRIN-23
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2707,§1.7,PRIN-13
-repo,runcoach-api/tests/test_hrv_trend_reset.py,2790,§1.7,PRIN-14
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3362,§5.4,HRV-38
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3457,5.4,FIG-07
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3466,5.4,FIG-01
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3479,5.4,FIG-02
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3489,5.4 (ii),FIG-07
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3686,5.4,FIG-02
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3722,5.4 (ii),FIG-07
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3728,5.4 (ii),FIG-07
-repo,runcoach-api/tests/test_hrv_trend_reset.py,3774,5.4 (i),HRV-82
+repo,runcoach-api/tests/test_hrv_trend_reset.py,1477,FIG-01,HRV-77
+repo,runcoach-api/tests/test_hrv_trend_reset.py,1677,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,1907,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,1952,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,1962,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2153,§5.4,HRV-72
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2226,§5.4,HRV-40
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2228,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2285,§1.6,PRIN-23
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2329,§1.6,PRIN-23
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2708,§1.7,PRIN-13
+repo,runcoach-api/tests/test_hrv_trend_reset.py,2791,§1.7,PRIN-14
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3363,§5.4,HRV-38
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3458,5.4,FIG-07
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3467,5.4,FIG-01
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3480,5.4,FIG-02
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3490,5.4 (ii),FIG-07
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3687,5.4,FIG-02
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3723,5.4 (ii),FIG-07
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3729,5.4 (ii),FIG-07
+repo,runcoach-api/tests/test_hrv_trend_reset.py,3775,5.4 (i),HRV-82
 repo,runcoach-api/tests/test_hrv_trend_series.py,461,§1.6,PRIN-12
 repo,runcoach-api/tests/test_hrv_trend_series.py,624,§3.3,HRV-01
 repo,runcoach-api/tests/test_hrv_trend_series.py,1104,§5.4,HRV-16
@@ -120,8 +120,10 @@ repo,runcoach-api/tests/test_hrv_trend_series.py,2447,§1.7,PRIN-14
 repo,runcoach-api/tests/test_hrv_trend_series.py,2724,5.4 (iii),HRV-59
 repo,runcoach-api/tests/test_hrv_unavailable_causes.py,155,§5.4 (iii),HRV-22
 repo,runcoach-api/tests/test_hrv_unavailable_causes.py,711,§1.7,PRIN-13
-repo,runcoach-api/tests/test_hrv_unavailable_causes.py,774,5.4,FIG-01
-repo,runcoach-api/tests/test_hrv_unavailable_causes.py,811,§1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_unavailable_causes.py,776,5.4,FIG-01
+repo,runcoach-api/tests/test_hrv_unavailable_causes.py,813,§1.6,PRIN-12
+repo,runcoach-api/tests/test_hrv_unavailable_causes.py,714,,ARCH-13
+repo,runcoach-api/tests/test_hrv_unavailable_causes.py,714,,ARCH-12
 repo,runcoach-api/tests/test_hrv_unavailable_reason.py,454,section 5.4 (iii),HRV-59
 repo,runcoach-api/tests/test_research00_citations_resolve.py,16,§1.x,literal
 repo,runcoach-api/tests/test_research00_citations_resolve.py,44,§5.4,literal
@@ -215,8 +217,15 @@ repo,runcoach-api/tests/test_source_change_rule_sweep.py,1485,Sec 5.4,HRV-44
 repo,runcoach-api/tests/test_spec_cost_figures.py,8,research/00:220,literal
 repo,runcoach-api/tests/test_spec_cost_figures.py,37,§1.7,PRIN-14
 repo,runcoach-api/tests/test_spec_cost_figures.py,206,5.4,FIG-01
-repo,runcoach-api/src/runcoach_api/main.py,322,PRIN-24,PRIN-27
-repo,runcoach-api/src/runcoach_api/main.py,525,PRIN-24,PRIN-27
-repo,runcoach-api/src/runcoach_api/schemas.py,24,PRIN-24,PRIN-27
-repo,runcoach-api/src/runcoach_api/schemas.py,458,PRIN-24,PRIN-27
-repo,runcoach-api/src/runcoach_api/db.py,587,PRIN-24,PRIN-27
+repo,runcoach-api/src/runcoach_api/main.py,322,,PRIN-27
+repo,runcoach-api/src/runcoach_api/main.py,526,,PRIN-27
+repo,runcoach-api/src/runcoach_api/main.py,322,,PRIN-24
+repo,runcoach-api/src/runcoach_api/main.py,525,,PRIN-24
+repo,runcoach-api/src/runcoach_api/schemas.py,24,,PRIN-27
+repo,runcoach-api/src/runcoach_api/schemas.py,458,,PRIN-27
+repo,runcoach-api/src/runcoach_api/schemas.py,24,,PRIN-24
+repo,runcoach-api/src/runcoach_api/schemas.py,458,,PRIN-24
+repo,runcoach-api/src/runcoach_api/db.py,587,,PRIN-27
+repo,runcoach-api/src/runcoach_api/db.py,587,,PRIN-24
+repo,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,54,,HRV-06
+repo,runcoach-api/src/runcoach_api/models.py,101,,HRV-06

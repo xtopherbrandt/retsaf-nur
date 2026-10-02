@@ -1474,7 +1474,8 @@ def test_thirteen_stray_days_inside_the_old_era_are_corroboration_and_fourteen_a
     apart, so the per-dataset internal-hole clip now cuts the 14 side at
     ``D-29`` too, **unreported**: window ``(D-29, D-7)``, ``n`` 23, the
     same window and ``n`` as the 13 side. The report is still ``None``
-    and the cliff research/00 FIG-01 prices is, on this
+    and the 13-vs-14 stray-day cliff of research/00 HRV-77 (priced at T102,
+    H-14 in research/00-history.md) is, on this
     geometry, closed by the hole clip rather than crossed. The survivor's
     death certificate is re-pointed to what still separates the mutant from
     the rule: the mutant finds an era boundary and lists the trial

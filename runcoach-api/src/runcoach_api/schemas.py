@@ -21,7 +21,7 @@ class IngestResponse(BaseModel):
 #
 # The response is reproducibility-critical (``research/00`` PRIN-12): a reader
 # must be able to recompute the verdict by hand from what it carries (the
-# inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-27), which is
+# inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24 and PRIN-27), which is
 # why the thresholds, the band's own mean and half-width, and every excluded
 # row with its reason are in the payload rather than only in the docs. The
 # field descriptions below are the documentation the contract (T091) and the
@@ -455,7 +455,7 @@ class HrvTrendResponse(BaseModel):
         description=(
             "Why `verdict` is hrv_unavailable; null whenever it is not (research/00 PRIN-12: the verdict "
             "must be reproducible by hand from the response, its unserved inputs being PRIN-12's OPEN "
-            "exceptions (PRIN-27), and this was the one place that rule failed -- F005's "
+            "exceptions (PRIN-24, PRIN-27), and this was the one place that rule failed -- F005's "
             "Negative Class row 'the verdict still cannot say why it is unavailable', closed by "
             "T137). `judge` evaluates four causes in a fixed order and reports the first that fires: "
             f"`{hrv_trend.REASON_NO_TIER}` (no resting-HRV reading of any tier can sustain a trend -- "

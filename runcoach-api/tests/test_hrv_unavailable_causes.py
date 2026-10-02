@@ -707,10 +707,12 @@ def test_f005_prices_t116_and_t126_as_net_cost_until_e007() -> None:
     ``hrv_unavailable`` after every **coverage-gap** reset (T116, re-confirmed
     at the corrected duration by T126; narrowed from "every reset" on
     2026-09-17 by T138, which measured the other reset kind at 18 days and by
-    a different mechanism) -- and both acceptances rest on the same sentence: that
-    down-regulation is the direction ``research/00`` PRIN-13 leaves free,
-    because §6 widens its guardrails rather than being told readiness is
-    intact.
+    a different mechanism) -- and both acceptances rested on the same sentence:
+    that down-regulation was the direction ``research/00`` PRIN-13 was read to
+    leave free, because §6 would widen its guardrails rather than be told
+    readiness is intact. F008's C08 dropped that reading: ``research/00``
+    ARCH-13 makes each such day a net cost until §6 exists, and ARCH-12 is the
+    widening once it does.
 
     **§6 is E007, and E007 does not exist.** Until it does, the widening is
     not a behaviour the system performs, so the accepted cost is the whole

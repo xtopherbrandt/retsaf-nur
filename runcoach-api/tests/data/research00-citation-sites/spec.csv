@@ -42,6 +42,7 @@ repo,specification/spec_outline.md,93,§1.6,PRIN-22
 repo,specification/spec_outline.md,93,Part 2,ARCH-08
 repo,specification/spec_outline.md,103,Part 3,DOC-07
 repo,specification/spec_outline.md,104,Part 4,FTO-01
+repo,specification/spec_outline.md,53,,REG-22
 repo,specification/spec_development_plan.md,17,Part 3,REG-19
 repo,specification/spec_development_plan.md,19,Part 1,ARB-01
 repo,specification/spec_development_plan.md,19,Part 2,ARCH-00
@@ -87,6 +88,7 @@ repo,specification/future/future-directions.md,138,Part 3,REG-15
 repo,specification/future/future-directions.md,138,Part 3,REG-16
 repo,specification/future/future-directions.md,189,,LT1-01
 repo,specification/future/future-directions.md,196,§3.1,IND-01
+repo,specification/future/future-directions.md,121,§3.2,COLD-02
 repo,specification/research/02-wearable-data-garmin.md,113,§3.3,HRV-01
 repo,specification/research/02-wearable-data-garmin.md,169,§3.3,HRV-01
 repo,specification/research/02-wearable-data-garmin.md,169,Part 3,REG-09
@@ -141,6 +143,7 @@ repo,specification/spec/07-recovery-and-taper.md,114,§3.1,IND-01
 repo,specification/spec/07-recovery-and-taper.md,122,§1.1,PRIN-01
 repo,specification/spec/07-recovery-and-taper.md,134,Part 3,REG-15
 repo,specification/spec/07-recovery-and-taper.md,134,Part 3,REG-16
+repo,specification/spec/07-recovery-and-taper.md,3,,AUT-01
 repo,specification/spec/08-conversational-coach-interface.md,3,§1.8,AUT-01
 repo,specification/spec/08-conversational-coach-interface.md,3,§1.9,GOAL-01
 repo,specification/spec/08-conversational-coach-interface.md,3,§1.5,PRIN-07
@@ -169,6 +172,9 @@ repo,specification/spec/08-conversational-coach-interface.md,101,Part 2,ARCH-11
 repo,specification/spec/08-conversational-coach-interface.md,101,§1.6,PRIN-11
 repo,specification/spec/08-conversational-coach-interface.md,103,Part 2,ARCH-07
 repo,specification/spec/08-conversational-coach-interface.md,103,Part 2,ARCH-07
+repo,specification/spec/08-conversational-coach-interface.md,78,,ARB-07
+repo,specification/spec/08-conversational-coach-interface.md,78,,AUT-01
+repo,specification/spec/08-conversational-coach-interface.md,78,,AUT-03
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,§1.6,PRIN-22
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,§1.5,PRIN-07
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,3,Part 2,ARCH-08
@@ -191,6 +197,9 @@ repo,specification/spec/09-loop-closure-decision-log-explainability.md,144,Part 
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,154,§1.1,PRIN-01
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-17
 repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,Part 3,REG-18
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,,REG-28
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,,REG-29
+repo,specification/spec/09-loop-closure-decision-log-explainability.md,158,,REG-30
 repo,specification/spec/02-canonical-data-schema-ingestion.md,3,§1.5,PRIN-07
 repo,specification/spec/02-canonical-data-schema-ingestion.md,3,Part 2,ARCH-06
 repo,specification/spec/02-canonical-data-schema-ingestion.md,3,Part 2,ARCH-01
@@ -259,7 +268,7 @@ repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-10
 repo,specification/spec/04-physiological-state-model.md,112,,COLD-08
 repo,specification/spec/04-physiological-state-model.md,132,§3.2,COLD-11
 repo,specification/spec/04-physiological-state-model.md,134,§3.2,COLD-01
-repo,specification/spec/04-physiological-state-model.md,134,§1.5,PRIN-07
+repo,specification/spec/04-physiological-state-model.md,134,PRIN-07,FTO-01
 repo,specification/spec/04-physiological-state-model.md,134,Part 4,FTO-02
 repo,specification/spec/04-physiological-state-model.md,138,§3.2,COLD-01
 repo,specification/spec/04-physiological-state-model.md,148,§3.1,IND-01
@@ -269,6 +278,9 @@ repo,specification/spec/04-physiological-state-model.md,164,Part 2,ARCH-11
 repo,specification/spec/04-physiological-state-model.md,168,§1.7,PRIN-13
 repo,specification/spec/04-physiological-state-model.md,183,§3.2,COLD-01
 repo,specification/spec/04-physiological-state-model.md,183,Part 3,DOC-08
+repo,specification/spec/04-physiological-state-model.md,134,,FTO-03
+repo,specification/spec/04-physiological-state-model.md,156,,REG-20
+repo,specification/spec/04-physiological-state-model.md,183,,DOC-07
 repo,specification/spec/05-training-plan-generation.md,3,§1.1,PRIN-01
 repo,specification/spec/05-training-plan-generation.md,3,Part 2,ARCH-04
 repo,specification/spec/05-training-plan-generation.md,3,Part 3,REG-07
@@ -293,7 +305,7 @@ repo,specification/spec/05-training-plan-generation.md,157,§1.2,ARB-01
 repo,specification/spec/05-training-plan-generation.md,157,§1.7,PRIN-13
 repo,specification/spec/05-training-plan-generation.md,161,Part 2,ARCH-11
 repo,specification/spec/05-training-plan-generation.md,169,Part 3,REG-07
-repo,specification/spec/05-training-plan-generation.md,190,§1.7,PRIN-13
+repo,specification/spec/05-training-plan-generation.md,190,PRIN-13,REG-13
 repo,specification/spec/05-training-plan-generation.md,190,§3.1,IND-01
 repo,specification/spec/05-training-plan-generation.md,190,Part 2,ARCH-11
 repo,specification/spec/05-training-plan-generation.md,194,§1.7,PRIN-13
@@ -305,6 +317,8 @@ repo,specification/spec/05-training-plan-generation.md,239,§3.4,LT1-01
 repo,specification/spec/05-training-plan-generation.md,239,§3.4,LT1-02
 repo,specification/spec/05-training-plan-generation.md,241,Part 3,REG-13
 repo,specification/spec/05-training-plan-generation.md,245,Part 3,REG-14
+repo,specification/spec/05-training-plan-generation.md,169,Part 3,REG-22
+repo,specification/spec/05-training-plan-generation.md,128,,IND-05
 repo,specification/spec/06-adaptation-logic.md,3,§1.2,ARB-01
 repo,specification/spec/06-adaptation-logic.md,3,§1.3,PRIN-04
 repo,specification/spec/06-adaptation-logic.md,3,§1.4,PRIN-05
@@ -438,4 +452,14 @@ repo,specification/spec/03-derived-metric-formulas.md,215,,HRV-04
 repo,specification/spec/03-derived-metric-formulas.md,310,,IND-01
 repo,specification/spec/03-derived-metric-formulas.md,235,PRIN-24,PRIN-27
 repo,specification/spec/03-derived-metric-formulas.md,236,PRIN-24,PRIN-27
-repo,specification/spec/06-adaptation-logic.md,74,PRIN-24,PRIN-27
+repo,specification/spec/03-derived-metric-formulas.md,161,,REG-20
+repo,specification/spec/03-derived-metric-formulas.md,246,,HRV-31
+repo,specification/spec/03-derived-metric-formulas.md,247,,HRV-05
+repo,specification/spec/03-derived-metric-formulas.md,247,,HRV-22
+repo,specification/spec/03-derived-metric-formulas.md,247,,HRV-26
+repo,specification/spec/03-derived-metric-formulas.md,247,,HRV-59
+repo,specification/spec/06-adaptation-logic.md,74,,PRIN-27
+repo,specification/spec/06-adaptation-logic.md,74,,PRIN-24
+repo,specification/spec/06-adaptation-logic.md,74,,FIG-07
+repo,specification/spec/06-adaptation-logic.md,165,,DOC-04
+repo,specification/spec/06-adaptation-logic.md,253,,AUT-07

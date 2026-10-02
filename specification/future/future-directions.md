@@ -118,7 +118,7 @@ each cross-referenced to its open item in `spec_development_plan.md` — are:
 
 - **The non-exercise cold-start fitness seed** (`spec/04` §4.4.2). The v1 seed
   is built from open published estimators (Uth–Sørensen heart-rate-ratio and a
-  Jackson-form non-exercise regression; now cited in `research/00` COLD-03). A
+  Jackson-form non-exercise regression; now cited in `research/00` COLD-02, COLD-03). A
   coach can often supply a far better day-one fitness estimate from a recent
   race, a lab VO₂max, or direct knowledge of the athlete — a natural override.
 - **The aerobic-threshold (LT1) / Zone-1–Zone-2 boundary** (`spec/05` §5.4.2,

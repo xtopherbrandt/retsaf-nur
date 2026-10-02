@@ -98,7 +98,7 @@ class RRInterval:
     rr_ms: float | None = None
     # Tier enum per §2.2.3 (chest_strap_ecg / overnight_ppg /
     # health_snapshot_ppg / other) -- the tier §3 ranks by fidelity and
-    # never mixes within one band (research/00 HRV-04, T-21).
+    # never mixes within one band (research/00 HRV-04, HRV-06, T-21).
     rr_source: str | None = None
     # Which FIT carrier supplied this beat (§2.3.4 step 3). Kept
     # separate so the tier enum above isn't overloaded.

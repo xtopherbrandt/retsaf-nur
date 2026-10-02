@@ -10,14 +10,16 @@ repo,CHANGELOG.md,7,§1.6,PRIN-12
 repo,contracts/openapi.yaml,283,§1.9,GOAL-02
 repo,contracts/openapi.yaml,329,§1.9,GOAL-03
 repo,contracts/openapi.yaml,329,§1.9,GOAL-04
-repo,contracts/openapi.yaml,653,PRIN-24,PRIN-27
-repo,contracts/openapi.yaml,1358,PRIN-24,PRIN-27
+repo,contracts/openapi.yaml,653,,PRIN-27
+repo,contracts/openapi.yaml,1358,,PRIN-27
 repo,contracts/openapi.yaml,1460,§1.6,PRIN-12
 repo,contracts/openapi.yaml,1654,§1.6,PRIN-23
 repo,contracts/openapi.yaml,1798,§5.4 (v),HRV-31
 repo,contracts/openapi.yaml,1837,§5.4 (iii),HRV-57
 repo,contracts/openapi.yaml,1857,§5.4 (iii),HRV-22
 repo,contracts/openapi.yaml,1878,§1.7,PRIN-14
+repo,contracts/openapi.yaml,653,,PRIN-24
+repo,contracts/openapi.yaml,1358,,PRIN-24
 repo,runcoach-api/tests/data/research00_census.csv,52,§3.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,60,§1.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,101,PRIN-16,literal

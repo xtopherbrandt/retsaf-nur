@@ -50,7 +50,7 @@
 
 **Defines.** The machine-representable workout typology and workout data representation. Periodization structure (base/build/peak/taper). Intensity distribution (pyramidal-leaning base → polarizing through build/peak, ~80% easy by time, Z2/Z3 split as a phase- and distance-dependent tunable parameter). Relative-anchored pace prescription (all paces stored relative to current state estimate so zones update automatically when the model updates). How workouts target specific physiological determinants.
 
-**Cites.** `research_04` §2–3 (periodization, intensity distribution, workout typology); `research_00` ARCH-04 (relative anchoring) and the intensity-distribution register row REG-07; `research_01` (determinant-to-stimulus mapping).
+**Cites.** `research_04` §2–3 (periodization, intensity distribution, workout typology); `research_00` ARCH-04 (relative anchoring) and the intensity-distribution register rows REG-07, REG-22; `research_01` (determinant-to-stimulus mapping).
 
 **Depends on.** §4 (the state estimate paces anchor to; determinants workouts target).
 
