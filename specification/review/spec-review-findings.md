@@ -6,7 +6,7 @@
 
 ## Finding 1 — Gap remedy should propose a change of goal *pace*, not goal *date*
 
-**Locus:** `spec/01-scope-inputs-pace-target.md` §1.4.6, which defers to the decision authority for the goal-contract change (the underlying rule is GOAL-02 in `research/00`).
+**Locus:** `spec/01-scope-inputs-pace-target.md` §1.4.6, which defers to the decision authority for the goal-contract change (the underlying rule is GOAL-03 in `research/00`).
 
 **Status:** resolved — ordering applied across the decision authority and every spec locus that surfaces the proposal (2026-08-31).
 
@@ -21,7 +21,7 @@
 
 This ordering should be stated wherever the gap-triggered proposal is defined — §1.4.6 and, as the decision authority, `research/00` GOAL-03 — so the two stay consistent. (Note: `distance_m` is a third contract field; the review is not asking to make distance change a proposed remedy — flagging only that the ordering language should be precise about *which* fields the system proposes to move and in what order.)
 
-**Resolution (applied 2026-08-31).** The ordering of remedies is now stated as the decision authority in **`research/00` GOAL-03 and GOAL-04** — primary: a revised goal pace on the existing date; secondary: a later race date; `distance_m` explicitly excluded as a proposed remedy; the ordering governs only what the *system proposes*, not which field the athlete may elect to move. A reconciliation note was added to `research/00` (now GOAL-06). The same ordering was then stated at every point the gap-triggered proposal is surfaced, all deferring to GOAL-03:
+**Resolution (applied 2026-08-31).** The ordering of remedies is now stated as the decision authority in **`research/00` GOAL-03, GOAL-04 and GOAL-05** — primary: a revised goal pace on the existing date; secondary: a later race date; `distance_m` explicitly excluded as a proposed remedy; the ordering governs only what the *system proposes*, not which field the athlete may elect to move. A reconciliation note was added to `research/00` (now GOAL-06). The same ordering was then stated at every point the gap-triggered proposal is surfaced, all deferring to GOAL-03:
 
 - **`spec/01` §1.4.6** — the pace-target output now states the primary/secondary ordering and the distance exclusion where it defines the gap-triggered proposal.
 - **`spec/06` §6.8** (goal-contract exception) — the goal-contract bullet now states the pace-first ordering when Section 6 proposes a change.

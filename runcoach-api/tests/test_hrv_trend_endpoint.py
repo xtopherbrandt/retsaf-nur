@@ -1013,8 +1013,8 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 #: implementation it exists to constrain cannot detect an implementation
 #: defect by construction (``contract-tables-need-an-independent-oracle``;
 #: ``project-domain-and-spec-fidelity`` names ``research/00`` the authority).
-#: The entries are **constrained by ``research/00`` HRV-38 and F005** -- rule
-#: 4's three conditions, the clip-versus-report split of decision log D4 --
+#: The entries are **constrained by ``research/00`` HRV-38, HRV-40, HRV-80 and
+#: F005** -- rule 4's three conditions, the clip-versus-report split of D4 --
 #: and were *checked against* ``build_series``, which is a reproduction, not
 #: a derivation. What T109 got right is that they are no longer transcribed
 #: from the prose they pin: entry 5 used to be the (b)-alone gloss that is
@@ -2266,7 +2266,7 @@ def test_the_two_copies_of_the_reset_reason_contract_publish_the_same_claims() -
     prose inherits whatever is wrong with the prose and promotes it to an
     enforced invariant. The pattern is right; the authorship was not, which
     is G-C5-7's no-independent-oracle shape again. The entries are
-    constrained by ``research/00`` HRV-38 and F005 rather than by the sentence
+    constrained by ``research/00`` HRV-38, HRV-40, HRV-80 and F005, not by the sentence
     they pin, and each was reproduced against ``build_series`` -- the runs
     are listed above ``RESET_REASON_CLAIMS`` (T109; the stated authorship
     corrected by T112, which found it claiming the entries were *derived
@@ -2399,7 +2399,7 @@ def test_the_two_copies_of_the_window_contract_publish_the_same_claims() -> None
 #: Authorship (``contract-tables-need-an-independent-oracle``, and T109's
 #: correction of this pattern): these fragments are **not** transcriptions of
 #: the paragraph. They are the four things a client can act on, taken from the
-#: user decision of 2026-09-15 and from ``research/00`` PRIN-14, and each is
+#: user decision of 2026-09-15 and from ``research/00`` HRV-27, and each is
 #: reproduced against ``judge`` by a named behavioural pin rather than by this
 #: file: entry 1 and entry 3 by
 #: ``test_hrv_trend_band.test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``
@@ -2421,7 +2421,7 @@ VERDICT_CLAIMS = (
 #: T122 (review cycle 7) moved this tuple into ``withdrawn_phrasings.py`` and
 #: into the walk. Until then it was read against the **two contract copies
 #: only**, while ``RESET_REASON_WITHDRAWN`` was read against all 265 walked
-#: files -- so a restored asymmetric sentence in ``research/00`` HRV-34,
+#: files -- so a restored asymmetric sentence in ``research/00`` HRV-27,
 #: spec/03 §3.7.3, the construction reference or any docstring was invisible to it *by
 #: construction*, which is precisely the gap T111 found for ``reset_reason``
 #: and T119 then closed by replacing the allowlist with a walk. Measured
@@ -2510,7 +2510,7 @@ UNAVAILABLE_REASON_SHARED_ANCHOR = (
 #: transcriptions of the paragraph. They are the three things a client reading
 #: ``established`` can act on -- what the flag *is*, that **neither** verdict,
 #: not just the suppression, is asserted beneath it, and what is emitted
-#: instead -- taken from the 2026-09-15 user decision and ``research/00`` PRIN-14,
+#: instead -- taken from the 2026-09-15 user decision and ``research/00`` HRV-27,
 #: the same source ``VERDICT_CLAIMS`` is constrained by. Each is reproduced
 #: against ``judge`` by a named behavioural pin rather than by this file:
 #: ``test_hrv_trend_band.test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``

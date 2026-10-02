@@ -988,7 +988,7 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     (23 / 22 / 21), ``hrv_suppressed`` on a suppressed return and
     ``hrv_normal`` on a healthy one from the fifth morning back.* That last
     value is the row T162 priced: ``hrv_normal`` on a band every reading of
-    which is 36 to 66 days old, PRIN-14's forbidden direction, and it is the
+    which is 36 to 66 days old, the under-calling direction, and it is the
     walk's own contribution to the 96 -> 254 stale-band regression AC21
     blocked release on. The return is not a ``research/00`` HRV-71 free
     return: HRV-71 frees a return only when it follows 21 or fewer silent
@@ -1331,9 +1331,9 @@ def test_the_withhold_reaches_a_never_used_tier_bought_this_week() -> None:
     ``True`` -- ``hrv_normal``. The athlete is told readiness is intact on a
     mean of three mornings he did not live, while his own three
     brand-new-device mornings -- the ones actually suppressed -- are
-    silently excluded as ``off_baseline_tier``. ``research/00`` PRIN-14's
-    forbidden direction: up-regulating (staying silent about suppression)
-    on weak evidence.
+    silently excluded as ``off_baseline_tier``. The under-calling
+    direction: up-regulating (staying silent about suppression) on a
+    week he did not live.
 
     T132 (form B, user decision, review cycle 9, against the measured table
     in ``spec/references/T125-fix-form-measurements.md``): union today's

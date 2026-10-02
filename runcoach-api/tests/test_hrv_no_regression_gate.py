@@ -273,8 +273,8 @@ PAID_BY_T164 = {
 #:    "the band's dispersion is the same at every density" -- so both tiers
 #:    carry statistically identical bands. "No forbidden-direction (PRIN-14) rate moved where the flips
 #:    worsened" is therefore true **by construction**: a property of the
-#:    fixtures, not a finding about the rule. Under a real dispersion gap
-#:    (HRV-06, F006: 2.16% strap vs 17.49% PPG) the snapshot band is wider, so a flip
+#:    fixtures, not a finding about the rule. Under a real dispersion gap (F006:
+#:    2.16% strap vs 17.49% PPG; GATE-02's IDEA-089 (b)) the snapshot band is wider, so a flip
 #:    makes ``hrv_normal`` strictly more likely -- PRIN-14's forbidden direction.
 #:    No row of the CSV can show that, because SD is pinned equal across tiers.
 #:

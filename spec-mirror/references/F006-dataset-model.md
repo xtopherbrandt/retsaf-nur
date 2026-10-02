@@ -88,7 +88,7 @@ selected dataset decides" or in the retained withhold moves. [[T162]] measured t
 section described: `hrv_normal` promoted on an entirely pre-layoff band rose from shipped F005's
 **1,896 to 3,705 of 307,500** return-rectangle rows (×1.95) and **96 to 254 of 24,000**
 device-return-walk rows (×2.65), worse at every `c`, on 82 of 150 cells, identically under both
-overlap variants — PRIN-14's forbidden direction, and AC21's blocking one. [[T164]] widened the
+overlap variants — the under-calling direction, and AC21's blocking one. [[T164]] widened the
 population and the rate returned to shipped F005's **exactly**: **1,896** and **96**, flat at 316 per
 `c`, cell for cell across all 25 capture-density pairs. **What it cost**, priced in §11: a **lone
 judgeable** dataset is no longer automatically its own reference — an established but *weekless*
@@ -297,7 +297,7 @@ gap **29 > 28** → strap struck → watch selected → judged on the watch's wa
 highest-fidelity candidate. AC6 said *"its latest reading"* with **no window named**, and the strap's
 latest reading is `D-0` → gap 0 → not skipped → selected → **the athlete is judged against a band
 whose every reading is 36–66 days old and entirely pre-layoff.** If that stale band sits low, the
-verdict promoted is `hrv_normal`: PRIN-14's forbidden direction, on the exact mechanism T125 and three
+verdict promoted is `hrv_normal`: the under-calling direction, on the exact mechanism T125 and three
 review cycles were spent on.
 
 ### Why it happened, and the lesson worth keeping
@@ -387,7 +387,7 @@ the Negative Class had moved in full).
 | **The 18-day adoption silence, and `week_too_thin` on 16 of those days** | Out of scope by user decision, 2026-09-18. A never-used device holds no baseline under any scheme. Priced by [[T137]]/[[T138]], unchanged here |
 | **A 3×/week wearer's dataset flips for seven days on one missed session** | Pre-existing (`CRITIC-F005` priority 3), inherited identically by every form, un-fixable without re-opening §3.7.4's count rule. AC14 makes it visible in `points[]`; AC23 gates it against F005 |
 | **A hole of at most `GAP_RESET_DAYS` silent days, or one whose resumption is after `D-7`, is not clipped** (AC17, T153) | The first still mixes the eras either side of it — bounded by three weeks of silence, either direction, unreported; the second leaves the pre-layoff band in place, unreported, and hands the question to AC6, which does not skip a dataset fewer than 29 days behind the latest-read **established** dataset (the reference population as widened by T164, 2026-09-20; §3). Accepted because the constant has one meaning (`coverage_gap_reset`'s) and a per-dataset clip firing earlier than the global gap would make two rules disagree about the same number of days (the 28 > 21 partition); the straddling case is AC6's population by AC17's own text. Who notices: nobody from `hrv_status`; `baseline.window` shows the first, `datasets[]` (T159) will show the second |
-| **A lone judgeable dataset is no longer its own reference, and every judgeable candidate can be skipped at once** (AC6/AC7 as widened by T164, 2026-09-20; §3) | The price paid for restoring shipped F005's stale-band promotion rate **exactly** — `hrv_normal` on an entirely pre-layoff band, 3,705 → 1,896 of 307,500 rectangle rows and 254 → 96 of 24,000 walk rows. An established but **weekless** dataset read later now strikes the returning one, so the athlete pays in **silence**: ~3,600 more silent rectangle mornings (`hrv_unavailable` 243,326 → 246,944) and 316 more on the walk (15,996 → 16,312). The state this reference once held unreachable — every judgeable dataset skipped at once — is now reachable, and AC9's presentation fallback handles it, conferring no verdict. Accepted because the alternative is PRIN-14's forbidden direction at roughly twice shipped F005's rate, which AC21 blocks on. Who notices: nobody from `hrv_status` — the athlete is told nothing rather than told something stale. Full measurement in the feature file's Negative Class and `spec/references/F006-no-regression-report.md` |
+| **A lone judgeable dataset is no longer its own reference, and every judgeable candidate can be skipped at once** (AC6/AC7 as widened by T164, 2026-09-20; §3) | The price paid for restoring shipped F005's stale-band promotion rate **exactly** — `hrv_normal` on an entirely pre-layoff band, 3,705 → 1,896 of 307,500 rectangle rows and 254 → 96 of 24,000 walk rows. An established but **weekless** dataset read later now strikes the returning one, so the athlete pays in **silence**: ~3,600 more silent rectangle mornings (`hrv_unavailable` 243,326 → 246,944) and 316 more on the walk (15,996 → 16,312). The state this reference once held unreachable — every judgeable dataset skipped at once — is now reachable, and AC9's presentation fallback handles it, conferring no verdict. Accepted because the alternative is the under-calling direction at roughly twice shipped F005's rate, which AC21 blocks on. Who notices: nobody from `hrv_status` — the athlete is told nothing rather than told something stale. Full measurement in the feature file's Negative Class and `spec/references/F006-no-regression-report.md` |
 
 
 ## 12. Decision log (full text, moved from the feature file)

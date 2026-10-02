@@ -1673,9 +1673,9 @@ def test_the_band_does_not_step_when_the_judged_week_slides_past_the_old_tiers_c
     seven-week-old trial back into the band: ``hrv_normal`` on ``base``,
     ``base+1`` and ``base+2`` (``lo`` 3.4791, ``n`` 43) and
     ``hrv_suppressed`` from ``base+3`` (``lo`` 3.6459, ``n`` 36) once the
-    week had slid past the captures -- the under-calling direction
-    ``research/00`` PRIN-14 forbids and ``judge``'s own docstring
-    names as forbidden.
+    week had slid past the captures -- the under-calling direction, on
+    an established band the old trial had pulled down, which no guard
+    in ``judge`` can see.
 
     Under D4a the clip is unconditional -- of the report here, and of a
     coverage gap since T107: the baseline begins on the era's
@@ -1903,8 +1903,8 @@ def test_the_era_boundary_tie_on_stray_days_goes_to_the_later_boundary() -> None
     until now (review cycle 4, G-C4-2): of several era boundaries the one
     whose strays the judged week is clear of is taken first, then the one
     with the fewest stray days -- the switch that explains the most
-    readings -- **ties to the later one, the younger baseline being the
-    cautious reading** (``research/00`` PRIN-14).
+    readings -- **ties to the later one**, the third term of ``research/00``
+    HRV-78's order (this file reads the younger baseline as the cautious one).
 
     The cycle-4 critic's series, target ``D``: a daily snapshot to
     ``E`` = ``D-70`` = 2026-06-30, a daily strap from ``E+1`` = 07-01, and
@@ -1948,8 +1948,8 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
     07-31, snapshot strays on 08-01 and 08-03, and the era's first strap
     reading carrying 50 ms where every later one carries 25.
 
-    Ties to the later boundary -- the younger baseline being the cautious
-    reading (``research/00`` PRIN-14) -- so the era begins on ``E+2`` =
+    Ties to the later boundary (the third ordering term of ``research/00``
+    HRV-78; the younger baseline read as the cautious one) -- so the era begins on ``E+2`` =
     08-01, ``baseline`` is clipped to ``[08-01, D-7]``, and the 50 ms
     reading of 07-31 is *before* the reset: 32 readings, all 25 ms, a flat
     band.
@@ -1959,7 +1959,7 @@ def test_the_stray_day_tie_puts_the_band_on_the_younger_era() -> None:
     ``tier_change on 2026-07-31``, ``baseline_window`` ``(07-31, D-7)``,
     ``baseline_n`` 33 and ``band_lo`` 3.1796 rather than
     ``ln(25) - 0.01``, because the day whose era is in dispute is drawn
-    into the band. That is PRIN-14's asymmetry in one series: the earlier
+    into the band. That is the under-calling risk in one series: the earlier
     boundary can only *add* a reading whose era is unknown to the baseline
     the athlete is judged against, and a baseline pulled down by a foreign
     era reads a suppressed week as normal."""
@@ -2225,8 +2225,8 @@ def test_a_coverage_gap_does_not_cancel_the_era_clip() -> None:
     The 7-day mean is 3.6636 on both. The six 26 ms readings of a strap
     trial the athlete abandoned in August -- readings ``research/00`` HRV-40
     says are **never** in the band -- were pulled back into it by the gap
-    alone, and a genuinely suppressed week read ``hrv_normal``: PRIN-14's
-    forbidden direction, through a door neither G-C4-1 nor G-C5-1
+    alone, and a genuinely suppressed week read ``hrv_normal``: the
+    under-calling direction, through a door neither G-C4-1 nor G-C5-1
     touched and with **no threshold to cross**.
 
     *If the rule were what the gate at ``hrv_trend.py:554`` implemented* --
@@ -2461,7 +2461,7 @@ def test_the_era_clip_does_not_replace_the_gaps_when_the_gap_is_later() -> None:
 # branch outright, so the path could not be taken. **User decision
 # 2026-09-15: accept it, name it, pin it** -- withdrawn on **2026-09-16**
 # once T123's re-run of the direction search the acceptance rested on found
-# the forbidden flip (5 of 26,360 well-formed histories, `hrv_suppressed` to
+# the under-calling flip (5 of 26,360 well-formed histories, `hrv_suppressed` to
 # `hrv_normal` on an unchanged week mean, established on both sides). T129
 # hands rule 4 the **unclipped** population for its stray count, so the clip
 # decides the *band* and no longer decides what ``_era_boundary`` can see.
@@ -2788,7 +2788,7 @@ def unclipped_stray_witness() -> list[dict]:
 
 def test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary() -> None:
     """**The witness G-C7-3's acceptance was withdrawn on** (T129, closing the
-    `research/00` PRIN-14 violation T123 measured). One capture history, one
+    under-calling flip T123 measured). One capture history, one
     judged week, one week mean -- and two different verdicts, decided by
     nothing but whether the gap clip was allowed to hide five readings from
     rule 4's stray count.
@@ -2832,7 +2832,7 @@ def test_the_unclipped_stray_count_refuses_the_gap_created_era_boundary() -> Non
     series = build(rows, target=UNCLIPPED_STRAY_D)
     verdict = hrv_trend.judge(series)
 
-    # The verdict, first: this is the forbidden direction, closed.
+    # The verdict, first: this is the under-calling flip, closed.
     assert verdict.verdict == hrv_trend.VERDICT_SUPPRESSED
 
     # ...on a band the athlete's own full capture history supports.
