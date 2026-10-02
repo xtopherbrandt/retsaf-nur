@@ -3897,8 +3897,12 @@ PRESENCE_ANCHORS = (
 
 _C33_REASON = ("C33's prose and its EXCEPTIONS are F010's, not F011's (F011 Not in scope); this site is "
                "hrv_trend.py (F009's, sheltered by EXCEPTIONS) and a .py block, which T201 does not build")
-_PINNED_REASON = ("a Pinned line is research/00's own rule-block field, and F009 replaces 'none (F009)'; "
-                  "no downstream prose states it, so the row could never pass")
+#: T240 (F009 AC7): the Pinned string OPERATIVE["C06"] carries, after F009 replaced 'none (F009)'.
+_HRV25_PIN = ("Pinned: runcoach-api/tests/test_hrv25_population.py::"
+              "test_hrv_25_population_is_counted_and_does_not_grow")
+_PINNED_REASON = ("a Pinned line is research/00's own rule-block field, checker metadata naming the test "
+                  "node that pins HRV-25's population (T240); no downstream prose restates it, so the row "
+                  "could never pass")
 _T125_RESIDUAL_REASON = ("T125's residual ships inside one PRIN-15 exception, the F005-parity population "
                          "(IDEA-087), which the site names; the other two exceptions are not this bullet's")
 _ONE_EXCEPTION_REASON = ("T231: the site states HRV-25's population alone (HRV-25, IDEA-099, 'may not grow'); "
@@ -3941,18 +3945,18 @@ DROPPED_PRESENCE_ROWS = (
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "| cost | direction and why it is accepted |",
      "IDEA-087", "S6: already in the Negative Class table at HEAD"),
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "| cost | direction and why it is accepted |",
-     "Pinned: none (F009)", _PINNED_REASON),
-    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC21 —", "Pinned: none (F009)",
+     _HRV25_PIN, _PINNED_REASON),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC21 —", _HRV25_PIN,
      _PINNED_REASON),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
      "DEFERRED_EXCEPTION", "S6: already in the cost table at HEAD"),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
      "IDEA-087", "S6: already in the cost table at HEAD"),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "| cost | direction and why it is accepted |",
-     "Pinned: none (F009)", _PINNED_REASON),
+     _HRV25_PIN, _PINNED_REASON),
     # F011 review iteration 12.
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06",
-     "**The withhold is retained, not retired (T158, AC24).**", "Pinned: none (F009)", _PINNED_REASON),
+     "**The withhold is retained, not retired (T158, AC24).**", _HRV25_PIN, _PINNED_REASON),
     ("specification/spec/03-derived-metric-formulas.md", "C06",
      "**A judged week that is not a fair sample of the tier being judged**", "DEFERRED_EXCEPTION",
      _T125_RESIDUAL_REASON),
@@ -3961,7 +3965,7 @@ DROPPED_PRESENCE_ROWS = (
     ("specification/spec/03-derived-metric-formulas.md", "C06",
      "**A judged week that is not a fair sample of the tier being judged**", "IDEA-099", _T125_RESIDUAL_REASON),
     ("specification/spec/03-derived-metric-formulas.md", "C06",
-     "**A judged week that is not a fair sample of the tier being judged**", "Pinned: none (F009)",
+     "**A judged week that is not a fair sample of the tier being judged**", _HRV25_PIN,
      _PINNED_REASON),
     ("contracts/openapi.yaml", "C06", "This is the response's one report of the exposure F006 accepts", "*",
      _CONTRACT_REASON),
@@ -3976,7 +3980,7 @@ DROPPED_PRESENCE_ROWS = (
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "DEFERRED_EXCEPTION",
      _ONE_EXCEPTION_REASON),
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "IDEA-087", _ONE_EXCEPTION_REASON),
-    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "Pinned: none (F009)", _PINNED_REASON),
+    ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", _HRV25_PIN, _PINNED_REASON),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**", "F005-parity",
      _ONE_EXCEPTION_REASON),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**",
@@ -3984,7 +3988,7 @@ DROPPED_PRESENCE_ROWS = (
     ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**", "IDEA-087",
      _ONE_EXCEPTION_REASON),
     ("spec-mirror/references/F006-dataset-model.md", "C06", "**This rate is newly measurable.**",
-     "Pinned: none (F009)", _PINNED_REASON),
+     _HRV25_PIN, _PINNED_REASON),
 )
 
 
