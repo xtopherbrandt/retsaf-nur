@@ -13,11 +13,18 @@ data,spec/features/F009-research00-citations-to-rule-ids.md,92,HRV-999,literal
 data,spec/features/F010-publish-recency-tolerance.md,49,§1.6,PRIN-12
 data,spec/features/F010-publish-recency-tolerance.md,83,§1.6,PRIN-12
 data,spec/features/F012-research00-review-handoff.md,100,§1.6,literal
+data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,84,,HRV-54
+data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,85,,HRV-04
+data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,88,,HRV-04
 data,spec/ideas/IDEA-035-e003-load-block-is-anchor-blocked.md,18,,REG-03
 data,spec/ideas/IDEA-036-resting-hr-trend-as-corroborating-signal.md,38,,PRIN-05
-data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,19,§3.3,HRV-01
-data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,25,,DOC-01
-data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,47,§3.3,HRV-01
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,20,§3.3,HRV-01
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,22,,HRV-04
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,27,,DOC-01
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,49,§3.3,HRV-01
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,53,,HRV-01
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,56,,HRV-04
+data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,59,,HRV-01
 data,spec/ideas/IDEA-043-t084-a-below-band-week-on-an-unestablished-baseline-is-unavailable-not-normal.md,35,§1.7,PRIN-14
 data,spec/ideas/IDEA-044-t084-the-band-is-a-property-of-the-baseline-and-two-f005-lines-read-otherwise.md,32,§1.6,PRIN-12
 data,spec/ideas/IDEA-046-t092-decides-three-things-the-reset-spec-leaves-open.md,22,§1.6,PRIN-23
@@ -29,6 +36,13 @@ data,spec/ideas/IDEA-050-a-sprint-004-test-docstring-still-states-the-band-as-0.
 data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,16,Part 3,literal
 data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,48,Part 3,DOC-08
 data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,51,§5.4,HRV-07
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,54,,HRV-08
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,56,,HRV-07
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,56,,HRV-09
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,58,,HRV-37
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,58,,HRV-73
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,58,,PRIN-12
+data,spec/ideas/IDEA-050-spec-3-7-3-states-the-band-formula-but-none-of-the-constants-the-trend-ships.md,62,,PRIN-12
 data,spec/ideas/IDEA-062-hrv-normal-is-emitted-on-an-unestablished-baseline.md,53,§1.7,PRIN-14
 data,spec/ideas/IDEA-062-hrv-normal-is-emitted-on-an-unestablished-baseline.md,57,§1.7,PRIN-14
 data,spec/ideas/IDEA-062-hrv-normal-is-emitted-on-an-unestablished-baseline.md,72,§1.7,PRIN-14
@@ -45,7 +59,10 @@ data,spec/ideas/IDEA-071-the-tier-rule-is-accumulating-qualifiers-not-gaining-a-
 data,spec/ideas/IDEA-071-the-tier-rule-is-accumulating-qualifiers-not-gaining-a-model.md,287,§5.4,HRV-65
 data,spec/ideas/IDEA-073-the-corrected-reset-claim-survives-in-frozen-src.md,41,§5.4,FIG-02
 data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,34,§1.6,PRIN-12
-data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,51,§1.7,PRIN-13
+data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,53,PRIN-13,ARCH-12
+data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,64,,PRIN-13
+data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,65,,PRIN-13
+data,spec/ideas/IDEA-077-the-seventh-unavailable-cause-and-the-adoption-silence.md,66,,ARCH-12
 data,spec/ideas/IDEA-079-ac4-says-later-capture-is-kept-but-every-authority-keeps-the-earliest.md,17,5.4,HRV-49
 data,spec/ideas/IDEA-079-ac4-says-later-capture-is-kept-but-every-authority-keeps-the-earliest.md,20,,DOC-01
 data,spec/ideas/IDEA-080-a-stopped-carrier-leaves-the-recency-gate-with-no-reference.md,19,§5.4,HRV-51
@@ -60,10 +77,27 @@ data,spec/ideas/IDEA-083-ac24-says-not-judgeable-but-t125s-own-population-is-a-s
 data,spec/ideas/IDEA-083-ac24-says-not-judgeable-but-t125s-own-population-is-a-skipped-judgeable-dataset.md,26,§1.7,PRIN-14
 data,spec/ideas/IDEA-083-ac24-says-not-judgeable-but-t125s-own-population-is-a-skipped-judgeable-dataset.md,43,§5.4 (v),HRV-31
 data,spec/ideas/IDEA-083-ac24-says-not-judgeable-but-t125s-own-population-is-a-skipped-judgeable-dataset.md,49,,DOC-02
-data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,32,§5.4 (iv),HRV-71
-data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,36,§5.4 (v),HRV-37
-data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,43,§1.7,PRIN-13
-data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,50,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,33,§5.4 (iv),HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,41,§5.4 (v),HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,44,(v),HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,45,(iv),HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,47,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,48,(iv),HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,49,PRIN-13,ARCH-12
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,58,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,59,,HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,62,,HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,69,(iv),HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,70,(v),HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,72,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,73,,HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,81,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,82,,HRV-69
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,82,,HRV-70
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,83,,HRV-37
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,84,,ARCH-12
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,87,,HRV-71
+data,spec/ideas/IDEA-084-the-hole-clip-makes-a-return-after-a-layoff-longer-than-gap-reset-days-not-free.md,88,,HRV-37
 data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-means-more-than.md,18,§5.4 (v),HRV-37
 data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-means-more-than.md,22,,HRV-37
 data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-means-more-than.md,35,,HRV-16
@@ -91,9 +125,11 @@ data,spec/ideas/IDEA-089-ac23-flip-rate-worsens-at-the-2wk-carrier-density.md,18
 data,spec/ideas/IDEA-090-spec-03-states-both-the-t164-reference-rule-and-the-t117-one-it-replaced.md,26,§5.4,literal
 data,spec/ideas/IDEA-090-spec-03-states-both-the-t164-reference-rule-and-the-t117-one-it-replaced.md,73,,DOC-02
 data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,28,§1.7,PRIN-14
-data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,39,§1.7,PRIN-13
-data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,44,§1.7,PRIN-14
-data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,48,HRV-66,FIG-01
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,39,PRIN-13,ARCH-12
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,46,§1.7,PRIN-14
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,50,HRV-66,FIG-01
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,121,,PRIN-13
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,123,,ARCH-12
 data,spec/ideas/IDEA-094-every-negated-absence-clause-in-the-sprints-probes-was-a-no-op.md,55,§1.7,literal
 data,spec/ideas/IDEA-094-every-negated-absence-clause-in-the-sprints-probes-was-a-no-op.md,60,§1.7,PRIN-14
 data,spec/ideas/IDEA-096-replace-rule-restatements-with-rule-id-citations.md,15,,DOC-02
@@ -136,8 +172,8 @@ data,spec/references/F006-dataset-model.md,401,§1.7,PRIN-14
 data,spec/references/F006-dataset-model.md,441,§5.4,HRV-34
 data,spec/references/F008-F011-dor-findings.md,58,§5.4,literal
 data,spec/references/F011-sweep-decisions.md,123,,LT1-01
-data,spec/references/T123-direction-search-rerun.md,9,§1.7,PRIN-13
-data,spec/references/T123-direction-search-rerun.md,94,§1.7,PRIN-14
+data,spec/references/T123-direction-search-rerun.md,10,PRIN-13,ARCH-12
+data,spec/references/T123-direction-search-rerun.md,96,§1.7,PRIN-14
 data,spec/references/T125-fix-form-measurements.md,80,§1.7,PRIN-14
 data,spec/references/T125-fix-form-measurements.md,196,§1.7,PRIN-14
 data,spec/references/T125-fix-form-measurements.md,473,§1.7,PRIN-14
