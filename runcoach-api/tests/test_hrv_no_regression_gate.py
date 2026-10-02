@@ -243,16 +243,16 @@ PAID_BY_T164 = {
 #: question; neither is it a closed one.
 #:
 #: **What it was decided on.** Measured at ``car_density = 2wk`` -- the exact
-#: axis value every worsened cell sits on -- not one PRIN-14 forbidden family
-#: moved: all nine of them are equal across all 850 family×cell rows
-#: (370 cells). AC22 promotion exposure *improved* there, 52 better and
-#: 0 worse (``ac22_below`` 18,
+#: axis value every worsened cell sits on -- not one of the nine gated families
+#: (the PRIN-14 rates and the stale-band under-calling rates) moved: all nine
+#: are equal across all 850 family×cell rows (370 cells). AC22 promotion
+#: exposure *improved* there, 52 better and 0 worse (``ac22_below`` 18,
 #: ``ac22_literal`` 18, ``walk_ac22_below`` 16; an earlier record said 34,
 #: which silently dropped ``ac22_literal`` -- 52 is the figure the stated
 #: filter produces). The marginal halved, 18.4684 -> 9.359. The reasoning: a
-#: flip is a **proxy**, and what PRIN-14 forbids is a **harm** -- a wrong
-#: verdict in the up-regulating direction. Here the flips buy withheld days,
-#: the cautious direction, while every forbidden family is byte-identical to
+#: flip is a **proxy**, and what AC21 gates is a **harm** -- an ``hrv_normal``
+#: the athlete's current evidence does not support. Here the flips buy withheld
+#: days, the cautious direction, while every gated family is byte-identical to
 #: shipped F005.
 #:
 #: **The decision is against the set as measured on 2026-09-21, and it is not
@@ -275,8 +275,8 @@ PAID_BY_T164 = {
 #:    worsened" is therefore true **by construction**: a property of the
 #:    fixtures, not a finding about the rule. Under a real dispersion gap (F006:
 #:    2.16% strap vs 17.49% PPG; GATE-02's IDEA-089 (b)) the snapshot band is wider, so a flip
-#:    makes ``hrv_normal`` strictly more likely -- PRIN-14's forbidden direction.
-#:    No row of the CSV can show that, because SD is pinned equal across tiers.
+#:    makes ``hrv_normal`` strictly more likely while the other dataset reads below its own
+#:    band -- PRIN-14's forbidden direction. No CSV row can show that: SD is pinned equal across tiers.
 #:
 #: Until both are met AC23 is **PARTIAL, not MET**, and this pin is what keeps
 #: the conditional decision honest.
@@ -388,7 +388,7 @@ def name(row: dict[str, str]) -> str:
 
 
 def worsened(rows: list[dict[str, str]]) -> list[str]:
-    """Every worsened gated row, named -- the raw PRIN-14 direction, exception
+    """Every worsened gated row, named -- AC21's raw gated direction, exception
     included. The *gate* asserts on ``unexcused`` below; this is what the
     three-valued perturbation pin exercises, and what the exception is
     partitioned out of."""
@@ -654,7 +654,7 @@ def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
 
     regressions = unexcused(rows)
     assert not regressions, (
-        f"{len(regressions)} PRIN-14 rate(s) are worse on F006 than on shipped F005 and are NOT "
+        f"{len(regressions)} gated rate(s) are worse on F006 than on shipped F005 and are NOT "
         f"covered by the deferred exception, so AC21 blocks release: " + "; ".join(regressions[:40])
     )
 
@@ -945,7 +945,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
     to be handed -- and so that the deferred exception cannot swallow a
     regression it was not written for.
 
-    On the rows as measured the **raw** PRIN-14 comparison is still red: T164's
+    On the rows as measured the **raw** gated comparison is still red: T164's
     re-measurement leaves 64 worsened gated rows, every one of them the
     deferred exception (T162 found 548 before the reference-set change). The
     *gate* is green on them, because ``unexcused`` partitions those 64 out.
@@ -961,7 +961,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
        names **exactly** that row, on the gate's own predicate;
     3. **green again** -- that same copy with that row *lowered* by one (an
        improvement, the tolerated direction) names none, so the predicate is
-       on the PRIN-14 direction and not on any difference.
+       on the worsening direction and not on any difference.
 
     Then the two states the exception itself needs:
 
@@ -1024,7 +1024,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
     better_copy = [dict(row) for row in clamped]
     better_copy[victim_index]["f006"] = str(max(0.0, float(victim["f005"]) - 1))
     assert not unexcused(better_copy), (
-        "state 3: a rate that IMPROVES was reported as a regression -- the gate is on the PRIN-14 "
+        "state 3: a rate that IMPROVES was reported as a regression -- the gate is on the worsening "
         "direction, not on any difference"
     )
     print("state 3 (that copy, the same rate LOWERED by one): 0 regressions")
@@ -1039,7 +1039,7 @@ def test_the_gate_predicate_is_three_valued_over_a_perturbation() -> None:
 
     inside_copy = [dict(row) for row in clamped]
     inside_copy[excepted_index]["f006"] = str(float(excepted_victim["f005"]) + 1)
-    assert worsened(inside_copy), "state 4: the raw PRIN-14 comparison must still see the excepted row"
+    assert worsened(inside_copy), "state 4: the raw gated comparison must still see the excepted row"
     assert not unexcused(inside_copy), (
         "state 4: a worsened row inside the exception's shape reached the gate, so the deferral is "
         "not actually partitioned out"
