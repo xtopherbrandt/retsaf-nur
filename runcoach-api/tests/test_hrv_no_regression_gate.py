@@ -448,12 +448,6 @@ def provenance() -> dict:
     return json.loads(ROWS_PROVENANCE.read_text(encoding="utf-8"))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="T239 re-measures: T238's single hrv_trend.py commit (F009 AC5) moved the blob with comment "
-           "and docstring edits only; the provenance records the new blob only after T239 reproduces "
-           "the rows (T162's rule). T239 removes this mark.",
-)
 def test_the_rows_were_measured_against_this_checkouts_rule() -> None:
     """**The provenance pin.** Everything else in this module asserts over a
     committed CSV that changes only when someone re-runs a ~13-minute sweep.
