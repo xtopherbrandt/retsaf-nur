@@ -947,9 +947,13 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     tier is established over its era-A days (23, 22, 21) and holds ``r``
     mornings of the week -- it is the only judgeable dataset, so it is its
     own recency reference and is selected, and the verdict is the return's
-    own three mornings earlier than at ``r = 8``. That is ``research/00``
-    HRV-71: a return to a dataset the athlete established before is
-    **free**, its band was never destroyed. ``r = 1..4`` are unchanged --
+    own three mornings earlier than at ``r = 8``. T155 read that as the
+    free return research/00 then stated. ``research/00`` HRV-71 as it now
+    reads makes a return free only when it follows 21 or fewer silent local
+    days of its tier and the recency gate does not skip it; this walk's
+    return follows 39 (``ERA_A_END`` to ``RETURN_FIRST``) and is skipped from
+    ``r = 5`` since T164 (below), so it falls outside HRV-71, and HRV-69 and
+    HRV-70 govern its costs. ``r = 1..4`` are unchanged --
     there the carrier is judgeable and the returning tier, once judgeable at
     ``r = 3``, is 33+ days behind it in the baseline window and skipped (AC6,
     the reference §9 shape) -- and so is the withhold on ``r = 3`` and
@@ -986,10 +990,11 @@ def test_the_device_return_is_walked_morning_by_morning_through_judge(
     value is the row T162 priced: ``hrv_normal`` on a band every reading of
     which is 36 to 66 days old, PRIN-14's forbidden direction, and it is the
     walk's own contribution to the 96 -> 254 stale-band regression AC21
-    blocked release on. ``research/00`` HRV-71's "a return is free" is
-    unchanged in itself -- the return's band was never destroyed -- but it is
-    not free *of the recency gate* while a dataset the athlete is still being
-    read on is established.
+    blocked release on. The return is not a ``research/00`` HRV-71 free
+    return: HRV-71 frees a return only when it follows 21 or fewer silent
+    local days of its tier and the recency gate does not skip it, and this
+    one follows 39 and is skipped (HRV-15) while a dataset the athlete is
+    still being read on is established, which HRV-69 permits.
     """
     rows = _seed_return_series(seed_hrv_series, home_tier, carrier_tier, suppressed)
     era_a = [ERA_A_END - timedelta(days=i) for i in range(80)]

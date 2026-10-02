@@ -9,7 +9,9 @@ system *treats it as a baseline re-establishment*: one baseline, owned by one
 tier, every other tier's readings excluded ``off_baseline_tier``, every
 verdict withheld until the new tier's baseline is established. F006 gives
 each tier its own baseline and band, so a *return* to an already-established
-dataset is free, which contradicts that clause directly. The authority is
+dataset can be free, which contradicts that clause directly (HRV-71 as it now
+reads frees a return only when it follows 21 or fewer silent local days of its
+tier and the recency gate does not skip it). The authority is
 amended first (``research/00`` HRV-34), then ``spec/03`` Sec 3.7.3/3.7.4 and
 ``spec/02`` Sec 2.4.5 are restated to match (project rule: ``research_00``
 governs), and this module is the witness that the claim was swept tree-wide

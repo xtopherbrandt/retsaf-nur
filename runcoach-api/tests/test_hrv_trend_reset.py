@@ -3459,10 +3459,14 @@ def test_the_reset_constants_are_the_construction_references() -> None:
 # the same; ``DOCUMENTED_TIER_CHANGE_WITHHELD_DAYS`` and
 # ``DOCUMENTED_TIER_CHANGE_THIN_DAYS`` below are those two numbers, pinned.
 #
-# ``research/00`` FIG-01 and spec/03 3.7.3, which say a re-establishment
-# "(a coverage gap or a source-tier change)" puts the athlete "20 days
-# beneath ``min_baseline_readings``", are therefore true of the gap and
-# false of the switch in both particulars.
+# research/00's figure and spec/03 3.7.3 said, when this walk was written,
+# that a re-establishment "(a coverage gap or a source-tier change)" put the
+# athlete "20 days beneath ``min_baseline_readings``": true of the gap and
+# false of the switch in both particulars. spec/03 no longer carries the
+# phrase, and ``research/00`` FIG-01 now states the 20 days for a
+# coverage-gap re-establishment alone, while FIG-02 states that a clean,
+# gapless source-tier change costs 18 silent days with ``established`` true
+# throughout.
 # ---------------------------------------------------------------------------
 
 #: The switch day ``R``: the new tier's first local day, and the day

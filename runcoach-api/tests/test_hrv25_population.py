@@ -36,7 +36,11 @@ the rowdir carries a sidecar, ``measured-module.json``, naming the module blob i
 which ``test_the_rowdir_was_measured_against_the_module_the_provenance_pins`` requires to equal the
 provenance's ``measured_module.blob_sha`` (S7). Nothing hands a re-measured rowdir to this test by
 itself: whoever re-measures writes the rowdir in place at ``ROWDIR`` and rewrites the sidecar, and a
-rowdir left behind by a re-measurement reds here instead of being counted as if it were current.
+rowdir left behind by a re-measurement reds here instead of being counted as if it were current. The
+sidecar is tamper-evident only (S11): anyone can write the pinned blob into it, so it binds nothing by
+itself. It is written by the re-measurer after a real ``--rowdir`` run (the provenance's
+``remeasure.command`` carries ``--rowdir``, so one run produces the rows and the rowdir), and the red
+never prints the provenance's blob, so the message holds no value to paste.
 
 **Fails loud, never skips.** The rowdir lives in the Shipyard data dir, which a worktree or a
 runner reaches only through ``SHIPYARD_DATA_DIR``. Where it is unreachable this test fails: a
@@ -220,14 +224,15 @@ def rowdir_blob_errors(rowdir: Path, provenance_blob: str) -> list[str]:
     blob is the checkout's module (``test_hrv_no_regression_gate.py`` asserts it), so equality here is what
     ties the counted rows to the code that ships; a missing or other blob is a finding, never a skip."""
     sidecar = Path(rowdir) / SIDECAR
+    remeasure = ("the sidecar is tamper-evident only, not proof: it is written by the re-measurer after a real "
+                 "t162-gate run with --rowdir into this rowdir (the provenance's remeasure.command), with the blob "
+                 "of the module that run measured, and never copied from the provenance to clear this red")
     if not sidecar.is_file():
-        return [(f"{sidecar} is missing: the rowdir does not record the module it was measured against; "
-                 f"write it at every T162 re-measurement (blob_sha of metrics/hrv_trend.py)")]
+        return [f"{sidecar} is missing: the rowdir does not record the module it was measured against; {remeasure}"]
     recorded = json.loads(sidecar.read_text(encoding="utf-8")).get("blob_sha")
     if recorded != provenance_blob:
-        return [(f"{sidecar} records module blob {recorded!r} and the T162 provenance pins {provenance_blob!r}: "
-                 f"the rowdir this test counts is not the measurement the no-regression gate holds; re-run "
-                 f"t162-gate with --rowdir into it and rewrite the sidecar")]
+        return [(f"{sidecar} records module blob {recorded!r}, which is not the blob the T162 provenance pins: the "
+                 f"rowdir this test counts is not the measurement the no-regression gate holds; {remeasure}")]
     return []
 
 
@@ -240,14 +245,15 @@ def test_the_rowdir_was_measured_against_the_module_the_provenance_pins() -> Non
     sidecar = rowdir / SIDECAR
     recorded = json.loads(sidecar.read_text(encoding="utf-8")).get("blob_sha") if sidecar.is_file() else None
     errors = rowdir_blob_errors(rowdir, provenance_blob)
-    print(f"[slice compared] {sidecar} blob {recorded!r} against provenance measured_module.blob_sha "
-          f"{provenance_blob!r}; errors {errors}")
+    print(f"[slice compared] {sidecar} blob {recorded!r} against provenance measured_module.blob_sha: "
+          f"equal {recorded == provenance_blob}; errors {errors}")
     assert errors == []
 
 
 def test_a_rowdir_with_no_sidecar_or_another_modules_blob_is_seen(tmp_path) -> None:
     """S7's perturbation: no sidecar, and a sidecar naming another blob, are each one error; the pinned blob
-    is none."""
+    is none. S11: neither error prints the provenance's blob, so the red holds no value to paste into the
+    sidecar; it says the sidecar is written by the re-measurer after a real ``--rowdir`` run."""
     pinned, other = "4" * 40, "d" * 40
     missing = rowdir_blob_errors(tmp_path, pinned)
     (tmp_path / SIDECAR).write_text(json.dumps({"blob_sha": other}), encoding="utf-8")
@@ -256,5 +262,7 @@ def test_a_rowdir_with_no_sidecar_or_another_modules_blob_is_seen(tmp_path) -> N
     same = rowdir_blob_errors(tmp_path, pinned)
     print(f"[slice compared] missing {missing}; other blob {moved}; pinned blob {same}")
     assert len(missing) == 1 and "is missing" in missing[0]
-    assert len(moved) == 1 and other in moved[0] and pinned in moved[0]
+    assert len(moved) == 1 and other in moved[0]
+    assert [pinned in error for error in missing + moved] == [False, False]
+    assert ["--rowdir" in error and "tamper-evident" in error for error in missing + moved] == [True, True]
     assert same == []

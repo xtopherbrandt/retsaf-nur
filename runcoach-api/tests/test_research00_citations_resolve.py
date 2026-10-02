@@ -51,7 +51,9 @@ concatenation closed); a "Section 3.x" merely near the mention is another docume
 file's own name or a possessive after the mention, ``Sections``, ``sec.`` and ``Section N of the research/00
 ...`` count; a measurement, a version or a sub-section number beside the mention does not (S5). So does a
 locator the rewrite retired, joined to the mention: ``research/00:<line>`` and ``research/00 finding <N>``
-(N4); a line of research/00-history.md and a finding with no mention before it are not. Line numbers are
+(N4), ``research/00 line <N>``, ``research/00 (L<N>)``, ``findings <N> and <M>`` and a possessive, straight or curly
+(S9); a section, line or finding of research/00-history.md, -traceability.md or -meaning-review.md (S10) and a
+finding with no mention before it are not. A section number the sentence's full stop follows counts (G1). Line numbers are
 ``git grep -n``'s: lines split on ``\\n`` alone, never on U+2028, U+2029, a form feed or NEL (S1).
 
 **Pending markers (S15 shape).** While ``pending-<root>.marker`` exists, that root's test is a strict
@@ -184,21 +186,30 @@ _SECTION_TOKEN = re.compile(r"§\s?(?:1\.\d|3\.\d|5\.4)\b")
 #: S5 widened it to the spellings the repo used at 099b1cd, in any case: the file's own name or a possessive
 #: after the mention (``research/00-design-decisions.md Section 1.6``, ``research/00's Sec 5.4``), ``Sections``
 #: (the first number of ``Sections 1.6 and 1.7``), ``sec. 1.6``, and ``Section 1.6 of the research/00 ...``.
-#: A number is a section only when no ``.<digit>`` follows it (``1.2.0``, ``5.4.1``), and a sign-less one
+#: A number is a section only when no digit and no ``.<digit>`` follows it (``1.10``, ``1.2.0``, ``5.4.1``); the
+#: full stop that ends a sentence does not stop it (G1: ``research/00 Section 1.6.``). A sign-less one is a section
 #: only when no unit follows it (``research/00 3.3 ms``).
-_SECTION_NUMBER = r"(?:1\.\d|3\.\d|5\.[1-4])(?![.\d])"
+#:
+#: Both tokens read research/00 itself (S10): the decisions file by its short name or its own file name, never
+#: research/00-history.md, -traceability.md or -meaning-review.md, whose sections, lines and findings are not
+#: research/00's. A possessive may follow, straight, curly (U+2019) or after a closing backtick (S9).
+_RESEARCH00_ITSELF = r"research[_/]00(?:-design-decisions(?:\.md)?)?(?![\w-])"
+_POSSESSIVE = r"[`'\"*]*(?:['’]s\b)?"
+_SECTION_NUMBER = r"(?:1\.\d|3\.\d|5\.[1-4])(?!\d|\.\d)"
 _SECTION_WORD = r"(?:§\s?|\bSec\.?\s*|\bSections?\s)"
 _NOT_A_UNIT = r"(?!\s*(?:ms|s|%|bpm|days?|mornings?|readings?|weeks?|x)\b)"
 _ADJACENT_SECTION_TOKEN = re.compile(
-    r"research[_/]00[\w.-]*(?:'s)?\W{1,4}(?:" + _SECTION_WORD + _SECTION_NUMBER + "|" + _SECTION_NUMBER + _NOT_A_UNIT + ")"
+    _RESEARCH00_ITSELF + _POSSESSIVE + r"\W{1,4}(?:" + _SECTION_WORD + _SECTION_NUMBER + "|" + _SECTION_NUMBER + _NOT_A_UNIT + ")"
     r"|" + _SECTION_WORD + _SECTION_NUMBER + r"(?:\s*(?:,|and|&|or)\s*(?:§\s?)?" + _SECTION_NUMBER + ")*"
-    r"\W{1,4}(?:of|in)\W{1,3}(?:the\s+)?research[_/]00",
+    r"\W{1,4}(?:of|in)\W{1,3}(?:the\s+)?" + _RESEARCH00_ITSELF,
     re.IGNORECASE)
-#: N4: a locator the rewrite retired, joined to the mention of research/00 itself (the decisions file, not
-#: research/00-history.md): a line number (``research/00``:219, ``research/00:220``,
-#: ``research/00-design-decisions.md:970``) or a finding (``the six research/00 finding 2 names``).
+#: N4: a locator the rewrite retired, joined to the mention of research/00 itself: a line number
+#: (``research/00``:219, ``research/00:220``, ``research/00-design-decisions.md:970``, and since S9 ``research/00
+#: line 219`` and ``research/00 (L219)``) or a finding (``the six research/00 finding 2 names``, and since S9
+#: ``research/00's finding 2`` and ``research/00 findings 2 and 3``).
 _LOCATOR_TOKEN = re.compile(
-    r"research[_/]00(?:-design-decisions(?:\.md)?)?[`'\"*]*(?::\d{1,4}\b|\W{0,4}finding\s*#?\s*\d+)", re.IGNORECASE)
+    _RESEARCH00_ITSELF + _POSSESSIVE
+    + r"(?::\d{1,4}\b|\W{0,4}(?:findings?\s*#?\s*\d+|lines?\s*\d{1,4}\b|L\d{1,4}\b))", re.IGNORECASE)
 #: Python's implicit string concatenation where a line pair is joined: ``"... (research/00 "`` + ``"1.6)."``.
 _STRING_JOIN = re.compile(r"\"\s*\"")
 _PART_TOKEN = re.compile(r"\bPart [1-5]\b")
@@ -1051,3 +1062,60 @@ def test_a_line_or_finding_locator_into_research00_is_a_finding(tmp_path):
                  "a colon and prose"):
         assert seen[name] == ([], []), name
     assert literal == []
+
+
+# ==================================================================================================
+# Code review, iteration 3: a section number that ends a sentence (G1), the possessive, plural and line
+# locators (S9), and a section of another research/00 file (S10).
+# ==================================================================================================
+
+#: G1: a section number the sentence's full stop follows, each on line 3. Iteration 2's ``(?![.\d])`` refused
+#: all of them; only a following digit or ``.<digit>`` is refused now.
+_SENTENCE_END_FORMS = {
+    "Section, full stop": _SIGNLESS_HEAD + "#: as research/00 Section 1.6.\n",
+    "Sec, full stop": _SIGNLESS_HEAD + "#: the rule is in research/00 Sec 5.4.\n",
+    "bare number, full stop": _SIGNLESS_HEAD + "#: see `research/00` 1.6. Nothing else.\n",
+    "Section of, full stop": _SIGNLESS_HEAD + "#: as Section 1.6 of research/00.\n",
+}
+#: S9: the locators iteration 2's token missed, each on line 3.
+_S9_LOCATOR_FORMS = {
+    "possessive finding": _SIGNLESS_HEAD + "#: research/00's finding 2 names it.\n",
+    "findings and": _SIGNLESS_HEAD + "#: research/00 findings 2 and 3 name it.\n",
+    "curly possessive finding": _SIGNLESS_HEAD + "#: research/00’s finding 2 names it.\n",
+    "curly possessive Sec": _SIGNLESS_HEAD + "#: research/00’s Sec 5.4 names it.\n",
+    "backticked possessive Sec": _SIGNLESS_HEAD + "#: `research/00`'s Section 1.6 names it.\n",
+    "line N": _SIGNLESS_HEAD + "#: research/00 line 219 states it.\n",
+    "L-number": _SIGNLESS_HEAD + "#: research/00 (L219) states it.\n",
+}
+#: Not research/00 section or locator citations: a version and a sub-section the sentence's full stop follows
+#: (G1 keeps both refusals), a two-digit number, and a section, number, line or finding of another research/00
+#: file (S10).
+_ITER3_NEGATIVES = {
+    "a version, full stop": _SIGNLESS_HEAD + "#: research/00 1.2.0.\n",
+    "a sub-section, full stop": _SIGNLESS_HEAD + "#: research/00 Section 5.4.1.\n",
+    "a two-digit number": _SIGNLESS_HEAD + "#: research/00 Section 1.10 is not one it has.\n",
+    "history Section": _SIGNLESS_HEAD + "#: research/00-history.md Section 1.6 records it.\n",
+    "history possessive Section": _SIGNLESS_HEAD + "#: research/00-history.md's Section 1.6 records it.\n",
+    "traceability number": _SIGNLESS_HEAD + "#: research/00-traceability.md 3.3 maps it.\n",
+    "meaning review Sec": _SIGNLESS_HEAD + "#: research/00-meaning-review.md Sec 5.4 judged it.\n",
+    "Section of the history": _SIGNLESS_HEAD + "#: Section 1.6 of research/00-history.md records it.\n",
+    "history line": _SIGNLESS_HEAD + "#: research/00-history.md line 12 records it.\n",
+    "meaning review finding": _SIGNLESS_HEAD + "#: research/00-meaning-review's finding 2 records it.\n",
+}
+
+
+def test_sentence_final_possessive_plural_and_line_locators_are_findings_and_other_research00_files_are_not(tmp_path):
+    """G1: ``research/00 Section 1.6.``, ``research/00 Sec 5.4.``, ``research/00 1.6.`` and ``Section 1.6 of
+    research/00.`` cite a section although the full stop follows the number. S9: ``research/00's finding 2``,
+    ``findings 2 and 3``, the curly possessive (U+2019) in both tokens, a backticked possessive, ``line 219``
+    and ``L219``. Each is ``unlisted`` on line 3 of a listed file, and the file unlisted when it has no row. A
+    version and a sub-section followed by a full stop, a two-digit number, and a section, number, line or
+    finding of research/00-history.md, -traceability.md or -meaning-review.md are not (S10)."""
+    seen = {name: _unlisted_both_ways(tmp_path, name, text)
+            for name, text in {**_SENTENCE_END_FORMS, **_S9_LOCATOR_FORMS, **_ITER3_NEGATIVES}.items()}
+    print(f"[slice compared] per form (listed-file findings, unlisted-file findings): {_show(seen)}")
+    failed = [name for name in (*_SENTENCE_END_FORMS, *_S9_LOCATOR_FORMS) if seen[name] != (
+        [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"],
+        [f"repo:{_SIGNLESS_PY}: cites a research/00 section and has no row in any CSV"])]
+    failed += [name for name in _ITER3_NEGATIVES if seen[name] != ([], [])]
+    assert failed == []

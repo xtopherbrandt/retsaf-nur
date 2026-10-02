@@ -417,13 +417,13 @@ def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
     """T167, fixing ``B-CR-002``: ``disagreed_with`` is empty in **every** state in
     which no verdict is conferred, not only the two the code happened to guard.
 
-    ``research/00`` HRV-22 (amended 2026-09-21, T167): "whenever the served
-    verdict is ``hrv_unavailable``, for any cause whatever, nothing is named as
-    disagreeing ... because a disagreement is a claim *about* a verdict and a
-    withheld verdict makes no claim to contradict". Before this task the endpoint
+    ``research/00`` HRV-22 (amended 2026-09-21, T167), as it now reads: "Whenever
+    the served HRV verdict is ``hrv_unavailable``, for any cause, the dissent list
+    (``disagreed_with``) MUST be empty", whichever of HRV-23's three no-verdict
+    states holds. Before this task the endpoint
     guarded a null selection (in ``hrv_trend.disagreed_with``) and
     ``day_not_happened`` (in ``main._disagreed_with``) and left the third state --
-    a **selected** dataset whose verdict is withheld under (v),
+    a **selected** dataset whose verdict is withheld under HRV-31,
     ``week_not_representative`` -- naming a dissenter beside
     ``verdict: hrv_unavailable``. That state is the returning athlete, T125's
     population and the reason F006 exists, so it is the one this pins.
@@ -434,7 +434,7 @@ def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
     back on the judged week's last three mornings at 25 ms.
 
     * ``c`` = 0 -- the carrier stops on ``D-3``, so every strap week day is later
-      than every carrier week day, the withhold of (v) fires, and the served
+      than every carrier week day, the withhold of HRV-31 fires, and the served
       verdict is ``hrv_unavailable`` / ``week_not_representative``.
     * ``c`` = 1 -- **the control.** The carrier also captures ``D-2``, the order
       clause is false, nothing is withheld, and the served verdict is
