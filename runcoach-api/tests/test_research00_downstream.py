@@ -3782,6 +3782,32 @@ def test_f012_key_negative_control_planted_in_a_tmp_world_is_no_hit(tmp_path, ke
     assert len(scan(tmp_path, old_meanings={key: OLD_MEANINGS[key]})) == 2
 
 
+#: S6 (sprint-009 code review, iteration 2): the PRIN-12 key's first arm was widened in dc5d156 (M3) to make
+#: "by hand" optional. Its two behaviours, each on its own: the bare promise without "by hand" is a hit, and
+#: the same sentence going on to name PRIN-12's OPEN exceptions is not.
+_PRIN_12_KEY = "PRIN-12-R13-reproducible-by-hand-without-exceptions"
+_PRIN_12_WIDENED = {
+    "hit, no by hand": "Every derived verdict is reproducible from what the response reports",
+    "miss, exceptions named": ("Every derived verdict is reproducible from what the response reports, less PRIN-12's "
+                               "OPEN exceptions PRIN-24 and PRIN-27"),
+}
+
+
+def test_the_prin_12_key_hits_without_by_hand_and_misses_beside_its_open_exceptions(tmp_path):
+    """S6: planted in a ``.md`` and a ``.py`` file, the promise with no "by hand" is one live hit per file,
+    and the same promise naming PRIN-24 and PRIN-27 after it is no hit at all."""
+    seen = {}
+    for name, sentence in _PRIN_12_WIDENED.items():
+        root = tmp_path / name.split(",")[0]
+        for suffix in ("md", "py"):
+            _plant(root, _plant_path(_PRIN_12_KEY, suffix), _PLANT_BODY[suffix].format(example=sentence))
+        seen[name] = [(h.path, h.matched, h.live) for h in scan(root, old_meanings={_PRIN_12_KEY: OLD_MEANINGS[_PRIN_12_KEY]})]
+    print(f"[slice compared] {_PRIN_12_KEY} over the widened arm's two cases: {seen}")
+    assert sorted(seen["hit, no by hand"]) == sorted(
+        (_plant_path(_PRIN_12_KEY, suffix), "reproducible from what the response reports", True) for suffix in ("md", "py"))
+    assert seen["miss, exceptions named"] == []
+
+
 # --------------------------------------------------------------------------------------------------
 # S6 and S9 (T201): presence rows, decisions/01's conformance and the no_regression comment.
 # --------------------------------------------------------------------------------------------------

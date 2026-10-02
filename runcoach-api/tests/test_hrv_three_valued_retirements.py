@@ -32,7 +32,7 @@ this task delivers (task Technical Notes, corroborated across waves 2-6):
 Everything else on IDEA-071's list is **retained or re-derived**, so nothing
 below pins it as retired: T094/T095/T129 (the reported reset, T154), T106
 (``_era_boundary``'s ordering key -- a sub-mechanism of the era clip, whose
-role ``research/00``:219 states normatively and whose real cover is
+role ``research/00`` HRV-78 states normatively and whose real cover is
 ``test_hrv_trend_reset.py::test_the_era_boundary_prefers_the_one_the_judged_week_is_clear_of``
 plus ``test_hrv_tier_change_per_dataset.py::test_the_era_boundary_ordering_key_keeps_its_three_terms``;
 neither carries the literal token ``T106``, so a grep-based retirement audit

@@ -1152,7 +1152,7 @@ Scenario: A sustained source-tier change re-establishes the baseline
     phrasing this criterion carried until 2026-09-15 (`acfebae`) remains
     withdrawn as `VERDICT_WITHDRAWN` entry 4. Mechanism measured at T138,
     split by cause at T143, and pinned since T147 by the judge walk in
-    test_hrv_trend_reset.test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppression_until_established,
+    test_hrv_trend_reset.test_a_sustained_tier_change_starts_a_fresh_baseline_and_week_coverage_quiets_the_switch,
     which asserts `established` true on every day of the switch and
     partitions the quiet by unavailable_reason; before it that test never
     called judge at all)

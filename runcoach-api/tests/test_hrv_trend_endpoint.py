@@ -239,9 +239,9 @@ def test_the_endpoint_reports_every_input_that_produced_the_verdict(configure, s
     """A 20-reading snapshot baseline, a snapshot week with one duplicate
     capture, one real strap capture (off the baseline tier), one ordinary run
     (no tier) and one pre-amendment row -- persisted through the real path.
-    The response must carry the verdict and everything needed to recompute
-    it by hand (``research/00`` PRIN-12), and every exclusion names a reason.
-    Red: the route does not exist (404)."""
+    The response must carry the verdict and everything needed to recompute it
+    by hand (``research/00`` PRIN-12, less its OPEN exceptions PRIN-24 and PRIN-27);
+    every exclusion names a reason. Red: the route does not exist (404)."""
     configure("UTC")
     values = baseline_values(20)
     seeder.snapshots(BASELINE_20, values)
@@ -431,8 +431,8 @@ def test_a_to_a_few_days_ahead_with_a_full_window_asserts_no_verdict(configure, 
     ``disagreed_with`` is withheld with the verdict it is a claim about, and
     ``datasets[]``/``selected_dataset``/``selected_reason`` are kept as
     computed because they are what produced the retained ``baseline``/``band``
-    (``research/00`` PRIN-12, reproducible by hand). On this single-tier fixture
-    the dissent list is empty on every day including ``D``, so the
+    (reproducible by hand, ``research/00`` PRIN-12 less its OPEN exceptions PRIN-24, PRIN-27). On this
+    single-tier fixture the dissent list is empty on every day including ``D``, so the
     ``disagreed_with`` clause below is a *consistency* check only; the one
     that can tell the rule from the fixture is
     ``test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred``,
@@ -2512,7 +2512,7 @@ UNAVAILABLE_REASON_SHARED_ANCHOR = (
 #: the same source ``VERDICT_CLAIMS`` is constrained by. Each is reproduced
 #: against ``judge`` by a named behavioural pin rather than by this file:
 #: ``test_hrv_trend_band.test_the_establishment_gate_flips_normal_at_exactly_fourteen_readings``
-#: for the 14-reading boundary and for ``hrv_normal`` being withheld, and
+#: for the 14-reading boundary and for ``hrv_normal`` not being asserted, and
 #: ``test_hrv_trend_band.test_a_thin_baseline_inside_the_band_is_unavailable_not_normal``
 #: for ``hrv_unavailable`` being what is emitted in its place.
 ESTABLISHED_CLAIMS = (
@@ -3728,8 +3728,8 @@ def test_the_response_says_the_verdict_fell_to_a_lower_tier_and_the_gate_is_repr
 
     The gate itself is recomputed here from the rendered fields alone --
     ``last_read`` per dataset, ``established``, ``week_days`` -- which is the
-    ``research/00`` PRIN-12 obligation the response carries for every other rule
-    it applies. The tolerance is read here from the module constant; since T220
+    ``research/00`` PRIN-12 obligation, less its OPEN exceptions PRIN-24 and PRIN-27,
+    the response carries for its rules. The tolerance is read from the module constant; since T220
     (C33, 2026-09-23, reversing IDEA-070) the response serves the same value as
     ``thresholds.recency_tolerance_days``, pinned equal to the module constant by
     ``test_the_endpoint_reports_every_input_that_produced_the_verdict``."""
@@ -3904,9 +3904,9 @@ def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
     * ``selected_dataset`` and ``selected_reason`` are **kept as computed** --
       ``_withhold_future``'s own justification is that everything which
       *produced* the verdict (band, baseline, ``readings_in_window``, week
-      mean) is left alone so the response stays reproducible by hand
-      (``research/00`` PRIN-12), and these two identify which dataset the retained
-      ``baseline``/``band`` came from. They are producers, not claims.
+      mean) is left alone so the verdict stays reproducible by hand from the response
+      (``research/00`` PRIN-12, less its OPEN exceptions PRIN-24 and PRIN-27); these two
+      identify which dataset the retained ``baseline``/``band`` came from. They are producers, not claims.
 
     The fixture is the dissent fixture, not a thin one: on ``to = D`` the
     snapshot **is** named, and the same rows one, two and four days ahead

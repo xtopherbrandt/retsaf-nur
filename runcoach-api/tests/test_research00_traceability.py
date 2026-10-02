@@ -639,7 +639,7 @@ OLD_MEANING_SHA256 = {
     "PRIN-08-C25-rule-file-short-list": "15bea1a5a8f5.e7b67b07770d.67ae3d3f6543.d0f66c4b6e21",
     "PRIN-10-C19-reduced-confidence": "4a55d90edabf.a241fbcc66d1.0440c34e3192.f5e2ee7f48ed",
     "PRIN-12-C33-tolerance-not-published": "90a523ce3525.56bcb20c6d0e.f9699c8b2640.a39ed58c5b0b",
-    "PRIN-12-R13-reproducible-by-hand-without-exceptions": "4ca142629005.fd76c1b74970.e77fba90b5d8.fbf57c0d412b",
+    "PRIN-12-R13-reproducible-by-hand-without-exceptions": "d1b5387ebb59.fd76c1b74970.e77fba90b5d8.fbf57c0d412b",
     "PRIN-12-R13-withheld-response-stays-reproducible": "140471decdb7.965760d0f608.576b340a4e35.bf1999145d8e",
     "PRIN-14-C07-weak-evidence-only": "037bd3251a9c.9fc907922633.5b9172a8603f.ab2c8aca25fc",
     "PRIN-15-C06-accepted-as-priced": "cedf36087186.77a9b4bb08b1.576b340a4e35.e18b75a07d89",

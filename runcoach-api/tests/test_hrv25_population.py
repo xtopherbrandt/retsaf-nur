@@ -29,9 +29,14 @@ cannot drift apart: re-pinning one without the other reds.
 
 **What the pin ratchets on, and what it does not see.** The population is counted from the frozen
 rowdir evidence (T239's per-row CSVs), not from the shipped module at test time, so a code change to
-``metrics/hrv_trend.py`` does not move this count by itself. It reaches this pin only through the T162
-provenance pin (``tests/data/T162-no-regression-rows.provenance.json``), asserted by
-``test_hrv_no_regression_gate.py``, which reds on a changed module blob until the rows are re-measured, and the re-measured rowdir is what this test then counts.
+``metrics/hrv_trend.py`` does not move this count by itself. It reaches this pin through two links. The
+T162 provenance pin (``tests/data/T162-no-regression-rows.provenance.json``), asserted by
+``test_hrv_no_regression_gate.py``, reds on a changed module blob until the rows are re-measured. And
+the rowdir carries a sidecar, ``measured-module.json``, naming the module blob it was measured against,
+which ``test_the_rowdir_was_measured_against_the_module_the_provenance_pins`` requires to equal the
+provenance's ``measured_module.blob_sha`` (S7). Nothing hands a re-measured rowdir to this test by
+itself: whoever re-measures writes the rowdir in place at ``ROWDIR`` and rewrites the sidecar, and a
+rowdir left behind by a re-measurement reds here instead of being counted as if it were current.
 
 **Fails loud, never skips.** The rowdir lives in the Shipyard data dir, which a worktree or a
 runner reaches only through ``SHIPYARD_DATA_DIR``. Where it is unreachable this test fails: a
@@ -45,6 +50,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 import os
 import re
 import sys
@@ -55,6 +61,10 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SUPPORT = Path(__file__).resolve().parent / "support" / "hrv25_population.py"
 TREE_ROWS = _REPO_ROOT / "runcoach-api" / "tests" / "data" / "T162-no-regression-rows.csv"
+ROWS_PROVENANCE = _REPO_ROOT / "runcoach-api" / "tests" / "data" / "T162-no-regression-rows.provenance.json"
+#: The rowdir's own record of the module it was measured against (S7), written beside the per-row CSVs by
+#: whoever re-measures: ``{"blob_sha": <git blob sha1 of metrics/hrv_trend.py>, ...}``.
+SIDECAR = "measured-module.json"
 
 #: Named where the ``.shipyard`` breadcrumb is absent -- a worktree, a runner.
 DATA_DIR_ENV = "SHIPYARD_DATA_DIR"
@@ -203,3 +213,48 @@ def test_a_prin_26_count_that_differs_from_the_pin_is_seen() -> None:
     assert moved[("rect", "healthy")] == 24100 != PINNED[("rect", "healthy")][0]
     with pytest.raises(AssertionError):
         prin26_population(text.replace("healthy-overlap rectangle rows", "rectangle rows"))
+
+
+def rowdir_blob_errors(rowdir: Path, provenance_blob: str) -> list[str]:
+    """S7: the rowdir's sidecar must exist and name the module blob the T162 provenance pins. The provenance
+    blob is the checkout's module (``test_hrv_no_regression_gate.py`` asserts it), so equality here is what
+    ties the counted rows to the code that ships; a missing or other blob is a finding, never a skip."""
+    sidecar = Path(rowdir) / SIDECAR
+    if not sidecar.is_file():
+        return [(f"{sidecar} is missing: the rowdir does not record the module it was measured against; "
+                 f"write it at every T162 re-measurement (blob_sha of metrics/hrv_trend.py)")]
+    recorded = json.loads(sidecar.read_text(encoding="utf-8")).get("blob_sha")
+    if recorded != provenance_blob:
+        return [(f"{sidecar} records module blob {recorded!r} and the T162 provenance pins {provenance_blob!r}: "
+                 f"the rowdir this test counts is not the measurement the no-regression gate holds; re-run "
+                 f"t162-gate with --rowdir into it and rewrite the sidecar")]
+    return []
+
+
+def test_the_rowdir_was_measured_against_the_module_the_provenance_pins() -> None:
+    """S7: the counted rowdir's sidecar names the module blob ``measured_module.blob_sha`` records."""
+    data_dir = _data_dir()
+    assert data_dir is not None, f"the Shipyard data dir is unreachable (${DATA_DIR_ENV}): a failure, not a skip"
+    rowdir = data_dir.joinpath(*_load_counter().ROWDIR)
+    provenance_blob = json.loads(ROWS_PROVENANCE.read_text(encoding="utf-8"))["measured_module"]["blob_sha"]
+    sidecar = rowdir / SIDECAR
+    recorded = json.loads(sidecar.read_text(encoding="utf-8")).get("blob_sha") if sidecar.is_file() else None
+    errors = rowdir_blob_errors(rowdir, provenance_blob)
+    print(f"[slice compared] {sidecar} blob {recorded!r} against provenance measured_module.blob_sha "
+          f"{provenance_blob!r}; errors {errors}")
+    assert errors == []
+
+
+def test_a_rowdir_with_no_sidecar_or_another_modules_blob_is_seen(tmp_path) -> None:
+    """S7's perturbation: no sidecar, and a sidecar naming another blob, are each one error; the pinned blob
+    is none."""
+    pinned, other = "4" * 40, "d" * 40
+    missing = rowdir_blob_errors(tmp_path, pinned)
+    (tmp_path / SIDECAR).write_text(json.dumps({"blob_sha": other}), encoding="utf-8")
+    moved = rowdir_blob_errors(tmp_path, pinned)
+    (tmp_path / SIDECAR).write_text(json.dumps({"blob_sha": pinned}), encoding="utf-8")
+    same = rowdir_blob_errors(tmp_path, pinned)
+    print(f"[slice compared] missing {missing}; other blob {moved}; pinned blob {same}")
+    assert len(missing) == 1 and "is missing" in missing[0]
+    assert len(moved) == 1 and other in moved[0] and pinned in moved[0]
+    assert same == []

@@ -47,7 +47,11 @@ own (T245): listing one line does not list the file. A bare token with no mentio
 finding here (see the blind spots). A section number written without the sign counts too when it is joined
 to the mention (``research/00 Sec 3.3``, ``research/00 Section 1.7``, ``research/00 1.6``, ``Section 1.7 of
 research/00``), on one line or across a line break (two adjacent lines joined, a Python implicit string
-concatenation closed); a "Section 3.x" merely near the mention is another document's (M2). Line numbers are
+concatenation closed); a "Section 3.x" merely near the mention is another document's (M2). Any case, the
+file's own name or a possessive after the mention, ``Sections``, ``sec.`` and ``Section N of the research/00
+...`` count; a measurement, a version or a sub-section number beside the mention does not (S5). So does a
+locator the rewrite retired, joined to the mention: ``research/00:<line>`` and ``research/00 finding <N>``
+(N4); a line of research/00-history.md and a finding with no mention before it are not. Line numbers are
 ``git grep -n``'s: lines split on ``\\n`` alone, never on U+2028, U+2029, a form feed or NEL (S1).
 
 **Pending markers (S15 shape).** While ``pending-<root>.marker`` exists, that root's test is a strict
@@ -176,9 +180,25 @@ _SECTION_TOKEN = re.compile(r"§\s?(?:1\.\d|3\.\d|5\.4)\b")
 #: "Section 3.x" merely on the mention's line or the next one is research/02's (quality_gates.py,
 #: rr_reconstruction.py), spec/03's or spec/01's as often as research/00's, and the walk measured six such
 #: false findings when the mention and the number were only required to share a line or a line pair.
+#:
+#: S5 widened it to the spellings the repo used at 099b1cd, in any case: the file's own name or a possessive
+#: after the mention (``research/00-design-decisions.md Section 1.6``, ``research/00's Sec 5.4``), ``Sections``
+#: (the first number of ``Sections 1.6 and 1.7``), ``sec. 1.6``, and ``Section 1.6 of the research/00 ...``.
+#: A number is a section only when no ``.<digit>`` follows it (``1.2.0``, ``5.4.1``), and a sign-less one
+#: only when no unit follows it (``research/00 3.3 ms``).
+_SECTION_NUMBER = r"(?:1\.\d|3\.\d|5\.[1-4])(?![.\d])"
+_SECTION_WORD = r"(?:§\s?|\bSec\.?\s*|\bSections?\s)"
+_NOT_A_UNIT = r"(?!\s*(?:ms|s|%|bpm|days?|mornings?|readings?|weeks?|x)\b)"
 _ADJACENT_SECTION_TOKEN = re.compile(
-    r"research[_/]00\W{1,4}(?:§\s?|Sec\.?\s|Section\s)?(?:1\.\d|3\.\d|5\.[1-4])\b"
-    r"|(?:§\s?|\bSec\.?\s|\bSection\s)(?:1\.\d|3\.\d|5\.[1-4])\b\W{1,4}(?:of|in)\W{1,3}research[_/]00")
+    r"research[_/]00[\w.-]*(?:'s)?\W{1,4}(?:" + _SECTION_WORD + _SECTION_NUMBER + "|" + _SECTION_NUMBER + _NOT_A_UNIT + ")"
+    r"|" + _SECTION_WORD + _SECTION_NUMBER + r"(?:\s*(?:,|and|&|or)\s*(?:§\s?)?" + _SECTION_NUMBER + ")*"
+    r"\W{1,4}(?:of|in)\W{1,3}(?:the\s+)?research[_/]00",
+    re.IGNORECASE)
+#: N4: a locator the rewrite retired, joined to the mention of research/00 itself (the decisions file, not
+#: research/00-history.md): a line number (``research/00``:219, ``research/00:220``,
+#: ``research/00-design-decisions.md:970``) or a finding (``the six research/00 finding 2 names``).
+_LOCATOR_TOKEN = re.compile(
+    r"research[_/]00(?:-design-decisions(?:\.md)?)?[`'\"*]*(?::\d{1,4}\b|\W{0,4}finding\s*#?\s*\d+)", re.IGNORECASE)
 #: Python's implicit string concatenation where a line pair is joined: ``"... (research/00 "`` + ``"1.6)."``.
 _STRING_JOIN = re.compile(r"\"\s*\"")
 _PART_TOKEN = re.compile(r"\bPart [1-5]\b")
@@ -414,11 +434,17 @@ def _cites(line: str) -> bool:
                 or _MENTION.search(line))
 
 
+def _joined_token(text: str) -> bool:
+    """A section number joined to the mention (M2, S5) or a retired locator joined to it (N4)."""
+    return bool(_ADJACENT_SECTION_TOKEN.search(text) or _LOCATOR_TOKEN.search(text))
+
+
 def _cites_a_research00_section(line: str) -> bool:
     """One line cites a research/00 section: the mention with a ``§`` or Part token anywhere on the line
-    (T245), or a section number, signed or not, joined to the mention (M2, ``_ADJACENT_SECTION_TOKEN``)."""
+    (T245), or a section number, signed or not, or a line or finding locator joined to the mention (M2,
+    S5, N4: ``_joined_token``)."""
     return bool(_MENTION.search(line) and (_SECTION_TOKEN.search(line) or _PART_TOKEN.search(line))
-                or _ADJACENT_SECTION_TOKEN.search(line))
+                or _joined_token(line))
 
 
 def _joined(line: str, following: str) -> str:
@@ -461,7 +487,7 @@ def root_findings(world: World, root: str) -> dict[str, list[str]]:
             following = lines[index + 1][1] if index + 1 < len(lines) and lines[index + 1][0] == number + 1 else None
             own = _cites_a_research00_section(line)
             paired = (following is not None and not own and not _cites_a_research00_section(following)
-                      and _ADJACENT_SECTION_TOKEN.search(_joined(line, following)) is not None)
+                      and _joined_token(_joined(line, following)))
             if _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line) or own or paired:
                 cites_a_section = True
             if _aliases(where) & literal:
@@ -939,3 +965,89 @@ def test_no_pending_marker_remains():
     pending = pending_roots(SITES_DIR)
     print(f"[slice compared] markers under {SITES_DIR.name}: {sorted(pending)}")
     assert pending == frozenset()
+
+
+# ==================================================================================================
+# Code review, iteration 2: the section spellings this repo used at base (S5) and the line and finding
+# locators (N4), each a finding in a listed file and in an unlisted one, beside the shapes that are not.
+# ==================================================================================================
+
+#: S5: research/00 section citations as the repo spelled them at 099b1cd, each on line 3 of ``_SIGNLESS_PY``.
+_SPELLED_FORMS = {
+    "lowercase section": _SIGNLESS_HEAD + "#: as research/00 section 5.4 (iii) says.\n",
+    "possessive Sec": _SIGNLESS_HEAD + "#: research/00's Sec 5.4 names the withhold.\n",
+    "file name Section": _SIGNLESS_HEAD + "#: specification/research/00-design-decisions.md Section 1.6 asks it.\n",
+    "Sections and": _SIGNLESS_HEAD + "#: research/00 Sections 1.6 and 1.7 govern it.\n",
+    "sec dot": _SIGNLESS_HEAD + "#: research/00 sec. 1.6 asks it.\n",
+    "Section of the": _SIGNLESS_HEAD + "#: Section 1.6 of the research/00 decisions asks it.\n",
+    "Sections and, before": _SIGNLESS_HEAD + "#: Sections 1.6 and 1.7 of research/00 govern it.\n",
+}
+#: N4: a research/00 line locator or a "finding N" after the mention, each on line 3.
+_LOCATOR_FORMS = {
+    "line locator": _SIGNLESS_HEAD + "#: whose role ``research/00``:219 states normatively.\n",
+    "line locator, plain": _SIGNLESS_HEAD + "#: one of them -- `research/00:220` -- is the authority.\n",
+    "line locator, file name": _SIGNLESS_HEAD + "#: specification/research/00-design-decisions.md:970 says it.\n",
+    "finding": _SIGNLESS_HEAD + "#: the six `research/00` finding 2 names.\n",
+    "Finding, capitalised": _SIGNLESS_HEAD + "#: as research/00 Finding 7 says.\n",
+}
+#: Not research/00 section or locator citations: a measurement, a version and a sub-section number beside the
+#: mention, a line locator into another research/00 file, a finding with no mention before it, another
+#: research document's finding, and a bare colon.
+_SPELLED_NEGATIVES = {
+    "a measurement": _SIGNLESS_HEAD + "#: research/00 3.3 ms is the jitter the strap reports.\n",
+    "a version": _SIGNLESS_HEAD + "#: research/00 1.2.0 of the schema.\n",
+    "a sub-section": _SIGNLESS_HEAD + "#: research/00 5.4.1 is not a section it has.\n",
+    "the history file's line": _SIGNLESS_HEAD + "#: research/00-history.md:12 records it.\n",
+    "a finding without the mention": _SIGNLESS_HEAD + "#: Load-bearing finding 8 (PRIN-14).\n",
+    "research/02's finding": _SIGNLESS_HEAD + "#: research/02 finding 2 says so.\n",
+    "a colon and prose": _SIGNLESS_HEAD + "#: research/00: two rules apply.\n",
+}
+
+
+def _unlisted_both_ways(tmp_path: Path, name: str, text: str) -> tuple[list[str], list[str]]:
+    """The ``python`` root's ``unlisted`` findings for ``text`` at ``_SIGNLESS_PY``, in a listed file (a row on
+    line 1 only) and in an unlisted one."""
+    slug = "".join(c if c.isalnum() else "-" for c in name)
+    listed = root_findings(_world(tmp_path / f"{slug}-listed", repo={_SIGNLESS_PY: text},
+                                  rows={"python": [("repo", _SIGNLESS_PY, "1", "", "PRIN-14")]}), "python")["unlisted"]
+    bare = root_findings(_world(tmp_path / f"{slug}-bare", repo={_SIGNLESS_PY: text}), "python")["unlisted"]
+    return listed, bare
+
+
+def test_the_section_spellings_the_repo_used_are_findings_and_numbers_that_are_not_sections_are_not(tmp_path):
+    """S5: lowercase, possessive, the file's own name before the section word, ``Sections ... and``, ``sec.``
+    and ``Section N of the research/00 ...`` are each a research/00 section citation: ``unlisted`` on line 3
+    of a listed file, and the file unlisted when it has no row. A measurement (``3.3 ms``), a version
+    (``1.2.0``) and a sub-section research/00 does not have (``5.4.1``) beside the mention are not."""
+    seen = {name: _unlisted_both_ways(tmp_path, name, text)
+            for name, text in {**_SPELLED_FORMS, **_SPELLED_NEGATIVES}.items()}
+    print(f"[slice compared] per form (listed-file findings, unlisted-file findings): {_show(seen)}")
+    for name in _SPELLED_FORMS:
+        assert seen[name] == (
+            [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"],
+            [f"repo:{_SIGNLESS_PY}: cites a research/00 section and has no row in any CSV"]), name
+    for name in ("a measurement", "a version", "a sub-section"):
+        assert seen[name] == ([], []), name
+
+
+def test_a_line_or_finding_locator_into_research00_is_a_finding(tmp_path):
+    """N4: ``research/00:<line>`` (backticked or not, or by the file's own name) and ``finding <N>`` after the
+    mention cite research/00 by a locator the rewrite retired: ``unlisted`` until the line has a row. A line
+    locator into research/00-history.md, a finding with no mention before it, research/02's finding and a
+    colon followed by prose are not."""
+    seen = {name: _unlisted_both_ways(tmp_path, name, text)
+            for name, text in {**_LOCATOR_FORMS, **_SPELLED_NEGATIVES}.items()}
+    literal = root_findings(_world(tmp_path / "literal-row", repo={_SIGNLESS_PY: _LOCATOR_FORMS["line locator, plain"]},
+                                   rows={"python": [("repo", _SIGNLESS_PY, "1", "", "PRIN-14"),
+                                                    ("repo", _SIGNLESS_PY, "3", "research/00:220", LITERAL)]}),
+                            "python")["unlisted"]
+    print(f"[slice compared] per form (listed-file findings, unlisted-file findings): {_show(seen)}; "
+          f"line locator under a literal row: {_show(literal)}")
+    for name in _LOCATOR_FORMS:
+        assert seen[name] == (
+            [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"],
+            [f"repo:{_SIGNLESS_PY}: cites a research/00 section and has no row in any CSV"]), name
+    for name in ("the history file's line", "a finding without the mention", "research/02's finding",
+                 "a colon and prose"):
+        assert seen[name] == ([], []), name
+    assert literal == []

@@ -18,7 +18,7 @@ data,spec/ideas/IDEA-036-resting-hr-trend-as-corroborating-signal.md,38,,PRIN-05
 data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,19,§3.3,HRV-01
 data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,25,,DOC-01
 data,spec/ideas/IDEA-040-t083-tier-order-note-inverts-the-authority.md,47,§3.3,HRV-01
-data,spec/ideas/IDEA-043-t084-a-below-band-week-on-an-unestablished-baseline-is-unavailable-not-normal.md,34,§1.7,PRIN-14
+data,spec/ideas/IDEA-043-t084-a-below-band-week-on-an-unestablished-baseline-is-unavailable-not-normal.md,35,§1.7,PRIN-14
 data,spec/ideas/IDEA-044-t084-the-band-is-a-property-of-the-baseline-and-two-f005-lines-read-otherwise.md,32,§1.6,PRIN-12
 data,spec/ideas/IDEA-046-t092-decides-three-things-the-reset-spec-leaves-open.md,22,§1.6,PRIN-23
 data,spec/ideas/IDEA-048-the-per-tier-confidence-weight-promise-survives-in-four-siblings-of-the-deferral.md,29,§3.3,literal
@@ -70,10 +70,10 @@ data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-mean
 data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-means-more-than.md,58,§3.7.3,literal
 data,spec/ideas/IDEA-085-ac17-says-at-least-gap-reset-days-but-the-constant-means-more-than.md,72,,DOC-02
 data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,3,5.4 (vi),HRV-83
-data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,15,§5.4,HRV-83
-data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,55,§5.4:219,HRV-78
-data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,72,§5.4 (vi),HRV-83
-data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,74,§5.4:219,HRV-78
+data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,18,§5.4,HRV-83
+data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,58,§5.4:219,HRV-78
+data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,75,§5.4 (vi),HRV-83
+data,spec/ideas/IDEA-086-research-00-5-4-vi-says-t106s-ordering-key-is-subsumed-by-judgeability-but-it-is-live-per-dataset.md,77,§5.4:219,HRV-78
 data,spec/ideas/IDEA-087-the-sign-agreement-rate-is-the-statistic-every-flip-price-depends-on-and-datasets-can-estimate-it-free.md,38,§1.7,PRIN-14
 data,spec/ideas/IDEA-088-ac21-says-any-1-7-rate-that-worsens-but-never-says-at-what-granularity.md,11,§1.7,literal
 data,spec/ideas/IDEA-088-ac21-says-any-1-7-rate-that-worsens-but-never-says-at-what-granularity.md,13,§1.7,literal
@@ -93,7 +93,7 @@ data,spec/ideas/IDEA-090-spec-03-states-both-the-t164-reference-rule-and-the-t11
 data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,28,§1.7,PRIN-14
 data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,39,§1.7,PRIN-13
 data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,44,§1.7,PRIN-14
-data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,48,,HRV-66
+data,spec/ideas/IDEA-092-per-tier-datasets-buy-more-withheld-mornings-at-sparse-capture.md,48,HRV-66,FIG-01
 data,spec/ideas/IDEA-094-every-negated-absence-clause-in-the-sprints-probes-was-a-no-op.md,55,§1.7,literal
 data,spec/ideas/IDEA-094-every-negated-absence-clause-in-the-sprints-probes-was-a-no-op.md,60,§1.7,PRIN-14
 data,spec/ideas/IDEA-096-replace-rule-restatements-with-rule-id-citations.md,15,,DOC-02

@@ -349,7 +349,7 @@ def test_no_band_is_asserted_below_two_baseline_readings(n: int) -> None:
 def test_two_baseline_readings_are_enough_for_a_band_but_not_for_a_verdict_to_suppress() -> None:
     """At exactly two readings SD is defined, so a band exists (T091's chart
     draws it) -- but ``established`` is false, so a below-band week is
-    withheld rather than called suppressed."""
+    ``hrv_unavailable`` (``baseline_unestablished``), not suppressed."""
     result = verdict_for([40.0, 44.0], [30.0, 30.0, 30.0])
 
     assert result.band is not None
@@ -484,7 +484,7 @@ def test_a_thin_baseline_can_never_produce_a_suppression_verdict() -> None:
     and this goes red (``hrv_suppressed``)."""
     result = verdict_for(alternating(13), [25.0] * 7)
 
-    assert result.band is not None, "the band exists at 13; only the verdict is withheld"
+    assert result.band is not None, "the band exists at 13; the verdict is hrv_unavailable (baseline_unestablished)"
     assert result.ln_rmssd_7d_mean < result.band.lo
     assert result.verdict != SUPPRESSED
     assert result.verdict == UNAVAILABLE
@@ -504,8 +504,8 @@ def test_established_flips_at_exactly_fourteen_baseline_readings() -> None:
 
 def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
     """T116 (2026-09-15, behaviour change; [[IDEA-062]]): the establishment
-    gate is symmetric, so the ``normal`` is withheld on a thin baseline
-    exactly as the suppression is. Five baseline readings and a week sitting
+    gate is symmetric: a thin baseline is ``hrv_unavailable`` (``baseline_unestablished``)
+    inside the band exactly as below it. Five baseline readings and a week sitting
     inside their band read ``hrv_unavailable`` -- ``hrv_normal`` here would
     tell Section 6 readiness is intact on a baseline the same response
     reports unestablished, the up-regulating direction ``research/00`` PRIN-14
@@ -517,8 +517,8 @@ def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
     ([[T138]]).
 
     Until T116 this same series asserted ``hrv_normal``; the band is still
-    reported, because the band is a property of the baseline and only the
-    verdict is withheld. Perturbation: drop the ``established`` gate from
+    reported, because the band is a property of the baseline; the verdict is
+    ``hrv_unavailable`` (``baseline_unestablished``). Perturbation: drop the ``established`` gate from
     ``judge``'s inside-or-above arm and this goes red (``hrv_normal``)."""
     result = verdict_for(alternating(5), [42.0] * 7)
 
@@ -526,7 +526,7 @@ def test_a_thin_baseline_inside_the_band_is_unavailable_not_normal() -> None:
     assert result.verdict != NORMAL
     assert result.established is False
     assert result.baseline_n == 5
-    assert result.band is not None, "the band is still reported; only the verdict is withheld"
+    assert result.band is not None, "the band is still reported; the verdict is hrv_unavailable (baseline_unestablished)"
     assert result.band.lo <= result.ln_rmssd_7d_mean <= result.band.hi
     assert result.below_by is None
 

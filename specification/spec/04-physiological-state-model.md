@@ -18,7 +18,7 @@ Everything in this section is built only from raw-derived inputs — Section 3's
 
 ## 4.2 The determinant profile
 
-The state model is a structured object holding one record per determinant. Each record carries a **point estimate** (in the determinant's natural units), a **short-term trend** and a **long-term trend** (direction and rate of change over recent weeks and over the training block), a **confidence** (§4.3), and a **provenance** stamp recording which efforts or metrics produced the current estimate and when. The determinants below are the six `research/00` finding 2 names, plus the two heart-rate anchors the profile must publish for Section 3. They are estimated in dependency order: the velocity anchors (CS/D′, vVO₂max, threshold pace) come from maximal-effort performance data; the economy, durability, and endurance-exponent records are refinements that shape how those anchors project to a race.
+The state model is a structured object holding one record per determinant. Each record carries a **point estimate** (in the determinant's natural units), a **short-term trend** and a **long-term trend** (direction and rate of change over recent weeks and over the training block), a **confidence** (§4.3), and a **provenance** stamp recording which efforts or metrics produced the current estimate and when. The determinants below are the six `research/00` ARCH-02 names, plus the two heart-rate anchors the profile must publish for Section 3. They are estimated in dependency order: the velocity anchors (CS/D′, vVO₂max, threshold pace) come from maximal-effort performance data; the economy, durability, and endurance-exponent records are refinements that shape how those anchors project to a race.
 
 ### 4.2.1 Critical speed (CS) and D′
 

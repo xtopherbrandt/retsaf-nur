@@ -434,7 +434,7 @@ def test_a_single_off_tier_capture_is_corroboration_not_a_reset() -> None:
     assert in_dataset(result, STRAP) == {"borrowed-strap"}
 
 
-def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppression_until_established() -> None:
+def test_a_sustained_tier_change_starts_a_fresh_baseline_and_week_coverage_quiets_the_switch() -> None:
     """A snapshot baseline (daily from D-126) gives way to daily chest-strap
     captures from D-29, at a much lower rMSSD.
 
@@ -448,7 +448,7 @@ def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppressi
     day, and the baseline window is clipped there.
 
     **What silences those days is week coverage, not establishment** --
-    [[T147]], review cycle 10, G-C10-13. This test's name and F005's
+    [[T147]], review cycle 10, G-C10-13. This test's former name and F005's
     criterion both read as though an establishment gate were holding the
     verdict back, and until now nothing here could tell the difference: the
     assertions stopped at ``build_series`` and never called ``judge``, so
@@ -467,9 +467,9 @@ def test_a_sustained_tier_change_starts_a_fresh_baseline_and_withholds_suppressi
     the name invokes **cannot fire here**. The quiet partitions into
     ``week_not_representative`` (D-27, D-26) and then ``week_too_thin``
     (D-25 .. D-10), which is [[T138]]'s mechanism and the split [[T143]]
-    pins morning by morning. The name is kept because two reference
-    documents and T092 cite it; this paragraph and the walk below say what it
-    actually holds.
+    pins morning by morning. Renamed 2026-10-02 (sprint-009 code review N1)
+    from a name that said an establishment gate held the suppression back;
+    the new name, this paragraph and the walk below say what it holds.
 
     Perturbation, all three run and reverted 2026-09-18 ([[T147]]): deleting
     ``judge``'s establishment requirement (its ``if established`` branch)
@@ -1259,8 +1259,8 @@ def test_one_new_tier_capture_before_a_genuine_switch_does_not_silence_its_reset
     assert [judged.band_lo for judged in stray_walk] == pytest.approx(
         [flat_band_lo(60.0), flat_band_lo(25.0), flat_band_lo(25.0)]
     )
-    # T116: the band is reported on all three days; the verdict is withheld
-    # on the one the reset left unestablished.
+    # T116: the band is reported on all three days; the one the reset left
+    # unestablished is hrv_unavailable (baseline_unestablished).
     assert [judged.verdict for judged in stray_walk] == [
         hrv_trend.VERDICT_UNAVAILABLE,
         hrv_trend.VERDICT_NORMAL,

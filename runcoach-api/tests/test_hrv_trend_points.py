@@ -231,8 +231,8 @@ def test_a_day_with_no_asserted_band_carries_three_nulls(configure, seed) -> Non
 
 
 def test_an_unestablished_but_computable_baseline_still_carries_its_band(configure, seed) -> None:
-    """2 <= n < 14: the verdict is withheld (``hrv_unavailable``, not
-    established) but the chart may draw the band. The point carries it."""
+    """2 <= n < 14: the verdict is ``hrv_unavailable`` (``baseline_unestablished``)
+    but the chart may draw the band. The point carries it."""
     thin = {D - timedelta(days=k): v for k, v in zip((20, 18, 16, 14, 12), (38.0, 44.0, 39.0, 43.0, 40.0))}
     readings = {**thin, **{day: 30.0 for day in WEEK}}
     body = get_points(configure, seed, readings, D, D)
