@@ -240,8 +240,8 @@ _FIDELITY_RANK = {tier: rank for rank, tier in enumerate(TIER_FIDELITY)}
 
 # Exclusion reasons. Each stored row inside ``[D-66, D]`` that is not in the
 # series is listed with exactly one of these (``research/00`` PRIN-23), so a
-# verdict is reproducible from its response (PRIN-12, less PRIN-24's OPEN
-# exceptions). The parameterised ones carry their argument after ``": "``.
+# verdict is reproducible from its response (PRIN-12, less the OPEN exceptions
+# PRIN-24 and PRIN-27 name). The parameterised ones carry their argument after ``": "``.
 REASON_OUTSIDE_WINDOWS = "outside_windows"
 REASON_PRE_AMENDMENT_WINDOW = "pre_amendment_window"
 REASON_NULL_TIER = "null_tier"
@@ -1796,7 +1796,7 @@ class HrvVerdict:
     ``ln_rmssd_7d_mean`` is the mean of the judged window's readings, or
     ``None`` when the window is empty; it is reported whenever there is one
     so the verdict is reproducible by hand from its response (``research/00``
-    PRIN-12, less PRIN-24's OPEN exceptions), even when
+    PRIN-12, less the OPEN exceptions PRIN-24 and PRIN-27 name), even when
     ``readings_in_window`` is below the minimum and the verdict is
     unavailable. ``below_by`` is ``band.lo - mean`` when suppressed, else
     ``None``. ``band`` is ``None`` when the baseline holds fewer than two
