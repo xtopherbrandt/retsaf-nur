@@ -21,8 +21,8 @@ reference "The band"; decision log rows "Thin and degenerate data" and
 - **every verdict but ``hrv_unavailable`` requires an established baseline**
   (T116, 2026-09-15, a behaviour change). Neither cell the spec's text left
   unnamed -- below the band on an unestablished baseline, and inside or above
-  it on one -- reads as a verdict: both are **unavailable**. spec/03 §3.7.3 says the
-  suppression is *withheld* until the baseline is established, and
+  it on one -- reads as a verdict: both are **unavailable**. spec/03 §3.7.3 says either
+  position on an unestablished baseline is ``hrv_unavailable`` (``baseline_unestablished``), and
   ``hrv_normal`` would tell Section 6 that readiness is intact on the
   strength of a baseline the same response reports unestablished -- up-
   regulating on weak evidence, which ``research/00`` PRIN-14 forbids.
@@ -659,8 +659,8 @@ def test_ln_is_not_guarded_here_so_a_non_positive_value_surfaces_as_a_defect() -
 
 
 def test_the_thresholds_the_response_echoes_are_the_constants_the_verdict_uses() -> None:
-    """``research/00`` PRIN-12: the verdict must be reproducible from what the
-    response reports, so the constants are module-level and named."""
+    """``research/00`` PRIN-12, less its OPEN exceptions PRIN-24 and PRIN-27: the verdict is
+    reproducible by hand from its response, so the constants are module-level and named."""
     assert hrv_trend.SWC_FACTOR == 0.5
     assert hrv_trend.BAND_FLOOR == 0.01
     assert hrv_trend.MIN_WINDOW_READINGS == 3
@@ -695,13 +695,13 @@ def expected_row(baseline_n: int, window_n: int, position: str) -> tuple[str, bo
     if not band or window_n < 3:
         return UNAVAILABLE, band, established, False
     if not established:
-        # T116: the establishment gate is symmetric. Below the band the
-        # suppression is withheld; inside or above it the ``normal`` is
-        # withheld for the same reason -- ``hrv_normal`` on a 2-to-13-reading
+        # T116: the establishment gate is symmetric. Below the band and inside
+        # or above it alike, an unestablished baseline is ``hrv_unavailable``
+        # (``baseline_unestablished``) -- ``hrv_normal`` on a 2-to-13-reading
         # baseline asserts intact readiness on evidence the same response
         # calls unestablished, the up-regulating direction ``research/00``
-        # PRIN-14 forbids. Both are ``hrv_unavailable``, and the band is still
-        # reported so the consumer can see what was withheld.
+        # PRIN-14 forbids. Neither verdict is asserted, and the band is still
+        # reported so the consumer can see the band no verdict was taken from.
         return UNAVAILABLE, True, False, False
     if position == BELOW:
         return SUPPRESSED, True, True, True

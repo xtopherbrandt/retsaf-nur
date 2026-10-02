@@ -21,6 +21,18 @@ re-pinned by whoever moved it.
 no-regression gate reads; the walk's metric is ``walk_ac22_below``. A per-row count that does not
 reproduce the rate row is a counting bug, not a finding.
 
+**Tied to the count research/00 publishes.** PRIN-26 states the count this test pins
+(``00-design-decisions.md``: "24,099 of 307,500 healthy-overlap rectangle rows, 9,923 suppressed, 3,315
+inter, 126 switch and 1,494 and 494 walk rows"). ``test_prin_26_states_the_pinned_population`` parses
+those figures and requires them to equal ``PINNED`` and ``ROWS``, so the pin and the published count
+cannot drift apart: re-pinning one without the other reds.
+
+**What the pin ratchets on, and what it does not see.** The population is counted from the frozen
+rowdir evidence (T239's per-row CSVs), not from the shipped module at test time, so a code change to
+``metrics/hrv_trend.py`` does not move this count by itself. It reaches this pin only through the T162
+provenance pin (``tests/data/T162-no-regression-rows.provenance.json``), asserted by
+``test_hrv_no_regression_gate.py``, which reds on a changed module blob until the rows are re-measured, and the re-measured rowdir is what this test then counts.
+
 **Fails loud, never skips.** The rowdir lives in the Shipyard data dir, which a worktree or a
 runner reaches only through ``SHIPYARD_DATA_DIR``. Where it is unreachable this test fails: a
 pin that cannot read its population has not pinned it.
@@ -34,6 +46,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -68,6 +81,29 @@ PINNED = {
 
 #: Rows per scope file, so a truncated or re-run rowdir reds before any count is compared.
 ROWS = {"rect": 307500, "inter": 5100, "switch": 1400, "walk": 24000}
+
+#: research/00, whose PRIN-26 publishes the pinned count (S4).
+RESEARCH_00 = _REPO_ROOT / "specification" / "research" / "00-design-decisions.md"
+_PRIN_26_COUNT = re.compile(
+    r"^\*\*PRIN-26\.\*\*.*? pins at (?P<rect>[\d,]+) of (?P<rect_rows>[\d,]+) healthy-overlap rectangle rows, "
+    r"(?P<rect_suppressed>[\d,]+) suppressed, (?P<inter>[\d,]+) inter, (?P<switch>[\d,]+) switch and "
+    r"(?P<walk_healthy>[\d,]+) and (?P<walk_suppressed>[\d,]+) walk rows\.", re.MULTILINE)
+
+
+def prin26_population(research_00: str) -> dict[tuple[str, str], int]:
+    """The population PRIN-26 states, keyed like ``PINNED`` (inter and switch are one figure each, the same
+    for both overlaps, as the pin holds them), plus ``("rect", "rows")`` for the rectangle's size. A PRIN-26
+    line whose sentence does not parse is an assertion error: a pin tied to text it cannot read is untied."""
+    match = _PRIN_26_COUNT.search(research_00)
+    assert match, "research/00 PRIN-26 no longer states the count in the form this pin parses"
+    n = {name: int(value.replace(",", "")) for name, value in match.groupdict().items()}
+    return {
+        ("rect", "healthy"): n["rect"], ("rect", "suppressed"): n["rect_suppressed"],
+        ("inter", "healthy"): n["inter"], ("inter", "suppressed"): n["inter"],
+        ("switch", "healthy"): n["switch"], ("switch", "suppressed"): n["switch"],
+        ("walk", "healthy"): n["walk_healthy"], ("walk", "suppressed"): n["walk_suppressed"],
+        ("rect", "rows"): n["rect_rows"],
+    }
 
 
 def _load_counter():
@@ -147,3 +183,23 @@ def test_hrv_25_population_is_counted_and_does_not_grow() -> None:
             f"at {pinned_overlap}: the two IDEA-087 exceptions and IDEA-099's now overlap "
             f"differently"
         )
+
+
+def test_prin_26_states_the_pinned_population() -> None:
+    """S4: the figures PRIN-26 publishes are ``PINNED``'s populations and ``ROWS``' rectangle size."""
+    stated = prin26_population(RESEARCH_00.read_text(encoding="utf-8"))
+    pinned = {key: population for key, (population, _overlap) in PINNED.items()}
+    print(f"[slice compared] PRIN-26 states {sorted(stated.items())}; PINNED {sorted(pinned.items())}; "
+          f"rect rows {ROWS['rect']}")
+    assert stated == {**pinned, ("rect", "rows"): ROWS["rect"]}
+
+
+def test_a_prin_26_count_that_differs_from_the_pin_is_seen() -> None:
+    """S4's perturbation: one figure changed in PRIN-26's text (24,099 to 24,100) no longer equals the
+    pin, and a PRIN-26 line whose sentence no longer parses is a failure, not an empty match."""
+    text = RESEARCH_00.read_text(encoding="utf-8")
+    moved = prin26_population(text.replace("pins at 24,099 of", "pins at 24,100 of"))
+    print(f"[slice compared] perturbed rect/healthy {moved[('rect', 'healthy')]} against {PINNED[('rect', 'healthy')][0]}")
+    assert moved[("rect", "healthy")] == 24100 != PINNED[("rect", "healthy")][0]
+    with pytest.raises(AssertionError):
+        prin26_population(text.replace("healthy-overlap rectangle rows", "rectangle rows"))

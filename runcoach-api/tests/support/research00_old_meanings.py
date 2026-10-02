@@ -324,7 +324,7 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         decision='R13 (the withhold is a second OPEN exception to PRIN-12, owned by IDEA-102)',
     ),
     'PRIN-12-R13-reproducible-by-hand-without-exceptions': OldMeaning(
-        pattern=(r'reproducible by hand from what the (?:same )?response reports'
+        pattern=(r'reproducible (?:by hand )?from what the (?:same )?response reports'
                  r'|(?:is|be|are) (?:still )?(?:reproducible|recomputed) by hand \((?:research/00 )?§ ?1\.6\)'
                  r'|reproducibility by hand \(research/00 §1\.6\)'),
         example='§1.6 requires a derived verdict to be reproducible by hand from what the response reports',

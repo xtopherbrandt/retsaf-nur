@@ -10,6 +10,7 @@ repo,runcoach-api/src/runcoach_api/schemas.py,541,5.4 (v),HRV-31
 repo,runcoach-api/src/runcoach_api/schemas.py,572,5.4,HRV-57
 repo,runcoach-api/src/runcoach_api/schemas.py,591,5.4 (iii),HRV-22
 repo,runcoach-api/src/runcoach_api/schemas.py,610,1.7,PRIN-14
+repo,runcoach-api/src/runcoach_api/schemas.py,350,1.6,PRIN-12
 repo,runcoach-api/tests/test_band_reconciliation.py,206,§3.7.3,literal
 repo,runcoach-api/tests/test_hrv_dataset_populations.py,235,§1.7,ARCH-13
 repo,runcoach-api/tests/test_hrv_dataset_populations.py,263,§1.7,PRIN-14
@@ -119,36 +120,48 @@ repo,runcoach-api/tests/test_hrv_unavailable_causes.py,711,§1.7,PRIN-13
 repo,runcoach-api/tests/test_hrv_unavailable_causes.py,774,5.4,FIG-01
 repo,runcoach-api/tests/test_hrv_unavailable_causes.py,811,§1.6,PRIN-12
 repo,runcoach-api/tests/test_hrv_unavailable_reason.py,454,section 5.4 (iii),HRV-59
-repo,runcoach-api/tests/test_research00_citations_resolve.py,15,§1.x,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,43,§5.4,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,56,forbid,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,57,tolerated,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,74,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,400,§5.4,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,404,tolerated,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,431,tolerat,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,432,tolerated,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,590,Part 1,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,622,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,623,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,626,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,627,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,628,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,631,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,634,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,636,HRV-999,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,640,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,642,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,643,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,656,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,657,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,658,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,675,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,677,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,16,§1.x,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,44,§5.4,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,48,Sec 3.3,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,61,forbid,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,62,tolerated,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,79,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,174,Sec 3.3,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,175,Section 1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,447,§5.4,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,451,tolerated,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,483,tolerat,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,484,tolerated,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,642,Part 1,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,674,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,675,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,678,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,679,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,680,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,683,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,686,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,688,HRV-999,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,692,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,694,§1.7,literal
 repo,runcoach-api/tests/test_research00_citations_resolve.py,695,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,714,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,715,§1.7,literal
-repo,runcoach-api/tests/test_research00_citations_resolve.py,718,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,708,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,709,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,710,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,727,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,729,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,747,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,766,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,767,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,770,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,848,Sec 3.3,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,849,Section 1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,850,1.6,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,852,Section 1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,861,§3.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,862,§1.4,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,903,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,904,§1.7,literal
+repo,runcoach-api/tests/test_research00_citations_resolve.py,918,§1.7,literal
 repo,runcoach-api/tests/test_research00_downstream.py,1627,§1.7,literal
 repo,runcoach-api/tests/test_research00_downstream.py,1628,§1.7,literal
 repo,runcoach-api/tests/test_research00_downstream.py,1636,§1.7,literal
@@ -160,9 +173,10 @@ repo,runcoach-api/tests/test_research00_downstream.py,3868,§1.7,literal
 repo,runcoach-api/tests/test_research00_downstream.py,3893,§1.7,literal
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,13,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,67,Sec 5.4,HRV-34
+repo,runcoach-api/tests/test_source_change_rule_sweep.py,75,Sec 3.3,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,390,Sec 5.4,HRV-34
-repo,runcoach-api/tests/test_source_change_rule_sweep.py,1462,Sec 5.4,HRV-34
-repo,runcoach-api/tests/test_source_change_rule_sweep.py,1485,Sec 5.4,HRV-44
+repo,runcoach-api/tests/test_source_change_rule_sweep.py,1460,Sec 5.4,HRV-34
+repo,runcoach-api/tests/test_source_change_rule_sweep.py,1483,Sec 5.4,HRV-44
 repo,runcoach-api/tests/test_spec_cost_figures.py,37,§1.7,PRIN-14
 repo,runcoach-api/tests/test_spec_cost_figures.py,206,5.4,FIG-01
 repo,runcoach-api/src/runcoach_api/main.py,322,PRIN-24,PRIN-27

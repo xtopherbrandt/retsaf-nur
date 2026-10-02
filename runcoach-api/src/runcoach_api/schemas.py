@@ -347,7 +347,7 @@ class DatasetSummary(BaseModel):
             "Mean of ln rMSSD over this dataset's own judged-week readings; null when it has none. "
             "It is `ln_rmssd_7d_mean` for the selected dataset and is computed the same way for "
             "every other, so `below` can be recomputed by hand from this and `band` (research/00 "
-            "1.6)."
+            "PRIN-12, less its OPEN exceptions, PRIN-24 and PRIN-27)."
         )
     )
     below: bool | None = Field(

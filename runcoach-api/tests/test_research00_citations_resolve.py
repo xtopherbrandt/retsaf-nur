@@ -9,7 +9,8 @@ and the rule-ID parser is F008's (``_RULE_ID``, ``rule_ids``, ``RETIRED_IDS`` in
 **The walk (AC1).** Two spaces: ``repo`` (this checkout) and ``data`` (``<SHIPYARD_DATA>/spec/`` only,
 found through ``SHIPYARD_DATA_DIR`` or the ``.shipyard`` breadcrumb; when neither names a directory with
 ``spec/`` under it the gate **fails, never skips**). Both skip the directories ``.git``, ``.venv``,
-``__pycache__`` and ``.shipyard``, every ``*.bak`` and every dot-prefixed file name (D12; ``.claude/`` is a
+``__pycache__`` and ``.shipyard``, every child directory holding ``.git`` (a nested checkout such as a
+builder worktree; S2), every ``*.bak`` and every dot-prefixed file name (D12; ``.claude/`` is a
 directory and is walked, so AC6's rule file is seen), and read only the text suffixes ``.md .py .yaml
 .yml .toml .csv .txt .json``. A file is **in scope** when its text mentions ``research[_/]00``, carries a
 ``§1.x``, ``§3.x`` or ``§5.4`` token, or cites a rule ID (``_RULE_ID``: a rule ID alone is a citation of
@@ -43,7 +44,11 @@ old-token check skips it (T233's rows; stated at T246). A live file with a citat
 ``§5.4`` or ``Part N``) on a live line and no row in any CSV is **unlisted**. So is one live line of a
 **listed** file that carries the ``research[_/]00`` mention and a section or Part token with no row of its
 own (T245): listing one line does not list the file. A bare token with no mention on such a line is not a
-finding here (see the blind spots).
+finding here (see the blind spots). A section number written without the sign counts too when it is joined
+to the mention (``research/00 Sec 3.3``, ``research/00 Section 1.7``, ``research/00 1.6``, ``Section 1.7 of
+research/00``), on one line or across a line break (two adjacent lines joined, a Python implicit string
+concatenation closed); a "Section 3.x" merely near the mention is another document's (M2). Line numbers are
+``git grep -n``'s: lines split on ``\\n`` alone, never on U+2028, U+2029, a form feed or NEL (S1).
 
 **Pending markers (S15 shape).** While ``pending-<root>.marker`` exists, that root's test is a strict
 xfail: unlisted files, AC3 clause 3 and the AC4 checks are expected red until the migrating task deletes
@@ -136,6 +141,10 @@ MIRROR_PREFIX = "spec-mirror/"
 SITES_DIR_REL = "runcoach-api/tests/data/research00-citation-sites/"
 TEXT_SUFFIXES = (".md", ".py", ".yaml", ".yml", ".toml", ".csv", ".txt", ".json")
 SKIPPED_DIRS = frozenset({".git", ".venv", "__pycache__", ".shipyard"})
+#: A child directory holding this (a file in a worktree, a directory in a clone) is a nested git checkout,
+#: a second copy of the tree, and is not entered (S2): ``SCAN_EXCLUDED_CHECKOUT_MARKER``'s rule in
+#: ``test_hrv_trend_endpoint.py`` (3c18d26). The walked root holds one too and is still walked.
+NESTED_CHECKOUT_MARKER = ".git"
 ROOTS = ("spec", "python", "data", "misc", "hrv_trend")
 CSV_COLUMNS = ("space", "file", "line", "old_citation", "new_id")
 LITERAL = "literal"
@@ -161,6 +170,17 @@ F011_FLOORS_AT_D13 = (
 
 _MENTION = re.compile(r"research[_/]00")
 _SECTION_TOKEN = re.compile(r"§\s?(?:1\.\d|3\.\d|5\.4)\b")
+#: A research/00 section number written with or without the sign (M2), **joined to the mention**: right
+#: after it (``research/00 Sec 3.3``, ``research/00 Section 1.7``, ``research/00 1.6``, ``research/00 §1.7``)
+#: or right before an ``of``/``in`` it (``Section 1.7 of research/00``). The join is the whole test: a
+#: "Section 3.x" merely on the mention's line or the next one is research/02's (quality_gates.py,
+#: rr_reconstruction.py), spec/03's or spec/01's as often as research/00's, and the walk measured six such
+#: false findings when the mention and the number were only required to share a line or a line pair.
+_ADJACENT_SECTION_TOKEN = re.compile(
+    r"research[_/]00\W{1,4}(?:§\s?|Sec\.?\s|Section\s)?(?:1\.\d|3\.\d|5\.[1-4])\b"
+    r"|(?:§\s?|\bSec\.?\s|\bSection\s)(?:1\.\d|3\.\d|5\.[1-4])\b\W{1,4}(?:of|in)\W{1,3}research[_/]00")
+#: Python's implicit string concatenation where a line pair is joined: ``"... (research/00 "`` + ``"1.6)."``.
+_STRING_JOIN = re.compile(r"\"\s*\"")
 _PART_TOKEN = re.compile(r"\bPart [1-5]\b")
 _SPEC_PREFIX = re.compile(r"spec/0\d")
 _FORBIDDEN_DIRECTION = re.compile(r"forbid|weak evidence|readiness[- ]intact", re.IGNORECASE)
@@ -197,9 +217,11 @@ def locate_data_dir(env=None, repo_root: Path = _REPO_ROOT) -> Path:
 
 def walk(base: Path, prefix: str = ""):
     """``(rel, path)`` for every text-suffixed file under ``base``, ``rel`` a ``/``-separated path with
-    ``prefix`` in front: ``SKIPPED_DIRS`` are not entered, ``*.bak`` and dot-prefixed names are skipped (D12)."""
+    ``prefix`` in front: ``SKIPPED_DIRS`` and nested checkouts (S2) are not entered, ``*.bak`` and
+    dot-prefixed names are skipped (D12)."""
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIPPED_DIRS)
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIPPED_DIRS
+                             and not (Path(dirpath) / d / NESTED_CHECKOUT_MARKER).exists())
         for name in sorted(filenames):
             path = Path(dirpath) / name
             if path.suffix not in TEXT_SUFFIXES or name.startswith(".") or name.endswith(".bak"):
@@ -264,14 +286,24 @@ def section_record_ranges(space: str, path: str, raw: str) -> list[tuple[int, in
     return record_ranges(key, raw)
 
 
+def newline_lines(raw: str) -> list[str]:
+    """The file's lines as ``git grep -n`` numbers them (S1): split on ``\\n`` alone, ``\\r\\n`` folded, never
+    on the U+2028, U+2029, form feed or NEL that ``str.splitlines`` also breaks on."""
+    lines = raw.replace("\r\n", "\n").split("\n")
+    return lines[:-1] if lines[-1] == "" else lines
+
+
 def live_lines(space: str, path: str, raw: str) -> list[tuple[int, str]]:
-    """``(1-based line number, text)`` for every line outside the file's section records."""
+    """``(1-based line number, text)`` for every line outside the file's section records, numbered by
+    ``newline_lines``."""
     ranges = section_record_ranges(space, path, raw)
     lines, offset = [], 0
-    for number, line in enumerate(raw.splitlines(keepends=True), start=1):
-        start, offset = offset, offset + len(line)
+    for number, segment in enumerate(raw.split("\n"), start=1):
+        start, offset = offset, offset + len(segment) + 1
+        if start >= len(raw):
+            break
         if not any(a <= start < b for a, b in ranges):
-            lines.append((number, line.rstrip("\r\n")))
+            lines.append((number, segment.removesuffix("\r")))
     return lines
 
 
@@ -382,6 +414,19 @@ def _cites(line: str) -> bool:
                 or _MENTION.search(line))
 
 
+def _cites_a_research00_section(line: str) -> bool:
+    """One line cites a research/00 section: the mention with a ``§`` or Part token anywhere on the line
+    (T245), or a section number, signed or not, joined to the mention (M2, ``_ADJACENT_SECTION_TOKEN``)."""
+    return bool(_MENTION.search(line) and (_SECTION_TOKEN.search(line) or _PART_TOKEN.search(line))
+                or _ADJACENT_SECTION_TOKEN.search(line))
+
+
+def _joined(line: str, following: str) -> str:
+    """Two adjacent lines as one, so a mention and its number split by a line break meet (M2): the break
+    and the indent become one space, and a Python implicit string concatenation (``" "``) is closed."""
+    return _STRING_JOIN.sub("", f"{line.rstrip()} {following.lstrip()}")
+
+
 def _aliases(key: str) -> frozenset[str]:
     """``key`` (``space:file`` or ``space:file:line``) and, for a mirrored document, the same key on its other
     copy: ``repo:spec-mirror/<x>`` <-> ``data:spec/<x>``. A row for either copy covers both (T236)."""
@@ -396,7 +441,9 @@ def _aliases(key: str) -> frozenset[str]:
 def root_findings(world: World, root: str) -> dict[str, list[str]]:
     """The root's red, by family. ``unlisted``: a live file with a citation token on a live line and no
     CSV row, or a live line of a listed file carrying the ``research/00`` mention and a section or Part
-    token with no row of its own (T245; a bare token with no mention is the migrating task's). ``clause3``
+    token with no row of its own (T245; a bare token with no mention is the migrating task's), or a
+    section number joined to the mention without the sign, on the line or across it and the next (M2,
+    ``_ADJACENT_SECTION_TOKEN``; a row on either line of the pair covers it). ``clause3``
     (AC3, ``.py`` under ``runcoach-api/``): a ``§1.x``/``§3.x``/``§5.4`` token on a
     live line without a ``spec/0N`` prefix and not a ``literal`` row. ``resolve`` (AC4): a rule ID on a
     live line that is no rule line of research/00 (a retired ID passes on a line that says "retired").
@@ -408,14 +455,19 @@ def root_findings(world: World, root: str) -> dict[str, list[str]]:
     for site in world.live(root):
         cites_a_section = False
         is_py_under_api = site.space == "repo" and site.path.endswith(".py") and site.path.startswith("runcoach-api/")
-        for number, line in live_lines(site.space, site.path, world.text(site)):
+        lines = live_lines(site.space, site.path, world.text(site))
+        for index, (number, line) in enumerate(lines):
             where = f"{site.ident}:{number}"
-            if _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line):
+            following = lines[index + 1][1] if index + 1 < len(lines) and lines[index + 1][0] == number + 1 else None
+            own = _cites_a_research00_section(line)
+            paired = (following is not None and not own and not _cites_a_research00_section(following)
+                      and _ADJACENT_SECTION_TOKEN.search(_joined(line, following)) is not None)
+            if _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line) or own or paired:
                 cites_a_section = True
             if _aliases(where) & literal:
                 continue
-            if _aliases(site.ident) & listed and not _aliases(where) & listed_lines and _MENTION.search(line) and (
-                    _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line)):
+            covered = _aliases(where) & listed_lines or (paired and _aliases(f"{site.ident}:{number + 1}") & listed_lines)
+            if _aliases(site.ident) & listed and (own or paired) and not covered:
                 findings["unlisted"].append(
                     f"{where}: cites research/00 with a section token and has no row in any CSV")
             if is_py_under_api and _SECTION_TOKEN.search(line) and not _SPEC_PREFIX.search(line):
@@ -461,7 +513,7 @@ def row_findings(world: World) -> list[str]:
         if site.kind == "record":
             findings.append(f"{row.ident}: a record's citations are not rewritten ({site.reason})")
             continue
-        lines = world.text(site).splitlines()
+        lines = newline_lines(world.text(site))
         if not row.line.isdigit() or not 1 <= int(row.line) <= len(lines):
             findings.append(f"{row.ident}: line is not 1..{len(lines)}")
             continue
@@ -781,3 +833,109 @@ def test_a_mirror_copy_is_the_data_roots_and_its_originals_row_covers_it(tmp_pat
     assert all(items == [] for items in root_findings(literal, "data").values()) and row_findings(literal) == []
     assert _aliases("repo:" + MIRROR_PREFIX + rel) == frozenset({"repo:" + MIRROR_PREFIX + rel, "data:spec/" + rel})
     assert _aliases("repo:CHANGELOG.md") == frozenset({"repo:CHANGELOG.md"})
+
+
+# ==================================================================================================
+# Code review, iteration 1: the sign-less section token (M2), newline-only line numbers (S1), nested
+# checkouts (S2) and the pending markers pinned gone (S3).
+# ==================================================================================================
+
+_SIGNLESS_PY = "runcoach-api/src/runcoach_api/signless.py"
+_SIGNLESS_HEAD = '"""PRIN-14 governs this (research/00)."""\n\n'
+#: Each research/00 section citation written without the ``§`` sign, on line 3 (the split form's number
+#: is on line 4, joined to its mention by Python's implicit string concatenation).
+_SIGNLESS_FORMS = {
+    "Sec": _SIGNLESS_HEAD + "#: research/00 Sec 3.3 (two paragraphs), measured 2026-09-18.\n",
+    "Section": _SIGNLESS_HEAD + "#: research/00 Section 1.7 forbids it.\n",
+    "bare number": _SIGNLESS_HEAD + 'NOTE = "from this and `band` (research/00 1.6)."\n',
+    "split": _SIGNLESS_HEAD + 'NOTE = ("from this and `band` (research/00 "\n        "1.6).")\n',
+    "Section, before": _SIGNLESS_HEAD + "#: as Section 1.7 of research/00 says.\n",
+}
+#: The shapes the walk measured as false findings when the number only had to share the mention's line or
+#: line pair (each is another document's section beside a research/00 mention), and a section number
+#: research/00 does not have.
+_SIGNLESS_NEGATIVES = {
+    "research/02 Section, same line": _SIGNLESS_HEAD + "# Section 3.4 nor `research/00` names one either\n",
+    "research/02 Section, next line": _SIGNLESS_HEAD + '# Section 3.2 says only "filtering", no\n# ratio) nor `research/00` names one\n',
+    "spec/03 Sec after a history mention": _SIGNLESS_HEAD + "#: research/00-history.md's H-09 names\n#: spec Sec 2.4.5, Sec 3.7.3/3.7.4.\n",
+    "spec section line, mention next": _SIGNLESS_HEAD + "#: ratified by §3.7.1 |\n#: (`research/00` HRV-04, HRV-54)\n",
+    "spec/01 section, mention next": _SIGNLESS_HEAD + "#: Section 1 §1.4 / Section 4 §4.7\n#: (`research/00` AUT-02)\n",
+    "spec/02 Sec": _SIGNLESS_HEAD + "#: see research/00 and\n#: spec/02 Sec 2.4.5.\n",
+}
+
+
+def test_a_research00_section_cited_without_the_sign_is_a_finding(tmp_path):
+    """M2: ``Sec 3.3``, ``Section 1.7``, a bare ``1.6`` right after the mention, and a mention and number
+    split across two lines are each a research/00 section citation. In a listed file the line is
+    ``unlisted`` until it has a row (a row on either line of the split pair clears it); in an unlisted
+    file the file is. research/02's ``Section 3.x`` away from the mention, and a section number research/00
+    does not have, are not citations."""
+    listed_row = ("repo", _SIGNLESS_PY, "1", "", "PRIN-14")
+    seen = {}
+    for name, text in {**_SIGNLESS_FORMS, **_SIGNLESS_NEGATIVES}.items():
+        slug = name.replace(" ", "-").replace("/", "-")
+        listed = root_findings(_world(tmp_path / f"{slug}-listed", repo={_SIGNLESS_PY: text},
+                                      rows={"python": [listed_row]}), "python")["unlisted"]
+        bare = root_findings(_world(tmp_path / f"{slug}-bare", repo={_SIGNLESS_PY: text}), "python")["unlisted"]
+        seen[name] = (listed, bare)
+    split_rows = {
+        line: root_findings(_world(tmp_path / f"split-row-{line}", repo={_SIGNLESS_PY: _SIGNLESS_FORMS["split"]},
+                                   rows={"python": [listed_row, ("repo", _SIGNLESS_PY, line, "1.6", LITERAL)]}),
+                            "python")["unlisted"]
+        for line in ("3", "4")}
+    print(f"[slice compared] per form (listed-file findings, unlisted-file findings): {_show(seen)}; "
+          f"split pair with a literal row on line 3 / line 4: {_show(split_rows)}")
+    for name in _SIGNLESS_FORMS:
+        assert seen[name] == (
+            [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"],
+            [f"repo:{_SIGNLESS_PY}: cites a research/00 section and has no row in any CSV"]), name
+    for name, text in _SIGNLESS_NEGATIVES.items():
+        # A ``§`` token anywhere in an unlisted live file still lists the file (the unchanged file-level rule).
+        assert seen[name][0] == [] and (seen[name][1] == []) == ("§" not in text), name
+    assert split_rows == {"3": [], "4": []}
+
+
+def test_line_numbers_count_newlines_only(tmp_path):
+    """S1: a line is what ``git grep -n`` numbers, so U+2028, U+2029, a form feed and NEL inside a line
+    start no new one. A row on the cited line is valid, and an unlisted line is named by its own number."""
+    spec_file = "specification/spec/06-adaptation-logic.md"
+    text = ("# spec\n\nseparators inside one\x0cline\x85here.\n\n"
+            "PRIN-14 governs this (research/00).\n\nresearch/00 §1.7 governs that too.\n")
+    world = _world(tmp_path, repo={spec_file: text}, rows={"spec": [("repo", spec_file, "5", "§1.7", "PRIN-14")]})
+    rows, unlisted = row_findings(world), root_findings(world, "spec")["unlisted"]
+    site = next(s for s in world.live("spec") if s.path == spec_file)
+    numbered = [n for n, line in live_lines(site.space, site.path, world.text(site)) if "research/00" in line]
+    print(f"[slice compared] rows {_show(rows)}; unlisted {_show(unlisted)}; lines naming research/00 {numbered}")
+    assert rows == []
+    assert unlisted == [f"repo:{spec_file}:7: cites research/00 with a section token and has no row in any CSV"]
+    assert numbered == [5, 7]
+
+
+def test_the_walk_prunes_a_nested_checkout_but_not_the_directory_around_it(tmp_path):
+    """S2: a child directory holding ``.git`` (a file, as a worktree has, or a directory, as a clone has) is
+    a second copy of the tree and is not entered; the directory around it is, and so is the walked root,
+    which holds ``.git`` itself."""
+    cite = "research/00 §1.7\n"
+    (tmp_path / ".git").mkdir()
+    worktree = tmp_path / ".claude" / "worktrees" / "agent-0123456789abcdef0"
+    (worktree / "specification" / "spec").mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (worktree / "specification" / "spec" / "03.md").write_text(cite, encoding="utf-8")
+    clone = tmp_path / "elsewhere" / "clone"
+    (clone / ".git").mkdir(parents=True)
+    (clone / "notes.md").write_text(cite, encoding="utf-8")
+    (tmp_path / ".claude" / "rules").mkdir(parents=True)
+    for rel in ("top.md", ".claude/rules/rule.md", ".claude/worktrees/notes.md", "elsewhere/kept.md"):
+        (tmp_path / rel).write_text(cite, encoding="utf-8")
+    walked = sorted(rel for rel, _path in walk(tmp_path))
+    print(f"[slice compared] walked {walked}")
+    assert walked == [".claude/rules/rule.md", ".claude/worktrees/notes.md", "elsewhere/kept.md", "top.md"]
+
+
+def test_no_pending_marker_remains():
+    """S3: every root is migrated, so no ``pending-<root>.marker`` may come back: a recreated one would turn
+    its root's test into a strict xfail and hide its findings (the downstream gate's
+    ``test_the_pending_directory_holds_no_csv`` is the model)."""
+    pending = pending_roots(SITES_DIR)
+    print(f"[slice compared] markers under {SITES_DIR.name}: {sorted(pending)}")
+    assert pending == frozenset()

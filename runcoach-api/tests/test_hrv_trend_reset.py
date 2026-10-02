@@ -11,7 +11,7 @@ first and last -- T093, restated by T094, judged over both windows since
 sprint-005 review cycle 3). There is no timezone-change reset.
 
 Pure unit tests over hand-built row dicts, like T083's. Nothing here computes
-a band or a verdict (T084): "suppression is withheld" is asserted as *the
+a band or a verdict (T084): "no suppressed verdict" (``hrv_unavailable``) is asserted as *the
 judged window carries no reading the band could be compared against*, and
 "readings before the gap do not contribute to the band" as *they are not in
 ``baseline`` and are listed as excluded*.
@@ -291,8 +291,8 @@ def test_the_fresh_baseline_resolves_its_tier_on_the_resumption_era_only() -> No
     """A snapshot baseline, a 30-day gap, and a strap resumption nine days
     before D-7. Over the unclipped ``[D-66, D-7]`` the snapshot still has 16
     readings and would win the tier; resolved on the clipped window the
-    fresh baseline is the strap's nine (thin, so T084 withholds suppression
-    until it is established). The reason is the gap, not a tier change.
+    fresh baseline is the strap's nine (thin, so the verdict is ``hrv_unavailable``,
+    ``baseline_unestablished``, until it is established). The reason is the gap, not a tier change.
     Perturbation: resolving the tier before clipping turns this red."""
     resume_on = ago(15)
     before = readings(SNAPSHOT, span(ago(90), resume_on - timedelta(days=31)), 60.0, "snap")

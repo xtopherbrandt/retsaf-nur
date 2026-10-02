@@ -458,8 +458,8 @@ def test_the_in_python_window_predicate_agrees_with_the_published_sql() -> None:
 
 def test_a_null_tier_row_is_excluded_with_its_reason() -> None:
     """An ordinary run (tier and value both null) inside the range is listed,
-    not silently absent -- ``research/00`` PRIN-12 wants the verdict reproducible
-    from what the response reports."""
+    not silently absent -- ``research/00`` PRIN-12 wants the verdict reproducible by
+    hand from its response, less its OPEN exceptions PRIN-24 and PRIN-27."""
     run = row(local(D - timedelta(days=1), 17), None, None, "plain-run")
     result = build(readings(STRAP, baseline_days(14)) + [run])
 

@@ -72,7 +72,7 @@ REQUIRED_FORM = re.compile(r"per-tier dataset")
 
 #: The superseded single-baseline phrasings, one per surface they were
 #: measured at on 2026-09-18 (grep over both roots before the amendment):
-#: research/00 Sec 3.3 (two paragraphs), spec/03 Sec 3.7.3 and Sec 3.7.4,
+#: research/00 (two paragraphs, which HRV-34 amended), spec/03 Sec 3.7.3 and Sec 3.7.4,
 #: spec/02 Sec 2.4.5 (two paragraphs). Each is the clause that made a source
 #: change re-establish the one baseline, or that made one tier own it.
 SUPERSEDED_FORMS = (
