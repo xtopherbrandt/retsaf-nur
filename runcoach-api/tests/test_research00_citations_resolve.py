@@ -31,7 +31,8 @@ Log that is a record in one copy cannot be live in the other.
 
 **Roots and the CSV contract (AC3, D20).** Root membership: ``specification/`` -> ``spec``;
 ``runcoach-api/**/*.py`` except ``metrics/hrv_trend.py`` -> ``python``; ``hrv_trend.py`` ->
-``hrv_trend``; the data space -> ``data``; everything else in the repo -> ``misc``. The by-reading record
+``hrv_trend``; the data space and its repo mirror ``spec-mirror/`` -> ``data`` (T236); everything else in the
+repo -> ``misc``. The by-reading record
 is ``tests/data/research00-citation-sites/<root>.csv`` (columns ``space,file,line,old_citation,new_id``;
 T233-T236 and T238 write the rows); the gate consumes every ``*.csv`` in the directory. ``new_id`` is a
 rule ID that must resolve to a rule line of research/00, or ``literal``: a search pattern, census excerpt
@@ -74,6 +75,14 @@ PRIN-14; a live line that says the direction is "tolerated" cites neither PRIN-1
   the retired PRIN-16; the data marker covers them until T235 lists or records them. This module is
   itself live under ``python``: its docstring witnesses and its finding-message strings are T234's
   ``literal`` rows (D13), not prose to migrate.
+- The citation-site CSVs themselves (``tests/data/research00-citation-sites/*.csv``) quote the tokens they
+  retired in ``old_citation`` and carry the perturbation tests' witness rows, so once T233 and T234 filled them the
+  walk saw them as live misc files. They are the by-reading record, not citers: ``CITATION_RECORDS`` holds
+  the directory (T236). Nothing lists a row for a CSV.
+- A ``spec-mirror/`` copy is one document in two places: ``test_normative_mirror.py`` holds it byte-identical
+  to its data-dir original, so T235 rewrites both copies and writes the rows once, for the original. The
+  mirror copy is therefore in the ``data`` root (``root_of``), and ``_aliases`` lets a row for either copy
+  cover the same line of the other (T236; the section-record logic above already reads the pair as one).
 - Printed witnesses are ASCII-escaped (``_show``): the probe runs ``-s`` on a cp1252 console.
 """
 
@@ -122,6 +131,9 @@ DATA_DIR_ENV = "SHIPYARD_DATA_DIR"
 SITES_DIR = _TESTS / "data" / "research00-citation-sites"
 RESEARCH_00 = "specification/research/00-design-decisions.md"
 HRV_TREND = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
+#: The repo copy of a data-dir ``spec/`` document (``test_normative_mirror.py`` holds the pair byte-identical).
+MIRROR_PREFIX = "spec-mirror/"
+SITES_DIR_REL = "runcoach-api/tests/data/research00-citation-sites/"
 TEXT_SUFFIXES = (".md", ".py", ".yaml", ".yml", ".toml", ".csv", ".txt", ".json")
 SKIPPED_DIRS = frozenset({".git", ".venv", "__pycache__", ".shipyard"})
 ROOTS = ("spec", "python", "data", "misc", "hrv_trend")
@@ -132,6 +144,8 @@ RECORD_STATUSES = frozenset({"done", "completed", "released"})
 CITATION_RECORDS = (
     ("repo", RESEARCH_00,
      "the target of citations, not a citer; its self-references stay (user ruling 2026-09-30, D19)"),
+    ("repo", SITES_DIR_REL,
+     "the by-reading record itself: old_citation quotes the tokens the rows retired (T236)"),
 )
 #: The D13 rows this task added to the shared set, asserted present with their reason.
 D13_RECORDS = (
@@ -226,7 +240,9 @@ def classify(space: str, path: str, raw: str) -> tuple[str, str]:
 
 
 def root_of(space: str, path: str) -> str:
-    if space == "data":
+    """The root that owns a file. A ``spec-mirror/`` copy is the ``data`` root's: it is the data-dir original
+    in a second place, and its rows are written once, for the original (T236)."""
+    if space == "data" or path.startswith(MIRROR_PREFIX):
         return "data"
     if path == HRV_TREND:
         return "hrv_trend"
@@ -366,6 +382,17 @@ def _cites(line: str) -> bool:
                 or _MENTION.search(line))
 
 
+def _aliases(key: str) -> frozenset[str]:
+    """``key`` (``space:file`` or ``space:file:line``) and, for a mirrored document, the same key on its other
+    copy: ``repo:spec-mirror/<x>`` <-> ``data:spec/<x>``. A row for either copy covers both (T236)."""
+    space, _, rest = key.partition(":")
+    if space == "repo" and rest.startswith(MIRROR_PREFIX):
+        return frozenset({key, "data:spec/" + rest[len(MIRROR_PREFIX):]})
+    if space == "data" and rest.startswith("spec/"):
+        return frozenset({key, "repo:" + MIRROR_PREFIX + rest[len("spec/"):]})
+    return frozenset({key})
+
+
 def root_findings(world: World, root: str) -> dict[str, list[str]]:
     """The root's red, by family. ``unlisted``: a live file with a citation token on a live line and no
     CSV row, or a live line of a listed file carrying the ``research/00`` mention and a section or Part
@@ -385,9 +412,9 @@ def root_findings(world: World, root: str) -> dict[str, list[str]]:
             where = f"{site.ident}:{number}"
             if _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line):
                 cites_a_section = True
-            if where in literal:
+            if _aliases(where) & literal:
                 continue
-            if site.ident in listed and where not in listed_lines and _MENTION.search(line) and (
+            if _aliases(site.ident) & listed and not _aliases(where) & listed_lines and _MENTION.search(line) and (
                     _SECTION_TOKEN.search(line) or _PART_TOKEN.search(line)):
                 findings["unlisted"].append(
                     f"{where}: cites research/00 with a section token and has no row in any CSV")
@@ -403,7 +430,7 @@ def root_findings(world: World, root: str) -> dict[str, list[str]]:
                 findings["forbidden"].append(f"{where}: names the forbidden direction without citing PRIN-14")
             if _TOLERATED.search(line) and ("PRIN-14" in line or any(r in line for r in RETIRED_IDS)):
                 findings["tolerated"].append(f"{where}: says tolerated and cites PRIN-14 or a retired ID")
-        if cites_a_section and site.ident not in listed:
+        if cites_a_section and not _aliases(site.ident) & listed:
             findings["unlisted"].append(f"{site.ident}: cites a research/00 section and has no row in any CSV")
     return findings
 
@@ -715,3 +742,42 @@ def test_the_gate_fails_rather_than_skips_without_a_data_dir(tmp_path):
     assert DATA_DIR_ENV in str(failed.value) and "not a skip" in str(failed.value)
     assert not isinstance(failed.value, pytest.skip.Exception)
     assert by_env == tmp_path / "found" and by_crumb == tmp_path / "repo" / ".shipyard"
+
+
+def test_the_sites_directory_is_a_citation_record_and_no_csv_is_live(world):
+    """T236: the by-reading record is not a citer. Every CSV the walk saw under ``SITES_DIR_REL`` is a
+    ``CITATION_RECORDS`` record, and the misc root holds none of them."""
+    seen = [s for s in world.sites if s.path.startswith(SITES_DIR_REL)]
+    print(f"[slice compared] sites-dir files {[(s.path.rsplit('/', 1)[-1], s.kind, s.reason) for s in seen]}; "
+          f"misc live {[s.path for s in world.live('misc')]}")
+    assert seen, "the walk saw no CSV under the sites directory (they carry old tokens, so they are in scope)"
+    assert all(s.kind == "record" and s.reason == "CITATION_RECORDS" for s in seen)
+    assert not any(s.path.startswith(SITES_DIR_REL) for s in world.live())
+
+
+def test_a_mirror_copy_is_the_data_roots_and_its_originals_row_covers_it(tmp_path):
+    """T236: the same document under ``data:spec/`` and ``repo:spec-mirror/`` is one site in two places. With
+    no row, the data root names both copies unlisted and the misc root neither; one row for the original
+    covers both; a ``literal`` row for the mirror copy exempts the original's line too."""
+    rel = "references/F006-dataset-model.md"
+    old = "# model\n\nThe withhold (research/00 \u00a75.4 (v)).\n"
+    new = "# model\n\nThe withhold (research/00 HRV-31).\n"
+    pair = lambda doc: {"data": {"spec/" + rel: doc}, "repo": {MIRROR_PREFIX + rel: doc}}  # noqa: E731
+    bare = _world(tmp_path / "bare", **pair(old))
+    listed = _world(tmp_path / "listed", **pair(new), rows={"data": [("data", "spec/" + rel, "3", "\u00a75.4 (v)", "HRV-31")]})
+    literal = _world(tmp_path / "literal", **pair(old), rows={"data": [("repo", MIRROR_PREFIX + rel, "3", "", LITERAL)]})
+    bare_data, bare_misc = root_findings(bare, "data"), root_findings(bare, "misc")
+    print(f"[slice compared] root_of mirror {root_of('repo', MIRROR_PREFIX + rel)!r}; bare data {_show(bare_data['unlisted'])}, "
+          f"bare misc {_show(bare_misc)}; listed {_show(root_findings(listed, 'data'))}, rows {row_findings(listed)}; "
+          f"literal {_show(root_findings(literal, 'data'))}, rows {row_findings(literal)}; "
+          f"aliases {sorted(_aliases('repo:' + MIRROR_PREFIX + rel))}")
+    assert root_of("repo", MIRROR_PREFIX + rel) == "data" and root_of("data", "spec/" + rel) == "data"
+    assert sorted(bare_data["unlisted"]) == sorted([
+        f"data:spec/{rel}: cites a research/00 section and has no row in any CSV",
+        f"repo:{MIRROR_PREFIX}{rel}: cites a research/00 section and has no row in any CSV",
+    ])
+    assert all(items == [] for items in bare_misc.values())
+    assert all(items == [] for items in root_findings(listed, "data").values()) and row_findings(listed) == []
+    assert all(items == [] for items in root_findings(literal, "data").values()) and row_findings(literal) == []
+    assert _aliases("repo:" + MIRROR_PREFIX + rel) == frozenset({"repo:" + MIRROR_PREFIX + rel, "data:spec/" + rel})
+    assert _aliases("repo:CHANGELOG.md") == frozenset({"repo:CHANGELOG.md"})

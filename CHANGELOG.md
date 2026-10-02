@@ -4,7 +4,7 @@
 
 F010: `/metrics/hrv` responses serve `thresholds.recency_tolerance_days` (28, read from
 `hrv_trend.RECENCY_TOLERANCE_DAYS`), so `selected_reason = higher_fidelity_skipped_stale` can be
-recomputed from `datasets[].last_read` and the response alone (research/00 §1.6, C33). Additive:
+recomputed from `datasets[].last_read` and the response alone (research/00 PRIN-12, C33). Additive:
 both contract copies describe the new key identically and `info.version` is unchanged. This
 reverses IDEA-070's 2026-09-15 decision to narrow the `thresholds` promise instead.
 

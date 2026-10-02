@@ -1,1 +1,39 @@
 space,file,line,old_citation,new_id
+repo,.claude/rules/project-domain-and-spec-fidelity.md,17,§5.4,HRV-07
+repo,.claude/rules/project-domain-and-spec-fidelity.md,26,Part 3,DOC-07
+repo,.claude/rules/project-domain-and-spec-fidelity.md,26,Part 3,DOC-18
+repo,.claude/rules/project-domain-and-spec-fidelity.md,30,§1.7,PRIN-13
+repo,.claude/rules/project-domain-and-spec-fidelity.md,30,§1.7,PRIN-14
+repo,.claude/rules/project-domain-and-spec-fidelity.md,31,,DOC-01
+repo,.claude/rules/project-api-contract.md,43,,literal
+repo,CHANGELOG.md,7,§1.6,PRIN-12
+repo,contracts/openapi.yaml,283,§1.9,GOAL-02
+repo,contracts/openapi.yaml,329,§1.9,GOAL-03
+repo,contracts/openapi.yaml,329,§1.9,GOAL-04
+repo,contracts/openapi.yaml,653,PRIN-24,PRIN-27
+repo,contracts/openapi.yaml,1358,PRIN-24,PRIN-27
+repo,contracts/openapi.yaml,1460,§1.6,PRIN-12
+repo,contracts/openapi.yaml,1654,§1.6,PRIN-23
+repo,contracts/openapi.yaml,1798,§5.4 (v),HRV-31
+repo,contracts/openapi.yaml,1837,§5.4 (iii),HRV-57
+repo,contracts/openapi.yaml,1857,§5.4 (iii),HRV-22
+repo,contracts/openapi.yaml,1878,§1.7,PRIN-14
+repo,runcoach-api/tests/data/research00_census.csv,52,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,60,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,101,PRIN-16,literal
+repo,runcoach-api/tests/data/research00_census.csv,102,PRIN-16,literal
+repo,runcoach-api/tests/data/research00_census.csv,138,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,166,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,181,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,204,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,211,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,212,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,213,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,221,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,231,§1.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,234,§3.7,literal
+repo,runcoach-api/tests/data/research00_census.csv,264,§1.6,literal
+repo,runcoach-api/tests/data/research00_census.csv,265,§1.6,literal
+repo,runcoach-api/tests/data/research00_census.csv,266,§1.6,literal
+repo,runcoach-api/tests/data/research00_census.csv,267,§1.6,literal
+repo,runcoach-api/tests/data/research00_census.csv,268,§1.6,literal

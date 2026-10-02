@@ -1,1 +1,0 @@
-While this file exists, the misc root is not yet migrated and the citation gate xfails (strict) on its unlisted live files (S15). Delete it in the commit that migrates the root.

@@ -280,7 +280,7 @@ paths:
         it is an explicit athlete confirmation and triggers (re-)periodization;
         the plan itself is then applied without any further gate.
       x-readiness: planned
-      x-owner-spec: "spec/01; spec/08 §8.5.2; research/00 §1.9"
+      x-owner-spec: "spec/01; spec/08 §8.5.2; research/00 GOAL-02"
       x-story: [initialize-race-goal, discuss-race-goal]
       requestBody:
         required: true
@@ -326,7 +326,7 @@ paths:
         injury makes the goal infeasible, in the fixed order revised-pace →
         later-date (never a distance change). Presented for the athlete to decide.
       x-readiness: planned
-      x-owner-spec: "spec/08 §8.5.2; research/00 §1.9"
+      x-owner-spec: "spec/08 §8.5.2; research/00 GOAL-03, GOAL-04"
       x-story: [respond-to-goal-change-proposal]
       responses:
         "200":
@@ -650,7 +650,7 @@ paths:
         mean, the band, the baseline, every reading that fed the mean and every
         stored row that fed nothing, with its reason — so the verdict can be
         recomputed by hand from the response, as research/00 PRIN-12 asks; the
-        inputs it does not serve are PRIN-12's OPEN exceptions (PRIN-24). Both
+        inputs it does not serve are PRIN-12's OPEN exceptions (PRIN-27). Both
         parameters are optional as built (F005/T091, 2026-09-09): `to` defaults
         to the athlete's local
         today in the configured zone and `from` to `to`, so a bare call yields
@@ -1355,7 +1355,7 @@ components:
         gains one field (`dataset`, AC14); everything else is the verdict for
         `to` and the inputs that produced it, added additively so the verdict
         is reproducible by hand from the response (research/00 PRIN-12; the
-        inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-24).
+        inputs it does not serve are PRIN-12's OPEN exceptions, PRIN-27).
         `baseline`, `band`,
         `verdict` and `below_by` keep their names and now mean THE SELECTED
         DATASET'S; `datasets[]`, `selected_dataset`, `selected_reason` and
@@ -1457,7 +1457,7 @@ components:
             - day_not_happened
           description: >
             Why verdict is hrv_unavailable; null whenever it is not (research/00
-            §1.6 -- this is the one place that invariant failed until T137,
+            PRIN-12 -- this is the one place that invariant failed until T137,
             closing F005's Negative Class row "the verdict still cannot say why it
             is unavailable", open since review cycle 4). judge evaluates four
             causes in a fixed order and reports the first that fires:
@@ -1651,7 +1651,7 @@ components:
             verdict was NOT taken from are retained rather than discarded:
             every reading inside the span is in exactly one dataset here or in
             `excluded` with a reason, never in neither and never in both (AC15,
-            research/00 §1.6). Empty only when no reading of any tier exists in
+            research/00 PRIN-23). Empty only when no reading of any tier exists in
             the span. Additive: `baseline`, `band` and `verdict` still describe
             the selected dataset and nothing non-nullable became nullable
             (AC12).
@@ -1795,7 +1795,7 @@ components:
             ASSERTED — the highest-fidelity JUDGEABLE dataset the recency gate
             did not skip (F006 AC5–AC8). The scope on that second half is every
             verdict-free state on a selected dataset: its judged week withheld as
-            unrepresentative (`week_not_representative`, research/00 §5.4 (v)),
+            unrepresentative (`week_not_representative`, research/00 HRV-31),
             and the withheld future day, where for a `to` after the athlete's
             local today the verdict is replaced with hrv_unavailable /
             `day_not_happened`. In both the verdict is hrv_unavailable and
@@ -1834,8 +1834,8 @@ components:
             fall invisible. Where `verdict` is hrv_unavailable (T125's returning
             athlete is served this value beside week_not_representative) no
             verdict is taken from any dataset: the value still says which
-            dataset was presented and why, kept as computed (research/00 §5.4
-            (iii)), and makes no claim about a verdict. Non-null EXACTLY WHEN
+            dataset was presented and why, kept as computed (research/00 HRV-57),
+            and makes no claim about a verdict. Non-null EXACTLY WHEN
             `selected_dataset` is non-null, null with null (AC13; the same
             shape `unavailable_reason` carries). It is derived from the
             selection rather than stored beside it, so it cannot disagree with
@@ -1854,8 +1854,8 @@ components:
             name a dataset here — so `week_days` is what a consumer weighs the
             name by. Disagreement NEVER OVERRIDES: `verdict` is the selected
             dataset's, unchanged, whatever is listed here. EMPTY WHENEVER
-            `verdict` is `hrv_unavailable`, for any cause (research/00 §5.4
-            (iii), amended 2026-09-21): a disagreement is a claim ABOUT a
+            `verdict` is `hrv_unavailable`, for any cause (research/00 HRV-22,
+            amended 2026-09-21): a disagreement is a claim ABOUT a
             verdict and none was conferred. One condition over all three
             verdict-free states — `selected_dataset` null, where the
             presentation fallback speaks; a dataset that IS selected whose
@@ -1875,7 +1875,7 @@ components:
             HRV-25's population: hrv_normal can be promoted from the best
             available instrument while another dataset reads below its own band,
             and a consumer reading `verdict` alone is not told. That is
-            research/00 §1.7's forbidden direction, which ships only as the named
+            research/00 PRIN-14's forbidden direction, which ships only as the named
             exception PRIN-15 lists, owned by IDEA-099, and that population may
             not grow (research/00 HRV-25, PRIN-15).
           items:
