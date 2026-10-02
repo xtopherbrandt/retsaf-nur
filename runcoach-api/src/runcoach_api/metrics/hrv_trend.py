@@ -91,8 +91,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 #: The baseline is the 60 local days ending a week before the target
-#: (construction reference "Constants"; the Plews/Altini lineage the register
-#: cites). Closed interval ``[D-66, D-7]``; the judged week is ``[D-6, D]``.
+#: (construction reference "Constants"; the Plews/Altini lineage ``research/06``
+#: §6 names). Closed interval ``[D-66, D-7]``; the judged week is ``[D-6, D]``.
 #: The two are disjoint so a suppressed week cannot lower its own band.
 BASELINE_DAYS = 60
 #: The judged window, in local days.
@@ -345,7 +345,7 @@ class HrvDataset:
     #: T125/T132 at dataset scope (T158, AC24; ``research/00`` HRV-31, HRV-63),
     #: asked of this dataset as if it were the selected one: the judged week
     #: is not a fair sample of it because a dataset that could not have been
-    #: selected -- not judgeable, or skipped by the recency gate -- holds
+    #: selected -- not judgeable, or one the recency gate skipped -- holds
     #: ``MIN_WINDOW_READINGS`` week days all later than every one of this
     #: dataset's. ``judge`` answers ``hrv_unavailable`` on it. See
     #: ``verdict_withheld``; computed by ``build_series`` once every dataset
@@ -1219,7 +1219,7 @@ def build_series(
     # T125/T132 at dataset scope (T158, AC24; ``research/00`` HRV-31, HRV-63),
     # asked of every dataset as if it were the selected one: the set the
     # order clause is asked about is every dataset that could not have been
-    # selected -- not judgeable, or skipped by the recency gate. The gate is
+    # selected -- not judgeable, or one the recency gate skipped. The gate is
     # the one ``select_dataset`` reuses, over the same baseline-window
     # ``_last_read``, so ``skipped`` here is *the* set (T125), not a second
     # transcription; the equality is pinned. On the real baseline window
@@ -1367,7 +1367,7 @@ class Selection:
 
 def select_dataset(series: HrvSeries) -> Selection:
     """The dataset the verdict is taken from: the highest-fidelity
-    **judgeable** dataset, skipped by the recency gate (F006, T155;
+    **judgeable** dataset the recency gate did not skip (F006, T155;
     ``research/00`` HRV-14, HRV-15; spec/03 §3.7.4).
 
     1. **Candidates are the judgeable datasets** (AC8): ``established`` --
@@ -1411,7 +1411,7 @@ def select_dataset(series: HrvSeries) -> Selection:
        rows and 24,000 walk rows, on both modules and under both overlap
        variants: ``hrv_normal`` on an entirely pre-layoff band rose **1,896 ->
        3,705** (x1.95) and **96 -> 254** (x2.65), worse at every ``c``, on 82
-       of 150 cells -- the forbidden direction (T-24, PRIN-14) on the population AC6 exists
+       of 150 cells -- the under-calling direction on the population AC6 exists
        to close, reopened at AC7 (IDEA-080). Widening the population restores
        F005's rate. The cost, knowingly re-imported: a **lone judgeable**
        dataset is no longer automatically its own reference -- an established
@@ -1424,8 +1424,8 @@ def select_dataset(series: HrvSeries) -> Selection:
     established and judgeable and the highest fidelity; its *latest*
     reading is ``D-0``, gap 0, and an unqualified gate selects it and judges
     the athlete against a band every reading of which is 36 to 66 days old
-    and entirely pre-layoff -- ``hrv_normal`` on a stale band, the forbidden
-    direction (T-24, PRIN-14), on the exact mechanism T125 closed. Its latest
+    and entirely pre-layoff -- ``hrv_normal`` on a stale band, the under-calling
+    direction, on the exact mechanism T125 closed. Its latest
     reading *in the window* is ``D-36``, 29 behind the snapshot's ``D-7``,
     and it is skipped. Per-tier baselining removed every clip that checked
     the *baseline's* recency; this gate is what puts the question back.
@@ -2146,8 +2146,8 @@ def coverage_gap_reset(
     arithmetic, never on UTC deltas: a silence straddling a DST change is
     still the same number of local days.
 
-    A gap is bounded by a reading on both sides. Three consequences the spec
-    text does not state and this function decides:
+    A gap is bounded by a reading on both sides. Three consequences follow;
+    ``research/00`` HRV-85 states the second, and this function decides the rest:
 
     * **An open gap** (the last reading is more than 21 days old and nothing
       has resumed) is not yet a reset: the reset lands on the first reading
@@ -2689,7 +2689,7 @@ def tier_change_reset(
     the boundary, 4,466 of those held ``baseline_n >= 14``, 702 were
     flip-reachable and **5 flipped** ``hrv_suppressed`` to ``hrv_normal``
     on an identical week mean with the baseline established on both sides
-    -- ``hrv_normal`` in the forbidden direction (T-24; ``research/00`` PRIN-14).
+    -- ``hrv_normal`` in the under-calling direction.
     At the fix the flip class is **0 of 26,360**. Pinned at both levels by
     ``test_the_gap_clip_moves_the_era_boundary_later_than_the_full_history_finds``
     (one history, the boundary dated 2026-07-03 on the full population and

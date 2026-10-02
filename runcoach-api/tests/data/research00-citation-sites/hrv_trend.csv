@@ -27,8 +27,6 @@ repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1383,§3.7.4,HRV-54
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1389,§1.6,PRIN-12
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1405,5.4 amended first,HRV-15
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1405,,HRV-51
-repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1414,1.7's,PRIN-14
-repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1428,§1.7's,PRIN-14
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1527,§5.4 amended 2026-09-18 (iii),HRV-21
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1572,§5.4 (iii),HRV-24
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,1584,§5.4 (iii),HRV-24
@@ -45,7 +43,7 @@ repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2033,,FIG-02
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2042,§5.4,HRV-31
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2042,,HRV-27
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2048,§1.7's,PRIN-14
+repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2150,,HRV-85
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2264,§1.6's,PRIN-23
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2385,§1.7,HRV-78
 repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2664,§5.4,HRV-41
-repo,runcoach-api/src/runcoach_api/metrics/hrv_trend.py,2692,§1.7,PRIN-14
