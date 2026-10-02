@@ -63,6 +63,10 @@ RECORD_SET = (
      "F005's references, shipped records F008 superseded (R5)"),
     ("data", "spec/references/F006-research-draft-archived-2026-09-23.md",
      "an archived draft, dated in its name"),
+    # F009 AC2's archived-draft kind, data space only (T235): F004's draft carries spec/01-03 section
+    # tokens and no research/00 citation, and an archive is not rewritten.
+    ("data", "spec/references/F004-research-draft-archived-2026-09-06.md",
+     "an archived draft, dated in its name"),
     ("data", "spec/references/F006-no-regression-report.md",
      "a dated measurement report of the tree it measured"),
     ("data", "spec/references/F006-sweep-findings.md",

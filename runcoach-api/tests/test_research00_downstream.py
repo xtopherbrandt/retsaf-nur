@@ -1491,8 +1491,8 @@ _SPEC_RECORD_ROWS = frozenset({
     # F009 AC2 under sprint-009 D13: the two literal-bearing support modules, outside F011's roots.
     ("repo", "runcoach-api/tests/support/build_research00_census.py"),
     ("repo", "runcoach-api/tests/support/withdrawn_phrasings.py"),
-    # F009 AC2, the data dir: F005-*, F006's three (both copies), the inventory, F008's decisions,
-    # sprints/sprint-* except current, verify/*-verdict-cycle*.md.
+    # F009 AC2, the data dir: F005-*, F006's three, F004's archived draft (T235), the inventory, F008's decisions, sprints/sprint-* except current, verify/*-verdict-cycle*.md.
+    ("data", "spec/references/F004-research-draft-archived-2026-09-06.md"),
     ("data", "spec/features/F005-"),
     ("data", "spec/references/F005-"),
     ("data", "spec/references/F006-research-draft-archived-2026-09-23.md"),
