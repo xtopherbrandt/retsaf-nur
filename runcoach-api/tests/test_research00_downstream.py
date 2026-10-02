@@ -3876,12 +3876,6 @@ PRESENCE_ANCHORS = (
     ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
      "up-regulation on weak evidence, which §1.7 forbids",
      "**Either position on a baseline that is not yet established**"),
-    ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
-     "reading a genuinely suppressed week as normal (up-regulation on weak evidence",
-     "**Per-source baseline discipline (the anti-mixing rule).**"),
-    ("specification/spec/03-derived-metric-formulas.md", "PRIN-14-C07-weak-evidence-only",
-     "on both sides — up-regulation on weak evidence, which `research/00` §1.7 forbids",
-     "**Per-source baseline discipline (the anti-mixing rule).**"),
     ("specification/spec/03-derived-metric-formulas.md", "C04-hole-at-least",
      "an internal capture hole of at least `gap_reset_days` (`research/00`",
      "**Graceful degradation across tiers, then unavailable.**"),
@@ -3933,6 +3927,9 @@ _T125_RESIDUAL_REASON = ("T125's residual ships inside one PRIN-15 exception, th
                          "(IDEA-087), which the site names; the other two exceptions are not this bullet's")
 _ONE_EXCEPTION_REASON = ("T231: the site states HRV-25's population alone (HRV-25, IDEA-099, 'may not grow'); "
                          "the other two PRIN-15 exceptions are AC21's and the cost table's, whose rows carry them")
+_UNDER_CALLING_REASON = ("D21: hrv_normal on a seven-week-old band (T117) or a gap-shifted band (T129) is the "
+                         "under-calling direction, outside T-24, so the site cites neither PRIN-14 nor T-24; the "
+                         "census row's absence check still covers the old text")
 _CONTRACT_REASON = ("a .yaml or .py description, which T201 does not build a block for; the census row's absence "
                     "check covers the site, whose fix names HRV-25, PRIN-15 and IDEA-099")
 
@@ -4001,6 +3998,13 @@ DROPPED_PRESENCE_ROWS = (
      "This is the response's one report of the exposure F006 accepts", "*", _CONTRACT_REASON),
     ("runcoach-api/src/runcoach_api/schemas.py", "C06",
      "forbidden direction, accepted, measured against shipped F005 rather than denied", "*", _CONTRACT_REASON),
+    # CR-FIX-iter-5 (D21: T-24 governs PRIN-14): spec/03:238's T117 and T129 sites state the under-calling
+    # direction, which is not within T-24, so they no longer state C07's string.
+    ("specification/spec/03-derived-metric-formulas.md", "C07",
+     "reading a genuinely suppressed week as normal (up-regulation on weak evidence", "*", _UNDER_CALLING_REASON),
+    ("specification/spec/03-derived-metric-formulas.md", "C07",
+     "on both sides — up-regulation on weak evidence, which `research/00` §1.7 forbids", "*",
+     _UNDER_CALLING_REASON),
     # T231 (IDEA-106 item 23a): the two "priced" sites.
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "F005-parity", _ONE_EXCEPTION_REASON),
     ("spec-mirror/features/F006-per-tier-hrv-datasets.md", "C06", "**AC22 —", "DEFERRED_EXCEPTION",

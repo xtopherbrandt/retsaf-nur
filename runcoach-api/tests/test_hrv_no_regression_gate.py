@@ -62,9 +62,9 @@ axes-held-constant tables beside them. The report is
 ``spec/references/F006-no-regression-report.md``.
 
 **What is gated and what is only surfaced.** ``gated`` is 1 on the forbidden-direction (PRIN-14)
-rates AC21 blocks release on -- every one counts an ``hrv_normal`` promoted
-on evidence that is not the athlete's own current reading -- and on AC22's
-promotion-with-a-dissenter exposure. It is 0 on AC23's dataset-flip rate,
+rates AC21 blocks release on (``hrv_normal`` while the athlete's own return is
+suppressed), on the stale-band rates AC21 also gates (the under-calling exposure),
+and on AC22's promotion-with-a-dissenter exposure. It is 0 on AC23's dataset-flip rate,
 which by the feature's own text triggers the deferred **hysteresis
 decision** rather than blocking release; the flip rows are asserted
 *present* here so the number cannot be quietly dropped, and their comparison
@@ -573,7 +573,7 @@ def test_the_rows_are_the_population_the_gate_needs() -> None:
     gated = [row for row in rows if row["gated"] == "1"]
     assert len(gated) > 500, f"only {len(gated)} gated rows: AC21 has almost nothing to gate on"
     assert {row["criterion"] for row in gated} == {"AC21", "AC22"}, (
-        "the gated set is AC21's PRIN-14 rates and AC22's promotion exposure, and nothing else"
+        "the gated set is AC21's PRIN-14 and stale-band rates and AC22's exposure, and nothing else"
     )
     for metric in ("forbidden", "forbidden_ret_week_ge3", "normal_stale_band",
                    "ac22_below", "ac22_below_min_window", "walk_forbidden"):
@@ -614,10 +614,10 @@ def test_the_paired_comparison_is_actually_paired() -> None:
 
 
 def test_no_1_7_rate_worsens_against_shipped_f005() -> None:
-    """**The gate** (F006 AC21). Any forbidden-direction rate (PRIN-14) -- ``hrv_normal`` promoted
-    while the athlete's own return is suppressed, whether via the carrier's
-    week or a band every reading of which predates the layoff; ``hrv_normal``
-    on a stale band at all; ``hrv_normal`` promoted while another dataset
+    """**The gate** (F006 AC21). Any rate AC21 gates -- the forbidden-direction (PRIN-14) rates,
+    ``hrv_normal`` promoted while the athlete's own return is suppressed, via the carrier's
+    week or a band every reading of which predates the layoff; the under-calling exposure,
+    ``hrv_normal`` on a stale band at all; ``hrv_normal`` promoted while another dataset
     reads the other side of its own band (AC22) -- that is higher on F006
     than on shipped F005, on any swept cell, blocks release.
 

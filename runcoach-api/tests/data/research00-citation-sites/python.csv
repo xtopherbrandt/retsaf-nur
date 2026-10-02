@@ -203,9 +203,9 @@ repo,runcoach-api/tests/test_research00_downstream.py,1636,§1.7,literal
 repo,runcoach-api/tests/test_research00_downstream.py,3737,§1.6,literal
 repo,runcoach-api/tests/test_research00_downstream.py,3741,§5.4 (v),literal
 repo,runcoach-api/tests/test_research00_downstream.py,3877,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3883,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3894,§1.7,literal
-repo,runcoach-api/tests/test_research00_downstream.py,3919,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,4006,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3888,§1.7,literal
+repo,runcoach-api/tests/test_research00_downstream.py,3913,§1.7,literal
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,15,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,69,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,77,Sec 3.3,HRV-34

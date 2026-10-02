@@ -267,6 +267,8 @@ repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-11
 repo,specification/spec/04-physiological-state-model.md,110,§1.5,PRIN-09
 repo,specification/spec/04-physiological-state-model.md,110,§3.2,COLD-10
 repo,specification/spec/04-physiological-state-model.md,112,,COLD-08
+repo,specification/spec/04-physiological-state-model.md,112,,COLD-02
+repo,specification/spec/04-physiological-state-model.md,112,,COLD-03
 repo,specification/spec/04-physiological-state-model.md,132,§3.2,COLD-11
 repo,specification/spec/04-physiological-state-model.md,134,§3.2,COLD-01
 repo,specification/spec/04-physiological-state-model.md,134,PRIN-07,FTO-01
@@ -410,7 +412,6 @@ repo,specification/spec/03-derived-metric-formulas.md,236,§5.4 (v),HRV-63
 repo,specification/spec/03-derived-metric-formulas.md,238,§3.3,HRV-06
 repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-10
 repo,specification/spec/03-derived-metric-formulas.md,238,§5.4,HRV-51
-repo,specification/spec/03-derived-metric-formulas.md,238,§1.7,PRIN-14
 repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-21
 repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-24
 repo,specification/spec/03-derived-metric-formulas.md,238,§5.4 (iii),HRV-60
