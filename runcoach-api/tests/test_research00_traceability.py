@@ -614,7 +614,7 @@ OLD_MEANING_SHA256 = {
     "C17-hrv24-read-on-last": "cf5e3da90d63.39f1ab966669.576b340a4e35.a7314aec43f1",
     "C18-no-tier-from-resolver": "a7915eb5cb64.4ebc7a63f730.e77fba90b5d8.66880a20dae0",
     "C19-hrv-03-tag-and-confidence": "1051957c88ad.201b14aa6fa0.f79e61bfca66.a539dc09c09c",
-    "C19-hrv-04-reduced-confidence": "5854f4095bc2.7ec3fdac444a.700a5baf5724.aae16350d9be",
+    "C19-hrv-04-reduced-confidence": "f45786026b4c.7ec3fdac444a.700a5baf5724.aae16350d9be",
     "C21-dec01-bonus-section": "02834eedae78.6bc22b93b0fd.ecc48cc297fe.abb23d0d25cd",
     "C24-arch06-ignores-by-default": "d22a4b5bede7.aeac417e7a2c.16bd7814bc5b.133d22d98524",
     "C26-cold01-hrv-input": "1c4bef7f91ca.d2aeea8a5c8e.d03fa426dc05.31c65e049802",

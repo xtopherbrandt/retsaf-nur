@@ -161,7 +161,7 @@ OLD_MEANINGS: dict[str, OldMeaning] = {
         decision='C19',
     ),
     'C19-hrv-04-reduced-confidence': OldMeaning(
-        pattern='rmssd(?:(?!\\. |;).)*?at reduced confidence|at reduced confidence(?:(?!\\. |;).)*?rmssd',
+        pattern='(?:rmssd|tiers?)(?:(?!\\. |;).)*?at reduced confidence|at reduced confidence(?:(?!\\. |;).)*?(?:rmssd|tiers?)',
         example='degrading to a numeric resting rMSSD (Health Snapshot, then Health API overnight) at reduced confidence',
         source='specification/research/00-design-decisions.md:105@4e47d0e',
         decision='C19 (downstream: runcoach-api/src/runcoach_api/schemas.py:298)',

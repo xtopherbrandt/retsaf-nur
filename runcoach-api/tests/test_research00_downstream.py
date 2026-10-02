@@ -1128,13 +1128,21 @@ def stale_pending_rows(hits: list[Hit], pending: dict[str, list[tuple[str, str]]
 #: census records every site a narrowing stops matching as a ``narrowed`` row (S11). Frozen here, not
 #: read from git, so CI needs no history.
 #:
+#: Each value is the tuple of the key's earlier patterns, oldest first; ``narrowed_extras`` re-runs
+#: every one of them, so a site any earlier pattern reached and the current one misses is an extra.
+#:
 #: - ``C19-hrv-04-reduced-confidence`` (T218, from ``b4479c4``): the bare phrase matched five sites of
 #:   correct prose that carry something other than a numeric rMSSD at reduced confidence (spec/03's
 #:   altitude-less features and CTL seed, spec/04's lone VO2max model, spec/02 §2.4.3 and
-#:   ``rr_reconstruction.py``'s low-valid-fraction series). The narrowed pattern needs rMSSD in the
-#:   same sentence, which every site of the old HRV-tier meaning names.
+#:   ``rr_reconstruction.py``'s low-valid-fraction series). T218's pattern needed the literal rMSSD in
+#:   the same sentence, so "numeric HRV tiers are admitted at reduced confidence" escaped it (IDEA-106
+#:   item 9); T243's pattern also takes "tier"/"tiers" in the sentence, which every site of the old
+#:   HRV-tier meaning names and none of the five correct-prose sites does.
 NARROWED_FROM = MappingProxyType({
-    "C19-hrv-04-reduced-confidence": "at reduced confidence",
+    "C19-hrv-04-reduced-confidence": (
+        "at reduced confidence",
+        "rmssd(?:(?!\\. |;).)*?at reduced confidence|at reduced confidence(?:(?!\\. |;).)*?rmssd",
+    ),
 })
 
 #: The paths of the sites each narrowing stopped matching, one entry per site, as T218 listed them
@@ -1155,14 +1163,19 @@ CENSUS_PATH = Path(__file__).parent / "data" / "research00_census.csv"
 
 
 def narrowed_extras(repo_root: Path = _REPO_ROOT, narrowed_from=NARROWED_FROM, old_meanings=None) -> list[Hit]:
-    """The sites each narrowing stopped matching: every hit of a key's old pattern over the live files
-    of ``repo_root`` that overlaps no hit of its current pattern in the same file. Exceptions play no
-    part (a narrowing is judged on the text, sheltered or not)."""
+    """The sites each narrowing stopped matching: every hit of any of a key's old patterns over the
+    live files of ``repo_root`` that overlaps no hit of its current pattern in the same file (one hit
+    per span, however many old patterns reach it). Exceptions play no part (a narrowing is judged on
+    the text, sheltered or not)."""
     old_meanings = OLD_MEANINGS if old_meanings is None else old_meanings
     current = {key: old_meanings[key] for key in narrowed_from}
-    before = {key: replace(old_meanings[key], pattern=old) for key, old in narrowed_from.items()}
     now = scan(repo_root, old_meanings=current, exceptions=())
-    was = scan(repo_root, old_meanings=before, exceptions=())
+    was: list[Hit] = []
+    for key, olds in narrowed_from.items():
+        for old in olds:
+            for h in scan(repo_root, old_meanings={key: replace(old_meanings[key], pattern=old)}, exceptions=()):
+                if not any(w.path == h.path and w.start == h.start and w.end == h.end for w in was):
+                    was.append(h)
     return [h for h in was if not any(n.path == h.path and n.key == h.key and n.start < h.end and h.start < n.end
                                       for n in now)]
 
@@ -3299,17 +3312,57 @@ def test_read_pending_rejects_a_row_that_is_not_path_key(tmp_path, body):
 _HRV_TREND = "runcoach-api/src/runcoach_api/metrics/hrv_trend.py"
 
 
+#: T218's C19-hrv-04 pattern, the "old" T243 re-narrowed from (IDEA-106 item 9).
+_T218_C19_PATTERN = "rmssd(?:(?!\\. |;).)*?at reduced confidence|at reduced confidence(?:(?!\\. |;).)*?rmssd"
+
+
 def test_narrowed_from_names_real_keys_whose_old_pattern_was_wider():
-    """Each ``NARROWED_FROM`` entry names an ``OLD_MEANINGS`` key, its old pattern differs from the
-    current one, and both match the key's example (a narrowing keeps F008's positive control)."""
-    rows = {key: (old, OLD_MEANINGS[key].pattern if key in OLD_MEANINGS else None)
-            for key, old in NARROWED_FROM.items()}
-    print(f"[slice compared] NARROWED_FROM (old, current): {rows}")
+    """Each ``NARROWED_FROM`` entry names an ``OLD_MEANINGS`` key, each of its old patterns differs
+    from the current one and from the others, and every one matches the key's example (a narrowing
+    keeps F008's positive control). C19's olds are the bare phrase, then T218's pattern (T243)."""
+    rows = {key: (olds, OLD_MEANINGS[key].pattern if key in OLD_MEANINGS else None)
+            for key, olds in NARROWED_FROM.items()}
+    print(f"[slice compared] NARROWED_FROM (olds, current): {rows}")
     assert sorted(NARROWED_FROM) == sorted(NARROWED_SITE_PATHS)
-    for key, (old, current) in rows.items():
-        assert current is not None and current != old, key
+    for key, (olds, current) in rows.items():
+        assert isinstance(olds, tuple) and olds and len(set(olds)) == len(olds), key
         example = normalize(OLD_MEANINGS[key].example)
-        assert re.search(old, example) and re.search(current, example), key
+        assert current is not None and re.search(current, example), key
+        for old in olds:
+            assert current != old and re.search(old, example), (key, old)
+    assert NARROWED_FROM["C19-hrv-04-reduced-confidence"] == ("at reduced confidence", _T218_C19_PATTERN)
+
+
+#: IDEA-106 item 9: the C19 wording T218's pattern missed, and T218's five correct-prose controls as
+#: its commit (``78de5b4``) quoted them (spec/02:191, spec/03:81, spec/03:155, spec/04:123,
+#: ``rr_reconstruction.py``:418), the clause boundary kept where the line has one.
+_C19_RMSSD_FREE_WORDING = "numeric HRV tiers are admitted at reduced confidence"
+_T218_C19_CONTROLS = (
+    "An HRV figure from a low-valid-fraction series is carried at reduced confidence rather than presented as clean.",
+    "A session with no usable altitude at all yields raw-pace-based features carried at reduced confidence",
+    "the seed is flagged provisional, carried at reduced confidence",
+    "when only one can be evaluated, it stands alone at reduced confidence.",
+    "carries a low-valid-fraction series at reduced confidence rather than presenting it as clean; §3's raw-RR tier",
+)
+
+
+def test_idea106_item9_rmssd_free_wording_is_a_hit():
+    """IDEA-106 item 9 (F012 AC6, D9): C19-hrv-04's current pattern hits the rmssd-free wording that
+    T218's pattern let through, keeps F008's positive control, and still misses all five of T218's
+    correct-prose sites; T218's pattern, kept as the second ``NARROWED_FROM`` old, misses the wording."""
+    key = "C19-hrv-04-reduced-confidence"
+    current = re.compile(OLD_MEANINGS[key].pattern)
+    t218 = re.compile(_T218_C19_PATTERN)
+    wording = normalize(_C19_RMSSD_FREE_WORDING)
+    controls_hit = [c for c in _T218_C19_CONTROLS if current.search(normalize(c))]
+    print(f"[slice compared] current {current.pattern!r}: wording hit {bool(current.search(wording))}, "
+          f"example hit {bool(current.search(normalize(OLD_MEANINGS[key].example)))}, "
+          f"controls hit {controls_hit}; T218 wording hit {bool(t218.search(wording))}")
+    assert current.search(wording), "the rmssd-free wording escapes the current pattern"
+    assert current.search(normalize(OLD_MEANINGS[key].example))
+    assert controls_hit == []
+    assert not t218.search(wording)
+    assert not any(t218.search(normalize(c)) for c in _T218_C19_CONTROLS)
 
 
 def test_narrowing_loses_exactly_the_named_correct_prose_sites():
@@ -3643,11 +3696,13 @@ def test_census_balance_rejects_a_surplus_grep_row(tmp_path):
 def test_narrowed_row_is_red_only_under_its_own_key_current_pattern(tmp_path):
     """The narrowed-row check in a planted world. Correct prose the current C19 pattern misses is green.
     Text the current C19 pattern still matches is red -- the "current pattern misses it" half can fail.
-    Text only another key's pattern (C05) matches is green: that hit is not the narrowing's."""
+    Text only another key's pattern (C05) matches is green: that hit is not the narrowing's. The
+    correct prose is spec/03:155's CTL seed (T218's control); a "tier" in the sentence is C19's wording
+    since T243, so the planted sentence names the seed, not a tier."""
     c19, c05 = "C19-hrv-04-reduced-confidence", "C05-gate02-worse-rate-reopens"
     rel = "specification/spec/99-site.md"
     correct = "carried at reduced confidence until it is established"
-    _plant(tmp_path, rel, (f"Correct: the tier is {correct}.\n\nOld: {OLD_MEANINGS[c19].example}.\n\n"
+    _plant(tmp_path, rel, (f"Correct: the seed is {correct}.\n\nOld: {OLD_MEANINGS[c19].example}.\n\n"
                            f"Other: {OLD_MEANINGS[c05].example}.\n"))
     hits = scan(tmp_path)
     sites = {"correct prose": CensusSite(c19, rel, correct, "narrowed", 1),
@@ -4243,6 +4298,8 @@ IDEA_END_STATES = (
     IdeaEndState("IDEA-099", "open", None, "owns HRV-25's population; F009 counts it (S7)"),
     IdeaEndState("IDEA-102", "open", "F011", "reference row: owns every unserved verdict-affecting input"),
     IdeaEndState("IDEA-103", "resolved", "F012", "owned by F012 (S7 as amended 2026-09-27); open -> resolved (T228)"),
+    IdeaEndState("IDEA-106", "resolved", "T243",
+                 "F012 AC6: every item fixed or ruled won't-fix (D9); item 9, the last open one, closes with T243"),
 )
 
 #: The reason every ``test_idea_end_state`` row skips with where the data dir is absent (AC3, AC5).
