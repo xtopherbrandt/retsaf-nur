@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+F007 (T248): the `sessions` table gains a nullable `hr_sensor_serial INTEGER` column, and
+`models.Session` the matching `hr_sensor_serial: int | None = None` field, carried through the
+insert path. It holds the serial of the ANT+ heart-rate sensor that was *connected* when the
+session was recorded — the strap's own unit serial, not the watch's (`source_device`). It records
+the pairing, not the HR stream's provenance (`hr_source` holds that), so a strap can be listed while
+the wrist produced the stream. `NULL` means **unknown**, never "no sensor".
+
+**No backfill.** Sessions stored before this column existed keep `hr_sensor_serial` `NULL`
+permanently: the original FIT bytes are not retained, so the value is unrecoverable, and no recovery
+path is added. Any later consumer must treat `NULL` as unknown. An existing database gains the
+column in place through `db._reconcile_columns` on the next `init_schema` (app startup or any
+ingest), with every row preserved — the same automatic reconcile that landed `resting_rmssd_ms`, so
+no migration step is required. Nothing populates the column yet (T249 does), nothing reads it, and
+it is absent from `GET /sessions/{id}`.
+
 ## 2026-09-30 through 2026-10-03 — Sprint 009: research/00 citations, recency tolerance, review hand-off
 
 F009: every live citation of research/00 names a rule ID that resolves. A citation gate

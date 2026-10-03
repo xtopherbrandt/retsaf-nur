@@ -105,6 +105,18 @@ _SCHEMA_DDL = """
       -- is expressed as a CHECK and why a consumer must guard the read
       -- across the amendment window rather than assume ln() is safe.
       resting_rmssd_ms REAL,
+      -- hr_sensor_serial is the serial of the ANT+ heart-rate sensor that
+      -- was CONNECTED when the session was recorded -- the strap's own
+      -- unit serial, distinct from the watch in source_device. It records
+      -- the pairing, not the HR stream's provenance (hr_source holds
+      -- that). NULL means unknown, never "no sensor": no ANT+ heart-rate
+      -- entry, no serial on any emission, conflicting serials, or a row
+      -- stored before the column existed. Added 2026-10-03 by F007;
+      -- _reconcile_columns lands it on an existing database and no
+      -- backfill fills it -- the FIT bytes are not retained, so pre-F007
+      -- rows stay NULL permanently. Nothing reads it yet (F007 AC6), and
+      -- it is deliberately absent from GET /sessions/{id} (AC9).
+      hr_sensor_serial INTEGER,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -219,12 +231,14 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             session_id, athlete_id, start_time, sport, activity_tag,
             source_vendor, source_device, recording_interval, hr_source,
             rr_valid_fraction, quality_flags, summary, context,
-            rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source
+            rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
+            hr_sensor_serial
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
             :rr_valid_fraction, :quality_flags, :summary, :context,
-            :rmssd_precomputed, :resting_rmssd_ms, :hrv_source_tier, :rr_source
+            :rmssd_precomputed, :resting_rmssd_ms, :hrv_source_tier, :rr_source,
+            :hr_sensor_serial
         )
         """,
         {
@@ -246,6 +260,9 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             # Session-level (§2.2.3), not the per-beat rr_intervals.rr_source
             # written by _insert_rr_intervals -- see models.Session.
             "rr_source": session.rr_source,
+            # The connected ANT+ heart-rate sensor's serial (F007); None
+            # until T249 populates it. See models.Session.
+            "hr_sensor_serial": session.hr_sensor_serial,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context))

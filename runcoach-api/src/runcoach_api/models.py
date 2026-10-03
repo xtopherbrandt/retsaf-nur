@@ -66,6 +66,17 @@ class Session:
     # per-beat column stays the Tier-1 carrier; this one is what E003
     # reads.
     rr_source: str | None = None
+    # --- per-unit sensor identity (F007) ---------------------------------
+    # The serial of the ANT+ heart-rate sensor that was *connected* when
+    # the session was recorded -- the strap's own unit serial, not the
+    # watch's (``source_device`` is the watch). It records the pairing,
+    # not the HR stream's provenance: ``hr_source`` above says whether the
+    # stream came from the strap or the wrist, and a strap can be
+    # connected while the wrist produced the stream. None = unknown
+    # (no ANT+ heart-rate entry, no serial, conflicting serials, or a
+    # session stored before F007) -- never "no sensor". Nothing reads it
+    # yet; T249 populates it from ``device_info``.
+    hr_sensor_serial: int | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None

@@ -905,3 +905,158 @@ def test_read_hrv_rows_returns_only_rows_in_the_utc_range(synthetic, classified)
 
     # Rows come back in start_time order so the consumer never re-sorts.
     assert [r["start_time"] for r in rows] == sorted(r["start_time"] for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# T248 (F007) -- the additive ``hr_sensor_serial`` column, and its no-backfill rule
+# ---------------------------------------------------------------------------
+
+# The ``sessions`` DDL exactly as sprint-009 released it (commit c2839b6,
+# ``git show c2839b6:runcoach-api/src/runcoach_api/db.py``): the current DDL
+# minus ``hr_sensor_serial``. Copied verbatim rather than paraphrased, for the
+# same reason ``_T017_DDL`` and ``_PRE_AMENDMENT_SESSIONS_DDL`` above are -- an
+# invented "old" schema contains only the columns whoever wrote it remembered
+# were new. Only the ``--`` comment block above ``resting_rmssd_ms`` is
+# stripped; every column is as at that commit.
+_PRE_F007_SESSIONS_DDL = """
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
+      sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
+      source_device TEXT, recording_interval TEXT, hr_source TEXT,
+      rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
+      rmssd_precomputed REAL, hrv_source_tier TEXT, rr_source TEXT,
+      resting_rmssd_ms REAL,
+      UNIQUE (source_device, start_time)
+    );
+"""
+
+# One row of that vintage, every column populated with a distinctive value so
+# that "survives byte-for-byte" is asserted on each pre-existing column rather
+# than on a row of nulls.
+_PRE_F007_ROW = {
+    "session_id": "pre-f007-1",
+    "athlete_id": "athlete-a",
+    "start_time": "2026-09-28T06:10:00+00:00",
+    "sport": "running",
+    "activity_tag": "resting_hrv_check",
+    "source_vendor": "garmin",
+    "source_device": "fr945_lte fw17.4",
+    "recording_interval": "1hz",
+    "hr_source": "chest_strap",
+    "rr_valid_fraction": 0.98,
+    "quality_flags": '["smart_recording"]',
+    "summary": '{"duration_s": 150.797}',
+    "context": '{"ingested_at": "2026-09-28T06:12:00+00:00", "provenance": {}}',
+    "rmssd_precomputed": None,
+    "hrv_source_tier": "chest_strap_raw",
+    "rr_source": "chest_strap_ecg",
+    "resting_rmssd_ms": 41.52,
+}
+
+
+def _pre_f007_database_with_one_row(conn) -> None:
+    conn.executescript(_PRE_F007_SESSIONS_DDL)
+    columns = ", ".join(_PRE_F007_ROW)
+    placeholders = ", ".join(f":{name}" for name in _PRE_F007_ROW)
+    conn.execute(f"INSERT INTO sessions ({columns}) VALUES ({placeholders})", _PRE_F007_ROW)
+    conn.commit()
+
+
+def test_init_schema_adds_hr_sensor_serial_to_a_pre_f007_database_without_data_loss():
+    """F007 AC7. A database created before F007, holding a row, gains the
+    column through ``_reconcile_columns`` in place: nullable INTEGER, no
+    default, the row intact on every pre-existing column and NULL in the new
+    one."""
+    conn = db.get_connection()
+    try:
+        _pre_f007_database_with_one_row(conn)
+        assert "hr_sensor_serial" not in _columns(conn, "sessions")
+
+        db.init_schema(conn)
+
+        info = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = 'pre-f007-1'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert "hr_sensor_serial" in info
+    assert info["hr_sensor_serial"]["type"] == "INTEGER"
+    assert info["hr_sensor_serial"]["notnull"] == 0
+    assert info["hr_sensor_serial"]["dflt_value"] is None
+    assert info["hr_sensor_serial"]["pk"] == 0
+
+    assert row is not None
+    for column, value in _PRE_F007_ROW.items():
+        assert row[column] == value, column
+    assert row["hr_sensor_serial"] is None
+
+
+def test_hr_sensor_serial_is_not_backfilled_on_reinit():
+    """F007 AC8. ``init_schema`` runs at startup and on every ingest, so it
+    runs many times over the life of one database. A second run on the
+    upgraded database must neither raise nor write anything into the column:
+    the FIT bytes are not retained, so there is nothing to backfill from."""
+    conn = db.get_connection()
+    try:
+        _pre_f007_database_with_one_row(conn)
+
+        db.init_schema(conn)
+        db.init_schema(conn)  # must not raise "duplicate column name"
+
+        cols = [row["name"] for row in conn.execute("PRAGMA table_info(sessions)")]
+        row = conn.execute(
+            "SELECT hr_sensor_serial, resting_rmssd_ms FROM sessions"
+            " WHERE session_id = 'pre-f007-1'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert cols.count("hr_sensor_serial") == 1
+    assert row["hr_sensor_serial"] is None
+    # ...and the upgrade touched nothing beside it.
+    assert row["resting_rmssd_ms"] == 41.52
+
+
+def test_insert_session_carries_hr_sensor_serial_to_the_row():
+    """The insert path carries the field: a ``Session`` persisted with the
+    HRM-Pro Plus serial reads back the same integer via a direct SELECT. The
+    default is ``None`` so every existing writer (nothing populates it until
+    T249) stores NULL. ``get_session_detail`` is deliberately not consulted:
+    F007 AC9 keeps the field out of the response."""
+    from runcoach_api.models import Session
+
+    assert Session.__dataclass_fields__["hr_sensor_serial"].default is None
+
+    with_serial = Session(
+        session_id="strap-1",
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-10-01T06:00:00+00:00",
+        source_device="fr945_lte fw17.4",
+        hr_sensor_serial=3611410126,
+    )
+    without_serial = Session(
+        session_id="wrist-1",
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-10-02T06:00:00+00:00",
+        source_device="fr945_lte fw17.4",
+    )
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db._insert_session(conn, with_serial)
+        db._insert_session(conn, without_serial)
+        conn.commit()
+        stored = {
+            row["session_id"]: row["hr_sensor_serial"]
+            for row in conn.execute("SELECT session_id, hr_sensor_serial FROM sessions")
+        }
+    finally:
+        conn.close()
+
+    assert stored == {"strap-1": 3611410126, "wrist-1": None}
+    assert isinstance(stored["strap-1"], int)
