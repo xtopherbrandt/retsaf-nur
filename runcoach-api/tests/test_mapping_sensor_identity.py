@@ -127,7 +127,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from runcoach_api import db
 from runcoach_api.ingestion import fit_parser, mapping, pipeline
 
@@ -166,15 +165,9 @@ def _hr(serial, index=2, **extra):
 
 
 def _antplus(device_type, serial, index):
-    """A non-heart-rate antplus entry (footpod, device type 30, power meter)."""
-    return {
-        "device_index": index,
-        "source_type": "antplus",
-        "antplus_device_type": device_type,
-        "manufacturer": "garmin",
-        "garmin_product": "hrm_pro_plus",
-        "serial_number": serial,
-    }
+    """A non-heart-rate antplus entry (footpod, device type 30, power meter):
+    the ``_hr`` shape with only the device type swapped."""
+    return _hr(serial, index=index, antplus_device_type=device_type)
 
 
 # (row id, device_info value dicts besides the creator, expected)
