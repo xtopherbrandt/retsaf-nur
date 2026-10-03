@@ -1670,7 +1670,7 @@ SCAN_EXCLUDED_CHECKOUT_MARKER = (
 #: withdrawn phrasing *as the thing that was withdrawn*, and are to be left
 #: alone. Each row is ``(root index, a directory prefix or a file name, why)``.
 #:
-#: **Two of the three rows are directory prefixes and one is a single named
+#: **Three of the four rows are directory prefixes and one is a single named
 #: file, and that is the honest description** (corrected 2026-09-15, T122:
 #: this note used to say "a pattern, never an individual file", which the row
 #: spec beside it and row 0 both contradict). A directory prefix holds out a
@@ -1701,11 +1701,17 @@ SCAN_EXCLUDED_CHECKOUT_MARKER = (
 #: ``test_every_historical_record_exclusion_still_shelters_a_withdrawn_phrasing``:
 #: a row that shelters nothing is dead weight and must be deleted rather than
 #: kept in case it is needed. ``.subagent-returns/`` needs no row -- those
-#: transcripts are ``.txt`` and were never in ``SCAN_SUFFIXES``.
+#: transcripts are ``.txt`` and were never in ``SCAN_SUFFIXES``. ``backups/``
+#: needed one from sprint-010 (2026-10-03): builders park a byte-exact copy of
+#: each CRLF file under ``backups/<sprint>/<task>/`` before editing it, and
+#: T248's copy of the pre-edit ``CHANGELOG.md`` carried the same retraction
+#: quotes the live file is held out for under root 0. Sprint-009's backups
+#: held no swept phrase, so the tree changed before the rule did.
 SCAN_EXCLUDED_HISTORY = (
     (0, "CHANGELOG.md", "its retraction entries quote each phrasing as the thing being retracted"),
     (1, "spec/tasks/", "a task file is the dated record of one task's decision, the withdrawal included"),
     (1, "verify/", "a review verdict quotes the phrasing it found, at the date it found it"),
+    (1, "backups/", "a pre-edit copy a builder parks before touching a CRLF file; every byte is history by construction"),
 )
 
 #: One of the two exclusions that are not history. ``withdrawn_phrasings.py`` holds the
