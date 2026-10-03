@@ -2,11 +2,28 @@
 
 ## Unreleased
 
+## 2026-09-30 through 2026-10-03 — Sprint 009: research/00 citations, recency tolerance, review hand-off
+
+F009: every live citation of research/00 names a rule ID that resolves. A citation gate
+(`test_research00_citations_resolve.py`) classifies 268 files as live or record and checks 965
+citation rows across five per-root CSVs; records keep their citations. `hrv_trend.py`'s comments
+cite rule IDs, in three comment-only commits (one planned, two by review ruling), each
+re-measured with byte-identical T162 rows. HRV-25's forbidden-direction population is counted and
+pinned (24,099 of 307,500).
+
 F010: `/metrics/hrv` responses serve `thresholds.recency_tolerance_days` (28, read from
 `hrv_trend.RECENCY_TOLERANCE_DAYS`), so `selected_reason = higher_fidelity_skipped_stale` can be
 recomputed from `datasets[].last_read` and the response alone (research/00 PRIN-12, C33). Additive:
 both contract copies describe the new key identically and `info.version` is unchanged. This
 reverses IDEA-070's 2026-09-15 decision to narrow the `thresholds` promise instead.
+
+F012: F008's review hand-off is enforced by keys. research/00 splits PRIN-24 (`window_days`) from
+the new PRIN-27 (every other unserved verdict-affecting input) and states the coverage-gap leading
+stretch as HRV-85. Four old-meaning keys guard the retired readings, and the rule file records
+the vocabulary, round-naming and history policies. IDEA-103 and IDEA-106 are resolved.
+
+No API behaviour change beyond F010's additive key; `info.version` is unchanged. The suite grew
+from 2761 to 2921 tests, with 0 failed and 0 skipped. Residuals are routed to IDEA-113 to IDEA-116.
 
 ## 2026-09-28 through 2026-09-30 — Sprint 008: research/00 downstream sweep
 
