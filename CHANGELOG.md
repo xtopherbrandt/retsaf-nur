@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-03 — Sprint 010: per-unit sensor identity at ingestion
+
 F007 (T248): the `sessions` table gains a nullable `hr_sensor_serial INTEGER` column, and
 `models.Session` the matching `hr_sensor_serial: int | None = None` field, carried through the
 insert path. It holds the serial of the ANT+ heart-rate sensor that was *connected* when the
