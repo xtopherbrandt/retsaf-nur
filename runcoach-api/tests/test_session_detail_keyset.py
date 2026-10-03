@@ -35,6 +35,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from runcoach_api import db as db_module
 from runcoach_api.main import app
 
 # --- literals from c2839b6 db.get_session_detail ---------------------------
@@ -97,6 +98,7 @@ CORPUS_STRAP_SERIALS = ("3611410126", "785102823")
 
 CANONICAL_FIXTURE = "strap_hrv_capture.fit"
 POLAR_FIXTURE = "dev_fields_run.fit"
+STORED_SERIAL = {CANONICAL_FIXTURE: 3611410126, POLAR_FIXTURE: 785102823}
 
 
 def _detail_response(client: TestClient, post_fit, filename: str):
@@ -152,6 +154,14 @@ def test_detail_body_carries_neither_the_field_nor_a_strap_serial(post_fit, file
     """
     with TestClient(app) as client:
         text = _detail_response(client, post_fit, filename).text
+
+    # Precondition: the serial half is only live if the serial was stored.
+    conn = db_module.get_connection()
+    try:
+        stored = [row[0] for row in conn.execute("SELECT hr_sensor_serial FROM sessions")]
+    finally:
+        conn.close()
+    assert stored == [STORED_SERIAL[filename]], f"{filename} stored {stored}; the serial needle would be vacuous"
 
     # Compared as an offset, not with ``not in``: on a miss pytest would
     # render ``needle not in text`` by running difflib over the whole

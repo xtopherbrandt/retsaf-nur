@@ -75,7 +75,7 @@ class Session:
     # connected while the wrist produced the stream. None = unknown
     # (no ANT+ heart-rate entry, no serial, conflicting serials, or a
     # session stored before F007) -- never "no sensor". Nothing reads it
-    # yet; T249 populates it from ``device_info``.
+    # (F007 AC6); mapping._resolve_hr_sensor_serial resolves it.
     hr_sensor_serial: int | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
