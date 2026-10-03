@@ -2939,8 +2939,8 @@ def test_the_two_copies_of_the_thresholds_contract_publish_the_same_claims() -> 
     now states that promise and ``THRESHOLDS_SHARED_ANCHOR`` starts the new
     second sentence. The three failure modes above are unchanged in shape;
     ``THRESHOLDS_WITHDRAWN`` still holds the pre-IDEA-070 "heuristic constants"
-    promise, which remains retracted -- the block is not every heuristic the
-    verdict uses, it is the seven the band, the verdict and the tier rule apply.
+    promise, which remains retracted -- the block is not every heuristic the verdict uses: it serves seven,
+    and PRIN-24 names window_days as the one verdict-affecting constant it does not serve.
     """
     target = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
     contract = _flat(target["components"]["schemas"]["HrvTrend"]["properties"]["thresholds"]["description"])

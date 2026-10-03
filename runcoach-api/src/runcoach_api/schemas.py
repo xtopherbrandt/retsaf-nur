@@ -189,10 +189,10 @@ class ExcludedReading(BaseModel):
 class Thresholds(BaseModel):
     """The band, verdict and dataset-selection constants (spec/03 §3.7; construction reference).
 
-    The tolerance of the recency gate is served here as recency_tolerance_days, beside the six
-    the band and the verdict apply, so selected_reason and baseline.tier are
-    recomputable from the response alone (research/00 PRIN-12; C33, 2026-09-23, which reversed
-    IDEA-070's narrowing of 2026-09-15).
+    The tolerance of the recency gate is served here as recency_tolerance_days, beside the six the block
+    already served (PRIN-24 names window_days as the one verdict-affecting constant it does not serve),
+    so selected_reason and baseline.tier are recomputable from the response alone (research/00 PRIN-12;
+    C33, 2026-09-23, which reversed IDEA-070's narrowing of 2026-09-15).
     """
 
     baseline_days: int

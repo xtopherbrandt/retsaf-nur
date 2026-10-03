@@ -22,6 +22,7 @@ repo,contracts/openapi.yaml,1880,§1.7,PRIN-14
 repo,contracts/openapi.yaml,653,,PRIN-24
 repo,contracts/openapi.yaml,1358,,PRIN-24
 repo,contracts/openapi.yaml,1461,,PRIN-24
+repo,contracts/openapi.yaml,1626,,PRIN-24
 repo,runcoach-api/tests/data/research00_census.csv,52,§3.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,60,§1.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,101,PRIN-16,literal
