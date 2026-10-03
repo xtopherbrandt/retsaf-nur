@@ -2480,17 +2480,17 @@ UNAVAILABLE_REASON_CLAIMS = (
 )
 
 #: The run the two copies must state identically, from this anchor to the end.
-#: It starts at the ordering sentence and not at the field's first word
-#: **because the two copies genuinely differ before it**: the YAML parenthesis
-#: cites ``research/00`` PRIN-12 and dates the closure, the schema copy states the
-#: reproduce-it-by-hand property that section is about. Both are true, neither
-#: is the rule. Everything from here on is the rule, and it is identical once
-#: flattened -- which it was not before T140: the two copies punctuated the
-#: ``day_not_happened`` clause differently (a dash in the YAML, a colon in the
-#: schema), a divergence nothing in the tree could see because no pin compared
-#: them.
+#: It starts at the field's first word, so the parenthesis is compared too.
+#: Until review cycle 9 it started at the ordering sentence, and that hid a
+#: real divergence: T225 rewrote the schema copy's ``research/00`` PRIN-12
+#: parenthesis to name that rule's OPEN exceptions and the YAML kept calling
+#: it an invariant that failed only here, until T137. Nothing in either copy
+#: needs to differ from the other before the ordering sentence. Before T140
+#: the two copies also punctuated the ``day_not_happened`` clause differently
+#: (a dash in the YAML, a colon in the schema), a divergence nothing in the
+#: tree could see because no pin compared them.
 UNAVAILABLE_REASON_SHARED_ANCHOR = (
-    "judge evaluates four causes in a fixed order and reports the first that fires"
+    "Why verdict is hrv_unavailable; null whenever it is not"
 )
 
 #: The same treatment for ``baseline.established``, added by review cycle 8

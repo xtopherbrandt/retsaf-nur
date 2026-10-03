@@ -1457,9 +1457,11 @@ components:
             - day_not_happened
           description: >
             Why verdict is hrv_unavailable; null whenever it is not (research/00
-            PRIN-12 -- this is the one place that invariant failed until T137,
-            closing F005's Negative Class row "the verdict still cannot say why it
-            is unavailable", open since review cycle 4). judge evaluates four
+            PRIN-12: the verdict must be reproducible by hand from the response,
+            its unserved inputs being PRIN-12's OPEN exceptions (PRIN-24, PRIN-27),
+            and this was the one place that rule failed -- F005's Negative Class
+            row "the verdict still cannot say why it is unavailable", closed by
+            T137). judge evaluates four
             causes in a fixed order and reports the first that fires:
             no_tier_sustains_a_trend (no resting-HRV reading of any tier can
             sustain a trend -- the series holds no per-tier dataset: no reading
