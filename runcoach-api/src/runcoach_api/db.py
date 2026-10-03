@@ -261,7 +261,7 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             # written by _insert_rr_intervals -- see models.Session.
             "rr_source": session.rr_source,
             # The connected ANT+ heart-rate sensor's serial (F007); None
-            # until T249 populates it. See models.Session.
+            # when unresolved -- see mapping._resolve_hr_sensor_serial.
             "hr_sensor_serial": session.hr_sensor_serial,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),

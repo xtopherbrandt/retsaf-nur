@@ -21,13 +21,13 @@ in ``strap_hrv_capture.fit``) and 785102823 (the Polar strap in
 ``dev_fields_run.fit``) -- both measured absent from both bodies at
 c2839b6.
 
-Timing: T251 runs in the same wave as T249, which populates the column.
-In T251's own run the ingested row still has ``hr_sensor_serial`` NULL,
-so the value-absent half of the body check cannot fail yet; it bites at
-T253, after T249 merges, when the row carries a real serial. The key-set
-half, and the detached-worktree perturbation recorded in the T251 commit
-body (adding ``"hr_sensor_serial": row["hr_sensor_serial"]`` to the dict
-and its SELECT turned this module red), are the proof inside the task.
+Both halves are live. T249 has merged, so both fixtures ingest with
+their strap's serial stored (3611410126 and 785102823), and the
+value-absent half of the body check fails if either serial reaches the
+body. The key-set half is proved by the detached-worktree perturbation
+recorded in the T251 commit body (adding ``"hr_sensor_serial":
+row["hr_sensor_serial"]`` to the dict and its SELECT turned this
+module red).
 """
 
 from __future__ import annotations
@@ -147,8 +147,8 @@ def test_pinned_key_sets_are_the_literals_not_the_model() -> None:
 def test_detail_body_carries_neither_the_field_nor_a_strap_serial(post_fit, filename: str) -> None:
     """Whole-body check that reaches into the JSON blobs the key-set pin cannot.
 
-    The serial half is vacuous until T249 lands (see the module docstring);
-    the field-name half is live now.
+    Both halves are live: each fixture ingests with its strap's serial
+    stored, so a serial reaching the body is caught (see the module docstring).
     """
     with TestClient(app) as client:
         text = _detail_response(client, post_fit, filename).text

@@ -14,8 +14,16 @@ permanently: the original FIT bytes are not retained, so the value is unrecovera
 path is added. Any later consumer must treat `NULL` as unknown. An existing database gains the
 column in place through `db._reconcile_columns` on the next `init_schema` (app startup or any
 ingest), with every row preserved — the same automatic reconcile that landed `resting_rmssd_ms`, so
-no migration step is required. Nothing populates the column yet (T249 does), nothing reads it, and
-it is absent from `GET /sessions/{id}`.
+no migration step is required.
+
+F007 (T249): ingestion resolves and stores `hr_sensor_serial`. The rule, as built in
+`mapping._resolve_hr_sensor_serial`: collect the distinct non-null `serial_number` values over the
+file's `device_info` entries with `source_type` antplus and `antplus_device_type` heart_rate.
+Exactly one distinct serial is stored; none, or two or more distinct serials, store `NULL`. There
+is no fallback to the watch's (`creator`) serial or to a sibling channel of the same strap, and
+firmware, manufacturer and product are not part of the identity, so a firmware push cannot split
+one sensor into two. A Bluetooth (BLE) strap stores `NULL`: only ANT+ entries are read. Nothing
+reads the column, and it is absent from `GET /sessions/{id}`.
 
 ## 2026-09-30 through 2026-10-03 — Sprint 009: research/00 citations, recency tolerance, review hand-off
 

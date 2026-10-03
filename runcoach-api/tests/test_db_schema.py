@@ -1022,8 +1022,8 @@ def test_hr_sensor_serial_is_not_backfilled_on_reinit():
 def test_insert_session_carries_hr_sensor_serial_to_the_row():
     """The insert path carries the field: a ``Session`` persisted with the
     HRM-Pro Plus serial reads back the same integer via a direct SELECT. The
-    default is ``None`` so every existing writer (nothing populates it until
-    T249) stores NULL. ``get_session_detail`` is deliberately not consulted:
+    default is ``None``, so a writer that does not resolve it stores NULL
+    (the dataclass default). ``get_session_detail`` is deliberately not consulted:
     F007 AC9 keeps the field out of the response."""
     from runcoach_api.models import Session
 

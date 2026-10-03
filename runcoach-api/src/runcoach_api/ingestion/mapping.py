@@ -236,9 +236,12 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     later consumer cannot tell the two apart.
 
     The field records the pairing, not the HR stream's provenance:
-    ``hr_source`` says whether the strap produced the beats. Two corpus
-    fixtures list the strap while the HR came from the wrist, and resolve
-    to the strap's serial by design.
+    ``hr_source`` is the inferred provenance (spec/02 section 2.4.2: no RR
+    stream with HR present defaults it to ``wrist_ppg``). Four corpus
+    fixtures -- ``sample_run.fit``, ``wrist_ppg_run.fit``,
+    ``strap_health_snapshot.fit`` and ``strap_health_snapshot_hrv.fit`` --
+    store the strap's serial while ``hr_source`` reads ``wrist_ppg`` (each
+    has 0 RR beats), by design.
 
     Field shapes, verified against the real decode of every fixture
     (census 2026-10-03): ``source_type`` resolves to the string
@@ -246,9 +249,12 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     ``device_info.device_type`` (def_num 1) is a subfield switched on
     ``source_type`` (def_num 25) -- ``antplus_device_type`` only when
     ``source_type`` is antplus, ``ble_device_type`` when it is
-    ``bluetooth_low_energy`` (``fitdecode/profile.py`` lines 9690-9731) --
-    so a BLE strap never presents an ``antplus_device_type`` and is
-    excluded by the type check before the source check. ``serial_number``
+    ``bluetooth_low_energy`` (``fitdecode/profile.py`` lines 9693-9744) --
+    so a BLE strap never presents an ``antplus_device_type``. The predicate
+    tests ``source_type`` first and ``and`` short-circuits, so it is the
+    source check that rejects a BLE strap; but the type check alone would
+    reject it too, so dropping the source clause is undetectable on real
+    fitdecode shapes. ``serial_number``
     is uint32z, whose invalid raw 0 fitdecode already delivers as ``None``
     (``fitdecode/types.py`` line 379), so an absent serial reaches this
     function as ``None`` and is discarded before counting.

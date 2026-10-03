@@ -11,7 +11,7 @@ three ways, from the outside in:
    three states that differ *only* in ``hr_sensor_serial``:
 
    - **A**: as ingested (every row ``NULL``, the pre-F007 and the
-     no-sensor posture alike);
+     unresolved posture alike);
    - **B**: one serial on every row (``UPDATE sessions SET ...``);
    - **C**: two serials alternating by ``start_time`` order -- the "device
      swap" shape a future consumer of the field would be built to react to.
@@ -28,9 +28,12 @@ three ways, from the outside in:
    returns exactly the four columns the metric consumes, so a widened
    ``SELECT`` reddens here before any consumer can lean on the fifth.
 
-3. **Lexically**, over the reader set the probe also greps -- ``metrics/``,
-   ``ingestion/hrv_classification.py``, ``schemas.py`` and ``main.py`` -- no
-   token outside a comment mentions the column. The behavioural walk cannot
+3. **Lexically**, over every ``.py`` module under ``src/runcoach_api``,
+   recursively, except the three storage modules allowed to name it --
+   ``db.py``, ``ingestion/mapping.py`` and ``models.py`` -- no token outside
+   a comment mentions the column. Inverted from a listed reader set, so a
+   read in ``pipeline.py``, ``quality_gates.py``, ``cli.py`` or a module
+   added later is scanned without editing this file. The behavioural walk cannot
    see a classifier branch (classification runs at seed time, before the
    mutation) or a response-model field on a route that is not a metric, so
    this pin covers what the walk cannot reach.
@@ -95,14 +98,13 @@ METRIC_ROUTES: frozenset[tuple[str, str]] = frozenset({("GET", "/metrics/hrv")})
 # The four columns ``read_hrv_rows`` serves the trend, in SELECT order.
 HRV_ROW_COLUMNS = ["session_id", "start_time", "resting_rmssd_ms", "hrv_source_tier"]
 
-# The reader set the lexical pin scans, relative to ``src/runcoach_api``.
-# ``db.py`` and ``mapping.py`` are storage and are excluded by design.
+# The lexical pin scans every module under ``src/runcoach_api``, recursively,
+# except the storage modules -- the only files allowed to name the column.
 _SRC = Path(__file__).resolve().parents[1] / "src" / "runcoach_api"
-READER_FILES: tuple[Path, ...] = (
-    *sorted(p for p in (_SRC / "metrics").glob("*.py")),
-    _SRC / "ingestion" / "hrv_classification.py",
-    _SRC / "schemas.py",
-    _SRC / "main.py",
+STORAGE_FILES: frozenset[str] = frozenset({"db.py", "ingestion/mapping.py", "models.py"})
+ALL_SOURCE_FILES: tuple[Path, ...] = tuple(sorted(_SRC.rglob("*.py")))
+READER_FILES: tuple[Path, ...] = tuple(
+    p for p in ALL_SOURCE_FILES if p.relative_to(_SRC).as_posix() not in STORAGE_FILES
 )
 COLUMN = "hr_sensor_serial"
 
@@ -254,8 +256,9 @@ def test_read_hrv_rows_serves_only_the_four_trend_columns(
 
 
 def test_no_reader_module_mentions_the_column_outside_comments() -> None:
-    """Every NAME and STRING token of the reader set is scanned; a dict key,
-    an SQL fragment, an attribute or a pydantic field all surface here."""
+    """Every non-comment token of every non-storage module is scanned; a
+    dict key, an SQL fragment, an attribute or a pydantic field all surface
+    here."""
     hits: list[str] = []
     tokens_scanned = 0
     for path in READER_FILES:
@@ -265,8 +268,16 @@ def test_no_reader_module_mentions_the_column_outside_comments() -> None:
                 continue
             tokens_scanned += 1
             if COLUMN in tok.string:
-                hits.append(f"{path.relative_to(_SRC)}:{tok.start[0]}: {tok.string.strip()[:80]}")
-    names = [str(p.relative_to(_SRC)) for p in READER_FILES]
-    print(f"\n[slice compared] reader files={len(names)} {names} tokens={tokens_scanned} hits={len(hits)}")
-    assert len(names) >= 4 and all(p.is_file() for p in READER_FILES)
+                hits.append(f"{path.relative_to(_SRC).as_posix()}:{tok.start[0]}: {tok.string.strip()[:80]}")
+    names = [p.relative_to(_SRC).as_posix() for p in READER_FILES]
+    storage = sorted(p.relative_to(_SRC).as_posix() for p in ALL_SOURCE_FILES if p not in READER_FILES)
+    print(
+        f"\n[slice compared] scanned files={len(names)} of {len(ALL_SOURCE_FILES)} "
+        f"(allowed storage={storage}) {names} tokens={tokens_scanned} hits={len(hits)}"
+    )
+    # Every storage file still exists, so the allow-list names real files and
+    # exactly those three are held out; everything else is scanned.
+    assert storage == sorted(STORAGE_FILES)
+    assert len(names) == len(ALL_SOURCE_FILES) - len(STORAGE_FILES)
+    assert "pipeline.py" in {p.name for p in READER_FILES}
     assert hits == []

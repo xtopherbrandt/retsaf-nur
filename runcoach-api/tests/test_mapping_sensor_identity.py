@@ -45,11 +45,13 @@ presence of a creator, not in its absence.
    device type 30, both serial S                                  even though the same strap owns both
                                                                   channels in the corpus.
 8  bike_power with serial S only                        None      None: wrong device type (AC4).
-9  source_type bluetooth_low_energy,                    None      None: antplus only. A faithful BLE fake
-   ble_device_type heart_rate, serial S                           carries no ``antplus_device_type`` key
-                                                                  (see the row 9 note), so this row is
-                                                                  excluded by the device-type check before
-                                                                  the ``source_type`` check is reached.
+9  source_type bluetooth_low_energy,                    None      None: antplus only. The ``source_type``
+   ble_device_type heart_rate, serial S                           check rejects it (it runs first and
+                                                                  ``and`` short-circuits). A faithful BLE
+                                                                  fake carries no ``antplus_device_type``
+                                                                  key (see the row 9 note), so the
+                                                                  device-type check alone would reject it
+                                                                  too.
 10 no device_info at all; also no file_id               None      None, no exception, and ``db.persist``
                                                                   succeeds (AC2/AC3 "ingestion succeeds").
 11 only the creator entry (local), serial C             None      None: no creator fallback (AC3). A watch
@@ -76,18 +78,34 @@ presence of a creator, not in its absence.
    ``source_type`` field at all, serial S                         is the in-between population -- a
                                                                   third-party or older head unit -- named
                                                                   so it is seen, not accepted by accident.
+17 same serial S, manufacturer garmin then              S         S: manufacturer is not an input, so it
+   polar_electro                                                  cannot split one serial into two (AC1).
+18 same serial S, software_version 8.9 then 9.1         S         S: a firmware push does not split one
+                                                                  sensor into two (AC1).
+19 same serial S on device_index 2 and 3                S         S: ``device_index`` is not an input; the
+                                                                  serial alone is the identity (AC1).
+20 serials S1 then S2 on the same device_index          None      None: two distinct serials conflict
+                                                                  whatever index carries them; never the
+                                                                  last value per index (AC4).
 == ==================================================== ========= =========================================
+
+Rows 17-20 were added at code review (iteration 1): rows 1-16 never
+varied a not-an-input field across two emissions of one serial, so a
+resolver keying identity on (manufacturer, serial), (software_version,
+serial) or (device_index, serial), or taking the last serial per
+``device_index``, passed every one of them.
 
 Row 9 note. In real fitdecode, ``device_info.device_type`` (def_num 1) is a
 field with four subfields selected by ``source_type`` (def_num 25):
 ``ant_device_type`` when ``source_type`` is ``ant``, ``antplus_device_type``
 when ``antplus``, ``ble_device_type`` when ``bluetooth_low_energy`` and
 ``local_device_type`` when ``local`` (``fitdecode/profile.py`` lines
-9690-9731, the ``ReferenceField(name='source_type', ...)`` entries). So
+9693-9744, the four ``SubField`` entries and their
+``ReferenceField(name='source_type', ...)``). So
 ``get_value("antplus_device_type")`` resolves only on an antplus entry, and
 a faithful BLE fake has no ``antplus_device_type`` key. Row 9 therefore
 cannot by itself detect a resolver that dropped the ``source_type ==
-'antplus'`` clause: it is already excluded by the device-type check. Row 16
+'antplus'`` clause: the device-type check alone would exclude it. Row 16
 cannot either, for the same reason, when it lacks ``antplus_device_type``.
 The ``source_type`` clause is kept because it is the ruling's wording and
 because it is what makes the resolver's inputs legible; perturbation (d) in
@@ -103,18 +121,27 @@ with the task's table before the resolver was written):
 
 - ``dev_fields_run.fit`` 785102823 -- Polar strap; manufacturer not an input.
 - ``sample_health_snapshot.fit`` None -- no antplus heart-rate entry.
-- ``sample_run.fit`` 3611410126 -- strap connected, HR from wrist: pairing,
-  not provenance.
+- ``sample_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
+  (0 RR beats): pairing, not provenance.
 - ``strap_cool_down_walk.fit`` 3611410126.
-- ``strap_health_snapshot.fit`` 3611410126.
-- ``strap_health_snapshot_hrv.fit`` 3611410126 -- first emission
-  ``garmin_product: 21``; product not an input.
+- ``strap_health_snapshot.fit`` 3611410126 -- ``hr_source`` reads
+  ``wrist_ppg`` (0 RR beats).
+- ``strap_health_snapshot_hrv.fit`` 3611410126 -- ``hr_source`` reads
+  ``wrist_ppg`` (0 RR beats); first emission ``garmin_product: 21``;
+  product not an input.
 - ``strap_hrv_capture.fit`` 3611410126 -- same; the index-6 footpod channel
   is ignored.
 - ``strap_hrv_sample_run.fit`` 3611410126 -- same.
 - ``strap_run_hrv.fit`` 3611410126.
 - ``wrist_ppg_hrv_snapshot.fit`` None -- no antplus heart-rate entry.
-- ``wrist_ppg_run.fit`` 3611410126 -- strap connected, HR from wrist.
+- ``wrist_ppg_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
+  (0 RR beats).
+
+Those four store the strap's serial while ``hr_source`` reads
+``wrist_ppg``. ``hr_source`` is the inferred provenance (spec/02 section
+2.4.2: no RR stream with HR present defaults it to ``wrist_ppg``); this
+table does not assert where their HR physically came from. Measured by an
+isolated re-ingest of every fixture at code review (iteration 1).
 
 The end-to-end rows drive ``pipeline.ingest_fit_bytes`` into the isolated
 database and read the column back; the upgrade-path row builds the
@@ -220,6 +247,26 @@ _PROBE_ROWS = [
         [{"device_index": 2, "device_type": 120, "serial_number": S}],
         None,
         id="row16-no-source-type-field-in-between-population",
+    ),
+    pytest.param(
+        [_hr(S), _hr(S, manufacturer="polar_electro")],
+        S,
+        id="row17-same-serial-two-manufacturers-not-an-input",
+    ),
+    pytest.param(
+        [_hr(S, software_version=8.9), _hr(S, software_version=9.1)],
+        S,
+        id="row18-same-serial-two-firmware-versions-not-an-input",
+    ),
+    pytest.param(
+        [_hr(S, index=2), _hr(S, index=3)],
+        S,
+        id="row19-same-serial-two-device-indexes-not-an-input",
+    ),
+    pytest.param(
+        [_hr(S1, index=2), _hr(S2, index=2)],
+        None,
+        id="row20-two-serials-same-device-index-conflict",
     ),
 ]
 
