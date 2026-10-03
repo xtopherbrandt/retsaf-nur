@@ -63,15 +63,12 @@ presence of a creator, not in its absence.
    serial S                                                       broadcasting optical HR over ANT+ is a
                                                                   connected heart-rate sensor; product is
                                                                   excluded by ruling.
-14 heart_rate whose serial is the uint32z invalid       None      Not a test row: ``serial_number`` is
-   value (raw 0)                                        (row 4)   uint32z and fitdecode's base-type parser
-                                                                  maps raw 0 to ``None`` before any field
-                                                                  is read (``fitdecode/types.py`` line 379,
-                                                                  ``BaseType(name='uint32z', ...,
-                                                                  parse=lambda x: None if x == 0 else x)``),
-                                                                  so the case reaches the resolver as row
-                                                                  4. No ``0`` stub row: no rule covers a
-                                                                  raw 0 and the decoder never delivers one.
+14 heart_rate whose serial is the uint32z invalid       None      Not a test row: on a conforming file
+   value (raw 0)                                        (row 4)   ``serial_number`` is uint32z and
+                                                                  fitdecode's base-type parser maps raw 0
+                                                                  to ``None`` (``fitdecode/types.py`` line
+                                                                  379), so it reaches the resolver as row
+                                                                  4. A non-conforming file is rows 21-27.
 15 heart_rate, manufacturer None, serial S              S         S: manufacturer absent is still a
                                                                   heart-rate entry with one serial (AC1).
 16 device_type heart_rate (raw 120) with no             None      None: ``source_type`` is not antplus. This
@@ -87,6 +84,16 @@ presence of a creator, not in its absence.
 20 serials S1 then S2 on the same device_index          None      None: two distinct serials conflict
                                                                   whatever index carries them; never the
                                                                   last value per index (AC4).
+21 heart_rate, serial int 0 (file declares uint32)      None      None: 0 is not a serial; discarded.
+22 heart_rate, serial a tuple (array-sized field)       None      None: discarded -- sqlite3 cannot bind a
+                                                                  tuple, so keeping it 500s the upload.
+23 heart_rate, serial a str                             None      None: no TEXT in the INTEGER column.
+24 heart_rate, serial bytes                             None      None: no BLOB in the INTEGER column.
+25 heart_rate, serial True                              None      None: a bool is an int subclass, not a
+                                                                  serial.
+26 heart_rate, serial negative (file declares sint32)   None      None: only a positive integer counts.
+27 heart_rate S, then the same sensor emitting 0        S         S: the invalid value is discarded before
+                                                                  counting, not counted as a conflict.
 == ==================================================== ========= =========================================
 
 Rows 17-20 were added at code review (iteration 1): rows 1-16 never
@@ -94,6 +101,12 @@ varied a not-an-input field across two emissions of one serial, so a
 resolver keying identity on (manufacturer, serial), (software_version,
 serial) or (device_index, serial), or taking the last serial per
 ``device_index``, passed every one of them.
+
+Rows 21-27 were added at code review (stage 4.7): fitdecode decodes with
+the base type the *file* declares, not the profile's uint32z, so a
+non-conforming writer can deliver ``serial_number`` as a plain 0, a
+negative, a tuple, a str or bytes. Only a positive integer counts;
+anything else is discarded before counting.
 
 Row 9 note. In real fitdecode, ``device_info.device_type`` (def_num 1) is a
 field with four subfields selected by ``source_type`` (def_num 25):
@@ -268,6 +281,13 @@ _PROBE_ROWS = [
         None,
         id="row20-two-serials-same-device-index-conflict",
     ),
+    pytest.param([_hr(0)], None, id="row21-plain-uint32-zero-discarded"),
+    pytest.param([_hr((S, S))], None, id="row22-array-sized-tuple-discarded"),
+    pytest.param([_hr(str(S))], None, id="row23-str-serial-discarded"),
+    pytest.param([_hr(str(S).encode())], None, id="row24-bytes-serial-discarded"),
+    pytest.param([_hr(True)], None, id="row25-bool-serial-discarded"),
+    pytest.param([_hr(-S)], None, id="row26-negative-serial-discarded"),
+    pytest.param([_hr(S), _hr(0)], S, id="row27-valid-serial-plus-zero-is-not-a-conflict"),
 ]
 
 
@@ -380,6 +400,30 @@ def test_ingest_persists_hr_sensor_serial_end_to_end(
 
     assert row is not None
     assert row[0] == expected
+
+
+def test_row22_tuple_serial_ingests_and_persists_null(
+    synthetic, fake_msg, isolated_data_dir
+) -> None:
+    """Row 22 through ``to_canonical`` and ``db.persist`` (row 10's shape):
+    kept, the tuple reaches the insert and sqlite3 raises ProgrammingError
+    (POST /sessions 500). Discarded, the session persists with NULL."""
+    messages = synthetic() + [fake_msg("device_info", _hr((S, S)))]
+    session, records = mapping.to_canonical(messages)
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.persist(conn, session, records, [], {})
+        stored = conn.execute(
+            "SELECT hr_sensor_serial FROM sessions WHERE session_id = ?",
+            (session.session_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert stored is not None
+    assert stored["hr_sensor_serial"] is None
 
 
 # The ``sessions`` DDL exactly as sprint-009 released it (commit c2839b6,

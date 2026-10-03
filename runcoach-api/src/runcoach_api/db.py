@@ -105,17 +105,17 @@ _SCHEMA_DDL = """
       -- is expressed as a CHECK and why a consumer must guard the read
       -- across the amendment window rather than assume ln() is safe.
       resting_rmssd_ms REAL,
-      -- hr_sensor_serial is the serial of the ANT+ heart-rate sensor that
-      -- was CONNECTED when the session was recorded -- the strap's own
-      -- unit serial, distinct from the watch in source_device. It records
-      -- the pairing, not the HR stream's provenance (hr_source holds
-      -- that). NULL means unknown, never "no sensor": no ANT+ heart-rate
-      -- entry, no serial on any emission, conflicting serials, or a row
-      -- stored before the column existed. Added 2026-10-03 by F007;
-      -- _reconcile_columns lands it on an existing database and no
-      -- backfill fills it -- the FIT bytes are not retained, so pre-F007
-      -- rows stay NULL permanently. Nothing reads it yet (F007 AC6), and
-      -- it is deliberately absent from GET /sessions/{id} (AC9).
+      -- hr_sensor_serial is the own unit serial of the ANT+ heart-rate
+      -- sensor CONNECTED when the session was recorded (usually a chest
+      -- strap; a watch broadcasting optical HR over ANT+ counts too), not
+      -- the recording watch in source_device. It records the pairing, not
+      -- the HR provenance: the inferred hr_source can read wrist_ppg while
+      -- a strap was connected, and neither proves the other. NULL means
+      -- unknown, never "no sensor": no ANT+ heart-rate entry, no valid
+      -- serial, conflicting serials, or a row stored before F007 (added
+      -- 2026-10-03; _reconcile_columns lands it, nothing backfills it and
+      -- no FIT bytes are kept, so such a row stays NULL until the session
+      -- is deleted and re-uploaded). Unread (F007 AC6); not in GET (AC9).
       hr_sensor_serial INTEGER,
       UNIQUE (source_device, start_time)
     );

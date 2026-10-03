@@ -67,14 +67,14 @@ class Session:
     # reads.
     rr_source: str | None = None
     # --- per-unit sensor identity (F007) ---------------------------------
-    # The serial of the ANT+ heart-rate sensor that was *connected* when
-    # the session was recorded -- the strap's own unit serial, not the
-    # watch's (``source_device`` is the watch). It records the pairing,
-    # not the HR stream's provenance: ``hr_source`` above says whether the
-    # stream came from the strap or the wrist, and a strap can be
-    # connected while the wrist produced the stream. None = unknown
-    # (no ANT+ heart-rate entry, no serial, conflicting serials, or a
-    # session stored before F007) -- never "no sensor". Nothing reads it
+    # The own unit serial of the ANT+ heart-rate sensor *connected* when
+    # the session was recorded (usually a chest strap; a watch broadcasting
+    # optical HR over ANT+ counts too), not the recording watch's
+    # (``source_device``). It records the pairing, not the HR provenance:
+    # the inferred ``hr_source`` can read wrist_ppg while a strap was
+    # connected, and neither proves the other. None = unknown (no ANT+
+    # heart-rate entry, no valid serial, conflicting serials, or a pre-F007
+    # session not yet deleted and re-uploaded) -- never "no sensor". Unread
     # (F007 AC6); mapping._resolve_hr_sensor_serial resolves it.
     hr_sensor_serial: int | None = None
     quality_flags: list[str] = field(default_factory=list)

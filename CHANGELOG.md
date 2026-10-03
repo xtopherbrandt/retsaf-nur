@@ -5,21 +5,25 @@
 F007 (T248): the `sessions` table gains a nullable `hr_sensor_serial INTEGER` column, and
 `models.Session` the matching `hr_sensor_serial: int | None = None` field, carried through the
 insert path. It holds the serial of the ANT+ heart-rate sensor that was *connected* when the
-session was recorded — the strap's own unit serial, not the watch's (`source_device`). It records
-the pairing, not the HR stream's provenance (`hr_source` holds that), so a strap can be listed while
-the wrist produced the stream. `NULL` means **unknown**, never "no sensor".
+session was recorded — that sensor's own unit serial (usually a chest strap; a watch broadcasting
+its optical HR over ANT+ counts too), not the recording watch's (`source_device`). It records the
+pairing, not the HR stream's provenance: `hr_source` is inferred (spec/02 section 2.4.2) and can read
+`wrist_ppg` while a strap was connected, so the two fields can disagree and neither proves the
+other. `NULL` means **unknown**, never "no sensor".
 
-**No backfill.** Sessions stored before this column existed keep `hr_sensor_serial` `NULL`
-permanently: the original FIT bytes are not retained, so the value is unrecoverable, and no recovery
-path is added. Any later consumer must treat `NULL` as unknown. An existing database gains the
+**No backfill.** Nothing fills `hr_sensor_serial` for sessions stored before this column existed,
+and the app keeps no FIT bytes, so such a row stays `NULL` unless the athlete deletes the session
+and re-uploads the original file: the re-ingest derives the same `session_id` (F007 AC5) and stores
+the serial. Any later consumer must treat `NULL` as unknown. An existing database gains the
 column in place through `db._reconcile_columns` on the next `init_schema` (app startup or any
 ingest), with every row preserved — the same automatic reconcile that landed `resting_rmssd_ms`, so
 no migration step is required.
 
 F007 (T249): ingestion resolves and stores `hr_sensor_serial`. The rule, as built in
 `mapping._resolve_hr_sensor_serial`: collect the distinct non-null `serial_number` values over the
-file's `device_info` entries with `source_type` antplus and `antplus_device_type` heart_rate.
-Exactly one distinct serial is stored; none, or two or more distinct serials, store `NULL`. There
+file's `device_info` entries with `source_type` antplus and `antplus_device_type` heart_rate;
+only a positive integer counts, and anything else a non-conforming writer sends (a 0, a tuple, a
+string) is discarded. Exactly one distinct serial is stored; none, or two or more distinct serials, store `NULL`. There
 is no fallback to the watch's (`creator`) serial or to a sibling channel of the same strap, and
 firmware, manufacturer and product are not part of the identity, so a firmware push cannot split
 one sensor into two. A Bluetooth (BLE) strap stores `NULL`: only ANT+ entries are read. Nothing

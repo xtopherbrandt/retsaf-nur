@@ -256,20 +256,27 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     reject it too, so dropping the source clause is undetectable on real
     fitdecode shapes. ``serial_number``
     is uint32z, whose invalid raw 0 fitdecode already delivers as ``None``
-    (``fitdecode/types.py`` line 379), so an absent serial reaches this
-    function as ``None`` and is discarded before counting.
+    (``fitdecode/types.py`` line 379). But fitdecode decodes with the base
+    type the *file* declares, so a non-conforming writer can deliver a plain
+    0, a negative, a tuple (array-sized field; sqlite3 cannot bind it), a str
+    or bytes: only a positive integer counts; anything else a non-conforming
+    writer sends is discarded before counting, never counted as a conflict.
 
     Lives beside ``_build_source_device``, not inside it: ``source_device``
     and ``derive_session_id`` are frozen by F007 AC5 and read the first
     ``device_info`` only; this reads all of them.
     """
-    serials = {
+    candidates = (
         msg.get_value("serial_number", fallback=None)
         for msg in by_name.get("device_info", [])
         if msg.get_value("source_type", fallback=None) == "antplus"
         and msg.get_value("antplus_device_type", fallback=None) == "heart_rate"
+    )
+    serials = {
+        value
+        for value in candidates
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
     }
-    serials.discard(None)
     if len(serials) != 1:
         return None
     return serials.pop()
