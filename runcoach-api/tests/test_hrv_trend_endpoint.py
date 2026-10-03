@@ -3901,7 +3901,7 @@ def test_a_future_day_names_no_dissenter_because_no_verdict_was_conferred(
     ``_withhold_future`` confers no verdict either, so the same argument
     applies, and the split it implies is what this pins:
 
-    * ``disagreed_with`` is **empty** on a withheld future day -- it is a
+    * ``disagreed_with`` is **empty** on a future day -- it is a
       claim *about* a verdict and none was conferred;
     * ``selected_dataset`` and ``selected_reason`` are **kept as computed** --
       ``_withhold_future``'s own justification is that everything which

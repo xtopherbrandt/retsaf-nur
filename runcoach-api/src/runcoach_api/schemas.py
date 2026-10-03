@@ -538,7 +538,7 @@ class HrvTrendResponse(BaseModel):
             "highest-fidelity **judgeable** dataset the recency gate did not skip (F006 "
             "AC5-AC8). The scope on that second half is every verdict-free state on a selected "
             "dataset: its judged week withheld as unrepresentative (`week_not_representative`, "
-            "research/00 HRV-31), and the withheld future day, where for a `to` after the "
+            "research/00 HRV-31), and the future day, where for a `to` after the "
             "athlete's local today the verdict is replaced with hrv_unavailable / "
             "`day_not_happened`. In both the verdict is hrv_unavailable and `below_by` is null, so "
             "those two describe no dataset, while this field still names the one the retained "
