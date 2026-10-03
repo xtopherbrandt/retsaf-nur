@@ -33,6 +33,7 @@ One session object per recorded activity. It carries identity, timing, the sourc
 | `activity_tag` | enum / string | e.g. `race`, `workout`, `easy`, `long_run`, `resting_hrv_check`, `health_snapshot` | Athlete- or system-assigned role. `resting_hrv_check` is a chest-strap morning-HRV capture and `health_snapshot` a Garmin Health Snapshot reading (§2.4.5); both are routed to the resting-HRV path rather than treated as training sessions. |
 | `source_vendor` | enum | e.g. `garmin` | Which adapter produced this object. Recorded so quality gates and later audits know the provenance. |
 | `source_device` | string | model + firmware where available | Device identity; firmware is recorded because vendor-derived metrics (§2.3.6) and the numeric resting-HRV pipeline (§2.4.5) are firmware-dependent and change without notice (`research/02` §4), so any corroboration or source-tier baseline must know the firmware it came from. |
+| `hr_sensor_serial` | integer | serial of the connected ANT+ heart-rate sensor; null where none, none with a serial, or more than one | Which heart-rate sensor was **connected** when the session was recorded (spec-recorded 2026-10-03, F007): the one distinct non-null `serial_number` over the file's `antplus` heart-rate `device_info` entries. It records the pairing, not the HR stream's provenance (`hr_source` holds that, section 2.4.2): a strap can be connected while the wrist produced the HR. Firmware, manufacturer and product are excluded from the identity, so a firmware push or a profile upgrade cannot split one sensor into two. Null means **unknown**, never "no sensor": no entry, no serial on any entry, or two disagreeing serials all store null, and sessions stored before F007 stay null permanently (the FIT bytes are not retained, so there is no backfill). Nothing reads it yet; `source_device` and session identity are untouched. |
 | `recording_interval` | descriptor | detected sampling mode | `1hz` / `smart` / `irregular`, set by the recording-mode detector (§2.4.1). Gates whether uniform-sampling metrics may run. |
 | `hr_source` | enum | `chest_strap` / `wrist_ppg` / `unknown` | Which HR sensor produced this session's HR/RR, inferred per §2.4.2. Gates HRV and at/above-threshold HR metrics. |
 | `quality_flags` | list | see §2.4 | Every gate result raised on this session, carried with it so downstream consumers can down-weight rather than the ingester silently dropping data. |
@@ -114,7 +115,7 @@ The running-relevant FIT global messages map to the canonical schema as follows 
 
 | FIT message (global #) | Canonical target | Notes |
 |---|---|---|
-| `file_id`, `device_info` | `session.source_device`, provenance | Device model + firmware (message identifiers resolved via the SDK profile, §2.3.1). |
+| `file_id`, `device_info` | `session.source_device`, `session.hr_sensor_serial`, provenance | Device model + firmware (message identifiers resolved via the SDK profile, §2.3.1); the serial of the `antplus` heart-rate entries, resolved as above. |
 | `session` (#18) | `session` header + `summary` | Roll-up only; not a metric source (§2.2.1). |
 | `lap` (#19) | lap boundaries within the record stream | Used for lap/interval averaging of pace (§2.4.4). |
 | `record` (#20) | the record stream (§2.2.2) | One FIT `record` message → one canonical sample. Field mapping in §2.3.3. |
