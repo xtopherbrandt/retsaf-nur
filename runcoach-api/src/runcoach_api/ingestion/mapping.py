@@ -216,6 +216,59 @@ def _build_source_device(by_name: dict[str, list[fitdecode.FitDataMessage]]) -> 
     return f"{product} fw{firmware}"
 
 
+def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]) -> int | None:
+    """The connected ANT+ heart-rate sensor's serial, or ``None`` (F007, T249).
+
+    The rule (user ruling 2026-10-03; spec/02 section 2.2.1's
+    ``hr_sensor_serial`` row, the db.py DDL comment and
+    ``models.Session.hr_sensor_serial`` restate it): collect the distinct
+    non-null ``serial_number`` values over every ``device_info`` entry
+    with ``source_type == "antplus"`` and ``antplus_device_type ==
+    "heart_rate"``. Exactly one -> that serial. Zero (no such entry, or
+    none carrying a serial) -> ``None``. Two or more -> ``None``: a
+    conflict is unknown, never the first or last value. Manufacturer,
+    product, ``garmin_product``, ``software_version`` and ``device_index``
+    are not inputs, so a firmware push or a profile upgrade that newly
+    resolves a product name cannot split one sensor into two. There is no
+    fallback to the ``creator`` (watch) serial and none to a sibling
+    channel of the same strap (its footpod or device-type-30 entry): a
+    watch identity in a sensor field is worse than nothing, because a
+    later consumer cannot tell the two apart.
+
+    The field records the pairing, not the HR stream's provenance:
+    ``hr_source`` says whether the strap produced the beats. Two corpus
+    fixtures list the strap while the HR came from the wrist, and resolve
+    to the strap's serial by design.
+
+    Field shapes, verified against the real decode of every fixture
+    (census 2026-10-03): ``source_type`` resolves to the string
+    ``"antplus"`` and ``antplus_device_type`` to ``"heart_rate"``.
+    ``device_info.device_type`` (def_num 1) is a subfield switched on
+    ``source_type`` (def_num 25) -- ``antplus_device_type`` only when
+    ``source_type`` is antplus, ``ble_device_type`` when it is
+    ``bluetooth_low_energy`` (``fitdecode/profile.py`` lines 9690-9731) --
+    so a BLE strap never presents an ``antplus_device_type`` and is
+    excluded by the type check before the source check. ``serial_number``
+    is uint32z, whose invalid raw 0 fitdecode already delivers as ``None``
+    (``fitdecode/types.py`` line 379), so an absent serial reaches this
+    function as ``None`` and is discarded before counting.
+
+    Lives beside ``_build_source_device``, not inside it: ``source_device``
+    and ``derive_session_id`` are frozen by F007 AC5 and read the first
+    ``device_info`` only; this reads all of them.
+    """
+    serials = {
+        msg.get_value("serial_number", fallback=None)
+        for msg in by_name.get("device_info", [])
+        if msg.get_value("source_type", fallback=None) == "antplus"
+        and msg.get_value("antplus_device_type", fallback=None) == "heart_rate"
+    }
+    serials.discard(None)
+    if len(serials) != 1:
+        return None
+    return serials.pop()
+
+
 def _getter(msg):
     """Bind a ``.get_value(name, fallback=None)`` lookup to ``msg``.
 
@@ -511,6 +564,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
 
     start_time_iso = start_time.isoformat()
     source_device = _build_source_device(by_name)
+    hr_sensor_serial = _resolve_hr_sensor_serial(by_name)
 
     session = Session(
         session_id=derive_session_id(source_device, start_time_iso),
@@ -518,6 +572,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         source_vendor="garmin",
         start_time=start_time_iso,
         source_device=source_device,
+        hr_sensor_serial=hr_sensor_serial,
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
         context=_build_context(
