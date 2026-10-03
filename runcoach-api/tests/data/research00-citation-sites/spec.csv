@@ -250,6 +250,9 @@ repo,specification/spec/04-physiological-state-model.md,3,§1.5,PRIN-09
 repo,specification/spec/04-physiological-state-model.md,3,§3.1,IND-01
 repo,specification/spec/04-physiological-state-model.md,3,§3.2,COLD-01
 repo,specification/spec/04-physiological-state-model.md,3,Part 3,DOC-06
+repo,specification/spec/04-physiological-state-model.md,3,findings 2 and 8,ARCH-02
+repo,specification/spec/04-physiological-state-model.md,3,findings 2 and 8,ARCH-08
+repo,specification/spec/04-physiological-state-model.md,3,,ARCH-11
 repo,specification/spec/04-physiological-state-model.md,9,Part 2,ARCH-02
 repo,specification/spec/04-physiological-state-model.md,15,§1.5,PRIN-08
 repo,specification/spec/04-physiological-state-model.md,15,§1.5,PRIN-09
@@ -278,7 +281,7 @@ repo,specification/spec/04-physiological-state-model.md,148,§3.1,IND-01
 repo,specification/spec/04-physiological-state-model.md,152,§3.1,IND-01
 repo,specification/spec/04-physiological-state-model.md,156,§3.1,IND-06
 repo,specification/spec/04-physiological-state-model.md,164,Part 2,ARCH-11
-repo,specification/spec/04-physiological-state-model.md,168,§1.7,PRIN-13
+repo,specification/spec/04-physiological-state-model.md,168,PRIN-13,ARCH-11
 repo,specification/spec/04-physiological-state-model.md,183,§3.2,COLD-01
 repo,specification/spec/04-physiological-state-model.md,183,Part 3,DOC-08
 repo,specification/spec/04-physiological-state-model.md,134,,FTO-03
@@ -311,7 +314,6 @@ repo,specification/spec/05-training-plan-generation.md,169,Part 3,REG-07
 repo,specification/spec/05-training-plan-generation.md,190,PRIN-13,REG-13
 repo,specification/spec/05-training-plan-generation.md,190,§3.1,IND-01
 repo,specification/spec/05-training-plan-generation.md,190,Part 2,ARCH-11
-repo,specification/spec/05-training-plan-generation.md,194,§1.7,PRIN-13
 repo,specification/spec/05-training-plan-generation.md,194,Part 2,ARCH-11
 repo,specification/spec/05-training-plan-generation.md,196,Part 3,REG-13
 repo,specification/spec/05-training-plan-generation.md,217,§1.8,AUT-04
@@ -329,6 +331,8 @@ repo,specification/spec/06-adaptation-logic.md,3,§1.7,PRIN-13
 repo,specification/spec/06-adaptation-logic.md,3,§1.8,AUT-01
 repo,specification/spec/06-adaptation-logic.md,3,§1.9,GOAL-01
 repo,specification/spec/06-adaptation-logic.md,3,Part 3,DOC-06
+repo,specification/spec/06-adaptation-logic.md,3,finding 3,ARCH-03
+repo,specification/spec/06-adaptation-logic.md,3,,ARCH-09
 repo,specification/spec/06-adaptation-logic.md,13,§1.9,GOAL-01
 repo,specification/spec/06-adaptation-logic.md,13,§1.8,AUT-01
 repo,specification/spec/06-adaptation-logic.md,14,§1.6,PRIN-22
