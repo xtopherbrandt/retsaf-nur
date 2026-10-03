@@ -23,8 +23,8 @@ F007 (T249): ingestion resolves and stores `hr_sensor_serial`. The rule, as buil
 `mapping._resolve_hr_sensor_serial`: collect the distinct non-null `serial_number` values over the
 file's `device_info` entries with `source_type` antplus and `antplus_device_type` heart_rate;
 only a positive integer counts, and anything else a non-conforming writer sends (a 0, a tuple, a
-string) is discarded. Exactly one distinct serial is stored; none, or two or more distinct serials, store `NULL`. There
-is no fallback to the watch's (`creator`) serial or to a sibling channel of the same strap, and
+string) is discarded. Exactly one distinct serial is stored; none, or two or more distinct
+serials, store `NULL`. There is no fallback to the watch's (`creator`) serial or to a sibling channel of the same strap, and
 firmware, manufacturer and product are not part of the identity, so a firmware push cannot split
 one sensor into two. A Bluetooth (BLE) strap stores `NULL`: only ANT+ entries are read. Nothing
 reads the column, and it is absent from `GET /sessions/{id}`.
