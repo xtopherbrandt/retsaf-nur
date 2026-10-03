@@ -5,14 +5,6 @@ data,spec/bugs/B-CR-002-disagreed-with-names-a-dissenter-against-a-withheld-verd
 data,spec/bugs/B-CR-002-disagreed-with-names-a-dissenter-against-a-withheld-verdict.md,108,§5.4 (iii),HRV-21
 data,spec/bugs/B-CR-002-disagreed-with-names-a-dissenter-against-a-withheld-verdict.md,128,§1.7,PRIN-14
 data,spec/features/F007-per-unit-sensor-identity.md,62,,HRV-84
-data,spec/features/F009-research00-citations-to-rule-ids.md,48,§1.7,literal
-data,spec/features/F009-research00-citations-to-rule-ids.md,49,§5.4,literal
-data,spec/features/F009-research00-citations-to-rule-ids.md,83,§1.x,literal
-data,spec/features/F009-research00-citations-to-rule-ids.md,90,tolerated,literal
-data,spec/features/F009-research00-citations-to-rule-ids.md,92,HRV-999,literal
-data,spec/features/F010-publish-recency-tolerance.md,49,§1.6,PRIN-12
-data,spec/features/F010-publish-recency-tolerance.md,83,§1.6,PRIN-12
-data,spec/features/F012-research00-review-handoff.md,100,§1.6,literal
 data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,84,,HRV-54
 data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,85,,HRV-04
 data,spec/ideas/IDEA-027-rr-source-asserts-ppg-provenance-it-never-measures.md,88,,HRV-04
