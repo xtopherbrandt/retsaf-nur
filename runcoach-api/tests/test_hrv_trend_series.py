@@ -1859,8 +1859,8 @@ def local_day_of(stored_row: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# F006 / T155 -- selection: the highest-fidelity judgeable dataset, skipped
-# by the recency gate (research/00 HRV-14, HRV-15;
+# F006 / T155 -- selection: the highest-fidelity judgeable dataset the
+# recency gate did not skip (research/00 HRV-14, HRV-15;
 # F006 AC5-AC8; reference section 9 for the series a first draft got wrong)
 #
 # Every pin below prints the slice it compared -- which datasets were
