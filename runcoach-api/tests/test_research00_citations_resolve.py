@@ -46,10 +46,11 @@ old-token check skips it (T233's rows; stated at T246). A live file with a citat
 own (T245): listing one line does not list the file. A bare token with no mention on such a line is not a
 finding here (see the blind spots). A section number written without the sign counts too when it is joined
 to the mention (``research/00 Sec 3.3``, ``research/00 Section 1.7``, ``research/00 1.6``, ``Section 1.7 of
-research/00``), on one line or across a line break (two adjacent lines joined, a Python implicit string
-concatenation closed); a "Section 3.x" merely near the mention is another document's (M2). Any case, the
-file's own name or a possessive after the mention, ``Sections``, ``sec.`` and ``Section N of the research/00
-...`` count; a measurement, a version or a sub-section number beside the mention does not (S5). So does a
+research/00``), on one line or across a line break (two adjacent lines joined, and a plain double-quoted
+Python implicit string concatenation, ``" "``, closed: see the blind spots); a "Section 3.x" merely near
+the mention is another document's (M2). Any case, the file's own name or a possessive after the mention,
+``Sections``, ``sec.`` and ``Section N of the research/00 ...`` count; a measurement, a version or a
+sub-section number beside the mention does not (S5). So does a
 locator the rewrite retired, joined to the mention: ``research/00:<line>`` and ``research/00 finding <N>``
 (N4), ``research/00 line <N>``, ``research/00 (L<N>)``, ``findings <N> and <M>`` and a possessive, straight or curly
 (S9); a section, line or finding of research/00-history.md, -traceability.md or -meaning-review.md (S10) and a
@@ -94,6 +95,11 @@ PRIN-14; a live line that says the direction is "tolerated" cites neither PRIN-1
   to its data-dir original, so T235 rewrites both copies and writes the rows once, for the original. The
   mirror copy is therefore in the ``data`` root (``root_of``), and ``_aliases`` lets a row for either copy
   cover the same line of the other (T236; the section-record logic above already reads the pair as one).
+- The line-pair join closes only a plain double-quoted implicit concatenation (``" "``, whitespace
+  between). A single-quoted pair, a prefixed string (``f"``, ``r"``) or an explicit ``+`` across the break
+  is not closed, so a mention and a number split that way are seen only when the junction between them is
+  at most the four non-word characters the gap spans. Measured 2026-10-02 (CR-FIX-iter-7): no live line
+  pair in either space changes its verdict under this join, or under one widened to those forms.
 - Printed witnesses are ASCII-escaped (``_show``): the probe runs ``-s`` on a cp1252 console.
 """
 
@@ -210,7 +216,8 @@ _ADJACENT_SECTION_TOKEN = re.compile(
 _LOCATOR_TOKEN = re.compile(
     _RESEARCH00_ITSELF + _POSSESSIVE
     + r"(?::\d{1,4}\b|\W{0,4}(?:findings?\s*#?\s*\d+|lines?\s*\d{1,4}\b|L\d{1,4}\b))", re.IGNORECASE)
-#: Python's implicit string concatenation where a line pair is joined: ``"... (research/00 "`` + ``"1.6)."``.
+#: A plain double-quoted Python implicit string concatenation where a line pair is joined, ``"... (research/00 "``
+#: + ``"1.6)."``, is closed; a single-quoted pair, a prefixed string or an explicit ``+`` is not (blind spots).
 _STRING_JOIN = re.compile(r"\"\s*\"")
 _PART_TOKEN = re.compile(r"\bPart [1-5]\b")
 _SPEC_PREFIX = re.compile(r"spec/0\d")
@@ -460,7 +467,8 @@ def _cites_a_research00_section(line: str) -> bool:
 
 def _joined(line: str, following: str) -> str:
     """Two adjacent lines as one, so a mention and its number split by a line break meet (M2): the break
-    and the indent become one space, and a Python implicit string concatenation (``" "``) is closed."""
+    and the indent become one space, and a plain double-quoted implicit string concatenation (``" "``) is
+    closed; a single-quoted pair, a prefixed string (``f"``) or an explicit ``+`` is not (the blind spots)."""
     return _STRING_JOIN.sub("", f"{line.rstrip()} {following.lstrip()}")
 
 
@@ -879,13 +887,17 @@ def test_a_mirror_copy_is_the_data_roots_and_its_originals_row_covers_it(tmp_pat
 
 _SIGNLESS_PY = "runcoach-api/src/runcoach_api/signless.py"
 _SIGNLESS_HEAD = '"""PRIN-14 governs this (research/00)."""\n\n'
-#: Each research/00 section citation written without the ``§`` sign, on line 3 (the split form's number
-#: is on line 4, joined to its mention by Python's implicit string concatenation).
+#: Each research/00 section citation written without the ``§`` sign, on line 3 (the split forms' number
+#: is on line 4, joined to its mention by Python's implicit string concatenation). The "split" junction,
+#: `` " "``, is four non-word characters, which the ``\W{1,4}`` gap spans with or without ``_STRING_JOIN``;
+#: the "split, five-character junction" one, ``, " "``, is five, so only the join closes it.
 _SIGNLESS_FORMS = {
     "Sec": _SIGNLESS_HEAD + "#: research/00 Sec 3.3 (two paragraphs), measured 2026-09-18.\n",
     "Section": _SIGNLESS_HEAD + "#: research/00 Section 1.7 forbids it.\n",
     "bare number": _SIGNLESS_HEAD + 'NOTE = "from this and `band` (research/00 1.6)."\n',
     "split": _SIGNLESS_HEAD + 'NOTE = ("from this and `band` (research/00 "\n        "1.6).")\n',
+    "split, five-character junction": _SIGNLESS_HEAD + 'NOTE = ("from this and `band` (research/00, "\n'
+                                       '        "1.6 for it.")\n',
     "Section, before": _SIGNLESS_HEAD + "#: as Section 1.7 of research/00 says.\n",
 }
 #: The shapes the walk measured as false findings when the number only had to share the mention's line or
@@ -903,10 +915,11 @@ _SIGNLESS_NEGATIVES = {
 
 def test_a_research00_section_cited_without_the_sign_is_a_finding(tmp_path):
     """M2: ``Sec 3.3``, ``Section 1.7``, a bare ``1.6`` right after the mention, and a mention and number
-    split across two lines are each a research/00 section citation. In a listed file the line is
-    ``unlisted`` until it has a row (a row on either line of the split pair clears it); in an unlisted
-    file the file is. research/02's ``Section 3.x`` away from the mention, and a section number research/00
-    does not have, are not citations."""
+    split across two lines are each a research/00 section citation, including a split whose junction is
+    more than the four non-word characters the gap spans (``_STRING_JOIN`` closes it). In a listed file
+    the line is ``unlisted`` until it has a row (a row on either line of a split pair clears it); in an
+    unlisted file the file is. research/02's ``Section 3.x`` away from the mention, and a section number
+    research/00 does not have, are not citations."""
     listed_row = ("repo", _SIGNLESS_PY, "1", "", "PRIN-14")
     seen = {}
     for name, text in {**_SIGNLESS_FORMS, **_SIGNLESS_NEGATIVES}.items():
@@ -915,13 +928,15 @@ def test_a_research00_section_cited_without_the_sign_is_a_finding(tmp_path):
                                       rows={"python": [listed_row]}), "python")["unlisted"]
         bare = root_findings(_world(tmp_path / f"{slug}-bare", repo={_SIGNLESS_PY: text}), "python")["unlisted"]
         seen[name] = (listed, bare)
+    split_forms = ("split", "split, five-character junction")
     split_rows = {
-        line: root_findings(_world(tmp_path / f"split-row-{line}", repo={_SIGNLESS_PY: _SIGNLESS_FORMS["split"]},
-                                   rows={"python": [listed_row, ("repo", _SIGNLESS_PY, line, "1.6", LITERAL)]}),
-                            "python")["unlisted"]
-        for line in ("3", "4")}
+        (form, line): root_findings(_world(tmp_path / f"split-row-{index}-{line}",
+                                           repo={_SIGNLESS_PY: _SIGNLESS_FORMS[form]},
+                                           rows={"python": [listed_row, ("repo", _SIGNLESS_PY, line, "1.6", LITERAL)]}),
+                                    "python")["unlisted"]
+        for index, form in enumerate(split_forms) for line in ("3", "4")}
     print(f"[slice compared] per form (listed-file findings, unlisted-file findings): {_show(seen)}; "
-          f"split pair with a literal row on line 3 / line 4: {_show(split_rows)}")
+          f"each split pair with a literal row on line 3 / line 4: {_show(split_rows)}")
     for name in _SIGNLESS_FORMS:
         assert seen[name] == (
             [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"],
@@ -929,7 +944,31 @@ def test_a_research00_section_cited_without_the_sign_is_a_finding(tmp_path):
     for name, text in _SIGNLESS_NEGATIVES.items():
         # A ``§`` token anywhere in an unlisted live file still lists the file (the unchanged file-level rule).
         assert seen[name][0] == [] and (seen[name][1] == []) == ("§" not in text), name
-    assert split_rows == {"3": [], "4": []}
+    assert split_rows == {(form, line): [] for form in split_forms for line in ("3", "4")}
+
+
+#: Line 3 cites a research/00 section on its own; line 4 cites nothing, so the pair joined still matches.
+_OWN_LINE_BESIDE_A_ROW = _SIGNLESS_HEAD + "#: research/00 Section 1.7 says so,\n#: and this line cites nothing.\n"
+
+
+def test_a_line_that_cites_on_its_own_is_not_covered_by_a_row_on_the_next_line(tmp_path):
+    """The ``not own`` guard in ``root_findings``: a line pair is one citation, which a row on either line
+    covers, only when neither line cites research/00 by itself. Line 3 here does, and line 4 does not, yet the
+    pair joined still matches. With a row on line 4 only, line 3 is ``unlisted``; its own row clears it.
+    Without the guard the pair would count and the row on line 4 would cover line 3."""
+    lines = _OWN_LINE_BESIDE_A_ROW.split("\n")
+    own = {number: _cites_a_research00_section(lines[number - 1]) for number in (3, 4)}
+    pair = _joined_token(_joined(lines[2], lines[3]))
+    seen = {
+        line: root_findings(_world(tmp_path / f"own-row-{line}", repo={_SIGNLESS_PY: _OWN_LINE_BESIDE_A_ROW},
+                                   rows={"python": [("repo", _SIGNLESS_PY, "1", "", "PRIN-14"),
+                                                    ("repo", _SIGNLESS_PY, line, "1.7", LITERAL)]}),
+                            "python")["unlisted"]
+        for line in ("3", "4")}
+    print(f"[slice compared] line 3 {_show(lines[2])!r} / line 4 {_show(lines[3])!r} cite on their own: {own}; "
+          f"the pair joined matches: {pair}; unlisted with a row on line 3 / line 4 only: {_show(seen)}")
+    assert own == {3: True, 4: False} and pair
+    assert seen == {"3": [], "4": [f"repo:{_SIGNLESS_PY}:3: cites research/00 with a section token and has no row in any CSV"]}
 
 
 def test_line_numbers_count_newlines_only(tmp_path):

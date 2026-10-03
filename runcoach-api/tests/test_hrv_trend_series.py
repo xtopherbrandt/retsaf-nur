@@ -2403,7 +2403,7 @@ def test_probe_the_selection_contract_holds_on_arbitrary_hand_built_series() -> 
 # ``research/00`` HRV-31: a dataset that could not be selected -- not
 # judgeable, or skipped by the recency gate -- and that holds at least
 # MIN_WINDOW_READINGS judged-week days, every one later than every judged-week
-# day of the selected dataset, withholds the verdict. ``build_series`` asks it
+# day of the dataset being judged, withholds the verdict. ``build_series`` asks it
 # of every dataset as if that dataset were the selected one (``verdict_withheld``),
 # ``selected_view`` carries the presented dataset's answer, ``judge`` reads it.
 # Every pin here prints the slice it compared: the selection line and each

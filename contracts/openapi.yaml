@@ -1438,13 +1438,13 @@ components:
             there would tell a consumer
             readiness is intact on evidence this same response reports
             unestablished, the up-regulating direction research/00 PRIN-14 forbids);
-            and when the judged day is after the athlete's local today in
-            timezone, which is decided at the route and overrides whichever of the
-            other five would otherwise have applied -- whatever the window holds,
-            no verdict is asserted about a day that has not happened, and the
-            other fields are still reported as computed. The band is still
-            reported whenever the baseline can build one, established or not, so
-            an unavailable verdict remains checkable by hand.
+            and when the judged day is after the athlete's local today in timezone,
+            which is decided at the route and overrides whichever of the other five
+            would otherwise have applied -- whatever the window holds, no verdict is
+            asserted about a day that has not happened, and the other fields are
+            still reported as computed. The band is still reported whenever the
+            baseline can build one, established or not, so an unavailable verdict on
+            an unestablished baseline remains checkable by hand.
         unavailable_reason:
           type: string
           nullable: true

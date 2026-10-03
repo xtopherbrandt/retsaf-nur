@@ -20,7 +20,7 @@ This docstring read "``established``, ``MIN_WINDOW_READINGS`` **and ``withheld``
 verdict, not the report", and that is no longer true of the *served* report.
 ``research/00`` HRV-22 as amended now states one condition for the whole of
 ``disagreed_with``: wherever the served ``verdict`` is ``hrv_unavailable``, for any cause,
-nothing is named, because a disagreement is a claim *about* a verdict and a withheld verdict
+nothing is named, because a disagreement is a claim *about* a verdict and an unavailable verdict
 makes no claim to contradict. A withheld dataset's verdict **is** ``hrv_unavailable``
 (``week_not_representative``), so the served list is empty there. That rule lives at the
 rendering seam (``main._disagreed_with``) and is pinned at the served body by

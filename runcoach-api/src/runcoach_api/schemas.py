@@ -437,8 +437,8 @@ class HrvTrendResponse(BaseModel):
             "is decided at the route and overrides whichever of the other five would otherwise have "
             "applied -- whatever the window holds, no verdict is asserted about a day that has not "
             "happened, and the other fields are still reported as computed. The band is still reported "
-            "whenever the baseline can build one, established or not, so an unavailable verdict remains "
-            "checkable by hand."
+            "whenever the baseline can build one, established or not, so an unavailable verdict on an "
+            "unestablished baseline remains checkable by hand."
         )
     )
     unavailable_reason: (

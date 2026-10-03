@@ -252,8 +252,8 @@ PAID_BY_T164 = {
 #: filter produces). The marginal halved, 18.4684 -> 9.359. The reasoning: a
 #: flip is a **proxy**, and what AC21 gates is a **harm** -- an ``hrv_normal``
 #: the athlete's current evidence does not support. Here the flips buy withheld
-#: days, the cautious direction, while every gated family is byte-identical to
-#: shipped F005.
+#: days, a net cost until Section 6 exists (ARCH-13), while every gated family
+#: is byte-identical to shipped F005.
 #:
 #: **The decision is against the set as measured on 2026-09-21, and it is not
 #: a licence for that set to grow.** That is why this pin keeps its exact
