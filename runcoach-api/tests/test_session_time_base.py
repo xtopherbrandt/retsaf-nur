@@ -101,6 +101,34 @@ def test_a_regressing_distance_contributes_zero_and_flags_the_session():
     assert all(b >= a for a, b in zip(tb.s, tb.s[1:]))
 
 
+def test_a_lower_distance_across_a_break_is_not_a_regression():
+    # The 600 s break goes from 3 m back to 1 m; only counted segments can regress.
+    rows = [
+        {"t": 0.0, "distance": 0.0},
+        {"t": 1.0, "distance": 3.0},
+        {"t": 601.0, "distance": 1.0},
+        {"t": 602.0, "distance": 4.0},
+    ]
+    tb = S.build_time_base(S.screen(rows))
+    assert tb.segments[1].is_break and not tb.segments[1].regressed
+    assert tb.distance_regressed is False
+    assert tb.D == 6.0
+
+
+def test_a_lower_distance_on_a_dt_zero_duplicate_is_not_a_regression():
+    # The duplicate at t = 1 carries 2 m after 3 m; a dt = 0 segment is not counted, so it cannot regress.
+    rows = [
+        {"t": 0.0, "distance": 0.0},
+        {"t": 1.0, "distance": 3.0},
+        {"t": 1.0, "distance": 2.0},
+        {"t": 2.0, "distance": 5.0},
+    ]
+    tb = S.build_time_base(S.screen(rows))
+    assert tb.segments[1].dt == 0.0 and not tb.segments[1].counted and not tb.segments[1].regressed
+    assert tb.distance_regressed is False
+    assert tb.D == 6.0
+
+
 def test_a_run_without_regression_has_the_flag_down():
     tb = S.build_time_base(S.screen(RUN))
     assert tb.distance_regressed is False

@@ -7,7 +7,8 @@ tests pin what it adds on top of the wave modules:
 - the flat invariant (constant altitude, and no altitude at all);
 - the clamp seam, both signs, with exactly 0.45 in range and 0.5 clamped;
 - the session-wide overrides and their precedence, and ``no_distance``;
-- the GAP clause of the recorded-time rule (pause and duplicate inserted);
+- the GAP clause of the recorded-time rule (pause and duplicate inserted on the ramp);
+- NGP's per-record g on a ramp and at one graded step, and ``gap_unavailable`` at coverage 0.99;
 - the pass-through and derived fields, the flag order and uniqueness, and the
   14-key response shape;
 - the identity ``avg_pace / gap_avg_pace == distance-weighted mean g``;
@@ -213,12 +214,17 @@ def _graded_run() -> list[dict]:
     return rows
 
 
-def test_a_pause_and_a_duplicate_on_the_flat_leave_gap_pace_identical():
+def test_a_pause_and_a_duplicate_on_the_ramp_leave_gap_pace_identical():
     plain = _graded_run()
-    # A 600 s standstill after record 159: dt = 600, dd = 0, and every stride of ``plain`` is kept.
-    paused = plain[:160] + [{**plain[159], "t": plain[159]["t"] + 600.0}]
-    paused += [{**row, "t": row["t"] + 600.0} for row in plain[160:]]
-    duplicated = plain[:160] + [dict(plain[159])] + plain[160:]
+    # Both sit after record 60, at s = 120 m: the ramp ends at 200 m, so every +-25 m window around
+    # them is graded at 5 %. A 600 s standstill there is dt = 600, dd = 0, and every stride of
+    # ``plain`` is kept; the duplicate is a dt = 0 copy of record 60.
+    paused = plain[:61] + [{**plain[60], "t": plain[60]["t"] + 600.0}]
+    paused += [{**row, "t": row["t"] + 600.0} for row in plain[61:]]
+    duplicated = plain[:61] + [dict(plain[60])] + plain[61:]
+    for rows in (paused, duplicated):
+        near = [row for row in SF.segment_rows(_session(), rows) if 95.0 <= row["s_start"] <= 145.0]
+        assert near and all(row["i"] == pytest.approx(0.05, rel=1e-9) for row in near)
     gap = [
         _value(SF.compute_session_features(_session(), rows), "gap_avg_pace_s_per_km")
         for rows in (plain, paused, duplicated)
@@ -248,6 +254,52 @@ def test_the_environment_context_reaches_features_verbatim():
     assert out["features"]["env_wind_ms"] == {"value": 3.2, "unavailable": None}
     bare = SF.compute_session_features(_session(), _ramp(120, 3.0, 0.0))
     assert bare["features"]["env_wind_ms"] == {"value": None, "unavailable": "not_recorded"}
+
+
+def _ngp_oracle(series: list[float]) -> float:
+    """Reference section 6 restated: the fourth root of the mean fourth power of every 30-sample mean."""
+    means = [sum(series[w : w + 30]) / 30 for w in range(len(series) - 29)]
+    return (sum(m**4 for m in means) / len(means)) ** 0.25
+
+
+def test_ngp_on_a_ten_percent_ramp_carries_the_grade_of_every_record():
+    # 1 m/s on an unquantized 10 % ramp: every segment's window reads i = 0.1, so every record after
+    # the first carries g(0.10); record 0 has no arriving segment and takes g = 1.
+    out = SF.compute_session_features(_session(), _ramp(200, 1.0, grade=0.10))
+    assert out["gap_coverage"] == 1.0 and out["flags"] == []
+    expected = _ngp_oracle([1.0] + [_g_oracle(0.10)] * 199)
+    assert _value(out, "ngp_speed_m_s") == pytest.approx(expected, rel=1e-9)
+    assert _value(out, "ngp_speed_m_s") == pytest.approx(_g_oracle(0.10), rel=2e-3)
+
+
+def test_ngp_gives_each_record_the_g_of_the_segment_ending_at_it():
+    # 31 records 5 s and 20 m apart at 4 m/s: each segment's +-25 m window holds only its own two
+    # records, so a 2 m step between records 29 and 30 grades segment 29 alone, at i = 0.1.
+    rows = [
+        {"t": 5.0 * k, "distance": 20.0 * k, "speed": 4.0, "altitude": 2.0 if k >= 30 else 0.0}
+        for k in range(31)
+    ]
+    stream = SF.segment_rows(_session(), rows)
+    assert [row["i"] for row in stream] == [0.0] * 29 + [0.1]
+    # Record 30 takes segment 29's g, so only the second of the two windows holds it.
+    expected = _ngp_oracle([4.0 * _g_oracle(0.0)] * 30 + [4.0 * _g_oracle(0.1)])
+    shifted = _ngp_oracle([4.0 * _g_oracle(0.0)] * 29 + [4.0 * _g_oracle(0.1), 4.0])
+    assert expected != pytest.approx(shifted, rel=1e-6)
+    out = SF.compute_session_features(_session(), rows)
+    assert _value(out, "ngp_speed_m_s") == pytest.approx(expected, rel=1e-12)
+
+
+def test_one_ungraded_stride_in_a_long_graded_run_flags_gap_unavailable():
+    # 2000 records of 3 m on flat ground with one 55 m stride: its +-25 m midpoint window holds no
+    # record, so that stride alone has no grade, and the coverage is about 0.99, just under 1.
+    rows = _ramp(2000, 3.0, grade=0.0)
+    for row in rows[1000:]:
+        row["distance"] += 52.0
+    out = SF.compute_session_features(_session(), rows)
+    distance = 1999 * 3.0 + 52.0
+    assert out["gap_coverage"] == pytest.approx((distance - 55.0) / distance, rel=1e-12)
+    assert 0.99 < out["gap_coverage"] < 1.0
+    assert "gap_unavailable" in out["flags"]
 
 
 def test_ngp_pace_is_1000_over_ngp_speed():

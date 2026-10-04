@@ -59,7 +59,7 @@ reference rule that makes it the right answer.
 | 16 | ``sport`` other, full streams | ``sport`` ``other``; every feature ``sport_not_running``; coverage null | the first session-wide override, ahead of every row (section 7) |
 | 17 | 2 s spacing, no altitude | ``flags == ['smart_recording', 'gap_unavailable']`` | the session flag is copied first, then the derived flags in their order (section 8) |
 | 18 | an unquantized 10 % ramp, 400 m at 1 m/s | ``avg_pace / gap_avg_pace`` 1000 / 603.68 = 1.6565, inside ``[g(0.098), g(0.10)]`` = [1.6426, 1.6578]; ``gap_coverage`` 1.0; ``flags == []``; ascent 39.25 m | the ratio is the distance-weighted mean g (section 5); the window bound is derived above; 0.1 is inside Minetti's domain (section 4) |
-| 19 | a ramp rising 25 m over 50 m (i = 0.5) | 200; ``flags == ['grade_clamped']``; ``grade_clamped_fraction`` 0.04 (the 10 strides whose +-25 m window overlaps the ramp by more than 45 m); GAP pace 539.9 s/km against 1000 s/km raw | i = 0.5 is above the strict 0.45 boundary, so ``clamp_grade`` clamps and the segment counts (section 4, the user's ruling) |
+| 19 | a ramp rising 25 m over 50 m (i = 0.5) | 200; ``flags == ['grade_clamped']``; ``grade_clamped_fraction`` 0.04 (the 10 strides whose +-25 m window overlaps the ramp by more than 45 m); ``gap_coverage`` 1.0; ascent 25.0 m; GAP pace 539.9 s/km against 1000 s/km raw, derived in the row from the windows | i = 0.5 is above the strict 0.45 boundary, so ``clamp_grade`` clamps and the segment counts (section 4, the user's ruling) |
 | 20 | ``gps_accuracy`` 20 on records 30-59 of 90 | ``gps_degraded_fraction`` 90/267; both paces equal the untagged run's, whose fraction is 0.0 | ``gps_degraded`` samples are counted in the fraction and not excluded (section 1); the fraction is contributed distance over D (section 5) |
 | seam | altitude, HR and distance as nan/inf; two ``power_model`` values; g(+-0.46), g(nan) | pinned at the module seam, upload cannot deliver them (section 1) | ``test_screen_makes_every_non_finite_or_missing_numeric_field_absent``, ``test_screen_makes_nan_heart_rate_absent_before_the_sign_test`` and ``test_non_finite_altitude_samples_are_in_no_window_and_no_grade_is_non_finite`` (nan/inf); ``test_two_distinct_power_models_give_mixed_power_models``; ``test_g_raises_outside_the_measured_domain`` and ``test_g_raises_on_nan_so_the_finiteness_check_comes_first`` |
 """
@@ -410,9 +410,27 @@ def _row_19_half_grade_ramp(client, monkeypatch):
         monkeypatch,
         [_session(), *_run(251, speed=1.0, distance_of=lambda k: float(k), altitude_of=altitude)],
     )
-    assert "grade_clamped" in body["flags"]
-    assert body["grade_clamped_fraction"] > 0.0
-    assert _value(body, "gap_avg_pace_s_per_km") > 0.0
+    assert body["flags"] == ["grade_clamped"]
+    assert body["grade_clamped_fraction"] == pytest.approx(10 / 250, rel=1e-9)
+    assert body["gap_coverage"] == 1.0
+    assert _value(body, "total_ascent_m") == pytest.approx(25.0, rel=1e-9)
+    assert _value(body, "avg_pace_s_per_km") == pytest.approx(1000.0, rel=1e-12)
+
+    # The GAP pace by hand. The gate's 3-sample index mean moves only the two corner records
+    # (100: 0.5 / 3; 150: 24.5 + 0.5 * 2 / 3), the rest of the line is exact. Segment k's +-25 m
+    # window on s = k is records k - 24 .. k + 25, clipped at the ends (reference section 3); its
+    # grade is clamped to +-0.45 and costed with the g restated above (section 4).
+    raw = [altitude(k) for k in range(251)]
+    smoothed = [sum(raw[max(k - 1, 0) : k + 2]) / len(raw[max(k - 1, 0) : k + 2]) for k in range(251)]
+    grades = []
+    for k in range(250):
+        first, last = max(k - 24, 0), min(k + 25, 250)
+        grades.append((smoothed[last] - smoothed[first]) / (last - first))
+    gs = [_g(max(-0.45, min(0.45, i))) for i in grades]
+    assert sum(1 for i in grades if abs(i) > 0.45) == 10  # the fraction's numerator, from the same windows
+    expected_gap_pace = 1000.0 * 250.0 / sum(gs)  # 1000 * T / sum(v_actual * g * dt), 1 m per stride
+    assert expected_gap_pace == pytest.approx(539.9406743835696, rel=1e-12)
+    assert _value(body, "gap_avg_pace_s_per_km") == pytest.approx(expected_gap_pace, rel=1e-9)
     return body
 
 
