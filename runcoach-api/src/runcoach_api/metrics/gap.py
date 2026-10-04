@@ -36,7 +36,7 @@ _FLAT_COST = 3.6
 """The published polynomial's intercept, C(0), kept as the normaliser (F013 reference, section 11)."""
 
 
-def C(i: float) -> float:  # noqa: N802 -- the spec's name for the cost polynomial
+def C(i: float) -> float:  # the spec's name for the cost polynomial
     """Minetti's cost of running at grade ``i``, in J/(kg*m).
 
     The raw polynomial, with no domain guard: ``g`` is the guarded entry point.

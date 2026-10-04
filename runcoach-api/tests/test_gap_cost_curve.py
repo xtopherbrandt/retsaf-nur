@@ -26,7 +26,6 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from runcoach_api.metrics import gap
 
 GRADE_DOMAIN = 0.45  # restated, not imported (independent-oracle rule)

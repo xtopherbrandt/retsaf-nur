@@ -173,21 +173,27 @@ PRESENT_ROW = {
     "gps_degraded": 0,
     "sample_quality": ["interpolation_gap", "cadence_lock"],
 }
+MISSING = "missing"  # parametrize marker: delete the key instead of setting a value
+
+
+def _present_row_with(field: str, raw: object) -> dict:
+    """``PRESENT_ROW`` with ``field`` set to ``raw``, or with the key deleted when ``raw`` is ``MISSING``."""
+    row = dict(PRESENT_ROW)
+    if raw == MISSING:
+        del row[field]
+    else:
+        row[field] = raw
+    return row
 
 
 @pytest.mark.parametrize("field", NUMERIC_FIELDS)
 @pytest.mark.parametrize(
     "bad",
-    [None, float("nan"), float("inf"), float("-inf"), "missing"],
+    [None, float("nan"), float("inf"), float("-inf"), MISSING],
     ids=["None", "nan", "inf", "-inf", "missing-key"],
 )
 def test_screen_makes_every_non_finite_or_missing_numeric_field_absent(field, bad):
-    row = dict(PRESENT_ROW)
-    if bad == "missing":
-        del row[field]
-    else:
-        row[field] = bad
-    (rec,) = S.screen([row])
+    (rec,) = S.screen([_present_row_with(field, bad)])
     assert getattr(rec, field) is None
     # Every other field survives untouched.
     for other in NUMERIC_FIELDS:
@@ -224,27 +230,17 @@ def test_screen_leaves_a_positive_heart_rate_present():
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [(0, False), (1, True), (False, False), (True, True), (None, None), ("missing", None)],
+    [(0, False), (1, True), (False, False), (True, True), (None, None), (MISSING, None)],
     ids=["0", "1", "False", "True", "None", "missing-key"],
 )
 def test_screen_normalises_gps_degraded_to_bool_or_none(raw, expected):
-    row = dict(PRESENT_ROW)
-    if raw == "missing":
-        del row["gps_degraded"]
-    else:
-        row["gps_degraded"] = raw
-    (rec,) = S.screen([row])
+    (rec,) = S.screen([_present_row_with("gps_degraded", raw)])
     assert rec.gps_degraded is expected
 
 
-@pytest.mark.parametrize("raw", [None, "missing", []], ids=["None", "missing-key", "empty-list"])
+@pytest.mark.parametrize("raw", [None, MISSING, []], ids=["None", "missing-key", "empty-list"])
 def test_screen_gives_an_empty_sample_quality_tuple_when_none_is_recorded(raw):
-    row = dict(PRESENT_ROW)
-    if raw == "missing":
-        del row["sample_quality"]
-    else:
-        row["sample_quality"] = raw
-    (rec,) = S.screen([row])
+    (rec,) = S.screen([_present_row_with("sample_quality", raw)])
     assert rec.sample_quality == ()
 
 
@@ -253,14 +249,9 @@ def test_screen_keeps_the_callers_sample_quality_order_and_does_not_sort():
     assert rec.sample_quality == ("z_flag", "a_flag", "m_flag")
 
 
-@pytest.mark.parametrize("raw", [None, "missing"], ids=["None", "missing-key"])
+@pytest.mark.parametrize("raw", [None, MISSING], ids=["None", "missing-key"])
 def test_screen_leaves_power_model_absent_when_not_recorded(raw):
-    row = dict(PRESENT_ROW)
-    if raw == "missing":
-        del row["power_model"]
-    else:
-        row["power_model"] = raw
-    (rec,) = S.screen([row])
+    (rec,) = S.screen([_present_row_with("power_model", raw)])
     assert rec.power_model is None
 
 
@@ -274,15 +265,11 @@ def test_screen_handles_a_row_with_only_t():
 
 @pytest.mark.parametrize(
     "bad_t",
-    [None, float("nan"), float("inf"), float("-inf"), "missing"],
+    [None, float("nan"), float("inf"), float("-inf"), MISSING],
     ids=["None", "nan", "inf", "-inf", "missing-key"],
 )
 def test_screen_drops_a_row_whose_t_is_absent_or_non_finite(bad_t):
-    row = dict(PRESENT_ROW)
-    if bad_t == "missing":
-        del row["t"]
-    else:
-        row["t"] = bad_t
+    row = _present_row_with("t", bad_t)
     recs = S.screen([{"t": 1.0, "distance": 0.0}, row, {"t": 2.0, "distance": 3.0}])
     assert [rec.t for rec in recs] == [1.0, 2.0]
 
