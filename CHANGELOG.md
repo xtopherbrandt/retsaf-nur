@@ -6,7 +6,7 @@ F013: `GET /sessions/{session_id}/features` serves each running session's grade-
 normalized graded pace (NGP) and the spec/03 section 3.2 descriptors, computed on read from the
 stored canonical records. Nothing is stored and no table is added, so a deleted session has no
 features: the route returns the 404 envelope of `GET /sessions/{id}`. The as-built rule: the time
-base is recorded time (consecutive records at most 5 s apart form a counted segment; a longer
+base is recorded time (consecutive records with 0 < dt <= 5 s form a counted segment; a longer
 segment is a break that contributes neither time nor distance; a dt = 0 duplicate contributes
 nothing; a decreasing distance contributes 0 m and flags `distance_regressed`). The gradient is
 taken over +/-25 m of reconstructed distance and clamped to +/-0.45 before Minetti's cost curve;

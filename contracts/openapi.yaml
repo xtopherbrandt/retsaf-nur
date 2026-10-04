@@ -2038,7 +2038,7 @@ components:
         descriptors, computed on read from its stored canonical records (F013).
         Nothing is stored. duration_s, distance_m and avg_pace_s_per_km are the
         same quantities SessionSummary names: recorded time, not elapsed
-        (consecutive records at most 5 s apart count; a pause or an unfilled gap
+        (consecutive records with 0 < dt <= 5 s count; a pause or an unfilled gap
         contributes neither time nor distance), so a future listSessions
         projects these values rather than computing its own.
       required: [session_id, sport, flags, gap_coverage, grade_clamped_fraction, gps_degraded_fraction, features]
