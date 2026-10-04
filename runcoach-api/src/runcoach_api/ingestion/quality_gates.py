@@ -67,10 +67,10 @@ _CADENCE_LOCK_MIN_CONSECUTIVE = 30
 # default, tunable -- not a citable formula constant -- matching the
 # treatment `_UNIFORM_1HZ_MIN_FRACTION` gives its own uncited
 # predominance cut-off above. 3 samples (~3s post-resampling) is a
-# light touch chosen to knock down single-sample barometric noise
-# spikes without smearing real short climbs/descents into the grade
-# signal. See F003's Decision Log, 2026-09-03 "S1 altitude smoothing
-# window" entry.
+# light touch that knocks down single-sample barometric noise spikes;
+# the grade itself is taken downstream over spec/03 section 3.3.1's
+# +/-25 m window of reconstructed distance, not over this window. See
+# F003's Decision Log, 2026-09-03 "S1 altitude smoothing window" entry.
 _ALTITUDE_SMOOTHING_WINDOW = 3
 
 # Numeric per-sample fields eligible for linear interpolation across a

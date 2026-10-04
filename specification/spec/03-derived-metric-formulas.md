@@ -36,11 +36,11 @@ Grade-adjusted pace (GAP) expresses the pace an athlete ran on a graded segment 
 
 ### 3.3.1 Raw inputs
 
-For each record sample the transform reads the smoothed barometric `altitude` and the cumulative `distance` from the canonical record stream (§2.2.2), both already quality-gated by Section 2 — altitude smoothed before gradient is taken and spans of barometric drift flagged (§2.4.4), pace treated as reliable only over an averaging window rather than sample-by-sample (§2.4.4). The instantaneous gradient at a sample is the change in smoothed altitude over the change in distance across a short window centered on the sample:
+For each record sample the transform reads the smoothed barometric `altitude` and the cumulative `distance` from the canonical record stream (§2.2.2), both already quality-gated by Section 2 — altitude smoothed before gradient is taken and spans of barometric drift flagged (§2.4.4), pace treated as reliable only over an averaging window rather than sample-by-sample (§2.4.4). The gradient of a segment (the interval between consecutive records) is the change in gate-smoothed altitude over the change in reconstructed distance, taken over a window of ±25 m of reconstructed distance around the segment's midpoint and clipped one-sided at the session's ends:
 
 > **i = Δaltitude / Δdistance_horizontal**
 
-expressed as a dimensionless grade (rise over run; e.g. i = 0.05 for a 5% uphill, i = −0.05 for a 5% downhill). The window is the same altitude-smoothing window the Section 2 gate applied, so training-run grade and race-course grade (§2.5) are treated consistently.
+expressed as a dimensionless grade (rise over run; e.g. i = 0.05 for a 5% uphill, i = −0.05 for a 5% downhill). The ±25 m half-width is a heuristic default, not a cited constant; the altitude it reads is the Section 2 gate's smoothed stream (§2.4.4), and a segment whose window holds fewer than two altitude samples has no grade and falls back to raw pace (§3.3.4). The race course of §2.5 is resampled no sparser than 50 m, so training-run grade and race-course grade are compared at a similar horizontal scale, not over the same span.
 
 ### 3.3.2 The Minetti cost-of-gradient curve
 
@@ -48,7 +48,7 @@ Minetti et al. measured the metabolic energy cost of running across gradients fr
 
 > **C(i) = 155.4·i⁵ − 30.4·i⁴ − 43.3·i³ + 46.3·i² + 19.5·i + 3.6**
 
-where C(i) is the cost of transport in joules per kilogram per metre (J·kg⁻¹·m⁻¹) and *i* is the gradient as a fraction. On the flat (i = 0) this gives the baseline cost **C(0) = 3.6 J·kg⁻¹·m⁻¹**. The curve reproduces the two physiologically load-bearing features `research/01` §5.4 names: a cost minimum at a slight downhill (near i ≈ −0.10 to −0.20) and a steep cost rise on uphills, with the uphill cost exceeding the magnitude of the corresponding downhill saving — so time lost climbing is not fully repaid descending, and a net-flat rolling course is metabolically costlier than a truly flat one.
+where C(i) is the cost of transport in joules per kilogram per metre (J·kg⁻¹·m⁻¹) and *i* is the gradient as a fraction. On the flat (i = 0) this gives the baseline cost **C(0) = 3.6 J·kg⁻¹·m⁻¹**. The curve reproduces the two physiologically load-bearing features `research/01` §5.4 names: a cost minimum at a slight downhill (near i ≈ −0.10 to −0.20) and a steep cost rise on uphills, with the uphill cost exceeding the magnitude of the corresponding downhill saving — so time lost climbing is not fully repaid descending, and a net-flat rolling course is metabolically costlier than a truly flat one. The polynomial is used only on [−0.45, +0.45], the range Minetti measured; outside it the fit is an extrapolation (C(−1.0) is negative). A grade outside that domain is clamped to the nearer boundary before the adjustment factor is taken, and the session is flagged `grade_clamped`.
 
 **Provenance note.** `research/01` §5.4 cites Minetti et al. (2002) for the curve but states it qualitatively; the fifth-order polynomial and its coefficients above are the standard published form of that same source, reproduced here in full so an implementer needs no further lookup. The coefficients are the shipped default; they are a fixed physiological curve, not a per-athlete tunable, though the whole GAP transform can be swapped behind its interface if a better-validated cost model is adopted.
 
@@ -66,10 +66,10 @@ so that a segment run uphill (g > 1, costlier than flat) maps to a *faster* flat
 
 **Normalized Graded Pace (NGP).** For the load computation of §3.4, the session's GAP stream is further reduced to a single **NGP** — a *fourth-power–normalized* average of grade-adjusted speed (not a simple or duration-weighted mean), following the same Normalized-Power construction TrainingPeaks uses for rTSS (`research/04` §4.1). The fourth-power weighting up-weights the harder portions of a variable session so its physiological stress is not understated by averaging hard efforts with recoveries. The algorithm, stated in full so an implementer needs no further lookup:
 
-1. Take the per-sample grade-adjusted speed series **v_GAP** (§3.3.3) on the uniform 1 s grid Section 2 guarantees (§2.4.1).
-2. Compute a **30-second rolling average** of v_GAP, smoothing the second-by-second noise (the same 30 s window Normalized Power uses).
+1. Take the per-record series **device speed × g(i)**: the recorded `speed`, which has already absorbed GPS-acquisition and tunnel-exit distance jumps, scaled by the grade factor of the segment ending at that record (g = 1 where the segment has no grade). Split it into **contiguous blocks** at every recording gap over 5 s (§2.4.1) and at every record with no speed.
+2. Within each block compute a **30-second rolling average** of the series (the same 30 s window Normalized Power uses). No window spans a block boundary; a block shorter than 30 samples yields no window and contributes nothing, and a session in which no block yields a window has no NGP.
 3. Raise each rolling-average value to the **fourth power**.
-4. Take the **arithmetic mean** of those fourth-power values over the session.
+4. Take the **arithmetic mean** of those fourth-power values pooled over all blocks of the session.
 5. Take the **fourth root** of that mean.
 
 > **NGP = ( mean_t[ ( v̄_GAP,30s(t) )⁴ ] )^(1/4)**
@@ -78,7 +78,7 @@ where v̄_GAP,30s(t) is the 30 s rolling average of grade-adjusted speed. NGP is
 
 ### 3.3.4 Degradation
 
-When the barometric altitude stream is absent or the Section 2 gate flagged it as drift-corrupted over a span, GAP over that span falls back to raw pace with a `gap_unavailable` flag on the affected samples, and any downstream metric that assumed grade correction is down-weighted accordingly. A session with no usable altitude at all yields raw-pace-based features carried at reduced confidence — which, per §3.4, also disqualifies rTSS as the primary load metric for that session and triggers the load-metric fallback.
+When the barometric altitude stream is absent or the Section 2 gate flagged it as drift-corrupted over a span, every segment in that span has no grade and falls back to raw pace (g = 1). The session reports **`gap_coverage`**, the share of its distance that was graded, and carries the **session flag** `gap_unavailable` whenever coverage is below 1, so any downstream metric that assumed grade correction can be down-weighted accordingly. A session with no usable altitude at all has coverage 0 and yields raw-pace-based features carried at reduced confidence — which, per §3.4, also disqualifies rTSS as the primary load metric for that session and triggers the load-metric fallback.
 
 **Flag: established** (Minetti cost-of-gradient is settled science; the NGP weighting is an established practitioner construction).
 
