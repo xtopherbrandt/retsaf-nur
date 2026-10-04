@@ -43,9 +43,9 @@ mapping and copy its three ``env_*`` values verbatim, or report
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 
-from runcoach_api.metrics.segments import Feature, ScreenedRecord, TimeBase
+from runcoach_api.metrics.segments import Feature, ScreenedRecord, Segment, TimeBase
 
 HYSTERESIS_M = 1.0
 """Heuristic default, F013 Decision Log (2026-10-03): a move under 1 m is barometric noise, not relief.
@@ -69,16 +69,21 @@ def hr_excluded(record: ScreenedRecord) -> bool:
     return record.heart_rate is None or CADENCE_LOCK_TAG in record.sample_quality
 
 
+def _counted_starts(tb: TimeBase) -> Iterator[tuple[Segment, ScreenedRecord]]:
+    """Each counted segment with its start record: the one walk every descriptor below takes."""
+    for seg in tb.segments:
+        if seg.counted:
+            yield seg, tb.records[seg.k]
+
+
 def _time_weighted_mean(
     tb: TimeBase, value_of: Callable[[ScreenedRecord], float | None]
 ) -> float | None:
     """The dt-weighted mean of ``value_of(start record)`` over counted segments; None if none qualify."""
     weighted = 0.0
     time = 0.0
-    for seg in tb.segments:
-        if not seg.counted:
-            continue
-        value = value_of(tb.records[seg.k])
+    for seg, start in _counted_starts(tb):
+        value = value_of(start)
         if value is None:
             continue
         weighted += value * seg.dt
@@ -91,9 +96,7 @@ def avg_hr(tb: TimeBase) -> Feature:
     mean = _time_weighted_mean(tb, lambda r: None if hr_excluded(r) else r.heart_rate)
     if mean is not None:
         return Feature(mean, None)
-    any_present = any(
-        tb.records[seg.k].heart_rate is not None for seg in tb.segments if seg.counted
-    )
+    any_present = any(start.heart_rate is not None for _, start in _counted_starts(tb))
     # Precedence: HR that was never there is `no_heart_rate`; HR that was there and all of it
     # locked is the gate's own flag.
     return Feature(None, CADENCE_LOCK_TAG if any_present else "no_heart_rate")
@@ -118,11 +121,9 @@ def avg_power(tb: TimeBase) -> tuple[Feature, str | None]:
     if mean is None:
         return Feature(None, "no_power"), None
     models = {
-        tb.records[seg.k].power_model
-        for seg in tb.segments
-        if seg.counted
-        and tb.records[seg.k].power is not None
-        and tb.records[seg.k].power_model is not None
+        start.power_model
+        for _, start in _counted_starts(tb)
+        if start.power is not None and start.power_model is not None
     }
     if len(models) > 1:
         return Feature(None, "mixed_power_models"), None
@@ -157,7 +158,10 @@ def env_features(context: Mapping[str, object]) -> dict[str, Feature]:
     out: dict[str, Feature] = {}
     for name in ENV_FEATURES:
         value = context.get(name)
-        out[name] = Feature(None, "not_recorded") if value is None else Feature(value, None)  # type: ignore[arg-type]
+        if value is None:
+            out[name] = Feature(None, "not_recorded")
+        else:
+            out[name] = Feature(value, None)  # type: ignore[arg-type]
     return out
 
 
@@ -171,7 +175,7 @@ def gps_degraded_fraction(tb: TimeBase) -> float | None:
         return None
     degraded = sum(
         seg.contributed_m
-        for seg in tb.segments
-        if seg.counted and GPS_DEGRADED_TAG in tb.records[seg.k].sample_quality
+        for seg, start in _counted_starts(tb)
+        if GPS_DEGRADED_TAG in start.sample_quality
     )
     return degraded / tb.D

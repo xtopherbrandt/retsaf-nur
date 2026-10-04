@@ -109,7 +109,8 @@ def ngp(tb: TimeBase, g_per_record: Sequence[float]) -> Feature:
     """
     if len(g_per_record) != len(tb.records):
         raise ValueError(
-            f"g_per_record has {len(g_per_record)} entries for {len(tb.records)} records; one per record is needed"
+            f"g_per_record has {len(g_per_record)} entries for {len(tb.records)} records; "
+            "one per record is needed"
         )
     fourth_powers = [m**4 for block in _blocks(tb, g_per_record) for m in _window_means(block)]
     if not fourth_powers:
