@@ -189,7 +189,10 @@ def test_gap_ratio_matches_the_independent_oracle(fixture: str) -> None:
 
 @pytest.mark.parametrize("fixture", RATIO_FIXTURES)
 def test_ascent_and_descent_follow_the_hysteresis_restated_here(fixture: str) -> None:
-    """Served ascent and descent equal the 1 m hysteresis over the detail's altitudes, in ``t`` order, to 1e-9."""
+    """Served ascent and descent equal the 1 m hysteresis over the detail's altitudes.
+
+    The altitudes are taken in ``t`` order; the comparison is to 1e-9.
+    """
     with _client() as client:
         session_id = _upload(client, fixture)
         body = _features(client, session_id)
@@ -232,7 +235,8 @@ def test_strap_hrv_sample_run_coverage_is_partial() -> None:
 
     coverage = body["gap_coverage"]
     print(
-        f"{PARTIAL_COVERAGE_FIXTURE}: gap_coverage={coverage} oracle={PARTIAL_COVERAGE} band=+-{PARTIAL_COVERAGE_TOLERANCE}"
+        f"{PARTIAL_COVERAGE_FIXTURE}: gap_coverage={coverage} "
+        f"oracle={PARTIAL_COVERAGE} band=+-{PARTIAL_COVERAGE_TOLERANCE}"
     )
     assert coverage is not None
     assert abs(coverage - PARTIAL_COVERAGE) <= PARTIAL_COVERAGE_TOLERANCE, (coverage, PARTIAL_COVERAGE)

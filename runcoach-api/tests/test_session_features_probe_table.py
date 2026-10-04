@@ -164,7 +164,10 @@ def _run(
     cadence: int | None = RAW_CADENCE,
     degraded: Callable[[int], bool] = lambda k: False,
 ) -> list[_UploadMsg]:
-    """``n`` records at ``spacing`` seconds; by default distance advances ``SPEED`` per second on flat ground."""
+    """``n`` records at ``spacing`` seconds.
+
+    By default distance advances ``SPEED`` per second on flat ground.
+    """
     if distance_of is None:
         distance_of = lambda k: SPEED * k * spacing
     if altitude_of is None:
@@ -256,10 +259,12 @@ def _row_04_distance_regresses_once(client, monkeypatch):
     distances = [SPEED * k for k in range(60)]
     distances[30] = 80.0  # 87 -> 80 -> 93: one drop of 7 m, then a 13 m stride
     body = _features(client, monkeypatch, [_session(), *_run(60, distance_of=lambda k: distances[k])])
-    expected_d = sum(max(b - a, 0.0) for a, b in pairwise(distances))  # reference section 2: D = sum max(dd, 0)
+    # reference section 2: D = sum max(dd, 0)
+    expected_d = sum(max(b - a, 0.0) for a, b in pairwise(distances))
     assert body["flags"] == ["distance_regressed"]
     assert _value(body, "distance_m") == pytest.approx(expected_d, rel=1e-9)
-    assert expected_d == 184.0  # 59 strides of 3 m, less the two strides the drop replaces, plus the 13 m stride
+    # 59 strides of 3 m, less the two strides the drop replaces, plus the 13 m stride
+    assert expected_d == 184.0
     return body
 
 
@@ -290,7 +295,10 @@ def _row_07_distance_jump_speed_continuous(client, monkeypatch):
     jumped = _features(
         client,
         monkeypatch,
-        [_session(start=LATER), *_run(90, start=LATER, distance_of=lambda k: SPEED * k + (52.0 if k >= 45 else 0.0))],
+        [
+            _session(start=LATER),
+            *_run(90, start=LATER, distance_of=lambda k: SPEED * k + (52.0 if k >= 45 else 0.0)),
+        ],
     )
     assert _value(jumped, "ngp_speed_m_s") == pytest.approx(_value(baseline, "ngp_speed_m_s"), rel=1e-9)
     assert _value(jumped, "distance_m") == pytest.approx(_value(baseline, "distance_m") + 52.0, rel=1e-9)
@@ -393,7 +401,9 @@ def _row_19_half_grade_ramp(client, monkeypatch):
         return 0.5 * min(max(k - 100, 0), 50)
 
     body = _features(
-        client, monkeypatch, [_session(), *_run(251, speed=1.0, distance_of=lambda k: float(k), altitude_of=altitude)]
+        client,
+        monkeypatch,
+        [_session(), *_run(251, speed=1.0, distance_of=lambda k: float(k), altitude_of=altitude)],
     )
     assert "grade_clamped" in body["flags"]
     assert body["grade_clamped_fraction"] > 0.0
@@ -403,7 +413,9 @@ def _row_19_half_grade_ramp(client, monkeypatch):
 
 def _row_20_gps_degraded_on_part(client, monkeypatch):
     untagged = _features(client, monkeypatch, [_session(), *_run(90)])
-    tagged = _features(client, monkeypatch, [_session(start=LATER), *_run(90, start=LATER, degraded=lambda k: 30 <= k < 60)])
+    tagged = _features(
+        client, monkeypatch, [_session(start=LATER), *_run(90, start=LATER, degraded=lambda k: 30 <= k < 60)]
+    )
     assert untagged["gps_degraded_fraction"] == 0.0
     # 30 counted segments start on a tagged record, 3 m each, over D = 89 * 3 m (reference section 5).
     assert tagged["gps_degraded_fraction"] == pytest.approx(30 * SPEED / (89 * SPEED), rel=1e-9)
