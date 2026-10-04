@@ -179,3 +179,27 @@ def test_g_per_record_must_match_the_record_count():
         N.ngp(tb, [1.0] * 29)
     with pytest.raises(ValueError):
         N.ngp(tb, [1.0] * 31)
+
+
+# -- The block numbering the per-segment stream reads --------------------------------------------
+
+
+def test_record_block_ids_number_the_blocks_ngp_pools_and_mark_left_out_records_none():
+    rows = _rows(12)
+    rows[4]["speed"] = None  # closes block 0 after record 3; record 5 opens block 1
+    rows = rows[:8] + [dict(rows[7])] + rows[8:]  # a dt = 0 duplicate at index 8: left out, no split
+    for row in rows[10:]:
+        row["t"] += 100.0  # a break before index 10 opens block 2
+    tb = _tb(rows)
+    ids = N.record_block_ids(tb)
+    assert len(ids) == len(tb.records) == 13
+    assert ids == [0, 0, 0, 0, None, 1, 1, 1, None, 1, 2, 2, 2]
+    assert [len(block) for block in N._blocks(tb, [1.0] * 13)] == [4, 4, 3]
+
+
+def test_record_block_ids_skip_no_number_when_a_block_would_be_empty():
+    rows = _rows(6)
+    rows[2]["speed"] = None
+    rows[3]["speed"] = None  # two absent speeds in a row open no empty block between them
+    assert N.record_block_ids(_tb(rows)) == [0, 0, None, None, 1, 1]
+    assert N.record_block_ids(_tb([])) == []

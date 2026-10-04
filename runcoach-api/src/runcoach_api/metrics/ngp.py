@@ -58,32 +58,53 @@ from runcoach_api.metrics.segments import Feature, TimeBase
 NGP_WINDOW = 30
 
 
-def _blocks(tb: TimeBase, g_per_record: Sequence[float]) -> list[list[float]]:
-    """Cut the graded device-speed series into contiguous blocks.
+def record_block_ids(tb: TimeBase) -> list[int | None]:
+    """The NGP block each record's sample belongs to, numbered 0, 1, 2, ... in record order.
 
-    A break segment or an absent speed closes the current block; a record
-    reached by a dt = 0 segment is skipped without closing it. Empty blocks are
-    not emitted.
+    One entry per record of ``tb``. ``None`` marks a record that is left out of
+    the series: its speed is absent, or it is reached by a dt = 0 segment. A
+    break segment or an absent speed closes the current block, and the next
+    present speed opens the next one; a dt = 0 arrival closes nothing. Only
+    blocks that hold a sample take a number, so the ids are contiguous and
+    match the order ``ngp`` pools them in. The session transform's per-segment
+    stream reads this so its ``block_id`` is NGP's numbering, not a second one.
     """
-    blocks: list[list[float]] = []
-    current: list[float] = []
+    ids: list[int | None] = []
+    block = 0  # the id the next present speed joins
+    holds_sample = False  # whether block ``block`` has a sample yet
     for j, record in enumerate(tb.records):
         if j > 0:
             arriving = tb.segments[j - 1]
             if arriving.is_break:
-                if current:
-                    blocks.append(current)
-                current = []
+                if holds_sample:
+                    block += 1
+                    holds_sample = False
             elif arriving.dt == 0.0:
+                ids.append(None)
                 continue
         if record.speed is None:
-            if current:
-                blocks.append(current)
-            current = []
+            if holds_sample:
+                block += 1
+                holds_sample = False
+            ids.append(None)
             continue
-        current.append(record.speed * g_per_record[j])
-    if current:
-        blocks.append(current)
+        ids.append(block)
+        holds_sample = True
+    return ids
+
+
+def _blocks(tb: TimeBase, g_per_record: Sequence[float]) -> list[list[float]]:
+    """Cut the graded device-speed series into the contiguous blocks ``record_block_ids`` numbers.
+
+    Empty blocks are never numbered, so none is emitted.
+    """
+    blocks: list[list[float]] = []
+    for j, block_id in enumerate(record_block_ids(tb)):
+        if block_id is None:
+            continue
+        if block_id == len(blocks):
+            blocks.append([])
+        blocks[block_id].append(tb.records[j].speed * g_per_record[j])
     return blocks
 
 
