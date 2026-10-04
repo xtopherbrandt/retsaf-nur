@@ -132,8 +132,8 @@ def _session_flags(session: Mapping[str, object]) -> list[str]:
 def _response_features(features: Mapping[str, Feature], power_model: str | None) -> dict[str, object]:
     """The 14 features in response order as ``{"value", "unavailable"}``; ``avg_power_w`` adds its model."""
     out: dict[str, object] = {
-        name: {"value": feature.value, "unavailable": feature.unavailable}
-        for name, feature in ((name, features[name]) for name in FEATURE_NAMES)
+        name: {"value": features[name].value, "unavailable": features[name].unavailable}
+        for name in FEATURE_NAMES
     }
     out["avg_power_w"] = {**out["avg_power_w"], "power_model": power_model}  # type: ignore[dict-item]
     return out
@@ -175,10 +175,6 @@ def _pace(T: float, distance_like: float) -> Feature:
     return Feature(1000.0 * T / distance_like, None) if distance_like > 0.0 else Feature(None, "no_distance")
 
 
-def _fraction(part: float, D: float) -> float | None:
-    return part / D if D > 0.0 else None
-
-
 def compute_session_features(session: Mapping[str, object], rows: Iterable[Mapping[str, object]]) -> dict:
     """The features response of reference section 8 for one session's stored records.
 
@@ -206,7 +202,7 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
             clamped_m += seg.contributed_m
 
     T, D = tb.T, tb.D
-    gap_coverage = _fraction(graded_m, D)  # None exactly when D = 0
+    gap_coverage = descriptors.distance_fraction(graded_m, D)  # None exactly when D = 0
     ngp_speed = ngp.ngp(tb, _g_per_record(graded, len(tb.records)))
     ngp_pace = Feature(1000.0 / ngp_speed.value, None) if ngp_speed.value else ngp_speed
     power, power_model = descriptors.avg_power(tb)
@@ -241,7 +237,7 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
         _unique(_session_flags(session) + derived_flags),
         _response_features(features, power_model),
         gap_coverage=gap_coverage,
-        grade_clamped_fraction=_fraction(clamped_m, D),
+        grade_clamped_fraction=descriptors.distance_fraction(clamped_m, D),
         gps_degraded_fraction=descriptors.gps_degraded_fraction(tb),
     )
 

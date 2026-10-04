@@ -165,17 +165,24 @@ def env_features(context: Mapping[str, object]) -> dict[str, Feature]:
     return out
 
 
+def distance_fraction(part_m: float, D: float) -> float | None:
+    """``part_m`` as a share of the contributed distance ``D``; None when D = 0.
+
+    The one home of the contributed-distance share; the session transform's
+    coverage and clamped fractions read it too.
+    """
+    return part_m / D if D > 0.0 else None
+
+
 def gps_degraded_fraction(tb: TimeBase) -> float | None:
     """Contributed distance of counted segments whose start record is ``gps_degraded``, over D.
 
     None when D = 0 (reference section 5). Nothing is excluded on this tag; the
     fraction is the report.
     """
-    if tb.D == 0.0:
-        return None
     degraded = sum(
         seg.contributed_m
         for seg, start in _counted_starts(tb)
         if GPS_DEGRADED_TAG in start.sample_quality
     )
-    return degraded / tb.D
+    return distance_fraction(degraded, tb.D)
