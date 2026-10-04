@@ -634,12 +634,12 @@ class FeatureValue(BaseModel):
             "Why no value is served, null when one is. The reason codes, by feature: `sport_not_running` (every "
             "feature of a non-running session) and `no_records` (every feature of a running session with no "
             "records) take precedence over all others; then `no_counted_segments` (duration_s, when no segment "
-            "of at most 5 s exists), `no_distance` (distance_m, avg_pace_s_per_km and gap_avg_pace_s_per_km, "
-            "when the counted distance is 0: a zero is reported as unavailable, never as a value), "
-            "`no_30s_block` and `no_motion` (ngp_speed_m_s and ngp_pace_s_per_km), `no_heart_rate` and "
-            "`cadence_lock` (avg_hr_bpm), `no_cadence` (avg_cadence_spm), `no_power` and `mixed_power_models` "
-            "(avg_power_w), `no_altitude` (total_ascent_m and total_descent_m) and `not_recorded` (the three "
-            "env_* features, always the case on the FIT-upload path today)."
+            "with 0 < dt <= 5 s exists), `no_distance` (distance_m, avg_pace_s_per_km and "
+            "gap_avg_pace_s_per_km, when the counted distance is 0: a zero is reported as unavailable, never as "
+            "a value), `no_30s_block` and `no_motion` (ngp_speed_m_s and ngp_pace_s_per_km), `no_heart_rate` "
+            "and `cadence_lock` (avg_hr_bpm), `no_cadence` (avg_cadence_spm), `no_power` and "
+            "`mixed_power_models` (avg_power_w), `no_altitude` (total_ascent_m and total_descent_m) and "
+            "`not_recorded` (the three env_* features, always the case on the FIT-upload path today)."
         )
     )
 
@@ -681,9 +681,9 @@ class SessionFeatureValues(BaseModel):
     )
     ngp_speed_m_s: FeatureValue = Field(
         description=(
-            "Normalized graded speed: the fourth root of the mean fourth power of the 30 s trailing mean of "
-            "device speed * g, over every full window of every contiguous block (blocks split at a gap over "
-            "5 s and at a record without speed; a block of fewer than 30 records yields no window)."
+            "Normalized graded speed: fourth root of the mean fourth power of the 30 s trailing mean of device speed "
+            "* g over each full window of each block (blocks split at a gap over 5 s and at a speedless record; a "
+            "record reached by a dt = 0 segment is dropped and splits nothing; a block under 30 records has none)."
         )
     )
     ngp_pace_s_per_km: FeatureValue = Field(description="1000 / ngp_speed_m_s.")

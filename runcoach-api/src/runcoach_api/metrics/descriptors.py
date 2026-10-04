@@ -31,9 +31,9 @@ nothing. The gate-aware screens are applied per start record:
 **Ascent and descent** are a 1 m hysteresis over the present altitude
 samples in ``t`` order (reference section 7). The threshold is a heuristic
 default ratified in F013's Decision Log; the vendor ``total_ascent`` was
-calibration evidence for it and is never an input. Raw over derived
-(PRIN-07): nothing here reads the session summary, the sidecar or any
-vendor total.
+calibration evidence for it and is never an input. Raw over derived:
+nothing here reads the session summary, the sidecar or any vendor
+total.
 
 **Pure, by design.** No ``config``, ``db`` or ``fastapi`` import, no clock, no
 connection; the environment features take the already-decoded ``context``

@@ -2085,7 +2085,7 @@ components:
               description: "1000 * T / sum(v_actual * g * dt): g is Minetti's cost of gradient relative to the flat over +/-25 m, clamped to +/-0.45; an ungraded segment contributes at g = 1, so avg_pace / gap_avg_pace is the distance-weighted mean g."
             ngp_speed_m_s:
               allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
-              description: "Normalized graded speed: fourth root of the mean fourth power of the 30 s trailing mean of device speed * g, over every full window of every contiguous block (a block of fewer than 30 records yields none)."
+              description: "Normalized graded speed: fourth root of the mean fourth power of the 30 s trailing mean of device speed * g, over every full window of every contiguous block (a block of fewer than 30 records yields none); a record reached by a dt = 0 segment is left out of the series and does not split its block."
             ngp_pace_s_per_km:
               allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
               description: "1000 / ngp_speed_m_s."
