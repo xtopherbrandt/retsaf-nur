@@ -13,6 +13,9 @@ module. Values are not asserted here; the real-fixture suite does that.
 from __future__ import annotations
 
 import re
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
@@ -85,15 +88,30 @@ def _upload(client: TestClient, filename: str) -> str:
     return created.json()["session_id"]
 
 
-def _schema_and_counts() -> tuple[list[tuple], dict[str, int]]:
-    """``sqlite_master`` and every table's row count, read outside the app."""
+@contextmanager
+def _connection() -> Iterator[sqlite3.Connection]:
+    """A connection to the isolated store, opened outside the app and closed on exit."""
     conn = db_module.get_connection()
     try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _read_inputs(session_id: str) -> tuple[dict, list[dict]]:
+    """What the reader hands the pure module for a session that exists."""
+    with _connection() as conn:
+        inputs = db_module.read_session_feature_inputs(conn, session_id)
+    assert inputs is not None, session_id
+    return inputs
+
+
+def _schema_and_counts() -> tuple[list[tuple], dict[str, int]]:
+    """``sqlite_master`` and every table's row count, read outside the app."""
+    with _connection() as conn:
         schema = [tuple(r) for r in conn.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name")]
         tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
-    finally:
-        conn.close()
     return schema, counts
 
 
@@ -108,11 +126,8 @@ def _contract() -> dict:
 
 def test_the_database_path_resolves_under_tmp_path(tmp_path: Path) -> None:
     """The autouse isolation holds before the first request: the store the route opens is under ``tmp_path``."""
-    conn = db_module.get_connection()
-    try:
+    with _connection() as conn:
         (db_path,) = [row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"]
-    finally:
-        conn.close()
     resolved = Path(db_path).resolve()
     assert resolved.is_relative_to(tmp_path.resolve()), db_path
     assert not resolved.is_relative_to(Path.home() / ".runcoach"), db_path
@@ -189,11 +204,7 @@ def test_the_route_serves_the_pure_module_result_unchanged() -> None:
     with TestClient(app) as client:
         session_id = _upload(client, RUN_FIXTURE)
         body = client.get(f"/sessions/{session_id}/features").json()
-    conn = db_module.get_connection()
-    try:
-        session, rows = db_module.read_session_feature_inputs(conn, session_id)
-    finally:
-        conn.close()
+    session, rows = _read_inputs(session_id)
     assert body == session_features.compute_session_features(session, rows)
 
 
@@ -219,11 +230,7 @@ def test_a_non_running_session_is_a_200_with_every_feature_unavailable() -> None
 def test_the_reader_session_mapping_has_exactly_the_four_keys() -> None:
     with TestClient(app) as client:
         session_id = _upload(client, RUN_FIXTURE)
-    conn = db_module.get_connection()
-    try:
-        session, rows = db_module.read_session_feature_inputs(conn, session_id)
-    finally:
-        conn.close()
+    session, rows = _read_inputs(session_id)
     assert set(session) == SESSION_MAPPING_KEYS
     assert session["session_id"] == session_id
     assert session["sport"] == "running"
@@ -235,24 +242,17 @@ def test_the_reader_session_mapping_has_exactly_the_four_keys() -> None:
 def test_the_reader_context_is_an_empty_mapping_when_the_stored_context_is_null() -> None:
     with TestClient(app) as client:
         session_id = _upload(client, RUN_FIXTURE)
-    conn = db_module.get_connection()
-    try:
+    with _connection() as conn:
         conn.execute("UPDATE sessions SET context = NULL WHERE session_id = ?", (session_id,))
         conn.commit()
-        session, _rows = db_module.read_session_feature_inputs(conn, session_id)
-    finally:
-        conn.close()
+    session, _rows = _read_inputs(session_id)
     assert session["context"] == {}
 
 
 def test_the_reader_records_carry_only_the_feature_columns_decoded() -> None:
     with TestClient(app) as client:
         session_id = _upload(client, RUN_FIXTURE)
-    conn = db_module.get_connection()
-    try:
-        _session, rows = db_module.read_session_feature_inputs(conn, session_id)
-    finally:
-        conn.close()
+    _session, rows = _read_inputs(session_id)
     assert rows
     assert {frozenset(r) for r in rows} == {frozenset(RECORD_KEYS)}
     assert all(isinstance(r["sample_quality"], list) for r in rows)
@@ -263,8 +263,7 @@ def test_the_reader_orders_by_t_then_stored_order() -> None:
     """Ties on ``t`` keep stored order (reference section 2): ``ORDER BY t, rowid``."""
     with TestClient(app) as client:
         session_id = _upload(client, RUN_FIXTURE)
-    conn = db_module.get_connection()
-    try:
+    with _connection() as conn:
         last_t = conn.execute("SELECT MAX(t) FROM records WHERE session_id = ?", (session_id,)).fetchone()[0]
         for marker in (101.0, 102.0, 103.0):
             conn.execute(
@@ -276,19 +275,14 @@ def test_the_reader_orders_by_t_then_stored_order() -> None:
             (session_id, last_t + 0.5, 100.0),
         )
         conn.commit()
-        _session, rows = db_module.read_session_feature_inputs(conn, session_id)
-    finally:
-        conn.close()
+    _session, rows = _read_inputs(session_id)
     assert [r["distance"] for r in rows[-4:]] == [100.0, 101.0, 102.0, 103.0]
 
 
 def test_the_reader_returns_none_for_an_unknown_session() -> None:
-    conn = db_module.get_connection()
-    try:
+    with _connection() as conn:
         db_module.init_schema(conn)
         assert db_module.read_session_feature_inputs(conn, "nope") is None
-    finally:
-        conn.close()
 
 
 # ---------------------------------------------------------------------------
