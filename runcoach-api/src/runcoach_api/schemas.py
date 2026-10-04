@@ -611,3 +611,140 @@ class HrvTrendResponse(BaseModel):
             "owned by IDEA-099, and that population may not grow (research/00 HRV-25, PRIN-15)."
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/features (F013)
+#
+# The response ``metrics.session_features.compute_session_features`` builds,
+# typed. Every feature is a value or an unavailable reason, never both and
+# never neither (a value is never imputed, spec/03 section 3.2), so a consumer
+# that reads ``value`` without checking ``unavailable`` reads null, not a
+# number. The field descriptions are what the contract and the UI read from
+# ``/openapi.json``.
+# ---------------------------------------------------------------------------
+
+
+class FeatureValue(BaseModel):
+    """One session feature: a `value`, or the reason it is `unavailable`; exactly one of the two is non-null."""
+
+    value: float | None = Field(description="The feature's value in the unit its name states; null when unavailable.")
+    unavailable: str | None = Field(
+        description=(
+            "Why no value is served, null when one is. The reason codes, by feature: `sport_not_running` (every "
+            "feature of a non-running session) and `no_records` (every feature of a running session with no "
+            "records) take precedence over all others; then `no_counted_segments` (duration_s, when no segment "
+            "of at most 5 s exists), `no_distance` (distance_m, avg_pace_s_per_km and gap_avg_pace_s_per_km, "
+            "when the counted distance is 0: a zero is reported as unavailable, never as a value), "
+            "`no_30s_block` and `no_motion` (ngp_speed_m_s and ngp_pace_s_per_km), `no_heart_rate` and "
+            "`cadence_lock` (avg_hr_bpm), `no_cadence` (avg_cadence_spm), `no_power` and `mixed_power_models` "
+            "(avg_power_w), `no_altitude` (total_ascent_m and total_descent_m) and `not_recorded` (the three "
+            "env_* features, always the case on the FIT-upload path today)."
+        )
+    )
+
+
+class PowerFeatureValue(FeatureValue):
+    """`avg_power_w` with the model the power stream was recorded under."""
+
+    power_model: str | None = Field(
+        description=(
+            "The one `power_model` the session's power samples carry (a sample with a null model still counts); "
+            "null when no power was recorded or when the models are mixed (`mixed_power_models`)."
+        )
+    )
+
+
+class SessionFeatureValues(BaseModel):
+    """The 14 features of F013, in the response's order (F013 reference, section 7)."""
+
+    duration_s: FeatureValue = Field(
+        description=(
+            "Recorded time T: the sum of dt over counted segments (consecutive records 0 < dt <= 5 s apart). "
+            "A pause or an unfilled gap longer than 5 s contributes nothing; a dt = 0 duplicate contributes nothing."
+        )
+    )
+    distance_m: FeatureValue = Field(
+        description=(
+            "Distance D: the sum of max(dd, 0) over counted segments. A regressing segment contributes 0 m and "
+            "raises the `distance_regressed` flag."
+        )
+    )
+    avg_pace_s_per_km: FeatureValue = Field(description="1000 * T / D.")
+    gap_avg_pace_s_per_km: FeatureValue = Field(
+        description=(
+            "Grade-adjusted average pace: 1000 * T / sum(v_actual * g * dt) over counted segments, g being "
+            "Minetti's cost of gradient relative to the flat, over a +/-25 m window of reconstructed distance, "
+            "clamped to +/-0.45. A segment with no grade contributes at g = 1, so `avg_pace_s_per_km / "
+            "gap_avg_pace_s_per_km` is the distance-weighted mean g, and flat ground leaves pace unchanged."
+        )
+    )
+    ngp_speed_m_s: FeatureValue = Field(
+        description=(
+            "Normalized graded speed: the fourth root of the mean fourth power of the 30 s trailing mean of "
+            "device speed * g, over every full window of every contiguous block (blocks split at a gap over "
+            "5 s and at a record without speed; a block of fewer than 30 records yields no window)."
+        )
+    )
+    ngp_pace_s_per_km: FeatureValue = Field(description="1000 / ngp_speed_m_s.")
+    avg_hr_bpm: FeatureValue = Field(
+        description=(
+            "Time-weighted mean of the heart rate at each counted segment's start, over records with a heart "
+            "rate above 0 and without the `cadence_lock` sample flag."
+        )
+    )
+    avg_cadence_spm: FeatureValue = Field(
+        description="Time-weighted mean of cadence at each counted segment's start, over records with cadence > 0."
+    )
+    avg_power_w: PowerFeatureValue = Field(
+        description="Time-weighted mean of power at each counted segment's start, with its `power_model`."
+    )
+    total_ascent_m: FeatureValue = Field(
+        description=(
+            "Ascent by a 1 m hysteresis over the present altitude samples in t order; no vendor total is read."
+        )
+    )
+    total_descent_m: FeatureValue = Field(description="Descent by the same 1 m hysteresis.")
+    env_temperature_c: FeatureValue = Field(description="The session context's `env_temperature_c`, verbatim.")
+    env_humidity_pct: FeatureValue = Field(description="The session context's `env_humidity_pct`, verbatim.")
+    env_wind_ms: FeatureValue = Field(description="The session context's `env_wind_ms`, verbatim.")
+
+
+class SessionFeaturesResponse(BaseModel):
+    """The features of one session, computed on read from its stored canonical records (F013).
+
+    Nothing is stored: every request recomputes from the records, so a deleted
+    session has no features (404, the envelope of GET /sessions/{id}). A
+    non-running session, or one with no records, is a 200 with every feature
+    unavailable and the reason named: an all-unavailable session is an
+    answer, not an error. duration_s, distance_m and avg_pace_s_per_km are
+    the same quantities SessionSummary names: recorded time, not elapsed, so a
+    future listSessions projects these values.
+    """
+
+    session_id: str
+    sport: str
+    flags: list[str] = Field(
+        description=(
+            "The session's stored `quality_flags` first, in stored order with `smart_recording` moved to the "
+            "front when present; then `distance_regressed` (a counted segment whose distance decreased), "
+            "`gap_unavailable` (D > 0 and gap_coverage < 1: spec/03 section 3.3.4's raw-pace fallback applied "
+            "to part of the run) and `grade_clamped` (a segment's grade was clamped to +/-0.45). Each at most once."
+        )
+    )
+    gap_coverage: float | None = Field(
+        description=(
+            "The share of D contributed by segments that had a grade (two altitude samples in their +/-25 m "
+            "window). 1.0 when every metre was graded, 0.0 with no altitude at all; null when D = 0."
+        )
+    )
+    grade_clamped_fraction: float | None = Field(
+        description="The share of D contributed by segments whose grade was clamped to +/-0.45; null when D = 0."
+    )
+    gps_degraded_fraction: float | None = Field(
+        description=(
+            "The share of D contributed by segments starting at a `gps_degraded` record. Reported, not "
+            "excluded: averaged pace is trusted once degraded samples are averaged. Null when D = 0."
+        )
+    )
+    features: SessionFeatureValues

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+F013: `GET /sessions/{session_id}/features` serves each running session's grade-adjusted pace (GAP),
+normalized graded pace (NGP) and the spec/03 section 3.2 descriptors, computed on read from the
+stored canonical records. Nothing is stored and no table is added, so a deleted session has no
+features: the route returns the 404 envelope of `GET /sessions/{id}`. The as-built rule: the time
+base is recorded time (consecutive records at most 5 s apart form a counted segment; a longer
+segment is a break that contributes neither time nor distance; a dt = 0 duplicate contributes
+nothing; a decreasing distance contributes 0 m and flags `distance_regressed`). The gradient is
+taken over +/-25 m of reconstructed distance and clamped to +/-0.45 before Minetti's cost curve;
+clamped segments count in `grade_clamped_fraction` and flag `grade_clamped`. GAP is the
+distance-weighted mean, so `avg_pace / gap_avg_pace` is the mean g and flat ground leaves pace
+unchanged; an ungraded segment contributes at g = 1 and `gap_coverage` reports the graded share,
+with `gap_unavailable` flagged when it is below 1. NGP is the fourth-power mean of device speed
+times g over 30 s windows within contiguous blocks (a block of fewer than 30 records adds nothing;
+a 52 m one-second distance jump cannot move it). `gps_degraded_fraction` reports and excludes
+nothing; the session's `quality_flags` lead `flags`, `smart_recording` first. Every feature is
+`{value, unavailable}` with exactly one side set; the reason codes are `sport_not_running`,
+`no_records`, `no_counted_segments`, `no_distance` (a zero distance is never served as 0.0),
+`no_30s_block`, `no_motion`, `no_heart_rate`, `cadence_lock`, `no_cadence`, `no_power`,
+`mixed_power_models`, `no_altitude` and `not_recorded`. A non-running session is a 200 with every
+feature `sport_not_running`. The contract gains `getSessionFeatures` (`x-readiness: implemented`)
+and the `SessionFeatures` component, whose `duration_s`, `distance_m` and `avg_pace_s_per_km` are
+the quantities `SessionSummary` names: recorded time, not elapsed. The key set of
+`GET /sessions/{id}` is unchanged.
+
 ## 2026-10-03 — Sprint 010: per-unit sensor identity at ingestion
 
 F007 (T248): the `sessions` table gains a nullable `hr_sensor_serial INTEGER` column, and

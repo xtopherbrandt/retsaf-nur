@@ -657,3 +657,59 @@ def earliest_hrv_reading(conn: sqlite3.Connection, tiers: Sequence[str]) -> str 
         tuple(tiers),
     )
     return cur.fetchone()[0]
+
+
+def read_session_feature_inputs(conn: sqlite3.Connection, session_id: str) -> tuple[dict, list[dict]] | None:
+    """Read what ``metrics.session_features.compute_session_features`` consumes for one session.
+
+    Returns ``None`` when ``session_id`` does not exist, so the features route
+    can serve the same 404 as ``GET /sessions/{id}``. Otherwise a pair: the
+    session mapping with exactly the keys ``session_id``, ``sport``,
+    ``quality_flags`` (JSON-decoded, ``[]`` when null) and ``context``
+    (JSON-decoded, ``{}`` when null; the ``env_*`` values live there), and the
+    records the transform reads -- ``t``, ``distance``, ``speed``,
+    ``altitude``, ``heart_rate``, ``cadence``, ``power``, ``power_model``,
+    ``gps_degraded`` and ``sample_quality`` (JSON-decoded) -- ``ORDER BY t,
+    rowid``, so records with equal ``t`` keep stored order (F013 reference,
+    section 2). Nothing else is selected: no other session column reaches the
+    features response through this reader, and ``get_session_detail`` and its
+    ordering are untouched. Read-only: no ``init_schema``, no write.
+    """
+    cur = conn.execute(
+        "SELECT session_id, sport, quality_flags, context FROM sessions WHERE session_id = ?",
+        (session_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    session = {
+        "session_id": row["session_id"],
+        "sport": row["sport"],
+        "quality_flags": _json_load(row["quality_flags"], default=[]),
+        "context": _json_load(row["context"], default={}) or {},
+    }
+
+    records_cur = conn.execute(
+        """
+        SELECT t, distance, speed, altitude, heart_rate, cadence, power, power_model,
+               gps_degraded, sample_quality
+        FROM records WHERE session_id = ? ORDER BY t, rowid
+        """,
+        (session_id,),
+    )
+    rows = [
+        {
+            "t": r["t"],
+            "distance": r["distance"],
+            "speed": r["speed"],
+            "altitude": r["altitude"],
+            "heart_rate": r["heart_rate"],
+            "cadence": r["cadence"],
+            "power": r["power"],
+            "power_model": r["power_model"],
+            "gps_degraded": _int_to_bool(r["gps_degraded"]),
+            "sample_quality": _json_load(r["sample_quality"], default=[]),
+        }
+        for r in records_cur.fetchall()
+    ]
+    return session, rows

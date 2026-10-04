@@ -704,3 +704,49 @@ def get_hrv_trend(
     points = [_point(series, verdict) for series, verdict in judged]
     series, verdict = judged[-1]
     return _trend_response(from_, points, series, verdict)
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/features (F013)
+#
+# Appended below the earlier routes with its own imports: this module's
+# existing lines are cited by line number elsewhere and are left in place.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics import session_features
+from runcoach_api.schemas import SessionFeaturesResponse
+
+
+@app.get(
+    "/sessions/{session_id}/features",
+    response_model=SessionFeaturesResponse,
+    operation_id="getSessionFeatures",
+    tags=["Sessions"],
+)
+def get_session_features(session_id: str) -> SessionFeaturesResponse:
+    """The session's grade-adjusted pace, NGP and descriptors, computed on read (F013).
+
+    ``db.read_session_feature_inputs`` reads the session's ``sport``,
+    ``quality_flags``, ``context`` and the record columns the transform
+    consumes, and ``metrics.session_features.compute_session_features`` builds
+    the response of the F013 reference, section 8. Nothing is stored and no
+    schema is touched: the connection is opened and closed inline, as
+    ``get_hrv_trend`` does, and ``init_schema`` is never called here, so the
+    schema and every row count are identical before and after the request.
+
+    An unknown or deleted ``session_id`` is the 404 ``get_session`` raises,
+    with the same message, so the two routes share one envelope. Every other
+    case is a 200: a non-running session, or one with no records, serves every
+    feature unavailable with its reason, because an all-unavailable session is
+    an answer, not an error.
+    """
+    conn = db.get_connection()
+    try:
+        inputs = db.read_session_feature_inputs(conn, session_id)
+    finally:
+        conn.close()
+
+    if inputs is None:
+        raise HTTPException(404, f"session {session_id} not found")
+
+    session, rows = inputs
+    return SessionFeaturesResponse(**session_features.compute_session_features(session, rows))

@@ -15,9 +15,11 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-09-09 the implemented endpoints in retsaf-nur are GET /health,
-# /sessions (POST ingest, GET detail, DELETE) and GET /metrics/hrv (F005: the
-# per-day series plus the verdict blocks, `from`/`to` optional); everything else
+# As of 2026-10-04 the implemented endpoints in retsaf-nur are GET /health,
+# /sessions (POST ingest, GET detail, DELETE), GET /metrics/hrv (F005: the
+# per-day series plus the verdict blocks, `from`/`to` optional) and
+# GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
+# descriptors, computed on read, nothing stored); everything else
 # is `planned` and is developed against a mock generated from this file until
 # the backend catches up. POST /sessions carries the F004 `resting_capture`
 # flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
@@ -62,7 +64,7 @@ tags:
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
-    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail)."
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail + features)."
   - name: Workouts
     description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
   - name: Subjective
@@ -529,6 +531,37 @@ paths:
         - $ref: "#/components/parameters/SessionId"
       responses:
         "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sessions/{session_id}/features:
+    get:
+      tags: [Sessions]
+      operationId: getSessionFeatures
+      summary: Grade-adjusted pace, NGP and the session descriptors, computed on read
+      description: >
+        F013. The session's recorded-time duration and distance, average pace,
+        grade-adjusted average pace (Minetti's cost of gradient over a +/-25 m
+        window of reconstructed distance, clamped to +/-0.45 and flagged),
+        normalized graded pace (NGP: device speed times g within contiguous
+        blocks, 30 s windows) and the spec/03 section 3.2 descriptors, each a
+        value or an unavailable reason, never imputed. Computed from the stored
+        canonical records on every request; nothing is stored, so a deleted
+        session has no features (404, the envelope of GET /sessions/{id}). A
+        non-running session, or one with no records, is a 200 with every
+        feature unavailable and the reason named: an all-unavailable session is
+        an answer, not an error. The per-segment stream behind these figures is
+        in-process only and not served.
+      x-readiness: implemented
+      x-owner-spec: "spec/03 section 3.2 and 3.3 (as amended by F013); runcoach-api F013"
+      x-story: [view-workout]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: The session's features, computed on read
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionFeatures" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # --------------------------------------------------------------- Workouts
@@ -1965,3 +1998,118 @@ components:
         change_set:
           allOf: [ { $ref: "#/components/schemas/ChangeSet" } ]
           nullable: true
+
+    # ---- Session features (F013, implemented) ---------------------------
+    FeatureValue:
+      type: object
+      description: >
+        One session feature: a value, or the reason it is unavailable. Exactly
+        one of the two is non-null; a value is never imputed (spec/03 section
+        3.2), so a consumer reads `unavailable` before trusting `value`.
+      required: [value, unavailable]
+      properties:
+        value: { type: number, nullable: true, description: "The value in the unit the feature's name states; null when unavailable." }
+        unavailable:
+          type: string
+          nullable: true
+          description: >
+            Why no value is served, null when one is. `sport_not_running` (every
+            feature of a non-running session) and `no_records` (every feature of a
+            running session with no records) take precedence; then
+            `no_counted_segments` (duration_s), `no_distance` (distance_m,
+            avg_pace_s_per_km, gap_avg_pace_s_per_km; a zero distance is reported
+            as unavailable, never as 0.0), `no_30s_block` and `no_motion` (the two
+            NGP features), `no_heart_rate` and `cadence_lock` (avg_hr_bpm),
+            `no_cadence`, `no_power` and `mixed_power_models` (avg_power_w),
+            `no_altitude` (ascent and descent) and `not_recorded` (the env_*
+            features; always the case on the FIT-upload path today).
+    PowerFeatureValue:
+      type: object
+      description: "`avg_power_w` with the model its power samples were recorded under."
+      required: [value, unavailable, power_model]
+      properties:
+        value: { type: number, nullable: true }
+        unavailable: { type: string, nullable: true }
+        power_model: { type: string, nullable: true, description: "The one power_model the samples carry (a sample with a null model still counts); null with no power or with mixed models." }
+    SessionFeatures:
+      type: object
+      description: >
+        GET /sessions/{id}/features: one session's grade-adjusted pace, NGP and
+        descriptors, computed on read from its stored canonical records (F013).
+        Nothing is stored. duration_s, distance_m and avg_pace_s_per_km are the
+        same quantities SessionSummary names: recorded time, not elapsed
+        (consecutive records at most 5 s apart count; a pause or an unfilled gap
+        contributes neither time nor distance), so a future listSessions
+        projects these values rather than computing its own.
+      required: [session_id, sport, flags, gap_coverage, grade_clamped_fraction, gps_degraded_fraction, features]
+      properties:
+        session_id: { type: string }
+        sport: { type: string }
+        flags:
+          type: array
+          items: { type: string }
+          description: >
+            The session's stored quality_flags first, in stored order with
+            `smart_recording` moved to the front when present; then
+            `distance_regressed`, `gap_unavailable` (D > 0 and gap_coverage < 1:
+            spec/03 section 3.3.4's raw-pace fallback applied to part of the run)
+            and `grade_clamped` (a grade was clamped to +/-0.45). Each at most once.
+        gap_coverage:
+          type: number
+          nullable: true
+          description: "Share of distance_m contributed by graded segments (two altitude samples in their +/-25 m window); 0.0 with no altitude; null when distance_m is 0."
+        grade_clamped_fraction:
+          type: number
+          nullable: true
+          description: "Share of distance_m contributed by segments whose grade was clamped to +/-0.45; null when distance_m is 0."
+        gps_degraded_fraction:
+          type: number
+          nullable: true
+          description: "Share of distance_m contributed by segments starting at a gps_degraded record. Reported, not excluded. Null when distance_m is 0."
+        features:
+          type: object
+          description: The 14 features, in this order.
+          required: [duration_s, distance_m, avg_pace_s_per_km, gap_avg_pace_s_per_km, ngp_speed_m_s, ngp_pace_s_per_km, avg_hr_bpm, avg_cadence_spm, avg_power_w, total_ascent_m, total_descent_m, env_temperature_c, env_humidity_pct, env_wind_ms]
+          properties:
+            duration_s:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Recorded time T: the sum of dt over counted segments (0 < dt <= 5 s). Pauses, gaps over 5 s and dt = 0 duplicates contribute nothing."
+            distance_m:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "D: the sum of max(dd, 0) over counted segments; a regressing segment contributes 0 m and raises distance_regressed."
+            avg_pace_s_per_km:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "1000 * T / D."
+            gap_avg_pace_s_per_km:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "1000 * T / sum(v_actual * g * dt): g is Minetti's cost of gradient relative to the flat over +/-25 m, clamped to +/-0.45; an ungraded segment contributes at g = 1, so avg_pace / gap_avg_pace is the distance-weighted mean g."
+            ngp_speed_m_s:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Normalized graded speed: fourth root of the mean fourth power of the 30 s trailing mean of device speed * g, over every full window of every contiguous block (a block of fewer than 30 records yields none)."
+            ngp_pace_s_per_km:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "1000 / ngp_speed_m_s."
+            avg_hr_bpm:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Time-weighted mean HR at each counted segment's start, over records with HR > 0 and without cadence_lock."
+            avg_cadence_spm:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Time-weighted mean cadence at each counted segment's start, over records with cadence > 0."
+            avg_power_w:
+              allOf: [ { $ref: "#/components/schemas/PowerFeatureValue" } ]
+              description: "Time-weighted mean power at each counted segment's start, with its power_model."
+            total_ascent_m:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Ascent by a 1 m hysteresis over the present altitude samples in t order; no vendor total is read."
+            total_descent_m:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "Descent by the same 1 m hysteresis."
+            env_temperature_c:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "The session context's env_temperature_c, verbatim."
+            env_humidity_pct:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "The session context's env_humidity_pct, verbatim."
+            env_wind_ms:
+              allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
+              description: "The session context's env_wind_ms, verbatim."
