@@ -1853,6 +1853,10 @@ def _all_scanned_files() -> tuple[Path, ...]:
 #: sat at 87.3% and 87.6% -- the same failure T138 hit, in the same way, two files
 #: over -- and each was moved to the last live sentence of its file's new tail.
 #: The 98% floor is what noticed both times; neither was found by reading.
+#: Re-anchored a third time on 2026-10-04 for ``schemas.py`` and ``openapi.yaml``,
+#: which gained the session features response and its ``SessionFeatures``
+#: component by append-only edits; their old anchors then sat at 83.4% and
+#: 92.3%, and each was moved to the last live sentence of its file's new tail.
 WITHDRAWN_SCAN_ANCHORS = _DECLARATIONS.WITHDRAWN_SCAN_ANCHORS
 
 

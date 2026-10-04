@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "which ships only as the named exception PRIN-15 lists, owned by IDEA-099",
+        "averaged pace is trusted once degraded samples are averaged. Null when D = 0.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "decision-record ids this reply is grounded in",
+        "The session context's env_wind_ms, verbatim.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
