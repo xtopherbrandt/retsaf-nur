@@ -218,6 +218,12 @@ def _assert_same(a: dict, b: dict, names: tuple[str, ...]) -> None:
         assert _value(a, name) == pytest.approx(_value(b, name), rel=1e-9), name
 
 
+def _assert_flat_paces_agree(body: dict) -> None:
+    """Within one upload on flat ground g = 1, so GAP pace equals raw pace (F013 AC4)."""
+    gap_pace, raw_pace = _value(body, "gap_avg_pace_s_per_km"), _value(body, "avg_pace_s_per_km")
+    assert gap_pace == pytest.approx(raw_pace, rel=1e-9), ("flat GAP pace != raw pace", gap_pace, raw_pace)
+
+
 # ---------------------------------------------------------------------------
 # the rows
 # ---------------------------------------------------------------------------
@@ -270,6 +276,7 @@ def _row_04_distance_regresses_once(client, monkeypatch):
 
 def _row_05_pause(client, monkeypatch):
     baseline = _features(client, monkeypatch, [_session(), *_run(90)])
+    _assert_flat_paces_agree(baseline)
     first = _run(45, start=LATER)
     paused = _record(644.0, start=LATER, distance=SPEED * 44)  # dt = 600 from record 44, dd = 0
     rest = [
@@ -283,6 +290,7 @@ def _row_05_pause(client, monkeypatch):
 
 def _row_06_dt_zero_duplicate(client, monkeypatch):
     baseline = _features(client, monkeypatch, [_session(), *_run(90)])
+    _assert_flat_paces_agree(baseline)
     records = _run(90, start=LATER)
     records.insert(46, _record(45.0, start=LATER, distance=SPEED * 45))  # the same instant as record 45
     with_duplicate = _features(client, monkeypatch, [_session(start=LATER), *records])
@@ -305,6 +313,9 @@ def _row_07_distance_jump_speed_continuous(client, monkeypatch):
             *_run(90, start=LATER, distance_of=lambda k: SPEED * k + (52.0 if k >= 45 else 0.0)),
         ],
     )
+    # Both paces agree in each upload: g = 1 on flat ground and on the ungraded stride.
+    _assert_flat_paces_agree(baseline)
+    _assert_flat_paces_agree(jumped)
     assert _value(jumped, "ngp_speed_m_s") == pytest.approx(_value(baseline, "ngp_speed_m_s"), rel=1e-9)
     assert _value(jumped, "distance_m") == pytest.approx(_value(baseline, "distance_m") + 52.0, rel=1e-9)
     # The 55 m stride's midpoint window, +-25 m on s, holds no record, so that stride alone has no grade
@@ -436,6 +447,7 @@ def _row_19_half_grade_ramp(client, monkeypatch):
 
 def _row_20_gps_degraded_on_part(client, monkeypatch):
     untagged = _features(client, monkeypatch, [_session(), *_run(90)])
+    _assert_flat_paces_agree(untagged)
     tagged = _features(
         client, monkeypatch, [_session(start=LATER), *_run(90, start=LATER, degraded=lambda k: 30 <= k < 60)]
     )
