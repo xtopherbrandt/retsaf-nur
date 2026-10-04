@@ -129,32 +129,46 @@ def _session_flags(session: Mapping[str, object]) -> list[str]:
     return _unique(stored)
 
 
-def _feature_dict(feature: Feature) -> dict[str, object]:
-    return {"value": feature.value, "unavailable": feature.unavailable}
+def _response_features(features: Mapping[str, Feature], power_model: str | None) -> dict[str, object]:
+    """The 14 features in response order as ``{"value", "unavailable"}``; ``avg_power_w`` adds its model."""
+    out: dict[str, object] = {
+        name: {"value": feature.value, "unavailable": feature.unavailable}
+        for name, feature in ((name, features[name]) for name in FEATURE_NAMES)
+    }
+    out["avg_power_w"] = {**out["avg_power_w"], "power_model": power_model}  # type: ignore[dict-item]
+    return out
 
 
-def _all_unavailable(session: Mapping[str, object], reason: str) -> dict[str, object]:
-    """The response when a session-wide override applies: every feature carries ``reason``."""
-    features: dict[str, object] = {name: _feature_dict(Feature(None, reason)) for name in FEATURE_NAMES}
-    features["avg_power_w"] = {**features["avg_power_w"], "power_model": None}  # type: ignore[dict-item]
+def _response(
+    session: Mapping[str, object],
+    flags: list[str],
+    features: dict[str, object],
+    gap_coverage: float | None = None,
+    grade_clamped_fraction: float | None = None,
+    gps_degraded_fraction: float | None = None,
+) -> dict:
+    """The seven-key response of reference section 8; the fractions default to the override path's nulls."""
     return {
         "session_id": session.get("session_id"),
         "sport": session.get("sport"),
-        "flags": _session_flags(session),
-        "gap_coverage": None,
-        "grade_clamped_fraction": None,
-        "gps_degraded_fraction": None,
+        "flags": flags,
+        "gap_coverage": gap_coverage,
+        "grade_clamped_fraction": grade_clamped_fraction,
+        "gps_degraded_fraction": gps_degraded_fraction,
         "features": features,
     }
 
 
-def _override_reason(session: Mapping[str, object], records: Sequence[segments.ScreenedRecord]) -> str | None:
-    """The session-wide reason that pre-empts every row, in precedence order, or None."""
+def _screened_time_base(
+    session: Mapping[str, object], rows: Iterable[Mapping[str, object]]
+) -> tuple[TimeBase, str | None]:
+    """The session's time base and the session-wide reason that pre-empts every row, in precedence order."""
+    tb = segments.build_time_base(segments.screen(rows))
     if session.get("sport") != RUNNING:
-        return "sport_not_running"
-    if not records:
-        return "no_records"
-    return None
+        return tb, "sport_not_running"
+    if not tb.records:
+        return tb, "no_records"
+    return tb, None
 
 
 def _pace(T: float, distance_like: float) -> Feature:
@@ -173,15 +187,15 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
     ``context``. Every feature is ``{"value", "unavailable"}`` with exactly one
     side set; ``avg_power_w`` also carries ``power_model``.
     """
-    tb = segments.build_time_base(segments.screen(rows))
-    reason = _override_reason(session, tb.records)
+    tb, reason = _screened_time_base(session, rows)
     if reason is not None:
-        return _all_unavailable(session, reason)
+        unavailable = {name: Feature(None, reason) for name in FEATURE_NAMES}
+        return _response(session, _session_flags(session), _response_features(unavailable, None))
 
     graded = _grade_segments(tb)
     gap_distance = 0.0  # sum(v_actual * g * dt): each counted segment's contributed metres at its g
-    graded_m = 0.0
-    clamped_m = 0.0
+    graded_m = 0.0  # contributed metres over graded segments
+    clamped_m = 0.0  # contributed metres over clamped segments
     for seg, gs in zip(tb.segments, graded):
         if not seg.counted:
             continue
@@ -192,7 +206,7 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
             clamped_m += seg.contributed_m
 
     T, D = tb.T, tb.D
-    gap_coverage = _fraction(graded_m, D)
+    gap_coverage = _fraction(graded_m, D)  # None exactly when D = 0
     ngp_speed = ngp.ngp(tb, _g_per_record(graded, len(tb.records)))
     ngp_pace = Feature(1000.0 / ngp_speed.value, None) if ngp_speed.value else ngp_speed
     power, power_model = descriptors.avg_power(tb)
@@ -203,7 +217,7 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
         "duration_s": Feature(T, None) if T > 0.0 else Feature(None, "no_counted_segments"),
         "distance_m": Feature(D, None) if D > 0.0 else Feature(None, "no_distance"),
         "avg_pace_s_per_km": _pace(T, D),
-        "gap_avg_pace_s_per_km": _pace(T, gap_distance) if D > 0.0 else Feature(None, "no_distance"),
+        "gap_avg_pace_s_per_km": _pace(T, gap_distance),  # g > 0, so gap_distance is 0 exactly when D is
         "ngp_speed_m_s": ngp_speed,
         "ngp_pace_s_per_km": ngp_pace,
         "avg_hr_bpm": descriptors.avg_hr(tb),
@@ -213,26 +227,23 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
         "total_descent_m": descent,
         **descriptors.env_features(context),  # type: ignore[arg-type]
     }
-    response_features: dict[str, object] = {name: _feature_dict(features[name]) for name in FEATURE_NAMES}
-    response_features["avg_power_w"] = {**response_features["avg_power_w"], "power_model": power_model}  # type: ignore[dict-item]
 
     derived_flags = []
     if tb.distance_regressed:
         derived_flags.append(DISTANCE_REGRESSED_FLAG)
-    if D > 0.0 and gap_coverage is not None and gap_coverage < 1.0:
+    if gap_coverage is not None and gap_coverage < 1.0:  # D > 0 and not every metre graded
         derived_flags.append(GAP_UNAVAILABLE_FLAG)
-    if clamped_m > 0.0 or any(gs.clamped for gs in graded):
+    if any(gs.clamped for gs in graded):
         derived_flags.append(GRADE_CLAMPED_FLAG)
 
-    return {
-        "session_id": session.get("session_id"),
-        "sport": session.get("sport"),
-        "flags": _unique(_session_flags(session) + derived_flags),
-        "gap_coverage": gap_coverage,
-        "grade_clamped_fraction": _fraction(clamped_m, D),
-        "gps_degraded_fraction": descriptors.gps_degraded_fraction(tb),
-        "features": response_features,
-    }
+    return _response(
+        session,
+        _unique(_session_flags(session) + derived_flags),
+        _response_features(features, power_model),
+        gap_coverage=gap_coverage,
+        grade_clamped_fraction=_fraction(clamped_m, D),
+        gps_degraded_fraction=descriptors.gps_degraded_fraction(tb),
+    )
 
 
 def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, object]]) -> list[dict]:
@@ -244,8 +255,8 @@ def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, obje
     ``heart_rate`` and ``hr_excluded`` to the record it starts at. Empty when a
     session-wide override applies.
     """
-    tb = segments.build_time_base(segments.screen(rows))
-    if _override_reason(session, tb.records) is not None:
+    tb, reason = _screened_time_base(session, rows)
+    if reason is not None:
         return []
     graded = _grade_segments(tb)
     block_ids = ngp.record_block_ids(tb)

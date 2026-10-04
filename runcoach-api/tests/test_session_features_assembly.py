@@ -121,7 +121,8 @@ def test_a_ramp_at_grade_0_5_is_clamped_to_0_45_counted_and_flagged():
     # Every segment carries g(0.45), so avg / gap is exactly that factor.
     ratio = _value(out, "avg_pace_s_per_km") / _value(out, "gap_avg_pace_s_per_km")
     assert ratio == pytest.approx(_g_oracle(0.45), rel=1e-9)
-    assert all(row["clamped"] and row["i"] == 0.45 for row in SF.segment_rows(_session(), _ramp(120, 1.0, grade=0.5)))
+    stream = SF.segment_rows(_session(), _ramp(120, 1.0, grade=0.5))
+    assert all(row["clamped"] and row["i"] == 0.45 for row in stream)
 
 
 def test_a_ramp_at_exactly_0_45_is_in_range_and_not_clamped():
@@ -218,7 +219,10 @@ def test_a_pause_and_a_duplicate_on_the_flat_leave_gap_pace_identical():
     paused = plain[:160] + [{**plain[159], "t": plain[159]["t"] + 600.0}]
     paused += [{**row, "t": row["t"] + 600.0} for row in plain[160:]]
     duplicated = plain[:160] + [dict(plain[159])] + plain[160:]
-    gap = [_value(SF.compute_session_features(_session(), rows), "gap_avg_pace_s_per_km") for rows in (plain, paused, duplicated)]
+    gap = [
+        _value(SF.compute_session_features(_session(), rows), "gap_avg_pace_s_per_km")
+        for rows in (plain, paused, duplicated)
+    ]
     assert gap[0] == gap[1] == gap[2]
     # The run is graded, so this pins more than the flat invariant.
     out = SF.compute_session_features(_session(), plain)
@@ -258,7 +262,11 @@ def test_the_descriptors_and_power_model_are_carried_through():
     out = SF.compute_session_features(_session(), rows)
     assert _value(out, "avg_hr_bpm") == pytest.approx(150.0)
     assert _value(out, "avg_cadence_spm") == pytest.approx(170.0)
-    assert out["features"]["avg_power_w"] == {"value": pytest.approx(250.0), "unavailable": None, "power_model": "stryd"}
+    assert out["features"]["avg_power_w"] == {
+        "value": pytest.approx(250.0),
+        "unavailable": None,
+        "power_model": "stryd",
+    }
     assert _value(out, "total_ascent_m") == 0.0 and _value(out, "total_descent_m") == 0.0
 
 
@@ -275,7 +283,8 @@ def _regressed_half_graded_steep() -> list[dict]:
 
 
 def test_flags_follow_the_session_flags_in_the_reference_order_each_at_most_once():
-    out = SF.compute_session_features(_session(flags=["rr_artefact_burst", "distance_regressed"]), _regressed_half_graded_steep())
+    session = _session(flags=["rr_artefact_burst", "distance_regressed"])
+    out = SF.compute_session_features(session, _regressed_half_graded_steep())
     assert out["flags"] == ["rr_artefact_burst", "distance_regressed", "gap_unavailable", "grade_clamped"]
     assert 0.0 < out["gap_coverage"] < 1.0
     assert out["grade_clamped_fraction"] == pytest.approx(out["gap_coverage"])
@@ -288,7 +297,8 @@ def test_the_derived_flags_alone_come_in_the_reference_order():
 
 
 def test_smart_recording_is_listed_first_when_present():
-    out = SF.compute_session_features(_session(flags=["rr_artefact_burst", "smart_recording"]), _ramp(120, 3.0, 0.0))
+    session = _session(flags=["rr_artefact_burst", "smart_recording"])
+    out = SF.compute_session_features(session, _ramp(120, 3.0, 0.0))
     assert out["flags"] == ["smart_recording", "rr_artefact_burst"]
 
 
@@ -325,7 +335,7 @@ def test_the_response_has_the_seven_keys_and_fourteen_features_with_exactly_one_
     }
     assert set(out["features"]) == FEATURE_KEYS
     for name, feature in out["features"].items():
-        expected_keys = {"value", "unavailable", "power_model"} if name == "avg_power_w" else {"value", "unavailable"}
+        expected_keys = {"value", "unavailable"} | ({"power_model"} if name == "avg_power_w" else set())
         assert set(feature) == expected_keys, name
         assert (feature["value"] is None) != (feature["unavailable"] is None), name
 
@@ -356,7 +366,8 @@ def test_avg_over_gap_pace_is_the_distance_weighted_mean_g():
     assert distance == pytest.approx(_value(out, "distance_m"), rel=1e-12)
     distance_weighted = sum(row["contributed_m"] * row["g"] for row in stream) / distance
     time_weighted = sum(row["dt"] * row["g"] for row in stream) / sum(row["dt"] for row in stream)
-    assert distance_weighted != pytest.approx(time_weighted, rel=1e-6)  # the two weightings are distinguishable
+    # The two weightings are distinguishable, so a time-weighted slip cannot pass below.
+    assert distance_weighted != pytest.approx(time_weighted, rel=1e-6)
     ratio = _value(out, "avg_pace_s_per_km") / _value(out, "gap_avg_pace_s_per_km")
     assert ratio == pytest.approx(distance_weighted, rel=1e-9)
     assert any(row["g"] != 1.0 for row in stream)
@@ -366,7 +377,9 @@ def test_avg_over_gap_pace_is_the_distance_weighted_mean_g():
 
 
 def test_segment_rows_carry_the_reference_fields_for_every_counted_segment():
-    rows = _ramp(60, 2.0, 0.05, heart_rate=[0] * 10 + [140] * 50, sample_quality=[["cadence_lock"]] * 20 + [[]] * 40)
+    heart_rate = [0] * 10 + [140] * 50
+    sample_quality = [["cadence_lock"]] * 20 + [[]] * 40
+    rows = _ramp(60, 2.0, 0.05, heart_rate=heart_rate, sample_quality=sample_quality)
     rows[30]["t"] += 600.0  # a break before record 30
     for row in rows[31:]:
         row["t"] += 600.0
@@ -374,7 +387,8 @@ def test_segment_rows_carry_the_reference_fields_for_every_counted_segment():
     tb = S.build_time_base(S.screen(rows))
     counted = [seg for seg in tb.segments if seg.counted]
     assert len(stream) == len(counted) == 58
-    fields = ["t_start", "dt", "s_start", "contributed_m", "v_actual", "speed", "i", "graded", "clamped", "g", "block_id", "heart_rate", "hr_excluded"]
+    fields = ["t_start", "dt", "s_start", "contributed_m", "v_actual", "speed", "i", "graded", "clamped", "g"]
+    fields += ["block_id", "heart_rate", "hr_excluded"]
     for row, seg in zip(stream, counted):
         assert list(row) == fields
         assert row["t_start"] == tb.records[seg.k].t and row["dt"] == seg.dt
@@ -384,7 +398,8 @@ def test_segment_rows_carry_the_reference_fields_for_every_counted_segment():
     assert stream[0]["heart_rate"] is None and stream[0]["hr_excluded"]  # HR 0 is absent
     assert stream[15]["heart_rate"] == 140.0 and stream[15]["hr_excluded"]  # locked
     assert stream[25]["heart_rate"] == 140.0 and not stream[25]["hr_excluded"]
-    assert sum(row["dt"] for row in stream) == _value(SF.compute_session_features(_session(), rows), "duration_s")
+    duration = _value(SF.compute_session_features(_session(), rows), "duration_s")
+    assert sum(row["dt"] for row in stream) == duration
 
 
 def test_segment_rows_block_ids_equal_ngp_block_numbering():
