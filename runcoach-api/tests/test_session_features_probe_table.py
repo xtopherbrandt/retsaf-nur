@@ -287,6 +287,11 @@ def _row_06_dt_zero_duplicate(client, monkeypatch):
     records.insert(46, _record(45.0, start=LATER, distance=SPEED * 45))  # the same instant as record 45
     with_duplicate = _features(client, monkeypatch, [_session(start=LATER), *records])
     _assert_same(baseline, with_duplicate, AC5_FEATURES)
+    # The served NGP is unchanged by the duplicate; the input cannot tell a series that drops the
+    # dt = 0 record from one that keeps it, so that rule is pinned by the ngp module tests, not here.
+    assert _value(baseline, "ngp_speed_m_s") == pytest.approx(SPEED, rel=1e-9)
+    assert _value(with_duplicate, "ngp_speed_m_s") == pytest.approx(SPEED, rel=1e-9)
+    _assert_same(baseline, with_duplicate, ("ngp_speed_m_s",))
     return baseline, with_duplicate
 
 
