@@ -277,8 +277,8 @@ def test_degenerate_sport_profile_names_are_lifted_verbatim(value: str) -> None:
 
 
 def test_sport_profile_name_is_not_taken_from_the_sport_message() -> None:
-    """The session field is the single key. All ten fixtures currently agree
-    with the ``sport`` message's own ``name``, but consulting it as a
+    """The session field is the single key. All thirteen fixtures (measured
+    2026-10-04) agree with the ``sport`` message's own ``name``, but consulting it as a
     fallback would introduce a second route that a future disagreement
     turns into a routing bug."""
     messages = [

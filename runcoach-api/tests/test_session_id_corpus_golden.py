@@ -1,20 +1,22 @@
 """T247 (F007 AC5): the corpus ``session_id`` golden table.
 
-oracle: the fixture file bytes at c2839b6, measured before F007's code
-existed; literals, never computed at test time.
+oracle: the fixture file bytes, measured at c2839b6 before F007's code
+existed for every file committed then, and at 36605bc (2026-10-04) for
+the two hilly runs added after it. Literals, never computed at test time.
 
 ``tests/test_session_id_determinism.py`` proves ``session_id`` is
 deterministic and is the derivation applied to ``(source_device,
 start_time)``. Neither assertion pins the *values*: a change to
 ``_build_source_device`` that moves every id consistently keeps both
 green. F007 AC5 promises that ``source_device`` and the dedup key stay
-exactly what they are today, so this module commits the eleven
-``(source_device, session_id)`` pairs the pre-feature build produces for
-the real fixture corpus and re-derives them through the real decoder,
+exactly what they are today, so this module commits the
+``(source_device, session_id)`` pair of every file in the real fixture
+corpus (thirteen, measured 2026-10-04) and re-derives them through the
+real decoder,
 through ``mapping.to_canonical`` per file and through
 ``pipeline.ingest_fit_bytes`` into a fresh isolated database.
 
-The expected values are literals pasted from a measurement at c2839b6.
+The expected values are literals pasted from the measurements above.
 They are deliberately not recomputed from ``derive_session_id`` here --
 that would pin the function against itself. If a row goes red, the
 change under test altered the session identity the local-first rebuild
@@ -38,9 +40,12 @@ from runcoach_api.ingestion import fit_parser, mapping, pipeline
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# fixture name -> (source_device, session_id), measured at c2839b6.
+# fixture name -> (source_device, session_id), measured at c2839b6; the two
+# hilly rows measured at 36605bc (2026-10-04).
 GOLDEN: dict[str, tuple[str, str]] = {
     "dev_fields_run.fit": ("fr955 fw19.18", "bfd1daaa50481984871f00479a8ad04d"),
+    "hilly_long_run_17k_fr945.fit": ("fr945_lte fw17.4", "8d303bbe033f3409beca481b23af2181"),
+    "hilly_run_8k_fr945.fit": ("fr945_lte fw17.4", "329566000b31df8b6d132d23aabfbd34"),
     "sample_health_snapshot.fit": ("fr945_lte fw17.4", "e25a77b6fa3e126533bbe348a0060460"),
     "sample_run.fit": ("fr945_lte fw17.4", "c5f50427f21507dcfa21adf0d041b150"),
     "strap_cool_down_walk.fit": ("fr945_lte fw17.4", "92a80fc19e03808b9e78ad3f711a8096"),
@@ -84,7 +89,8 @@ def test_reingesting_the_corpus_persists_the_golden_table(
     ``pipeline.ingest_fit_bytes`` into one fresh database, then the
     persisted ``(session_id, source_device)`` rows read back equal the
     table. Resting captures route through the resting-HRV path and still
-    persist a session row, so eleven rows are expected, never fewer."""
+    persist a session row, so one row per fixture is expected (thirteen,
+    measured 2026-10-04), never fewer."""
     # The autouse fixture must have pointed the DB layer at tmp_path before
     # init_schema runs; verify the resolved path rather than trusting it.
     resolved_data_dir = db._load_config_cached().data_dir

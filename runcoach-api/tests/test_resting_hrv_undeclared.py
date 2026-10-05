@@ -162,10 +162,11 @@ Three probe results worth recording rather than a bare pass:
    never as a pin for the declaration rule -- it is over-determined three ways
    over (speed veto, 118.874 s under the §5 minimum, undeclared), exactly the
    mistake ``contract-tables-need-an-independent-oracle`` names.
-2. **Five of the ten corpus fixtures now carry an undeclared note** when nothing
-   is configured (the two genuine captures with ``vetoed_by`` null, plus
-   ``strap_run_hrv``, ``dev_fields_run`` and ``strap_cool_down_walk`` with a
-   named veto); the five beatless fixtures carry none. That distribution is
+2. **Six of the thirteen corpus fixtures carry an undeclared note** when nothing
+   is configured (measured 2026-10-04: the two genuine captures with
+   ``vetoed_by`` null, plus ``strap_run_hrv``, ``dev_fields_run``,
+   ``hilly_run_8k_fr945`` and ``strap_cool_down_walk`` with a named veto); the
+   seven beatless fixtures carry none. That distribution is
    asserted directly in ``test_the_corpus_note_distribution_is_what_r5_intends``
    so the noise cost R5 accepted is visible in the suite rather than argued
    about in prose.
@@ -961,10 +962,10 @@ def test_the_corpus_note_distribution_is_what_r5_intends() -> None:
     """The cost R5 accepted, made visible in the suite instead of argued in prose.
 
     Undeclared, every fixture carrying beats now records a note: the two genuine
-    captures with ``vetoed_by`` null, and three ordinary activities with a named
-    veto. The five beatless files record nothing. If a later change makes the
-    note fire more widely -- on beatless files, say -- this row is what says so,
-    with the file names."""
+    captures with ``vetoed_by`` null, and four ordinary activities with a named
+    veto. The seven beatless files record nothing (counts measured
+    2026-10-04). If a later change makes the note fire more widely -- on
+    beatless files, say -- this row is what says so, with the file names."""
     noted = {}
     for fixture in sorted(path.name for path in FIXTURES.glob("*.fit")):
         note = _provenance(_classify_fixture(fixture)).get(UNDECLARED_NOTE)
@@ -973,6 +974,7 @@ def test_the_corpus_note_distribution_is_what_r5_intends() -> None:
 
     assert noted == {
         "dev_fields_run.fit": "duration_out_of_range",
+        "hilly_run_8k_fr945.fit": "duration_out_of_range",
         "strap_cool_down_walk.fit": "mean_speed_too_high",
         "strap_hrv_capture.fit": None,
         "strap_hrv_sample_run.fit": None,

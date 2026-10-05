@@ -133,6 +133,10 @@ application of the ruling to the printed ``device_info`` entries agreed
 with the task's table before the resolver was written):
 
 - ``dev_fields_run.fit`` 785102823 -- Polar strap; manufacturer not an input.
+- ``hilly_long_run_17k_fr945.fit`` 2149907669 -- a second strap (measured
+  2026-10-04); ``hr_source`` reads ``wrist_ppg`` as built today (0 RR beats).
+- ``hilly_run_8k_fr945.fit`` 3611410126 (measured 2026-10-04);
+  ``hr_source`` reads ``chest_strap``.
 - ``sample_health_snapshot.fit`` None -- no antplus heart-rate entry.
 - ``sample_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
   (0 RR beats): pairing, not provenance.
@@ -150,11 +154,13 @@ with the task's table before the resolver was written):
 - ``wrist_ppg_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
   (0 RR beats).
 
-Those four store the strap's serial while ``hr_source`` reads
+Those five store a strap's serial while ``hr_source`` reads
 ``wrist_ppg``. ``hr_source`` is the inferred provenance (spec/02 section
 2.4.2: no RR stream with HR present defaults it to ``wrist_ppg``); this
 table does not assert where their HR physically came from. Measured by an
-isolated re-ingest of every fixture at code review (iteration 1).
+isolated re-ingest of every fixture at code review (iteration 1); the two
+hilly rows through ``mapping.to_canonical`` and ``quality_gates.apply``
+on 2026-10-04.
 
 The end-to-end rows drive ``pipeline.ingest_fit_bytes`` into the isolated
 database and read the column back; the upgrade-path row builds the
@@ -336,6 +342,8 @@ def test_row10_no_device_info_ingests_and_persists_null(synthetic, isolated_data
 # fixture name -> expected hr_sensor_serial (census 2026-10-03; see the docstring).
 REAL_FIXTURE_SERIAL: dict[str, int | None] = {
     "dev_fields_run.fit": 785102823,
+    "hilly_long_run_17k_fr945.fit": 2149907669,
+    "hilly_run_8k_fr945.fit": 3611410126,
     "sample_health_snapshot.fit": None,
     "sample_run.fit": 3611410126,
     "strap_cool_down_walk.fit": 3611410126,

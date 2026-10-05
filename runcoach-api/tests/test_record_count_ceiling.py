@@ -72,8 +72,11 @@ ALL_FIXTURES = [
     "wrist_ppg_run.fit",
 ]
 
-# The largest real fixture in the corpus, by record count -- the
-# calibration point for the ceiling's headroom (task file: 3,118).
+# The calibration point for the ceiling's headroom (task file: 3,118
+# records). It was the largest real fixture when chosen; it is no longer:
+# measured 2026-10-04, strap_run_hrv.fit holds 6002 records and
+# hilly_long_run_17k_fr945.fit 5388. Kept, because the beats and the 413
+# tests are calibrated on it.
 LARGEST_FIXTURE = "dev_fields_run.fit"
 
 
