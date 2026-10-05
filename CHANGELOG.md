@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-04 — Sprint 011: grade-adjusted pace and session descriptors
+
 F013: `GET /sessions/{session_id}/features` serves each running session's grade-adjusted pace (GAP),
 normalized graded pace (NGP) and the spec/03 section 3.2 descriptors, computed on read from the
 stored canonical records. Nothing is stored and no table is added, so a deleted session has no
@@ -25,6 +27,10 @@ exactly one side set; the reason codes are `sport_not_running`, `no_records`, `n
 gains `getSessionFeatures` (`x-readiness: implemented`) and the `SessionFeatures` component, whose
 `duration_s`, `distance_m` and `avg_pace_s_per_km` are the quantities `SessionSummary` names:
 recorded time, not elapsed. The key set of `GET /sessions/{id}` is unchanged.
+Known limitation: a gap over 5 s while the runner keeps moving (smart recording, a GPS dropout)
+is dropped from time and distance while its altitude change still enters the gradient window, so
+`duration_s` and `distance_m` read low, GAP pace reads fast and NGP high for such runs, until a
+follow-up feature treats moving gaps.
 
 ## 2026-10-03 — Sprint 010: per-unit sensor identity at ingestion
 
