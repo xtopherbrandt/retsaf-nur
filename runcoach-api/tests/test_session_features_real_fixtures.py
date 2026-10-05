@@ -1,15 +1,21 @@
-"""The real running fixtures through ``GET /sessions/{id}/features``, against an independent oracle (F013 AC1, AC7).
+"""The real running fixtures through ``GET /sessions/{id}/features``, against an independent oracle.
+
+F013 AC1 and AC7; F014 AC3, AC4 and AC5 for the two hilly runs.
 
 Every expected value here was authored away from the module under test.
 
-**The GAP ratio table** (``ORACLE_RATIOS``) was measured at discuss time, before
-the metrics package existed, by a script that shared no code with it: it read
-the fixtures, took the gradient over +-25 m of distance on the gate-smoothed
-altitude, and priced each segment with Minetti's polynomial. The critic then
-reproduced the four figures independently, to within 0.0004. They are the
-F013 reference's oracle for AC1, which allows +-0.005, and they are not
-as-built figures: the table is not edited to fit the code, and the code is not
-edited to fit the table. A miss is a finding, reported, never absorbed.
+**The GAP ratio table** (``ORACLE_RATIOS``) was measured at discuss time by a
+script that shared no code with the metrics package: it read the fixtures, took
+the gradient over +-25 m of distance on the gate-smoothed altitude, and priced
+each segment with Minetti's polynomial. The rows for ``dev_fields_run``,
+``sample_run``, ``strap_run_hrv`` and ``wrist_ppg_run`` come from the F013
+reference, measured before the metrics package existed, and the critic
+reproduced them independently to within 0.0004. The rows for the two hilly
+runs come from the F014 reference (section 2), whose oracle script was written
+from the F013 reference alone and reproduced the ``sample_run`` row and the
+ascent figures as a calibration. The band is +-0.005, and the figures are not
+as-built: the table is not edited to fit the code, and the code is not edited
+to fit the table. A miss is a finding, reported, never absorbed.
 
 **The hysteresis oracle** is restated in this file (``_hysteresis``), from the
 rule in the F013 reference, and run over the altitudes ``GET /sessions/{id}``
@@ -19,14 +25,24 @@ summary is printed beside the served value as evidence that it was not read,
 and so are the discuss-time figures (``DISCUSS_TIME_ASCENT_M``); neither is
 asserted on.
 
-**What this table holds constant.** All four ratio fixtures are 1 Hz
-recordings from the same watch family, outdoor runs, with barometric altitude
-quantized at 0.2 m. The table says nothing about smart recording, treadmill
-sessions, or other devices.
+**What this table holds constant.** Every ratio fixture is a 1 Hz recording
+from the same watch family, an outdoor run, with barometric altitude quantized
+at 0.2 m. The chest strap is a Garmin HRM-Pro Plus on all but two: a Polar
+strap (with a Stryd) on ``dev_fields_run``'s FR955, and the second device mix,
+an FR945 LTE with a Dynastream OEM axh01 HR strap, on
+``hilly_long_run_17k_fr945``. The two hilly runs were recorded with Smart selected, but the
+watch wrote 1 Hz, which ``test_hilly_runs_were_recorded_at_one_hertz`` pins, so
+the table still says nothing about smart recording, treadmill sessions, or
+other devices.
 
-The tests print the slice they compared (ratio, ascent, descent) so the
-acceptance probe's ``-rA`` output shows the measured figures, not an exit code
-alone.
+**Time and distance against the watch** (F014 AC5) cover the two hilly runs
+only. The vendor ``total_timer_time`` and ``total_distance`` are read with
+fitdecode from the session message, never from ``GET /sessions/{id}``, whose
+summary holds those vendor values themselves.
+
+The tests print the slice they compared (ratio, ascent, descent, duration,
+distance) so the acceptance probe's ``-rA`` output shows the measured figures,
+not an exit code alone.
 """
 
 from __future__ import annotations
@@ -35,28 +51,40 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import fitdecode
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# GAP/raw at +-25 m, measured before the build (F013 reference, "Measured on the fixture corpus").
+# GAP/raw at +-25 m, measured away from the code: the first four before the build (F013 reference,
+# "Measured on the fixture corpus"), the two hilly runs at F014 discuss time (F014 reference, section 2).
 ORACLE_RATIOS = {
     "dev_fields_run.fit": 1.0132,
     "sample_run.fit": 1.0540,
     "strap_run_hrv.fit": 1.0038,
     "wrist_ppg_run.fit": 1.0817,
+    "hilly_run_8k_fr945.fit": 1.0547,
+    "hilly_long_run_17k_fr945.fit": 1.0230,
 }
 RATIO_TOLERANCE = 0.005
 
-# The discuss-time hysteresis ascent on the same four fixtures: printed as evidence, never asserted.
+# The discuss-time hysteresis ascent on the same ratio fixtures, from the same two references:
+# printed as evidence, never asserted.
 DISCUSS_TIME_ASCENT_M = {
     "dev_fields_run.fit": 92.0,
     "sample_run.fit": 199.5,
     "strap_run_hrv.fit": 60.4,
     "wrist_ppg_run.fit": 175.9,
+    "hilly_run_8k_fr945.fit": 198.5,
+    "hilly_long_run_17k_fr945.fit": 197.7,
 }
+
+# The two hilly runs (F014): recording mode, and time and distance against the watch's own totals.
+HILLY_FIXTURES = ("hilly_long_run_17k_fr945.fit", "hilly_run_8k_fr945.fit")
+DURATION_TOLERANCE_S = 1.0
+DISTANCE_RELATIVE_TOLERANCE = 0.001
 
 # A 108 m capture on a running profile whose window finds a grade on about half its distance.
 PARTIAL_COVERAGE_FIXTURE = "strap_hrv_sample_run.fit"
@@ -164,7 +192,7 @@ def test_sample_run_serves_every_feature_but_the_environment() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AC1: the four GAP ratios against the discuss-time oracle
+# AC1 (and F014 AC4 for the hilly runs): every GAP ratio against the discuss-time oracle
 # ---------------------------------------------------------------------------
 
 
@@ -241,3 +269,68 @@ def test_strap_hrv_sample_run_coverage_is_partial() -> None:
     assert coverage is not None
     assert abs(coverage - PARTIAL_COVERAGE) <= PARTIAL_COVERAGE_TOLERANCE, (coverage, PARTIAL_COVERAGE)
     assert "gap_unavailable" in body["flags"], body["flags"]
+
+
+# ---------------------------------------------------------------------------
+# F014 AC3: the hilly runs were written at 1 Hz, though Smart was selected
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fixture", HILLY_FIXTURES)
+def test_hilly_runs_were_recorded_at_one_hertz(fixture: str) -> None:
+    """``GET /sessions/{id}`` gives ``recording_interval == "1hz"`` and no ``smart_recording`` flag."""
+    with _client() as client:
+        detail = _detail(client, _upload(client, fixture))
+
+    interval = detail["recording_interval"]
+    flags = detail["quality_flags"]
+    print(f"{fixture}: recording_interval={interval} quality_flags={flags}")
+    assert interval == "1hz", (fixture, interval)
+    assert "smart_recording" not in flags, (fixture, flags)
+
+
+# ---------------------------------------------------------------------------
+# F014 AC5: time and distance against the watch's own session totals
+# ---------------------------------------------------------------------------
+
+
+def _vendor_session_totals(fixture: str) -> dict:
+    """The one ``session`` message's totals, decoded with fitdecode and nothing from ``runcoach_api``."""
+    sessions = []
+    with fitdecode.FitReader(str(FIXTURES / fixture)) as reader:
+        for frame in reader:
+            if isinstance(frame, fitdecode.FitDataMessage) and frame.name == "session":
+                sessions.append({fd.name: fd.value for fd in frame.fields})
+    assert len(sessions) == 1, (fixture, len(sessions))
+    return sessions[0]
+
+
+@pytest.mark.parametrize("fixture", HILLY_FIXTURES)
+def test_hilly_run_duration_and_distance_match_the_watch(fixture: str) -> None:
+    """Served duration within 1.0 s of ``total_timer_time``; served distance within 0.1 % of
+    ``total_distance``. ``hilly_run_8k_fr945``'s auto-pause must be excluded, as the timer excludes it.
+
+    The vendor ``total_ascent`` is printed beside the served ascent, never asserted. Both files also
+    grade every metre (``gap_coverage`` 1.0) and clamp none (``grade_clamped_fraction`` 0.0).
+    """
+    vendor = _vendor_session_totals(fixture)
+    with _client() as client:
+        body = _features(client, _upload(client, fixture))
+
+    timer_s = vendor["total_timer_time"]
+    vendor_distance_m = vendor["total_distance"]
+    duration_s = _value(body, "duration_s")
+    distance_m = _value(body, "distance_m")
+    distance_rel = (distance_m - vendor_distance_m) / vendor_distance_m
+    print(
+        f"{fixture}: duration served={duration_s:.3f} total_timer_time={timer_s:.3f} "
+        f"diff={duration_s - timer_s:+.3f}s band=+-{DURATION_TOLERANCE_S}s; "
+        f"distance served={distance_m:.2f} total_distance={vendor_distance_m:.2f} "
+        f"diff={distance_rel:+.4%} band=+-{DISTANCE_RELATIVE_TOLERANCE:.1%}; "
+        f"ascent served={_value(body, 'total_ascent_m'):.1f} vendor_total_ascent={vendor.get('total_ascent')}; "
+        f"gap_coverage={body['gap_coverage']} grade_clamped_fraction={body['grade_clamped_fraction']}"
+    )
+    assert abs(duration_s - timer_s) <= DURATION_TOLERANCE_S, (fixture, duration_s, timer_s)
+    assert abs(distance_rel) <= DISTANCE_RELATIVE_TOLERANCE, (fixture, distance_m, vendor_distance_m)
+    assert body["gap_coverage"] == 1.0, (fixture, body["gap_coverage"])
+    assert body["grade_clamped_fraction"] == 0.0, (fixture, body["grade_clamped_fraction"])
