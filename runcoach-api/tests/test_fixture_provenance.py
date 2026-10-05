@@ -171,8 +171,6 @@ def parse_devices(stem: str, cell: str) -> tuple[str, frozenset[str]]:
     return creator, frozenset(sensors)
 
 
-
-
 def directory_mismatch(on_disk: list[str], rows: dict[str, Row]) -> str | None:
     """The guard's finding, naming each file, or ``None`` when they agree."""
     without_row = sorted(set(on_disk) - set(rows))
