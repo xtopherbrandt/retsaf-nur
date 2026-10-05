@@ -4,10 +4,10 @@ NGP is the fourth-power mean of a 30 s trailing rolling mean of graded speed:
 the Normalized Power construction applied to speed, so a surging run reads
 harder than a steady run of the same average. Its per-record series is
 **``record.speed * g``**, the device's own speed, and never ``v_actual`` or a
-distance difference. The device has already absorbed GPS-acquisition and
-tunnel-exit distance jumps: ``strap_hrv_sample_run`` carries a 52 m jump in
-one second while ``speed`` reads 0, and ``v_actual`` over that stride would
-have doubled NGP (F013 Decision Log, 2026-10-03). Nothing in this module reads
+distance difference, on the premise that the device absorbs GPS-acquisition
+and tunnel-exit distance jumps. That premise is unverified on a real run: the
+only file showing such a jump, ``strap_hrv_sample_run``, is a resting sample,
+not a run (IDEA-124). Nothing in this module reads
 ``distance``, ``s`` or ``v_actual``.
 
 **Blocks.** A rolling window must not span a pause, so the series is cut into
