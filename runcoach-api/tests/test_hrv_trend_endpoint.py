@@ -1218,9 +1218,9 @@ SCOPED_HRV_SUITES = (
 #: suite gain a test. The three sites now cite this pin by name and carry no
 #: literal; the assertion below is what reddens when the corpus moves, and the
 #: author who reddens it is the author who re-measures it.
-SCOPED_SUITE_COLLECTED = 476  # re-measured 2026-10-01 (sprint-009 wave 3 test-fix, IDEA-072),
-#                              # as the last action before the commit: +1. One pin added to this
-#                              # file, the walk's nested-checkout prune
+SCOPED_SUITE_COLLECTED = 477  # re-measured 2026-10-04 (sprint-012, IDEA-119): +1, the tier two-copy
+#                              # pin. 476 (2026-10-01, sprint-009 wave 3 test-fix, IDEA-072): +1, one
+#                              # pin added to this file, the walk's nested-checkout prune
 #                              # (test_the_walk_prunes_a_nested_checkout_but_not_the_directory_around_it).
 #                              # No identity elsewhere changed. Nothing publishes this literal;
 #                              # the previous value's own note follows.
@@ -4372,3 +4372,29 @@ def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:
     # T152's breaking change took the contract to 0.2.0-draft; this one is
     # additive and does not move it (AC12).
     assert contract["info"]["version"] == "0.2.0-draft"
+
+
+def test_both_tier_descriptions_say_the_sensor_serial_is_stored_but_unread() -> None:
+    """IDEA-119. Since F007 the store records the connected heart-rate
+    sensor's serial, so "per-unit identity is a later feature" stopped being
+    true: only a rule that reads the serial is later. The served
+    ``DatasetSummary.tier`` description and the contract's
+    ``datasets.items.properties.tier`` carry the same reason clause, and this
+    pins both copies so neither can drift back alone."""
+    claim = _flat(
+        "since F007 the store also records the connected heart-rate sensor's serial, "
+        "but no rule reads it, so a per-unit key is a later feature"
+    )
+    served = app.openapi()["components"]["schemas"]["DatasetSummary"]["properties"]["tier"]
+    contract = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    datasets = contract["components"]["schemas"]["HrvTrend"]["properties"]["datasets"]
+    published = datasets["items"]["properties"]["tier"]
+    copies = {
+        "schemas.DatasetSummary.tier": served["description"],
+        "contracts/openapi.yaml datasets.items.properties.tier": published["description"],
+    }
+    for where, description in copies.items():
+        flat = _flat(description)
+        assert claim in flat, f"{where} does not carry the F007 reason clause: {flat!r}"
+        assert "per-unit identity" not in flat, where
+        assert "per-unit device identity" not in flat, where

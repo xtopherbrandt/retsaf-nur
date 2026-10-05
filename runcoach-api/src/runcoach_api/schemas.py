@@ -274,10 +274,10 @@ class DatasetSummary(BaseModel):
 
     tier: str = Field(
         description=(
-            "The source tier, which **is** the dataset's key (F006 reference 1: the stored "
-            "source_device is the watch, so per-unit identity is a later feature). One entry per "
-            "tier present in the **gap-clipped** span; the list is in fidelity order, highest "
-            "first."
+            "The source tier, which **is** the dataset's key (F006 reference 1: the stored source_device "
+            "is the watch; since F007 the store also records the connected heart-rate sensor's serial, but "
+            "no rule reads it, so a per-unit key is a later feature). One entry per tier present in the "
+            "**gap-clipped** span; the list is in fidelity order, highest first."
         )
     )
     n: int = Field(

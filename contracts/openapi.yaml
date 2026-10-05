@@ -1696,10 +1696,10 @@ components:
               tier:
                 type: string
                 description: >
-                  The source tier, which IS the dataset's key: the stored
-                  source_device is the watch, so per-unit device identity is a
-                  later feature. One entry per tier present in the gap-clipped
-                  span, in fidelity order, highest first.
+                  The source tier, which IS the dataset's key: the stored source_device is the
+                  watch; since F007 the store also records the connected heart-rate sensor's
+                  serial, but no rule reads it, so a per-unit key is a later feature. One entry
+                  per tier present in the gap-clipped span, in fidelity order, highest first.
               n:
                 type: integer
                 description: >
