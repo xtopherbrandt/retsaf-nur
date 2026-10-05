@@ -109,8 +109,8 @@ _SCHEMA_DDL = """
       -- sensor CONNECTED when the session was recorded (usually a chest
       -- strap; a watch broadcasting optical HR over ANT+ counts too), not
       -- the recording watch in source_device. It records the pairing, not
-      -- the HR provenance: the inferred hr_source can read wrist_ppg while
-      -- a strap was connected, and neither proves the other. NULL means
+      -- the HR provenance: hr_source reads chest_strap for a connected
+      -- strap with HR, and a strap paired but not worn reads so too. NULL means
       -- unknown, never "no sensor": no ANT+ heart-rate entry, no valid
       -- serial, conflicting serials, or a row stored before F007 (added
       -- 2026-10-03; _reconcile_columns lands it, nothing backfills it and

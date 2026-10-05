@@ -173,10 +173,9 @@ def test_canonical_get_response_never_contains_training_effect() -> None:
     body_lower = str(body).lower()
     assert "training_effect" not in body_lower
 
-    # T036 item 2 -- confirm hr_source gating for a wrist-PPG-only
-    # fixture survives the full round trip, not just the quarantine
-    # check above. quality_gates.apply()'s default-fill sets
-    # hr_source = "wrist_ppg" when chest-strap RR detection (which
-    # requires an hrv/dev-field carrier, absent here) did not already
-    # set it.
-    assert body["hr_source"] == "wrist_ppg"
+    # T036 item 2 -- confirm the inferred hr_source survives the full
+    # round trip, not just the quarantine check above. This file has no
+    # RR carrier, but its HR came from a connected ANT+ heart-rate strap
+    # (the name is historical; see the fixtures README), so spec/02
+    # section 2.4.2 step 1 reads it as chest_strap, not the wrist default.
+    assert body["hr_source"] == "chest_strap"

@@ -216,6 +216,30 @@ def _build_source_device(by_name: dict[str, list[fitdecode.FitDataMessage]]) -> 
     return f"{product} fw{firmware}"
 
 
+# ``device_info.device_type`` is a subfield switched on ``source_type``, so
+# each source names its device type under its own subfield.
+_DEVICE_TYPE_FIELD_BY_SOURCE = {
+    "antplus": "antplus_device_type",
+    "bluetooth_low_energy": "ble_device_type",
+}
+# F007's serial rule reads ANT+ entries only; F015's pairing test reads both.
+_IDENTITY_SOURCES = ("antplus",)
+_PAIRING_SOURCES = ("antplus", "bluetooth_low_energy")
+
+
+def _is_heart_rate_sensor(msg, sources: tuple[str, ...]) -> bool:
+    """True when ``msg`` is a ``device_info`` entry for a heart-rate sensor on one of ``sources``.
+
+    ``source_type`` is tested first: an entry from any other source (a
+    legacy ``ant`` entry, the ``local`` creator, or one with no
+    ``source_type`` at all) is never read, whatever its device type.
+    """
+    source = msg.get_value("source_type", fallback=None)
+    if source not in sources:
+        return False
+    return msg.get_value(_DEVICE_TYPE_FIELD_BY_SOURCE[source], fallback=None) == "heart_rate"
+
+
 def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]) -> int | None:
     """The connected ANT+ heart-rate sensor's serial, or ``None`` (F007, T249).
 
@@ -236,12 +260,11 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     later consumer cannot tell the two apart.
 
     The field records the pairing, not the HR stream's provenance:
-    ``hr_source`` is the inferred provenance (spec/02 section 2.4.2: no RR
-    stream with HR present defaults it to ``wrist_ppg``). Four corpus
-    fixtures -- ``sample_run.fit``, ``wrist_ppg_run.fit``,
-    ``strap_health_snapshot.fit`` and ``strap_health_snapshot_hrv.fit`` --
-    store the strap's serial while ``hr_source`` reads ``wrist_ppg`` (each
-    has 0 RR beats), by design.
+    ``hr_source`` is the inferred provenance (spec/02 section 2.4.2; see
+    ``_infer_hr_source``). A connected heart-rate sensor with HR present now
+    reads ``chest_strap`` even without RR, so the two agree on every corpus
+    fixture. They can still disagree: a strap paired but not worn reads
+    ``chest_strap``, and this serial is stored only for an ANT+ sensor.
 
     Field shapes, verified against the real decode of every fixture
     (census 2026-10-03): ``source_type`` resolves to the string
@@ -251,7 +274,8 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     ``source_type`` is antplus, ``ble_device_type`` when it is
     ``bluetooth_low_energy`` (``fitdecode/profile.py`` lines 9693-9744) --
     so a BLE strap never presents an ``antplus_device_type``. The predicate
-    tests ``source_type`` first and ``and`` short-circuits, so it is the
+    (``_is_heart_rate_sensor``, shared with ``_infer_hr_source``) tests
+    ``source_type`` first and returns early, so it is the
     source check that rejects a BLE strap; but the type check alone would
     reject it too, so dropping the source clause is undetectable on real
     fitdecode shapes. ``serial_number``
@@ -269,8 +293,7 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     candidates = (
         msg.get_value("serial_number", fallback=None)
         for msg in by_name.get("device_info", [])
-        if msg.get_value("source_type", fallback=None) == "antplus"
-        and msg.get_value("antplus_device_type", fallback=None) == "heart_rate"
+        if _is_heart_rate_sensor(msg, _IDENTITY_SOURCES)
     )
     serials = {
         value
@@ -316,8 +339,23 @@ def _build_summary(session_msg) -> dict:
 
 
 def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
-    """``chest_strap`` when any RR carrier has data, else ``None`` (left
-    for ``quality_gates.apply()``'s wrist-PPG default to fill in).
+    """The HR provenance (spec/02 section 2.4.2 step 1, F015), in one place.
+
+    - RR present (any carrier has beats) -> ``chest_strap``.
+    - No RR, HR present (a ``record`` with a positive ``heart_rate``), and a
+      heart-rate sensor connected -> ``chest_strap``. "Connected" means any
+      ``device_info`` entry whose ``source_type`` is ``antplus`` or
+      ``bluetooth_low_energy`` and whose device type is ``heart_rate``
+      (``_is_heart_rate_sensor``). No serial is needed: pairing does not
+      need identity, unlike ``_resolve_hr_sensor_serial``, which stays
+      ANT+ only.
+    - Otherwise ``None``, left for ``quality_gates.apply()``'s wrist-PPG
+      default to fill in. With no HR the connected sensor is not read, so
+      a file with neither RR nor HR reads ``wrist_ppg`` as before.
+
+    The rule cannot tell a strap paired but not worn from one worn: such a
+    session reads ``chest_strap`` and escapes the cadence-lock check
+    (accepted, user ruling 2026-10-04).
 
     T024's task notes scope this task to only ``mapping.py`` and
     ``rr_reconstruction.py`` -- ``pipeline.py`` (which also calls
@@ -329,7 +367,22 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
     would need a wiring change to ``pipeline.py`` this task's own file
     list excludes.
     """
-    return "chest_strap" if rr_reconstruction.reconstruct(messages) else None
+    if rr_reconstruction.reconstruct(messages):
+        return "chest_strap"
+    hr_present = any(
+        msg.name == "record" and _is_positive_number(msg.get_value("heart_rate", fallback=None))
+        for msg in messages
+    )
+    if not hr_present:
+        return None
+    sensor_connected = any(
+        msg.name == "device_info" and _is_heart_rate_sensor(msg, _PAIRING_SOURCES) for msg in messages
+    )
+    return "chest_strap" if sensor_connected else None
+
+
+def _is_positive_number(value) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and value > 0
 
 
 def _build_context(

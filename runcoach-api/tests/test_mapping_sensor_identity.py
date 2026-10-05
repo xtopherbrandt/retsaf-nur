@@ -47,7 +47,7 @@ presence of a creator, not in its absence.
 8  bike_power with serial S only                        None      None: wrong device type (AC4).
 9  source_type bluetooth_low_energy,                    None      None: antplus only. The ``source_type``
    ble_device_type heart_rate, serial S                           check rejects it (it runs first and
-                                                                  ``and`` short-circuits). A faithful BLE
+                                                                  the predicate returns early). A faithful BLE
                                                                   fake carries no ``antplus_device_type``
                                                                   key (see the row 9 note), so the
                                                                   device-type check alone would reject it
@@ -134,33 +134,33 @@ with the task's table before the resolver was written):
 
 - ``dev_fields_run.fit`` 785102823 -- Polar strap; manufacturer not an input.
 - ``hilly_long_run_17k_fr945.fit`` 2149907669 -- a second strap (measured
-  2026-10-04); ``hr_source`` reads ``wrist_ppg`` as built today (0 RR beats).
+  2026-10-04); ``hr_source`` reads ``chest_strap`` with 0 RR beats.
 - ``hilly_run_8k_fr945.fit`` 3611410126 (measured 2026-10-04);
   ``hr_source`` reads ``chest_strap``.
 - ``sample_health_snapshot.fit`` None -- no antplus heart-rate entry.
-- ``sample_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
-  (0 RR beats): pairing, not provenance.
+- ``sample_run.fit`` 3611410126 -- ``hr_source`` reads ``chest_strap``
+  with 0 RR beats.
 - ``strap_cool_down_walk.fit`` 3611410126.
 - ``strap_health_snapshot.fit`` 3611410126 -- ``hr_source`` reads
-  ``wrist_ppg`` (0 RR beats).
+  ``chest_strap`` with 0 RR beats.
 - ``strap_health_snapshot_hrv.fit`` 3611410126 -- ``hr_source`` reads
-  ``wrist_ppg`` (0 RR beats); first emission ``garmin_product: 21``;
+  ``chest_strap`` with 0 RR beats; first emission ``garmin_product: 21``;
   product not an input.
 - ``strap_hrv_capture.fit`` 3611410126 -- same; the index-6 footpod channel
   is ignored.
 - ``strap_hrv_sample_run.fit`` 3611410126 -- same.
 - ``strap_run_hrv.fit`` 3611410126.
 - ``wrist_ppg_hrv_snapshot.fit`` None -- no antplus heart-rate entry.
-- ``wrist_ppg_run.fit`` 3611410126 -- ``hr_source`` reads ``wrist_ppg``
-  (0 RR beats).
+- ``wrist_ppg_run.fit`` 3611410126 -- ``hr_source`` reads ``chest_strap``
+  with 0 RR beats; the name is historical.
 
-Those five store a strap's serial while ``hr_source`` reads
-``wrist_ppg``. ``hr_source`` is the inferred provenance (spec/02 section
-2.4.2: no RR stream with HR present defaults it to ``wrist_ppg``); this
-table does not assert where their HR physically came from. Measured by an
-isolated re-ingest of every fixture at code review (iteration 1); the two
-hilly rows through ``mapping.to_canonical`` and ``quality_gates.apply``
-on 2026-10-04.
+The serial records the pairing; ``hr_source`` is the inferred provenance
+(spec/02 section 2.4.2), and ``test_hr_source_inference.py`` pins it per
+file. This table does not assert where any file's HR physically came
+from. Serials measured by an isolated re-ingest of every fixture at code
+review (iteration 1); the two hilly rows through ``mapping.to_canonical``
+and ``quality_gates.apply`` on 2026-10-04; the ``hr_source`` notes
+re-measured through upload on 2026-10-04.
 
 The end-to-end rows drive ``pipeline.ingest_fit_bytes`` into the isolated
 database and read the column back; the upgrade-path row builds the
@@ -339,7 +339,7 @@ def test_row10_no_device_info_ingests_and_persists_null(synthetic, isolated_data
     assert stored["hr_sensor_serial"] is None
 
 
-# fixture name -> expected hr_sensor_serial (census 2026-10-03; see the docstring).
+# fixture name -> expected hr_sensor_serial (census 2026-10-03, hilly rows 2026-10-04; see the docstring).
 REAL_FIXTURE_SERIAL: dict[str, int | None] = {
     "dev_fields_run.fit": 785102823,
     "hilly_long_run_17k_fr945.fit": 2149907669,

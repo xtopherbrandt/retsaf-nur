@@ -36,6 +36,8 @@ from runcoach_api.ingestion import fit_parser, mapping, rr_reconstruction
 
 HRV_FIXTURE = Path(__file__).parent / "fixtures" / "dev_fields_run.fit"
 NO_RR_FIXTURE = Path(__file__).parent / "fixtures" / "wrist_ppg_run.fit"
+# No RR carrier and no heart-rate device_info entry: HR from the wrist alone.
+NO_STRAP_FIXTURE = Path(__file__).parent / "fixtures" / "wrist_ppg_hrv_snapshot.fit"
 
 
 def _raw(path: Path) -> bytes:
@@ -109,8 +111,12 @@ def test_no_rr_carrier_present_returns_empty_list_on_real_fixture() -> None:
 
 
 def test_hr_source_left_for_wrist_ppg_default_when_no_rr_carrier() -> None:
-    messages = fit_parser.decode(_raw(NO_RR_FIXTURE))
+    # wrist_ppg_hrv_snapshot.fit has HR but no RR carrier and no
+    # heart-rate sensor in device_info (wrist_ppg_run.fit no longer
+    # serves here: its strap was connected, so it reads chest_strap).
+    messages = fit_parser.decode(_raw(NO_STRAP_FIXTURE))
 
+    assert rr_reconstruction.reconstruct(messages) == []
     session, _records = mapping.to_canonical(messages)
 
     # Not clobbered to "chest_strap" -- quality_gates.apply()'s

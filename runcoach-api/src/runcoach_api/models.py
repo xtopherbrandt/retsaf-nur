@@ -71,8 +71,8 @@ class Session:
     # the session was recorded (usually a chest strap; a watch broadcasting
     # optical HR over ANT+ counts too), not the recording watch's
     # (``source_device``). It records the pairing, not the HR provenance:
-    # the inferred ``hr_source`` can read wrist_ppg while a strap was
-    # connected, and neither proves the other. None = unknown (no ANT+
+    # ``hr_source`` reads chest_strap for a connected strap with HR, and
+    # a strap paired but not worn reads so too. None = unknown (no ANT+
     # heart-rate entry, no valid serial, conflicting serials, or a pre-F007
     # session not yet deleted and re-uploaded) -- never "no sensor". Unread
     # (F007 AC6); mapping._resolve_hr_sensor_serial resolves it.

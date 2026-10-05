@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+F015: ingestion reads `hr_source` as `chest_strap` when a file has no RR stream but has HR and a
+connected heart-rate sensor: any `device_info` entry whose device type is heart_rate and whose
+`source_type` is antplus or bluetooth_low_energy (spec/02 section 2.4.2 step 1, as built in
+`mapping._infer_hr_source`). No serial is needed, and `hr_sensor_serial` stays ANT+ only. RR present
+still reads `chest_strap`; HR with no RR and no such entry still reads `wrist_ppg`; a file with no HR
+is unchanged. Five corpus files move from `wrist_ppg` to `chest_strap` (`sample_run`,
+`wrist_ppg_run`, `hilly_long_run_17k_fr945`, `strap_health_snapshot` and
+`strap_health_snapshot_hrv`). The three runs among them lose their `cadence_lock` sample tags (154,
+157 and 36 samples), so F013's `avg_hr_bpm` on those runs now counts the samples it used to exclude.
+Known limitation: a strap paired but not worn reads `chest_strap`, so a wrist session recorded with a
+strap connected escapes the cadence-lock check. The key set of `GET /sessions/{id}` and the contract
+are unchanged.
+
+### Migration required
+
+Sessions stored before this change keep their stored `hr_source` and `cadence_lock` sample tags;
+nothing is backfilled. Deleting such a session and re-uploading the original file re-derives both,
+under the same session id (a duplicate upload is refused with 409, so the delete comes first).
+
+F014: `runcoach-api/tests/fixtures/README.md` holds a provenance table for every fixture (kind,
+recording mode, devices, positions, run proof), checked against the decoded files by a test. Two
+real hilly runs join the corpus with positions stripped, `hilly_run_8k_fr945` and
+`hilly_long_run_17k_fr945`, pinned against the GAP oracle and the watch's own time and distance
+totals. F013's NGP premise, that device speed has already absorbed GPS distance jumps, is marked
+unverified on a real run (spec/03 section 3.3.3 and `metrics/ngp.py`): it was argued from a resting
+sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
+as run proof and that features reading the time base name their recording-mode population.
+
+IDEA-119: the served `DatasetSummary.tier` description and the contract's datasets tier now say the
+connected heart-rate sensor's serial is stored but no rule reads it, so a per-unit key is later work.
+
 ## 2026-10-04 — Sprint 011: grade-adjusted pace and session descriptors
 
 F013: `GET /sessions/{session_id}/features` serves each running session's grade-adjusted pace (GAP),
