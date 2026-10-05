@@ -21,6 +21,8 @@ Sessions stored before this change keep their stored `hr_source` and `cadence_lo
 nothing is backfilled. Deleting such a session and re-uploading the original file re-derives both,
 under the same session id (a duplicate upload is refused with 409, so the delete comes first).
 
+### Added
+
 F014: `runcoach-api/tests/fixtures/README.md` holds a provenance table for every fixture (kind,
 recording mode, devices, positions, run proof), checked against the decoded files by a test. Two
 real hilly runs join the corpus with positions stripped, `hilly_run_8k_fr945` and
@@ -29,6 +31,8 @@ totals. F013's NGP premise, that device speed has already absorbed GPS distance 
 unverified on a real run (spec/03 section 3.3.3 and `metrics/ngp.py`): it was argued from a resting
 sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
 as run proof and that features reading the time base name their recording-mode population.
+
+### Changed
 
 IDEA-119: the served `DatasetSummary.tier` description and the contract's datasets tier now say the
 connected heart-rate sensor's serial is stored but no rule reads it, so a per-unit key is later work.
