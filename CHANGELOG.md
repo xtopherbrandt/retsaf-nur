@@ -18,8 +18,8 @@ because the heart-rate device type does not tell optical from ECG. A strap that 
 mid-activity marks the whole session `chest_strap`. research/00 is amended to match: REG-24 names
 both chest-strap signatures (RR presence, or, with no RR, a connected ANT+ or Bluetooth Low Energy
 heart-rate sensor with a positive heart rate), and REG-23 and REG-09 name the three accepted limits
-in their Not clauses (R16 in the F008 decisions reference). The key set of `GET /sessions/{id}` and
-the contract are unchanged.
+in their Not clauses (R16 in the F008 decisions reference). F015 changes neither the key set of
+`GET /sessions/{id}` nor the contract.
 
 ### Migration required
 
