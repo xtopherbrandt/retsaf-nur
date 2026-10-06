@@ -20,9 +20,13 @@ sint32 invalid value ``0x7FFFFFFF`` in the definition's byte order. The
 recomputed with ``fitdecode.utils.compute_crc``. Nothing else moves.
 
 The walk refuses (exit 2, naming the reason) what it does not need to
-handle and cannot check: compressed-timestamp headers, developer fields,
-a position field that is not a whole number of 4-byte elements, or a data
-size that does not match the header. It never prints a field value.
+handle and cannot check: a source whose file CRC does not match (so a
+corrupted original is never laundered into a CRC-valid output),
+compressed-timestamp headers, developer fields, a position field that is
+not a whole number of 4-byte elements, a definition or message that runs
+past the data, or a data size that does not match the header. The command
+line also refuses a destination that is the source or already exists. It
+never prints a field value.
 """
 
 from __future__ import annotations
@@ -75,6 +79,12 @@ def strip_positions(data: bytes) -> tuple[bytes, list[tuple[int, int]]]:
     end = header_size + data_size
     if end + 2 != len(buf):
         raise StripError(f"data size {data_size} + header {header_size} + 2 != file length {len(buf)}")
+    if struct.unpack_from("<H", buf, end)[0] != compute_crc(buf, start=0, end=end):
+        raise StripError("source CRC mismatch")
+
+    def need(start: int, length: int, what: str) -> None:
+        if start + length > end:
+            raise StripError(f"{what} at offset {start} runs past the data end {end}")
 
     # local number -> (big_endian, global number, [(field_num, size)])
     definitions: dict[int, tuple[bool, int, list[tuple[int, int]]]] = {}
@@ -89,10 +99,12 @@ def strip_positions(data: bytes) -> tuple[bytes, list[tuple[int, int]]]:
         if record_header & 0x40:
             if record_header & 0x20:
                 raise StripError(f"developer-data definition at offset {pos - 1}")
+            need(pos, 5, "definition")
             big_endian = buf[pos + 1] == 1
             global_num = struct.unpack_from(">H" if big_endian else "<H", buf, pos + 2)[0]
             n_fields = buf[pos + 4]
             pos += 5
+            need(pos, 3 * n_fields, "field definitions")
             fields = []
             for _ in range(n_fields):
                 fields.append((buf[pos], buf[pos + 1]))
@@ -103,6 +115,7 @@ def strip_positions(data: bytes) -> tuple[bytes, list[tuple[int, int]]]:
             raise StripError(f"data message for undefined local {local} at offset {pos - 1}")
         big_endian, global_num, fields = definitions[local]
         wanted = targets.get(global_num, frozenset())
+        need(pos, sum(size for _, size in fields), "data message")
         for field_num, size in fields:
             if field_num in wanted:
                 if size % 4:
@@ -123,6 +136,12 @@ def main(argv: list[str]) -> int:
         print("usage: strip_fit_positions.py SRC DST", file=sys.stderr)
         return 2
     src, dst = Path(argv[1]), Path(argv[2])
+    if dst.resolve() == src.resolve():
+        print(f"refused: destination {dst} is the source; write to a new file", file=sys.stderr)
+        return 2
+    if dst.exists():
+        print(f"refused: destination {dst} already exists; remove it or choose a new file", file=sys.stderr)
+        return 2
     try:
         stripped, windows = strip_positions(src.read_bytes())
     except StripError as exc:
