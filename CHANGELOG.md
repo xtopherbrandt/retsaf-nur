@@ -15,8 +15,11 @@ Known limitations: a strap paired but not worn reads `chest_strap`, so a wrist s
 strap connected escapes the cadence-lock check. So does a session from an external optical sensor
 connected over ANT+ or Bluetooth Low Energy (an optical armband, or a watch broadcasting wrist HR),
 because the heart-rate device type does not tell optical from ECG. A strap that drops out
-mid-activity marks the whole session `chest_strap`. The key set of `GET /sessions/{id}` and the contract
-are unchanged.
+mid-activity marks the whole session `chest_strap`. research/00 is amended to match: REG-24 names
+both chest-strap signatures (RR presence, or, with no RR, a connected ANT+ or Bluetooth Low Energy
+heart-rate sensor with a positive heart rate), and REG-23 and REG-09 name the three accepted limits
+in their Not clauses (R16 in the F008 decisions reference). The key set of `GET /sessions/{id}` and
+the contract are unchanged.
 
 ### Migration required
 
