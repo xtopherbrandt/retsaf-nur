@@ -5,10 +5,13 @@ the Normalized Power construction applied to speed, so a surging run reads
 harder than a steady run of the same average. Its per-record series is
 **``record.speed * g``**, the device's own speed, and never ``v_actual`` or a
 distance difference, on the premise that the device absorbs GPS-acquisition
-and tunnel-exit distance jumps. That premise is unverified on a real run: the
-only file showing such a jump, ``strap_hrv_sample_run``, is a resting sample,
-not a run (IDEA-124). Nothing in this module reads
-``distance``, ``s`` or ``v_actual``.
+and tunnel-exit distance jumps. On two real runs it did: device speed stayed
+continuous through ``strap_run_hrv``'s 25.4 m and 40.2 m one-second distance
+jumps (speed near 3.0 m/s) and through ``hilly_run_8k_fr945``'s 11.7 m jump
+during GPS acquisition, 10 s after the start (speed near 2.0 m/s). What no
+real run shows yet is a device-speed spike: the corpus's one spike, 24.027 m/s
+on 44 records, is in ``strap_hrv_sample_run``, a resting sample, not a run
+(IDEA-124). Nothing in this module reads ``distance``, ``s`` or ``v_actual``.
 
 **Blocks.** A rolling window must not span a pause, so the series is cut into
 contiguous blocks:

@@ -27,11 +27,15 @@ under the same session id (a duplicate upload is refused with 409, so the delete
 ### Added
 
 F014: `runcoach-api/tests/fixtures/README.md` holds a provenance table for every fixture (kind,
-recording mode, devices, positions, run proof), checked against the decoded files by a test. Two
+recording mode, devices, positions, run proof). A test compares kind, mode and run proof with a
+copy of the F014 reference rows it keeps, and positions, devices and each mode's recording interval
+and pause lengths with the decoded files. Two
 real hilly runs join the corpus with positions stripped, `hilly_run_8k_fr945` and
 `hilly_long_run_17k_fr945`, pinned against the GAP oracle and the watch's own time and distance
-totals. F013's NGP premise, that device speed has already absorbed GPS distance jumps, is marked
-unverified on a real run (spec/03 section 3.3.3 and `metrics/ngp.py`): it was argued from a resting
+totals. F013's NGP premise, that device speed absorbs GPS distance jumps, now cites real runs (spec/03
+section 3.3.3 and `metrics/ngp.py`): device speed stayed continuous through `strap_run_hrv`'s 25.4 m
+and 40.2 m one-second jumps and `hilly_run_8k_fr945`'s 11.7 m GPS-acquisition jump. A device-speed
+spike is still unseen on a run: the corpus's one spike is in a resting
 sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
 as run proof and that features reading the time base name their recording-mode population.
 
