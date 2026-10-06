@@ -263,6 +263,13 @@ SEAM_ROWS = [
     pytest.param([_creator(), _antplus("heart_rate"), *_records(0)], "wrist_ppg", id="zero-hr-strap-connected"),
     pytest.param([_creator(), _antplus("heart_rate")], "wrist_ppg", id="no-records-strap-connected"),
     pytest.param([_rr(), *_records(None)], "chest_strap", id="no-hr-rr-present"),
+    # HR present means any record with a positive heart_rate, not every record:
+    # the strap was acquired after the start, so the first records read None or 0.
+    pytest.param(
+        [_creator(), _antplus("heart_rate"), *_records(None), *_records(0), *_records(150)],
+        "chest_strap",
+        id="hr-acquired-after-start-strap-connected",
+    ),
     # Accepted limit (user, 2026-10-06), pinned as built: an external optical sensor
     # on ANT+ (here a watch broadcasting wrist HR, garmin_product 255, the shape
     # test_mapping_sensor_identity.py row 13 uses) presents device type heart_rate,
