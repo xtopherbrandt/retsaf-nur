@@ -798,13 +798,17 @@ def _abstentions(profiles: list[SpanProfile]) -> list[str]:
 #:
 #: A file joining or leaving either set reds, and the set is re-measured and
 #: re-argued here rather than widened to fit.
+#:
+#: Re-measured 2026-10-06 (sprint-012 review, after critic rounds 14 to 16),
+#: 41 swept files: the meaning review **left both sets**. Its rounds 14 to 16
+#: quote the rule wording they judged, so it now has spans, and both arms probe
+#: it and behave: ``@138977 boundary splice -> seen`` and ``@138378 in-span
+#: splice -> suppressed``. The boundary arm abstains on the traceability table
+#: alone, for the reason above, and the inside arm on no file.
 BOUNDARY_ARM_ABSTAINING = frozenset({
-    "specification/research/00-meaning-review.md",
     "specification/research/00-traceability.md",
 })
-INSIDE_ARM_ABSTAINING = frozenset({
-    "specification/research/00-meaning-review.md",
-})
+INSIDE_ARM_ABSTAINING: frozenset[str] = frozenset()
 
 
 def test_no_quoted_span_can_swallow_a_document() -> None:

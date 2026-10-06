@@ -205,8 +205,8 @@ repo,runcoach-api/tests/test_source_change_rule_sweep.py,15,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,69,Sec 5.4,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,77,Sec 3.3,HRV-34
 repo,runcoach-api/tests/test_source_change_rule_sweep.py,392,Sec 5.4,HRV-34
-repo,runcoach-api/tests/test_source_change_rule_sweep.py,1462,Sec 5.4,HRV-34
-repo,runcoach-api/tests/test_source_change_rule_sweep.py,1485,Sec 5.4,HRV-44
+repo,runcoach-api/tests/test_source_change_rule_sweep.py,1466,Sec 5.4,HRV-34
+repo,runcoach-api/tests/test_source_change_rule_sweep.py,1489,Sec 5.4,HRV-44
 repo,runcoach-api/tests/test_spec_cost_figures.py,8,research/00:220,literal
 repo,runcoach-api/tests/test_spec_cost_figures.py,37,§1.7,PRIN-14
 repo,runcoach-api/tests/test_spec_cost_figures.py,206,5.4,FIG-01
