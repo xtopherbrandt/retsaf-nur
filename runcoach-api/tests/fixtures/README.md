@@ -7,7 +7,10 @@ section 1, in the Shipyard data dir).
 
 `tests/test_fixture_provenance.py` keeps the table honest. It fails and names the file when a
 fixture has no row, when a row names a missing file, when `kind` or `run proof` is outside its set,
-and when `positions` or `devices` disagrees with the decoded file.
+when `kind`, `mode` or `run proof` differs from the copy of the reference rows the test keeps, and
+when `positions`, `devices` or `mode` disagrees with the decoded file. For `mode` the decoded file
+gives the recording interval and the length of each pause (a record gap over 5 s between a timer
+stop and a timer start); the words `pause` and `auto-pause` are not checked.
 
 ## Columns
 
@@ -33,7 +36,7 @@ and when `positions` or `devices` disagrees with the decoded file.
 |---|---|---|---|---|---|---|
 | sample_run | real run | | 1 Hz | FR945 LTE; HRM-Pro Plus | yes | yes |
 | dev_fields_run | real run | | 1 Hz | FR955; Polar HR strap, Stryd | yes | yes |
-| wrist_ppg_run | real run | HR from the chest strap (user, 2026-10-04); the name is historical | 1 Hz, 81 s pause | FR945 LTE; HRM-Pro Plus | yes | yes |
+| wrist_ppg_run | real run | HR from the chest strap (user, 2026-10-04); the name is historical | 1 Hz, 81 s and 11 s pauses | FR945 LTE; HRM-Pro Plus | yes | yes |
 | strap_run_hrv | real run | strap HRV | 1 Hz, 229 s pause | FR945 LTE; HRM-Pro Plus | yes | yes |
 | hilly_run_8k_fr945 | real run | was `Hilly_Smart_Recorded_run.fit`; Smart selected, watch wrote 1 Hz; positions stripped | 1 Hz, 82 s auto-pause | FR945 LTE; HRM-Pro Plus | no | yes |
 | hilly_long_run_17k_fr945 | real run | was `Hilly_Smart_Recorded_Run_2.fit`; Smart selected, watch wrote 1 Hz; positions stripped | 1 Hz | FR945 LTE; Dynastream OEM axh01 HR | no | yes |

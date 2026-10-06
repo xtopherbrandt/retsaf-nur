@@ -12,9 +12,20 @@ This module is the guard that keeps the table honest:
 - the directory and the table name the same files (a file without a row, or
   a row naming a missing file, fails and names it);
 - ``kind`` and ``run proof`` stay inside their closed sets;
+- ``kind``, ``mode`` and ``run proof`` equal ``REFERENCE_ROWS`` below, a
+  literal copy of the reference section 1 rows kept in this file, so an edit
+  to the README alone (calling the resting sample a run, say) fails;
 - ``positions`` and ``devices`` are re-derived from the decoded file with
   fitdecode, using the reference's definitions, and a row that disagrees
-  fails and names the file.
+  fails and names the file;
+- ``mode`` is re-derived too, as far as the decoded file can say: the
+  recording interval (``1 Hz`` when most record steps are 1 s, ``6 s steps``
+  when most are 6 s) and the length of each pause, a record gap over 5 s that
+  opens on a timer stop and closes on a timer start. A gap over 5 s in a
+  1 Hz file with no such timer pair would be a moving dropout, which the
+  cell has no word for, so it fails. The qualifier words (``pause``,
+  ``auto-pause``) are not derived: every timer event in the corpus decodes
+  with ``timer_trigger`` ``manual``.
 
 Definitions, from the reference:
 
@@ -34,8 +45,11 @@ never a silent pass.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from functools import cache
+from itertools import pairwise
 from pathlib import Path
 
 import fitdecode
@@ -61,6 +75,29 @@ DEVICE_NAMES: dict[tuple[str, object], str] = {
     ("stryd", 4660): "Stryd",
     ("dynastream_oem", "axh01"): "Dynastream OEM axh01 HR",
 }
+
+#: file -> (kind, mode, run proof), copied from the F014 reference section 1 rows (Shipyard data
+#: dir), never from the README. The README must agree with it; a change to either is a change to
+#: both, made on purpose.
+REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
+    "sample_run": ("real run", "1 Hz", "yes"),
+    "dev_fields_run": ("real run", "1 Hz", "yes"),
+    "wrist_ppg_run": ("real run", "1 Hz, 81 s and 11 s pauses", "yes"),
+    "strap_run_hrv": ("real run", "1 Hz, 229 s pause", "yes"),
+    "hilly_run_8k_fr945": ("real run", "1 Hz, 82 s auto-pause", "yes"),
+    "hilly_long_run_17k_fr945": ("real run", "1 Hz", "yes"),
+    "strap_cool_down_walk": ("real walk", "1 Hz", "walk only"),
+    "strap_hrv_sample_run": ("HRV capture", "1 Hz", "no"),
+    "strap_hrv_capture": ("HRV capture", "6 s steps", "no"),
+    "wrist_ppg_hrv_snapshot": ("HRV capture", "6 s steps", "no"),
+    "strap_health_snapshot": ("health snapshot", "1 Hz", "no"),
+    "strap_health_snapshot_hrv": ("health snapshot", "1 Hz", "no"),
+    "sample_health_snapshot": ("health snapshot", "1 Hz", "no"),
+}
+
+#: The record step that names each recording interval, and the gap above which a step is a pause.
+INTERVALS = {1.0: "1 Hz", 6.0: "6 s steps"}
+PAUSE_MIN_GAP_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -118,6 +155,31 @@ class Decoded:
     position_fields: tuple[str, ...]
     creator: tuple[str, object]
     sensors: frozenset[tuple[str, object]]
+    interval: str
+    pauses: tuple[int, ...]
+    dropouts: tuple[int, ...]
+
+
+def _mode_from(timestamps: list, timer_events: list[tuple[object, str]]) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
+    """``(interval, pauses, dropouts)`` from record timestamps and timer events, in time order.
+
+    The interval names the most common record step (``INTERVALS``). In a 1 Hz file each gap over
+    ``PAUSE_MIN_GAP_S`` is a pause when a timer ``stop_all`` sits at its first record and a timer
+    ``start`` at its last, and a dropout otherwise; in a stepped file the steps are the mode.
+    """
+    steps = [(b - a).total_seconds() for a, b in pairwise(timestamps)]
+    common = Counter(steps).most_common(1)[0][0]
+    interval = INTERVALS.get(common, f"{common:g} s steps")
+    if interval != "1 Hz":
+        return interval, (), ()
+    stops = {t for t, kind in timer_events if kind in ("stop", "stop_all")}
+    starts = {t for t, kind in timer_events if kind == "start"}
+    pauses, dropouts = [], []
+    for a, b in pairwise(timestamps):
+        gap = (b - a).total_seconds()
+        if gap > PAUSE_MIN_GAP_S:
+            (pauses if a in stops and b in starts else dropouts).append(round(gap))
+    return interval, tuple(pauses), tuple(dropouts)
 
 
 @cache
@@ -125,10 +187,19 @@ def decode(stem: str) -> Decoded:
     position_fields: set[str] = set()
     creator = None
     sensors: set[tuple[str, object]] = set()
+    timestamps: list = []
+    timer_events: list[tuple[object, str]] = []
     with fitdecode.FitReader(str(FIXTURES / f"{stem}.fit")) as reader:
         for frame in reader:
             if not isinstance(frame, fitdecode.FitDataMessage):
                 continue
+            if frame.name == "record":
+                timestamp = frame.get_value("timestamp", fallback=None)
+                if timestamp is not None:
+                    timestamps.append(timestamp)
+            elif frame.name == "event" and frame.get_value("event", fallback=None) == "timer":
+                timer_events.append((frame.get_value("timestamp", fallback=None),
+                                     frame.get_value("event_type", fallback=None)))
             for field in frame.fields:
                 if field.value is None:
                     continue
@@ -146,7 +217,15 @@ def decode(stem: str) -> Decoded:
                 if source == "antplus" and manufacturer is not None:
                     sensors.add((manufacturer, frame.get_value("product", fallback=None)))
     assert creator is not None, f"{stem}.fit: no file_id message"
-    return Decoded(tuple(sorted(position_fields)), creator, frozenset(sensors))
+    assert len(timestamps) >= 2, f"{stem}.fit: fewer than two timed records"
+    interval, pauses, dropouts = _mode_from(timestamps, timer_events)
+    return Decoded(tuple(sorted(position_fields)), creator, frozenset(sensors), interval, pauses, dropouts)
+
+
+def parse_mode(cell: str) -> tuple[str, tuple[int, ...]]:
+    """``(interval, pause lengths in s)`` from a mode cell such as ``1 Hz, 81 s and 11 s pauses``."""
+    interval, _, rest = cell.partition(", ")
+    return interval, tuple(int(n) for n in re.findall(r"(\d+) s\b", rest))
 
 
 def _display(stem: str, key: tuple[str, object]) -> str:
@@ -195,6 +274,17 @@ def value_problems(row: Row) -> list[str]:
     return problems
 
 
+def reference_problems(row: Row) -> list[str]:
+    """Disagreements between the row and ``REFERENCE_ROWS``, each naming the file and column."""
+    if row.file not in REFERENCE_ROWS:
+        return [f"{row.file}: no reference row in REFERENCE_ROWS"]
+    expected = dict(zip(("kind", "mode", "run_proof"), REFERENCE_ROWS[row.file]))
+    print(f"[slice compared] {row.file}: kind/mode/run proof row "
+          f"{(row.kind, row.mode, row.run_proof)} reference {tuple(expected.values())}")
+    return [f"{row.file}: {column} says {getattr(row, column)!r} but the reference row says {value!r}"
+            for column, value in expected.items() if getattr(row, column) != value]
+
+
 def decoded_problems(row: Row) -> list[str]:
     """Disagreements between the row and its decoded file, each naming the file."""
     stem = row.file
@@ -215,6 +305,14 @@ def decoded_problems(row: Row) -> list[str]:
         problems.append(
             f"{stem}: devices says {row.devices!r} but the decoded creator and ANT+ sensors are "
             f"{expected[0]!r}; {sorted(expected[1]) or 'none'}")
+    stated_mode = parse_mode(row.mode)
+    print(f"[slice compared] {stem}: mode row {stated_mode[0]!r} pauses {list(stated_mode[1])} "
+          f"decoded {decoded.interval!r} pauses {list(decoded.pauses)} dropouts {list(decoded.dropouts)}")
+    if decoded.dropouts or stated_mode != (decoded.interval, decoded.pauses):
+        problems.append(
+            f"{stem}: mode says {row.mode!r} but the decoded file has interval {decoded.interval!r}, "
+            f"pauses {list(decoded.pauses)} s and gaps over {PAUSE_MIN_GAP_S:g} s with no timer pair "
+            f"{list(decoded.dropouts)} s")
     return problems
 
 
@@ -235,8 +333,15 @@ def test_provenance_row_matches_the_decoded_file(stem: str) -> None:
     assert stem in rows, f"{stem}.fit has no provenance row in {README.name}"
     problems = value_problems(rows[stem])
     assert not problems, problems
+    problems = reference_problems(rows[stem])
+    assert not problems, problems
     problems = decoded_problems(rows[stem])
     assert not problems, problems
+
+
+def test_the_reference_rows_name_every_fixture() -> None:
+    """``REFERENCE_ROWS`` covers the directory, so no fixture escapes the literal check."""
+    assert sorted(REFERENCE_ROWS) == _on_disk()
 
 
 def test_the_historical_wrist_ppg_name_carries_the_users_ruling() -> None:
@@ -293,4 +398,44 @@ def test_an_out_of_set_value_is_named(column: str, value: str) -> None:
 def test_a_row_disagreeing_with_the_decoded_file_is_named(stem: str, column: str, value: str) -> None:
     row = replace(_real_rows()[stem], **{column: value})
     problems = decoded_problems(row)
+    assert len(problems) == 1 and problems[0].startswith(f"{stem}: {column} says")
+
+
+@pytest.mark.parametrize(
+    ("stem", "value"),
+    [
+        ("wrist_ppg_run", "1 Hz, 81 s pause"),
+        ("wrist_ppg_run", "1 Hz"),
+        ("hilly_run_8k_fr945", "6 s steps"),
+        ("hilly_run_8k_fr945", "1 Hz"),
+        ("strap_hrv_capture", "1 Hz"),
+        ("hilly_long_run_17k_fr945", "1 Hz, 30 s pause"),
+    ],
+)
+def test_a_mode_disagreeing_with_the_decoded_file_is_named(stem: str, value: str) -> None:
+    row = replace(_real_rows()[stem], mode=value)
+    problems = decoded_problems(row)
+    assert len(problems) == 1 and problems[0].startswith(f"{stem}: mode says")
+
+
+def test_a_gap_with_no_timer_pair_is_a_dropout_not_a_pause() -> None:
+    t0 = datetime(2026, 3, 1, tzinfo=UTC)
+    stamps = [t0 + timedelta(seconds=s) for s in (0, 1, 2, 12, 13, 14)]
+    assert _mode_from(stamps, []) == ("1 Hz", (), (10,))
+    assert _mode_from(stamps, [(stamps[2], "stop_all"), (stamps[3], "start")]) == ("1 Hz", (10,), ())
+
+
+@pytest.mark.parametrize(
+    ("stem", "column", "value"),
+    [
+        ("strap_hrv_sample_run", "kind", "real run"),
+        ("strap_hrv_sample_run", "run_proof", "yes"),
+        ("wrist_ppg_hrv_snapshot", "kind", "health snapshot"),
+        ("strap_cool_down_walk", "run_proof", "yes"),
+        ("wrist_ppg_run", "mode", "1 Hz"),
+    ],
+)
+def test_a_row_disagreeing_with_the_reference_is_named(stem: str, column: str, value: str) -> None:
+    row = replace(_real_rows()[stem], **{column: value})
+    problems = reference_problems(row)
     assert len(problems) == 1 and problems[0].startswith(f"{stem}: {column} says")
