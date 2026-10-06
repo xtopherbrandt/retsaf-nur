@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-06 — Sprint 012: fixture provenance, hilly runs and chest-strap inference
+
 F015: ingestion reads `hr_source` as `chest_strap` when a file has no RR stream but has HR and a
 connected heart-rate sensor: any `device_info` entry whose device type is heart_rate and whose
 `source_type` is antplus or bluetooth_low_energy (spec/02 section 2.4.2 step 1, as built in
@@ -34,17 +36,19 @@ under the same session id (a duplicate upload is refused with 409, so the delete
 F014: `runcoach-api/tests/fixtures/README.md` holds a provenance table for every fixture (kind,
 recording mode, devices, positions, run proof). A test compares kind, mode and run proof with a
 copy of the F014 reference rows it keeps, and positions, devices and each mode's recording interval
-and pause lengths with the decoded files. Two
-real hilly runs join the corpus with positions stripped, `hilly_run_8k_fr945` and
-`hilly_long_run_17k_fr945`, pinned against the GAP oracle and the watch's own time and distance
-totals. F013's NGP premise, that device speed absorbs GPS distance jumps, now cites real runs (spec/03
-section 3.3.3 and `metrics/ngp.py`): on three real runs device speed stayed continuous through
-`strap_run_hrv`'s 25.4 m and 40.2 m one-second jumps, `hilly_run_8k_fr945`'s 11.7 m GPS-acquisition
-jump and `hilly_long_run_17k_fr945`'s 8.6 m jump (a jump is a 1 s step over device speed × dt by
-more than 5 m, as the F014 reference defines it). A device-speed
-spike is still unseen on a run: the corpus's one spike is in a resting
-sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
-as run proof and that features reading the time base name their recording-mode population.
+and pause lengths with the decoded files. Two real hilly runs join the corpus with positions
+stripped, `hilly_run_8k_fr945` and `hilly_long_run_17k_fr945`, pinned against the GAP oracle and the
+watch's own time and distance totals. A new fixture that still carries positions fails the
+provenance test unless it is on the allow-list, and `tests/support/strip_fit_positions.py` refuses a
+source with a bad CRC and will not overwrite its source or an existing file. F013's NGP premise,
+that device speed absorbs GPS distance jumps, now cites real runs (spec/03 section 3.3.3 and
+`metrics/ngp.py`): on three real runs device speed stayed continuous through `strap_run_hrv`'s
+25.4 m and 40.2 m one-second jumps, `hilly_run_8k_fr945`'s 11.7 m GPS-acquisition jump and
+`hilly_long_run_17k_fr945`'s 8.6 m jump (a jump is a 1 s step over device speed × dt by more than
+5 m, as the F014 reference defines it). A device-speed spike is still unseen on a run: the corpus's
+one spike is in a resting sample, and IDEA-124 holds it open. Two learnings rules ask that only
+real-activity fixtures be cited as run proof and that features reading the time base name their
+recording-mode population.
 
 IDEA-122: a third learnings rule, `no-later-task-ids-in-durable-text.md`, says durable text never
 names a later task of the same sprint, and `runcoach-api/tests/support/sweep_sprint_task_ids.py`
