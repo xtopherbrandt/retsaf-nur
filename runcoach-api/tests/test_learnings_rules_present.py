@@ -2,12 +2,15 @@
 
 ``.claude/rules/learnings/`` is loaded into every agent session through its ``paths:`` frontmatter. A
 rule file without that frontmatter is never loaded, and one without its ``Origin:`` line loses the IDEA
-that records why it exists. Each file is also pinned to the phrase that carries its rule:
+that records why it exists. Each file is also pinned to the phrases that carry its rule:
 
 - ``cite-only-real-activity-fixtures-as-proof.md`` (IDEA-128) reads the "run proof" column of the
-  fixture provenance table, ``runcoach-api/tests/fixtures/README.md``;
+  fixture provenance table, ``runcoach-api/tests/fixtures/README.md``, and keeps its two clauses:
+  captures and snapshots are cited for what they are, and a file's name is not its provenance;
 - ``name-the-recording-mode-population.md`` (IDEA-127) names the three recording-mode populations a
-  feature reading per-record time, distance, speed or altitude must place in its Negative Class.
+  feature reading per-record time, distance, speed or altitude must place in its Negative Class
+  (1 Hz with pauses, moving dropouts over 5 s, smart recording), and asks for a probe or a dated
+  deferral with an owner for each.
 """
 
 from __future__ import annotations
@@ -25,7 +28,13 @@ RULES = (
     (
         "cite-only-real-activity-fixtures-as-proof.md",
         "IDEA-128",
-        ("run proof", "runcoach-api/tests/fixtures/README.md", "walk only"),
+        (
+            "run proof",
+            "runcoach-api/tests/fixtures/README.md",
+            "walk only",
+            "Captures and snapshots are cited for what they are",
+            "A file's name is not its provenance",
+        ),
     ),
     (
         "name-the-recording-mode-population.md",
@@ -34,7 +43,9 @@ RULES = (
             "recording-mode",
             "1 Hz with pauses",
             "moving dropouts over 5 s",
+            "smart recording: variable gaps",
             "not observed on runs in the corpus (see the provenance table)",
+            "a dated deferral with an owner",
         ),
     ),
 )
@@ -43,8 +54,9 @@ _FRONTMATTER = re.compile(r"\A---\r?\n(?P<body>.*?)\r?\n---\r?\n", re.DOTALL)
 
 
 def _flat(text: str) -> str:
-    """Collapse whitespace so a phrase wrapped across lines is still found."""
-    return " ".join(text.split())
+    """Collapse whitespace so a phrase wrapped across lines is still found, and drop the ``**``
+    bold markers so a phrase is found whether or not the rule emphasises it."""
+    return " ".join(text.split()).replace("**", "")
 
 
 @pytest.mark.parametrize(("name", "idea", "phrases"), RULES, ids=[r[0] for r in RULES])
