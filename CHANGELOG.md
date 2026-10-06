@@ -38,8 +38,10 @@ and pause lengths with the decoded files. Two
 real hilly runs join the corpus with positions stripped, `hilly_run_8k_fr945` and
 `hilly_long_run_17k_fr945`, pinned against the GAP oracle and the watch's own time and distance
 totals. F013's NGP premise, that device speed absorbs GPS distance jumps, now cites real runs (spec/03
-section 3.3.3 and `metrics/ngp.py`): device speed stayed continuous through `strap_run_hrv`'s 25.4 m
-and 40.2 m one-second jumps and `hilly_run_8k_fr945`'s 11.7 m GPS-acquisition jump. A device-speed
+section 3.3.3 and `metrics/ngp.py`): on three real runs device speed stayed continuous through
+`strap_run_hrv`'s 25.4 m and 40.2 m one-second jumps, `hilly_run_8k_fr945`'s 11.7 m GPS-acquisition
+jump and `hilly_long_run_17k_fr945`'s 8.6 m jump (a jump is a 1 s step over device speed × dt by
+more than 5 m, as the F014 reference defines it). A device-speed
 spike is still unseen on a run: the corpus's one spike is in a resting
 sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
 as run proof and that features reading the time base name their recording-mode population.
