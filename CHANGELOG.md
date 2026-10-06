@@ -35,6 +35,11 @@ unverified on a real run (spec/03 section 3.3.3 and `metrics/ngp.py`): it was ar
 sample, and IDEA-124 holds it open. Two learnings rules ask that only real-activity fixtures be cited
 as run proof and that features reading the time base name their recording-mode population.
 
+IDEA-122: a third learnings rule, `no-later-task-ids-in-durable-text.md`, says durable text never
+names a later task of the same sprint, and `runcoach-api/tests/support/sweep_sprint_task_ids.py`
+finds such sentences in a sprint's diff. The sprint's last-wave release gate runs the sweep with
+`--strict` and the sprint's own ID range.
+
 ### Changed
 
 IDEA-119: the served `DatasetSummary.tier` description and the contract's datasets tier now say the
