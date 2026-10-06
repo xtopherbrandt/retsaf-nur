@@ -411,6 +411,16 @@ WALKS = (
         ],
         [(1, "fail", 1)],
     ),
+    # The same with the hand-off above the self-tag, so the worst writer is not the first one walked.
+    (
+        "merged-lines-reversed",
+        [
+            ("T249 fills the column.\n", "feat(T249): fill the column"),
+            ("T249 fills the cache.\nT249 fills the column.\n", "feat(T248): add the cache"),
+            ("T249 fills the cache and the column.\n", "docs(f015): merge the notes"),
+        ],
+        [(1, "fail", 1)],
+    ),
     (
         "lowercase",
         [
