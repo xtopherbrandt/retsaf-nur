@@ -519,13 +519,16 @@ def test_the_walk_reads_a_quoted_path_in_the_blame_headers(clone):
 
 # --- the user's git config does not change what is read ------------------------------------------
 
-#: Each setting changes the text of ``git diff``: no ``b/`` prefix, another prefix, or fused hunks.
+#: Each setting changes the text of ``git diff`` or ``git blame``: no ``b/`` prefix, another prefix,
+#: fused hunks, skipped commits, colour, or an external driver (``true`` prints no diff at all).
 GIT_CONFIGS = (
     ("diff.noprefix", "true"),
     ("diff.dstPrefix", "new/"),
     ("diff.mnemonicPrefix", "true"),
     ("diff.interHunkContext", "10"),
     ("blame.ignoreRevsFile", "no-such-file"),
+    ("color.ui", "always"),
+    ("diff.external", "true"),
 )
 
 
