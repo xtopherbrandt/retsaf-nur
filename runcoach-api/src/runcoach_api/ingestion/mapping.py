@@ -263,8 +263,11 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     ``hr_source`` is the inferred provenance (spec/02 section 2.4.2; see
     ``_infer_hr_source``). A connected heart-rate sensor with HR present now
     reads ``chest_strap`` even without RR, so the two agree on every corpus
-    fixture. They can still disagree: a strap paired but not worn reads
-    ``chest_strap``, and this serial is stored only for an ANT+ sensor.
+    fixture. They can still disagree: a strap connected while the file
+    records no HR keeps its serial while ``hr_source`` reads ``wrist_ppg``;
+    conflicting serials give ``None`` while ``hr_source`` reads
+    ``chest_strap``; and a Bluetooth-LE sensor reads ``chest_strap`` with
+    no serial, because this serial is stored only for an ANT+ sensor.
 
     Field shapes, verified against the real decode of every fixture
     (census 2026-10-03): ``source_type`` resolves to the string
@@ -355,7 +358,12 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
 
     The rule cannot tell a strap paired but not worn from one worn: such a
     session reads ``chest_strap`` and escapes the cadence-lock check
-    (accepted, user ruling 2026-10-04).
+    (accepted, user ruling 2026-10-04). Two more accepted limits (user
+    ruling 2026-10-06): an external optical sensor over ANT+ or
+    Bluetooth-LE (an armband, or a watch broadcasting wrist HR) reads
+    ``chest_strap``, because the heart-rate device type does not tell
+    optical from ECG; and a strap that drops out mid-activity marks the
+    whole session ``chest_strap``, since the rule has no time dimension.
 
     T024's task notes scope this task to only ``mapping.py`` and
     ``rr_reconstruction.py`` -- ``pipeline.py`` (which also calls

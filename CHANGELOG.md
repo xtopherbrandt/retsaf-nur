@@ -11,8 +11,11 @@ is unchanged. Five corpus files move from `wrist_ppg` to `chest_strap` (`sample_
 `wrist_ppg_run`, `hilly_long_run_17k_fr945`, `strap_health_snapshot` and
 `strap_health_snapshot_hrv`). The three runs among them lose their `cadence_lock` sample tags (154,
 157 and 36 samples), so F013's `avg_hr_bpm` on those runs now counts the samples it used to exclude.
-Known limitation: a strap paired but not worn reads `chest_strap`, so a wrist session recorded with a
-strap connected escapes the cadence-lock check. The key set of `GET /sessions/{id}` and the contract
+Known limitations: a strap paired but not worn reads `chest_strap`, so a wrist session recorded with a
+strap connected escapes the cadence-lock check. So does a session from an external optical sensor
+connected over ANT+ or Bluetooth Low Energy (an optical armband, or a watch broadcasting wrist HR),
+because the heart-rate device type does not tell optical from ECG. A strap that drops out
+mid-activity marks the whole session `chest_strap`. The key set of `GET /sessions/{id}` and the contract
 are unchanged.
 
 ### Migration required
