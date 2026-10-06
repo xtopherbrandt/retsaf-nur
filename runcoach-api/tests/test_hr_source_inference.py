@@ -3,7 +3,8 @@
 The rule (spec/02 section 2.4.2 step 1), resolved in ``mapping._infer_hr_source``:
 
 - RR present -> ``chest_strap``.
-- No RR, HR present, and any ``device_info`` entry whose ``source_type`` is
+- No RR, HR present (any record with a positive ``heart_rate``), and any
+  ``device_info`` entry whose ``source_type`` is
   ``antplus`` or ``bluetooth_low_energy`` and whose device type is
   ``heart_rate`` -> ``chest_strap``. No serial is needed: pairing does not
   need identity.
@@ -38,8 +39,8 @@ coverage, ``test_quality_gates_wrist_ppg.py``). Three accepted limits read
 sensor over ANT+ or Bluetooth-LE, an armband or a watch broadcasting wrist HR,
 because the heart-rate device type does not tell optical from ECG (pinned as
 built by the ``optical-hr-broadcast-over-antplus-reads-as-strap`` seam row);
-and a strap that drops out mid-activity, which marks the whole session (not
-covered).
+and a strap that drops out mid-activity, which marks the whole session (pinned
+as built by the ``strap-dropped-out-before-the-end-strap-connected`` seam row).
 """
 
 from __future__ import annotations
@@ -269,6 +270,14 @@ SEAM_ROWS = [
         [_creator(), _antplus("heart_rate"), *_records(None), *_records(0), *_records(150)],
         "chest_strap",
         id="hr-acquired-after-start-strap-connected",
+    ),
+    # The mirror: the strap dropped out before the end, so the last records read
+    # None. HR present is judged over every record, not the last, and the
+    # session reads chest_strap (the dropout limit, pinned as built).
+    pytest.param(
+        [_creator(), _antplus("heart_rate"), *_records(150), *_records(None)],
+        "chest_strap",
+        id="strap-dropped-out-before-the-end-strap-connected",
     ),
     # Accepted limit (user, 2026-10-06), pinned as built: an external optical sensor
     # on ANT+ (here a watch broadcasting wrist HR, garmin_product 255, the shape
