@@ -45,8 +45,6 @@ as built by the ``strap-dropped-out-before-the-end-strap-connected`` seam row).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -100,15 +98,9 @@ ANALYST_CADENCE_LOCK_BEFORE: dict[str, int] = {
 }
 
 
-@contextmanager
-def _client() -> Iterator[TestClient]:
-    with TestClient(app) as client:
-        yield client
-
-
 def _served(filename: str) -> dict:
     """Upload ``filename`` and return its ``GET /sessions/{id}`` body."""
-    with _client() as client:
+    with TestClient(app) as client:
         created = client.post("/sessions", files={"file": (filename, (FIXTURES / filename).read_bytes())})
         assert created.status_code == 201, created.text
         detail = client.get(f"/sessions/{created.json()['session_id']}")

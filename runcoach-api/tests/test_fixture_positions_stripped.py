@@ -176,6 +176,11 @@ def _area_box() -> tuple[tuple[float, float], tuple[float, float]]:
     return (lat_min - widen, lat_max + widen), (lon_min - widen, lon_max + widen)
 
 
+def _pair_key(global_num: int, lat_field: int, lon_field: int) -> str:
+    name = profile.MESSAGE_TYPES[global_num].name if global_num in profile.MESSAGE_TYPES else "unknown"
+    return f"{name} ({global_num}) fields {lat_field}/{lon_field}"
+
+
 def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
     """``(elements scanned, {message/fields identity: messages})`` for messages holding a pair in the box."""
     (lat_lo, lat_hi), (lon_lo, lon_hi) = box
@@ -189,8 +194,7 @@ def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
         in_lon = [(f, i) for f, i, v in values if lon_lo <= v <= lon_hi]
         pairs = {(a[0], b[0]) for a in in_lat for b in in_lon if a != b}
         for lat_field, lon_field in sorted(pairs):
-            name = profile.MESSAGE_TYPES[global_num].name if global_num in profile.MESSAGE_TYPES else "unknown"
-            key = f"{name} ({global_num}) fields {lat_field}/{lon_field}"
+            key = _pair_key(global_num, lat_field, lon_field)
             hits[key] = hits.get(key, 0) + 1
     return scanned, hits
 
@@ -280,8 +284,7 @@ def test_a_planted_pair_fails_the_check(plant: str, tmp_path: Path) -> None:
     data = bytearray((FIXTURES / HILLY_FIXTURES[0]).read_bytes())
     fields = next(located for number, located in _fields_by_message(bytes(data)) if number == global_num)
     assert lat_field in fields and lon_field in fields, f"message {global_num} lacks field {lat_field} or {lon_field}"
-    name = profile.MESSAGE_TYPES[global_num].name if global_num in profile.MESSAGE_TYPES else "unknown"
-    key = f"{name} ({global_num}) fields {lat_field}/{lon_field}"
+    key = _pair_key(global_num, lat_field, lon_field)
     assert key not in _pairs_in_box(bytes(data), box)[1], f"{key} is in the box before the plant"
 
     for (field_num, element), value in (((lat_field, lat_element), lat), ((lon_field, lon_element), lon)):

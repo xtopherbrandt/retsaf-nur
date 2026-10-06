@@ -324,7 +324,7 @@ def test_a_reindent_neither_hides_nor_relabels_a_hand_off(clone, capsys):
     assert rc == 0 and ", 0 hits" in out, "a whitespace-only change was swept as new text"
 
 
-def test_a_reindented_neighbour_is_not_the_line_it_handed_off_from(clone, capsys):
+def test_a_reindented_neighbour_is_not_the_line_it_handed_off_from(clone):
     """The commit that adds a hand-off beside a reindented line naming the same ID wrote the hand-off."""
     sweep = _load_sweep()
     base = _git(clone, "rev-parse", "HEAD")
@@ -482,7 +482,7 @@ WALKS = (
 QUOTED_WALK_PATH = 'planted/walk say "hi".md'
 
 
-def _walk_case(clone, label, steps, path):
+def _walk_case(clone, steps, path):
     base = _git(clone, "rev-parse", "HEAD")
     shas, parent = [], base
     for text, subject in steps:
@@ -495,7 +495,7 @@ def _walk_case(clone, label, steps, path):
 def test_the_walk_pairs_each_line_with_the_line_it_rewords(clone, capsys, label, steps, expected):
     sweep = _load_sweep()
     path = f"planted/walk-{label}.md"
-    base, shas = _walk_case(clone, label, steps, path)
+    base, shas = _walk_case(clone, steps, path)
     hits = sweep.sweep(clone, base, shas[-1], sweep.parse_ids(REPLAY_IDS))
     print(hits)
     assert [(hit.line, hit.disposition, hit.commit) for hit in hits] == [
@@ -509,7 +509,7 @@ def test_the_walk_pairs_each_line_with_the_line_it_rewords(clone, capsys, label,
 def test_the_walk_reads_a_quoted_path_in_the_blame_headers(clone):
     sweep = _load_sweep()
     steps = [(HAND_OFF_WRITTEN, "feat(T248): add the column"), (HAND_OFF_REWORDED, "feat(T249): fill it")]
-    base, shas = _walk_case(clone, "quoted", steps, QUOTED_WALK_PATH)
+    base, shas = _walk_case(clone, steps, QUOTED_WALK_PATH)
     hits = sweep.sweep(clone, base, shas[-1], sweep.parse_ids(REPLAY_IDS))
     print(hits)
     assert [(hit.path, hit.line, hit.disposition, hit.commit) for hit in hits] == [
@@ -541,7 +541,7 @@ def test_the_users_git_config_does_not_change_the_sweep(clone, capsys, key, valu
         ("one\ntwo\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
         ("ONE\ntwo\n" + HAND_OFF_REWORDED, "feat(T249): populate the column"),
     ]
-    base, shas = _walk_case(clone, key, steps, path)
+    base, shas = _walk_case(clone, steps, path)
     _git(clone, "config", key, value)
     try:
         rc = _run(sweep, clone, shas[-1], "--strict", base=base)
