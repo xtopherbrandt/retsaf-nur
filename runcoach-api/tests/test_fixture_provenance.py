@@ -353,9 +353,9 @@ def positions_problems(stem: str) -> list[str]:
           f"on the allow-list {stem in POSITIONS_ALLOWED}")
     if not fields or stem in POSITIONS_ALLOWED:
         return []
-    return [f"{stem}.fit carries {len(fields)} position field(s) {list(fields)[:4]} and is not in "
-            f"POSITIONS_ALLOWED: strip it with {STRIPPER} before committing it. Only the user can "
-            "rule that its track may be published; add it to the list only after that ruling."]
+    return [(f"{stem}.fit carries {len(fields)} position field(s) {list(fields)[:4]} and is not in "
+             f"POSITIONS_ALLOWED: strip it with {STRIPPER} before committing it. Only the user can "
+             "rule that its track may be published; add it to the list only after that ruling.")]
 
 
 def test_every_fixture_has_a_provenance_row() -> None:
