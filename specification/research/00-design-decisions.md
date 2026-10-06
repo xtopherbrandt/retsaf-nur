@@ -518,7 +518,7 @@ Why: decision C19 changes the wording for resting HRV only, since Section 3 appl
 
 **REG-24.** The chest-strap signature IS the presence of RR in an activity or, in an activity with no RR, a heart-rate sensor connected over ANT+ or Bluetooth Low Energy while the activity records a positive heart rate.
 Scope: every activity the system checks for a chest strap.
-Not: a resting HRV capture, whose source is its declared tier.
+Not: the HRV source of a resting HRV capture, which is its declared tier; that capture's hr_source still reads this signature, naming the producer of its HR stream.
 Pinned: none
 
 **REG-25.** A skipped morning reading MUST degrade the readiness gate gracefully and never fail it, and a day it leaves reading `hrv_unavailable` MUST reach Section 6 as low confidence that widens guardrails (rule ARCH-12).

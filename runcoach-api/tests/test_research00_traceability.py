@@ -1038,7 +1038,7 @@ HISTORY_SHA256 = {
     "H-38": "864b2eb04911",
     "H-39": "ea77338acc5e",
     "H-40": "ff2a30c98d83",
-    "H-41": "9d2e02a68a24",
+    "H-41": "cb75714fb871",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
