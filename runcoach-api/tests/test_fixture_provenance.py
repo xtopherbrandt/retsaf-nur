@@ -19,11 +19,13 @@ This module is the guard that keeps the table honest:
   fitdecode, using the reference's definitions, and a row that disagrees
   fails and names the file;
 - ``mode`` is re-derived too, as far as the decoded file can say: the
-  recording interval (``1 Hz`` when most record steps are 1 s, ``6 s steps``
-  when most are 6 s) and the length of each pause, a record gap over 5 s that
-  opens on a timer stop and closes on a timer start. A gap over 5 s in a
-  1 Hz file with no such timer pair would be a moving dropout, which the
-  cell has no word for, so it fails. The qualifier words (``pause``,
+  recording interval (``1 Hz`` when more than half the record steps are 1 s,
+  ``6 s steps`` when more than half are 6 s; a file with no such majority is
+  ``variable steps``, which no cell uses, so it fails) and the length of each
+  pause, a record gap over 5 s (over the step plus 5 s in a stepped file)
+  that opens on a timer stop and closes on a timer start. Such a gap with no
+  timer pair would be a moving dropout, which the cell has no word for, so
+  it fails. The qualifier words (``pause``,
   ``auto-pause``) are not derived: every timer event in the corpus decodes
   with ``timer_trigger`` ``manual``.
 
@@ -45,6 +47,7 @@ never a silent pass.
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -95,8 +98,11 @@ REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
     "sample_health_snapshot": ("health snapshot", "1 Hz", "no"),
 }
 
-#: The record step that names each recording interval, and the gap above which a step is a pause.
+#: The record step that names each recording interval, and the gap above which a 1 Hz step is a
+#: pause or a dropout (a stepped file adds its step). A file whose steps have no majority is named
+#: ``VARIABLE_STEPS``, which no mode cell uses.
 INTERVALS = {1.0: "1 Hz", 6.0: "6 s steps"}
+VARIABLE_STEPS = "variable steps"
 PAUSE_MIN_GAP_S = 5.0
 
 
@@ -163,21 +169,25 @@ class Decoded:
 def _mode_from(timestamps: list, timer_events: list[tuple[object, str]]) -> tuple[str, tuple[int, ...], tuple[int, ...]]:
     """``(interval, pauses, dropouts)`` from record timestamps and timer events, in time order.
 
-    The interval names the most common record step (``INTERVALS``). In a 1 Hz file each gap over
-    ``PAUSE_MIN_GAP_S`` is a pause when a timer ``stop_all`` sits at its first record and a timer
-    ``start`` at its last, and a dropout otherwise; in a stepped file the steps are the mode.
+    The interval names the record step that more than half of the steps share (``INTERVALS``).
+    When no step has that majority the interval is ``VARIABLE_STEPS``, which no mode cell uses, so
+    a file of mixed steps (smart recording) cannot read as 1 Hz. A gap is a record step over
+    ``PAUSE_MIN_GAP_S`` in a 1 Hz file, and over the step plus ``PAUSE_MIN_GAP_S`` in a stepped
+    file. Each gap is a pause when a timer ``stop`` or ``stop_all`` sits at its first record and a
+    timer ``start`` at its last, and a dropout otherwise.
     """
     steps = [(b - a).total_seconds() for a, b in pairwise(timestamps)]
-    common = Counter(steps).most_common(1)[0][0]
+    common, count = Counter(steps).most_common(1)[0]
+    if 2 * count <= len(steps):
+        return VARIABLE_STEPS, (), ()
     interval = INTERVALS.get(common, f"{common:g} s steps")
-    if interval != "1 Hz":
-        return interval, (), ()
+    gap_limit = PAUSE_MIN_GAP_S if interval == "1 Hz" else common + PAUSE_MIN_GAP_S
     stops = {t for t, kind in timer_events if kind in ("stop", "stop_all")}
     starts = {t for t, kind in timer_events if kind == "start"}
     pauses, dropouts = [], []
     for a, b in pairwise(timestamps):
         gap = (b - a).total_seconds()
-        if gap > PAUSE_MIN_GAP_S:
+        if gap > gap_limit:
             (pauses if a in stops and b in starts else dropouts).append(round(gap))
     return interval, tuple(pauses), tuple(dropouts)
 
@@ -423,6 +433,74 @@ def test_a_gap_with_no_timer_pair_is_a_dropout_not_a_pause() -> None:
     stamps = [t0 + timedelta(seconds=s) for s in (0, 1, 2, 12, 13, 14)]
     assert _mode_from(stamps, []) == ("1 Hz", (), (10,))
     assert _mode_from(stamps, [(stamps[2], "stop_all"), (stamps[3], "start")]) == ("1 Hz", (10,), ())
+
+
+def _stamps(*seconds: float) -> list[datetime]:
+    t0 = datetime(2026, 3, 1, tzinfo=UTC)
+    return [t0 + timedelta(seconds=s) for s in seconds]
+
+
+@pytest.mark.parametrize(
+    "timer_events",
+    [
+        pytest.param([(2, "stop_all")], id="stop-only"),
+        pytest.param([(2, "stop")], id="plain-stop-only"),
+        pytest.param([(12, "start")], id="start-only"),
+        pytest.param([(12, "stop_all"), (2, "start")], id="pair-reversed"),
+    ],
+)
+def test_a_gap_with_only_one_side_of_a_timer_pair_is_a_dropout(timer_events: list) -> None:
+    """A pause needs both events: a stop at the gap's first record and a start at its last."""
+    stamps = _stamps(0, 1, 2, 12, 13, 14)
+    events = [(_stamps(at)[0], kind) for at, kind in timer_events]
+    assert _mode_from(stamps, events) == ("1 Hz", (), (10,))
+
+
+def test_a_decoded_dropout_fails_a_mode_cell_that_otherwise_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The dropout branch of ``decoded_problems``: interval and pauses agree, a dropout alone fails."""
+    real = decode("sample_run")
+    assert real.dropouts == ()
+    monkeypatch.setattr(sys.modules[__name__], "decode", lambda stem: replace(real, dropouts=(10,)))
+    problems = decoded_problems(_real_rows()["sample_run"])
+    assert len(problems) == 1 and problems[0].startswith("sample_run: mode says"), problems
+    assert "[10] s" in problems[0]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "interval"),
+    [
+        # Smart-like: 1 s is the commonest step but not a majority, and no gap is over 5 s.
+        pytest.param((0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22), "variable steps", id="smart-like-mixed-1-to-5-s"),
+        # Exactly half the steps are 1 s: half is not a majority.
+        pytest.param((0, 1, 2, 4, 7), "variable steps", id="half-is-not-a-majority"),
+        pytest.param((0, 1, 2, 3, 5), "1 Hz", id="three-of-four-is-a-majority"),
+        pytest.param((0, 6, 12, 18, 20, 21), "6 s steps", id="six-s-majority"),
+    ],
+)
+def test_the_interval_is_named_only_by_a_majority_of_the_steps(seconds: tuple, interval: str) -> None:
+    assert _mode_from(_stamps(*seconds), [])[0] == interval
+
+
+def test_a_variable_step_file_fails_against_every_readme_mode() -> None:
+    stamps = _stamps(0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22)
+    derived = _mode_from(stamps, [])
+    assert derived[0] not in {parse_mode(row.mode)[0] for row in _real_rows().values()}
+
+
+@pytest.mark.parametrize(
+    ("seconds", "timer_events", "expected"),
+    [
+        pytest.param((0, 6, 12, 18, 38, 44, 50), [], ("6 s steps", (), (20,)), id="20-s-gap-no-timer-pair"),
+        pytest.param((0, 6, 12, 18, 38, 44, 50), [(18, "stop_all"), (38, "start")], ("6 s steps", (20,), ()),
+                     id="20-s-gap-with-a-timer-pair"),
+        pytest.param((0, 6, 12, 18, 29, 35, 41), [], ("6 s steps", (), ()), id="11-s-gap-is-step-plus-5-not-over"),
+        pytest.param((0, 6, 12, 18, 30, 36, 42), [], ("6 s steps", (), (12,)), id="12-s-gap-is-over-step-plus-5"),
+    ],
+)
+def test_a_stepped_file_gets_the_dropout_check_over_step_plus_5_s(
+        seconds: tuple, timer_events: list, expected: tuple) -> None:
+    events = [(_stamps(at)[0], kind) for at, kind in timer_events]
+    assert _mode_from(_stamps(*seconds), events) == expected
 
 
 @pytest.mark.parametrize(

@@ -9,8 +9,10 @@ section 1, in the Shipyard data dir).
 fixture has no row, when a row names a missing file, when `kind` or `run proof` is outside its set,
 when `kind`, `mode` or `run proof` differs from the copy of the reference rows the test keeps, and
 when `positions`, `devices` or `mode` disagrees with the decoded file. For `mode` the decoded file
-gives the recording interval and the length of each pause (a record gap over 5 s between a timer
-stop and a timer start); the words `pause` and `auto-pause` are not checked.
+gives the recording interval, the step that more than half of the record steps share (a file
+with no such majority fails), and the length of each pause (a record gap over 5 s, or over the
+step plus 5 s in a stepped file, between a timer stop and a timer start; such a gap with no timer
+pair fails); the words `pause` and `auto-pause` are not checked.
 
 ## Columns
 
