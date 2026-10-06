@@ -41,10 +41,10 @@ def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> I
     """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
-    # rr_reconstruction runs before quality_gates.apply() so the
-    # chest-strap hr_source set during mapping (T024) is already in
-    # place before apply()'s "default to wrist_ppg when not already
-    # set" guard runs -- see code-review Fix 5.
+    # rr_reconstruction runs before quality_gates.apply() so the chest_strap
+    # that mapping._infer_hr_source set (from RR, or from a connected
+    # heart-rate sensor with HR) is already in place before apply()'s
+    # "default to wrist_ppg when not already set" guard -- code-review Fix 5.
     rr_intervals = rr_reconstruction.reconstruct(messages)
     if rr_intervals:
         # §2.2.3/§2.4.3 quality weight -- left None (not 0.0) for a
