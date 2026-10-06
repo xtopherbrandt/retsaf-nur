@@ -27,6 +27,13 @@ polynomial over 3.6, never ``metrics.gap``. The served ``avg_pace / gap_avg_pace
 distance-weighted mean g to 1e-6. The test also asserts that the split really is one direction:
 its distance-weighted mean grade is at least 0.02, so a 2.0 change in the linear coefficient moves
 the ratio by at least 0.011, far outside the tolerance.
+
+The oracle's clamp, its ``0 < dt <= 5 s`` bound and its ``max(dd, 0)`` are inert on this split (it
+holds no pause, no grade that reaches the clamp and no falling distance), so this module does not
+pin those production rules: the clamp is pinned by ``test_gap_cost_curve.py`` and row 19 of
+``test_session_features_probe_table.py``, the dt bound by ``test_segment_dt_boundaries`` in
+``test_session_time_base.py`` and probe row 5, and the falling distance by
+``test_a_regressing_distance_contributes_zero_and_flags_the_session`` in ``test_session_time_base.py``.
 """
 
 from __future__ import annotations
