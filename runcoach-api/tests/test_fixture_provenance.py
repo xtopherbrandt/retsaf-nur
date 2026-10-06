@@ -18,6 +18,8 @@ This module is the guard that keeps the table honest:
 - ``positions`` and ``devices`` are re-derived from the decoded file with
   fitdecode, using the reference's definitions, and a row that disagrees
   fails and names the file;
+- a fixture whose decoded file carries positions must be on ``POSITIONS_ALLOWED``, the files
+  committed with them; any other fails, pointing at the stripper, until the user rules on it;
 - ``mode`` is re-derived too, as far as the decoded file can say: the
   recording interval (``1 Hz`` when more than half the record steps are 1 s,
   ``6 s steps`` when more than half are 6 s; a file with no majority step is
@@ -99,6 +101,21 @@ REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
     "strap_health_snapshot_hrv": ("health snapshot", "1 Hz", "no"),
     "sample_health_snapshot": ("health snapshot", "1 Hz", "no"),
 }
+
+#: The fixtures that may carry position values: the seven files committed with them before the
+#: F014 stripping, read from the decoded files. Every other fixture is stripped with ``STRIPPER``
+#: before it is committed; a new file joins this list only after the user rules that its track may
+#: be published. The list is exact both ways: a listed file that decodes without positions fails.
+POSITIONS_ALLOWED = frozenset({
+    "sample_run",
+    "dev_fields_run",
+    "wrist_ppg_run",
+    "strap_run_hrv",
+    "strap_cool_down_walk",
+    "strap_hrv_sample_run",
+    "wrist_ppg_hrv_snapshot",
+})
+STRIPPER = "tests/support/strip_fit_positions.py"
 
 #: The record step that names each recording interval, and the gap above which a 1 Hz step is a
 #: pause or a dropout (a stepped file adds its step). A file whose steps have no majority is named
@@ -329,6 +346,18 @@ def decoded_problems(row: Row) -> list[str]:
     return problems
 
 
+def positions_problems(stem: str) -> list[str]:
+    """A fixture outside ``POSITIONS_ALLOWED`` whose decoded file carries position values."""
+    fields = decode(stem).position_fields
+    print(f"[slice compared] {stem}: {len(fields)} position field(s), "
+          f"on the allow-list {stem in POSITIONS_ALLOWED}")
+    if not fields or stem in POSITIONS_ALLOWED:
+        return []
+    return [f"{stem}.fit carries {len(fields)} position field(s) {list(fields)[:4]} and is not in "
+            f"POSITIONS_ALLOWED: strip it with {STRIPPER} before committing it. Only the user can "
+            "rule that its track may be published; add it to the list only after that ruling."]
+
+
 def test_every_fixture_has_a_provenance_row() -> None:
     """The directory-equals-table guard: a fixture added without a row would
     otherwise fall outside the table; a row whose file was removed would
@@ -350,6 +379,40 @@ def test_provenance_row_matches_the_decoded_file(stem: str) -> None:
     assert not problems, problems
     problems = decoded_problems(rows[stem])
     assert not problems, problems
+
+
+@pytest.mark.parametrize("stem", _on_disk())
+def test_a_fixture_with_positions_is_on_the_allow_list(stem: str) -> None:
+    """A new fixture with a GPS track fails until it is stripped or the user rules it may stay."""
+    problems = positions_problems(stem)
+    assert not problems, problems
+
+
+def test_the_positions_allow_list_names_only_fixtures_that_carry_positions() -> None:
+    """The list stays exact: a listed file that is removed or stripped leaves the list too."""
+    carrying = sorted(stem for stem in _on_disk() if decode(stem).position_fields)
+    print(f"[slice compared] decoded with positions {carrying}; allowed {sorted(POSITIONS_ALLOWED)}")
+    assert carrying == sorted(POSITIONS_ALLOWED)
+
+
+def test_a_planted_fixture_with_positions_fails_and_points_at_the_stripper(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A byte copy of sample_run under a new name, in a scratch fixture dir, is refused."""
+    (tmp_path / "planted_run.fit").write_bytes((FIXTURES / "sample_run.fit").read_bytes())
+    monkeypatch.setattr(sys.modules[__name__], "FIXTURES", tmp_path)
+    try:
+        problems = positions_problems("planted_run")
+    finally:
+        decode.cache_clear()
+    assert len(problems) == 1, problems
+    assert problems[0].startswith("planted_run.fit carries ")
+    assert STRIPPER in problems[0] and "user" in problems[0]
+
+
+def test_the_readme_says_new_fixtures_are_stripped() -> None:
+    prose = re.sub(r"\s+", " ", _readme_text())
+    assert STRIPPER in prose and "unless the user rules otherwise" in prose, (
+        f"the README does not say new fixtures are stripped with {STRIPPER}")
 
 
 def test_the_reference_rows_name_every_fixture() -> None:

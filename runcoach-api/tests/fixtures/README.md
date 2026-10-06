@@ -14,6 +14,10 @@ with no such majority reads `variable steps`, which no row uses, so it fails), a
 each pause (a record gap over 5 s, or over the step plus 5 s in a stepped file, between a timer
 stop and a timer start; such a gap with no timer pair fails); the word `pause` is not checked.
 
+A new fixture is stripped of position values with `tests/support/strip_fit_positions.py` before it
+is committed, unless the user rules otherwise; the test enforces it, failing any file with
+positions that is not on its allow-list of the seven files committed with them.
+
 ## Columns
 
 - **file**: the fixture's name without `.fit`.
