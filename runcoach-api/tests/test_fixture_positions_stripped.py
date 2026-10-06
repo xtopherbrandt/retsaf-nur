@@ -30,7 +30,13 @@ another inside the longitude range of a box: ``sample_run.fit``'s own track
 at test time from that file's decoded record positions and never printed;
 failures name the message and field numbers and count them, never a value.
 A planted pair inside the box, written into a copy of a stripped file with
-the CRC recomputed, must fail the same check.
+the CRC recomputed, must fail the same check. The plant targets are fixed
+message and field numbers whose base type the test asserts, located by a
+byte walk of the test's own that reads every field whatever its type, so
+the scanner under test never chooses what it is tested on: one pair each in
+sint32, uint32, uint32z and float32 fields, one in the second and fourth
+elements of one uint32 array field, and one just outside the track's own
+bounding box but inside the 1-degree margin.
 """
 
 from __future__ import annotations
@@ -148,8 +154,8 @@ def _sint32(data: bytes, offset: int, big_endian: bool) -> int:
     return struct.unpack_from(">i" if big_endian else "<i", data, offset)[0]
 
 
-def _area_box() -> tuple[tuple[float, float], tuple[float, float]]:
-    """``((lat_lo, lat_hi), (lon_lo, lon_hi))`` in semicircles: sample_run's track, widened by 1 degree."""
+def _track_extent() -> tuple[tuple[int, int], tuple[int, int]]:
+    """``((lat_min, lat_max), (lon_min, lon_max))`` in semicircles: sample_run's own track."""
     lats, lons = [], []
     with fitdecode.FitReader(str(FIXTURES / BOX_SOURCE)) as reader:
         for frame in reader:
@@ -160,8 +166,14 @@ def _area_box() -> tuple[tuple[float, float], tuple[float, float]]:
                     lats.append(lat)
                     lons.append(lon)
     assert len(lats) > 100, f"{BOX_SOURCE}: only {len(lats)} positioned records to build the box from"
+    return (min(lats), max(lats)), (min(lons), max(lons))
+
+
+def _area_box() -> tuple[tuple[float, float], tuple[float, float]]:
+    """``((lat_lo, lat_hi), (lon_lo, lon_hi))`` in semicircles: sample_run's track, widened by 1 degree."""
+    (lat_min, lat_max), (lon_min, lon_max) = _track_extent()
     widen = SEMICIRCLES_PER_DEGREE
-    return (min(lats) - widen, max(lats) + widen), (min(lons) - widen, max(lons) + widen)
+    return (lat_min - widen, lat_max + widen), (lon_min - widen, lon_max + widen)
 
 
 def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
@@ -199,20 +211,81 @@ def test_the_check_sees_the_unstripped_track_it_was_built_from() -> None:
     assert hits.get("record (20) fields 0/1", 0) > 100, sorted(hits)
 
 
-def test_a_planted_pair_in_an_unknown_message_fails_the_check(tmp_path: Path) -> None:
-    """The check's failing branch: a pair inside the box, written into an unknown message of a copy."""
+# The plant targets are fixed by number, not chosen by the scanner under test. Each base type is the
+# low five bits of the FIT base-type byte, written out here rather than read from
+# FOUR_BYTE_BASE_TYPES, and asserted against the file before anything is planted.
+SINT32, UINT32, FLOAT32, UINT32Z = 0x05, 0x06, 0x08, 0x0C
+
+#: id -> (global message, (lat field, element), (lon field, element), base type, where the pair lies).
+#: Targets in the first message of that number in ``hilly_run_8k_fr945.fit``.
+PLANTS: dict[str, tuple[int, tuple[int, int], tuple[int, int], int, str]] = {
+    "sint32-unknown-message": (140, (5, 0), (6, 0), SINT32, "centre"),
+    "uint32-unknown-message": (113, (2, 0), (3, 0), UINT32, "centre"),
+    "uint32z-device-info": (23, (3, 0), (24, 0), UINT32Z, "centre"),
+    "float32-session": (18, (181, 0), (187, 0), FLOAT32, "centre"),
+    "uint32-array-non-first-elements": (216, (2, 1), (2, 3), UINT32, "centre"),
+    "sint32-in-the-1-degree-margin": (140, (2, 0), (3, 0), SINT32, "margin"),
+}
+
+
+def _fields_by_message(data: bytes):
+    """Yield ``(global_num, {field_num: (offset, size, base_type, big_endian)})`` per data message.
+
+    The test's own byte walk for choosing plant targets: it reads every field, whatever its base
+    type or size, and shares nothing with the scanner's base-type set or element split.
+    """
+    header_size = data[0]
+    end = header_size + struct.unpack_from("<I", data, 4)[0]
+    definitions: dict[int, tuple[bool, int, list[tuple[int, int, int]]]] = {}
+    pos = header_size
+    while pos < end:
+        record_header = data[pos]
+        pos += 1
+        local = record_header & 0x0F
+        if record_header & 0x40:
+            big_endian = data[pos + 1] == 1
+            global_num = struct.unpack_from(">H" if big_endian else "<H", data, pos + 2)[0]
+            count = data[pos + 4]
+            definitions[local] = (big_endian, global_num,
+                                  [tuple(data[pos + 5 + 3 * k: pos + 8 + 3 * k]) for k in range(count)])
+            pos += 5 + 3 * count
+            continue
+        big_endian, global_num, fields = definitions[local]
+        located = {}
+        for field_num, size, base_type in fields:
+            located[field_num] = (pos, size, base_type, big_endian)
+            pos += size
+        yield global_num, located
+
+
+def _plant_offset(target: tuple[int, int, int, bool], element: int, base_type: int) -> tuple[int, bool]:
+    offset, size, found_type, big_endian = target
+    assert found_type & 0x1F == base_type, f"base type {found_type:#04x}, expected {base_type:#04x}"
+    assert size >= 4 * (element + 1), f"field of {size} bytes has no element {element}"
+    return offset + 4 * element, big_endian
+
+
+@pytest.mark.parametrize("plant", sorted(PLANTS))
+def test_a_planted_pair_fails_the_check(plant: str, tmp_path: Path) -> None:
+    """The check's failing branch, once per base type, array element and box edge it must cover."""
+    global_num, (lat_field, lat_element), (lon_field, lon_element), base_type, where = PLANTS[plant]
     box = _area_box()
-    (lat_lo, lat_hi), (lon_lo, lon_hi) = box
+    if where == "centre":
+        (lat_lo, lat_hi), (lon_lo, lon_hi) = box
+        lat, lon = (lat_lo + lat_hi) / 2, (lon_lo + lon_hi) / 2
+    else:
+        # Half a degree past the track's own north-east corner: outside the track, inside the margin.
+        (_, lat_max), (_, lon_max) = _track_extent()
+        lat, lon = lat_max + SEMICIRCLES_PER_DEGREE / 2, lon_max + SEMICIRCLES_PER_DEGREE / 2
     data = bytearray((FIXTURES / HILLY_FIXTURES[0]).read_bytes())
-    target = next(
-        (global_num, elements)
-        for global_num, elements in _four_byte_elements(bytes(data))
-        if global_num not in profile.MESSAGE_TYPES and len({e[0] for e in elements}) >= 2
-    )
-    global_num, elements = target
-    lat_element = elements[0]
-    lon_element = next(e for e in elements if e[0] != lat_element[0])
-    for (_, _, offset, big_endian), value in ((lat_element, (lat_lo + lat_hi) / 2), (lon_element, (lon_lo + lon_hi) / 2)):
+    fields = next(located for number, located in _fields_by_message(bytes(data)) if number == global_num)
+    assert lat_field in fields and lon_field in fields, f"message {global_num} lacks field {lat_field} or {lon_field}"
+    name = profile.MESSAGE_TYPES[global_num].name if global_num in profile.MESSAGE_TYPES else "unknown"
+    key = f"{name} ({global_num}) fields {lat_field}/{lon_field}"
+    assert key not in _pairs_in_box(bytes(data), box)[1], f"{key} is in the box before the plant"
+
+    for (field_num, element), value in (((lat_field, lat_element), lat), ((lon_field, lon_element), lon)):
+        offset, big_endian = _plant_offset(fields[field_num], element, base_type)
         struct.pack_into(">i" if big_endian else "<i", data, offset, int(value))
     end = data[0] + struct.unpack_from("<I", data, 4)[0]
     struct.pack_into("<H", data, end, compute_crc(data, start=0, end=end))
@@ -222,6 +295,7 @@ def test_a_planted_pair_in_an_unknown_message_fails_the_check(tmp_path: Path) ->
         assert sum(1 for _ in reader) > 0
 
     _, hits = _pairs_in_box(bytes(data), box)
-    print(f"[slice compared] planted into unknown ({global_num}) fields {lat_element[0]}/{lon_element[0]}: "
-          f"{len(hits)} pair identities in the box")
-    assert f"unknown ({global_num}) fields {lat_element[0]}/{lon_element[0]}" in hits
+    # Identities and counts only: never a value.
+    print(f"[slice compared] {plant}: planted into {key} elements {lat_element}/{lon_element}; "
+          f"{len(hits)} pair identities in the box: {sorted(hits)}")
+    assert key in hits, sorted(hits)
