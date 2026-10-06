@@ -17,20 +17,41 @@ also still upload with 201.
 The originals live outside the repository, so the byte-diff and
 bounding-box checks made when the files were written are build-time
 evidence, recorded in the commit that added them.
+
+**A field-agnostic check.** The checks above test the stripper's own field
+set, so a position held in a field the set does not name (an unknown
+message, a vendor field) would pass them. The last check does not use the
+set. It walks every data message of each stripped file at the byte level,
+known and unknown messages alike, and reads every element of every field
+whose base type is 4 bytes wide (sint32, uint32, uint32z, float32) as a
+sint32. A message fails when one element falls inside the latitude range and
+another inside the longitude range of a box: ``sample_run.fit``'s own track
+(the athlete's area), widened by 1 degree on every side. The box is computed
+at test time from that file's decoded record positions and never printed;
+failures name the message and field numbers and count them, never a value.
+A planted pair inside the box, written into a copy of a stripped file with
+the CRC recomputed, must fail the same check.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import struct
 from pathlib import Path
 
 import fitdecode
 import pytest
 from fastapi.testclient import TestClient
+from fitdecode import profile
+from fitdecode.utils import compute_crc
 from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HILLY_FIXTURES = ("hilly_run_8k_fr945.fit", "hilly_long_run_17k_fr945.fit")
+BOX_SOURCE = "sample_run.fit"
+SEMICIRCLES_PER_DEGREE = 2**31 / 180
+#: FIT base types 4 bytes wide, by their low five bits: sint32, uint32, float32, uint32z.
+FOUR_BYTE_BASE_TYPES = frozenset({0x05, 0x06, 0x08, 0x0C})
 
 _SPEC = importlib.util.spec_from_file_location(
     "strip_fit_positions", Path(__file__).parent / "support" / "strip_fit_positions.py"
@@ -76,3 +97,131 @@ def test_the_stripped_fixture_uploads(fixture_name: str, post_fit) -> None:
     with TestClient(app) as client:
         response = post_fit(client, fixture_name)
     assert response.status_code == 201, response.text
+
+
+# ---------------------------------------------------------------------------
+# the field-agnostic check: no lat/long-shaped pair inside the athlete's area
+# ---------------------------------------------------------------------------
+
+
+def _four_byte_elements(data: bytes):
+    """Yield ``(global_num, [(field_num, element_index, offset, big_endian)])`` per data message.
+
+    A byte-level walk that keeps the current definition of each local message number. Every
+    field whose base type is 4 bytes wide contributes each of its 4-byte elements. The walk
+    refuses what it cannot read safely (compressed-timestamp headers, developer fields), so a
+    file it cannot scan fails rather than passes.
+    """
+    header_size = data[0]
+    end = header_size + struct.unpack_from("<I", data, 4)[0]
+    definitions: dict[int, tuple[bool, int, list[tuple[int, int, int]]]] = {}
+    pos = header_size
+    while pos < end:
+        record_header = data[pos]
+        pos += 1
+        assert not record_header & 0x80, f"compressed-timestamp header at offset {pos - 1}"
+        local = record_header & 0x0F
+        if record_header & 0x40:
+            assert not record_header & 0x20, f"developer-data definition at offset {pos - 1}"
+            big_endian = data[pos + 1] == 1
+            global_num = struct.unpack_from(">H" if big_endian else "<H", data, pos + 2)[0]
+            n_fields = data[pos + 4]
+            pos += 5
+            fields = []
+            for _ in range(n_fields):
+                fields.append((data[pos], data[pos + 1], data[pos + 2]))
+                pos += 3
+            definitions[local] = (big_endian, global_num, fields)
+            continue
+        big_endian, global_num, fields = definitions[local]
+        elements = []
+        for field_num, size, base_type in fields:
+            if base_type & 0x1F in FOUR_BYTE_BASE_TYPES and size % 4 == 0:
+                for index, offset in enumerate(range(pos, pos + size, 4)):
+                    elements.append((field_num, index, offset, big_endian))
+            pos += size
+        yield global_num, elements
+    assert pos == end, f"walk ended at {pos}, data ends at {end}"
+
+
+def _sint32(data: bytes, offset: int, big_endian: bool) -> int:
+    return struct.unpack_from(">i" if big_endian else "<i", data, offset)[0]
+
+
+def _area_box() -> tuple[tuple[float, float], tuple[float, float]]:
+    """``((lat_lo, lat_hi), (lon_lo, lon_hi))`` in semicircles: sample_run's track, widened by 1 degree."""
+    lats, lons = [], []
+    with fitdecode.FitReader(str(FIXTURES / BOX_SOURCE)) as reader:
+        for frame in reader:
+            if isinstance(frame, fitdecode.FitDataMessage) and frame.name == "record":
+                lat = frame.get_value("position_lat", fallback=None)
+                lon = frame.get_value("position_long", fallback=None)
+                if lat is not None and lon is not None:
+                    lats.append(lat)
+                    lons.append(lon)
+    assert len(lats) > 100, f"{BOX_SOURCE}: only {len(lats)} positioned records to build the box from"
+    widen = SEMICIRCLES_PER_DEGREE
+    return (min(lats) - widen, max(lats) + widen), (min(lons) - widen, max(lons) + widen)
+
+
+def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
+    """``(elements scanned, {message/fields identity: messages})`` for messages holding a pair in the box."""
+    (lat_lo, lat_hi), (lon_lo, lon_hi) = box
+    scanned = 0
+    hits: dict[str, int] = {}
+    for global_num, elements in _four_byte_elements(data):
+        scanned += len(elements)
+        values = [(field_num, index, _sint32(data, offset, big_endian))
+                  for field_num, index, offset, big_endian in elements]
+        in_lat = [(f, i) for f, i, v in values if lat_lo <= v <= lat_hi]
+        in_lon = [(f, i) for f, i, v in values if lon_lo <= v <= lon_hi]
+        pairs = {(a[0], b[0]) for a in in_lat for b in in_lon if a != b}
+        for lat_field, lon_field in sorted(pairs):
+            name = profile.MESSAGE_TYPES[global_num].name if global_num in profile.MESSAGE_TYPES else "unknown"
+            key = f"{name} ({global_num}) fields {lat_field}/{lon_field}"
+            hits[key] = hits.get(key, 0) + 1
+    return scanned, hits
+
+
+@pytest.mark.parametrize("fixture_name", HILLY_FIXTURES)
+def test_no_lat_long_shaped_pair_lies_in_the_athletes_area(fixture_name: str) -> None:
+    scanned, hits = _pairs_in_box((FIXTURES / fixture_name).read_bytes(), _area_box())
+    # Identities and counts only: never a value, never the box.
+    print(f"[slice compared] {fixture_name}: {scanned} four-byte elements scanned, {len(hits)} pair identities in the box")
+    assert scanned > 0, f"{fixture_name}: no four-byte element was scanned"
+    assert not hits, f"{fixture_name}: lat/long-shaped pairs inside the area box: {hits}"
+
+
+def test_the_check_sees_the_unstripped_track_it_was_built_from() -> None:
+    """A positive control: ``sample_run.fit`` keeps its track, so its record positions are hits."""
+    _, hits = _pairs_in_box((FIXTURES / BOX_SOURCE).read_bytes(), _area_box())
+    print(f"[slice compared] {BOX_SOURCE}: pair identities in the box {sorted(hits)}")
+    assert hits.get("record (20) fields 0/1", 0) > 100, sorted(hits)
+
+
+def test_a_planted_pair_in_an_unknown_message_fails_the_check(tmp_path: Path) -> None:
+    """The check's failing branch: a pair inside the box, written into an unknown message of a copy."""
+    box = _area_box()
+    (lat_lo, lat_hi), (lon_lo, lon_hi) = box
+    data = bytearray((FIXTURES / HILLY_FIXTURES[0]).read_bytes())
+    target = next(
+        (global_num, elements)
+        for global_num, elements in _four_byte_elements(bytes(data))
+        if global_num not in profile.MESSAGE_TYPES and len({e[0] for e in elements}) >= 2
+    )
+    global_num, elements = target
+    lat_element = elements[0]
+    lon_element = next(e for e in elements if e[0] != lat_element[0])
+    for (_, _, offset, big_endian), value in ((lat_element, (lat_lo + lat_hi) / 2), (lon_element, (lon_lo + lon_hi) / 2)):
+        struct.pack_into(">i" if big_endian else "<i", data, offset, int(value))
+    end = data[0] + struct.unpack_from("<I", data, 4)[0]
+    struct.pack_into("<H", data, end, compute_crc(data, start=0, end=end))
+    planted = tmp_path / "planted.fit"
+    planted.write_bytes(bytes(data))
+    with fitdecode.FitReader(str(planted), check_crc=fitdecode.CrcCheck.RAISE) as reader:
+        assert sum(1 for _ in reader) > 0
+
+    _, hits = _pairs_in_box(bytes(data), box)
+    print(f"[slice compared] planted into unknown ({global_num}) fields {lat_element[0]}/{lon_element[0]}: "
+          f"{len(hits)} pair identities in the box")
+    assert f"unknown ({global_num}) fields {lat_element[0]}/{lon_element[0]}" in hits
