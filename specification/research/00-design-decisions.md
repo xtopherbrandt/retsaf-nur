@@ -516,7 +516,7 @@ Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes.
 Pinned: none
 Why: decision C19 changes the wording for resting HRV only, since Section 3 applies fidelity as an ordinal rank and computes no confidence weight, and other PPG input keeps its down-weighting.
 
-**REG-24.** The chest-strap signature IS the presence of RR in an activity.
+**REG-24.** The chest-strap signature IS the presence of RR in an activity or, in an activity with no RR, a heart-rate sensor connected over ANT+ or Bluetooth Low Energy while the activity records a positive heart rate.
 Scope: every activity the system checks for a chest strap.
 Not: a resting HRV capture, whose source is its declared tier.
 Pinned: none
