@@ -26,6 +26,14 @@ docstrings, the CHANGELOG, spec and reference documents, and `.claude/rules/`.
   `grep`), prints every compared file and every hit, and fails a hit whose introducing commit is
   scoped to anything but that same task ID. `--strict` also fails the `listed` hits, the ones
   introduced under a `sprint-NNN` scope or no scope.
+- **An ID is matched in any case and inside identifiers.** `(t249 does)`, `test_..._until_t249`,
+  `T249_SERIAL` and `T249a` all name T249, because test names and constants are durable text too;
+  `T2490`, `UT249` and `1T249` name no ID.
+- **The introducing commit is the one that wrote the ID on the line**, not the last one to touch
+  it. A whitespace-only change is ignored, and when a later commit rewords a line that already
+  named the ID, the sweep walks back to the commit that first wrote it: a hand-off that the task it
+  names later rewords still fails, and the report says which commit last edited the line. The walk
+  is hunk-sized: if the rewording hunk removed several lines naming the ID, it follows the first.
 
 ## Why
 

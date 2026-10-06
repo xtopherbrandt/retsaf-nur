@@ -2,7 +2,7 @@
 
 ``runcoach-api/tests/support/sweep_sprint_task_ids.py`` reads the added lines of a sprint's diff and
 reports every mention of one of the sprint's own task IDs, with the disposition the commit that
-introduced the line gives it: ``exempt`` (the commit's scope is that same ID), ``listed`` (a
+wrote the ID on that line gives it: ``exempt`` (the commit's scope is that same ID), ``listed`` (a
 ``sprint-NNN`` scope or none) or ``fail`` (any other scope). The release gate runs it ``--strict``.
 
 Three kinds of check, each against real git rather than a mock:
@@ -12,8 +12,10 @@ Three kinds of check, each against real git rather than a mock:
   siblings). The script must fail on that range and name the seven lines that carry them. CI checks
   out with ``fetch-depth: 0``, so both commits are present; if they are not, this test fails rather
   than skips.
-- **The planted checks.** A temporary clone of this repository gets one commit adding
-  "until T249 lands" under three subjects, so each disposition is shown to follow the commit scope.
+- **The planted checks.** A temporary clone of this repository gets commits built with plumbing:
+  "until T249 lands" under three subjects, so each disposition is shown to follow the commit scope;
+  every spelling of an ID and the spellings that are not one; paths git pads or quotes; a reindent
+  (which neither hides nor relabels a hand-off); and a later task rewording a hand-off that names it.
 - **The ID parser and the scope rule**, as plain functions.
 
 Every task ID in this module belongs to sprint-010, so the module never names an ID of the sprint
@@ -75,6 +77,7 @@ def test_ids_accept_ranges_lists_and_an_en_dash():
     assert sweep.parse_ids("T247-T250") == {"T247", "T248", "T249", "T250"}
     assert sweep.parse_ids("T247,T249") == {"T247", "T249"}
     assert sweep.parse_ids("T247–T249, T253") == {"T247", "T248", "T249", "T253"}
+    assert sweep.parse_ids("t247-t248") == {"T247", "T248"}, "a lowercase range names the same IDs"
     with pytest.raises(ValueError):
         sweep.parse_ids("T253-T247")
     with pytest.raises(ValueError):
@@ -145,35 +148,45 @@ def clone(tmp_path_factory):
     )
     _git(path, "config", "user.name", "sweep test")
     _git(path, "config", "user.email", "sweep@example.invalid")
+    # The commits are plumbing and never checked out, so a path NTFS refuses (a double quote) may be planted.
+    _git(path, "config", "core.protectNTFS", "false")
     return path
 
 
-def _plant(repo: Path, subject: str, name: str) -> str:
-    """Commits one new file whose wrapped prose says "until T249 lands" on top of HEAD; returns its sha."""
-    blob = subprocess.run(
-        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
-        input="The column stays empty\nuntil T249\nlands.\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    base = _git(repo, "rev-parse", "HEAD")
-    index = repo / ".git" / f"index-{name}"
-    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
-    subprocess.run(["git", "-C", str(repo), "read-tree", base], env=env, check=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "update-index", "--add", "--cacheinfo", f"100644,{blob},planted/{name}.md"],
-        env=env,
-        check=True,
-    )
+#: Wrapped prose whose second line carries the hand-off "until T249 lands".
+HAND_OFF = "The column stays empty\nuntil T249\nlands.\n"
+
+
+def _commit(repo: Path, parent: str, files: dict[str, str], subject: str) -> str:
+    """Commits ``files`` (path -> text) on top of ``parent`` with plumbing; returns the new sha."""
+    env = {**os.environ, "GIT_INDEX_FILE": str(repo / ".git" / "index-plant")}
+    subprocess.run(["git", "-C", str(repo), "read-tree", parent], env=env, check=True)
+    for path, text in files.items():
+        blob = subprocess.run(
+            ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+            input=text.encode("utf-8"),
+            capture_output=True,
+            check=True,
+        ).stdout.decode().strip()
+        subprocess.run(
+            ["git", "-C", str(repo), "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}"],
+            env=env,
+            check=True,
+        )
     tree = subprocess.run(
         ["git", "-C", str(repo), "write-tree"], env=env, capture_output=True, text=True, check=True
     ).stdout.strip()
-    return _git(repo, "commit-tree", tree, "-p", base, "-m", subject)
+    return _git(repo, "commit-tree", tree, "-p", parent, "-m", subject)
 
 
-def _run(sweep, repo: Path, head: str, *extra: str) -> int:
-    return sweep.main(["--repo", str(repo), "--base", f"{head}~1", "--head", head, "--ids", REPLAY_IDS, *extra])
+def _plant(repo: Path, subject: str, name: str) -> str:
+    """Commits ``planted/<name>.md`` holding :data:`HAND_OFF` on top of HEAD; returns its sha."""
+    return _commit(repo, _git(repo, "rev-parse", "HEAD"), {f"planted/{name}.md": HAND_OFF}, subject)
+
+
+def _run(sweep, repo: Path, head: str, *extra: str, base: str | None = None) -> int:
+    base = base or f"{head}~1"
+    return sweep.main(["--repo", str(repo), "--base", base, "--head", head, "--ids", REPLAY_IDS, *extra])
 
 
 def test_a_feature_scope_is_not_a_self_tag(clone, capsys):
@@ -204,6 +217,159 @@ def test_the_self_tag_is_exempt(clone, capsys):
     out = capsys.readouterr().out
     print(out)
     assert "exempt" in out and "planted/self.md:2" in out
+
+
+# --- every spelling of an ID, and the spellings that are not one ---------------------------------
+
+#: This repository writes task IDs in test names and constants in lowercase and snake_case
+#: (``..._since_t164``, ``T017_D``). Each shape below names T249 and must be a hit.
+ID_SHAPES = (
+    ("lowercase", "Nothing populates it yet (t249 does).\n"),
+    ("snake-lowercase", "def test_vacuous_until_t249():\n    pass\n"),
+    ("snake-uppercase", "def test_vacuous_until_T249():\n    pass\n"),
+    ("constant", "T249_SERIAL = 1\n"),
+    ("letter-suffix", "See T249a for the serial.\n"),
+)
+
+#: The negative class: a fourth digit, or a letter or digit before the T, makes it not an ID.
+NOT_ID_SHAPES = (
+    ("four-digits", "Row T2490 of the table.\n"),
+    ("letter-before", "The UT249 code.\n"),
+    ("digit-before", "Code 1T249 of the serial.\n"),
+)
+
+
+@pytest.mark.parametrize(("shape", "text"), ID_SHAPES, ids=[shape for shape, _ in ID_SHAPES])
+def test_every_spelling_of_an_id_is_a_hit(clone, capsys, shape, text):
+    sweep = _load_sweep()
+    path = f"planted/shape-{shape}.py"
+    head = _commit(clone, _git(clone, "rev-parse", "HEAD"), {path: text}, "feat(T248): plant a hand-off")
+    rc = _run(sweep, clone, head, "--strict")
+    out = capsys.readouterr().out
+    print(out)
+    assert rc == 1, f"{shape}: the sweep passed with T249 in {text!r}"
+    assert f"fail   {path}:1 T249 " in out
+
+
+@pytest.mark.parametrize(("shape", "text"), NOT_ID_SHAPES, ids=[shape for shape, _ in NOT_ID_SHAPES])
+def test_a_longer_number_or_a_prefixed_t_is_not_an_id(clone, capsys, shape, text):
+    sweep = _load_sweep()
+    path = f"planted/not-id-{shape}.md"
+    head = _commit(clone, _git(clone, "rev-parse", "HEAD"), {path: text}, "feat(T248): plant a non-id")
+    rc = _run(sweep, clone, head, "--strict")
+    out = capsys.readouterr().out
+    print(out)
+    assert f"compared {path}\n" in out
+    assert rc == 0 and "1 files compared, 0 hits" in out, f"{shape}: {text!r} was read as an ID"
+
+
+# --- paths git pads or quotes in the diff header -----------------------------------------------
+
+#: git writes "+++ b/my notes.md<TAB>" for a path with a space and C-quotes a path holding a quote.
+#: The script sets ``core.quotepath=off``, so a non-ASCII path is written unquoted.
+ODD_PATHS = (
+    ("space", "planted/my notes.md"),
+    ("quote", 'planted/say "hi".md'),
+    ("non-ascii", "planted/café.md"),
+)
+
+
+@pytest.mark.parametrize(("label", "path"), ODD_PATHS, ids=[label for label, _ in ODD_PATHS])
+def test_a_path_git_pads_or_quotes_is_swept(clone, capsys, label, path):
+    sweep = _load_sweep()
+    head = _commit(clone, _git(clone, "rev-parse", "HEAD"), {path: HAND_OFF}, "test(f014): plant a hand-off")
+    rc = _run(sweep, clone, head)
+    out = capsys.readouterr().out
+    print(out)
+    assert rc == 1, f"{label}: expected a fail hit, got rc {rc}"
+    assert f"compared {path}\n" in out
+    assert f"fail   {path}:2 T249 " in out
+
+
+def test_a_c_quoted_path_is_unquoted():
+    sweep = _load_sweep()
+    assert sweep.unquote_path('"b/caf\\303\\251.md"') == "b/café.md"
+    assert sweep.unquote_path('"b/say \\"hi\\".md"') == 'b/say "hi".md'
+    assert sweep.unquote_path('"b/tab\\there"') == "b/tab\there"
+    assert sweep.unquote_path("b/my notes.md") == "b/my notes.md"
+
+
+# --- whitespace-only changes ---------------------------------------------------------------------
+
+
+def test_a_reindent_neither_hides_nor_relabels_a_hand_off(clone, capsys):
+    """A reindent under a sprint scope is not the commit that wrote the hand-off, and adds no text."""
+    sweep = _load_sweep()
+    base = _git(clone, "rev-parse", "HEAD")
+    path = "planted/reindent.md"
+    wrote = _commit(clone, base, {path: HAND_OFF}, "test(f014): plant a hand-off")
+    reindented = _commit(
+        clone, wrote, {path: HAND_OFF.replace("until", "    until")}, "chore(sprint-010): reindent the prose"
+    )
+
+    # Both commits in range: the hit is judged by the commit that wrote it (blame -w).
+    rc = _run(sweep, clone, reindented, base=base)
+    out = capsys.readouterr().out
+    print(out)
+    assert rc == 1, "a reindent under chore(sprint-010) turned the test(f014) hand-off into a pass"
+    assert f"fail   {path}:2 T249 ({wrote[:7]} test(f014)" in out
+
+    # Only the reindent in range: a whitespace-only change adds no line to sweep (diff -w).
+    rc = _run(sweep, clone, reindented, "--strict", base=wrote)
+    out = capsys.readouterr().out
+    print(out)
+    assert rc == 0 and ", 0 hits" in out, "a whitespace-only change was swept as new text"
+
+
+def test_a_reindented_neighbour_is_not_the_line_it_handed_off_from(clone, capsys):
+    """The commit that adds a hand-off beside a reindented line naming the same ID wrote the hand-off."""
+    sweep = _load_sweep()
+    base = _git(clone, "rev-parse", "HEAD")
+    path = "planted/neighbour.md"
+    noted = _commit(clone, base, {path: "See T249 for the serial.\n"}, "test(T249): note the serial")
+    added = _commit(
+        clone,
+        noted,
+        {path: "  See T249 for the serial.\nThe column stays empty until T249 lands.\n"},
+        "feat(T248): add the column",
+    )
+    hits = sweep.sweep(clone, base, added, sweep.parse_ids(REPLAY_IDS))
+    print(hits)
+    assert [(hit.line, hit.disposition, hit.commit) for hit in hits] == [
+        (1, "exempt", noted),
+        (2, "fail", added),
+    ]
+
+
+# --- a later task that rewords the hand-off -----------------------------------------------------
+
+REWORDS = (
+    # feat(T248) hands off to T249, then feat(T249) rewords the line and keeps the ID.
+    ("hand-off", "None until T249 populates it.\n", "None until T249 fills it.\n", "fail"),
+    # feat(T249) rewrites a line that named no ID into one naming itself.
+    ("self-tag", "None yet.\n", "Filled by T249.\n", "exempt"),
+)
+
+
+@pytest.mark.parametrize(
+    ("label", "before", "after", "expected"), REWORDS, ids=[label for label, *_ in REWORDS]
+)
+def test_a_hand_off_is_judged_at_the_commit_that_wrote_the_id(clone, capsys, label, before, after, expected):
+    sweep = _load_sweep()
+    base = _git(clone, "rev-parse", "HEAD")
+    path = f"planted/reword-{label}.md"
+    wrote = _commit(clone, base, {path: before}, "feat(T248): add the column")
+    reworded = _commit(clone, wrote, {path: after}, "feat(T249): populate the column")
+    hits = sweep.sweep(clone, base, reworded, sweep.parse_ids(REPLAY_IDS))
+    print(hits)
+    assert [hit.disposition for hit in hits] == [expected], hits
+    assert hits[0].commit == (wrote if expected == "fail" else reworded)
+    rc = _run(sweep, clone, reworded, "--strict", base=base)
+    out = capsys.readouterr().out
+    print(out)
+    assert rc == (1 if expected == "fail" else 0)
+    if expected == "fail":
+        assert f"last edited by {reworded[:7]} feat(T249)" in out, "the rewording commit is not reported"
 
 
 # --- the learnings rule that points at the sweep ------------------------------------------------
