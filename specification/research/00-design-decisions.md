@@ -439,7 +439,7 @@ Pinned: none
 
 **REG-09.** Data-quality gating MUST require 1 Hz recording, and a chest strap for any at-or-above-threshold HR metric.
 Scope: every recording the system ingests, and every at-or-above-threshold HR metric.
-Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs; and a rejection of optical HR that bears REG-24's chest-strap signature, since the chest strap this rule requires is that signature, so three accepted limits pass its gate: an external optical sensor connected over ANT+ or Bluetooth Low Energy, wrist HR while a strap is paired but not worn, and wrist HR after a strap drops out mid-activity.
+Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs; and optical HR that bears REG-24's chest-strap signature, which is the chest strap this rule requires, so it passes the gate in three accepted limits: an external optical sensor connected over ANT+ or Bluetooth Low Energy, wrist HR while a strap is paired but not worn, and wrist HR after a strap drops out mid-activity.
 Pinned: none
 
 **REG-10.** The four course/environment pace modifiers MUST compose multiplicatively in the order altitude → heat/humidity → wind → grade.
