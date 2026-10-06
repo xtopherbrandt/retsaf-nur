@@ -1,21 +1,24 @@
-"""The real running fixtures through ``GET /sessions/{id}/features``, against an independent oracle.
+"""The real running fixtures through ``GET /sessions/{id}/features``, against an oracle outside the code.
 
 F013 AC1 and AC7; F014 AC3, AC4 and AC5 for the two hilly runs.
 
-Every expected value here was authored away from the module under test.
+No expected value here is imported from the module under test; how independent
+each row is differs, and is stated below.
 
-**The GAP ratio table** (``ORACLE_RATIOS``) was measured at discuss time by a
-script that shared no code with the metrics package: it read the fixtures, took
-the gradient over +-25 m of distance on the gate-smoothed altitude, and priced
+**The GAP ratio table** (``ORACLE_RATIOS``) was measured by a script that
+shared no code with the metrics package: it read the fixtures, took the
+gradient over +-25 m of distance on the gate-smoothed altitude, and priced
 each segment with Minetti's polynomial. The rows for ``dev_fields_run``,
 ``sample_run``, ``strap_run_hrv`` and ``wrist_ppg_run`` come from the F013
 reference, measured before the metrics package existed, and the critic
-reproduced them independently to within 0.0004. The rows for the two hilly
-runs come from the F014 reference (section 2), whose oracle script was written
-from the F013 reference alone and reproduced the ``sample_run`` row and the
-ascent figures as a calibration. The band is +-0.005, and the figures are not
-as-built: the table is not edited to fit the code, and the code is not edited
-to fit the table. A miss is a finding, reported, never absorbed.
+reproduced them independently to within 0.0004; those four are not as-built.
+The rows for the two hilly runs come from the F014 reference (section 2).
+They were measured after the build, with the as-built served values visible,
+and the script was not kept, so they cannot be shown to be independent of the
+code. Its calibration on ``sample_run`` gave 1.0544, which equals the served
+value, not the pinned pre-build 1.0540. The band is +-0.005: the table is not
+edited to fit the code, and the code is not edited to fit the table. A miss is
+a finding, reported, never absorbed.
 
 **The hysteresis oracle** is restated in this file (``_hysteresis``), from the
 rule in the F013 reference, and run over the altitudes ``GET /sessions/{id}``
@@ -58,8 +61,9 @@ from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# GAP/raw at +-25 m, measured away from the code: the first four before the build (F013 reference,
-# "Measured on the fixture corpus"), the two hilly runs at F014 discuss time (F014 reference, section 2).
+# GAP/raw at +-25 m: the first four measured before the build (F013 reference, "Measured on the
+# fixture corpus"); the two hilly runs measured after it, with the served values visible, by a
+# script that was not kept (F014 reference, section 2).
 ORACLE_RATIOS = {
     "dev_fields_run.fit": 1.0132,
     "sample_run.fit": 1.0540,
