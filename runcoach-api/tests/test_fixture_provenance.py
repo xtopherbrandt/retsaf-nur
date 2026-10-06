@@ -20,8 +20,9 @@ This module is the guard that keeps the table honest:
   fails and names the file;
 - ``mode`` is re-derived too, as far as the decoded file can say: the
   recording interval (``1 Hz`` when more than half the record steps are 1 s,
-  ``6 s steps`` when more than half are 6 s; a file with no such majority is
-  ``variable steps``, which no cell uses, so it fails) and the length of each
+  ``6 s steps`` when more than half are 6 s; a file with no majority step is
+  ``variable steps``, and a majority step other than 1 s or 6 s is named
+  ``<n> s steps``; no README cell uses either, so the row fails) and the length of each
   pause, a record gap over 5 s (over the step plus 5 s in a stepped file)
   that opens on a timer stop and closes on a timer start. Such a gap with no
   timer pair would be a moving dropout, which the cell has no word for, so
@@ -499,6 +500,22 @@ def test_a_variable_step_file_fails_against_every_readme_mode() -> None:
 )
 def test_a_stepped_file_gets_the_dropout_check_over_step_plus_5_s(
         seconds: tuple, timer_events: list, expected: tuple) -> None:
+    events = [(_stamps(at)[0], kind) for at, kind in timer_events]
+    assert _mode_from(_stamps(*seconds), events) == expected
+
+
+@pytest.mark.parametrize(
+    ("seconds", "timer_events", "expected"),
+    [
+        pytest.param((0, 1, 2, 3, 9, 10, 11, 12), [], ("1 Hz", (), (6,)), id="6-s-gap-no-timer-pair-is-a-dropout"),
+        pytest.param((0, 1, 2, 3, 9, 10, 11, 12), [(3, "stop_all"), (9, "start")], ("1 Hz", (6,), ()),
+                     id="6-s-gap-with-a-timer-pair-is-a-pause"),
+        pytest.param((0, 1, 2, 3, 8, 9, 10, 11), [], ("1 Hz", (), ()), id="5-s-gap-is-not-over-5"),
+    ],
+)
+def test_a_1_hz_file_gets_the_dropout_check_over_5_s_not_step_plus_5(
+        seconds: tuple, timer_events: list, expected: tuple) -> None:
+    """In a 1 Hz file the gap limit is 5 s, not the step plus 5 s: a 6 s gap is over it."""
     events = [(_stamps(at)[0], kind) for at, kind in timer_events]
     assert _mode_from(_stamps(*seconds), events) == expected
 
