@@ -23,12 +23,13 @@ This module is the guard that keeps the table honest:
   ``6 s steps`` when more than half are 6 s; a file with no majority step is
   ``variable steps``, and a majority step other than 1 s or 6 s is named
   ``<n> s steps``; no README cell uses either, so the row fails) and the length of each
-  pause, a record gap over 5 s (over the step plus 5 s in a stepped file)
-  that opens on a timer stop and closes on a timer start. Such a gap with no
+  pause, a record gap over 5 s (over the step plus 5 s in a stepped file;
+  over 5 s in a ``variable steps`` file too) that opens on a timer stop and
+  closes on a timer start. Such a gap with no
   timer pair would be a moving dropout, which the cell has no word for, so
-  it fails. The qualifier words (``pause``,
-  ``auto-pause``) are not derived: every timer event in the corpus decodes
-  with ``timer_trigger`` ``manual``.
+  it fails. The qualifier word ``pause`` says neither manual nor auto and is
+  not derived: every timer event in the corpus decodes with
+  ``timer_trigger`` ``manual``.
 
 Definitions, from the reference:
 
@@ -88,7 +89,7 @@ REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
     "dev_fields_run": ("real run", "1 Hz", "yes"),
     "wrist_ppg_run": ("real run", "1 Hz, 81 s and 11 s pauses", "yes"),
     "strap_run_hrv": ("real run", "1 Hz, 229 s pause", "yes"),
-    "hilly_run_8k_fr945": ("real run", "1 Hz, 82 s auto-pause", "yes"),
+    "hilly_run_8k_fr945": ("real run", "1 Hz, 82 s pause", "yes"),
     "hilly_long_run_17k_fr945": ("real run", "1 Hz", "yes"),
     "strap_cool_down_walk": ("real walk", "1 Hz", "walk only"),
     "strap_hrv_sample_run": ("HRV capture", "1 Hz", "no"),
@@ -145,8 +146,8 @@ def _readme_text() -> str:
     return README.read_text(encoding="utf-8")
 
 
-def _rows_by_file() -> dict[str, Row]:
-    rows = parse_table(_readme_text())
+def _rows_by_file(text: str | None = None) -> dict[str, Row]:
+    rows = parse_table(_readme_text() if text is None else text)
     names = [row.file for row in rows]
     duplicates = sorted({n for n in names if names.count(n) > 1})
     assert not duplicates, f"provenance rows named more than once: {duplicates}"
@@ -173,16 +174,17 @@ def _mode_from(timestamps: list, timer_events: list[tuple[object, str]]) -> tupl
     The interval names the record step that more than half of the steps share (``INTERVALS``).
     When no step has that majority the interval is ``VARIABLE_STEPS``, which no mode cell uses, so
     a file of mixed steps (smart recording) cannot read as 1 Hz. A gap is a record step over
-    ``PAUSE_MIN_GAP_S`` in a 1 Hz file, and over the step plus ``PAUSE_MIN_GAP_S`` in a stepped
-    file. Each gap is a pause when a timer ``stop`` or ``stop_all`` sits at its first record and a
+    ``PAUSE_MIN_GAP_S`` in a 1 Hz or variable-step file, and over the step plus ``PAUSE_MIN_GAP_S``
+    in a stepped file. Each gap is a pause when a timer ``stop`` or ``stop_all`` sits at its first record and a
     timer ``start`` at its last, and a dropout otherwise.
     """
     steps = [(b - a).total_seconds() for a, b in pairwise(timestamps)]
     common, count = Counter(steps).most_common(1)[0]
     if 2 * count <= len(steps):
-        return VARIABLE_STEPS, (), ()
-    interval = INTERVALS.get(common, f"{common:g} s steps")
-    gap_limit = PAUSE_MIN_GAP_S if interval == "1 Hz" else common + PAUSE_MIN_GAP_S
+        interval, gap_limit = VARIABLE_STEPS, PAUSE_MIN_GAP_S
+    else:
+        interval = INTERVALS.get(common, f"{common:g} s steps")
+        gap_limit = PAUSE_MIN_GAP_S if interval == "1 Hz" else common + PAUSE_MIN_GAP_S
     stops = {t for t, kind in timer_events if kind in ("stop", "stop_all")}
     starts = {t for t, kind in timer_events if kind == "start"}
     pauses, dropouts = [], []
@@ -382,6 +384,14 @@ def test_a_fixture_without_a_row_is_named() -> None:
     assert finding is not None and "files without a row ['sample_run']" in finding
 
 
+def test_a_file_named_by_two_rows_is_named() -> None:
+    """A second row for one file would let the later row silently replace the earlier one."""
+    text = _readme_text()
+    row = next(line for line in text.splitlines() if line.startswith("| sample_run |"))
+    with pytest.raises(AssertionError, match=r"provenance rows named more than once: \['sample_run'\]"):
+        _rows_by_file(text.replace(row, f"{row}\n{row}", 1))
+
+
 def test_a_row_whose_file_is_missing_is_named() -> None:
     rows = _real_rows()
     rows["ghost_run"] = replace(rows["sample_run"], file="ghost_run")
@@ -480,6 +490,26 @@ def test_a_decoded_dropout_fails_a_mode_cell_that_otherwise_agrees(monkeypatch: 
 )
 def test_the_interval_is_named_only_by_a_majority_of_the_steps(seconds: tuple, interval: str) -> None:
     assert _mode_from(_stamps(*seconds), [])[0] == interval
+
+
+@pytest.mark.parametrize(
+    ("seconds", "timer_events", "expected"),
+    [
+        pytest.param((0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22, 40), [], ("variable steps", (), (18,)),
+                     id="18-s-gap-no-timer-pair-is-a-dropout"),
+        pytest.param((0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22, 40), [(22, "stop_all"), (40, "start")],
+                     ("variable steps", (18,), ()), id="18-s-gap-with-a-timer-pair-is-a-pause"),
+        pytest.param((0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22, 28), [], ("variable steps", (), (6,)),
+                     id="6-s-gap-is-over-5"),
+        pytest.param((0, 1, 2, 3, 5, 8, 12, 13, 15, 18, 22), [], ("variable steps", (), ()),
+                     id="no-gap-over-5"),
+    ],
+)
+def test_a_variable_step_file_gets_the_dropout_check_over_5_s(
+        seconds: tuple, timer_events: list, expected: tuple) -> None:
+    """A file with no majority step has no step to add, so its gap limit is the 1 Hz 5 s."""
+    events = [(_stamps(at)[0], kind) for at, kind in timer_events]
+    assert _mode_from(_stamps(*seconds), events) == expected
 
 
 def test_a_variable_step_file_fails_against_every_readme_mode() -> None:

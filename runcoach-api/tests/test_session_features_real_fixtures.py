@@ -308,7 +308,7 @@ def _vendor_session_totals(fixture: str) -> dict:
 @pytest.mark.parametrize("fixture", HILLY_FIXTURES)
 def test_hilly_run_duration_and_distance_match_the_watch(fixture: str) -> None:
     """Served duration within 1.0 s of ``total_timer_time``; served distance within 0.1 % of
-    ``total_distance``. ``hilly_run_8k_fr945``'s auto-pause must be excluded, as the timer excludes it.
+    ``total_distance``. ``hilly_run_8k_fr945``'s 82 s pause must be excluded, as the timer excludes it.
 
     The vendor ``total_ascent`` is printed beside the served ascent, never asserted. Both files also
     grade every metre (``gap_coverage`` 1.0) and clamp none (``grade_clamped_fraction`` 0.0).
