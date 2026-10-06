@@ -314,8 +314,9 @@ def apply(session, records) -> None:
     interpolated samples or added ``sample_quality`` flags.
     """
     # T028: default HR-source inference. Only set when not already
-    # known -- a chest-strap RR stream (T024, set in mapping.py)
-    # takes precedence and must never be clobbered here.
+    # known -- the chest_strap that mapping._infer_hr_source set (from
+    # RR, or from a connected heart-rate sensor with HR) takes
+    # precedence and must never be clobbered here.
     if not session.hr_source:
         session.hr_source = "wrist_ppg"
 
@@ -341,8 +342,9 @@ def apply(session, records) -> None:
         # (gold-standard HR) whose reported HR happens to sit on the
         # same number as cadence is not the wrist-PPG artefact this
         # gate exists to catch (T034 item 1). ``hr_source`` is already
-        # resolved by this point: mapping.py's chest-strap RR
-        # detection runs before quality_gates.apply(), and the default
+        # resolved by this point: mapping._infer_hr_source (RR, or a
+        # connected heart-rate sensor with HR) runs before
+        # quality_gates.apply(), and the default
         # above only fills in "wrist_ppg" when it wasn't already set.
         if session.hr_source == "wrist_ppg":
             _flag_cadence_lock_runs(records)

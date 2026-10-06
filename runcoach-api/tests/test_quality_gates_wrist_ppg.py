@@ -4,9 +4,10 @@ Pure-logic unit tests against synthetic ``Session``/``Record`` objects
 (no FIT-parsing dependency) -- exercises the two independent sub-checks
 added to ``quality_gates.apply()`` by T028:
 
-- ``session.hr_source`` defaults to ``"wrist_ppg"`` unless a
-  chest-strap RR stream has already set it (a not-yet-implemented
-  upstream task) -- must never clobber that value.
+- ``session.hr_source`` defaults to ``"wrist_ppg"`` unless
+  ``mapping._infer_hr_source`` has already set it (``chest_strap`` from
+  RR, or from a connected heart-rate sensor with HR) -- must never
+  clobber that value.
 - ``"cadence_lock"`` is flagged on any span of 30+ consecutive records
   (by index, post-resampling, ~1 per second) where ``heart_rate``
   stays within 3bpm of ``cadence`` -- a known wrist-PPG artefact where

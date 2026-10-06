@@ -53,7 +53,8 @@ SNAPSHOT_FIXTURES = {
     "strap_health_snapshot.fit": 51,
 }
 # Files that must never route: two ordinary runs (one of them carrying 7220
-# raw beats) and a wrist-PPG run with no RR carrier at all.
+# raw beats) and a real run with no RR carrier at all (its HR came from
+# the strap; the file name is historical).
 NON_SNAPSHOT_FIXTURES = ("dev_fields_run.fit", "sample_run.fit", "wrist_ppg_run.fit")
 
 # ``synthetic``, ``classified`` and ``ingest`` come from ``conftest.py``,
