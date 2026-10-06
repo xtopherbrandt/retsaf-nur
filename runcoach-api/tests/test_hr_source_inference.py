@@ -33,8 +33,13 @@ served value is the gate's, not a restatement of its default.
 **What this file holds constant.** Every real file is from a Garmin FR945 or
 FR955 with ANT+ sensors; none has a Bluetooth-LE strap, and none is a run
 recorded on the wrist alone (the cadence-lock gate keeps only synthetic
-coverage, ``test_quality_gates_wrist_ppg.py``). A strap paired but not worn
-reads ``chest_strap`` and is not covered.
+coverage, ``test_quality_gates_wrist_ppg.py``). Three accepted limits read
+``chest_strap``: a strap paired but not worn (not covered); an external optical
+sensor over ANT+ or Bluetooth-LE, an armband or a watch broadcasting wrist HR,
+because the heart-rate device type does not tell optical from ECG (pinned as
+built by the ``optical-hr-broadcast-over-antplus-reads-as-strap`` seam row);
+and a strap that drops out mid-activity, which marks the whole session (not
+covered).
 """
 
 from __future__ import annotations
@@ -190,10 +195,10 @@ def _records(heart_rate: int | None) -> list[_FakeMsg]:
     return [_FakeMsg("record", {"heart_rate": heart_rate}) for _ in range(5)]
 
 
-def _antplus(device_type: str, serial: int | None = 4242) -> _FakeMsg:
+def _antplus(device_type: str, serial: int | None = 4242, **extra) -> _FakeMsg:
     return _FakeMsg(
         "device_info",
-        {"source_type": "antplus", "antplus_device_type": device_type, "serial_number": serial},
+        {"source_type": "antplus", "antplus_device_type": device_type, "serial_number": serial, **extra},
     )
 
 
@@ -254,8 +259,19 @@ SEAM_ROWS = [
     # No HR: as built before F015. RR still reads chest_strap; without RR the
     # connected strap does not matter, and the gate default fills wrist_ppg.
     pytest.param([_creator(), _antplus("heart_rate"), *_records(None)], "wrist_ppg", id="no-hr-strap-connected"),
+    # HR present means a positive heart_rate: records that all read 0 are no HR.
+    pytest.param([_creator(), _antplus("heart_rate"), *_records(0)], "wrist_ppg", id="zero-hr-strap-connected"),
     pytest.param([_creator(), _antplus("heart_rate")], "wrist_ppg", id="no-records-strap-connected"),
     pytest.param([_rr(), *_records(None)], "chest_strap", id="no-hr-rr-present"),
+    # Accepted limit (user, 2026-10-06), pinned as built: an external optical sensor
+    # on ANT+ (here a watch broadcasting wrist HR, garmin_product 255, the shape
+    # test_mapping_sensor_identity.py row 13 uses) presents device type heart_rate,
+    # which does not tell optical from ECG, so it reads as the strap.
+    pytest.param(
+        [_creator(), _antplus("heart_rate", manufacturer="garmin", garmin_product=255), *_records(150)],
+        "chest_strap",
+        id="optical-hr-broadcast-over-antplus-reads-as-strap",
+    ),
 ]
 
 
