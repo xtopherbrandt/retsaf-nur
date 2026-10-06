@@ -11,15 +11,17 @@ is unchanged. Five corpus files move from `wrist_ppg` to `chest_strap` (`sample_
 `wrist_ppg_run`, `hilly_long_run_17k_fr945`, `strap_health_snapshot` and
 `strap_health_snapshot_hrv`). The three runs among them lose their `cadence_lock` sample tags (154,
 157 and 36 samples), so F013's `avg_hr_bpm` on those runs now counts the samples it used to exclude.
+On the two Health Snapshots, `chest_strap` names the producer of the HR stream; their HRV source is
+still their tier (`hrv_source_tier = health_snapshot`, `rr_source = health_snapshot_ppg`).
 Known limitations: a strap paired but not worn reads `chest_strap`, so a wrist session recorded with a
 strap connected escapes the cadence-lock check. So does a session from an external optical sensor
 connected over ANT+ or Bluetooth Low Energy (an optical armband, or a watch broadcasting wrist HR),
 because the heart-rate device type does not tell optical from ECG. A strap that drops out
 mid-activity marks the whole session `chest_strap`. research/00 is amended to match: REG-24 names
 both chest-strap signatures (RR presence, or, with no RR, a connected ANT+ or Bluetooth Low Energy
-heart-rate sensor with a positive heart rate), and REG-23 and REG-09 name the three accepted limits
-in their Not clauses (R16 in the F008 decisions reference). F015 changes neither the key set of
-`GET /sessions/{id}` nor the contract.
+heart-rate sensor with a positive heart rate), REG-24's Not clause excludes only a resting capture's
+HRV source, and REG-23 and REG-09 name the three accepted limits in their Not clauses (R16 in the
+F008 decisions reference). F015 changes neither the key set of `GET /sessions/{id}` nor the contract.
 
 ### Migration required
 

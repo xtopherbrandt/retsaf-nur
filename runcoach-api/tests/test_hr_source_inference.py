@@ -175,6 +175,24 @@ def test_the_strap_runs_carry_no_cadence_lock_tag(filename: str) -> None:
     assert after == 0
 
 
+# The two flipped resting captures: hr_source names the producer of the HR stream (the strap),
+# while the capture's HRV source stays its declared tier (user ruling "b", 2026-10-06).
+STRAP_HEALTH_SNAPSHOTS = ("strap_health_snapshot.fit", "strap_health_snapshot_hrv.fit")
+
+
+@pytest.mark.parametrize("filename", STRAP_HEALTH_SNAPSHOTS)
+def test_a_strap_health_snapshot_reads_chest_strap_with_its_hrv_source_still_its_tier(filename: str) -> None:
+    served = _served(filename)
+    print(
+        f"{filename}: hr_source {served['hr_source']} hrv_source_tier {served['hrv_source_tier']} "
+        f"rr_source {served['rr_source']} activity_tag {served['activity_tag']}"
+    )
+
+    assert served["hr_source"] == "chest_strap"
+    assert served["hrv_source_tier"] == "health_snapshot"
+    assert served["rr_source"] == "health_snapshot_ppg"
+
+
 # ---------------------------------------------------------------------------
 # AC3: the edges, at the module seam
 # ---------------------------------------------------------------------------
