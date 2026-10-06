@@ -80,8 +80,8 @@ _FILLABLE_GAPS = (0.0, 0.25, 0.999, 1.001, 2.0, 3.5, 5.0)
 
 # Gaps past the ceiling: a real recording outage that resampling cannot
 # honestly fill. 5.000001 is the first value over it; 11.0 and 81.0 are
-# the two real non-1s deltas in wrist_ppg_run.fit (a dropout and an
-# auto-pause).
+# the two real non-1s deltas in wrist_ppg_run.fit (two pauses, each
+# between a timer stop and a timer start).
 _UNFILLABLE_GAPS = (5.000001, 6.0, 11.0, 81.0, 3600.0, 1.0e6)
 
 # Deltas spanning the whole plausible domain for the totality property:
@@ -298,7 +298,7 @@ def test_all_three_descriptors_are_reachable() -> None:
         max_size=5,
     )
 )
-@example(gaps=[81.0])  # wrist_ppg_run's auto-pause, in isolation
+@example(gaps=[81.0])  # wrist_ppg_run's 81 s pause, in isolation
 @example(gaps=[11.0, 81.0])  # wrist_ppg_run's two real non-1s deltas
 @example(gaps=[2.0, 3.0, 4.0, 5.0])  # a purely smart-recorded stream
 def test_adding_uniform_deltas_only_ever_moves_toward_1hz(

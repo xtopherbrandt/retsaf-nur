@@ -155,7 +155,7 @@ def test_predominantly_unfillable_gaps_classify_irregular() -> None:
 
 def test_isolated_long_gap_in_a_1hz_stream_stays_1hz_but_still_marks_the_gap() -> None:
     """The `wrist_ppg_run.fit` shape: ~2000 1s samples with a single
-    81s auto-pause. Per-sample ``interpolation_gap`` handling is
+    81s pause. Per-sample ``interpolation_gap`` handling is
     unchanged, but the session-level verdict stays ``1hz``.
     """
     session = _session()

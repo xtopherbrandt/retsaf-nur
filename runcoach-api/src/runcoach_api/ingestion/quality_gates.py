@@ -41,7 +41,7 @@ _MAX_INTERPOLATION_GAP_S = 5
 # A stream is 1hz when at least this fraction of its consecutive
 # timestamp deltas are ~1s. 0.95 sits in a very wide empty band: the real
 # Garmin 1Hz corpus tops out at 0.102% non-1s deltas (2 of 1960 in
-# wrist_ppg_run.fit -- one 81s auto-pause, one 11s dropout), while a
+# wrist_ppg_run.fit -- an 81s and an 11s pause, both timed), while a
 # genuinely smart-recorded stream only emits a sample when a value
 # changes and so is nowhere near 95% 1s-spaced. Isolated auto-pauses and
 # dropouts are already handled per-sample as ``interpolation_gap``; the
