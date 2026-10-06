@@ -439,7 +439,7 @@ Pinned: none
 
 **REG-09.** Data-quality gating MUST require 1 Hz recording, and a chest strap for any at-or-above-threshold HR metric.
 Scope: every recording the system ingests, and every at-or-above-threshold HR metric.
-Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs.
+Not: resting HRV sourcing, which the tier hierarchy of §3.3 governs; and a rejection of optical HR that bears REG-24's chest-strap signature, since the chest strap this rule requires is that signature, so three accepted limits pass its gate: an external optical sensor connected over ANT+ or Bluetooth Low Energy, wrist HR while a strap is paired but not worn, and wrist HR after a strap drops out mid-activity.
 Pinned: none
 
 **REG-10.** The four course/environment pace modifiers MUST compose multiplicatively in the order altitude → heat/humidity → wind → grade.
@@ -512,7 +512,7 @@ Pinned: none
 
 **REG-23.** PPG input MUST be flagged, PPG input other than resting HRV (in-run wrist HR, for example) MUST be down-weighted, and resting HRV from PPG MUST carry its reduced fidelity as an ordinal rank below the chest strap in selection, with any numeric per-source confidence weight deferred to Section 6's readiness fusion.
 Scope: every input the system takes from optical PPG.
-Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes.
+Not: HRV computed from in-run wrist PPG, which rule HRV-05 excludes; and the three accepted limits in which optical HR bears REG-24's chest-strap signature, so the system cannot tell it from the strap and reads it as the strap: an external optical sensor connected over ANT+ or Bluetooth Low Energy, wrist HR while a strap is paired but not worn, and wrist HR after a strap drops out mid-activity.
 Pinned: none
 Why: decision C19 changes the wording for resting HRV only, since Section 3 applies fidelity as an ordinal rank and computes no confidence weight, and other PPG input keeps its down-weighting.
 
