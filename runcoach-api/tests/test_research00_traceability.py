@@ -1053,7 +1053,8 @@ REVIEW_PROSE_SHA256 = (
     "3a7b11e58598", "f191ca7ee5d3", "e5d55848b69b", "c2b5b175501d", "609e8c7aa461", "5fefbc585347",
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
-    "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "9cd974867f32",
+    "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
+    "6e818f8a9193", "c70f43d8e852",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1077,6 +1078,9 @@ FROZEN_ROUNDS = {
     "11": "4cf8113a2480",
     "12": "a99cc87f595b",
     "13": "76a184b14c1b",
+    "14": "dc852e60c644",
+    "15": "0734e515a8d0",
+    "16": "6e818f8a9193",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1097,6 +1101,9 @@ _FROZEN_ROUNDS_PIN = {
     "11": "4cf8113a2480",
     "12": "a99cc87f595b",
     "13": "76a184b14c1b",
+    "14": "dc852e60c644",
+    "15": "0734e515a8d0",
+    "16": "6e818f8a9193",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1402,7 +1409,7 @@ REVIEW_LINE_SHA256 = {
     "REG-08/Not": "2da4b6abf8f8",
     "REG-09": "b19f1fddbaa5",
     "REG-09/Scope": "8066b63f7c31",
-    "REG-09/Not": "0c5d7c7baed5",
+    "REG-09/Not": "e2672103997c",
     "REG-10": "a8100b3143a7",
     "REG-10/Scope": "bf70f3b9f3ac",
     "REG-10/Not": "9c84d0884692",
@@ -1445,11 +1452,11 @@ REVIEW_LINE_SHA256 = {
     "REG-22": "58b44402169a",
     "REG-22/Scope": "7bcea45ea1bd",
     "REG-22/Not": "23564aac8c8a",
-    "REG-23": "40d27821376c",
+    "REG-23": "3ff22e062b76",
     "REG-23/Scope": "1af276a2eb97",
-    "REG-23/Not": "716a9094947a",
+    "REG-23/Not": "959f1bd4fa35",
     "REG-23/Why": "c0bc64b3f162",
-    "REG-24": "37fcabec3f7f",
+    "REG-24": "bc286608f64e",
     "REG-24/Scope": "7e698f1f3c03",
     "REG-24/Not": "2055d0087033",
     "REG-25": "545d4bd8a50b",
