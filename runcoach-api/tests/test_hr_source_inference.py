@@ -10,13 +10,15 @@ The rule (spec/02 section 2.4.2 step 1), resolved in ``mapping._infer_hr_source`
   need identity.
 - Otherwise ``None``, which ``quality_gates.apply`` fills as ``wrist_ppg``.
 
-**The corpus, through upload.** ``HR_SOURCE_BEFORE`` is the value every fixture
-was served when the rule read the RR stream alone; ``HR_SOURCE_AFTER`` is the
-value served now. Both were written from the device census (the
-``device_info`` entries and the RR beat count of each file) and the user's
-ruling of 2026-10-04 that the strap produced the HR on ``sample_run``,
-``wrist_ppg_run`` and ``hilly_long_run_17k_fr945``. Exactly five files differ.
-The test prints each file's before and after beside the served value.
+**The corpus, through upload.** ``hr_source_before`` is the value every fixture
+was served when the rule read the RR stream alone, derived from
+``rr_reconstruction.reconstruct`` on the decoded file; ``HR_SOURCE_AFTER`` is the
+value served now, written from the device census (the ``device_info`` entries
+and the RR beat count of each file) and the user's ruling of 2026-10-04 that
+the strap produced the HR on ``sample_run``, ``wrist_ppg_run`` and
+``hilly_long_run_17k_fr945``. Exactly five files differ, and each of the five
+reconstructs no RR. The test prints each file's before and after beside the
+served value.
 
 **The cadence-lock tags.** On the three runs the before count is measured here,
 not copied: the decoded file is mapped, ``hr_source`` is forced to
@@ -45,40 +47,31 @@ as built by the ``strap-dropped-out-before-the-end-strap-connected`` seam row).
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from runcoach_api.ingestion import fit_parser, mapping, quality_gates
+from runcoach_api.ingestion import fit_parser, mapping, quality_gates, rr_reconstruction
 from runcoach_api.main import app
 from runcoach_api.models import Session
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-# The value served when the rule read the RR stream alone (no RR -> the wrist default).
-HR_SOURCE_BEFORE: dict[str, str] = {
+# The value served now: a connected ANT+ heart-rate sensor with HR present reads chest_strap.
+HR_SOURCE_AFTER: dict[str, str] = {
     "dev_fields_run.fit": "chest_strap",
-    "hilly_long_run_17k_fr945.fit": "wrist_ppg",
+    "hilly_long_run_17k_fr945.fit": "chest_strap",
     "hilly_run_8k_fr945.fit": "chest_strap",
     "sample_health_snapshot.fit": "wrist_ppg",
-    "sample_run.fit": "wrist_ppg",
+    "sample_run.fit": "chest_strap",
     "strap_cool_down_walk.fit": "chest_strap",
-    "strap_health_snapshot.fit": "wrist_ppg",
-    "strap_health_snapshot_hrv.fit": "wrist_ppg",
+    "strap_health_snapshot.fit": "chest_strap",
+    "strap_health_snapshot_hrv.fit": "chest_strap",
     "strap_hrv_capture.fit": "chest_strap",
     "strap_hrv_sample_run.fit": "chest_strap",
     "strap_run_hrv.fit": "chest_strap",
     "wrist_ppg_hrv_snapshot.fit": "wrist_ppg",
-    "wrist_ppg_run.fit": "wrist_ppg",
-}
-
-# The value served now: a connected ANT+ heart-rate sensor with HR present reads chest_strap.
-HR_SOURCE_AFTER: dict[str, str] = {
-    **HR_SOURCE_BEFORE,
-    "hilly_long_run_17k_fr945.fit": "chest_strap",
-    "sample_run.fit": "chest_strap",
-    "strap_health_snapshot.fit": "chest_strap",
-    "strap_health_snapshot_hrv.fit": "chest_strap",
     "wrist_ppg_run.fit": "chest_strap",
 }
 
@@ -108,6 +101,17 @@ def _served(filename: str) -> dict:
     return detail.json()
 
 
+@cache
+def _messages(filename: str) -> list:
+    return fit_parser.decode((FIXTURES / filename).read_bytes())
+
+
+def hr_source_before(filename: str) -> str:
+    """The value served when the rule read the RR stream alone: RR present -> ``chest_strap``,
+    no RR -> the wrist default. Derived from ``rr_reconstruction.reconstruct``, never a hand table."""
+    return "chest_strap" if rr_reconstruction.reconstruct(_messages(filename)) else "wrist_ppg"
+
+
 def _cadence_lock_count(records) -> int:
     return sum(1 for r in records if "cadence_lock" in (r["sample_quality"] if isinstance(r, dict) else r.sample_quality))
 
@@ -117,24 +121,25 @@ def _cadence_lock_count(records) -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_the_tables_cover_the_whole_corpus() -> None:
+def test_the_table_covers_the_whole_corpus() -> None:
     on_disk = sorted(p.name for p in FIXTURES.glob("*.fit"))
-    assert sorted(HR_SOURCE_BEFORE) == on_disk
     assert sorted(HR_SOURCE_AFTER) == on_disk
 
 
 def test_exactly_five_files_flip_to_chest_strap() -> None:
-    changed = sorted(f for f in HR_SOURCE_BEFORE if HR_SOURCE_BEFORE[f] != HR_SOURCE_AFTER[f])
+    before = {f: hr_source_before(f) for f in HR_SOURCE_AFTER}
+    print(f"hr_source before (RR alone): {before}")
+    changed = sorted(f for f in HR_SOURCE_AFTER if before[f] != HR_SOURCE_AFTER[f])
     print(f"hr_source flipped: {changed}")
     assert changed == sorted(FLIPPED)
-    assert all(HR_SOURCE_BEFORE[f] == "wrist_ppg" and HR_SOURCE_AFTER[f] == "chest_strap" for f in changed)
+    assert all(before[f] == "wrist_ppg" and HR_SOURCE_AFTER[f] == "chest_strap" for f in changed)
 
 
 @pytest.mark.parametrize("filename", sorted(HR_SOURCE_AFTER))
 def test_hr_source_matches_the_pinned_table(filename: str) -> None:
     served = _served(filename)["hr_source"]
     print(
-        f"hr_source {filename}: before {HR_SOURCE_BEFORE[filename]} after {HR_SOURCE_AFTER[filename]} "
+        f"hr_source {filename}: before {hr_source_before(filename)} after {HR_SOURCE_AFTER[filename]} "
         f"served {served}"
     )
     assert served == HR_SOURCE_AFTER[filename]
@@ -144,7 +149,10 @@ def test_hr_source_matches_the_pinned_table(filename: str) -> None:
 def test_strap_connected_without_rr_reads_chest_strap(filename: str) -> None:
     """The five files at the seam: no RR, HR present, an ANT+ heart-rate entry."""
     messages = fit_parser.decode((FIXTURES / filename).read_bytes())
+    rr = rr_reconstruction.reconstruct(messages)
+    print(f"{filename}: RR beats {len(rr)}")
 
+    assert rr == []
     assert mapping._infer_hr_source(messages) == "chest_strap"
 
 
