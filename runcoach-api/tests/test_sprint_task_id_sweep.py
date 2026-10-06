@@ -15,7 +15,9 @@ Three kinds of check, each against real git rather than a mock:
 - **The planted checks.** A temporary clone of this repository gets commits built with plumbing:
   "until T249 lands" under three subjects, so each disposition is shown to follow the commit scope;
   every spelling of an ID and the spellings that are not one; paths git pads or quotes; a reindent
-  (which neither hides nor relabels a hand-off); and a later task rewording a hand-off that names it.
+  (which neither hides nor relabels a hand-off); a later task rewording a hand-off that names it;
+  rewords over several lines, hunks and shifted line numbers, each line paired with the line it
+  rewords; and git config settings that change the text of ``git diff`` or ``git blame``.
 - **The ID parser and the scope rule**, as plain functions.
 
 Every task ID in this module belongs to sprint-010, so the module never names an ID of the sprint
@@ -291,6 +293,7 @@ def test_a_c_quoted_path_is_unquoted():
     assert sweep.unquote_path('"b/caf\\303\\251.md"') == "b/café.md"
     assert sweep.unquote_path('"b/say \\"hi\\".md"') == 'b/say "hi".md'
     assert sweep.unquote_path('"b/tab\\there"') == "b/tab\there"
+    assert sweep.unquote_path('"b/back\\\\slash.md"') == "b/back\\slash.md"
     assert sweep.unquote_path("b/my notes.md") == "b/my notes.md"
 
 
@@ -370,6 +373,178 @@ def test_a_hand_off_is_judged_at_the_commit_that_wrote_the_id(clone, capsys, lab
     assert rc == (1 if expected == "fail" else 0)
     if expected == "fail":
         assert f"last edited by {reworded[:7]} feat(T249)" in out, "the rewording commit is not reported"
+
+
+# --- the walk back on multi-line and multi-hunk histories ----------------------------------------
+
+#: Each history is a list of (file text, subject) commits, oldest first. ``expected`` lists every hit
+#: as (line in head, disposition, index of the commit that wrote the ID).
+HAND_OFF_WRITTEN = "None until T249 populates it.\n"
+HAND_OFF_REWORDED = "None until T249 fills it.\n"
+WALKS = (
+    # One hunk rewords a self-tag and the hand-off below it: each line keeps its own writer.
+    (
+        "two-lines-one-hunk",
+        [
+            ("Self note on T249.\n", "feat(T249): note the serial"),
+            ("Self note on T249.\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
+            ("Self note about T249.\n" + HAND_OFF_REWORDED, "docs(f015): reword the notes"),
+        ],
+        [(1, "exempt", 0), (2, "fail", 1)],
+    ),
+    # A self-tag replaced wholesale by a new sentence that hands off to the task: a new writer.
+    (
+        "self-tag-replaced",
+        [
+            ("T249 adds the column.\n", "feat(T249): add the column"),
+            ("The cache stays cold until T249 warms it.\n", "feat(T251): add the cache"),
+        ],
+        [(1, "fail", 1)],
+    ),
+    # Two removed lines the added line rewords about equally: the worst writer judges it.
+    (
+        "merged-lines",
+        [
+            ("T249 fills the column.\n", "feat(T249): fill the column"),
+            ("T249 fills the column.\nT249 fills the cache.\n", "feat(T248): add the cache"),
+            ("T249 fills the column and the cache.\n", "docs(f015): merge the notes"),
+        ],
+        [(1, "fail", 1)],
+    ),
+    (
+        "lowercase",
+        [
+            ("None until t249 populates it.\n", "feat(T248): add the column"),
+            ("None until t249 fills it.\n", "feat(T249): populate the column"),
+        ],
+        [(1, "fail", 0)],
+    ),
+    # The removed line names another task: the rewording commit wrote this ID.
+    (
+        "other-id-removed",
+        [
+            ("None until T248 populates it.\n", "chore(sprint-010): note the column"),
+            (HAND_OFF_WRITTEN, "feat(T250): hand off the column"),
+        ],
+        [(1, "fail", 1)],
+    ),
+    # Lines inserted above after the reword: the line's number in head is not its number when reworded.
+    (
+        "shifted-after-the-reword",
+        [
+            (HAND_OFF_WRITTEN, "feat(T248): add the column"),
+            (HAND_OFF_REWORDED, "feat(T249): populate the column"),
+            ("x\ny\n" + HAND_OFF_REWORDED, "chore: add a preface"),
+        ],
+        [(3, "fail", 0)],
+    ),
+    # Lines inserted above before the reword: the walk steps to the line's number in the parent.
+    (
+        "shifted-before-the-reword",
+        [
+            ("a\nb\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
+            ("x\ny\na\nb\n" + HAND_OFF_WRITTEN, "chore: add a preface"),
+            ("x\ny\na\nb\n" + HAND_OFF_REWORDED, "feat(T249): populate the column"),
+        ],
+        [(5, "fail", 0)],
+    ),
+    # The reword commit edits line 1 in a first hunk and rewords the hand-off in a second.
+    (
+        "two-hunks",
+        [
+            ("one\ntwo\nthree\nfour\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
+            ("ONE\ntwo\nthree\nfour\n" + HAND_OFF_REWORDED, "feat(T249): populate the column"),
+        ],
+        [(5, "fail", 0)],
+    ),
+    # The reword commit also inserts a line above: old and new line numbers differ in its hunk.
+    (
+        "insert-above-in-the-reword",
+        [
+            ("one\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
+            ("zero\none\n" + HAND_OFF_REWORDED, "feat(T249): populate the column"),
+        ],
+        [(3, "fail", 0)],
+    ),
+)
+
+#: A path git C-quotes in the blame ``filename`` and ``previous`` headers (it holds a double quote).
+QUOTED_WALK_PATH = 'planted/walk say "hi".md'
+
+
+def _walk_case(clone, label, steps, path):
+    base = _git(clone, "rev-parse", "HEAD")
+    shas, parent = [], base
+    for text, subject in steps:
+        parent = _commit(clone, parent, {path: text}, subject)
+        shas.append(parent)
+    return base, shas
+
+
+@pytest.mark.parametrize(("label", "steps", "expected"), WALKS, ids=[label for label, *_ in WALKS])
+def test_the_walk_pairs_each_line_with_the_line_it_rewords(clone, capsys, label, steps, expected):
+    sweep = _load_sweep()
+    path = f"planted/walk-{label}.md"
+    base, shas = _walk_case(clone, label, steps, path)
+    hits = sweep.sweep(clone, base, shas[-1], sweep.parse_ids(REPLAY_IDS))
+    print(hits)
+    assert [(hit.line, hit.disposition, hit.commit) for hit in hits] == [
+        (line, verdict, shas[index]) for line, verdict, index in expected
+    ]
+    rc = _run(sweep, clone, shas[-1], "--strict", base=base)
+    print(capsys.readouterr().out)
+    assert rc == (1 if any(verdict != "exempt" for _, verdict, _ in expected) else 0)
+
+
+def test_the_walk_reads_a_quoted_path_in_the_blame_headers(clone):
+    sweep = _load_sweep()
+    steps = [(HAND_OFF_WRITTEN, "feat(T248): add the column"), (HAND_OFF_REWORDED, "feat(T249): fill it")]
+    base, shas = _walk_case(clone, "quoted", steps, QUOTED_WALK_PATH)
+    hits = sweep.sweep(clone, base, shas[-1], sweep.parse_ids(REPLAY_IDS))
+    print(hits)
+    assert [(hit.path, hit.line, hit.disposition, hit.commit) for hit in hits] == [
+        (QUOTED_WALK_PATH, 1, "fail", shas[0])
+    ]
+
+
+# --- the user's git config does not change what is read ------------------------------------------
+
+#: Each setting changes the text of ``git diff``: no ``b/`` prefix, another prefix, or fused hunks.
+GIT_CONFIGS = (
+    ("diff.noprefix", "true"),
+    ("diff.dstPrefix", "new/"),
+    ("diff.mnemonicPrefix", "true"),
+    ("diff.interHunkContext", "10"),
+    ("blame.ignoreRevsFile", "no-such-file"),
+)
+
+
+@pytest.mark.parametrize(("key", "value"), GIT_CONFIGS, ids=[key for key, _ in GIT_CONFIGS])
+def test_the_users_git_config_does_not_change_the_sweep(clone, capsys, key, value):
+    sweep = _load_sweep()
+    path = f"planted/config-{key}.md"
+    # Under a fused hunk, the unchanged "two" sits between the edited line 1 and the hand-off on line 3.
+    steps = [
+        ("one\ntwo\n" + HAND_OFF_WRITTEN, "feat(T248): add the column"),
+        ("ONE\ntwo\n" + HAND_OFF_REWORDED, "feat(T249): populate the column"),
+    ]
+    base, shas = _walk_case(clone, key, steps, path)
+    _git(clone, "config", key, value)
+    try:
+        rc = _run(sweep, clone, shas[-1], "--strict", base=base)
+    finally:
+        _git(clone, "config", "--unset", key)
+    out = capsys.readouterr().out
+    print(out)
+    assert f"compared {path}\n" in out, f"{key}={value}: the file was not compared"
+    assert rc == 1 and f"fail   {path}:3 T249 ({shas[0][:7]} feat(T248)" in out
+
+
+def test_a_diff_header_without_the_b_prefix_is_an_error():
+    sweep = _load_sweep()
+    diff = "diff --git notes.md notes.md\n--- notes.md\n+++ notes.md\n@@ -0,0 +1 @@\n+until T249 lands\n"
+    with pytest.raises(RuntimeError):
+        sweep.parse_diff(diff)
 
 
 # --- the learnings rule that points at the sweep ------------------------------------------------

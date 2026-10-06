@@ -22,13 +22,24 @@ between its ends. The sweep matches single IDs only: when the scanned text itsel
 such as "T247–T253", the sweep sees only its two endpoints, not the IDs between them.
 
 **The commit that wrote the ID.** ``git blame -w --porcelain -L n,n head`` names the last commit
-that changed the line other than in whitespace. If the hunk of that commit's ``git diff -w`` that
-wrote the line also removed a line naming the same ID, the ID was already there: the sweep steps to
-that removed line in the parent and blames again, until it reaches the commit whose hunk removed no
-line naming the ID. That commit wrote the ID, and the hit is judged by it, so a later task that
-rewords a hand-off naming itself does not exempt it. The step is hunk-sized: when that hunk removed
-several lines naming the ID, the walk follows the first. When the commit that wrote the ID is not
-the last one to change the line, the report adds ``last edited by <sha> <subject>``.
+that changed the line other than in whitespace. In the hunk of that commit's ``git diff -w`` that
+wrote the line, each removed line naming the same ID is scored by its similarity to the line
+(``difflib`` ratio over flattened whitespace). When the best score is at least ``REWORD_RATIO``
+(0.6) the line rewords that removed line, the ID was already there, and the sweep steps to it in
+the parent and blames again. It stops at the commit whose hunk holds no such removed line: that
+commit wrote the ID, and the hit is judged by it, so a later task that rewords a hand-off naming
+itself does not exempt it. A line under 0.6 against every removed line is a new sentence, so a
+self-tag replaced wholesale by a hand-off is judged by the commit that replaced it. When several
+removed lines score within ``TIE_MARGIN`` (0.1) of the best, the pairing is ambiguous: the sweep
+walks each, and the hit is judged by the worst of their writers (``fail``, then ``listed``, then
+``exempt``). When the commit that wrote the ID is not the last one to change the line, the report
+adds ``last edited by <sha> <subject>``.
+
+**The user's git config.** Every diff passes ``--src-prefix=a/ --dst-prefix=b/ --no-color
+--no-ext-diff --inter-hunk-context=0``, every blame ``--no-ignore-revs-file``, and every call
+``-c core.quotepath=off``, so ``diff.noprefix``, ``diff.dstPrefix``, ``diff.interHunkContext`` and
+``blame.ignoreRevsFile`` change nothing. A ``+++`` header without the ``b/`` prefix is an error
+(exit 2), never a file that is skipped.
 
 **Disposition.** The Conventional Commits scope of the commit that wrote the ID decides:
 
@@ -58,6 +69,7 @@ import fnmatch
 import re
 import subprocess
 import sys
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import NamedTuple
 
@@ -71,6 +83,21 @@ _HUNK = re.compile(r"^@@ -(?P<old>\d+)(?:,\d+)? \+(?P<start>\d+)(?:,\d+)? @@")
 _C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 #: Bound on the walk back to the commit that wrote an ID; a line rewritten more often is an error.
 _MAX_STEPS = 100
+#: An added line at least this similar to a removed line naming the ID rewords it; below, it is new.
+REWORD_RATIO = 0.6
+#: Every removed line within this much of the best similarity is a candidate ancestor.
+TIE_MARGIN = 0.1
+#: The order of badness used to judge a line by the worst of its candidate writers.
+_SEVERITY = {"exempt": 0, "listed": 1, "fail": 2}
+#: Options that fix the text of ``git diff`` whatever the user's config says (prefixes, colour,
+#: external drivers, hunks fused across unchanged lines).
+_DIFF_OPTIONS = (
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--no-color",
+    "--no-ext-diff",
+    "--inter-hunk-context=0",
+)
 
 #: Paths never swept: the citation-site records, the research/00 census and the spec mirror.
 EXCLUDED = (
@@ -187,10 +214,15 @@ def _header_path(target: str) -> str | None:
     """The path a ``+++ `` header names (``b/`` dropped), or None for ``/dev/null``.
 
     git pads a path holding a space with a trailing TAB and C-quotes a path holding a quote, a
-    backslash or a control character; an unquoted path never holds a TAB, so the TAB ends it.
+    backslash or a control character; an unquoted path never holds a TAB, so the TAB ends it. Any
+    other header is an error, so a diff whose prefix is not ``b/`` cannot compare 0 files and pass.
     """
     target = unquote_path(target.rstrip("\r").split("\t", 1)[0])
-    return target[2:] if target.startswith("b/") else None
+    if target == "/dev/null":
+        return None
+    if not target.startswith("b/"):
+        raise RuntimeError(f"diff header without the b/ prefix: +++ {target}")
+    return target[2:]
 
 
 def parse_diff(diff: str) -> dict[str, list[Hunk]]:
@@ -220,11 +252,13 @@ def parse_diff(diff: str) -> dict[str, list[Hunk]]:
         elif raw.startswith("-"):
             files[path][-1].removed.append((old_no, raw[1:].rstrip("\r")))
             old_no += 1
+        elif raw.startswith(" "):  # a context line, which a fused hunk holds
+            old_no, new_no = old_no + 1, new_no + 1
     return files
 
 
 def _diff(repo: Path, *args: str) -> dict[str, list[Hunk]]:
-    return parse_diff(_git(repo, "diff", "-w", "--no-color", "--no-ext-diff", "-U0", *args))
+    return parse_diff(_git(repo, "diff", "-w", *_DIFF_OPTIONS, "-U0", *args))
 
 
 def added_lines(repo: Path, base: str, head: str) -> dict[str, list[tuple[int, str]]]:
@@ -237,7 +271,10 @@ def added_lines(repo: Path, base: str, head: str) -> dict[str, list[tuple[int, s
 
 def _blame(repo: Path, rev: str, path: str, line: int) -> _Blame:
     """The last commit at or before ``rev`` that changed ``path:line`` other than in whitespace."""
-    out = _git(repo, "blame", "-w", "--porcelain", "-L", f"{line},{line}", rev, "--", path)
+    # --no-ignore-revs-file drops a configured blame.ignoreRevsFile, which would skip commits.
+    out = _git(
+        repo, "blame", "-w", "--porcelain", "--no-ignore-revs-file", "-L", f"{line},{line}", rev, "--", path
+    )
     lines = out.split("\n")
     sha, orig_line = lines[0].split(" ")[:2]
     headers = {}
@@ -265,21 +302,53 @@ def _hunk_writing(repo: Path, blame: _Blame) -> Hunk | None:
     return next((hunk for hunk in hunks if any(no == blame.line for no, _ in hunk.added)), None)
 
 
+def _similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, " ".join(a.split()), " ".join(b.split()), autojunk=False).ratio()
+
+
+def reworded_lines(hunk: Hunk, line: int, task_id: str) -> list[int]:
+    """The old-side numbers of the removed lines naming ``task_id`` that the added ``line`` rewords.
+
+    Each removed line naming the ID is scored by its similarity to the added line. When the best
+    score is under :data:`REWORD_RATIO` the added line is a new sentence, and the list is empty.
+    Otherwise every line within :data:`TIE_MARGIN` of the best is returned, so an ambiguous pairing
+    keeps every candidate.
+    """
+    text = next((added for no, added in hunk.added if no == line), None)
+    if text is None:
+        raise RuntimeError(f"line {line} is not among the hunk's added lines")
+    scored = [(_similarity(text, old), no) for no, old in hunk.removed if task_id in ids_in(old)]
+    best = max((score for score, _ in scored), default=0.0)
+    if best < REWORD_RATIO:
+        return []
+    return [no for score, no in scored if score >= best - TIE_MARGIN]
+
+
 def writer(repo: Path, head: str, path: str, line: int, task_id: str) -> tuple[_Blame, _Blame]:
     """``(commit that wrote task_id on path:line, last commit to change the line)`` in ``head``.
 
-    Starts at the blamed commit and steps back while the hunk that wrote the line also removed a
-    line naming ``task_id``: the ID was already there, so that commit only reworded it.
+    Starts at the blamed commit and steps back while the line rewords a removed line of the same
+    hunk that names ``task_id`` (:func:`reworded_lines`): the ID was already there, so that commit
+    only reworded it. When several removed lines are candidates, each is walked, and the line is
+    judged by the worst of their writers (``fail`` before ``listed`` before ``exempt``).
     """
-    last = found = _blame(repo, head, path, line)
-    for _ in range(_MAX_STEPS):
+    last = _blame(repo, head, path, line)
+    writers: list[_Blame] = []
+    pending, steps = [last], 0
+    while pending:
+        found = pending.pop()
         hunk = _hunk_writing(repo, found)
-        removed = [no for no, text in (hunk.removed if hunk else []) if task_id in ids_in(text)]
-        if not removed:
-            return found, last
+        olds = reworded_lines(hunk, found.line, task_id) if hunk else []
+        if not olds:
+            writers.append(found)
+            continue
+        steps += 1
+        if steps > _MAX_STEPS:
+            raise RuntimeError(f"{path}:{line}: more than {_MAX_STEPS} commits reword {task_id}")
         assert found.previous is not None  # a hunk with removed lines has a parent side
-        found = _blame(repo, found.previous[0], found.previous[1], removed[0])
-    raise RuntimeError(f"{path}:{line}: more than {_MAX_STEPS} commits reword {task_id}")
+        pending.extend(_blame(repo, found.previous[0], found.previous[1], no) for no in olds)
+    worst = max(writers, key=lambda blame: _SEVERITY[disposition(blame.subject, task_id)])
+    return worst, last
 
 
 def find_ids(lines: list[tuple[int, str]], ids: set[str]) -> list[tuple[int, str]]:

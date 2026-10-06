@@ -33,7 +33,16 @@ docstrings, the CHANGELOG, spec and reference documents, and `.claude/rules/`.
   it. A whitespace-only change is ignored, and when a later commit rewords a line that already
   named the ID, the sweep walks back to the commit that first wrote it: a hand-off that the task it
   names later rewords still fails, and the report says which commit last edited the line. The walk
-  is hunk-sized: if the rewording hunk removed several lines naming the ID, it follows the first.
+  pairs each line with the removed line it rewords, by similarity within the rewording hunk: a
+  line at least 0.6 similar to a removed line naming the ID rewords it. Under 0.6 the line is a
+  new sentence and its commit is a new writer, because whoever replaces a sentence wholesale wrote
+  the claim it now makes: a self-tag such as "T249 adds the column" replaced by "the cache stays
+  cold until T249 warms it" under another task's scope is a new hand-off, and fails. When several
+  removed lines score within 0.1 of the best, the pairing is ambiguous, so each is walked and the
+  worst writer judges the line (`fail`, then `listed`, then `exempt`).
+- **The user's git config does not change what is read.** The script fixes the diff prefixes and
+  drops a configured `blame.ignoreRevsFile`; a diff header it cannot read is an error, not a file
+  skipped.
 
 ## Why
 
