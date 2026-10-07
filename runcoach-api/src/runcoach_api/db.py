@@ -25,6 +25,7 @@ import dataclasses
 import functools
 import json
 import sqlite3
+import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -172,6 +173,13 @@ _SCHEMA_DDL = """
       anchor TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL,
       source TEXT NOT NULL, source_session_id TEXT
     );
+    CREATE TABLE IF NOT EXISTS athlete_settings (
+      -- F016: the one athlete's id, display_name, units (JSON text, the
+      -- contract's UnitPrefs) and created_at, as GET /me serves them. One
+      -- row, seeded by init_schema (_seed_athlete_settings), never on read.
+      id TEXT PRIMARY KEY, display_name TEXT, units TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
 """
 
 # The entered-values table's name, for callers and tests that address it.
@@ -179,6 +187,9 @@ PROFILE_ENTRIES_TABLE = "profile_entries"
 
 # The anchor version log's name, for callers and tests that address it.
 ANCHOR_VERSIONS_TABLE = "anchor_versions"
+
+# The athlete-settings table's name, for callers and tests that address it.
+ATHLETE_SETTINGS_TABLE = "athlete_settings"
 
 # The amendment-window predicate F004 publishes for E003, as SQL usable
 # directly after ``WHERE``. This is its one code home: F004's Data Model,
@@ -264,10 +275,12 @@ def init_schema(conn: sqlite3.Connection) -> None:
     then additively reconcile any column added after a database was
     first created (see ``_reconcile_columns``), and version the HR anchors
     of a store whose sessions or entries predate the anchor version log
-    (``_sync_anchor_versions``; a no-op on a store the write paths kept)."""
+    (``_sync_anchor_versions``; a no-op on a store the write paths kept), and
+    seed the athlete-settings row when there is none (``_seed_athlete_settings``)."""
     conn.executescript(_SCHEMA_DDL)
     _reconcile_columns(conn)
     _sync_anchor_versions(conn)
+    _seed_athlete_settings(conn)
     conn.commit()
 
 
@@ -899,3 +912,55 @@ def read_hr_anchors(conn: sqlite3.Connection) -> dict[str, profile_module.Anchor
     sessions, entries = read_profile_inputs(conn)
     resolved = profile_module.resolve(sessions, entries)
     return profile_module.anchors(resolved, _read_anchor_log(conn))
+
+
+# The contract's UnitPrefs defaults, which a seeded athlete-settings row carries.
+DEFAULT_UNITS: dict[str, str] = {"distance": "km", "pace": "min_per_km", "temperature": "c"}
+
+
+def _seed_athlete_settings(conn: sqlite3.Connection) -> None:
+    """Insert the one athlete-settings row when the table has none: a new random ``id``,
+    ``display_name`` NULL, ``units`` the contract's ``UnitPrefs`` defaults
+    (``DEFAULT_UNITS``) and ``created_at`` now in UTC. A store that has the row keeps it, so
+    ``id`` and ``created_at`` do not change across restarts. Commits nothing itself."""
+    conn.execute(
+        f"""
+        INSERT INTO {ATHLETE_SETTINGS_TABLE} (id, display_name, units, created_at)
+        SELECT ?, NULL, ?, ? WHERE NOT EXISTS (SELECT 1 FROM {ATHLETE_SETTINGS_TABLE})
+        """,
+        (uuid.uuid4().hex, _json_dump(DEFAULT_UNITS), datetime.now(UTC).isoformat()),
+    )
+
+
+def read_athlete(
+    conn: sqlite3.Connection,
+) -> tuple[dict, dict[str, profile_module.FieldValue], dict[str, profile_module.Anchor]]:
+    """What ``GET /me`` serves, read in one snapshot: the athlete-settings row (``id``,
+    ``display_name``, ``units`` JSON-decoded, ``created_at``), every profile field as
+    ``profile.resolve`` computes it, and the four HR anchors as ``read_hr_anchors`` serves them.
+
+    Read-only: the reads share one deferred transaction, which is rolled back, so a write
+    landing between them cannot pair the fields of one state with the anchors of another.
+    Raises ``ValueError`` when there is no settings row or when ``read_hr_anchors`` raises;
+    ``init_schema`` seeds the row and repairs the anchor log, so either means a store that
+    has not been through it since an out-of-band write.
+    """
+    conn.execute("BEGIN")
+    try:
+        row = conn.execute(
+            f"SELECT id, display_name, units, created_at FROM {ATHLETE_SETTINGS_TABLE}"
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"no {ATHLETE_SETTINGS_TABLE} row; init_schema seeds it")
+        settings = {
+            "id": row["id"],
+            "display_name": row["display_name"],
+            "units": _json_load(row["units"]),
+            "created_at": row["created_at"],
+        }
+        sessions, entries = read_profile_inputs(conn)
+        resolved = profile_module.resolve(sessions, entries)
+        served = read_hr_anchors(conn)
+    finally:
+        conn.rollback()
+    return settings, resolved, served

@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "averaged pace is trusted once degraded samples are averaged. Null when D = 0.",
+        "The resting, max and threshold HR and sex anchors under the ordering rule, each with its version.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "The session context's env_wind_ms, verbatim.",
+        "The sex anchor's latest entry, `unspecified` included.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

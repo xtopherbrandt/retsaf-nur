@@ -748,3 +748,146 @@ class SessionFeaturesResponse(BaseModel):
         )
     )
     features: SessionFeatureValues
+
+
+# ---------------------------------------------------------------------------
+# GET /me (F016)
+#
+# The athlete's profile as ``profile.resolve`` computes it, one entry per field,
+# and the four HR anchors as ``db.read_hr_anchors`` serves them, beside the
+# contract's existing ``id``, ``display_name``, ``units`` and ``created_at``.
+# ``FeatureValue`` is the precedent: a value, or the reason it is
+# ``unavailable``, never both and never neither. The entry classes differ only
+# in the type of ``value`` and ``entered_value``.
+# ---------------------------------------------------------------------------
+
+_SOURCE_DESCRIPTION = (
+    "`fit` when a stored session's FIT file supplied the value, `entered` when the athlete's entry did, "
+    "null when unavailable."
+)
+_Sex = Literal["female", "male", "unspecified"]
+_SESSION_ID_DESCRIPTION = "The session whose file supplied the value; null unless `source` is `fit`."
+_ENTERED_VALUE_DESCRIPTION = (
+    "The athlete's latest entry for the field, shown even when a FIT value shadows it; null when there is "
+    "none or it was cleared."
+)
+
+
+class ProfileEntryBase(BaseModel):
+    """The fields every profile entry carries besides its value."""
+
+    unavailable: Literal["missing"] | None = Field(
+        description="`missing` when no stored file and no entry supplies a value; null when `value` is served."
+    )
+    source: Literal["fit", "entered"] | None = Field(description=_SOURCE_DESCRIPTION)
+    session_id: str | None = Field(description=_SESSION_ID_DESCRIPTION)
+    recorded_at: str | None = Field(
+        description=(
+            "The supplying session's stored start time when `source` is `fit`, the time the entry was set when it "
+            "is `entered`; null when unavailable."
+        )
+    )
+
+
+class ProfileSexEntry(ProfileEntryBase):
+    """`sex`: `male` or `female` from a FIT file, or `male`, `female` or `unspecified` as entered."""
+
+    value: _Sex | None = Field(description="The effective value; null when unavailable.")
+    entered_value: _Sex | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class ProfileDateEntry(ProfileEntryBase):
+    """`birth_date`: entered only; no FIT file carries it."""
+
+    value: datetime.date | None = Field(description="The effective value; null when unavailable.")
+    entered_value: datetime.date | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class ProfileNumberEntry(ProfileEntryBase):
+    """A body field: `body_mass_kg` in kg or `height_cm` in cm."""
+
+    value: float | None = Field(description="The effective value; null when unavailable.")
+    entered_value: float | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class ProfileIntegerEntry(ProfileEntryBase):
+    """A heart-rate field in bpm. For `max_hr_bpm` and `threshold_hr_bpm` only sessions stored as running count."""
+
+    value: int | None = Field(description="The effective value; null when unavailable.")
+    entered_value: int | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class AnchorBase(BaseModel):
+    """The fields every HR anchor carries besides its value."""
+
+    unavailable: Literal["missing", "order_conflict"] | None = Field(
+        description=(
+            "Null when the anchor is served. `missing` when the field has no effective value (for `sex`, also "
+            "when it is `unspecified`); `order_conflict` when the effective values break the ordering rule: "
+            "resting HR must be below max HR, or both conflict, and threshold HR must be above resting and below "
+            "max, checked against whichever of the two are served, or threshold alone conflicts."
+        )
+    )
+    source: Literal["fit", "entered"] | None = Field(description=_SOURCE_DESCRIPTION)
+    session_id: str | None = Field(description=_SESSION_ID_DESCRIPTION)
+    recorded_at: str | None = Field(
+        description="As the field entry's `recorded_at`; null when the anchor is unavailable."
+    )
+    version: int | None = Field(
+        description=(
+            "Starts at 1 and moves when, and only when, the served value changes. The source does not move it, and "
+            "neither does a period unavailable. Null when the anchor is unavailable."
+        )
+    )
+
+
+class HrAnchor(AnchorBase):
+    """A heart-rate anchor in bpm."""
+
+    value: int | None = Field(description="The served value; null when unavailable.")
+    entered_value: int | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class SexAnchor(AnchorBase):
+    """The `sex` anchor: `male` or `female` when served."""
+
+    value: Literal["female", "male"] | None = Field(description="The served value; null when unavailable.")
+    entered_value: _Sex | None = Field(description=_ENTERED_VALUE_DESCRIPTION)
+
+
+class HrAnchors(BaseModel):
+    """The four anchors a load computation reads, each served or unavailable with its reason."""
+
+    resting_hr_bpm: HrAnchor
+    max_hr_bpm: HrAnchor
+    threshold_hr_bpm: HrAnchor
+    sex: SexAnchor
+
+
+class UnitPrefs(BaseModel):
+    """The athlete's display units."""
+
+    distance: Literal["km", "mi"]
+    pace: Literal["min_per_km", "min_per_mi"]
+    temperature: Literal["c", "f"]
+
+
+class Athlete(BaseModel):
+    """The athlete's profile (F016). Each field's effective value is the stored session with the latest start
+    time whose file carries it (for max and threshold HR, sessions stored as running only), else the latest
+    entered value, else unavailable. Computed on read: nothing is cached, so deleting a session recomputes it."""
+
+    id: str
+    display_name: str | None
+    sex: ProfileSexEntry
+    birth_date: ProfileDateEntry
+    units: UnitPrefs
+    created_at: str = Field(description="When the athlete's settings were first created, ISO 8601 in UTC.")
+    body_mass_kg: ProfileNumberEntry
+    height_cm: ProfileNumberEntry
+    resting_hr_bpm: ProfileIntegerEntry
+    max_hr_bpm: ProfileIntegerEntry
+    threshold_hr_bpm: ProfileIntegerEntry
+    anchors: HrAnchors = Field(
+        description="The resting, max and threshold HR and sex anchors under the ordering rule, each with its version."
+    )

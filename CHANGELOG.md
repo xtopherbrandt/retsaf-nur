@@ -24,7 +24,15 @@ the profile, says a latest-file value can go down, and names no age-based max-HR
 
 F016: `GET /me` returns each profile field's effective value, its source (`fit` with the session,
 or `entered`) and any entry a file value shadows, plus the resting, max and threshold HR and sex
-anchors, each available with a version or unavailable as `missing` or `order_conflict`.
+anchors, each available with a version or unavailable as `missing` or `order_conflict`, beside
+the athlete's `id`, `display_name`, `units` and `created_at` (one settings row, seeded at startup
+with `display_name` null and the default units). A store whose anchor version log does not hold a
+served value is a 500 that names the repair: restarting the API repairs the log. In the contract,
+`getMe` is `implemented`, inherits the global `bearerAuth` like the session operations, and lists
+no 401. `Athlete`'s `sex` and `birth_date` change from scalars to per-field entries; that shape
+change is accepted only because `getMe` was planned, and `createAthlete`'s 201 still points at
+`Athlete`. `OnboardingInput` still names the weight `weight_kg`, where `Athlete` names it
+`body_mass_kg`: two names for one field, flagged for the UI project.
 `PATCH /me` stores entered values (`null` clears a field; `{}` changes nothing) and returns the
 same shape. `runcoach profile show` prints them, and `runcoach profile set` enters or clears them.
 

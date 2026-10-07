@@ -15,11 +15,12 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-10-04 the implemented endpoints in retsaf-nur are GET /health,
+# As of 2026-10-07 the implemented endpoints in retsaf-nur are GET /health,
 # /sessions (POST ingest, GET detail, DELETE), GET /metrics/hrv (F005: the
-# per-day series plus the verdict blocks, `from`/`to` optional) and
+# per-day series plus the verdict blocks, `from`/`to` optional),
 # GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
-# descriptors, computed on read, nothing stored); everything else
+# descriptors, computed on read, nothing stored) and GET /me (F016: each
+# profile field with its source, and the HR anchors); everything else
 # is `planned` and is developed against a mock generated from this file until
 # the backend catches up. POST /sessions carries the F004 `resting_capture`
 # flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
@@ -56,7 +57,7 @@ tags:
   - name: System
     description: "Liveness/version. x-readiness: implemented."
   - name: Auth & Athlete
-    description: "Session, profile, onboarding. x-readiness: planned (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 §4.4."
+    description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors); planned otherwise (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 section 4.4."
   - name: Connections & Sync
     description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10."
   - name: Goal
@@ -103,7 +104,19 @@ paths:
       tags: [Auth & Athlete]
       operationId: getMe
       summary: The authenticated athlete's profile
-      x-readiness: planned
+      description: >
+        F016. The athlete's settings (id, display_name, units, created_at), one
+        entry per profile field (its effective value, its source, the session or
+        entry time behind it, and the latest entry even when a FIT value shadows
+        it) and the resting, max and threshold HR and sex anchors, each served
+        with a version or unavailable as `missing` or `order_conflict`. Computed
+        on read; nothing is stored. An empty store is a 200 with every field and
+        anchor `missing`. A store out of step (no settings row, or an anchor
+        version log that does not hold a served value; only a write outside the
+        API's write paths causes either) is a 500 whose detail names the cause
+        and the repair: restart the API, whose startup repairs both. As-built
+        errors are FastAPI {detail}.
+      x-readiness: implemented
       x-owner-spec: "spec/01 (athlete input); spec/04 §4.4 (starting state)"
       x-story: [authenticate, create-athlete]
       responses:
@@ -112,7 +125,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Athlete" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
     patch:
       tags: [Auth & Athlete]
       operationId: updateMe
@@ -1066,14 +1078,30 @@ components:
     # ---- Athlete / onboarding (planned — field-level per spec/04 §4.4) ---
     Athlete:
       type: object
-      description: "Planned. Field-level fidelity pending a full read of spec/01 + spec/04 §4.4."
+      description: >
+        GET /me (F016, implemented). id, display_name, units and created_at are
+        the athlete's settings. Each profile field is an entry: its effective
+        value is the stored session with the latest start time whose file
+        carries it (for max_hr_bpm and threshold_hr_bpm, sessions stored as
+        running only), else the latest entered value, else unavailable
+        (`missing`). sex and birth_date were scalars before F016 and are entries
+        now. anchors holds the four HR anchors under the ordering rule.
+        Computed on read, so deleting a session recomputes it. OnboardingInput
+        still names the weight weight_kg, where this names it body_mass_kg.
+      required: [id, display_name, sex, birth_date, units, created_at, body_mass_kg, height_cm, resting_hr_bpm, max_hr_bpm, threshold_hr_bpm, anchors]
       properties:
         id: { type: string }
         display_name: { type: string, nullable: true }
-        sex: { type: string, nullable: true, enum: [female, male, unspecified] }
-        birth_date: { type: string, format: date, nullable: true }
+        sex: { $ref: "#/components/schemas/ProfileSexEntry" }
+        birth_date: { $ref: "#/components/schemas/ProfileDateEntry" }
         units: { $ref: "#/components/schemas/UnitPrefs" }
-        created_at: { type: string }
+        created_at: { type: string, description: "When the athlete's settings were first created, ISO 8601 in UTC." }
+        body_mass_kg: { $ref: "#/components/schemas/ProfileNumberEntry" }
+        height_cm: { $ref: "#/components/schemas/ProfileNumberEntry" }
+        resting_hr_bpm: { $ref: "#/components/schemas/ProfileIntegerEntry" }
+        max_hr_bpm: { $ref: "#/components/schemas/ProfileIntegerEntry" }
+        threshold_hr_bpm: { $ref: "#/components/schemas/ProfileIntegerEntry" }
+        anchors: { $ref: "#/components/schemas/HrAnchors" }
 
     AthleteProfileUpdate:
       type: object
@@ -2113,3 +2141,99 @@ components:
             env_wind_ms:
               allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
               description: "The session context's env_wind_ms, verbatim."
+
+    # ---- Athlete profile (F016, implemented) -----------------------------
+    ProfileSexEntry:
+      type: object
+      description: "`sex`: `male` or `female` from a FIT file, or `male`, `female` or `unspecified` as entered. Exactly one of value and unavailable is non-null."
+      required: [value, unavailable, source, session_id, recorded_at, entered_value]
+      properties:
+        value: { type: string, nullable: true, enum: [female, male, unspecified] }
+        unavailable: { type: string, nullable: true, enum: [missing], description: "`missing` when no stored file and no entry supplies a value." }
+        source: { type: string, nullable: true, enum: [fit, entered], description: "`fit` (a stored session's FIT file), `entered` (the athlete's entry), null when unavailable." }
+        session_id: { type: string, nullable: true, description: "The session whose file supplied the value; null unless source is `fit`." }
+        recorded_at: { type: string, nullable: true, description: "The supplying session's start time (`fit`) or the time the entry was set (`entered`)." }
+        entered_value: { type: string, nullable: true, enum: [female, male, unspecified], description: "The latest entry, shown even when a FIT value shadows it; null when none or cleared." }
+    ProfileDateEntry:
+      type: object
+      description: "`birth_date`: entered only; no FIT file carries it. Fields as ProfileSexEntry."
+      required: [value, unavailable, source, session_id, recorded_at, entered_value]
+      properties:
+        value: { type: string, format: date, nullable: true }
+        unavailable: { type: string, nullable: true, enum: [missing] }
+        source: { type: string, nullable: true, enum: [fit, entered] }
+        session_id: { type: string, nullable: true }
+        recorded_at: { type: string, nullable: true }
+        entered_value: { type: string, format: date, nullable: true }
+    ProfileNumberEntry:
+      type: object
+      description: "A body field, `body_mass_kg` (kg) or `height_cm` (cm). Fields as ProfileSexEntry."
+      required: [value, unavailable, source, session_id, recorded_at, entered_value]
+      properties:
+        value: { type: number, nullable: true }
+        unavailable: { type: string, nullable: true, enum: [missing] }
+        source: { type: string, nullable: true, enum: [fit, entered] }
+        session_id: { type: string, nullable: true }
+        recorded_at: { type: string, nullable: true }
+        entered_value: { type: number, nullable: true }
+    ProfileIntegerEntry:
+      type: object
+      description: "A heart-rate field in bpm; for max_hr_bpm and threshold_hr_bpm only sessions stored as running count. Fields as ProfileSexEntry."
+      required: [value, unavailable, source, session_id, recorded_at, entered_value]
+      properties:
+        value: { type: integer, nullable: true }
+        unavailable: { type: string, nullable: true, enum: [missing] }
+        source: { type: string, nullable: true, enum: [fit, entered] }
+        session_id: { type: string, nullable: true }
+        recorded_at: { type: string, nullable: true }
+        entered_value: { type: integer, nullable: true }
+    HrAnchors:
+      type: object
+      description: "The four anchors a load computation reads, each served or unavailable with its reason."
+      required: [resting_hr_bpm, max_hr_bpm, threshold_hr_bpm, sex]
+      properties:
+        resting_hr_bpm: { $ref: "#/components/schemas/HrAnchor" }
+        max_hr_bpm: { $ref: "#/components/schemas/HrAnchor" }
+        threshold_hr_bpm: { $ref: "#/components/schemas/HrAnchor" }
+        sex: { $ref: "#/components/schemas/SexAnchor" }
+    HrAnchor:
+      type: object
+      description: >
+        A heart-rate anchor in bpm: served (value, source, session_id,
+        recorded_at and version set; unavailable null) or unavailable (those
+        null; unavailable names the reason). entered_value is the field's latest
+        entry either way.
+      required: [value, unavailable, source, session_id, recorded_at, version, entered_value]
+      properties:
+        value: { type: integer, nullable: true }
+        unavailable:
+          type: string
+          nullable: true
+          enum: [missing, order_conflict]
+          description: >
+            `missing` when the field has no effective value (for sex, also when
+            it is `unspecified`). `order_conflict` when the effective values break
+            the ordering rule: resting HR must be below max HR, or both conflict;
+            threshold HR must be above resting and below max, checked against
+            whichever of the two are served, or threshold alone conflicts. No
+            plausibility range is applied.
+        source: { type: string, nullable: true, enum: [fit, entered] }
+        session_id: { type: string, nullable: true }
+        recorded_at: { type: string, nullable: true }
+        version:
+          type: integer
+          nullable: true
+          description: "Starts at 1 and moves when, and only when, the served value changes; the source does not move it, and neither does a period unavailable."
+        entered_value: { type: integer, nullable: true }
+    SexAnchor:
+      type: object
+      description: "The sex anchor: `male` or `female` when served; fields as HrAnchor, never `order_conflict`."
+      required: [value, unavailable, source, session_id, recorded_at, version, entered_value]
+      properties:
+        value: { type: string, nullable: true, enum: [female, male] }
+        unavailable: { type: string, nullable: true, enum: [missing, order_conflict] }
+        source: { type: string, nullable: true, enum: [fit, entered] }
+        session_id: { type: string, nullable: true }
+        recorded_at: { type: string, nullable: true }
+        version: { type: integer, nullable: true }
+        entered_value: { type: string, nullable: true, enum: [female, male, unspecified], description: "The sex anchor's latest entry, `unspecified` included." }

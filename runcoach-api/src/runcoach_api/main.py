@@ -750,3 +750,69 @@ def get_session_features(session_id: str) -> SessionFeaturesResponse:
 
     session, rows = inputs
     return SessionFeaturesResponse(**session_features.compute_session_features(session, rows))
+
+
+# ---------------------------------------------------------------------------
+# GET /me (F016)
+#
+# Appended below the earlier routes with its own imports, as the features
+# route is, so the lines cited above stay in place.
+# ---------------------------------------------------------------------------
+from runcoach_api import profile
+from runcoach_api.schemas import Athlete
+
+
+def _entry(field: profile.FieldValue) -> dict:
+    return {
+        "value": field.value,
+        "unavailable": field.reason,
+        "source": field.source,
+        "session_id": field.session_id,
+        "recorded_at": field.recorded_at,
+        "entered_value": field.entered_value,
+    }
+
+
+def _anchor(anchor: profile.Anchor) -> dict:
+    return {
+        "value": anchor.value,
+        "unavailable": anchor.reason,
+        "source": anchor.source,
+        "session_id": anchor.session_id,
+        "recorded_at": anchor.recorded_at,
+        "version": anchor.version,
+        "entered_value": anchor.entered_value,
+    }
+
+
+@app.get("/me", response_model=Athlete, operation_id="getMe", tags=["Auth & Athlete"])
+def get_me() -> Athlete:
+    """The athlete's profile (F016): the settings row, each field's effective value with its
+    source and any entry a file shadows, and the four HR anchors.
+
+    ``db.read_athlete`` reads all three in one snapshot. Nothing is stored and no schema is
+    touched: the schema and the settings row come from ``db.init_schema``, which the app
+    lifespan runs at startup, never from this read. An empty store is a 200 with every field
+    and anchor unavailable, reason ``missing``.
+
+    The one error is a store out of step: no settings row, or an anchor version log that does
+    not hold a served value (``db.read_hr_anchors``). Only a write outside the app's write
+    paths causes either, and ``init_schema`` repairs both, so this is a 500 that names the
+    cause and the repair (restart the API) rather than serving a version that names another
+    value. The read does not repair it, because a GET does not write.
+    """
+    conn = db.get_connection()
+    try:
+        settings, resolved, served = db.read_athlete(conn)
+    except ValueError as exc:
+        raise HTTPException(
+            500, f"the profile store is out of step ({exc}); restart the API, whose startup repairs it"
+        ) from exc
+    finally:
+        conn.close()
+
+    return Athlete(
+        **settings,
+        **{field: _entry(resolved[field]) for field in profile.ENTERED_FIELDS},
+        anchors={field: _anchor(served[field]) for field in profile.ANCHOR_FIELDS},
+    )
