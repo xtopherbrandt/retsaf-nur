@@ -84,8 +84,8 @@ class Session:
     # --- profile settings the file carried (F016) ------------------------
     # The first user_profile / zones_target message's values, as
     # ingestion.profile_values maps them; None = the file had no value
-    # (invalid, missing, or 0 for the five numeric fields). Stored whatever
-    # the sport. Not in GET /sessions/{id}.
+    # (invalid, missing, 0 or negative for the five numeric fields, or a
+    # non-finite body mass). Stored whatever the sport. Not in GET /sessions/{id}.
     sex: str | None = None
     body_mass_kg: float | None = None
     height_cm: int | None = None
