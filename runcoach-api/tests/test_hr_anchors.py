@@ -148,8 +148,15 @@ def test_anchor_lookup_refuses_a_log_that_does_not_hold_the_served_value() -> No
     lookup raises rather than serving a version that names another value."""
     resolved = _resolved(47, 188, 169, "male")
     with pytest.raises(ValueError, match="max_hr_bpm"):
-        profile.anchors(resolved, {"resting_hr_bpm": (47, 1), "max_hr_bpm": (189, 2),
-                                   "threshold_hr_bpm": (169, 1), "sex": ("male", 1)})
+        profile.anchors(
+            resolved,
+            {
+                "resting_hr_bpm": (47, 1),
+                "max_hr_bpm": (189, 2),
+                "threshold_hr_bpm": (169, 1),
+                "sex": ("male", 1),
+            },
+        )
 
 
 def test_anchor_next_versions_bump_only_on_a_changed_served_value() -> None:

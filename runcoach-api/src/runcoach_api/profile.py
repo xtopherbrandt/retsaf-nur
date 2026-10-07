@@ -239,9 +239,7 @@ def order_rule(resolved: Mapping[str, FieldValue]) -> dict[str, str | None]:
         # Only a served bound checks threshold: a missing or conflicting one does not.
         lower = resting if reasons["resting_hr_bpm"] is None else None
         upper = max_hr if reasons["max_hr_bpm"] is None else None
-        if (lower is not None and not threshold > lower) or (
-            upper is not None and not threshold < upper
-        ):
+        if (lower is not None and not threshold > lower) or (upper is not None and not threshold < upper):
             reasons["threshold_hr_bpm"] = ORDER_CONFLICT
     return reasons
 
@@ -273,9 +271,7 @@ def next_versions(
     return changes
 
 
-def anchors(
-    resolved: Mapping[str, FieldValue], logged: Mapping[str, tuple[Any, int]]
-) -> dict[str, Anchor]:
+def anchors(resolved: Mapping[str, FieldValue], logged: Mapping[str, tuple[Any, int]]) -> dict[str, Anchor]:
     """The four anchors, from ``resolve``'s result and the version log.
 
     Raises ``ValueError`` when a served anchor's value is not the value the log
