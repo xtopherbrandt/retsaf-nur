@@ -40,8 +40,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from runcoach_api import db
-from runcoach_api import profile
+from runcoach_api import db, profile
 from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
