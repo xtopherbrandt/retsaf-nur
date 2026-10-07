@@ -40,7 +40,9 @@ docstrings, the CHANGELOG, spec and reference documents, and `.claude/rules/`.
   removes any line of F naming X, every hit for X in F fails, a self-tag included. Rewrite the
   line, or justify it as `listed`.
 - **A bad range is an error.** The base must be an ancestor of the head and a different commit:
-  `--base HEAD` and a reversed range exit 2, rather than comparing nothing and passing.
+  `--base HEAD` and a reversed range exit 2, rather than comparing nothing and passing. The
+  sweep also refuses, with exit 2, a range in which no commit has one of the given IDs as its
+  scope (the wrong range or the wrong IDs), and a range that compares no file.
 - **The user's git config does not change what is read.** The script fixes the diff prefixes and
   drops a configured `blame.ignoreRevsFile`; a diff header it cannot read is an error, not a file
   skipped.
