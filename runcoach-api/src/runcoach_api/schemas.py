@@ -1,7 +1,7 @@
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from runcoach_api.metrics import hrv_trend
 
@@ -865,11 +865,60 @@ class HrAnchors(BaseModel):
 
 
 class UnitPrefs(BaseModel):
-    """The athlete's display units."""
+    """The athlete's display units. An unknown key is refused, so a misspelt unit is a 422 on
+    ``PATCH /me`` rather than a change silently dropped."""
+
+    model_config = ConfigDict(extra="forbid")
 
     distance: Literal["km", "mi"]
     pace: Literal["min_per_km", "min_per_mi"]
     temperature: Literal["c", "f"]
+
+
+_HR_ENTRY = Field(
+    None, gt=0, strict=True, description="A whole number of bpm above 0; null clears the entry."
+)
+_BODY_ENTRY_DESCRIPTION = "A finite number above 0; null clears the entry."
+
+
+class AthleteProfileUpdate(BaseModel):
+    """The body of ``PATCH /me``: any of the entered profile fields plus ``display_name`` and ``units``.
+
+    A field left out is unchanged. For a profile field, null clears the entry, so the field falls to the
+    stored FIT value or unavailable, never to an earlier entry. HR values are strict whole numbers above 0
+    (``true``, ``"188"`` and ``188.5`` are refused); body values are finite numbers above 0, strict so a
+    JSON ``true`` is not taken as 1. ``birth_date`` is a ``YYYY-MM-DD`` date; the route also refuses one
+    after today in ``athlete_timezone``. Ordering across fields is not checked here: it is the anchor
+    lookup's rule, and ``GET /me`` shows a conflicting entry as ``order_conflict``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = Field(None, description="The athlete's display name; null clears it.")
+    units: UnitPrefs = Field(None, description="The athlete's display units, all three; not nullable.")  # type: ignore[assignment]
+    sex: _Sex | None = Field(None, description="`male`, `female` or `unspecified`; null clears the entry.")
+    birth_date: str | None = Field(
+        None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        json_schema_extra={"format": "date"},
+        description="A `YYYY-MM-DD` date, not after today in the athlete's timezone; null clears the entry.",
+    )
+    body_mass_kg: float | None = Field(
+        None, gt=0, allow_inf_nan=False, strict=True, description=f"In kg. {_BODY_ENTRY_DESCRIPTION}"
+    )
+    height_cm: float | None = Field(
+        None, gt=0, allow_inf_nan=False, strict=True, description=f"In cm. {_BODY_ENTRY_DESCRIPTION}"
+    )
+    resting_hr_bpm: int | None = _HR_ENTRY
+    max_hr_bpm: int | None = _HR_ENTRY
+    threshold_hr_bpm: int | None = _HR_ENTRY
+
+    @field_validator("birth_date")
+    @classmethod
+    def _a_calendar_date(cls, value: str | None) -> str | None:
+        """The pattern admits ``1980-13-01``; ``date.fromisoformat`` refuses it."""
+        if value is not None:
+            datetime.date.fromisoformat(value)
+        return value
 
 
 class Athlete(BaseModel):

@@ -16,7 +16,7 @@ Two halves:
    ``POST /sessions`` from real or patched fixture bytes
    (``tests/support/fit_patch.py``), deleted through ``DELETE /sessions/{id}``,
    and entries are written through ``db.write_profile_entries`` (the function
-   ``PATCH /me`` will call). The profile is read back with
+   ``PATCH /me`` calls). The profile is read back with
    ``db.read_profile_inputs`` and resolved by ``profile.resolve``. Each test
    prints the fields it asserts on (run with ``-s``).
 2. **The resolver over plain rows**: precedence, the tie-break, the running

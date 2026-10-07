@@ -803,16 +803,97 @@ def get_me() -> Athlete:
     """
     conn = db.get_connection()
     try:
+        return _athlete(conn)
+    finally:
+        conn.close()
+
+
+def _athlete(conn) -> Athlete:
+    """``GET /me``'s body, read by ``db.read_athlete``; a store out of step is the named 500."""
+    try:
         settings, resolved, served = db.read_athlete(conn)
     except ValueError as exc:
         raise HTTPException(
             500, f"the profile store is out of step ({exc}); restart the API, whose startup repairs it"
         ) from exc
-    finally:
-        conn.close()
-
     return Athlete(
         **settings,
         **{field: _entry(resolved[field]) for field in profile.ENTERED_FIELDS},
         anchors={field: _anchor(served[field]) for field in profile.ANCHOR_FIELDS},
     )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /me (F016)
+# ---------------------------------------------------------------------------
+import math
+
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from runcoach_api.schemas import AthleteProfileUpdate
+
+_NON_FINITE_TOKENS = {math.inf: "Infinity", -math.inf: "-Infinity"}
+
+
+def _json_safe(value):
+    """``value`` with every non-finite float written as the JSON token that carried it."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return "NaN" if math.isnan(value) else _NON_FINITE_TOKENS[value]
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error(request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's own 422 body (``fastapi.exception_handlers.request_validation_exception_handler``),
+    except that a non-finite input is echoed as text. The request parser reads the ``NaN`` and
+    ``Infinity`` tokens, so a refused one sits in the error's ``input``, and the response encoder
+    refuses non-finite floats: without this a refused ``NaN`` body value was a 500, not a 422."""
+    return JSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
+
+
+@app.patch("/me", response_model=Athlete, operation_id="updateMe", tags=["Auth & Athlete"])
+def update_me(update: AthleteProfileUpdate) -> Athlete:
+    """Store the athlete's entries and settings (F016), then return ``GET /me``'s shape.
+
+    ``AthleteProfileUpdate`` screens each value; a rejected body is a 422 that writes nothing.
+    The one screen it cannot apply is the clock: a ``birth_date`` after today in
+    ``athlete_timezone`` (read as ``get_hrv_trend`` reads it, through the ``_utcnow`` seam) is a
+    422 here, before any write. Each profile field present writes one entered-value row through
+    ``db.write_profile_entries``, null a clear, and ``display_name`` and ``units`` change the
+    settings row, all in one transaction with the anchor version log. ``{}`` writes nothing.
+    Ordering across fields is not checked: an entry that conflicts with another field's
+    effective value is stored, and ``GET /me`` serves the anchors as ``order_conflict``.
+    """
+    present = update.model_fields_set
+    birth_date = update.birth_date if "birth_date" in present else None
+    if birth_date is not None:
+        today = _today_in(ZoneInfo(db._load_config_cached().athlete_timezone))
+        if datetime.date.fromisoformat(birth_date) > today:
+            raise RequestValidationError(
+                [
+                    {
+                        "type": "value_error",
+                        "loc": ("body", "birth_date"),
+                        "msg": f"Value error, birth_date {birth_date} is after today ({today}) in the athlete's timezone",
+                        "input": birth_date,
+                    }
+                ]
+            )
+    settings = {field: getattr(update, field) for field in db.SETTINGS_FIELDS if field in present}
+    if "units" in settings:
+        settings["units"] = update.units.model_dump()
+    values = {field: getattr(update, field) for field in profile.ENTERED_FIELDS if field in present}
+
+    conn = db.get_connection()
+    try:
+        if values or settings:
+            db.write_profile_entries(conn, values, settings=settings)
+        return _athlete(conn)
+    finally:
+        conn.close()

@@ -14,8 +14,9 @@ isolated store, as uvicorn does at startup. A GET does not write, so the
 route never creates the schema or the settings row itself; a store that has
 not been through ``init_schema`` is not served.
 
-Entries are written with ``db.write_profile_entries``, the function the
-entry route calls, because no entry route is served yet. Values are pinned
+Entries are written with ``db.write_profile_entries``, the function
+``PATCH /me`` calls, so these tests read the GET alone (``test_me_patch_route``
+drives the entries through ``PATCH /me``). Values are pinned
 against the fixtures' decoded settings: ``sample_run`` carries resting 47,
 max 188, threshold 169 and ``male``.
 """

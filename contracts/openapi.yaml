@@ -57,7 +57,7 @@ tags:
   - name: System
     description: "Liveness/version. x-readiness: implemented."
   - name: Auth & Athlete
-    description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors); planned otherwise (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 section 4.4."
+    description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors) and PATCH /me (entries and settings); planned otherwise (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 section 4.4."
   - name: Connections & Sync
     description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10."
   - name: Goal
@@ -129,7 +129,23 @@ paths:
       tags: [Auth & Athlete]
       operationId: updateMe
       summary: Update mutable profile fields
-      x-readiness: planned
+      description: >
+        F016. A partial object: any of the entered profile fields plus
+        display_name and units. A field left out is unchanged. Each profile
+        field present stores one entered value (null clears the entry, so the
+        field falls to the stored FIT value or unavailable, never to an earlier
+        entry); display_name (null clears it) and units (all three, not
+        nullable) change the settings. An empty object is a 200 that changes
+        nothing. The response is getMe's shape, read after the write. 422, with
+        nothing written, for an unknown field (units' keys included); an HR
+        value that is not a whole number above 0 (true, "188" and 188.5 are
+        refused); a body value that is not a finite number above 0; a sex
+        outside the enum; a birth_date that is not a YYYY-MM-DD date or lies
+        after today in the athlete's timezone. Ordering across fields is not
+        checked here: an entry that conflicts with another field's effective
+        value is stored, and getMe serves the anchors as order_conflict.
+        As-built errors are FastAPI {detail}.
+      x-readiness: implemented
       x-owner-spec: "spec/01"
       requestBody:
         required: true
@@ -142,7 +158,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Athlete" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /athletes:
@@ -1105,12 +1120,22 @@ components:
 
     AthleteProfileUpdate:
       type: object
+      description: "updateMe's body. Every field is optional; a field left out is unchanged, and null clears a profile entry or display_name."
+      additionalProperties: false
       properties:
-        display_name: { type: string }
+        display_name: { type: string, nullable: true }
         units: { $ref: "#/components/schemas/UnitPrefs" }
+        sex: { type: string, nullable: true, enum: [female, male, unspecified] }
+        birth_date: { type: string, nullable: true, format: date, description: "Not after today in the athlete's timezone." }
+        body_mass_kg: { type: number, nullable: true, exclusiveMinimum: 0, description: "In kg; finite." }
+        height_cm: { type: number, nullable: true, exclusiveMinimum: 0, description: "In cm; finite." }
+        resting_hr_bpm: { type: integer, nullable: true, exclusiveMinimum: 0 }
+        max_hr_bpm: { type: integer, nullable: true, exclusiveMinimum: 0 }
+        threshold_hr_bpm: { type: integer, nullable: true, exclusiveMinimum: 0 }
 
     UnitPrefs:
       type: object
+      additionalProperties: false
       properties:
         distance: { type: string, enum: [km, mi], default: km }
         pace: { type: string, enum: [min_per_km, min_per_mi], default: min_per_km }

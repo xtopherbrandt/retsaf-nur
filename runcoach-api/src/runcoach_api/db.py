@@ -797,26 +797,42 @@ def read_session_feature_inputs(conn: sqlite3.Connection, session_id: str) -> tu
 
 
 def write_profile_entries(
-    conn: sqlite3.Connection, values: Mapping[str, object], set_at: str | None = None
+    conn: sqlite3.Connection,
+    values: Mapping[str, object],
+    set_at: str | None = None,
+    *,
+    settings: Mapping[str, object] | None = None,
 ) -> str:
     """Write the athlete's entered profile values, one ``profile_entries`` row per field.
 
     ``values`` maps a field of ``profile.ENTERED_FIELDS`` to its entered value,
     or to ``None``, which writes a clear (a row whose value is NULL). Every row
     of one call shares ``set_at`` (an ISO timestamp; default: now in UTC,
-    ``isoformat()``), which is returned. An empty mapping writes nothing. A
-    field outside ``ENTERED_FIELDS`` raises ``ValueError`` before any row is
-    written; the rows of one call are one transaction. Values are not
-    validated here: ``PATCH /me`` screens them and calls this. The caller has
-    run ``init_schema``, as ``persist``'s callers do. The HR anchor version
-    log is updated in the same transaction (``_sync_anchor_versions``).
+    ``isoformat()``), which is returned. ``settings`` optionally maps
+    ``display_name`` (a string or ``None``) and ``units`` (a ``UnitPrefs``
+    mapping) to their new values on the athlete-settings row. A field outside
+    ``ENTERED_FIELDS``, or a settings key outside ``SETTINGS_FIELDS``, raises
+    ``ValueError`` before anything is written; the rows and the settings change
+    of one call are one transaction. An empty ``values`` with no ``settings``
+    still runs that transaction but adds no row. Values are not validated here:
+    ``PATCH /me`` screens them and calls this. The caller has run
+    ``init_schema``, as ``persist``'s callers do. The HR anchor version log is
+    updated in the same transaction (``_sync_anchor_versions``).
     """
     unknown = sorted(set(values) - set(profile_module.ENTERED_FIELDS))
     if unknown:
         raise ValueError(f"not an entered profile field: {', '.join(unknown)}")
+    settings = dict(settings or {})
+    unknown_settings = sorted(set(settings) - set(SETTINGS_FIELDS))
+    if unknown_settings:
+        raise ValueError(f"not an athlete setting: {', '.join(unknown_settings)}")
     if set_at is None:
         set_at = datetime.now(UTC).isoformat()
     with conn:
+        if "display_name" in settings:
+            conn.execute(f"UPDATE {ATHLETE_SETTINGS_TABLE} SET display_name = ?", (settings["display_name"],))
+        if "units" in settings:
+            conn.execute(f"UPDATE {ATHLETE_SETTINGS_TABLE} SET units = ?", (_json_dump(settings["units"]),))
         conn.executemany(
             f"INSERT INTO {PROFILE_ENTRIES_TABLE} (field, value, set_at) VALUES (?, ?, ?)",
             [(field, _json_dump(value), set_at) for field, value in values.items()],
@@ -916,6 +932,9 @@ def read_hr_anchors(conn: sqlite3.Connection) -> dict[str, profile_module.Anchor
 
 # The contract's UnitPrefs defaults, which a seeded athlete-settings row carries.
 DEFAULT_UNITS: dict[str, str] = {"distance": "km", "pace": "min_per_km", "temperature": "c"}
+
+# The athlete-settings columns ``write_profile_entries`` can change (``id`` and ``created_at`` never change).
+SETTINGS_FIELDS: tuple[str, ...] = ("display_name", "units")
 
 
 def _seed_athlete_settings(conn: sqlite3.Connection) -> None:

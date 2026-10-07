@@ -33,8 +33,16 @@ no 401. `Athlete`'s `sex` and `birth_date` change from scalars to per-field entr
 change is accepted only because `getMe` was planned, and `createAthlete`'s 201 still points at
 `Athlete`. `OnboardingInput` still names the weight `weight_kg`, where `Athlete` names it
 `body_mass_kg`: two names for one field, flagged for the UI project.
-`PATCH /me` stores entered values (`null` clears a field; `{}` changes nothing) and returns the
-same shape. `runcoach profile show` prints them, and `runcoach profile set` enters or clears them.
+`PATCH /me` stores entered values, one per field sent (`null` clears a field; `{}` changes
+nothing), sets `display_name` and `units` (all three), and returns the same shape. It answers 422,
+writing nothing, for an unknown field, an HR value that is not a whole number above 0 (`true`,
+`"188"` and `188.5` included), a body value that is not a finite number above 0, a `sex` outside
+the enum, or a `birth_date` that is not a `YYYY-MM-DD` date or lies after today in
+`athlete_timezone`; ordering across fields is left to the anchors. A JSON body carrying a `NaN` or
+`Infinity` token that fails validation is a 422 that echoes the token as text. In the
+contract, `updateMe` is `implemented`, inherits `bearerAuth` and lists no 401, and
+`AthleteProfileUpdate` gains the seven entered fields; it and `UnitPrefs` refuse unknown keys.
+`runcoach profile show` prints them, and `runcoach profile set` enters or clears them.
 
 Tests: a fixture whose name lacks a lowercase `.fit` suffix fails the fixture provenance tests, so
 a file named `X.FIT` cannot escape the case-sensitive census globs on Linux.

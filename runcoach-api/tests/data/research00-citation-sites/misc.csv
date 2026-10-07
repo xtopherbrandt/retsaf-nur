@@ -6,22 +6,22 @@ repo,.claude/rules/project-domain-and-spec-fidelity.md,30,§1.7,PRIN-13
 repo,.claude/rules/project-domain-and-spec-fidelity.md,30,§1.7,PRIN-14
 repo,.claude/rules/project-domain-and-spec-fidelity.md,31,,DOC-01
 repo,.claude/rules/project-api-contract.md,43,,literal
-repo,contracts/openapi.yaml,297,§1.9,GOAL-02
-repo,contracts/openapi.yaml,343,§1.9,GOAL-03
-repo,contracts/openapi.yaml,343,§1.9,GOAL-04
-repo,contracts/openapi.yaml,698,,PRIN-27
-repo,contracts/openapi.yaml,1419,,PRIN-27
-repo,contracts/openapi.yaml,1522,,PRIN-27
-repo,contracts/openapi.yaml,1521,§1.6,PRIN-12
-repo,contracts/openapi.yaml,1717,§1.6,PRIN-23
-repo,contracts/openapi.yaml,1861,§5.4 (v),HRV-31
-repo,contracts/openapi.yaml,1900,§5.4 (iii),HRV-57
-repo,contracts/openapi.yaml,1920,§5.4 (iii),HRV-22
-repo,contracts/openapi.yaml,1941,§1.7,PRIN-14
-repo,contracts/openapi.yaml,698,,PRIN-24
-repo,contracts/openapi.yaml,1419,,PRIN-24
-repo,contracts/openapi.yaml,1522,,PRIN-24
-repo,contracts/openapi.yaml,1687,,PRIN-24
+repo,contracts/openapi.yaml,312,§1.9,GOAL-02
+repo,contracts/openapi.yaml,358,§1.9,GOAL-03
+repo,contracts/openapi.yaml,358,§1.9,GOAL-04
+repo,contracts/openapi.yaml,713,,PRIN-27
+repo,contracts/openapi.yaml,1444,,PRIN-27
+repo,contracts/openapi.yaml,1547,,PRIN-27
+repo,contracts/openapi.yaml,1546,§1.6,PRIN-12
+repo,contracts/openapi.yaml,1742,§1.6,PRIN-23
+repo,contracts/openapi.yaml,1886,§5.4 (v),HRV-31
+repo,contracts/openapi.yaml,1925,§5.4 (iii),HRV-57
+repo,contracts/openapi.yaml,1945,§5.4 (iii),HRV-22
+repo,contracts/openapi.yaml,1966,§1.7,PRIN-14
+repo,contracts/openapi.yaml,713,,PRIN-24
+repo,contracts/openapi.yaml,1444,,PRIN-24
+repo,contracts/openapi.yaml,1547,,PRIN-24
+repo,contracts/openapi.yaml,1712,,PRIN-24
 repo,runcoach-api/tests/data/research00_census.csv,52,§3.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,60,§1.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,101,PRIN-16,literal
