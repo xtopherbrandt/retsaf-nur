@@ -4,8 +4,12 @@
 for where the SQLite file lives -- no separate config field is added
 here. ``get_connection`` creates the directory if needed and returns a
 connection with foreign keys enabled; ``init_schema`` is idempotent
-DDL for the four canonical-schema tables and the athlete's entered
-profile values (``profile_entries``); ``persist`` writes one
+DDL for the four canonical-schema tables and F016's three profile
+tables -- the athlete's entered values (``profile_entries``), the HR
+anchor version log (``anchor_versions``) and the one athlete-settings
+row (``athlete_settings``) -- followed by its two startup writes, the
+anchor sync (``_sync_anchor_versions``) and the settings seed
+(``_seed_athlete_settings``), in one transaction; ``persist`` writes one
 ingested session (session header, records, RR intervals, and
 quarantined sidecar values) in a single transaction, and
 ``delete_session`` removes that same row set in one -- children first,
@@ -217,10 +221,7 @@ def _expected_schema() -> dict[str, dict[str, str]]:
     probe = sqlite3.connect(":memory:")
     try:
         probe.executescript(_SCHEMA_DDL)
-        tables = [
-            row[0]
-            for row in probe.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        ]
+        tables = [row[0] for row in probe.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
         return {
             table: {row[1]: row[2] for row in probe.execute(f"PRAGMA table_info({table})")}
             for table in tables
@@ -276,11 +277,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
     first created (see ``_reconcile_columns``), and version the HR anchors
     of a store whose sessions or entries predate the anchor version log
     (``_sync_anchor_versions``; a no-op on a store the write paths kept), and
-    seed the athlete-settings row when there is none (``_seed_athlete_settings``)."""
+    seed the athlete-settings row when there is none (``_seed_athlete_settings``).
+
+    Everything after the DDL is one ``BEGIN IMMEDIATE`` transaction, so the write lock is
+    held from before the anchor sync reads the store until it commits: a write from another
+    connection waits, rather than landing between the sync's input read and its log read and
+    leaving the log a stale value under a new version."""
     conn.executescript(_SCHEMA_DDL)
-    _reconcile_columns(conn)
-    _sync_anchor_versions(conn)
-    _seed_athlete_settings(conn)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        _reconcile_columns(conn)
+        _sync_anchor_versions(conn)
+        _seed_athlete_settings(conn)
+    except BaseException:
+        conn.rollback()
+        raise
     conn.commit()
 
 
@@ -336,9 +347,7 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "garmin_activity_class": session.garmin_activity_class,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
-            "context": _json_dump(dataclasses.asdict(session.context))
-            if session.context
-            else None,
+            "context": _json_dump(dataclasses.asdict(session.context)) if session.context else None,
         },
     )
 
@@ -384,9 +393,7 @@ def _insert_records(conn: sqlite3.Connection, session_id: str, records: list[Rec
     )
 
 
-def _insert_rr_intervals(
-    conn: sqlite3.Connection, session_id: str, rr_intervals: list[RRInterval]
-) -> None:
+def _insert_rr_intervals(conn: sqlite3.Connection, session_id: str, rr_intervals: list[RRInterval]) -> None:
     conn.executemany(
         """
         INSERT INTO rr_intervals (
@@ -408,9 +415,7 @@ def _insert_rr_intervals(
     )
 
 
-def _insert_quarantine_sidecar(
-    conn: sqlite3.Connection, session_id: str, quarantine_values: dict
-) -> None:
+def _insert_quarantine_sidecar(conn: sqlite3.Connection, session_id: str, quarantine_values: dict) -> None:
     conn.executemany(
         """
         INSERT INTO quarantine_sidecar (session_id, field_name, value)
@@ -909,8 +914,15 @@ def _sync_anchor_versions(conn: sqlite3.Connection) -> None:
     Called inside the transaction of every write that can change an effective
     value -- ``persist``, ``delete_session`` and ``write_profile_entries`` -- so
     the log sees each change, including one a later write reverses before
-    anything reads it. An unavailable anchor leaves its row untouched, so
+    anything reads it, and by ``init_schema`` to repair a store those paths did
+    not keep. An unavailable anchor leaves its row untouched, so
     188, unavailable, 188 keeps one version. Commits nothing itself.
+
+    The reads here must share one transaction with the log write: the three
+    write paths call it inside theirs, and ``init_schema`` opens ``BEGIN
+    IMMEDIATE`` first. Read in autocommit, a write committed by another
+    connection between the input read and the log read is logged with the older
+    value under a new version.
     """
     sessions, entries = read_profile_inputs(conn)
     resolved = profile_module.resolve(sessions, entries)

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import importlib.util
 import itertools
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -465,3 +466,85 @@ def test_init_schema_versions_a_store_that_predates_the_log(post_fit_bytes) -> N
         conn.close()
     served = _anchors("after init_schema")
     assert all(served[f].version == 1 for f in profile.ANCHOR_FIELDS), served
+
+
+# --- a write from another connection between two reads -----------------------------------------
+
+
+def _second_writer(results: list) -> None:
+    """Commit resting 52 from a second connection, or record that the database refused it
+    while the first connection held its lock (busy within 50 ms)."""
+    other = db.get_connection()
+    other.execute("PRAGMA busy_timeout = 50")
+    try:
+        db.write_profile_entries(other, {"resting_hr_bpm": 52})
+        results.append("committed")
+    except sqlite3.OperationalError as exc:
+        results.append(f"busy: {exc}")
+    finally:
+        other.close()
+
+
+def test_init_schema_holds_the_write_lock_across_its_anchor_sync(monkeypatch) -> None:
+    """A write committed by another connection between ``init_schema``'s input read and its
+    log read must not leave the log holding a value the store does not serve.
+
+    The second writer is fired from inside ``init_schema``'s first ``read_profile_inputs``.
+    Either it is refused (busy) until ``init_schema`` commits and then retried, or it lands
+    first; in both cases the log must agree with what is served, and the version moves once,
+    for the one change from 50 to 52."""
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.write_profile_entries(conn, {"resting_hr_bpm": 50})
+        real = db.read_profile_inputs
+        results: list[str] = []
+
+        def interleaved(c):
+            inputs = real(c)
+            if c is conn and not results:
+                _second_writer(results)
+            return inputs
+
+        with monkeypatch.context() as m:
+            m.setattr(db, "read_profile_inputs", interleaved)
+            db.init_schema(conn)
+        print(f"\n  second writer during init_schema: {results}; log {db._read_anchor_log(conn)}")
+        assert len(results) == 1, results
+        # Whatever happened, what init_schema left is consistent: the lookup serves it.
+        served = db.read_hr_anchors(conn)["resting_hr_bpm"]
+        if results[0].startswith("busy"):
+            assert (served.value, served.version) == (50, 1), served
+            _second_writer(results)
+            assert results[-1] == "committed", results
+        served = db.read_hr_anchors(conn)["resting_hr_bpm"]
+    finally:
+        conn.close()
+    assert (served.value, served.version) == (52, 2), served
+
+
+def test_read_athlete_pairs_fields_and_anchors_of_one_state(monkeypatch) -> None:
+    """A write committed by another connection between ``read_athlete``'s field read and its
+    anchor read must not pair the fields of one state with the anchors of another: either the
+    write is held off until the read ends, or both halves see it."""
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.write_profile_entries(conn, {"resting_hr_bpm": 50})
+        real = db.read_hr_anchors
+        results: list[str] = []
+
+        def interleaved(c):
+            if c is conn and not results:
+                _second_writer(results)
+            return real(c)
+
+        with monkeypatch.context() as m:
+            m.setattr(db, "read_hr_anchors", interleaved)
+            _, resolved, served = db.read_athlete(conn)
+    finally:
+        conn.close()
+    print(f"\n  second writer during read_athlete: {results}")
+    print(f"  field {resolved['resting_hr_bpm'].value}, anchor {served['resting_hr_bpm'].value}")
+    assert len(results) == 1, results
+    assert resolved["resting_hr_bpm"].value == served["resting_hr_bpm"].value, (results, resolved, served)
