@@ -161,10 +161,24 @@ _SCHEMA_DDL = """
       entry_id INTEGER PRIMARY KEY, field TEXT NOT NULL, value TEXT,
       set_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS anchor_versions (
+      -- F016: per HR anchor (profile.ANCHOR_FIELDS), the last served value
+      -- (JSON text) and its version, set by _sync_anchor_versions inside
+      -- each write that can change an effective value. source and
+      -- source_session_id name what served the value when the version
+      -- began. Named source_session_id, with no foreign key, so
+      -- _child_tables never lists this table and delete_session never
+      -- sweeps the history; it may name a deleted session.
+      anchor TEXT PRIMARY KEY, value TEXT NOT NULL, version INTEGER NOT NULL,
+      source TEXT NOT NULL, source_session_id TEXT
+    );
 """
 
 # The entered-values table's name, for callers and tests that address it.
 PROFILE_ENTRIES_TABLE = "profile_entries"
+
+# The anchor version log's name, for callers and tests that address it.
+ANCHOR_VERSIONS_TABLE = "anchor_versions"
 
 # The amendment-window predicate F004 publishes for E003, as SQL usable
 # directly after ``WHERE``. This is its one code home: F004's Data Model,
@@ -248,9 +262,12 @@ def _reconcile_columns(conn: sqlite3.Connection) -> None:
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the canonical-schema tables if they don't already exist,
     then additively reconcile any column added after a database was
-    first created (see ``_reconcile_columns``)."""
+    first created (see ``_reconcile_columns``), and version the HR anchors
+    of a store whose sessions or entries predate the anchor version log
+    (``_sync_anchor_versions``; a no-op on a store the write paths kept)."""
     conn.executescript(_SCHEMA_DDL)
     _reconcile_columns(conn)
+    _sync_anchor_versions(conn)
     conn.commit()
 
 
@@ -418,6 +435,10 @@ def persist(
     be monkeypatched (it's an immutable C type), so this is the seam
     that makes the chaos test possible without touching real DB
     internals.
+
+    The HR anchor version log is updated last, in the same transaction
+    (``_sync_anchor_versions``), so a refused or failed ingest leaves it
+    untouched.
     """
     try:
         with conn:
@@ -425,6 +446,7 @@ def persist(
             _insert_records(conn, session.session_id, records)
             _insert_rr_intervals(conn, session.session_id, rr_intervals)
             _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
+            _sync_anchor_versions(conn)
     except sqlite3.IntegrityError as exc:
         cur = conn.execute(
             "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
@@ -501,7 +523,9 @@ def delete_session(conn: sqlite3.Connection, session_id: str) -> bool:
     ``with conn:`` is the whole atomicity story: SQLite opens an
     implicit transaction on the first DELETE and rolls it back if
     anything raises, so a failure part-way through leaves the session
-    fully intact rather than stripped of its beats.
+    fully intact rather than stripped of its beats. The HR anchor version
+    log is updated in the same transaction (``_sync_anchor_versions``),
+    since the delete can change an effective value.
     """
     with conn:
         _delete_child_rows(conn, session_id)
@@ -510,7 +534,10 @@ def delete_session(conn: sqlite3.Connection, session_id: str) -> bool:
         # existence and removal are then decided by one statement inside
         # one transaction, so two concurrent deletes cannot both report
         # success (the second finds no row and returns False).
-        return cur.rowcount > 0
+        deleted = cur.rowcount > 0
+        if deleted:
+            _sync_anchor_versions(conn)
+        return deleted
 
 
 def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None:
@@ -768,7 +795,8 @@ def write_profile_entries(
     field outside ``ENTERED_FIELDS`` raises ``ValueError`` before any row is
     written; the rows of one call are one transaction. Values are not
     validated here: ``PATCH /me`` screens them and calls this. The caller has
-    run ``init_schema``, as ``persist``'s callers do.
+    run ``init_schema``, as ``persist``'s callers do. The HR anchor version
+    log is updated in the same transaction (``_sync_anchor_versions``).
     """
     unknown = sorted(set(values) - set(profile_module.ENTERED_FIELDS))
     if unknown:
@@ -780,6 +808,7 @@ def write_profile_entries(
             f"INSERT INTO {PROFILE_ENTRIES_TABLE} (field, value, set_at) VALUES (?, ?, ?)",
             [(field, _json_dump(value), set_at) for field, value in values.items()],
         )
+        _sync_anchor_versions(conn)
     return set_at
 
 
@@ -814,3 +843,59 @@ def read_profile_inputs(conn: sqlite3.Connection) -> tuple[list[dict], list[dict
         ).fetchall()
     ]
     return sessions, entries
+
+
+def _read_anchor_log(conn: sqlite3.Connection) -> dict[str, tuple[object, int]]:
+    """The anchor version log as ``{anchor: (value, version)}``, value JSON-decoded."""
+    return {
+        r["anchor"]: (_json_load(r["value"]), r["version"])
+        for r in conn.execute(f"SELECT anchor, value, version FROM {ANCHOR_VERSIONS_TABLE}")
+    }
+
+
+def _write_anchor_log(
+    conn: sqlite3.Connection, changes: Mapping[str, profile_module.AnchorLogChange]
+) -> None:
+    """Set the version log rows ``profile.next_versions`` returned. A private helper so a
+    test can fail the transaction straight after the log write."""
+    conn.executemany(
+        f"""
+        INSERT INTO {ANCHOR_VERSIONS_TABLE} (anchor, value, version, source, source_session_id)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (anchor) DO UPDATE SET
+            value = excluded.value, version = excluded.version,
+            source = excluded.source, source_session_id = excluded.source_session_id
+        """,
+        [
+            (field, _json_dump(c.value), c.version, c.source, c.source_session_id)
+            for field, c in changes.items()
+        ],
+    )
+
+
+def _sync_anchor_versions(conn: sqlite3.Connection) -> None:
+    """Recompute the four HR anchors from what is stored and move each one's version
+    when its served value differs from the value the log holds.
+
+    Called inside the transaction of every write that can change an effective
+    value -- ``persist``, ``delete_session`` and ``write_profile_entries`` -- so
+    the log sees each change, including one a later write reverses before
+    anything reads it. An unavailable anchor leaves its row untouched, so
+    188, unavailable, 188 keeps one version. Commits nothing itself.
+    """
+    sessions, entries = read_profile_inputs(conn)
+    resolved = profile_module.resolve(sessions, entries)
+    _write_anchor_log(conn, profile_module.next_versions(resolved, _read_anchor_log(conn)))
+
+
+def read_hr_anchors(conn: sqlite3.Connection) -> dict[str, profile_module.Anchor]:
+    """The four HR anchors as ``profile.anchors`` serves them: the effective values under
+    the ordering rule, each served one with its version from the log.
+
+    Read-only. Raises ``ValueError`` when the log does not hold a served value,
+    which only a write outside ``persist``, ``delete_session`` and
+    ``write_profile_entries`` can cause; ``init_schema`` repairs such a store.
+    """
+    sessions, entries = read_profile_inputs(conn)
+    resolved = profile_module.resolve(sessions, entries)
+    return profile_module.anchors(resolved, _read_anchor_log(conn))
