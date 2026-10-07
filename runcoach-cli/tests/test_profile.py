@@ -18,8 +18,11 @@ serve them. When that pin changes, copy the change here.
 reads ``contracts/openapi.yaml``'s ``Athlete`` and every component it refers to, and checks
 ``ME_BODY``'s keys, types, nulls and enum values against them, so a contract change to the ``/me``
 shape goes red here rather than leaving a silent render gap. The CLI has no YAML dependency, so the
-reader is a small line reader for the contract's component layout; it fails on a line it cannot read
-rather than skipping it.
+reader is a small line reader for the contract's component layout: one-line flow lists, each property
+as a one-line ``{ }`` mapping or a block of keys, and quoted or ``>``/``|`` descriptions. Every other
+line, a block-style list or a wrapped flow mapping or list included, fails the test with the line it
+could not read rather than being skipped; ``test_the_reader_refuses_a_layout_it_does_not_read`` pins
+that.
 """
 
 from __future__ import annotations
@@ -103,11 +106,13 @@ ME_BODY = {
 # ---------------------------------------------------------------------------
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
-_REF = re.compile(r'\$ref: "#/components/schemas/(\w+)"')
-_TYPE = re.compile(r"\btype: (\w+)")
-_NULLABLE = re.compile(r"\bnullable: (true|false)\b")
-_ENUM = re.compile(r"\benum: \[([^\]]*)\]")
-_DESCRIPTION = re.compile(r'description: "(?:[^"\\]|\\.)*"|description: >.*$')
+_REF = re.compile(r'"#/components/schemas/(\w+)"')
+_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+_FLOW_LIST = re.compile(r"\[([^\[\]\"{}]*)\]")
+_LIST_ITEM = re.compile(r"[\w.-]+")
+_KEY = re.compile(r"\$?\w+")
+_BLOCK_SCALARS = {">", ">-", "|", "|-"}
+_COMPONENT_LINES = {"type: object", "additionalProperties: true", "additionalProperties: false"}
 _PY_TYPES = {
     "string": (str,),
     "integer": (int,),
@@ -130,53 +135,153 @@ def _component_block(lines: list[str], name: str) -> list[str]:
     return block
 
 
-def _read_property(text: str, where: str) -> dict:
-    text = _DESCRIPTION.sub("", text)
-    spec: dict = {"nullable": False}
-    if m := _REF.search(text):
+def _refuse(where: str, text: str, why: str) -> None:
+    raise AssertionError(f"{where}: cannot read {text.strip()!r}: {why}")
+
+
+def _flow_list(value: str, where: str) -> list[str]:
+    """The items of a one-line flow list ``[a, b]``. A block-style list (the key with nothing
+    after it, items on the lines below) or a list wrapped over lines is refused."""
+    m = _FLOW_LIST.fullmatch(value)
+    if not m:
+        _refuse(
+            where, value, "only a one-line flow list [a, b] is read; block-style and wrapped lists are not"
+        )
+    items = [v.strip() for v in m.group(1).split(",")]
+    if not all(_LIST_ITEM.fullmatch(v) for v in items):
+        _refuse(where, value, "a list item is empty or not a plain word")
+    return items
+
+
+def _split_flow(text: str, where: str) -> list[str]:
+    """The ``key: value`` items of a one-line flow mapping's inside, split on the commas that sit
+    outside quotes and brackets."""
+    items, depth, quoted, escaped, start = [], 0, False, False, 0
+    for i, ch in enumerate(text):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                quoted = False
+        elif ch == '"':
+            quoted = True
+        elif ch in "[{":
+            depth += 1
+        elif ch in "]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(text[start:i])
+            start = i + 1
+    if quoted or depth:
+        _refuse(where, text, "an unclosed quote or bracket")
+    items.append(text[start:])
+    return [item.strip() for item in items]
+
+
+def _read_key(spec: dict, key: str, value: str, where: str) -> bool:
+    """Read one property key into ``spec``; True when it opens a ``>``/``|`` description whose
+    continuation lines follow. Any key or value form not listed here is refused."""
+    if key in spec or (key == "$ref" and "ref" in spec):
+        _refuse(where, f"{key}: {value}", "a repeated key")
+    if key == "type" and _KEY.fullmatch(value):
+        spec["type"] = value
+    elif key == "nullable" and value in ("true", "false"):
+        spec["nullable"] = value == "true"
+    elif key == "enum":
+        spec["enum"] = _flow_list(value, f"{where}.enum")
+    elif key == "$ref" and (m := _REF.fullmatch(value)):
         spec["ref"] = m.group(1)
-    if m := _TYPE.search(text):
-        spec["type"] = m.group(1)
-    if m := _NULLABLE.search(text):
-        spec["nullable"] = m.group(1) == "true"
-    if m := _ENUM.search(text):
-        spec["enum"] = [v.strip() for v in m.group(1).split(",")]
-    assert "ref" in spec or spec.get("type") in _PY_TYPES, f"{where}: cannot read {text.strip()!r}"
-    return spec
+    elif key == "format" and _KEY.fullmatch(value):
+        spec["format"] = value
+    elif key == "description" and value in _BLOCK_SCALARS:
+        spec["description"] = value
+        return True
+    elif key == "description" and _QUOTED.fullmatch(value):
+        spec["description"] = value
+    else:
+        _refuse(where, f"{key}: {value}", "not a key and value form the reader knows")
+    return False
+
+
+def _finish_property(spec: dict, where: str) -> dict:
+    if "ref" not in spec and spec.get("type") not in _PY_TYPES:
+        _refuse(where, str(spec), "neither a $ref nor a known type")
+    return {"nullable": False, **spec}
 
 
 def _read_component(lines: list[str], name: str) -> tuple[set[str], dict[str, dict]]:
-    """``(required, {property: {type, nullable, enum, ref}})`` for one object component."""
+    """``(required, {property: {type, nullable, enum, ref}})`` for one object component.
+
+    Every line of the component is consumed or refused: the component's own keys at indent 6,
+    each property at indent 8 as a one-line ``{ }`` mapping or as a block of keys at indent 10,
+    and the deeper continuation lines of a ``>``/``|`` description. Anything else fails with the
+    line it could not read."""
     block = _component_block(lines, name)
     required: set[str] = set()
     props: dict[str, dict] = {}
     in_props = False
-    current: tuple[str, list[str]] | None = None
+    scalar_indent: int | None = None
+    current: tuple[str, dict] | None = None
+
+    def close() -> None:
+        nonlocal current
+        if current is not None:
+            props[current[0]] = _finish_property(current[1], f"{name}.{current[0]}")
+            current = None
+
     for ln in block:
         indent = len(ln) - len(ln.lstrip(" "))
         stripped = ln.strip()
+        if scalar_indent is not None:
+            if not stripped or indent > scalar_indent:
+                continue
+            scalar_indent = None
         if not stripped or stripped.startswith("#"):
             continue
+        key, sep, value = stripped.partition(":")
+        value = value.strip()
+        where = f"{name}.{current[0]}" if current and indent == 10 else name
+        if not sep or not _KEY.fullmatch(key):
+            _refuse(where, ln, "not a key: value line")
         if indent == 6:
-            in_props = stripped == "properties:"
-            if stripped.startswith("required: ["):
-                required = {v.strip() for v in stripped[len("required: [") : -1].split(",")}
-            continue
-        if not in_props or indent < 8:
-            continue
-        if indent == 8:
-            key, _, rest = stripped.partition(":")
-            if rest.strip():
-                props[key] = _read_property(rest, f"{name}.{key}")
-                current = None
+            close()
+            in_props = False
+            if key == "properties" and not value:
+                in_props = True
+            elif stripped in _COMPONENT_LINES:
+                pass
+            elif key == "required":
+                required = set(_flow_list(value, f"{name}.required"))
+            elif key == "description" and value in _BLOCK_SCALARS:
+                scalar_indent = 6
+            elif key == "description" and _QUOTED.fullmatch(value):
+                pass
             else:
-                current = (key, [])
-                props[key] = {}
+                _refuse(name, ln, "not a component key the reader knows")
+        elif indent == 8 and in_props:
+            close()
+            if key in props:
+                _refuse(name, ln, "a repeated property")
+            if not value:
+                current = (key, {})
+            elif value.startswith("{") and value.endswith("}"):
+                spec: dict = {}
+                for item in _split_flow(value[1:-1], f"{name}.{key}"):
+                    k, s, v = item.partition(":")
+                    if not s or _read_key(spec, k.strip(), v.strip(), f"{name}.{key}"):
+                        _refuse(f"{name}.{key}", item, "not a one-line key: value item")
+                props[key] = _finish_property(spec, f"{name}.{key}")
+            else:
+                _refuse(name, ln, "a property is a one-line { } mapping or a block of keys")
         elif indent == 10 and current is not None:
-            current[1].append(stripped)
-            props[current[0]] = _read_property(", ".join(current[1]), f"{name}.{current[0]}")
+            if _read_key(current[1], key, value, where):
+                scalar_indent = 10
+        else:
+            _refuse(where, ln, f"a line at indent {indent} the reader does not consume here")
+    close()
     assert props, f"{name}: no properties read"
-    assert all(props.values()), f"{name}: a block property with no keys: {props}"
     return required, props
 
 
@@ -247,6 +352,87 @@ def test_the_contract_check_reports_a_departure(body, expected) -> None:
     problems = _contract_problems(body, "Athlete", _contract_lines())
     print(problems)
     assert any(p.startswith(expected) for p in problems), problems
+
+
+def _synthetic(*body_lines: str) -> list[str]:
+    """A contract holding one component, ``Thing``, whose lines after its header are given."""
+    return ["components:", "  schemas:", "    Thing:", *body_lines, "    Other:", "      type: object"]
+
+
+_THING_HEAD = ("      type: object", "      required: [unavailable]", "      properties:")
+
+
+def test_the_reader_reads_a_folded_description_before_the_enum() -> None:
+    """A ``description: >`` placed before ``enum:`` in a block property does not hide the enum:
+    its continuation lines are consumed, and a value outside the enum is still caught."""
+    lines = _synthetic(
+        *_THING_HEAD,
+        "        unavailable:",
+        "          type: string",
+        "          description: >",
+        "            The reason, enum: [anything] in prose, which is not the enum.",
+        "          enum: [missing]",
+    )
+    assert _read_component(lines, "Thing")[1]["unavailable"]["enum"] == ["missing"]
+    problems = _contract_problems({"unavailable": "bogus"}, "Thing", lines)
+    print(problems)
+    assert problems == [".unavailable: 'bogus' not in ['missing']"], problems
+
+
+@pytest.mark.parametrize(
+    "body_lines",
+    [
+        (
+            *_THING_HEAD,
+            "        unavailable:",
+            "          type: string",
+            "          enum:",
+            "            - missing",
+        ),
+        (
+            *_THING_HEAD,
+            "        unavailable:",
+            "          type: string",
+            "          enum:",
+            "          - missing",
+        ),
+        (*_THING_HEAD, "        unavailable: { type: string, enum: [missing,", "          order_conflict] }"),
+        (
+            *_THING_HEAD,
+            "        unavailable:",
+            "          type: string",
+            "          enum: [missing,",
+            "            order_conflict]",
+        ),
+        (
+            "      type: object",
+            "      required:",
+            "        - unavailable",
+            "      properties:",
+            "        unavailable: { type: string }",
+        ),
+        (*_THING_HEAD, "        unavailable: { type: string, enum: [missing] }", "          minLength: 1"),
+        (*_THING_HEAD, "        unavailable: { type: string, maxLength: 3 }"),
+        (*_THING_HEAD, '        unavailable: { type: string, description: "a, b }'),
+        ("      type: object", "      oneOf: []", *_THING_HEAD[1:], "        unavailable: { type: string }"),
+    ],
+    ids=[
+        "block-enum",
+        "block-enum-same-indent",
+        "wrapped-flow-enum",
+        "wrapped-block-enum",
+        "block-required",
+        "stray-deeper-line",
+        "unknown-key",
+        "unclosed-quote",
+        "unknown-component-key",
+    ],
+)
+def test_the_reader_refuses_a_layout_it_does_not_read(body_lines) -> None:
+    """A layout the reader does not read fails loudly instead of disabling the check."""
+    with pytest.raises(AssertionError, match="cannot read") as refused:
+        _read_component(_synthetic(*body_lines), "Thing")
+    print(refused.value)
 
 
 def _line(output: str, prefix: str) -> str:
