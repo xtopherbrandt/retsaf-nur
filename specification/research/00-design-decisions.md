@@ -131,7 +131,7 @@ Pinned: none
 
 **PRIN-08.** Vendor black-box metrics MUST be ingested into a quarantined namespace and MUST never feed a decision, whatever any setting or default says.
 Scope: every vendor black-box metric from any vendor, the metrics PRIN-20 names among them.
-Not: a device's numeric resting rMSSD, which PRIN-10 admits as an HRV input.
+Not: a device's numeric resting rMSSD, which PRIN-10 admits as an HRV input, and the seven FIT profile settings, which PRIN-28 admits as profile inputs.
 Pinned: none
 Why: decision C24 leaves no default or switch under which the coaching logic may read a quarantined metric (H-38).
 
@@ -144,6 +144,12 @@ Pinned: none
 Scope: the numeric tiers of the resting-HRV hierarchy (HRV-01).
 Not: a numeric per-tier confidence weight, which is deferred to Section 6's readiness fusion (HRV-19).
 Pinned: none
+
+**PRIN-28.** The seven athlete settings a FIT file carries, `user_profile` `gender`, `weight`, `height`, `resting_heart_rate` and `activity_class` and `zones_target` `max_heart_rate` and `threshold_heart_rate`, are Garmin's record of the athlete's profile, whether the athlete entered a value or the watch detected or defaulted it, so each MAY be admitted as a profile input.
+Scope: the athlete profile's sex, body mass, height, resting HR and Garmin activity class, read from every stored FIT file, and its max and threshold HR, read from stored running files only.
+Not: any other field of those messages, and every vendor black-box metric, the metrics PRIN-20 names among them, which stay quarantined under PRIN-08.
+Pinned: none
+Why: the F016 rulings make Garmin's settings, carried in its FIT files, the source of truth for the profile, with the athlete's entries as the fallback, and leave decision C24's quarantine of vendor black-box metrics as it stands, so this narrow rule admits the settings and PRIN-08 is unchanged (H-41).
 
 **PRIN-19.** A quarantined vendor metric MAY be used only for display to the athlete and for divergence surfacing (REG-17).
 Scope: every vendor black-box metric that PRIN-08 quarantines, the metrics PRIN-20 names among them.
