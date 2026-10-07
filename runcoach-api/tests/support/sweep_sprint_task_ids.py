@@ -44,7 +44,8 @@ file, since a sweep that read nothing would pass having judged nothing.
 ``--no-ignore-revs-file``, and every call ``-c core.quotepath=off``, so ``diff.noprefix``,
 ``diff.dstPrefix``, ``diff.interHunkContext``, ``log.showSignature`` and ``blame.ignoreRevsFile``
 change nothing; ``--follow`` detects a rename whatever ``diff.renames`` says. A ``+++`` header
-without the ``b/`` prefix is an error (exit 2), never a file that is skipped.
+without the ``b/`` prefix is an error (exit 2), never a file that is skipped, and so is a hunk header
+it cannot read, whose added lines would otherwise be numbered from 0.
 
 **Disposition.** The Conventional Commits scope of a writer decides:
 
@@ -284,7 +285,9 @@ def parse_diff(diff: str, deleted: bool = False) -> dict[str, list[Hunk]]:
         elif raw.startswith("@@"):
             in_header = False
             match = _HUNK.match(raw)
-            new_no = int(match.group("start")) if match else 0
+            if not match:
+                raise RuntimeError(f"hunk header it cannot read: {raw.rstrip()}")
+            new_no = int(match.group("start"))
             if path is not None:
                 files[path].append(Hunk([], []))
         elif in_header or path is None or not files[path]:

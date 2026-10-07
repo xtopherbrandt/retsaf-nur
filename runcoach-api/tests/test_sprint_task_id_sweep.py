@@ -914,6 +914,16 @@ def test_a_diff_header_without_the_b_prefix_is_an_error():
         sweep.parse_diff(diff)
 
 
+def test_a_hunk_header_it_cannot_read_is_an_error():
+    """An unreadable ``@@`` header would number its added lines from 0, so it fails at parse time."""
+    sweep = _load_sweep()
+    diff = (
+        "diff --git a/notes.md b/notes.md\n--- a/notes.md\n+++ b/notes.md\n@@ -0,0 +x @@\n+until T249 lands\n"
+    )
+    with pytest.raises(RuntimeError, match="hunk header"):
+        sweep.parse_diff(diff)
+
+
 # --- the learnings rule that points at the sweep ------------------------------------------------
 
 
