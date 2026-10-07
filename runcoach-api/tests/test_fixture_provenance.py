@@ -53,6 +53,7 @@ from __future__ import annotations
 import re
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -173,6 +174,22 @@ def _rows_by_file(text: str | None = None) -> dict[str, Row]:
 
 def _on_disk() -> list[str]:
     return sorted(p.stem for p in FIXTURES.glob("*.fit"))
+
+
+def names_without_a_lowercase_fit_suffix(names: Iterable[str]) -> list[str]:
+    """The names that are neither ``README.md`` nor end in lowercase ``.fit``, sorted.
+
+    ``X.FIT`` and ``x.Fit`` are named: the census globs match them on Windows and miss them on
+    Linux, so the check is on the exact suffix, independent of the platform.
+    """
+    return sorted(name for name in names if name != README.name and not name.endswith(".fit"))
+
+
+def misnamed_fixtures() -> list[str]:
+    """Every entry of ``FIXTURES`` that is not ``README.md`` or a file ending in lowercase ``.fit``."""
+    entries = list(FIXTURES.iterdir())
+    not_files = {p.name for p in entries if not p.is_file()}
+    return sorted(set(names_without_a_lowercase_fit_suffix(p.name for p in entries)) | not_files)
 
 
 @dataclass(frozen=True)
@@ -627,3 +644,39 @@ def test_a_row_disagreeing_with_the_reference_is_named(stem: str, column: str, v
     row = replace(_real_rows()[stem], **{column: value})
     problems = reference_problems(row)
     assert len(problems) == 1 and problems[0].startswith(f"{stem}: {column} says")
+
+
+# The census sites glob ``*.fit``, which is case-sensitive on Linux and not on Windows, so a file
+# named ``X.FIT`` would escape them on CI alone. One platform-independent guard covers them all.
+
+def test_every_fixture_name_has_a_lowercase_fit_suffix() -> None:
+    misnamed = misnamed_fixtures()
+    print(f"[slice compared] entries {sorted(p.name for p in FIXTURES.iterdir())}; misnamed {misnamed}")
+    assert misnamed == [], (
+        f"fixture entries without a lowercase .fit suffix: {misnamed}; rename them to end in .fit")
+
+
+def test_a_fixture_name_without_a_lowercase_fit_suffix_is_named(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("a.fit", "Upper_Case_Run.FIT", "README.md"):
+        (tmp_path / name).write_bytes(b"")
+    monkeypatch.setattr(sys.modules[__name__], "FIXTURES", tmp_path)
+    misnamed = misnamed_fixtures()
+    print(f"[slice compared] entries {sorted(p.name for p in tmp_path.iterdir())}; misnamed {misnamed}")
+    assert misnamed == ["Upper_Case_Run.FIT"]
+
+
+def test_a_directory_named_like_a_fixture_is_named(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only a file can be a fixture: a directory whose name ends in ``.fit`` is named too."""
+    (tmp_path / "a.fit").write_bytes(b"")
+    (tmp_path / "nested.fit").mkdir()
+    monkeypatch.setattr(sys.modules[__name__], "FIXTURES", tmp_path)
+    assert misnamed_fixtures() == ["nested.fit"]
+
+
+def test_the_lowercase_suffix_check_on_a_name_list() -> None:
+    names = ["x.Fit", "y.fit.bak", "z.fit", "README.md"]
+    misnamed = names_without_a_lowercase_fit_suffix(names)
+    print(f"[slice compared] names {names}; misnamed {misnamed}")
+    assert misnamed == ["x.Fit", "y.fit.bak"]
