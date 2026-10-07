@@ -622,6 +622,26 @@ HISTORIES = (
         [(HAND_OFF_WRITTEN, "feat(T248): add the column"), (HAND_OFF_REWORDED, "feat(T249): fill it")],
         [(1, "fail", 0)],
     ),
+    # A commit that only removes a line naming the ID is a writer of it: the self-tag left behind fails.
+    (
+        "removal-only-writer",
+        [
+            ("T249 adds the column.\nT249 fills the cache.\n", "feat(T249): add the column"),
+            ("T249 adds the column.\n", "feat(T248): drop the cache note"),
+        ],
+        [(1, "fail", 1)],
+    ),
+    # A step of ``None`` deletes the file. The deletion removes the line naming the ID, so the task that
+    # deleted it is a writer, and the self-tag recreated after it fails.
+    (
+        "deleted-and-recreated",
+        [
+            ("T249 adds the column.\n", "feat(T249): add the column"),
+            (None, "feat(T248): drop the notes"),
+            ("T249 adds the column.\n", "feat(T249): restore the notes"),
+        ],
+        [(1, "fail", 1)],
+    ),
 )
 
 #: A path git C-quotes in diff headers (it holds a double quote).
@@ -629,10 +649,14 @@ QUOTED_PATH = 'planted/history say "hi".md'
 
 
 def _history(clone, steps, path):
+    """Commits each ``(text, subject)`` step to ``path`` in turn; a ``None`` text deletes the file."""
     base = _git(clone, "rev-parse", "HEAD")
     shas, parent = [], base
     for text, subject in steps:
-        parent = _commit(clone, parent, {path: text}, subject)
+        if text is None:
+            parent = _commit(clone, parent, {}, subject, remove=(path,))
+        else:
+            parent = _commit(clone, parent, {path: text}, subject)
         shas.append(parent)
     return base, shas
 
@@ -814,6 +838,28 @@ def test_a_merge_that_brings_a_self_tag_in_is_no_writer_of_it(clone, capsys, val
             _git(clone, "config", "--unset", "log.diffMerges")
     print(hits)
     assert [(hit.path, hit.line, hit.disposition, hit.commit) for hit in hits] == [(path, 1, "exempt", side)]
+
+
+def test_a_merge_that_writes_a_hand_off_is_its_writer(clone, capsys):
+    """The log lists no merge diff, so only blame names a merge as the writer of a line it wrote: the
+    hand-off the merge adds fails, judged by the merge, beside the side branch's self-tag."""
+    sweep = _load_sweep()
+    path, other = "planted/merge-writes.md", "planted/merge-writes-other.md"
+    base = _git(clone, "rev-parse", "HEAD")
+    side = _commit(clone, base, {path: "T249 adds the column.\n"}, "feat(T249): add the column")
+    main = _commit(clone, base, {other: "Unrelated.\n"}, "chore(sprint-010): add a note")
+    merged = {other: "Unrelated.\n", path: "T249 adds the column.\n" + HAND_OFF_WRITTEN}
+    both = _commit(clone, side, merged, "scratch: the merged tree")
+    tree = _git(clone, "rev-parse", f"{both}^{{tree}}")
+    merge = _git(clone, "commit-tree", tree, "-p", main, "-p", side, "-m", "feat(T248): merge the column")
+    hits = sweep.sweep(clone, base, merge, sweep.parse_ids(REPLAY_IDS))
+    print(hits)
+    assert [(hit.path, hit.line, hit.disposition, hit.commit) for hit in hits] == [
+        (path, 1, "exempt", side),
+        (path, 2, "fail", merge),
+    ]
+    assert _run(sweep, clone, merge, base=base) == 1
+    print(capsys.readouterr().out)
 
 
 def test_a_diff_header_without_the_b_prefix_is_an_error():
