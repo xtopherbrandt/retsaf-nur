@@ -19,17 +19,20 @@ Rules, each pinned by ``tests/test_profile_values_ingest.py``:
 
 - A FIT invalid value (decoded by ``fitdecode`` as ``None``), a missing
   field and a missing message all store absent (``None``).
-- **0 stores absent for the five numeric HR and body fields only.** FIT
-  ``gender`` 0 is ``female``, and ``activity_class`` 0 is a valid level, so
-  neither is screened by zero. Any ``gender`` other than 0 or 1 is absent.
+- **Zero or negative stores absent for the five numeric HR and body fields
+  only.** The profile declares them unsigned, but a file's definition may
+  declare a signed base type, and then a negative value decodes as itself.
+  FIT ``gender`` 0 is ``female``, and ``activity_class`` 0 is a valid level,
+  so neither is screened by zero. Any ``gender`` other than 0 or 1 is absent.
 - ``activity_class`` is the field's ``raw_value``: ``fitdecode`` decodes 100
   as ``'level_max'`` and bit 0x80 as ``'athlete'``, strings that would hide
   the integer.
 - ``height_cm`` is the raw integer. FIT scales height by 100 to metres, so
   the decoded value is a float, and ``round(m * 100)`` of it is not the
   stored integer.
-- ``body_mass_kg`` is the decoded value when it is a number. FIT weight's
-  0xFFFE decodes as the string ``'calculating'`` and stores absent.
+- ``body_mass_kg`` is the decoded value when it is a finite number. FIT
+  weight's 0xFFFE decodes as the string ``'calculating'`` and stores absent,
+  as does a non-finite value (a float base type can carry one).
 - Only the first ``user_profile`` and the first ``zones_target`` message are
   read; a later message of the same type is ignored even where the first
   lacks a field.
@@ -40,6 +43,8 @@ not here. ``extract([])`` returns all seven fields absent.
 """
 
 from __future__ import annotations
+
+import math
 
 import fitdecode
 
@@ -75,8 +80,9 @@ def _raw_int(message, field_name: str) -> int | None:
     return raw
 
 
-def _nonzero(value):
-    return None if value == 0 else value
+def _positive(value):
+    """``value`` when it is above zero, else ``None`` (zero, negative or already ``None``)."""
+    return value if value is not None and value > 0 else None
 
 
 def _body_mass_kg(profile) -> float | None:
@@ -85,7 +91,8 @@ def _body_mass_kg(profile) -> float | None:
     value = profile.get_value("weight", fallback=None)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return _nonzero(float(value))
+    value = float(value)
+    return _positive(value) if math.isfinite(value) else None
 
 
 def extract(messages: list[fitdecode.FitDataMessage]) -> dict[str, str | int | float | None]:
@@ -97,9 +104,9 @@ def extract(messages: list[fitdecode.FitDataMessage]) -> dict[str, str | int | f
     return {
         "sex": _SEX_BY_GENDER.get(_raw_int(profile, "gender")),
         "body_mass_kg": _body_mass_kg(profile),
-        "height_cm": _nonzero(_raw_int(profile, "height")),
-        "resting_hr_bpm": _nonzero(_raw_int(profile, "resting_heart_rate")),
-        "max_hr_bpm": _nonzero(_raw_int(zones, "max_heart_rate")),
-        "threshold_hr_bpm": _nonzero(_raw_int(zones, "threshold_heart_rate")),
+        "height_cm": _positive(_raw_int(profile, "height")),
+        "resting_hr_bpm": _positive(_raw_int(profile, "resting_heart_rate")),
+        "max_hr_bpm": _positive(_raw_int(zones, "max_heart_rate")),
+        "threshold_hr_bpm": _positive(_raw_int(zones, "threshold_heart_rate")),
         "garmin_activity_class": _raw_int(profile, "activity_class"),
     }

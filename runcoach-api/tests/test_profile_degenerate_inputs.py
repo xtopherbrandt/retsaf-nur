@@ -12,7 +12,7 @@ max 188, threshold 169, male, activity class 50. ``wrist_ppg_run``
 earlier file a fall-through row falls to, and its max 189 tells the two files
 apart.
 
-Four groups:
+Five groups:
 
 1. **Values the mapping screens or keeps** (resting 0, max as the uint8
    invalid value, ``gender`` 0) and **the ordering rule** (resting equal to
@@ -29,6 +29,12 @@ Four groups:
    before and after, then shows the same max 199 does move the profile when
    the upload is not refused, so an unchanged snapshot is not a probe that
    could not see a change.
+5. **A negative value under a signed base type.** The file's definition
+   retypes one numeric field to ``sint8`` or ``sint16`` and the message
+   carries a negative value, which ``fitdecode`` decodes as that negative
+   number: zero or negative stores absent for the five numeric fields, so the
+   column is NULL and ``GET /me`` serves the field (and an HR anchor) as
+   missing.
 """
 
 from __future__ import annotations
@@ -59,6 +65,11 @@ RESTING_HEART_RATE = 8  # user_profile.resting_heart_rate, uint8
 ACTIVITY_CLASS = 17  # user_profile.activity_class, enum
 MAX_HEART_RATE = 1  # zones_target.max_heart_rate, uint8
 THRESHOLD_HEART_RATE = 2  # zones_target.threshold_heart_rate, uint8
+WEIGHT = 4  # user_profile.weight, uint16, scale 10
+HEIGHT = 3  # user_profile.height, uint8, scale 100
+
+# FIT signed base types a definition may declare in place of the unsigned one.
+SINT8, SINT16 = 0x01, 0x83
 
 UINT8_INVALID = 0xFF
 
@@ -445,3 +456,95 @@ def test_refusal_before_persist_with_max_199_changes_nothing(post_fit_bytes) -> 
         2,
         stored,
     )
+
+
+# --- group 5: a negative value under a signed base type ----------------------------------------
+
+
+def _retype(data: bytes, global_num: int, field_num: int, base_type: int) -> bytes:
+    """``data`` with ``field_num``'s base type, in the definition that the first ``global_num``
+    data message uses, rewritten to ``base_type`` (the field's size is kept)."""
+    records = fit_patch.walk(data)
+    first = next(r for r in records if not r.is_definition and r.definition.global_num == global_num)
+    definition = next(
+        r
+        for r in reversed(records[: records.index(first)])
+        if r.is_definition and r.definition is first.definition
+    )
+    index = next(i for i, f in enumerate(definition.definition.fields) if f.num == field_num)
+    buf = bytearray(data)
+    # Record header, reserved, architecture, global number (2), field count, then 3 bytes a field.
+    buf[definition.offset + 6 + 3 * index + 2] = base_type
+    return fit_patch.finalize(buf)
+
+
+# (id, message, FIT field name, field number, signed base type, the negative value, stored column)
+SIGNED_ROWS = [
+    (
+        "resting_sint8_minus_5",
+        "user_profile",
+        "resting_heart_rate",
+        RESTING_HEART_RATE,
+        SINT8,
+        -5,
+        "resting_hr_bpm",
+    ),
+    ("max_sint8_minus_5", "zones_target", "max_heart_rate", MAX_HEART_RATE, SINT8, -5, "max_hr_bpm"),
+    (
+        "threshold_sint8_minus_40",
+        "zones_target",
+        "threshold_heart_rate",
+        THRESHOLD_HEART_RATE,
+        SINT8,
+        -40,
+        "threshold_hr_bpm",
+    ),
+    ("weight_sint16_minus_700", "user_profile", "weight", WEIGHT, SINT16, -700, "body_mass_kg"),
+    ("height_sint8_minus_1", "user_profile", "height", HEIGHT, SINT8, -1, "height_cm"),
+]
+
+_GLOBAL_NUM = {"user_profile": USER_PROFILE, "zones_target": ZONES_TARGET}
+_SIZE = {SINT8: 1, SINT16: 2}
+
+
+@pytest.mark.parametrize(
+    ("message", "fit_field", "field_num", "base_type", "negative", "column"),
+    [pytest.param(*row[1:], id=row[0]) for row in SIGNED_ROWS],
+)
+def test_a_negative_value_under_a_signed_base_type_stores_absent(
+    post_fit_bytes, message, fit_field, field_num, base_type, negative, column
+) -> None:
+    global_num = _GLOBAL_NUM[message]
+    data = _retype(_raw("sample_run.fit"), global_num, field_num, base_type)
+    data = fit_patch.set_field(data, global_num, field_num, negative + (1 << (8 * _SIZE[base_type])))
+    # The patched file really carries the negative number: fitdecode reads it as one.
+    assert _messages(data, message)[0][fit_field] == negative
+
+    with TestClient(app) as client:
+        session_id = _upload(client, post_fit_bytes, data)
+        me = client.get("/me")
+    columns = _stored(session_id)
+    print(f"\n  {column} {negative}: stored {columns}")
+    assert columns[column] is None, columns
+    assert me.status_code == 200, me.text
+    body = me.json()
+    print(f"  GET /me {column}: {body[column]}")
+    assert body[column]["value"] is None and body[column]["unavailable"] == "missing", body[column]
+    if column in profile.ANCHOR_FIELDS:
+        served = _anchors(f"{column} {negative}")
+        assert (served[column].value, served[column].reason) == (None, "missing"), served[column]
+        assert body["anchors"][column]["value"] is None, body["anchors"][column]
+    # Every other column is the unpatched file's.
+    assert {c: v for c, v in columns.items() if c != column} == {
+        c: v
+        for c, v in {
+            "sex": "male",
+            "body_mass_kg": 71.7,
+            "height_cm": 180,
+            "resting_hr_bpm": 47,
+            "max_hr_bpm": 188,
+            "threshold_hr_bpm": 169,
+            "garmin_activity_class": 50,
+        }.items()
+        if c != column
+    }

@@ -63,7 +63,7 @@ def _census(path: Path) -> dict:
     zones = zones or {}
 
     def positive(raw):
-        return raw if isinstance(raw, int) and raw != 0 else None
+        return raw if isinstance(raw, int) and raw > 0 else None
 
     weight_raw = profile.get("weight")
     activity_class = profile.get("activity_class")
@@ -71,7 +71,7 @@ def _census(path: Path) -> dict:
         "sex": {0: "female", 1: "male"}.get(profile.get("gender")),
         # FIT weight is uint16 at scale 10; 0xFFFE means "calculating".
         "body_mass_kg": weight_raw / 10
-        if isinstance(weight_raw, int) and weight_raw not in (0, 0xFFFE)
+        if isinstance(weight_raw, int) and weight_raw > 0 and weight_raw != 0xFFFE
         else None,
         "height_cm": positive(profile.get("height")),
         "resting_hr_bpm": positive(profile.get("resting_heart_rate")),
@@ -296,6 +296,35 @@ def test_a_missing_field_stores_absent(column: str) -> None:
 )
 def test_zero_stores_absent_for_the_five_numeric_hr_and_body_fields(column: str, zero) -> None:
     assert profile_values.extract(_with(column, zero))[column] is None
+
+
+@pytest.mark.parametrize(
+    ("column", "negative"),
+    [
+        ("body_mass_kg", (-70.0, -700)),
+        ("body_mass_kg", (-0.1, -1)),
+        ("height_cm", (-0.01, -1)),
+        ("resting_hr_bpm", (-5, -5)),
+        ("max_hr_bpm", (-1, -1)),
+        ("threshold_hr_bpm", (-40, -40)),
+    ],
+)
+def test_a_negative_value_stores_absent_for_the_five_numeric_hr_and_body_fields(
+    column: str, negative
+) -> None:
+    """A FIT definition may declare one of these fields with a signed base type, and then a
+    negative value decodes as itself: zero or negative stores absent."""
+    got = profile_values.extract(_with(column, negative))
+    assert got[column] is None
+    assert {c: got[c] for c in COLUMNS if c != column} == {c: FULL[c] for c in COLUMNS if c != column}
+
+
+@pytest.mark.parametrize(
+    "weight", [float("inf"), float("-inf"), float("nan")], ids=["inf", "minus_inf", "nan"]
+)
+def test_a_non_finite_weight_stores_absent(weight: float) -> None:
+    got = profile_values.extract([_profile(weight=(weight, 0)), _zones()])
+    assert got["body_mass_kg"] is None
 
 
 def test_zero_is_a_value_for_gender_and_activity_class() -> None:
