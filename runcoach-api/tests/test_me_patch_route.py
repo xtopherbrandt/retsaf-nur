@@ -325,6 +325,12 @@ def test_patch_me_null_units_is_422() -> None:
         _assert_422(client, "units", json={"units": None})
 
 
+def test_patch_me_units_without_temperature_is_422() -> None:
+    """``units`` replaces the whole set, so a set without ``temperature`` is refused, not filled in."""
+    with TestClient(app) as client:
+        _assert_422(client, "temperature", json={"units": {"distance": "mi", "pace": "min_per_mi"}})
+
+
 # ---------------------------------------------------------------------------
 # AC8: the contract moves with the route
 # ---------------------------------------------------------------------------
