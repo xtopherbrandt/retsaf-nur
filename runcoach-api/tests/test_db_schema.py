@@ -1060,3 +1060,214 @@ def test_insert_session_carries_hr_sensor_serial_to_the_row():
 
     assert stored == {"strap-1": 3611410126, "wrist-1": None}
     assert isinstance(stored["strap-1"], int)
+
+
+# ---------------------------------------------------------------------------
+# F016 -- the seven per-session profile columns and the upload-order column
+# ---------------------------------------------------------------------------
+
+# The ``sessions`` DDL as of commit f7337b8 (the tree F016's build started
+# from): the current DDL minus the eight F016 columns. Comment blocks are
+# stripped; every column is as at that commit.
+_PRE_F016_SESSIONS_DDL = """
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY, athlete_id TEXT, start_time TEXT NOT NULL,
+      sport TEXT NOT NULL, activity_tag TEXT, source_vendor TEXT NOT NULL,
+      source_device TEXT, recording_interval TEXT, hr_source TEXT,
+      rr_valid_fraction REAL, quality_flags TEXT, summary TEXT, context TEXT,
+      rmssd_precomputed REAL, hrv_source_tier TEXT, rr_source TEXT,
+      resting_rmssd_ms REAL,
+      hr_sensor_serial INTEGER,
+      UNIQUE (source_device, start_time)
+    );
+"""
+
+_PRE_F016_ROW = {**_PRE_F007_ROW, "session_id": "pre-f016-1", "hr_sensor_serial": 3611410126}
+
+_F016_COLUMNS = {
+    "sex": "TEXT",
+    "body_mass_kg": "REAL",
+    "height_cm": "INTEGER",
+    "resting_hr_bpm": "INTEGER",
+    "max_hr_bpm": "INTEGER",
+    "threshold_hr_bpm": "INTEGER",
+    "garmin_activity_class": "INTEGER",
+    "upload_order": "INTEGER",
+}
+
+
+def _pre_f016_database_with_one_row(conn) -> None:
+    conn.executescript(_PRE_F016_SESSIONS_DDL)
+    columns = ", ".join(_PRE_F016_ROW)
+    placeholders = ", ".join(f":{name}" for name in _PRE_F016_ROW)
+    conn.execute(f"INSERT INTO sessions ({columns}) VALUES ({placeholders})", _PRE_F016_ROW)
+    conn.commit()
+
+
+def test_the_pre_f016_ddl_is_the_current_ddl_minus_the_f016_columns():
+    """Guards the copy above from drifting: it must differ from the live DDL
+    by exactly the eight new columns, so the upgrade test below starts from a
+    real prior layout rather than an invented one."""
+    probe = db.get_connection()
+    try:
+        probe.executescript(_PRE_F016_SESSIONS_DDL)
+        before = {row["name"]: row["type"] for row in probe.execute("PRAGMA table_info(sessions)")}
+    finally:
+        probe.close()
+    after = db._expected_schema()["sessions"]
+    assert {c: t for c, t in after.items() if c not in before} == _F016_COLUMNS
+    assert set(before) <= set(after)
+
+
+def test_init_schema_adds_the_f016_columns_to_an_existing_database_without_data_loss():
+    """F016 AC1 schema row. A database holding a row from before F016 gains
+    the eight columns in place through ``_reconcile_columns``: nullable, no
+    default, the row intact on every pre-existing column and NULL in each new
+    one."""
+    conn = db.get_connection()
+    try:
+        _pre_f016_database_with_one_row(conn)
+        assert not set(_F016_COLUMNS) & _columns(conn, "sessions")
+
+        db.init_schema(conn)
+
+        info = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'pre-f016-1'").fetchone()
+    finally:
+        conn.close()
+
+    for column, decl_type in _F016_COLUMNS.items():
+        assert column in info, column
+        assert info[column]["type"] == decl_type, column
+        assert info[column]["notnull"] == 0, column
+        assert info[column]["dflt_value"] is None, column
+        assert info[column]["pk"] == 0, column
+
+    assert row is not None
+    for column, value in _PRE_F016_ROW.items():
+        assert row[column] == value, column
+    for column in _F016_COLUMNS:
+        assert row[column] is None, column
+
+
+def test_the_f016_columns_are_not_backfilled_on_reinit():
+    """``init_schema`` runs on every ingest. Re-running it on an upgraded
+    database neither raises nor writes into the new columns: no FIT bytes are
+    kept, so there is nothing to backfill the profile values from, and the
+    upload order of a pre-existing row is unknown."""
+    conn = db.get_connection()
+    try:
+        _pre_f016_database_with_one_row(conn)
+        db.init_schema(conn)
+        db.init_schema(conn)
+
+        cols = [row["name"] for row in conn.execute("PRAGMA table_info(sessions)")]
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'pre-f016-1'").fetchone()
+    finally:
+        conn.close()
+
+    for column in _F016_COLUMNS:
+        assert cols.count(column) == 1, column
+        assert row[column] is None, column
+    assert row["hr_sensor_serial"] == 3611410126
+
+
+def test_insert_session_carries_the_profile_values_and_numbers_the_upload():
+    """``_insert_session`` writes the seven fields off the ``Session`` and sets
+    ``upload_order`` to one more than the largest stored, so ``persist``'s
+    signature is unchanged. A row reconciled from before F016 (NULL order)
+    does not stop the count."""
+    from runcoach_api.models import Session
+
+    for column in _F016_COLUMNS:
+        if column != "upload_order":
+            assert Session.__dataclass_fields__[column].default is None, column
+    assert "upload_order" not in Session.__dataclass_fields__
+
+    with_values = Session(
+        session_id="profile-1",
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-10-01T06:00:00+00:00",
+        source_device="fr945_lte fw17.4",
+        sex="female",
+        body_mass_kg=58.4,
+        height_cm=166,
+        resting_hr_bpm=44,
+        max_hr_bpm=192,
+        threshold_hr_bpm=171,
+        garmin_activity_class=0,
+    )
+    without_values = Session(
+        session_id="profile-2",
+        sport="other",
+        source_vendor="garmin",
+        start_time="2026-10-02T06:00:00+00:00",
+        source_device="fr945_lte fw17.4",
+    )
+
+    conn = db.get_connection()
+    try:
+        _pre_f016_database_with_one_row(conn)
+        db.init_schema(conn)
+        db.persist(conn, with_values, [], [], {})
+        db.persist(conn, without_values, [], [], {})
+        stored = {
+            row["session_id"]: {c: row[c] for c in _F016_COLUMNS}
+            for row in conn.execute("SELECT * FROM sessions")
+        }
+    finally:
+        conn.close()
+
+    assert stored["pre-f016-1"] == dict.fromkeys(_F016_COLUMNS)
+    assert stored["profile-1"] == {
+        "sex": "female",
+        "body_mass_kg": 58.4,
+        "height_cm": 166,
+        "resting_hr_bpm": 44,
+        "max_hr_bpm": 192,
+        "threshold_hr_bpm": 171,
+        "garmin_activity_class": 0,
+        "upload_order": 1,
+    }
+    assert stored["profile-2"] == {**dict.fromkeys(_F016_COLUMNS), "upload_order": 2}
+
+
+def test_a_failed_insert_writes_no_upload_order():
+    """The order is assigned inside the insert transaction: a duplicate
+    upload that ``persist`` refuses consumes no number."""
+    from runcoach_api.ingestion.exceptions import DuplicateSessionError
+    from runcoach_api.models import Session
+
+    def make(session_id: str) -> Session:
+        return Session(
+            session_id=session_id,
+            sport="running",
+            source_vendor="garmin",
+            start_time="2026-10-01T06:00:00+00:00",
+            source_device="fr945_lte fw17.4",
+        )
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.persist(conn, make("dup-1"), [], [], {})
+        try:
+            db.persist(conn, make("dup-2"), [], [], {})
+        except DuplicateSessionError:
+            pass
+        else:
+            raise AssertionError("the duplicate was accepted")
+        later = Session(
+            session_id="after-dup",
+            sport="running",
+            source_vendor="garmin",
+            start_time="2026-10-03T06:00:00+00:00",
+            source_device="fr945_lte fw17.4",
+        )
+        db.persist(conn, later, [], [], {})
+        order = dict(conn.execute("SELECT session_id, upload_order FROM sessions").fetchall())
+    finally:
+        conn.close()
+
+    assert order == {"dup-1": 1, "after-dup": 2}

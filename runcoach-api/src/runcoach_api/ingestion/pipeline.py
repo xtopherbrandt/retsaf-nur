@@ -17,6 +17,7 @@ from runcoach_api.ingestion import (
     fit_parser,
     hrv_classification,
     mapping,
+    profile_values,
     quality_gates,
     quarantine,
     rr_reconstruction,
@@ -41,6 +42,10 @@ def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> I
     """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
+    # F016: the profile settings the file carried ride on the session row,
+    # so db.persist writes them in the same transaction as the session.
+    for field_name, value in profile_values.extract(messages).items():
+        setattr(session, field_name, value)
     # rr_reconstruction runs before quality_gates.apply() so the chest_strap
     # that mapping._infer_hr_source set (from RR, or from a connected
     # heart-rate sensor with HR) is already in place before apply()'s

@@ -121,6 +121,17 @@ _SCHEMA_DDL = """
       -- no FIT bytes are kept, so such a row stays NULL until the session
       -- is deleted and re-uploaded). Unread (F007 AC6); not in GET (AC9).
       hr_sensor_serial INTEGER,
+      -- F016: the profile settings the session's FIT file carried, as
+      -- ingestion.profile_values maps them (NULL = the file had no value).
+      -- Written with the row, so they go when the session is deleted.
+      -- Added 2026-10-07; _reconcile_columns lands them and nothing
+      -- backfills them (no FIT bytes are kept). Not in GET /sessions/{id}.
+      sex TEXT, body_mass_kg REAL, height_cm INTEGER, resting_hr_bpm INTEGER,
+      max_hr_bpm INTEGER, threshold_hr_bpm INTEGER, garmin_activity_class INTEGER,
+      -- upload_order: 1 + the largest stored, assigned inside the insert
+      -- transaction; it orders uploads that share a start time. Not rowid,
+      -- which VACUUM may renumber. NULL on a row stored before F016.
+      upload_order INTEGER,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -236,13 +247,16 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             source_vendor, source_device, recording_interval, hr_source,
             rr_valid_fraction, quality_flags, summary, context,
             rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
-            hr_sensor_serial
+            hr_sensor_serial, sex, body_mass_kg, height_cm, resting_hr_bpm,
+            max_hr_bpm, threshold_hr_bpm, garmin_activity_class, upload_order
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
             :rr_valid_fraction, :quality_flags, :summary, :context,
             :rmssd_precomputed, :resting_rmssd_ms, :hrv_source_tier, :rr_source,
-            :hr_sensor_serial
+            :hr_sensor_serial, :sex, :body_mass_kg, :height_cm, :resting_hr_bpm,
+            :max_hr_bpm, :threshold_hr_bpm, :garmin_activity_class,
+            (SELECT COALESCE(MAX(upload_order), 0) + 1 FROM sessions)
         )
         """,
         {
@@ -267,6 +281,14 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             # The connected ANT+ heart-rate sensor's serial (F007); None
             # when unresolved -- see mapping._resolve_hr_sensor_serial.
             "hr_sensor_serial": session.hr_sensor_serial,
+            # The file's profile settings (F016); see models.Session.
+            "sex": session.sex,
+            "body_mass_kg": session.body_mass_kg,
+            "height_cm": session.height_cm,
+            "resting_hr_bpm": session.resting_hr_bpm,
+            "max_hr_bpm": session.max_hr_bpm,
+            "threshold_hr_bpm": session.threshold_hr_bpm,
+            "garmin_activity_class": session.garmin_activity_class,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context))

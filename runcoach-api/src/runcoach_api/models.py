@@ -81,6 +81,18 @@ class Session:
     # session not yet deleted and re-uploaded) -- never "no sensor". Unread
     # (F007 AC6); mapping._resolve_hr_sensor_serial resolves it.
     hr_sensor_serial: int | None = None
+    # --- profile settings the file carried (F016) ------------------------
+    # The first user_profile / zones_target message's values, as
+    # ingestion.profile_values maps them; None = the file had no value
+    # (invalid, missing, or 0 for the five numeric fields). Stored whatever
+    # the sport. Not in GET /sessions/{id}.
+    sex: str | None = None
+    body_mass_kg: float | None = None
+    height_cm: int | None = None
+    resting_hr_bpm: int | None = None
+    max_hr_bpm: int | None = None
+    threshold_hr_bpm: int | None = None
+    garmin_activity_class: int | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None
