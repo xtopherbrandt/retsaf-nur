@@ -253,18 +253,20 @@ def test_patch_me_negative_hr_is_422() -> None:
         _assert_422(client, "max_hr_bpm", json={"max_hr_bpm": -188})
 
 
-@pytest.mark.parametrize(
-    ("field", "value"), [("body_mass_kg", 0), ("height_cm", -180.0), ("body_mass_kg", True)]
-)
+BODY_FIELDS = ("body_mass_kg", "height_cm")
+
+
+@pytest.mark.parametrize("field", BODY_FIELDS)
+@pytest.mark.parametrize("value", [0, 0.0, -0.0, -180.0, True], ids=["0", "0.0", "-0.0", "negative", "true"])
 def test_patch_me_non_positive_body_value_is_422(field: str, value: object) -> None:
-    """0 and a negative number are non-positive; a JSON ``true`` is not a number (lax float takes it as 1.0)."""
+    """0 and a negative number are non-positive; a JSON ``true`` is not a number (lax float takes it as 1.0).
+    Every row runs on both body fields, so each field's own bound is pinned."""
     with TestClient(app) as client:
         _assert_422(client, field, json={field: value})
 
 
-@pytest.mark.parametrize(
-    ("field", "token"), [("body_mass_kg", "NaN"), ("height_cm", "Infinity"), ("body_mass_kg", "-Infinity")]
-)
+@pytest.mark.parametrize("field", BODY_FIELDS)
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
 def test_patch_me_non_finite_body_value_raw_body_is_422(field: str, token: str) -> None:
     """Sent as a raw body: a JSON encoder will not write the token, but the request parser reads it."""
     with TestClient(app) as client:
@@ -354,6 +356,9 @@ def test_the_patch_contract_operation_matches_the_served_route() -> None:
 
 
 def test_the_patch_contract_component_matches_the_request_model() -> None:
+    """The body's names, its closed shape and its screens. Each property's type, nullability, enum and
+    minimum against ``app.openapi()`` is compared by ``test_me_route``'s walk of every ``/me`` component,
+    which starts from this body as well as from the response."""
     contract = _contract()["components"]["schemas"]["AthleteProfileUpdate"]
     built = app.openapi()["components"]["schemas"]["AthleteProfileUpdate"]
     assert set(contract["properties"]) == set(built["properties"]) == UPDATE_KEYS

@@ -132,7 +132,21 @@ def test_get_me_shows_a_shadowed_entry() -> None:
         session_id,
         195,
     )
-    assert anchor["unavailable"] is None and anchor["version"] >= 1, anchor
+    # The entry 195 was served first, at version 1; the file's 188 moved it to 2.
+    assert anchor["unavailable"] is None and anchor["version"] == 2, anchor
+
+
+def test_get_me_serves_the_anchor_version_the_served_value_has_reached() -> None:
+    """Through the routes: an entered max HR is served at version 1, a different entry moves it to 2,
+    and entering the same value again does not move it."""
+    with TestClient(app) as client:
+        served = []
+        for value in (190, 191, 191):
+            assert client.patch("/me", json={"max_hr_bpm": value}).status_code == 200
+            anchor = client.get("/me").json()["anchors"]["max_hr_bpm"]
+            served.append((anchor["value"], anchor["version"]))
+    print(f"  served={served}")
+    assert served == [(190, 1), (191, 2), (191, 2)]
 
 
 def test_get_me_serves_an_entered_value_with_its_set_time() -> None:
@@ -281,6 +295,94 @@ def test_the_contract_component_matches_the_response_model() -> None:
         == set(built["UnitPrefs"]["properties"])
         == set(DEFAULT_UNITS)
     )
+
+
+REF_PREFIX = "#/components/schemas/"
+# The keywords compared per property. A description or a default is prose and is not compared.
+COMPARED_KEYWORDS = ("type", "enum", "format", "exclusiveMinimum")
+
+
+def _ref_name(ref: str) -> str:
+    assert ref.startswith(REF_PREFIX), ref
+    return ref[len(REF_PREFIX) :]
+
+
+def _normalised(prop: dict) -> dict:
+    """One property as ``{type, nullable, enum, format, exclusiveMinimum, ref}``, in either document's
+    spelling: the contract's ``nullable: true`` and FastAPI's ``anyOf: [X, {type: null}]`` both read as
+    nullable X, a ``const`` reads as a one-value ``enum``, and an enum's order is not compared."""
+    prop = dict(prop)
+    nullable = bool(prop.pop("nullable", False))
+    if "anyOf" in prop:
+        branches = prop.pop("anyOf")
+        rest = [b for b in branches if b != {"type": "null"}]
+        assert len(rest) == 1 and len(rest) < len(branches), f"not an optional single type: {branches}"
+        nullable = True
+        prop = {**prop, **rest[0]}
+    if "const" in prop:
+        prop["enum"] = [prop.pop("const")]
+    if "allOf" in prop:
+        (only,) = prop.pop("allOf")
+        prop = {**prop, **only}
+    out = {"nullable": nullable}
+    if "$ref" in prop:
+        out["ref"] = _ref_name(prop["$ref"])
+    for key in COMPARED_KEYWORDS:
+        if key in prop:
+            out[key] = sorted(prop[key]) if key == "enum" else prop[key]
+    assert "ref" in out or "type" in out, f"a property with neither a type nor a $ref: {prop}"
+    return out
+
+
+def _me_roots(doc: dict) -> set[str]:
+    """The components the two ``/me`` operations name: getMe's and updateMe's response and body."""
+    get, patch = doc["paths"]["/me"]["get"], doc["paths"]["/me"]["patch"]
+    schemas = [
+        get["responses"]["200"]["content"]["application/json"]["schema"],
+        patch["responses"]["200"]["content"]["application/json"]["schema"],
+        patch["requestBody"]["content"]["application/json"]["schema"],
+    ]
+    return {_ref_name(s["$ref"]) for s in schemas}
+
+
+def test_every_me_component_matches_the_served_model_property_by_property() -> None:
+    """Walk every component reachable from the ``/me`` operations, in the contract and in
+    ``app.openapi()`` alike, and compare each property's type, nullability, enum, format, minimum and
+    ``$ref`` target. A contract that narrows an enum, retypes a field or drops its null fails here,
+    which a comparison of property names alone does not see. Each component's ``required`` list is
+    compared too, except that ``UnitPrefs``' contract entry may leave it unstated (its keys are
+    defaulted there); once stated, it must match."""
+    contract = _contract()
+    built = app.openapi()
+    assert _me_roots(contract) == _me_roots(built) == {"Athlete", "AthleteProfileUpdate"}
+    queue, seen, compared = sorted(_me_roots(contract)), set(), []
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        ours, theirs = contract["components"]["schemas"][name], built["components"]["schemas"][name]
+        assert set(ours["properties"]) == set(theirs["properties"]), name
+        for field in ours["properties"]:
+            want = _normalised(theirs["properties"][field])
+            got = _normalised(ours["properties"][field])
+            assert got == want, f"{name}.{field}: contract {got} != served {want}"
+            compared.append(f"{name}.{field}")
+            if "ref" in got:
+                queue.append(got["ref"])
+        if name != "UnitPrefs" or "required" in ours:
+            assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
+        assert ours.get("additionalProperties", True) == theirs.get("additionalProperties", True), name
+    print(f"  {len(compared)} properties over {sorted(seen)}")
+    assert seen >= {
+        "Athlete",
+        "AthleteProfileUpdate",
+        "UnitPrefs",
+        "HrAnchors",
+        "HrAnchor",
+        "SexAnchor",
+        *ENTRY_COMPONENTS.values(),
+    }, seen
 
 
 def test_create_athlete_stays_planned_with_its_own_security() -> None:
