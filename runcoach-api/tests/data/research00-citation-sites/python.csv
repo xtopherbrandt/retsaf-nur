@@ -220,7 +220,7 @@ repo,runcoach-api/src/runcoach_api/schemas.py,24,,PRIN-24
 repo,runcoach-api/src/runcoach_api/schemas.py,458,,PRIN-24
 repo,runcoach-api/src/runcoach_api/schemas.py,193,,PRIN-24
 repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2953,,PRIN-24
-repo,runcoach-api/src/runcoach_api/db.py,630,,PRIN-27
-repo,runcoach-api/src/runcoach_api/db.py,630,,PRIN-24
+repo,runcoach-api/src/runcoach_api/db.py,645,,PRIN-27
+repo,runcoach-api/src/runcoach_api/db.py,645,,PRIN-24
 repo,runcoach-api/src/runcoach_api/ingestion/rr_reconstruction.py,54,,HRV-06
 repo,runcoach-api/src/runcoach_api/models.py,128,,HRV-06

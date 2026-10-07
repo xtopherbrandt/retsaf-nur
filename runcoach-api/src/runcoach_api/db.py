@@ -4,7 +4,8 @@
 for where the SQLite file lives -- no separate config field is added
 here. ``get_connection`` creates the directory if needed and returns a
 connection with foreign keys enabled; ``init_schema`` is idempotent
-DDL for the four canonical-schema tables; ``persist`` writes one
+DDL for the four canonical-schema tables and the athlete's entered
+profile values (``profile_entries``); ``persist`` writes one
 ingested session (session header, records, RR intervals, and
 quarantined sidecar values) in a single transaction, and
 ``delete_session`` removes that same row set in one -- children first,
@@ -24,10 +25,12 @@ import dataclasses
 import functools
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from runcoach_api import config as config_module
+from runcoach_api import profile as profile_module
 from runcoach_api.ingestion.exceptions import DuplicateSessionError
 from runcoach_api.models import Record, RRInterval, Session
 
@@ -149,7 +152,19 @@ _SCHEMA_DDL = """
       session_id TEXT NOT NULL REFERENCES sessions(session_id), field_name TEXT NOT NULL,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS profile_entries (
+      -- F016: the athlete's entered profile values, one row per change,
+      -- written by write_profile_entries. value is JSON text; NULL is a
+      -- clear. entry_id orders the changes (an INTEGER PRIMARY KEY, which
+      -- VACUUM keeps). No session_id column, so delete_session never
+      -- sweeps an entry.
+      entry_id INTEGER PRIMARY KEY, field TEXT NOT NULL, value TEXT,
+      set_at TEXT NOT NULL
+    );
 """
+
+# The entered-values table's name, for callers and tests that address it.
+PROFILE_ENTRIES_TABLE = "profile_entries"
 
 # The amendment-window predicate F004 publishes for E003, as SQL usable
 # directly after ``WHERE``. This is its one code home: F004's Data Model,
@@ -739,3 +754,63 @@ def read_session_feature_inputs(conn: sqlite3.Connection, session_id: str) -> tu
         for r in records_cur.fetchall()
     ]
     return session, rows
+
+
+def write_profile_entries(
+    conn: sqlite3.Connection, values: Mapping[str, object], set_at: str | None = None
+) -> str:
+    """Write the athlete's entered profile values, one ``profile_entries`` row per field.
+
+    ``values`` maps a field of ``profile.ENTERED_FIELDS`` to its entered value,
+    or to ``None``, which writes a clear (a row whose value is NULL). Every row
+    of one call shares ``set_at`` (an ISO timestamp; default: now in UTC,
+    ``isoformat()``), which is returned. An empty mapping writes nothing. A
+    field outside ``ENTERED_FIELDS`` raises ``ValueError`` before any row is
+    written; the rows of one call are one transaction. Values are not
+    validated here: ``PATCH /me`` screens them and calls this. The caller has
+    run ``init_schema``, as ``persist``'s callers do.
+    """
+    unknown = sorted(set(values) - set(profile_module.ENTERED_FIELDS))
+    if unknown:
+        raise ValueError(f"not an entered profile field: {', '.join(unknown)}")
+    if set_at is None:
+        set_at = datetime.now(UTC).isoformat()
+    with conn:
+        conn.executemany(
+            f"INSERT INTO {PROFILE_ENTRIES_TABLE} (field, value, set_at) VALUES (?, ?, ?)",
+            [(field, _json_dump(value), set_at) for field, value in values.items()],
+        )
+    return set_at
+
+
+def read_profile_inputs(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
+    """Read what ``profile.resolve`` consumes: every stored session's profile columns and
+    every entered-value row.
+
+    Returns a pair. The sessions: one mapping per stored session with exactly
+    ``session_id``, ``start_time``, ``upload_order``, ``sport`` and the six
+    ``profile.FIT_FIELDS`` columns, ``ORDER BY start_time, upload_order``. The
+    entries: one mapping per ``profile_entries`` row with ``entry_id``,
+    ``field``, ``value`` (JSON-decoded, ``None`` for a clear) and ``set_at``,
+    ``ORDER BY entry_id``. Read-only: no ``init_schema``, no write; nothing is
+    cached, so the profile is recomputed from whatever is stored when read.
+    """
+    columns = ("session_id", "start_time", "upload_order", "sport", *profile_module.FIT_FIELDS)
+    sessions = [
+        {c: r[c] for c in columns}
+        for r in conn.execute(
+            f"SELECT {', '.join(columns)} FROM sessions ORDER BY start_time, upload_order"
+        ).fetchall()
+    ]
+    entries = [
+        {
+            "entry_id": r["entry_id"],
+            "field": r["field"],
+            "value": _json_load(r["value"]),
+            "set_at": r["set_at"],
+        }
+        for r in conn.execute(
+            f"SELECT entry_id, field, value, set_at FROM {PROFILE_ENTRIES_TABLE} ORDER BY entry_id"
+        ).fetchall()
+    ]
+    return sessions, entries
