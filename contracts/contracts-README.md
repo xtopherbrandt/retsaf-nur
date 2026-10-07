@@ -36,9 +36,11 @@ Every operation carries three vendor extensions:
 | `x-story` | The UI user story/stories the operation serves. |
 
 `implemented` today: `GET /health`, `/sessions` (`POST`, `GET /{id}`,
-`DELETE /{id}`), `GET /metrics/hrv` (F005, 2026-09-09) and
+`DELETE /{id}`), `GET /metrics/hrv` (F005, 2026-09-09),
 `GET /sessions/{id}/features` (F013, 2026-10-04: grade-adjusted pace, NGP and the
-session descriptors, computed on read, nothing stored). Everything else is
+session descriptors, computed on read, nothing stored) and `GET /me` and
+`PATCH /me` (F016, 2026-10-07: each profile field with its source and the HR
+anchors; entered profile values, display_name and units). Everything else is
 `planned` and is served by a mock until the backend catches up.
 
 ## How to use it

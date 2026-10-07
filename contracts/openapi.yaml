@@ -19,8 +19,9 @@ openapi: 3.1.0
 # /sessions (POST ingest, GET detail, DELETE), GET /metrics/hrv (F005: the
 # per-day series plus the verdict blocks, `from`/`to` optional),
 # GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
-# descriptors, computed on read, nothing stored) and GET /me (F016: each
-# profile field with its source, and the HR anchors); everything else
+# descriptors, computed on read, nothing stored), GET /me (F016: each
+# profile field with its source, and the HR anchors) and PATCH /me (F016:
+# entered profile values, display_name and units); everything else
 # is `planned` and is developed against a mock generated from this file until
 # the backend catches up. POST /sessions carries the F004 `resting_capture`
 # flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
@@ -137,7 +138,8 @@ paths:
         entry); display_name (null clears it) and units (all three, not
         nullable) change the settings. An empty object is a 200 that changes
         nothing. The response is getMe's shape, read after the write. 422, with
-        nothing written, for an unknown field (units' keys included); an HR
+        nothing written, for an unknown field (units' keys included); a units
+        object missing a key, or null; an HR
         value that is not a whole number above 0 (true, "188" and 188.5 are
         refused); a body value that is not a finite number above 0; a sex
         outside the enum; a birth_date that is not a YYYY-MM-DD date or lies
@@ -1135,11 +1137,13 @@ components:
 
     UnitPrefs:
       type: object
+      description: "All three keys are required on updateMe; a units object missing a key, or null, is a 422."
+      required: [distance, pace, temperature]
       additionalProperties: false
       properties:
-        distance: { type: string, enum: [km, mi], default: km }
-        pace: { type: string, enum: [min_per_km, min_per_mi], default: min_per_km }
-        temperature: { type: string, enum: [c, f], default: c }
+        distance: { type: string, enum: [km, mi] }
+        pace: { type: string, enum: [min_per_km, min_per_mi] }
+        temperature: { type: string, enum: [c, f] }
 
     OnboardingInput:
       type: object
