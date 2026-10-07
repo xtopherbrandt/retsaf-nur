@@ -23,23 +23,24 @@ docstrings, the CHANGELOG, spec and reference documents, and `.claude/rules/`.
           --base <sprint base> --ids <first>-<last> --strict
 
   It reads the added lines of the sprint's diff with whitespace flattened (wrapped prose defeats
-  `grep`), prints every compared file and every hit, and fails a hit whose introducing commit is
-  scoped to anything but that same task ID. `--strict` also fails the `listed` hits, the ones
-  introduced under a `sprint-NNN` scope or no scope.
+  `grep`), prints every compared file and every hit, and fails a hit when any of its writers has
+  a scope other than that same task ID, a `sprint-NNN` scope or none. `--strict` also fails the
+  `listed` hits, whose worst writer has a `sprint-NNN` scope or no scope.
 - **An ID is matched in any case and inside identifiers.** `(t249 does)`, `test_..._until_t249`,
   `T249_SERIAL` and `T249a` all name T249, because test names and constants are durable text too;
   `T2490`, `UT249` and `1T249` name no ID.
-- **The introducing commit is the one that wrote the ID on the line**, not the last one to touch
-  it. A whitespace-only change is ignored, and when a later commit rewords a line that already
-  named the ID, the sweep walks back to the commit that first wrote it: a hand-off that the task it
-  names later rewords still fails, and the report says which commit last edited the line. The walk
-  pairs each line with the removed line it rewords, by similarity within the rewording hunk: a
-  line at least 0.6 similar to a removed line naming the ID rewords it. Under 0.6 the line is a
-  new sentence and its commit is a new writer, because whoever replaces a sentence wholesale wrote
-  the claim it now makes: a self-tag such as "T249 adds the column" replaced by "the cache stays
-  cold until T249 warms it" under another task's scope is a new hand-off, and fails. When several
-  removed lines score within 0.1 of the best, the pairing is ambiguous, so each is walked and the
-  worst writer judges the line (`fail`, then `listed`, then `exempt`).
+- **A hit is judged by every writer of its ID in the file.** A hit on a line of file F naming ID
+  X is judged by the worst of every commit in the sweep range that added or removed a line of F
+  naming X, plus the commit `blame` names for the line (which adds a merge that wrote it): `fail`,
+  then `listed`, then `exempt`. The report names the oldest of the worst writers, and the commit
+  that last edited the line when that is another. A whitespace-only change writes nothing, a
+  rename keeps the writers from before it, and a commit before the sweep base does not count. So a
+  hand-off that the task it names later rewords, joins, splits or moves still fails.
+- **The accepted over-fail (the user's ruling, 2026-10-06).** When another task's commit adds or
+  removes any line of F naming X, every hit for X in F fails, a self-tag included. Rewrite the
+  line, or justify it as `listed`.
+- **A bad range is an error.** The base must be an ancestor of the head and a different commit:
+  `--base HEAD` and a reversed range exit 2, rather than comparing nothing and passing.
 - **The user's git config does not change what is read.** The script fixes the diff prefixes and
   drops a configured `blame.ignoreRevsFile`; a diff header it cannot read is an error, not a file
   skipped.

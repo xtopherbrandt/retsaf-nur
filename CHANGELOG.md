@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+IDEA-132: the task-ID sweep judges each hit by the worst of every commit in the sweep range that
+added or removed a line of the file naming the ID, plus the commit blame names for the line, in
+place of the similarity walk-back; another task's edit of such a line fails every hit for that ID
+in the file, and a range whose base is not a strict ancestor of its head exits 2.
+
 ## 2026-10-06 — Sprint 012: fixture provenance, hilly runs and chest-strap inference
 
 F015: ingestion reads `hr_source` as `chest_strap` when a file has no RR stream but has HR and a
