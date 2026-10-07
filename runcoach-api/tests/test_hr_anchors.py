@@ -548,3 +548,67 @@ def test_read_athlete_pairs_fields_and_anchors_of_one_state(monkeypatch) -> None
     print(f"  field {resolved['resting_hr_bpm'].value}, anchor {served['resting_hr_bpm'].value}")
     assert len(results) == 1, results
     assert resolved["resting_hr_bpm"].value == served["resting_hr_bpm"].value, (results, resolved, served)
+
+
+def _try_write_lock() -> str:
+    """Try to take the write lock from a second connection that does not wait (timeout 0),
+    release it at once if taken, and say which happened."""
+    other = sqlite3.connect(db._load_config_cached().data_dir / db.DB_FILENAME, timeout=0)
+    try:
+        other.execute("BEGIN IMMEDIATE")
+    except sqlite3.OperationalError as exc:
+        return f"refused: {exc}"
+    else:
+        other.rollback()
+        return "taken"
+    finally:
+        other.close()
+
+
+def test_init_schema_takes_the_write_lock_before_its_first_read(monkeypatch) -> None:
+    """``init_schema`` holds the write lock from ``BEGIN`` on, not from its first write: at
+    the moment its anchor sync first reads the store, a second connection that does not
+    wait is refused the write lock. A deferred ``BEGIN`` would let that connection in here
+    and later fail one of the two writers with "database is locked"."""
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        real = db.read_profile_inputs
+        outcomes: list[str] = []
+
+        def probe(c):
+            if c is conn and not outcomes:
+                outcomes.append(_try_write_lock())
+            return real(c)
+
+        with monkeypatch.context() as m:
+            m.setattr(db, "read_profile_inputs", probe)
+            db.init_schema(conn)
+    finally:
+        conn.close()
+    print(f"\n  second connection's BEGIN IMMEDIATE at the first read: {outcomes}")
+    assert len(outcomes) == 1, outcomes
+    assert outcomes[0].startswith("refused") and "database is locked" in outcomes[0], outcomes
+
+
+def test_init_schema_rolls_back_and_releases_the_lock_on_an_exception(monkeypatch) -> None:
+    """An exception inside ``init_schema``'s transaction propagates, and the transaction is
+    rolled back: the connection is left outside a transaction and the write lock is free."""
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+
+        def fail(c):
+            raise RuntimeError("anchor sync failed")
+
+        with monkeypatch.context() as m:
+            m.setattr(db, "_sync_anchor_versions", fail)
+            with pytest.raises(RuntimeError, match="anchor sync failed"):
+                db.init_schema(conn)
+        in_transaction = conn.in_transaction
+        lock = _try_write_lock()
+    finally:
+        conn.close()
+    print(f"\n  after the failed init_schema: in_transaction={in_transaction}, write lock {lock}")
+    assert not in_transaction
+    assert lock == "taken", lock
