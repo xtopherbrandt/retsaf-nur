@@ -262,7 +262,17 @@ def _post_fit(client, filename: str, data=None):
     entirely when ``None``, so the default upload is byte-for-byte the one
     every pre-T063 test already sent.
     """
-    raw = (FIXTURES / filename).read_bytes()
+    return _post_fit_bytes(client, filename, (FIXTURES / filename).read_bytes(), data)
+
+
+def _post_fit_bytes(client, filename: str, raw: bytes, data=None):
+    """POST ``raw`` to ``/sessions`` under ``filename`` and return the raw response.
+
+    ``_post_fit`` reads a committed fixture by name; this sends bytes the test
+    built in memory, such as a fixture patched by ``tests/support/fit_patch.py``,
+    which are never written into ``tests/fixtures/``. ``data`` is as for
+    ``_post_fit``.
+    """
     return client.post("/sessions", files={"file": (filename, raw)}, data=data)
 
 
@@ -327,6 +337,12 @@ def ingest():
 def post_fit():
     """``post_fit(client, filename, data=None)`` -> raw POST response."""
     return _post_fit
+
+
+@pytest.fixture
+def post_fit_bytes():
+    """``post_fit_bytes(client, filename, raw, data=None)`` -> raw POST response."""
+    return _post_fit_bytes
 
 
 @pytest.fixture
