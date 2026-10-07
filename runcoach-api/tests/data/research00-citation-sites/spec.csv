@@ -111,19 +111,20 @@ repo,specification/spec/01-scope-inputs-pace-target.md,15,Part 2,ARCH-11
 repo,specification/spec/01-scope-inputs-pace-target.md,27,§1.9,GOAL-02
 repo,specification/spec/01-scope-inputs-pace-target.md,36,,GOAL-02
 repo,specification/spec/01-scope-inputs-pace-target.md,70,§3.2,COLD-02
-repo,specification/spec/01-scope-inputs-pace-target.md,75,§3.2,COLD-01
-repo,specification/spec/01-scope-inputs-pace-target.md,106,§3.1,IND-01
-repo,specification/spec/01-scope-inputs-pace-target.md,106,Part 3,REG-05
-repo,specification/spec/01-scope-inputs-pace-target.md,119,Part 3,REG-06
-repo,specification/spec/01-scope-inputs-pace-target.md,125,Part 2,ARCH-05
-repo,specification/spec/01-scope-inputs-pace-target.md,135,Part 3,DOC-07
-repo,specification/spec/01-scope-inputs-pace-target.md,143,Part 3,REG-10
-repo,specification/spec/01-scope-inputs-pace-target.md,147,§1.6,PRIN-11
-repo,specification/spec/01-scope-inputs-pace-target.md,147,Part 2,ARCH-11
-repo,specification/spec/01-scope-inputs-pace-target.md,157,§1.9,GOAL-02
-repo,specification/spec/01-scope-inputs-pace-target.md,159,§1.9,GOAL-03
-repo,specification/spec/01-scope-inputs-pace-target.md,164,§1.9,GOAL-02
-repo,specification/spec/01-scope-inputs-pace-target.md,174,Part 3,REG-10
+repo,specification/spec/01-scope-inputs-pace-target.md,79,§3.2,COLD-01
+repo,specification/spec/01-scope-inputs-pace-target.md,112,§3.1,IND-01
+repo,specification/spec/01-scope-inputs-pace-target.md,112,Part 3,REG-05
+repo,specification/spec/01-scope-inputs-pace-target.md,125,Part 3,REG-06
+repo,specification/spec/01-scope-inputs-pace-target.md,131,Part 2,ARCH-05
+repo,specification/spec/01-scope-inputs-pace-target.md,141,Part 3,DOC-07
+repo,specification/spec/01-scope-inputs-pace-target.md,149,Part 3,REG-10
+repo,specification/spec/01-scope-inputs-pace-target.md,153,§1.6,PRIN-11
+repo,specification/spec/01-scope-inputs-pace-target.md,153,Part 2,ARCH-11
+repo,specification/spec/01-scope-inputs-pace-target.md,163,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,165,§1.9,GOAL-03
+repo,specification/spec/01-scope-inputs-pace-target.md,170,§1.9,GOAL-02
+repo,specification/spec/01-scope-inputs-pace-target.md,180,Part 3,REG-10
+repo,specification/spec/01-scope-inputs-pace-target.md,81,,PRIN-28
 repo,specification/spec/07-recovery-and-taper.md,3,§1.1,PRIN-01
 repo,specification/spec/07-recovery-and-taper.md,3,Part 3,REG-08
 repo,specification/spec/07-recovery-and-taper.md,3,§1.7,PRIN-13
@@ -211,40 +212,42 @@ repo,specification/spec/02-canonical-data-schema-ingestion.md,11,§1.5,PRIN-10
 repo,specification/spec/02-canonical-data-schema-ingestion.md,11,§3.3,PRIN-21
 repo,specification/spec/02-canonical-data-schema-ingestion.md,13,Part 2,ARCH-06
 repo,specification/spec/02-canonical-data-schema-ingestion.md,15,Part 2,ARCH-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,44,Part 3,REG-09
-repo,specification/spec/02-canonical-data-schema-ingestion.md,67,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,75,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,79,Part 3,REG-09
-repo,specification/spec/02-canonical-data-schema-ingestion.md,79,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,81,,HRV-05
-repo,specification/spec/02-canonical-data-schema-ingestion.md,93,Part 2,ARCH-07
-repo,specification/spec/02-canonical-data-schema-ingestion.md,150,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,164,§1.5,PRIN-10
-repo,specification/spec/02-canonical-data-schema-ingestion.md,164,§3.3,HRV-04
-repo,specification/spec/02-canonical-data-schema-ingestion.md,170,Part 3,REG-09
-repo,specification/spec/02-canonical-data-schema-ingestion.md,174,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,51,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,74,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,82,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,86,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,86,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,88,,HRV-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,100,Part 2,ARCH-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,159,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,173,§1.5,PRIN-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,173,§3.3,HRV-04
+repo,specification/spec/02-canonical-data-schema-ingestion.md,181,Part 3,REG-09
 repo,specification/spec/02-canonical-data-schema-ingestion.md,185,Part 3,REG-09
-repo,specification/spec/02-canonical-data-schema-ingestion.md,192,Part 4,FTO-03
-repo,specification/spec/02-canonical-data-schema-ingestion.md,198,Part 2,ARCH-05
-repo,specification/spec/02-canonical-data-schema-ingestion.md,204,Part 3,HRV-07
-repo,specification/spec/02-canonical-data-schema-ingestion.md,204,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,206,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,208,,HRV-02
-repo,specification/spec/02-canonical-data-schema-ingestion.md,213,§1.5,PRIN-10
-repo,specification/spec/02-canonical-data-schema-ingestion.md,213,§5.4,HRV-10
-repo,specification/spec/02-canonical-data-schema-ingestion.md,217,§5.4,HRV-10
-repo,specification/spec/02-canonical-data-schema-ingestion.md,217,§5.4,HRV-51
-repo,specification/spec/02-canonical-data-schema-ingestion.md,217,§5.4,HRV-14
-repo,specification/spec/02-canonical-data-schema-ingestion.md,217,§1.4,PRIN-05
-repo,specification/spec/02-canonical-data-schema-ingestion.md,217,Part 2,ARCH-12
-repo,specification/spec/02-canonical-data-schema-ingestion.md,219,§3.3,HRV-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,225,Part 2,ARCH-05
-repo,specification/spec/02-canonical-data-schema-ingestion.md,237,Part 2,ARCH-06
-repo,specification/spec/02-canonical-data-schema-ingestion.md,253,Part 2,ARCH-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,281,Part 2,ARCH-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,281,Part 3,ARCH-01
-repo,specification/spec/02-canonical-data-schema-ingestion.md,291,Part 3,REG-11
-repo,specification/spec/02-canonical-data-schema-ingestion.md,291,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,196,Part 3,REG-09
+repo,specification/spec/02-canonical-data-schema-ingestion.md,203,Part 4,FTO-03
+repo,specification/spec/02-canonical-data-schema-ingestion.md,209,Part 2,ARCH-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,215,Part 3,HRV-07
+repo,specification/spec/02-canonical-data-schema-ingestion.md,215,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,217,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,219,,HRV-02
+repo,specification/spec/02-canonical-data-schema-ingestion.md,224,§1.5,PRIN-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,224,§5.4,HRV-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,228,§5.4,HRV-10
+repo,specification/spec/02-canonical-data-schema-ingestion.md,228,§5.4,HRV-51
+repo,specification/spec/02-canonical-data-schema-ingestion.md,228,§5.4,HRV-14
+repo,specification/spec/02-canonical-data-schema-ingestion.md,228,§1.4,PRIN-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,228,Part 2,ARCH-12
+repo,specification/spec/02-canonical-data-schema-ingestion.md,230,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,236,Part 2,ARCH-05
+repo,specification/spec/02-canonical-data-schema-ingestion.md,248,Part 2,ARCH-06
+repo,specification/spec/02-canonical-data-schema-ingestion.md,264,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,292,Part 2,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,292,Part 3,ARCH-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,302,Part 3,REG-11
+repo,specification/spec/02-canonical-data-schema-ingestion.md,302,§3.3,HRV-01
+repo,specification/spec/02-canonical-data-schema-ingestion.md,175,,PRIN-28
+repo,specification/spec/02-canonical-data-schema-ingestion.md,175,,PRIN-08
 repo,specification/spec/04-physiological-state-model.md,3,§1.5,PRIN-07
 repo,specification/spec/04-physiological-state-model.md,3,§1.5,PRIN-09
 repo,specification/spec/04-physiological-state-model.md,3,§3.1,IND-01
@@ -287,6 +290,7 @@ repo,specification/spec/04-physiological-state-model.md,183,Part 3,DOC-08
 repo,specification/spec/04-physiological-state-model.md,134,,FTO-03
 repo,specification/spec/04-physiological-state-model.md,156,,REG-20
 repo,specification/spec/04-physiological-state-model.md,183,,DOC-07
+repo,specification/spec/04-physiological-state-model.md,64,,PRIN-28
 repo,specification/spec/05-training-plan-generation.md,3,§1.1,PRIN-01
 repo,specification/spec/05-training-plan-generation.md,3,Part 2,ARCH-04
 repo,specification/spec/05-training-plan-generation.md,3,Part 3,REG-07

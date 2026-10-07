@@ -9,6 +9,36 @@ added or removed a line of the file naming the ID, plus the commit blame names f
 place of the similarity walk-back; another task's edit of such a line fails every hit for that ID
 in the file, and a range whose base is not a strict ancestor of its head exits 2.
 
+### Added
+
+F016: each stored session keeps the seven athlete profile settings its FIT file carried, read from
+the first `user_profile` and `zones_target` messages: `sex`, `body_mass_kg`, `height_cm`,
+`resting_hr_bpm`, `garmin_activity_class`, `max_hr_bpm` and `threshold_hr_bpm` (spec/02 section
+2.2.1). A FIT invalid value, a missing field or message, and 0 for the five numeric HR and body
+fields store no value; FIT `gender` 0 is `female`, and `garmin_activity_class` is the raw integer.
+The athlete's entered values are kept one row per change. Each profile field's effective value is
+the latest stored file that carries it, by session start time (for max and threshold HR, running
+sessions only), else the latest entered value, else unavailable (spec/01 section 1.3; research/00
+PRIN-28 admits the seven settings as profile inputs). spec/04 section 4.2.7 now seeds HR_max from
+the profile, says a latest-file value can go down, and names no age-based max-HR formula (IDEA-138).
+
+F016: `GET /me` returns each profile field's effective value, its source (`fit` with the session,
+or `entered`) and any entry a file value shadows, plus the resting, max and threshold HR and sex
+anchors, each available with a version or unavailable as `missing` or `order_conflict`.
+`PATCH /me` stores entered values (`null` clears a field; `{}` changes nothing) and returns the
+same shape. `runcoach profile show` prints them, and `runcoach profile set` enters or clears them.
+
+Tests: a fixture whose name lacks a lowercase `.fit` suffix fails the fixture provenance tests, so
+a file named `X.FIT` cannot escape the case-sensitive census globs on Linux.
+
+### Migration required
+
+F016: sessions stored before this change carry no profile values, and nothing is backfilled.
+Uploading an already-stored file again returns 409, so to fill a session's values the athlete
+deletes the session and uploads the file again. Until the newest files are re-ingested, a
+pre-change row's empty values read as "this file had no value", so the profile can come from an
+older file, or from an entered value.
+
 ## 2026-10-06 — Sprint 012: fixture provenance, hilly runs and chest-strap inference
 
 F015: ingestion reads `hr_source` as `chest_strap` when a file has no RR stream but has HR and a
