@@ -251,6 +251,30 @@ def test_file_without_zones_target_leaves_hr_to_the_earlier_file(post_fit_bytes)
     _assert_fit(resolved["sex"], "male", later)
 
 
+def test_file_without_user_profile_leaves_the_body_fields_to_the_earlier_file(post_fit_bytes) -> None:
+    """The reverse: ``wrist_ppg_run`` (08-21, max 189, threshold 169) with its weight patched to
+    70.0 kg, then ``sample_run`` (09-01, max 188, threshold 169) with ``user_profile`` removed:
+    the body fields come from the earlier file, max and threshold HR from the later one."""
+    earlier_bytes = fit_patch.set_field(_raw("wrist_ppg_run.fit"), USER_PROFILE, WEIGHT, 700)
+    later_bytes = fit_patch.remove_messages(_raw("sample_run.fit"), USER_PROFILE)
+    with TestClient(app) as client:
+        earlier = _upload(client, post_fit_bytes, "wrist_ppg_run.fit", earlier_bytes)
+        later = _upload(client, post_fit_bytes, "sample_run.fit", later_bytes)
+    stored = _stored(later, *BODY_FIELDS, "max_hr_bpm", "start_time")
+    assert all(stored[field] is None for field in BODY_FIELDS), stored
+    assert stored["max_hr_bpm"] == 188, stored
+    earlier_start = _stored(earlier, "start_time")["start_time"]
+    assert stored["start_time"] > earlier_start
+
+    resolved = _profile()
+    _assert_fit(resolved["body_mass_kg"], 70.0, earlier, earlier_start)
+    _assert_fit(resolved["height_cm"], 180, earlier)
+    _assert_fit(resolved["resting_hr_bpm"], 47, earlier)
+    _assert_fit(resolved["sex"], "male", earlier)
+    _assert_fit(resolved["max_hr_bpm"], 188, later, stored["start_time"])
+    _assert_fit(resolved["threshold_hr_bpm"], 169, later)
+
+
 # --- AC2 rows 5 to 7: entries --------------------------------------------------------------------
 
 
