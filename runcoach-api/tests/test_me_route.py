@@ -350,8 +350,8 @@ def test_every_me_component_matches_the_served_model_property_by_property() -> N
     ``app.openapi()`` alike, and compare each property's type, nullability, enum, format, minimum and
     ``$ref`` target. A contract that narrows an enum, retypes a field or drops its null fails here,
     which a comparison of property names alone does not see. Each component's ``required`` list is
-    compared too, except that ``UnitPrefs``' contract entry may leave it unstated (its keys are
-    defaulted there); once stated, it must match."""
+    compared too, for every component: a contract that drops a ``required`` list the served model
+    has (``UnitPrefs``' three keys included) fails here."""
     contract = _contract()
     built = app.openapi()
     assert _me_roots(contract) == _me_roots(built) == {"Athlete", "AthleteProfileUpdate"}
@@ -370,8 +370,7 @@ def test_every_me_component_matches_the_served_model_property_by_property() -> N
             compared.append(f"{name}.{field}")
             if "ref" in got:
                 queue.append(got["ref"])
-        if name != "UnitPrefs" or "required" in ours:
-            assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
+        assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
         assert ours.get("additionalProperties", True) == theirs.get("additionalProperties", True), name
     print(f"  {len(compared)} properties over {sorted(seen)}")
     assert seen >= {
