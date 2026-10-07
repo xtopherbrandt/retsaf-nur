@@ -14,9 +14,10 @@ in the file, and a range whose base is not a strict ancestor of its head exits 2
 F016: each stored session keeps the seven athlete profile settings its FIT file carried, read from
 the first `user_profile` and `zones_target` messages: `sex`, `body_mass_kg`, `height_cm`,
 `resting_hr_bpm`, `garmin_activity_class`, `max_hr_bpm` and `threshold_hr_bpm` (spec/02 section
-2.2.1). A FIT invalid value, a missing field or message, and 0 for the five numeric HR and body
-fields store no value; FIT `gender` 0 is `female`, and `garmin_activity_class` is the raw integer.
-The athlete's entered values are kept one row per change. Each profile field's effective value is
+2.2.1). A FIT invalid value, a missing field or message, a 0 or negative value for the five numeric HR
+and body fields, and a non-finite body mass store no value; FIT `gender` 0 is `female`, and `garmin_activity_class` is the raw integer.
+The athlete's entered values are kept one row per change. Each profile field's effective value,
+for every field but `garmin_activity_class` (stored per session only, never resolved or served), is
 the latest stored file that carries it, by session start time (for max and threshold HR, running
 sessions only), else the latest entered value, else unavailable (spec/01 section 1.3; research/00
 PRIN-28 admits the seven settings as profile inputs). spec/04 section 4.2.7 now seeds HR_max from
@@ -42,7 +43,10 @@ the enum, or a `birth_date` that is not a `YYYY-MM-DD` date or lies after today 
 `Infinity` token that fails validation is a 422 that echoes the token as text. In the
 contract, `updateMe` is `implemented`, inherits `bearerAuth` and lists no 401, and
 `AthleteProfileUpdate` gains the seven entered fields; it and `UnitPrefs` refuse unknown keys.
-`runcoach profile show` prints them, and `runcoach profile set` enters or clears them.
+`runcoach profile show` prints them, and `runcoach profile set` enters or clears them; it refuses a
+non-finite body mass or height with an error before sending anything. `init_schema` holds the write
+lock across its anchor version sync, so an upload and a `PATCH /me` that run at the same time no
+longer log a stale anchor version.
 
 Tests: a fixture whose name lacks a lowercase `.fit` suffix fails the fixture provenance tests, so
 a file named `X.FIT` cannot escape the case-sensitive census globs on Linux.
