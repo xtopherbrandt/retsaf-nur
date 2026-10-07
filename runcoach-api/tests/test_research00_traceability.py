@@ -448,7 +448,7 @@ TRACEABILITY_ROW_SHA256 = {
     "PRIN-05": "c1f7bf41ba01.910f76e3cda2.0f5e0d50cfe3.cdae81e1c37b.e18b75a07d89.8a798890fe93.cd582787b3b2",
     "PRIN-06": "39ba548399e0.51e10f46e03e.0f5e0d50cfe3.eed8c40ff52a.bda050585a00.9390298f3fb0.bda050585a00",
     "PRIN-07": "644752b65331.e2638a9261f8.ae3f7c6f4add.644752b65331.bda050585a00.9390298f3fb0.bda050585a00",
-    "PRIN-08": "57c7d3a77f12.86f27db53205.103dc6246b0e.d9af109ec97d.cb031e6f7fc6.8a798890fe93.828906f78405",
+    "PRIN-08": "57c7d3a77f12.86f27db53205.103dc6246b0e.b35b4c14af7e.cb031e6f7fc6.8a798890fe93.828906f78405",
     "PRIN-09": "a7ec19cf42b5.36557c69dde9.59464aa69139.a7ec19cf42b5.bda050585a00.9390298f3fb0.bda050585a00",
     "PRIN-10": "9ffe88a4b14d.10b0a06f7359.d663ecf5fa5a.7d7226145cdb.a539dc09c09c.9390298f3fb0.16b7f083a84e",
     "PRIN-11": "94ee3c5975a7.6d57e5f11cd9.8825ccca09f2.253d4600eeb0.bda050585a00.9390298f3fb0.bda050585a00",
@@ -691,6 +691,7 @@ PINNED_SHA256 = {
     "PRIN-08/Pinned": "6f6a2e0e1e2d",
     "PRIN-09/Pinned": "6f6a2e0e1e2d",
     "PRIN-10/Pinned": "6f6a2e0e1e2d",
+    "PRIN-28/Pinned": "6f6a2e0e1e2d",
     "PRIN-19/Pinned": "6f6a2e0e1e2d",
     "PRIN-20/Pinned": "6f6a2e0e1e2d",
     "PRIN-21/Pinned": "6f6a2e0e1e2d",
@@ -942,7 +943,7 @@ RESEARCH_STRUCTURE = (
     "### 1.4 Conflict resolution between subjective and objective signals",
     "PRIN-05", "PRIN-06", "PRIN-17", "PRIN-18",
     "### 1.5 Raw over derived",
-    "PRIN-07", "PRIN-08", "PRIN-09", "PRIN-10", "PRIN-19", "PRIN-20", "PRIN-21",
+    "PRIN-07", "PRIN-08", "PRIN-09", "PRIN-10", "PRIN-28", "PRIN-19", "PRIN-20", "PRIN-21",
     "### 1.6 Transparency and explainability",
     "PRIN-11", "PRIN-12", "PRIN-22", "PRIN-23", "PRIN-24", "PRIN-27",
     "### 1.7 Down-regulate freely, up-regulate cautiously",
@@ -1038,7 +1039,7 @@ HISTORY_SHA256 = {
     "H-38": "864b2eb04911",
     "H-39": "ea77338acc5e",
     "H-40": "ff2a30c98d83",
-    "H-41": "cb75714fb871",
+    "H-41": "0843f60b2521",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1054,7 +1055,7 @@ REVIEW_PROSE_SHA256 = (
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
-    "6e818f8a9193", "b42d87f9dcd2", "d13bb5c915cb",
+    "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "f9196af9f3b3",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1082,6 +1083,7 @@ FROZEN_ROUNDS = {
     "15": "0734e515a8d0",
     "16": "6e818f8a9193",
     "17": "b42d87f9dcd2",
+    "18": "6a0fb2c5487d",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1106,6 +1108,7 @@ _FROZEN_ROUNDS_PIN = {
     "15": "0734e515a8d0",
     "16": "6e818f8a9193",
     "17": "b42d87f9dcd2",
+    "18": "6a0fb2c5487d",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1170,7 +1173,7 @@ REVIEW_LINE_SHA256 = {
     "PRIN-07/Not": "a7995f06a008",
     "PRIN-08": "4e78d38cf492",
     "PRIN-08/Scope": "5ed2bb8a5b09",
-    "PRIN-08/Not": "f8266aa2a2ef",
+    "PRIN-08/Not": "74a55a2e2497",
     "PRIN-08/Why": "cd08a720c075",
     "PRIN-09": "bf022260d245",
     "PRIN-09/Scope": "9908a42e8959",
@@ -1178,6 +1181,10 @@ REVIEW_LINE_SHA256 = {
     "PRIN-10": "7dfdd89d5026",
     "PRIN-10/Scope": "cb16899cd058",
     "PRIN-10/Not": "9125da803dd8",
+    "PRIN-28": "ec31283c695a",
+    "PRIN-28/Scope": "46a2f4b72c25",
+    "PRIN-28/Not": "b01f75c8ba0c",
+    "PRIN-28/Why": "6f31082031ce",
     "PRIN-19": "877ecac351f2",
     "PRIN-19/Scope": "17fac90aef50",
     "PRIN-19/Not": "34627042ac60",
