@@ -12,14 +12,22 @@ threshold 169 served at version 1, ``sex`` missing) are
 ``test_get_me_serves_an_order_conflict_anchor_with_its_reason``; the settings keys and default units are
 ``test_get_me_on_an_empty_database_reads_every_field_missing``. One body combines those pins (the
 order conflict's max HR anchor carries the shadowed entry's 195), with the keys and nulls as the pins
-serve them. A change to that pin should be copied here, so a contract change shows up as a red CLI
-test rather than a silent render gap.
+serve them. When that pin changes, copy the change here.
+
+**The mocked body is checked against the contract.** ``test_the_mocked_body_matches_the_contract``
+reads ``contracts/openapi.yaml``'s ``Athlete`` and every component it refers to, and checks
+``ME_BODY``'s keys, types, nulls and enum values against them, so a contract change to the ``/me``
+shape goes red here rather than leaving a silent render gap. The CLI has no YAML dependency, so the
+reader is a small line reader for the contract's component layout; it fails on a line it cannot read
+rather than skipping it.
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -88,6 +96,157 @@ ME_BODY = {
         "sex": copy.deepcopy(MISSING_ANCHOR),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# the mocked body against the contract
+# ---------------------------------------------------------------------------
+
+CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
+_REF = re.compile(r'\$ref: "#/components/schemas/(\w+)"')
+_TYPE = re.compile(r"\btype: (\w+)")
+_NULLABLE = re.compile(r"\bnullable: (true|false)\b")
+_ENUM = re.compile(r"\benum: \[([^\]]*)\]")
+_DESCRIPTION = re.compile(r'description: "(?:[^"\\]|\\.)*"|description: >.*$')
+_PY_TYPES = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "object": (dict,),
+}
+
+
+def _component_block(lines: list[str], name: str) -> list[str]:
+    """The lines of ``components.schemas.<name>``: from its 4-space header to the next one."""
+    header = f"    {name}:"
+    starts = [i for i, ln in enumerate(lines) if ln.rstrip() == header]
+    assert len(starts) == 1, f"{name}: {len(starts)} headers in the contract"
+    block = []
+    for ln in lines[starts[0] + 1 :]:
+        if ln.strip() and len(ln) - len(ln.lstrip(" ")) <= 4:
+            break
+        block.append(ln)
+    return block
+
+
+def _read_property(text: str, where: str) -> dict:
+    text = _DESCRIPTION.sub("", text)
+    spec: dict = {"nullable": False}
+    if m := _REF.search(text):
+        spec["ref"] = m.group(1)
+    if m := _TYPE.search(text):
+        spec["type"] = m.group(1)
+    if m := _NULLABLE.search(text):
+        spec["nullable"] = m.group(1) == "true"
+    if m := _ENUM.search(text):
+        spec["enum"] = [v.strip() for v in m.group(1).split(",")]
+    assert "ref" in spec or spec.get("type") in _PY_TYPES, f"{where}: cannot read {text.strip()!r}"
+    return spec
+
+
+def _read_component(lines: list[str], name: str) -> tuple[set[str], dict[str, dict]]:
+    """``(required, {property: {type, nullable, enum, ref}})`` for one object component."""
+    block = _component_block(lines, name)
+    required: set[str] = set()
+    props: dict[str, dict] = {}
+    in_props = False
+    current: tuple[str, list[str]] | None = None
+    for ln in block:
+        indent = len(ln) - len(ln.lstrip(" "))
+        stripped = ln.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if indent == 6:
+            in_props = stripped == "properties:"
+            if stripped.startswith("required: ["):
+                required = {v.strip() for v in stripped[len("required: [") : -1].split(",")}
+            continue
+        if not in_props or indent < 8:
+            continue
+        if indent == 8:
+            key, _, rest = stripped.partition(":")
+            if rest.strip():
+                props[key] = _read_property(rest, f"{name}.{key}")
+                current = None
+            else:
+                current = (key, [])
+                props[key] = {}
+        elif indent == 10 and current is not None:
+            current[1].append(stripped)
+            props[current[0]] = _read_property(", ".join(current[1]), f"{name}.{current[0]}")
+    assert props, f"{name}: no properties read"
+    assert all(props.values()), f"{name}: a block property with no keys: {props}"
+    return required, props
+
+
+def _contract_problems(body: object, name: str, lines: list[str], where: str = "") -> list[str]:
+    """Every way ``body`` departs from component ``name``: keys, nulls, types and enum values."""
+    required, props = _read_component(lines, name)
+    if not isinstance(body, dict):
+        return [f"{where or name}: not an object"]
+    problems = [f"{where}.{k}: not in {name}" for k in sorted(set(body) - set(props))]
+    problems += [f"{where}.{k}: absent, {name} declares it" for k in sorted(set(props) - set(body))]
+    problems += [f"{where}.{k}: required by {name}, absent" for k in sorted(required - set(body))]
+    for key, spec in props.items():
+        if key not in body:
+            continue
+        value, at = body[key], f"{where}.{key}"
+        if value is None:
+            if not spec["nullable"]:
+                problems.append(f"{at}: null, {name} does not allow it")
+        elif "ref" in spec:
+            problems += _contract_problems(value, spec["ref"], lines, at)
+        elif isinstance(value, bool) and spec["type"] != "boolean":
+            problems.append(f"{at}: a boolean, {name} says {spec['type']}")
+        elif not isinstance(value, _PY_TYPES[spec["type"]]):
+            problems.append(f"{at}: {type(value).__name__}, {name} says {spec['type']}")
+        elif "enum" in spec and value not in spec["enum"]:
+            problems.append(f"{at}: {value!r} not in {spec['enum']}")
+    return problems
+
+
+def _contract_lines() -> list[str]:
+    return CONTRACT.read_text(encoding="utf-8").splitlines()
+
+
+def test_the_mocked_body_matches_the_contract() -> None:
+    problems = _contract_problems(ME_BODY, "Athlete", _contract_lines())
+    print(problems)
+    assert problems == []
+
+
+def _with(path: tuple[str, ...], value=None, *, drop: bool = False, add: str | None = None) -> dict:
+    body = copy.deepcopy(ME_BODY)
+    target = body
+    for key in path[:-1]:
+        target = target[key]
+    if drop:
+        del target[path[-1]]
+    elif add is not None:
+        target[path[-1]][add] = None
+    else:
+        target[path[-1]] = value
+    return body
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (_with(("anchors", "sex", "unavailable"), "bogus"), ".anchors.sex.unavailable: 'bogus' not in"),
+        (_with(("anchors", "threshold_hr_bpm", "version"), "1"), ".anchors.threshold_hr_bpm.version: str"),
+        (_with(("units", "distance"), None), ".units.distance: null"),
+        (_with(("resting_hr_bpm", "value"), True), ".resting_hr_bpm.value: a boolean"),
+        (_with(("birth_date", "source"), drop=True), ".birth_date.source: absent"),
+        (_with(("height_cm",), add="unit"), ".height_cm.unit: not in ProfileNumberEntry"),
+    ],
+    ids=["enum", "type", "null", "bool-as-int", "missing-key", "extra-key"],
+)
+def test_the_contract_check_reports_a_departure(body, expected) -> None:
+    """The check itself can fail: each departure from the contract is named."""
+    problems = _contract_problems(body, "Athlete", _contract_lines())
+    print(problems)
+    assert any(p.startswith(expected) for p in problems), problems
 
 
 def _line(output: str, prefix: str) -> str:
