@@ -70,3 +70,28 @@ def upload_fit(
             )
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+def get_me(base_url: str) -> httpx.Response:
+    """Call GET {base_url}/me (the athlete profile and HR anchors) and return the raw response.
+
+    Only network-layer failures are translated into ApiUnreachableError; status and body are the
+    caller's job.
+    """
+    try:
+        return client.get(f"{base_url}/me")
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def patch_me(base_url: str, changes: dict) -> httpx.Response:
+    """Send ``changes`` as the JSON body of PATCH {base_url}/me and return the raw response.
+
+    ``changes`` maps profile field names to their new values, ``None`` clearing a field. It is sent
+    as given; the API validates it. Only network-layer failures are translated into
+    ApiUnreachableError.
+    """
+    try:
+        return client.patch(f"{base_url}/me", json=changes)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
