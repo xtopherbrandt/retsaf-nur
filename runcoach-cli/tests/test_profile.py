@@ -240,6 +240,24 @@ def test_profile_set_refuses_a_fractional_hr_without_a_request(install_mock_clie
     assert rec.requests == []
 
 
+@pytest.mark.parametrize("option", ["--body-mass-kg", "--height-cm"])
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "NaN", "Infinity"])
+def test_profile_set_refuses_a_non_finite_measure_without_a_request(
+    install_mock_client, option, value
+) -> None:
+    rec = _Recorder()
+    install_mock_client(rec)
+
+    result = runner.invoke(app, ["profile", "set", option, value])
+
+    print(f"  exit={result.exit_code} stderr={result.stderr!a}")
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert result.exit_code == 2, result.output
+    assert "Error" in result.stderr and "finite" in result.stderr, result.stderr
+    assert option in result.stderr, result.stderr
+    assert rec.requests == []
+
+
 def test_profile_set_clear_sends_null(install_mock_client) -> None:
     rec = _Recorder()
     install_mock_client(rec)

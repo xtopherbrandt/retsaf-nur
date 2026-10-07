@@ -5,14 +5,16 @@ entered value a FIT value shadows, then the four HR anchors, each with its versi
 unavailable (``missing`` or ``order_conflict``). ``set`` sends the given fields to ``PATCH /me``
 (``--clear FIELD`` sends null for that field) and prints the returned profile the same way.
 
-The CLI does no profile validation of its own beyond option types (an HR is an integer): the API owns
-the rules and answers 422 for a value it refuses, which is reported like any other non-2xx.
+The CLI does no profile validation of its own beyond option types (an HR is an integer) and refusing a
+non-finite body mass or height (``nan`` and ``inf`` cannot be sent as JSON): the API owns the rules and
+answers 422 for a value it refuses, which is reported like any other non-2xx.
 """
 
 from __future__ import annotations
 
 import enum
 import json
+import math
 from typing import Any
 
 import httpx
@@ -128,6 +130,10 @@ def set_profile(
     ),
 ) -> None:
     """Enter or clear profile fields via PATCH /me, then print the returned profile."""
+    # A non-finite float is not valid JSON, so it cannot reach the API's own validation: refuse it here.
+    for option, value in (("--body-mass-kg", body_mass_kg), ("--height-cm", height_cm)):
+        if value is not None and not math.isfinite(value):
+            raise typer.BadParameter(f"{value!r} is not a finite number", param_hint=option)
     given = {
         "sex": sex.value if sex is not None else None,
         "birth_date": birth_date,
