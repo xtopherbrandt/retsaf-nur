@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-07 through 2026-10-08 — Sprint 013: athlete profile and HR anchors
+
 ### Changed
 
 IDEA-132: the task-ID sweep judges each hit by the worst of every commit in the sweep range that
