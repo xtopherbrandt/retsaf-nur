@@ -35,9 +35,11 @@ not the one reported, the report adds ``last edited by <sha> <subject>``.
 
 **The range.** ``base`` must be an ancestor of ``head`` and a different commit, or the sweep exits
 2: ``--base HEAD`` compares nothing, and a reversed range reads removed lines as added. The sweep
-also exits 2 when no commit in the range has one of ``--ids`` as its scope (the scope read as for a
-writer, below), since that is the wrong range or the wrong IDs, and when the range compares no
-file, since a sweep that read nothing would pass having judged nothing.
+also exits 2 when the range compares no file, since a sweep that read nothing would pass having
+judged nothing. A range with the wrong IDs is not detected (an accepted limit, the user's ruling,
+2026-10-07): the sweep knows a task's commits only by their scope, and this project does not
+require a task's commits to carry its ID as their scope, so the IDs cannot be checked against the
+range. A wrong-ID range compares its files, finds no hit and passes.
 
 **The user's git config.** Every diff and log passes ``--src-prefix=a/ --dst-prefix=b/ --no-color
 --no-ext-diff --inter-hunk-context=0``, the log also ``--no-show-signature``, every blame
@@ -231,20 +233,6 @@ def check_range(repo: Path, base: str, head: str) -> None:
         raise RuntimeError(f"git merge-base --is-ancestor failed: {done.stderr.strip()}")
 
 
-def check_task_commits(repo: Path, base: str, head: str, ids: set[str]) -> None:
-    """Raises unless a commit in ``base..head`` has one of ``ids`` as its scope.
-
-    The scope is read as :func:`disposition` reads a writer's (``feat(T249): ...`` is T249's
-    commit). A range none of whose commits is one of the given tasks is the wrong range or the
-    wrong IDs, and sweeping it would pass having judged nothing.
-    """
-    subjects = _git(repo, "log", "--no-show-signature", "--format=%s", f"{base}..{head}").splitlines()
-    if not any(subject_scope(subject).upper() in ids for subject in subjects):
-        raise RuntimeError(
-            f"wrong range or IDs: no commit in {base}..{head} has one of the task IDs as its scope"
-        )
-
-
 def _header_path(target: str, prefix: str = "b/") -> str | None:
     """The path a ``+++ `` (or ``--- ``) header names, ``prefix`` dropped, or None for ``/dev/null``.
 
@@ -406,7 +394,6 @@ def find_ids(lines: list[tuple[int, str]], ids: set[str]) -> list[tuple[int, str
 def sweep(repo: Path, base: str, head: str, ids: set[str], compared: list[str] | None = None) -> list[Hit]:
     """Every hit of ``ids`` in the added lines of ``base..head``, with its disposition."""
     check_range(repo, base, head)
-    check_task_commits(repo, base, head, ids)
     hits: list[Hit] = []
     swept = 0
     for path, lines in sorted(added_lines(repo, base, head).items()):

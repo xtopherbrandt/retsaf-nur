@@ -41,8 +41,11 @@ docstrings, the CHANGELOG, spec and reference documents, and `.claude/rules/`.
   line, or justify it as `listed`.
 - **A bad range is an error.** The base must be an ancestor of the head and a different commit:
   `--base HEAD` and a reversed range exit 2, rather than comparing nothing and passing. The
-  sweep also refuses, with exit 2, a range in which no commit has one of the given IDs as its
-  scope (the wrong range or the wrong IDs), and a range that compares no file.
+  sweep also refuses, with exit 2, a range that compares no file.
+- **The accepted limit (the user's ruling, 2026-10-07).** A range with the wrong IDs is not
+  detected: it compares its files, finds no hit and passes. The sweep knows a task's commits only
+  by their scope, and this project does not require a task's commits to carry its ID as their
+  scope, so check the range and the IDs against the sprint plan before reading a PASS.
 - **The user's git config does not change what is read.** The script fixes the diff prefixes and
   drops a configured `blame.ignoreRevsFile`; a diff header it cannot read is an error, not a file
   skipped.

@@ -224,22 +224,9 @@ def _commit(repo: Path, parent: str, files: dict[str, str], subject: str, remove
     return _git(repo, "commit-tree", tree, "-p", parent, "-m", subject)
 
 
-def _open_range(repo: Path, parent: str, name: str) -> str:
-    """A ``feat(T247)`` commit on ``parent`` adding a note that names no ID; returns its sha.
-
-    The sweep refuses a range in which no commit has one of the given IDs as its scope, so a check
-    whose own commit has another scope puts this commit in its range too.
-    """
-    return _commit(
-        repo, parent, {f"planted/opened-{name}.md": "Opens the range.\n"}, "feat(T247): open the range"
-    )
-
-
 def _plant(repo: Path, subject: str, name: str) -> str:
-    """Commits ``planted/<name>.md`` holding :data:`HAND_OFF` on top of :func:`_open_range` on HEAD;
-    returns its sha, so the range is ``<sha>~2..<sha>``."""
-    opened = _open_range(repo, _git(repo, "rev-parse", "HEAD"), name)
-    return _commit(repo, opened, {f"planted/{name}.md": HAND_OFF}, subject)
+    """Commits ``planted/<name>.md`` holding :data:`HAND_OFF` on top of HEAD; returns its sha."""
+    return _commit(repo, _git(repo, "rev-parse", "HEAD"), {f"planted/{name}.md": HAND_OFF}, subject)
 
 
 def _run(sweep, repo: Path, head: str, *extra: str, base: str | None = None) -> int:
@@ -250,7 +237,7 @@ def _run(sweep, repo: Path, head: str, *extra: str, base: str | None = None) -> 
 def test_a_feature_scope_is_not_a_self_tag(clone, capsys):
     sweep = _load_sweep()
     head = _plant(clone, "test(f014): plant a hand-off", "feature")
-    rc = _run(sweep, clone, head, base=f"{head}~2")
+    rc = _run(sweep, clone, head)
     out = capsys.readouterr().out
     print(out)
     assert rc != 0
@@ -260,18 +247,18 @@ def test_a_feature_scope_is_not_a_self_tag(clone, capsys):
 def test_a_sprint_scope_is_listed_and_strict_fails_it(clone, capsys):
     sweep = _load_sweep()
     head = _plant(clone, "chore(sprint-010): plant a hand-off", "sprint")
-    assert _run(sweep, clone, head, base=f"{head}~2") == 0
+    assert _run(sweep, clone, head) == 0
     out = capsys.readouterr().out
     print(out)
     assert "listed" in out and "planted/sprint.md:2" in out
-    assert _run(sweep, clone, head, "--strict", base=f"{head}~2") == 1
+    assert _run(sweep, clone, head, "--strict") == 1
 
 
 def test_the_self_tag_is_exempt(clone, capsys):
     sweep = _load_sweep()
     head = _plant(clone, "test(T249): plant a hand-off", "self")
-    assert _run(sweep, clone, head, base=f"{head}~2") == 0
-    assert _run(sweep, clone, head, "--strict", base=f"{head}~2") == 0
+    assert _run(sweep, clone, head) == 0
+    assert _run(sweep, clone, head, "--strict") == 0
     out = capsys.readouterr().out
     print(out)
     assert "exempt" in out and "planted/self.md:2" in out
@@ -335,9 +322,8 @@ ODD_PATHS = (
 @pytest.mark.parametrize(("label", "path"), ODD_PATHS, ids=[label for label, _ in ODD_PATHS])
 def test_a_path_git_pads_or_quotes_is_swept(clone, capsys, label, path):
     sweep = _load_sweep()
-    opened = _open_range(clone, _git(clone, "rev-parse", "HEAD"), f"path-{label}")
-    head = _commit(clone, opened, {path: HAND_OFF}, "test(f014): plant a hand-off")
-    rc = _run(sweep, clone, head, base=f"{head}~2")
+    head = _commit(clone, _git(clone, "rev-parse", "HEAD"), {path: HAND_OFF}, "test(f014): plant a hand-off")
+    rc = _run(sweep, clone, head)
     out = capsys.readouterr().out
     print(out)
     assert rc == 1, f"{label}: expected a fail hit, got rc {rc}"
@@ -366,7 +352,10 @@ def test_a_reindent_neither_hides_nor_relabels_a_hand_off(clone, capsys):
     reindented = _commit(
         clone, wrote, {path: HAND_OFF.replace("until", "    until")}, "chore(sprint-010): reindent the prose"
     )
-    head = _open_range(clone, reindented, "reindent")
+    # A note naming no ID, so the range below still compares a file (one that compares none exits 2).
+    head = _commit(
+        clone, reindented, {"planted/reindent-note.md": "Names no ID.\n"}, "docs(f014): add a note"
+    )
 
     # Both commits in range: the hit is judged by the commit that wrote it (blame -w).
     rc = _run(sweep, clone, head, base=base)
@@ -375,8 +364,7 @@ def test_a_reindent_neither_hides_nor_relabels_a_hand_off(clone, capsys):
     assert rc == 1, "a reindent under chore(sprint-010) turned the test(f014) hand-off into a pass"
     assert f"fail   {path}:2 T249 ({wrote[:7]} test(f014)" in out
 
-    # Only the reindent and the commit that opens the range: a whitespace-only change adds no
-    # line to sweep (diff -w).
+    # Only the reindent and the note: a whitespace-only change adds no line to sweep (diff -w).
     rc = _run(sweep, clone, head, "--strict", base=wrote)
     out = capsys.readouterr().out
     print(out)
@@ -794,9 +782,11 @@ def test_a_bad_range_exits_2(clone, capsys, case):
     assert "sweep error:" in captured.err and "range" in captured.err
 
 
-def test_a_range_with_no_commit_of_the_given_ids_exits_2(clone, capsys):
-    """The wrong IDs for the range: its one commit is scoped to T240, outside T247-T253, so the
-    sweep would compare its file, find no hit and pass having judged nothing."""
+def test_the_accepted_limit_a_range_with_the_wrong_ids_passes(clone, capsys):
+    """The accepted limit (the user's ruling, 2026-10-07): a range with the wrong IDs is not
+    detected. Its one commit is scoped to T240, outside T247-T253, and adds no hit, so the sweep
+    compares its file and passes. The sweep knows a task's commits only by their scope, which this
+    project does not require, so refusing such a range would also refuse a right one."""
     sweep = _load_sweep()
     head = _commit(
         clone, _git(clone, "rev-parse", "HEAD"), {"planted/wrong-ids.md": "No ID.\n"}, "feat(T240): add"
@@ -804,9 +794,28 @@ def test_a_range_with_no_commit_of_the_given_ids_exits_2(clone, capsys):
     rc = _run(sweep, clone, head, "--strict")
     captured = capsys.readouterr()
     print(captured.out, captured.err)
-    assert rc == 2, f"exit {rc}"
-    assert "sweep error: wrong range or IDs: no commit in" in captured.err
-    assert captured.out == ""
+    assert rc == 0, f"exit {rc}"
+    assert "compared planted/wrong-ids.md\n" in captured.out and ", 0 hits" in captured.out
+    assert captured.out.rstrip().endswith("PASS") and captured.err == ""
+
+
+#: A real range whose task commits mostly carry another scope (``test(sweep): ...``,
+#: ``docs(research00): ...``), with two of its task IDs, built from numbers so this module names no
+#: ID of that sprint.
+SCOPELESS_BASE = "f7337b8"
+SCOPELESS_HEAD = "752c37f"
+SCOPELESS_IDS = ",".join(f"T{number}" for number in (276, 277))
+
+
+def test_a_real_range_whose_task_commits_carry_another_scope_passes(capsys):
+    """The range is swept on the IDs as given, not refused for lacking a commit scoped to one."""
+    sweep = _load_sweep()
+    rc = sweep.main(["--base", SCOPELESS_BASE, "--head", SCOPELESS_HEAD, "--ids", SCOPELESS_IDS])
+    captured = capsys.readouterr()
+    print(captured.out, captured.err)
+    assert rc == 0, f"exit {rc}"
+    assert "compared " in captured.out and captured.out.rstrip().endswith("PASS")
+    assert captured.err == ""
 
 
 def test_a_range_that_compares_no_file_exits_2(clone, capsys):
@@ -940,8 +949,9 @@ def test_the_learnings_rule_carries_the_rule_and_the_gate():
         "the worst of every commit in the sweep range that added or removed a line of F naming X",
         "a commit before the sweep base does not count",
         "every hit for X in F fails, a self-tag included",
-        "a range in which no commit has one of the given IDs as its scope",
         "a range that compares no file",
+        "A range with the wrong IDs is not detected",
+        "knows a task's commits only by their scope",
         "sweep_sprint_task_ids.py",
     ):
         assert phrase in flat, f"the rule is missing {phrase!r}"
