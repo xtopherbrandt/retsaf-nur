@@ -795,11 +795,14 @@ def get_me() -> Athlete:
     lifespan runs at startup, never from this read. An empty store is a 200 with every field
     and anchor unavailable, reason ``missing``.
 
-    The one error is a store out of step: no settings row, or an anchor version log that does
-    not hold a served value (``db.read_hr_anchors``). Only a write outside the app's write
-    paths causes either, and ``init_schema`` repairs both, so this is a 500 that names the
-    cause and the repair (restart the API) rather than serving a version that names another
-    value. The read does not repair it, because a GET does not write.
+    The one named error is a store out of step, in a store that has been through startup: no
+    settings row, or an anchor version log that does not hold a served value
+    (``db.read_hr_anchors``). Only a write outside the app's write paths causes either, and
+    ``init_schema`` repairs both, so this is a 500 that names the cause and the repair (restart
+    the API) rather than serving a version that names another value. The read does not repair
+    it, because a GET does not write. A store deleted or replaced while the API runs (as
+    deleting ``runcoach.db`` to rebuild it does) has no tables, and fails as on every other
+    route, with a bare 500 (``sqlite3.OperationalError``) that names neither.
     """
     conn = db.get_connection()
     try:
@@ -809,7 +812,11 @@ def get_me() -> Athlete:
 
 
 def _athlete(conn) -> Athlete:
-    """``GET /me``'s body, read by ``db.read_athlete``; a store out of step is the named 500."""
+    """``GET /me``'s body, read by ``db.read_athlete``; a store out of step is the named 500.
+
+    Only ``db.read_athlete``'s ``ValueError`` is named; a store with no tables raises
+    ``sqlite3.OperationalError``, which passes through as the bare 500 every route gives.
+    """
     try:
         settings, resolved, served = db.read_athlete(conn)
     except ValueError as exc:

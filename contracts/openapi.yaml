@@ -112,10 +112,13 @@ paths:
         it) and the resting, max and threshold HR and sex anchors, each served
         with a version or unavailable as `missing` or `order_conflict`. Computed
         on read; nothing is stored. An empty store is a 200 with every field and
-        anchor `missing`. A store out of step (no settings row, or an anchor
-        version log that does not hold a served value; only a write outside the
-        API's write paths causes either) is a 500 whose detail names the cause
-        and the repair: restart the API, whose startup repairs both. As-built
+        anchor `missing`. In a store that has been through the API's startup, a
+        store out of step (no settings row, or an anchor version log that does
+        not hold a served value; only a write outside the API's write paths
+        causes either) is a 500 whose detail names the cause and the repair:
+        restart the API, whose startup repairs both. A store deleted or replaced
+        while the API runs (as deleting runcoach.db to rebuild it does) fails as
+        on every other route, with a bare 500 that names neither. Other as-built
         errors are FastAPI {detail}.
       x-readiness: implemented
       x-owner-spec: "spec/01 (athlete input); spec/04 §4.4 (starting state)"
