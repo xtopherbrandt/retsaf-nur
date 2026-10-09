@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
+from runcoach_api.ingestion import mapping, pipeline
 from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -290,3 +291,43 @@ def test_the_schema_carries_the_column_and_the_table() -> None:
         "load_reason": "TEXT",
         "body": "TEXT",
     }
+
+
+# --- the timer time reads like the summary's duration: unparseable means null, never a 500 -----
+
+
+UNPARSEABLE_TIMER_TIMES = ((150.0, 1.0), "150", True)
+
+
+@pytest.mark.parametrize("timer_time", UNPARSEABLE_TIMER_TIMES, ids=("tuple", "string", "bool"))
+def test_an_unparseable_timer_time_maps_to_null(timer_time, synthetic) -> None:
+    """``fitdecode`` types a field by the file's own declared base type, so a crafted
+    or corrupt definition can hand ``total_timer_time`` over as a tuple or a string
+    (``test_resting_hrv_tier1.py`` enumerates the forms). ``_build_summary`` already
+    reads that value through ``_getter`` and the resting-HRV veto path then records
+    "present but unparseable"; ``timer_time_s`` must read the same field the same way
+    rather than raise from ``float()`` and turn the veto into a 500."""
+    session, _records = mapping.to_canonical(synthetic(total_timer_time=timer_time, total_distance=0.0))
+    assert session.timer_time_s is None
+
+
+def test_an_upload_with_an_unparseable_timer_time_is_not_a_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real decoded ``sample_run.fit`` frames, with the session's ``total_timer_time``
+    value replaced by the tuple ``fitdecode`` hands over for a multi-element field, are
+    served to the real pipeline in place of ``fit_parser.decode``'s answer: the whole
+    upload stores, with a null timer time and no clamp-free fraction to compute."""
+    raw = (FIXTURES / "sample_run.fit").read_bytes()
+    messages = pipeline.fit_parser.decode(raw)
+    session_msg = next(msg for msg in messages if msg.name == "session")
+    session_msg.get_field("total_timer_time").value = (150.0, 1.0)
+    with monkeypatch.context() as m:
+        m.setattr(pipeline.fit_parser, "decode", lambda _raw: messages)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/sessions", files={"file": ("sample_run.fit", raw)})
+    assert response.status_code == 201, response.text
+    session_id = response.json()["session_id"]
+    assert _stored_timer_time(session_id) is None
+    load_value, load_reason, body = _saved(session_id)
+    print(f"unparseable timer time: stored {(load_value, load_reason)}, inputs {body['inputs']}")
+    assert body["inputs"]["timer_time_s"] is None
+    assert body["inputs"]["hr_time_fraction"] is None

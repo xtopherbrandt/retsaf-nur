@@ -50,6 +50,7 @@ canonical units and are passed through unchanged. Two conversions are
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import datetime, timezone
 
 import fitdecode
@@ -346,11 +347,21 @@ def _timer_time(session_msg) -> float | None:
 
     The same field ``_build_summary`` stores as ``duration_s``; read once more
     here so the session row carries it in its own column, as a float.
+
+    Only a finite real number is a timer time. ``fitdecode`` types a field by the
+    file's own declared base type, so a crafted or corrupt definition record can
+    hand this a ``tuple``, a ``str`` or a ``bool`` where a scalar was expected;
+    ``float()`` on a tuple raises and turned the resting-HRV veto for such a file
+    into a 500. ``summary.duration_s`` keeps the raw value for the veto path to
+    name as "present but unparseable"; this column reads it as ``None``, the same
+    convention ``hrv_classification._numeric`` applies.
     """
     if session_msg is None:
         return None
     value = session_msg.get_value("total_timer_time", fallback=None)
-    return None if value is None else float(value)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
 
 
 def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
