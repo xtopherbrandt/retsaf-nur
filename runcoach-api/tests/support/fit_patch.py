@@ -22,14 +22,24 @@ written into ``tests/fixtures/``.
 - ``with_big_endian_definitions(data, global_num)`` rewrites every definition
   of ``global_num`` as big-endian and byte-swaps its data, so the endianness
   branch of ``set_field`` can be exercised: no fixture writes big-endian.
+- ``blank_record_field(data, field_num, start_s, end_s)`` writes the FIT
+  invalid value (the one ``fitdecode`` decodes to ``None``: 0xFF for a
+  ``uint8`` such as ``heart_rate``) into ``field_num`` of every ``record``
+  (20) data message whose ``timestamp`` (253) lies in ``[start_s, end_s)``
+  seconds after the first record message's timestamp.
+- ``drop_records(data, start_s, end_s)`` drops every ``record`` data message
+  in that span. Every other message, the ``session`` and ``lap`` messages
+  included, keeps its bytes, so ``total_timer_time`` is unchanged.
 
 Refused with ``FitPatchError``: a source whose file CRC does not match (so a
 corrupted file is never laundered into a CRC-valid one), a compressed-
 timestamp record header (no fixture has one), a header that is not 12 or 14
 bytes, a record that runs past the data, a data size that does not match the
 file length, a message number the file holds no data message for, a field
-the first message's definition does not carry, and a value that does not fit
-the field.
+the first message's definition does not carry, a value that does not fit
+the field, a record span that holds no record message (an empty or reversed
+span included), a record message without a timestamp, and a record message
+in the span whose definition does not carry the field to blank.
 
 **A moved start time leaves the records where they were.** Setting
 ``session.start_time`` on ``dev_fields_run.fit`` to ``sample_run.fit``'s start
@@ -40,6 +50,7 @@ is expected of this patch, not a fault in it.
 
 from __future__ import annotations
 
+import math
 import struct
 from typing import NamedTuple
 
@@ -49,6 +60,30 @@ from fitdecode.utils import compute_crc
 
 class FitPatchError(Exception):
     """The file, or the patch asked of it, is outside what this module rewrites safely."""
+
+
+RECORD_MESSAGE = 20
+TIMESTAMP_FIELD = 253
+
+# The FIT invalid raw value of each integer base type (FIT SDK base-type table);
+# ``fitdecode.types.BASE_TYPES`` decodes exactly these to ``None``. Floats are
+# invalid as NaN and a string as zero bytes; both are handled in ``_invalid_bytes``.
+_INVALID_INT = {
+    0x00: 0xFF,  # enum
+    0x01: 0x7F,  # sint8
+    0x02: 0xFF,  # uint8
+    0x83: 0x7FFF,  # sint16
+    0x84: 0xFFFF,  # uint16
+    0x85: 0x7FFFFFFF,  # sint32
+    0x86: 0xFFFFFFFF,  # uint32
+    0x0A: 0,  # uint8z
+    0x8B: 0,  # uint16z
+    0x8C: 0,  # uint32z
+    0x0D: 0xFF,  # byte
+    0x8E: 0x7FFFFFFFFFFFFFFF,  # sint64
+    0x8F: 0xFFFFFFFFFFFFFFFF,  # uint64
+    0x90: 0,  # uint64z
+}
 
 
 class FieldDef(NamedTuple):
@@ -205,6 +240,85 @@ def remove_messages(data: bytes, global_num: int) -> bytes:
     """Drop every data message of ``global_num``; every other record keeps its bytes."""
     records = walk(data)
     dropped = {r.offset for r in _data_records(records, global_num)}
+    header_size = data[0]
+    buf = bytearray(data[:header_size])
+    for r in records:
+        if r.offset not in dropped:
+            buf += data[r.offset : r.offset + r.length]
+    buf += b"\x00\x00"
+    return finalize(buf)
+
+
+def _field_offset(record: Record, field_num: int) -> tuple[int, FieldDef]:
+    """``(absolute byte offset, definition)`` of ``field_num`` in a data message."""
+    offset = record.offset + 1
+    for field in record.definition.fields:
+        if field.num == field_num:
+            return offset, field
+        offset += field.size
+    raise FitPatchError(
+        f"message {record.definition.global_num} at offset {record.offset} carries no field {field_num}"
+    )
+
+
+def _invalid_bytes(field: FieldDef, big_endian: bool) -> bytes:
+    """The bytes of ``field`` with every element set to its base type's FIT invalid value."""
+    base = BASE_TYPES.get(field.base_type)
+    if base is None:
+        raise FitPatchError(f"field {field.num} has unknown base type {field.base_type:#x}")
+    order = ">" if big_endian else "<"
+    if field.base_type in _INVALID_INT:
+        element = struct.pack(order + base.fmt, _INVALID_INT[field.base_type])
+    elif base.fmt in ("f", "d"):
+        element = struct.pack(order + base.fmt, math.nan)
+    elif base.fmt == "s":
+        element = b"\x00"
+    else:
+        raise FitPatchError(f"field {field.num} has base type {base.name}; no invalid value is known here")
+    if field.size % len(element):
+        raise FitPatchError(f"field {field.num} of {field.size} bytes is not whole {base.name} elements")
+    return element * (field.size // len(element))
+
+
+def _span(data: bytes, start_s: float, end_s: float) -> tuple[list[Record], list[Record]]:
+    """``(every record of the walk, the record data messages in the span)``.
+
+    The span is ``[start_s, end_s)`` seconds after the first record message's
+    timestamp (field 253, a ``uint32`` of FIT seconds), in file order.
+    """
+    records = walk(data)
+    found = []
+    first: int | None = None
+    for record in _data_records(records, RECORD_MESSAGE):
+        offset, field = _field_offset(record, TIMESTAMP_FIELD)
+        if field.size != 4:
+            raise FitPatchError(f"record at offset {record.offset} has a timestamp of {field.size} bytes")
+        order = ">" if record.definition.big_endian else "<"
+        timestamp = struct.unpack_from(order + "I", data, offset)[0]
+        if first is None:
+            first = timestamp
+        if start_s <= timestamp - first < end_s:
+            found.append(record)
+    if not found:
+        raise FitPatchError(f"no record message in [{start_s}, {end_s}) s after the first record")
+    return records, found
+
+
+def blank_record_field(data: bytes, field_num: int, start_s: float, end_s: float) -> bytes:
+    """Set ``field_num`` to its FIT invalid value on every record message in the span."""
+    _, in_span = _span(data, start_s, end_s)
+    buf = bytearray(data)
+    for record in in_span:
+        offset, field = _field_offset(record, field_num)
+        invalid = _invalid_bytes(field, record.definition.big_endian)
+        buf[offset : offset + field.size] = invalid
+    return finalize(buf)
+
+
+def drop_records(data: bytes, start_s: float, end_s: float) -> bytes:
+    """Drop every record message in the span; every other record keeps its bytes."""
+    records, in_span = _span(data, start_s, end_s)
+    dropped = {r.offset for r in in_span}
     header_size = data[0]
     buf = bytearray(data[:header_size])
     for r in records:
