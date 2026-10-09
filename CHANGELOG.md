@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+F018: `GET /metrics/load` serves the fitness, fatigue and form chart (spec/03 section 3.5): for
+each local date in `athlete_timezone` from the first running session to today, the day's `load` (the
+sum of the saved loads of its counted runs), `ctl` and `atl` (EWMAs at the fixed 42/7 constants) and
+`tsb` (yesterday's CTL minus yesterday's ATL), with the runs the day counted, the runs it could not
+count with their reason, and the sessions it excluded (non-running sports and declared resting
+captures). A day whose runs all have no load moves like a rest day and is `marked`. Both curves
+start at the `seed`: the average daily load over the first 42 days of history, or over all of it
+when shorter, with those days `provisional`. `from` and `to` bound the range; `from` after `to`, `to`
+after the local today, or a malformed date is a 422. A store with no running session answers 200
+with `first_day` and `seed` null and `days` empty. The operation is `getLoadChart` in the contract;
+the planned `getLoadSeries` at `/plan/load` stays planned. spec/03 section 3.5.2 now says a run
+with no load is never a 0 and a no-load day is treated as a rest day and marked; section 3.5.3 seeds
+from the average daily load (no longer "average weekly load") with no switch at six weeks; section
+3.5.4 says the 42/7 constants are fixed, no longer "exposed for tuning".
+
 ## 2026-10-07 through 2026-10-08 — Sprint 013: athlete profile and HR anchors
 
 ### Changed
