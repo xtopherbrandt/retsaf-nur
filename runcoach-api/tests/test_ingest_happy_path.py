@@ -183,7 +183,7 @@ def test_mid_transaction_failure_rolls_back_all_four_tables(monkeypatch) -> None
             with pytest.raises(RuntimeError):
                 db.persist(conn, session, records, rr_intervals, quarantine_values)
 
-        for table in ("sessions", "records", "rr_intervals", "quarantine_sidecar"):
+        for table in ("sessions", "records", "rr_intervals", "quarantine_sidecar", "session_loads"):
             cur = conn.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", (session.session_id,)
             )

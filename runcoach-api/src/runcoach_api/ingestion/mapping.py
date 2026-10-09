@@ -341,6 +341,18 @@ def _build_summary(session_msg) -> dict:
     return {k: v for k, v in summary.items() if v is not None}
 
 
+def _timer_time(session_msg) -> float | None:
+    """The FIT ``session.total_timer_time`` in seconds (F017's ``timer_time_s``), or None.
+
+    The same field ``_build_summary`` stores as ``duration_s``; read once more
+    here so the session row carries it in its own column, as a float.
+    """
+    if session_msg is None:
+        return None
+    value = session_msg.get_value("total_timer_time", fallback=None)
+    return None if value is None else float(value)
+
+
 def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
     """The HR provenance (spec/02 section 2.4.2 step 1, F015), in one place.
 
@@ -649,6 +661,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         hr_sensor_serial=hr_sensor_serial,
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
+        timer_time_s=_timer_time(session_msg),
         context=_build_context(
             unresolved_developer_fields, raw_sport_value, sport_profile_name
         ),

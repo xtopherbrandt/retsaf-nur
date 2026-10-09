@@ -93,6 +93,12 @@ class Session:
     max_hr_bpm: int | None = None
     threshold_hr_bpm: int | None = None
     garmin_activity_class: int | None = None
+    # --- the watch's running time (F017) ---------------------------------
+    # The FIT ``session.total_timer_time`` in seconds (pauses excluded), as
+    # ``summary.duration_s`` holds it, stored in its own nullable column so
+    # the saved load can report ``hr_time_fraction``; None when the file
+    # carries none. Set by ``mapping.to_canonical``.
+    timer_time_s: float | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None

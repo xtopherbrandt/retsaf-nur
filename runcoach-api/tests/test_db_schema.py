@@ -1095,6 +1095,9 @@ _F016_COLUMNS = {
     "upload_order": "INTEGER",
 }
 
+# F017's one session column (the saved load is its own table, session_loads).
+_F017_COLUMNS = {"timer_time_s": "REAL"}
+
 
 def _pre_f016_database_with_one_row(conn) -> None:
     conn.executescript(_PRE_F016_SESSIONS_DDL)
@@ -1115,7 +1118,7 @@ def test_the_pre_f016_ddl_is_the_current_ddl_minus_the_f016_columns():
     finally:
         probe.close()
     after = db._expected_schema()["sessions"]
-    assert {c: t for c, t in after.items() if c not in before} == _F016_COLUMNS
+    assert {c: t for c, t in after.items() if c not in before} == {**_F016_COLUMNS, **_F017_COLUMNS}
     assert set(before) <= set(after)
 
 
@@ -1271,3 +1274,48 @@ def test_a_failed_insert_writes_no_upload_order():
         conn.close()
 
     assert order == {"dup-1": 1, "after-dup": 2}
+
+
+# ---------------------------------------------------------------------------
+# F017 -- the timer-time column and the saved-load table
+# ---------------------------------------------------------------------------
+
+
+def test_init_schema_adds_timer_time_s_and_the_session_loads_table_to_an_existing_database():
+    """F017 AC8 schema row. A database holding a row from before F017 (the
+    pre-F016 layout plus the eight F016 columns) gains ``timer_time_s`` in
+    place through ``_reconcile_columns`` -- nullable, no default, the row
+    intact and NULL in the new column -- and the ``session_loads`` table,
+    empty: nothing here computes a load for the existing row."""
+    conn = db.get_connection()
+    try:
+        _pre_f016_database_with_one_row(conn)
+        for column, decl_type in _F016_COLUMNS.items():
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {decl_type}")
+        conn.commit()
+        assert "timer_time_s" not in _columns(conn, "sessions")
+        assert "session_loads" not in {
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+
+        db.init_schema(conn)
+
+        info = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'pre-f016-1'").fetchone()
+        loads = conn.execute(f"SELECT COUNT(*) FROM {db.SESSION_LOADS_TABLE}").fetchone()[0]
+        load_columns = {
+            r["name"]: r["type"] for r in conn.execute(f"PRAGMA table_info({db.SESSION_LOADS_TABLE})")
+        }
+    finally:
+        conn.close()
+
+    assert info["timer_time_s"]["type"] == "REAL"
+    assert info["timer_time_s"]["notnull"] == 0
+    assert info["timer_time_s"]["dflt_value"] is None
+    assert row is not None
+    assert row["timer_time_s"] is None
+    for column, value in _PRE_F016_ROW.items():
+        assert row[column] == value, column
+    assert loads == 0
+    assert load_columns == {"session_id": "TEXT", "load_value": "REAL", "load_reason": "TEXT", "body": "TEXT"}
+    assert db.SESSION_LOADS_TABLE in db._child_tables()

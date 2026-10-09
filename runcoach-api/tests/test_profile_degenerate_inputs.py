@@ -135,7 +135,8 @@ def _anchors(label: str) -> dict[str, profile.Anchor]:
 
 def _snapshot() -> dict:
     """Every row a profile write could touch: the sessions with their profile columns,
-    the entered values and the anchor version log."""
+    the entered values, the anchor version log and the saved loads (F017: written in the
+    same transaction, after the anchor log)."""
     conn = db.get_connection()
     try:
         db.init_schema(conn)
@@ -148,9 +149,15 @@ def _snapshot() -> dict:
         ]
         entries = [tuple(r) for r in conn.execute(f"SELECT * FROM {db.PROFILE_ENTRIES_TABLE} ORDER BY 1")]
         log = [tuple(r) for r in conn.execute(f"SELECT * FROM {db.ANCHOR_VERSIONS_TABLE} ORDER BY 1")]
+        loads = [
+            tuple(r)
+            for r in conn.execute(
+                f"SELECT session_id, load_value, load_reason FROM {db.SESSION_LOADS_TABLE} ORDER BY 1"
+            )
+        ]
     finally:
         conn.close()
-    return {"sessions": sessions, "entries": entries, "anchor_versions": log}
+    return {"sessions": sessions, "entries": entries, "anchor_versions": log, "session_loads": loads}
 
 
 def _messages(data: bytes, name: str) -> list[dict]:
@@ -367,7 +374,7 @@ def test_duplicate_of_the_latest_file_with_max_199_changes_nothing(post_fit_byte
 
 def _fail_in_helper(real, fired: list):
     """Fail in place of the helper: the session, record and RR inserts have run inside the
-    transaction; the quarantine sidecar and the anchor log have not."""
+    transaction; the quarantine sidecar, the anchor log and the saved load have not."""
 
     def boom(*args, **kwargs):
         fired.append("failed before the anchor log")

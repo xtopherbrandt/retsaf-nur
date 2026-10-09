@@ -10,8 +10,9 @@ anchor version log (``anchor_versions``) and the one athlete-settings
 row (``athlete_settings``) -- followed by its two startup writes, the
 anchor sync (``_sync_anchor_versions``) and the settings seed
 (``_seed_athlete_settings``), in one transaction; ``persist`` writes one
-ingested session (session header, records, RR intervals, and
-quarantined sidecar values) in a single transaction, and
+ingested session (session header, records, RR intervals, quarantined
+sidecar values, and F017's saved load, ``session_loads``) in a single
+transaction, and
 ``delete_session`` removes that same row set in one -- children first,
 parent last -- which is what makes re-ingesting a file possible after
 the ``UNIQUE (source_device, start_time)`` constraint has claimed its
@@ -140,6 +141,13 @@ _SCHEMA_DDL = """
       -- transaction; it orders uploads that share a start time. Not rowid,
       -- which VACUUM may renumber. NULL on a row stored before F016.
       upload_order INTEGER,
+      -- F017: the FIT session.total_timer_time in seconds (the watch's
+      -- running time, pauses excluded; the same value summary.duration_s
+      -- holds), so the saved load can report hr_time_fraction. NULL when
+      -- the file carried none, and on a row stored before F017 until the
+      -- one-time fill copies it from the stored summary. Added 2026-10-09;
+      -- _reconcile_columns lands it.
+      timer_time_s REAL,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -183,6 +191,19 @@ _SCHEMA_DDL = """
       -- row, seeded by init_schema (_seed_athlete_settings), never on read.
       id TEXT PRIMARY KEY, display_name TEXT, units TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS session_loads (
+      -- F017: one session's load body, computed and saved inside the
+      -- upload's transaction (_save_session_load) with every value it used,
+      -- and never moved by a later anchor or profile change (user rulings
+      -- C1-C3, 2026-10-08). body is the JSON text of the whole body
+      -- metrics.session_load.compute_session_load returns; load_value and
+      -- load_reason mirror its session_load.value and session_load.unavailable
+      -- for a query. HR values live only in the body (2**63 overflows
+      -- INTEGER). The column is named session_id so _child_tables lists this
+      -- table and delete_session removes the load with the session.
+      session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
+      load_value REAL, load_reason TEXT, body TEXT NOT NULL
     );
 """
 
@@ -304,7 +325,8 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             rr_valid_fraction, quality_flags, summary, context,
             rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
             hr_sensor_serial, sex, body_mass_kg, height_cm, resting_hr_bpm,
-            max_hr_bpm, threshold_hr_bpm, garmin_activity_class, upload_order
+            max_hr_bpm, threshold_hr_bpm, garmin_activity_class, upload_order,
+            timer_time_s
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
@@ -312,7 +334,8 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             :rmssd_precomputed, :resting_rmssd_ms, :hrv_source_tier, :rr_source,
             :hr_sensor_serial, :sex, :body_mass_kg, :height_cm, :resting_hr_bpm,
             :max_hr_bpm, :threshold_hr_bpm, :garmin_activity_class,
-            (SELECT COALESCE(MAX(upload_order), 0) + 1 FROM sessions)
+            (SELECT COALESCE(MAX(upload_order), 0) + 1 FROM sessions),
+            :timer_time_s
         )
         """,
         {
@@ -345,6 +368,8 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "max_hr_bpm": session.max_hr_bpm,
             "threshold_hr_bpm": session.threshold_hr_bpm,
             "garmin_activity_class": session.garmin_activity_class,
+            # The FIT timer time (F017); see models.Session.
+            "timer_time_s": session.timer_time_s,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context)) if session.context else None,
@@ -454,9 +479,12 @@ def persist(
     that makes the chaos test possible without touching real DB
     internals.
 
-    The HR anchor version log is updated last, in the same transaction
+    The HR anchor version log is updated next, in the same transaction
     (``_sync_anchor_versions``), so a refused or failed ingest leaves it
-    untouched.
+    untouched; then the session's load is computed from the rows just
+    written and saved (``_save_session_load``, F017 AC8). A fault in that
+    step propagates and rolls the whole upload back: the user ruled
+    (2026-10-08) that a run is not stored without its load.
     """
     try:
         with conn:
@@ -465,6 +493,7 @@ def persist(
             _insert_rr_intervals(conn, session.session_id, rr_intervals)
             _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
             _sync_anchor_versions(conn)
+            _save_session_load(conn, session.session_id)
     except sqlite3.IntegrityError as exc:
         cur = conn.execute(
             "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
@@ -995,3 +1024,110 @@ def read_athlete(
     finally:
         conn.rollback()
     return settings, resolved, served
+
+
+# ---------------------------------------------------------------------------
+# F017: the saved per-session load
+#
+# Appended below the earlier readers with its own import, as the features
+# reader is, so the lines cited above stay in place.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics import session_features
+from runcoach_api.metrics.session_load import ANCHOR_FIELDS as _LOAD_FIELDS
+from runcoach_api.metrics.session_load import compute_session_load
+
+# The saved-load table's name, for callers and tests that address it.
+SESSION_LOADS_TABLE = "session_loads"
+
+
+def _from_session_file(value, session_id: str) -> dict:
+    """One ``inputs.<field>`` block: the value the session's own file carried, or no value."""
+    if value is None:
+        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+    return {
+        "value": value,
+        "source": "session_file",
+        "session_id": session_id,
+        "anchor_version": None,
+        "anchor_unavailable": None,
+    }
+
+
+def read_session_load_inputs(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """Read what ``metrics.session_load.compute_session_load`` consumes for one stored session.
+
+    Returns ``None`` when ``session_id`` does not exist. Otherwise the inputs
+    mapping that module documents: ``session_id``, ``sport``, ``activity_tag``,
+    ``hr_source``, ``quality_flags`` (JSON-decoded, ``[]`` when null),
+    ``timer_time_s``, ``segment_rows`` and ``features`` (F013's
+    ``session_features.segment_rows`` and ``compute_session_features`` over
+    the records ``read_session_feature_inputs`` returns), and per HR field
+    (``resting_hr_bpm``, ``max_hr_bpm``, ``threshold_hr_bpm``, ``sex``) the
+    value the session's own file carried as a ``session_file`` block, or an
+    empty block when the file carried none. Read-only, and it runs inside an
+    open transaction when ``persist`` calls it, so it opens none itself and
+    sees the uncommitted rows.
+    """
+    cur = conn.execute(
+        f"SELECT session_id, sport, activity_tag, hr_source, quality_flags, timer_time_s, "
+        f"{', '.join(_LOAD_FIELDS)} FROM sessions WHERE session_id = ?",
+        (session_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    feature_inputs = read_session_feature_inputs(conn, session_id)
+    if feature_inputs is None:
+        return None
+    session, rows = feature_inputs
+    inputs = {
+        "session_id": row["session_id"],
+        "sport": row["sport"],
+        "activity_tag": row["activity_tag"],
+        "hr_source": row["hr_source"],
+        "quality_flags": _json_load(row["quality_flags"], default=[]),
+        "timer_time_s": row["timer_time_s"],
+        "segment_rows": session_features.segment_rows(session, rows),
+        "features": session_features.compute_session_features(session, rows),
+    }
+    for field_name in _LOAD_FIELDS:
+        inputs[field_name] = _from_session_file(row[field_name], row["session_id"])
+    return inputs
+
+
+def _write_session_load(conn: sqlite3.Connection, session_id: str, body: Mapping[str, object]) -> None:
+    """Insert one session's load row: ``load_value`` and ``load_reason`` mirror the body's
+    ``session_load.value`` and ``session_load.unavailable``; ``body`` is the whole body as JSON.
+
+    A plain INSERT, so a second save for one session fails loudly
+    (``sqlite3.IntegrityError`` on the primary key) rather than replacing a
+    saved load: a load is only ever recomputed by delete and re-upload.
+    """
+    session_load = body.get("session_load") or {}
+    conn.execute(
+        f"INSERT INTO {SESSION_LOADS_TABLE} (session_id, load_value, load_reason, body) VALUES (?, ?, ?, ?)",
+        (
+            session_id,
+            session_load.get("value"),  # type: ignore[union-attr]
+            session_load.get("unavailable"),  # type: ignore[union-attr]
+            json.dumps(body),
+        ),
+    )
+
+
+def _save_session_load(conn: sqlite3.Connection, session_id: str, *, resolved=None) -> None:
+    """Compute and save the stored session's load inside the caller's transaction (F017 AC8).
+
+    Reads the inputs (``read_session_load_inputs``), calls
+    ``compute_session_load`` and writes the row (``_write_session_load``).
+    ``persist`` calls it right after ``_sync_anchor_versions`` inside its
+    ``with conn:``; it is the seam a test patches to force a fault, which
+    rolls the whole upload back. Never calls ``read_athlete``, whose ``BEGIN``
+    fails inside an open transaction. ``resolved`` is the profile the anchor
+    fallback reuses when a file lacks a value; it is accepted and unused
+    here, so every HR input is the session's own file value or empty.
+    """
+    inputs = read_session_load_inputs(conn, session_id)
+    if inputs is None:
+        raise ValueError(f"session {session_id} is not stored; nothing to compute a load from")
+    _write_session_load(conn, session_id, compute_session_load(inputs))
