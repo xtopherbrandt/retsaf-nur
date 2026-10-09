@@ -5,7 +5,12 @@ the column changes no output ("additive storage only"). A promise like that
 needs a test whose failure *is* the promise breaking, so this module pins it
 three ways, from the outside in:
 
-1. **Behaviourally**, over every metric route. One isolated store is seeded
+1. **Behaviourally**, over every metric route (``GET /metrics/hrv`` and
+   ``GET /metrics/load``; the load route takes ``from``/``to`` the same way
+   and reads the saved loads the startup fill gave the seeded captures, none
+   of which is a running session, so it answers the empty chart in every
+   state -- the walk pins that the column does not change that answer, not
+   the curves themselves). One isolated store is seeded
    once through the real ``to_canonical -> classify -> db.persist`` path and
    then **mutated in place** -- never copied, never re-pointed -- through
    three states that differ *only* in ``hr_sensor_serial``:
@@ -93,7 +98,13 @@ SERIAL_POLAR = 785102823
 # The metric routes, as ``(method, path)``. Enumerated at test time from the
 # app and held equal to this literal; extend the literal *and* the walk when
 # a metric route is added.
-METRIC_ROUTES: frozenset[tuple[str, str]] = frozenset({("GET", "/metrics/hrv")})
+METRIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
+    {("GET", "/metrics/hrv"), ("GET", "/metrics/load")}
+)
+
+# The one route whose body carries a verdict; the last-day verdict check
+# reads it there and nowhere else.
+VERDICT_ROUTE = ("GET", "/metrics/hrv")
 
 # The four columns ``read_hrv_rows`` serves the trend, in SELECT order.
 HRV_ROW_COLUMNS = ["session_id", "start_time", "resting_rmssd_ms", "hrv_source_tier"]
@@ -220,7 +231,7 @@ def test_every_metric_route_serves_identical_bytes_across_the_three_serial_state
                     key = (method, path, from_, to)
                     if name == "A":
                         baseline[key] = response.content
-                        if to == SERIES_END:
+                        if to == SERIES_END and (method, path) == VERDICT_ROUTE:
                             verdicts_on_last_day.add(response.json()["verdict"])
                     else:
                         assert response.content == baseline[key], (
