@@ -1285,8 +1285,12 @@ def test_init_schema_adds_timer_time_s_and_the_session_loads_table_to_an_existin
     """F017 AC8 schema row. A database holding a row from before F017 (the
     pre-F016 layout plus the eight F016 columns) gains ``timer_time_s`` in
     place through ``_reconcile_columns`` -- nullable, no default, the row
-    intact and NULL in the new column -- and the ``session_loads`` table,
-    empty: nothing here computes a load for the existing row."""
+    intact on every pre-existing column -- and the ``session_loads`` table.
+    The one-time fill (``_fill_session_loads``, the same ``init_schema``) then
+    copies ``timer_time_s`` from the row's stored ``summary.duration_s`` and
+    saves the row's load: a ``resting_hrv_check`` session with no records is
+    ``declared_capture``. ``test_session_load_fill.py`` holds the fill's own
+    rows; this one pins that the upgrade and the fill are one startup."""
     conn = db.get_connection()
     try:
         _pre_f016_database_with_one_row(conn)
@@ -1302,7 +1306,9 @@ def test_init_schema_adds_timer_time_s_and_the_session_loads_table_to_an_existin
 
         info = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
         row = conn.execute("SELECT * FROM sessions WHERE session_id = 'pre-f016-1'").fetchone()
-        loads = conn.execute(f"SELECT COUNT(*) FROM {db.SESSION_LOADS_TABLE}").fetchone()[0]
+        loads = conn.execute(
+            f"SELECT session_id, load_value, load_reason FROM {db.SESSION_LOADS_TABLE}"
+        ).fetchall()
         load_columns = {
             r["name"]: r["type"] for r in conn.execute(f"PRAGMA table_info({db.SESSION_LOADS_TABLE})")
         }
@@ -1313,9 +1319,9 @@ def test_init_schema_adds_timer_time_s_and_the_session_loads_table_to_an_existin
     assert info["timer_time_s"]["notnull"] == 0
     assert info["timer_time_s"]["dflt_value"] is None
     assert row is not None
-    assert row["timer_time_s"] is None
+    assert row["timer_time_s"] == 150.797  # the fill copied the stored summary's duration_s
     for column, value in _PRE_F016_ROW.items():
         assert row[column] == value, column
-    assert loads == 0
+    assert [tuple(r) for r in loads] == [("pre-f016-1", None, "declared_capture")]
     assert load_columns == {"session_id": "TEXT", "load_value": "REAL", "load_reason": "TEXT", "body": "TEXT"}
     assert db.SESSION_LOADS_TABLE in db._child_tables()

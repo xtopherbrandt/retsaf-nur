@@ -7,9 +7,12 @@ connection with foreign keys enabled; ``init_schema`` is idempotent
 DDL for the four canonical-schema tables and F016's three profile
 tables -- the athlete's entered values (``profile_entries``), the HR
 anchor version log (``anchor_versions``) and the one athlete-settings
-row (``athlete_settings``) -- followed by its two startup writes, the
-anchor sync (``_sync_anchor_versions``) and the settings seed
-(``_seed_athlete_settings``), in one transaction; ``persist`` writes one
+row (``athlete_settings``) -- followed by its three startup writes, the
+anchor sync (``_sync_anchor_versions``), the settings seed
+(``_seed_athlete_settings``) and F017's one-time load fill
+(``_fill_session_loads``, the store's one startup data write: a saved
+load, and ``timer_time_s`` from the stored summary, for each session
+without one), in one transaction; ``persist`` writes one
 ingested session (session header, records, RR intervals, quarantined
 sidecar values, and F017's saved load, ``session_loads``) in a single
 transaction, and
@@ -29,6 +32,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import json
+import math
 import sqlite3
 import uuid
 from collections.abc import Mapping, Sequence
@@ -100,7 +104,9 @@ _SCHEMA_DDL = """
       -- rmssd_precomputed above stays the device-only audit record. Same
       -- nullability and REAL affinity as that column deliberately. Added
       -- 2026-09-06; _reconcile_columns lands it on an existing database
-      -- and no backfill fills it, so pre-amendment rows stay NULL.
+      -- and no backfill fills it (the startup fill, _fill_session_loads,
+      -- writes only timer_time_s and session_loads), so pre-amendment
+      -- rows stay NULL.
       -- The invariant is scoped to what this feature writes AFTER that
       -- amendment (T077): for such a row, a non-null hrv_source_tier
       -- implies a non-null, strictly positive resting_rmssd_ms, because
@@ -126,15 +132,17 @@ _SCHEMA_DDL = """
       -- which marks the whole session. NULL means
       -- unknown, never "no sensor": no ANT+ heart-rate entry, no valid
       -- serial, conflicting serials, or a row stored before F007 (added
-      -- 2026-10-03; _reconcile_columns lands it, nothing backfills it and
-      -- no FIT bytes are kept, so such a row stays NULL until the session
-      -- is deleted and re-uploaded). Unread (F007 AC6); not in GET (AC9).
+      -- 2026-10-03; _reconcile_columns lands it, nothing backfills it (the
+      -- startup fill leaves it alone) and no FIT bytes are kept, so such a
+      -- row stays NULL until the session is deleted and re-uploaded).
+      -- Unread (F007 AC6); not in GET (AC9).
       hr_sensor_serial INTEGER,
       -- F016: the profile settings the session's FIT file carried, as
       -- ingestion.profile_values maps them (NULL = the file had no value).
       -- Written with the row, so they go when the session is deleted.
       -- Added 2026-10-07; _reconcile_columns lands them and nothing
-      -- backfills them (no FIT bytes are kept). Not in GET /sessions/{id}.
+      -- backfills them (no FIT bytes are kept; the startup fill reads them
+      -- for a load, never writes them). Not in GET /sessions/{id}.
       sex TEXT, body_mass_kg REAL, height_cm INTEGER, resting_hr_bpm INTEGER,
       max_hr_bpm INTEGER, threshold_hr_bpm INTEGER, garmin_activity_class INTEGER,
       -- upload_order: 1 + the largest stored, assigned inside the insert
@@ -281,7 +289,10 @@ def _reconcile_columns(conn: sqlite3.Connection) -> None:
     ``context.provenance.computed_resting_rmssd_ms``, because those rows
     were produced by the inference predicate that amendment exists to
     discredit. Recovery is re-ingestion under the declaration rule, not
-    a backfill.
+    a backfill. The one startup data write is F017's load fill
+    (``_fill_session_loads``, run by ``init_schema`` after this): it
+    writes ``timer_time_s`` from the stored summary and a ``session_loads``
+    row, for a session without one, and no other column.
     """
     for table, expected in _expected_schema().items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -297,19 +308,23 @@ def init_schema(conn: sqlite3.Connection) -> None:
     then additively reconcile any column added after a database was
     first created (see ``_reconcile_columns``), and version the HR anchors
     of a store whose sessions or entries predate the anchor version log
-    (``_sync_anchor_versions``; a no-op on a store the write paths kept), and
-    seed the athlete-settings row when there is none (``_seed_athlete_settings``).
+    (``_sync_anchor_versions``; a no-op on a store the write paths kept), seed
+    the athlete-settings row when there is none (``_seed_athlete_settings``), and
+    fill a saved load for every session without one (``_fill_session_loads``,
+    F017 AC8; a no-op on a store whose sessions all have one).
 
     Everything after the DDL is one ``BEGIN IMMEDIATE`` transaction, so the write lock is
     held from before the anchor sync reads the store until it commits: a write from another
     connection waits, rather than landing between the sync's input read and its log read and
-    leaving the log a stale value under a new version."""
+    leaving the log a stale value under a new version. A fault in the fill rolls the whole
+    transaction back and propagates, so startup stops with the session named."""
     conn.executescript(_SCHEMA_DDL)
     conn.execute("BEGIN IMMEDIATE")
     try:
         _reconcile_columns(conn)
-        _sync_anchor_versions(conn)
+        resolved = _sync_anchor_versions(conn)
         _seed_athlete_settings(conn)
+        _fill_session_loads(conn, resolved=resolved)
     except BaseException:
         conn.rollback()
         raise
@@ -1145,13 +1160,14 @@ def _save_session_load(
     and writes the row (``_write_session_load``). ``persist`` calls it right
     after ``_sync_anchor_versions`` inside its ``with conn:`` and passes that
     sync's ``resolved`` profile, so the anchors come from
-    ``profile.anchors(resolved, log)`` without a second profile read; a caller
-    without one (the one-time fill) leaves ``resolved`` None and the anchors
-    are read here with ``read_hr_anchors``. Either way the anchor read shares
-    the caller's open transaction, so it sees the rows just written and the
-    log the sync just moved. It is the seam a test patches to force a fault,
-    which rolls the whole upload back. Never calls ``read_athlete``, whose
-    ``BEGIN`` fails inside an open transaction.
+    ``profile.anchors(resolved, log)`` without a second profile read, and the
+    one-time fill (``_fill_session_loads``) passes ``init_schema``'s sync's; a
+    caller without one leaves ``resolved`` None and the anchors are read here
+    with ``read_hr_anchors``. Either way the anchor read shares the caller's
+    open transaction, so it sees the rows just written and the log the sync
+    just moved. It is the seam a test patches to force a fault, which rolls
+    the whole upload, or the whole startup, back. Never calls
+    ``read_athlete``, whose ``BEGIN`` fails inside an open transaction.
     """
     inputs = read_session_load_inputs(conn, session_id)
     if inputs is None:
@@ -1165,6 +1181,59 @@ def _save_session_load(
             if inputs[field_name]["value"] is None:
                 inputs[field_name] = _from_anchor(anchors[field_name])
     _write_session_load(conn, session_id, compute_session_load(inputs))
+
+
+class SessionLoadFillError(RuntimeError):
+    """The one-time fill could not compute or save one session's load; the message names the
+    session, and the cause is chained. Raised out of ``init_schema``, so startup stops."""
+
+
+def _fill_session_loads(
+    conn: sqlite3.Connection, *, resolved: Mapping[str, profile_module.FieldValue] | None = None
+) -> None:
+    """Save a load for every stored session that has none, as an upload would (F017 AC8; user
+    rulings 2026-10-08 and 2026-10-09): the one-time fill for sessions stored before F017.
+
+    One LEFT JOIN selects the sessions with no ``session_loads`` row, oldest
+    first, so a store the write paths kept (every ``persist`` saves a load) costs
+    one SELECT and the fill is idempotent by selection: ``init_schema`` runs it
+    at every startup, on every upload and in the test seeders. For each such
+    session: ``timer_time_s`` is copied from the stored ``summary.duration_s``
+    (the FIT timer time its upload saved) when the column is null and the value
+    is a finite number, as ``mapping`` reads that field (a bool, a string or a
+    list stays null); then ``_save_session_load`` computes the load from the
+    stored rows, the session's own file values first and else the anchors
+    current now (``resolved``, the sync ``init_schema`` just ran), and saves it.
+    No other column is written.
+
+    A fault computing or saving one session's load raises
+    ``SessionLoadFillError`` naming that session, from the cause; the caller's
+    transaction rolls back, so the timer-time copies go with it and the next
+    start meets the same store. Commits nothing itself.
+    """
+    rows = conn.execute(
+        f"""
+        SELECT s.session_id, s.timer_time_s, s.summary
+        FROM sessions s
+        LEFT JOIN {SESSION_LOADS_TABLE} l USING (session_id)
+        WHERE l.session_id IS NULL
+        ORDER BY s.start_time, s.upload_order, s.session_id
+        """
+    ).fetchall()
+    for row in rows:
+        session_id = row["session_id"]
+        try:
+            if row["timer_time_s"] is None:
+                duration = (_json_load(row["summary"]) or {}).get("duration_s")
+                if isinstance(duration, (int, float)) and not isinstance(duration, bool) and math.isfinite(duration):
+                    conn.execute(
+                        "UPDATE sessions SET timer_time_s = ? WHERE session_id = ?", (float(duration), session_id)
+                    )
+            _save_session_load(conn, session_id, resolved=resolved)
+        except Exception as exc:
+            raise SessionLoadFillError(
+                f"startup could not fill the saved load of session {session_id}: {exc}"
+            ) from exc
 
 
 def read_session_load_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
