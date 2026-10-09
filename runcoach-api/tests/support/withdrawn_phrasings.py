@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "The values used and their sources, reported under every gate, gates 1 and 2 included.",
+        "in order, rest days included; empty when history has no day in the range.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "The values used and their sources, reported under every gate, gates 1 and 2 included.",
+        "in order, rest days included; empty when history has no day in the range.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

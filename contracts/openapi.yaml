@@ -20,7 +20,9 @@ openapi: 3.1.0
 # per-day series plus the verdict blocks, `from`/`to` optional),
 # GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
 # descriptors, computed on read), GET /sessions/{id}/load (F017: the load body
-# saved at upload), GET /me (F016: each profile field with its source, and the
+# saved at upload), GET /metrics/load (F018: the fitness, fatigue and form
+# chart, daily load with CTL/ATL/TSB, computed on read from the saved loads),
+# GET /me (F016: each profile field with its source, and the
 # HR anchors) and PATCH /me (F016: entries, display_name and units); the rest
 # is `planned` and is developed against a mock generated from this file until
 # the backend catches up. POST /sessions carries the F004 `resting_capture`
@@ -72,7 +74,7 @@ tags:
   - name: Subjective
     description: "Session-RPE, wellness, pain reports. x-readiness: planned. Owner: research/03, routed per spec/08 §8.4."
   - name: State & Metrics
-    description: "Physiological state model + derived metrics, with confidence. x-readiness: planned. Owner: spec/03, spec/04."
+    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
   - name: Decisions & Changes
     description: "Decision log (explainability) + apply-and-notify change feed. x-readiness: planned. Owner: spec/09, spec/06 §6.8."
   - name: Coach
@@ -773,6 +775,53 @@ paths:
               schema: { $ref: "#/components/schemas/HrvTrend" }
         "422":
           description: "`from` after `to`, a range longer than 366 days, or a malformed date (FastAPI-default {detail})"
+          content: { application/json: { schema: { type: object } } }
+
+  /metrics/load:
+    get:
+      tags: [State & Metrics]
+      operationId: getLoadChart
+      summary: The fitness, fatigue and form chart (daily load, CTL, ATL, TSB)
+      description: >
+        F018. One entry per athlete-local date from the first day holding a
+        running session to today (rest days included), each with the day's
+        load (the sum of the saved loads of the runs it counted), CTL and ATL
+        (EWMAs at the fixed 42- and 7-day rates, research/00 REG-01, REG-20,
+        IND-06), TSB (yesterday's CTL minus yesterday's ATL), the runs it
+        counted, the runs it could not count with their reason, and the
+        sessions it excluded (a non-running sport or a declared resting
+        capture). A run without a saved load is never a 0: its day moves like
+        a rest day and is marked. Both curves start at the seed, the mean daily
+        load over the first 42 days of history (all of it when shorter), with
+        those days provisional. Computed on read from the loads F017 saved at
+        upload and the configured athlete_timezone; nothing is stored. The
+        curves always run from the first day of history; from and to only
+        choose which days are returned. Both parameters are optional: to
+        defaults to the athlete's local today and from to the earlier of
+        first_day and to, so a to before history answers days empty. No range
+        cap. Unauthenticated today like every as-built route.
+      x-readiness: implemented
+      x-owner-spec: "spec/03 section 3.5 (as amended by F018); runcoach-api F018"
+      x-story: [view-state]
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: "Athlete-local date (YYYY-MM-DD). Defaults to the earlier of first_day and to. After to: 422."
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          description: "Athlete-local date (YYYY-MM-DD). Defaults to the athlete's local today. After today: 422."
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: The chart over [from, to], with first_day and the seed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoadChart" }
+        "422":
+          description: "from after to, to after the local today, or a malformed date (FastAPI-default {detail})"
           content: { application/json: { schema: { type: object } } }
 
   # -------------------------------------------------------- Decisions & Changes
@@ -2445,3 +2494,108 @@ components:
         inputs:
           allOf: [ { $ref: "#/components/schemas/SessionLoadInputs" } ]
           description: "The values used and their sources, reported under every gate, gates 1 and 2 included."
+
+    # ---- Load chart (F018, implemented) --------------------------------
+    LoadChartReason:
+      type: string
+      description: >
+        Why an uncounted run's saved load is unavailable: SessionLoadReason
+        minus the two exclusion reasons (sport_not_running and
+        declared_capture exclude a session instead of marking its day).
+      enum:
+        - no_hr
+        - missing_anchor
+        - order_conflict
+        - avg_hr_below_resting
+        - avg_hr_above_max
+        - wrist_hr_threshold_unknown
+        - wrist_hr_at_threshold
+        - not_representable
+        - no_threshold_hr
+        - threshold_order_conflict
+    LoadChartCounted:
+      type: object
+      description: "A session the day counted: its saved load is a number and adds to the day's load."
+      required: [session_id, load]
+      properties:
+        session_id: { type: string }
+        load: { type: number, description: "The session's saved session_load.value, unrounded." }
+    LoadChartUncounted:
+      type: object
+      description: >
+        A running session the day could not count: its saved load is
+        unavailable for a reason other than the two exclusions. It adds
+        nothing and marks the day; it is never served as a 0.
+      required: [session_id, reason]
+      properties:
+        session_id: { type: string }
+        reason:
+          allOf: [ { $ref: "#/components/schemas/LoadChartReason" } ]
+          description: "The saved session_load.unavailable reason."
+    LoadChartExcluded:
+      type: object
+      description: >
+        A session that is not running load by design: a non-running sport or
+        a declared resting capture. It adds nothing and does not mark the day.
+      required: [session_id, reason]
+      properties:
+        session_id: { type: string }
+        reason: { type: string, enum: [sport_not_running, declared_capture] }
+    LoadChartSeed:
+      type: object
+      description: >
+        The start value both curves begin from (spec/03 section 3.5.3 as
+        amended by F018): the mean of the day loads over the first 42 days of
+        history, or over all of it when shorter. One rule for every history
+        length, so the chart never jumps when history passes 42 days.
+      required: [value, window_days, provisional_until]
+      properties:
+        value: { type: number, description: "CTL_0 = ATL_0; the mean daily load over window_days, unrounded." }
+        window_days: { type: integer, description: "The days averaged: 42, or the length of history when shorter." }
+        provisional_until: { type: string, format: date, description: "first_day + 41: the last day inside the first 42 days of history, a future date while history is shorter." }
+    LoadChartDay:
+      type: object
+      description: "One local date of history, with the sessions it counted, could not count and excluded."
+      required: [date, load, ctl, atl, tsb, provisional, marked, uncounted_in_window, counted, uncounted, excluded]
+      properties:
+        date: { type: string, format: date, description: "The local date in athlete_timezone." }
+        load: { type: number, description: "The sum of the counted sessions' saved loads; 0 on a rest day or a marked day." }
+        ctl: { type: number, description: "CTL_(d-1) + (load - CTL_(d-1)) * (1 - e^(-1/42)), unrounded." }
+        atl: { type: number, description: "ATL_(d-1) + (load - ATL_(d-1)) * (1 - e^(-1/7)), unrounded." }
+        tsb: { type: number, description: "CTL_(d-1) - ATL_(d-1): yesterday's values, so 0 on the first day." }
+        provisional: { type: boolean, description: "True on every day inside the first 42 days of history, where the seed still moves." }
+        marked: { type: boolean, description: "True when uncounted is non-empty: a run without a load moved this day like a rest day." }
+        uncounted_in_window: { type: integer, description: "Uncounted sessions on the 42 days ending this day." }
+        counted:
+          type: array
+          items: { $ref: "#/components/schemas/LoadChartCounted" }
+          description: "Ordered by start_time then session_id."
+        uncounted:
+          type: array
+          items: { $ref: "#/components/schemas/LoadChartUncounted" }
+          description: "Ordered by start_time then session_id."
+        excluded:
+          type: array
+          items: { $ref: "#/components/schemas/LoadChartExcluded" }
+          description: "Ordered by start_time then session_id."
+    LoadChart:
+      type: object
+      description: >
+        GET /metrics/load: the fitness, fatigue and form series (F018, spec/03
+        section 3.5). Computed on read from the loads F017 saved at upload,
+        the sessions' start_time and the configured athlete_timezone; nothing
+        is stored. The curves always run from the first day of history; from
+        and to choose which days are returned.
+      required: [timezone, today, first_day, seed, days]
+      properties:
+        timezone: { type: string, description: "The configured athlete_timezone the days were bucketed in." }
+        today: { type: string, format: date, description: "The athlete's local today, resolved once per request: the default to." }
+        first_day: { type: string, format: date, nullable: true, description: "The first local date holding a counted or uncounted session; null when the store holds no running session." }
+        seed:
+          allOf: [ { $ref: "#/components/schemas/LoadChartSeed" } ]
+          nullable: true
+          description: "Null when first_day is null or after today."
+        days:
+          type: array
+          items: { $ref: "#/components/schemas/LoadChartDay" }
+          description: "Every local date from the later of from and first_day to to, in order, rest days included; empty when history has no day in the range."

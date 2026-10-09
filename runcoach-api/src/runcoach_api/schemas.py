@@ -1109,3 +1109,97 @@ class SessionLoad(BaseModel):
     )
     metrics: SessionLoadMetrics
     inputs: SessionLoadInputs = Field(description="The values used and their sources, reported under every gate, gates 1 and 2 included.")
+
+
+# ---------------------------------------------------------------------------
+# GET /metrics/load (F018): the fitness, fatigue and form chart
+#
+# Appended below the session load models. Named exactly as the contract's
+# components, so the route test's walker compares like with like.
+# ---------------------------------------------------------------------------
+
+
+class LoadChartReason(str, Enum):
+    """Why an uncounted run's saved load is unavailable: F017's `SessionLoadReason` minus the two
+    exclusion reasons (`sport_not_running` and `declared_capture` exclude a session instead)."""
+
+    NO_HR = "no_hr"
+    MISSING_ANCHOR = "missing_anchor"
+    ORDER_CONFLICT = "order_conflict"
+    AVG_HR_BELOW_RESTING = "avg_hr_below_resting"
+    AVG_HR_ABOVE_MAX = "avg_hr_above_max"
+    WRIST_HR_THRESHOLD_UNKNOWN = "wrist_hr_threshold_unknown"
+    WRIST_HR_AT_THRESHOLD = "wrist_hr_at_threshold"
+    NOT_REPRESENTABLE = "not_representable"
+    NO_THRESHOLD_HR = "no_threshold_hr"
+    THRESHOLD_ORDER_CONFLICT = "threshold_order_conflict"
+
+
+class LoadChartCounted(BaseModel):
+    """A session the day counted: its saved load is a number and adds to the day's `load`."""
+
+    session_id: str
+    load: float = Field(description="The session's saved `session_load.value`, unrounded.")
+
+
+class LoadChartUncounted(BaseModel):
+    """A running session the day could not count: its saved load is unavailable for a reason other
+    than the two exclusions. It adds nothing and marks the day; it is never served as a 0."""
+
+    session_id: str
+    reason: LoadChartReason = Field(description="The saved `session_load.unavailable` reason.")
+
+
+class LoadChartExcluded(BaseModel):
+    """A session that is not running load by design: a non-running sport or a declared resting
+    capture. It adds nothing and does not mark the day."""
+
+    session_id: str
+    reason: Literal["sport_not_running", "declared_capture"]
+
+
+class LoadChartSeed(BaseModel):
+    """The start value both curves begin from (user ruling C5; spec/03 section 3.5.3): the mean of
+    the day loads over the first 42 days of history, or over all of it when shorter."""
+
+    value: float = Field(description="CTL_0 = ATL_0; the mean daily load over `window_days`, unrounded.")
+    window_days: int = Field(description="The days averaged: 42, or the length of history when shorter.")
+    provisional_until: datetime.date = Field(
+        description="`first_day` + 41: the last day inside the first 42 days of history, a future date while history is shorter."
+    )
+
+
+class LoadChartDay(BaseModel):
+    """One local date of history, with the sessions it counted, could not count and excluded."""
+
+    date: datetime.date = Field(description="The local date in `athlete_timezone`.")
+    load: float = Field(description="The sum of the counted sessions' saved loads; 0 on a rest day or a marked day.")
+    ctl: float = Field(description="CTL_(d-1) + (load - CTL_(d-1)) * (1 - e^(-1/42)), unrounded.")
+    atl: float = Field(description="ATL_(d-1) + (load - ATL_(d-1)) * (1 - e^(-1/7)), unrounded.")
+    tsb: float = Field(description="CTL_(d-1) - ATL_(d-1): yesterday's values, so 0 on the first day.")
+    provisional: bool = Field(description="True on every day inside the first 42 days of history, where the seed still moves.")
+    marked: bool = Field(description="True when `uncounted` is non-empty: a run without a load moved this day like a rest day.")
+    uncounted_in_window: int = Field(description="Uncounted sessions on the 42 days ending this day.")
+    counted: list[LoadChartCounted] = Field(description="Ordered by `start_time` then `session_id`.")
+    uncounted: list[LoadChartUncounted] = Field(description="Ordered by `start_time` then `session_id`.")
+    excluded: list[LoadChartExcluded] = Field(description="Ordered by `start_time` then `session_id`.")
+
+
+class LoadChart(BaseModel):
+    """GET /metrics/load: the fitness, fatigue and form series (F018, spec/03 section 3.5).
+
+    Computed on read from the loads F017 saved at upload, the sessions'
+    `start_time` and the configured `athlete_timezone`; nothing is stored.
+    The curves always run from the first day of history; `from` and `to`
+    choose which days are returned.
+    """
+
+    timezone: str = Field(description="The configured `athlete_timezone` the days were bucketed in.")
+    today: datetime.date = Field(description="The athlete's local today, resolved once per request: the default `to`.")
+    first_day: datetime.date | None = Field(
+        description="The first local date holding a counted or uncounted session; null when the store holds no running session."
+    )
+    seed: LoadChartSeed | None = Field(description="Null when `first_day` is null or after `today`.")
+    days: list[LoadChartDay] = Field(
+        description="Every local date from the later of `from` and `first_day` to `to`, in order, rest days included; empty when history has no day in the range."
+    )

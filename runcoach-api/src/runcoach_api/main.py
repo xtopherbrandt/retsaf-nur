@@ -949,3 +949,87 @@ def get_session_load(session_id: str) -> SessionLoad:
     if body is None:
         raise HTTPException(404, f"session {session_id} not found")
     return SessionLoad(**body)
+
+
+# ---------------------------------------------------------------------------
+# GET /metrics/load (F018)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place.
+# ---------------------------------------------------------------------------
+import dataclasses
+
+from runcoach_api.metrics import load_chart
+from runcoach_api.schemas import LoadChart, LoadChartDay, LoadChartSeed
+
+
+@app.get(
+    "/metrics/load",
+    response_model=LoadChart,
+    operation_id="getLoadChart",
+    tags=["State & Metrics"],
+)
+def get_load_chart(
+    from_: datetime.date | None = Query(None, alias="from"),  # noqa: B008 -- FastAPI's parameter idiom
+    to: datetime.date | None = Query(None),  # noqa: B008
+) -> LoadChart:
+    """The fitness, fatigue and form chart (F018, spec/03 section 3.5) over ``[from, to]``, on
+    the contract's path (``operationId: getLoadChart``).
+
+    The zone is read from the config per request and the athlete's local
+    today resolved once, as ``get_hrv_trend`` does; both are handed to the
+    pure ``metrics.load_chart``, which buckets every stored session's saved
+    load (``db.read_session_load_rows``, one statement, one snapshot) into
+    local days and runs the curves from the first day of history. ``from``
+    and ``to`` only choose which days are returned.
+
+    ``to`` defaults to today and ``from`` to the earlier of ``first_day`` and
+    ``to``, so a ``to`` before history, or a store whose every session is
+    dated after today, answers ``days`` empty rather than a 422. ``from``
+    after ``to`` is a 422 naming both; ``to`` after today is a 422
+    (projection belongs to the taper, spec Section 7), unlike ``/metrics/hrv``,
+    which withholds future days with a 200. Both are coerced by pydantic from
+    ``YYYY-MM-DD`` and never hand-parsed. There is no range cap: one athlete,
+    about 365 rows a year. A store with no running session is a 200 with
+    ``first_day`` and ``seed`` null and ``days`` empty.
+
+    A session whose saved load row is missing (both load columns null in the
+    LEFT JOIN) is the module's ``ValueError`` naming the session, served as
+    a 500 with that message: a run without a load is never a 0, and a chart
+    that silently omitted it would be the worse answer. Nothing is written.
+    """
+    zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    today = _today_in(zone)
+    if to is None:
+        to = today
+    elif to > today:
+        raise HTTPException(
+            422,
+            f"'to' ({to.isoformat()}) is after today ({today.isoformat()}) in the athlete's timezone; "
+            "the chart is not projected",
+        )
+    if from_ is not None and from_ > to:
+        raise HTTPException(
+            422,
+            f"'from' ({from_.isoformat()}) is after 'to' ({to.isoformat()}); "
+            "'from' must be on or before 'to'",
+        )
+
+    conn = db.get_connection()
+    try:
+        rows = db.read_session_load_rows(conn)
+    finally:
+        conn.close()
+
+    try:
+        chart = load_chart.build_chart(rows, zone, today)
+    except ValueError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+    if from_ is None:
+        from_ = min(chart.first_day, to) if chart.first_day is not None else to
+    days = [
+        LoadChartDay.model_validate(dataclasses.asdict(day)) for day in chart.days if from_ <= day.date <= to
+    ]
+    seed = None if chart.seed is None else LoadChartSeed.model_validate(dataclasses.asdict(chart.seed))
+    return LoadChart(timezone=zone.key, today=today, first_day=chart.first_day, seed=seed, days=days)
