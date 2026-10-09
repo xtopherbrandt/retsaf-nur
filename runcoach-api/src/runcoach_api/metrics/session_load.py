@@ -40,15 +40,27 @@ for ``resting_hrv_check`` or ``health_snapshot`` (rtss and srpe too), 3
 has no value (``unavailable_fields`` names them), 5 ``order_conflict`` when
 resting >= max among the values used (equality included), 6
 ``avg_hr_below_resting`` / ``avg_hr_above_max`` when the average HR lies
-outside the bounds (R3; equality is computed), 9 ``not_representable`` when
+outside the bounds (R3; equality is computed), 7 ``wrist_hr_threshold_unknown``
+on the wrist path with no usable threshold (none, or not ``resting <
+threshold < max``), 8 ``wrist_hr_at_threshold`` on the wrist path when the
+average HR is at or above the threshold (R2; judged by average HR, user
+ruling 2026-10-08; equality refused), 9 ``not_representable`` when
 resting, max or a present threshold does not convert to a finite float
 (``float(10**400)`` raises ``OverflowError``; it is caught per value, so no
 upload is a 500). After TRIMP, the reference needs the threshold: no value
 gives ``no_threshold_hr``; ``resting < threshold < max`` failing (equality at
 either bound included) gives ``threshold_order_conflict``; TRIMP is still
-served. Gates 7 and 8 (the wrist path) are not applied here. When TRIMP is
-unavailable ``session_load`` carries the same reason and ``driver`` is null;
-under gates 1 and 2 the inputs are still reported. Gate comparisons are on
+served. When TRIMP is unavailable ``session_load`` carries the same reason
+and ``driver`` is null; under gates 1 and 2 the inputs are still reported.
+
+**The wrist path.** ``hr_source`` is ``chest_strap``, ``wrist_ppg`` or null;
+anything other than ``chest_strap`` (null and an unknown string included)
+takes the wrist path. The flag ``wrist_hr`` is set on every running session
+on the wrist path whatever the outcome (REG-23: PPG input is flagged), so a
+session gates 2-6 or 9 refuse still carries it; a non-running session is
+refused whole by gate 1 and carries no flag. On the wrist path a threshold
+that passes gate 7 is usable, so the reference step after TRIMP never
+withholds ``session_load`` there. Gate comparisons are on
 exact integers (Python compares an int of any size with a float exactly, so
 the average HR against ``10**400`` is a comparison, not a conversion); a value
 becomes a float only in the formula step. ``SERVED_REASONS`` lists every
@@ -89,6 +101,9 @@ COEFFICIENTS: dict[str, tuple[float, float]] = {"male": (0.64, 1.92), "female": 
 MALE = "male"
 HR_TRIMP = "hr_trimp"
 SEX_DEFAULTED_FLAG = "sex_defaulted"
+WRIST_HR_FLAG = "wrist_hr"
+CHEST_STRAP = "chest_strap"
+"""The one ``hr_source`` that escapes the wrist path (gates 7-8)."""
 
 ANCHOR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
 _EMPTY_VALUE = {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
@@ -106,6 +121,8 @@ SERVED_REASONS = (
     "order_conflict",
     "avg_hr_below_resting",
     "avg_hr_above_max",
+    "wrist_hr_threshold_unknown",
+    "wrist_hr_at_threshold",
     "not_representable",
     "no_threshold_hr",
     "threshold_order_conflict",
@@ -189,11 +206,14 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
     }
     load_reason: str | None = None
 
-    # Gates 1-6 and 9, in the reference's order; exact integers only.
+    # Gates 1-9, in the reference's order; exact integers only.
     resting = values["resting_hr_bpm"]["value"]
     max_hr = values["max_hr_bpm"]["value"]
     threshold = values["threshold_hr_bpm"]["value"]
     avg_hr = body_inputs["avg_hr_bpm"]
+    wrist = sport == RUNNING and inputs.get("hr_source") != CHEST_STRAP
+    if wrist:
+        flags.append(WRIST_HR_FLAG)
     if sport != RUNNING:
         hr_trimp["unavailable"] = "sport_not_running"
     elif inputs.get("activity_tag") in DECLARED_CAPTURE_TAGS:
@@ -211,6 +231,10 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
         hr_trimp["unavailable"] = "avg_hr_below_resting"
     elif avg_hr > max_hr:  # type: ignore[operator]
         hr_trimp["unavailable"] = "avg_hr_above_max"
+    elif wrist and (threshold is None or not (resting < threshold < max_hr)):
+        hr_trimp["unavailable"] = "wrist_hr_threshold_unknown"
+    elif wrist and avg_hr >= threshold:  # type: ignore[operator]
+        hr_trimp["unavailable"] = "wrist_hr_at_threshold"
     elif not _finite(resting, max_hr, threshold):
         hr_trimp["unavailable"] = "not_representable"
     else:

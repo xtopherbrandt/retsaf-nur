@@ -224,7 +224,7 @@ def test_max_two_to_the_63_gives_a_tiny_finite_trimp() -> None:
 
 
 def test_every_served_reason_is_in_the_reference_order() -> None:
-    """The module's own list of the reasons it can serve: gates 1-6 and 9 and the two reference
+    """The module's own list of the reasons it can serve: gates 1-9 and the two reference
     reasons, in the reference's order."""
     assert session_load.SERVED_REASONS == (
         "sport_not_running",
@@ -234,6 +234,8 @@ def test_every_served_reason_is_in_the_reference_order() -> None:
         "order_conflict",
         "avg_hr_below_resting",
         "avg_hr_above_max",
+        "wrist_hr_threshold_unknown",
+        "wrist_hr_at_threshold",
         "not_representable",
         "no_threshold_hr",
         "threshold_order_conflict",
