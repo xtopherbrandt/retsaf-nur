@@ -64,6 +64,8 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping
 
+from runcoach_api.metrics.session_features import unique_flags
+
 RUNNING = "running"
 DECLARED_CAPTURE_TAGS = ("resting_hrv_check", "health_snapshot")
 
@@ -81,16 +83,6 @@ NO_THRESHOLD_PACE = "no_threshold_pace"
 NO_RPE = "no_rpe"
 SESSION_WIDE_REASONS = ("sport_not_running", "declared_capture")
 """Gates 1 and 2: the reasons rtss and srpe carry as well as hr_trimp."""
-
-
-def _unique(flags: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for flag in flags:
-        if flag not in seen:
-            seen.add(flag)
-            out.append(flag)
-    return out
 
 
 def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
@@ -143,7 +135,7 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
         "hr_source": inputs.get("hr_source"),
         **values,
     }
-    input_flags = _unique([*(features.get("flags") or []), *(inputs.get("quality_flags") or [])])  # type: ignore[union-attr]
+    input_flags = unique_flags([*(features.get("flags") or []), *(inputs.get("quality_flags") or [])])  # type: ignore[union-attr]
 
     flags: list[str] = []
     hr_trimp = {

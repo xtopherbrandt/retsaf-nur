@@ -111,7 +111,8 @@ def _g_per_record(graded: Sequence[_GradedSegment], n_records: int) -> list[floa
     return [1.0] + [graded[j - 1].g for j in range(1, n_records)]
 
 
-def _unique(flags: Iterable[str]) -> list[str]:
+def unique_flags(flags: Iterable[str]) -> list[str]:
+    """The flags in first-seen order, each once; ``session_load`` dedupes its input flags with it too."""
     seen: set[str] = set()
     out: list[str] = []
     for flag in flags:
@@ -126,7 +127,7 @@ def _session_flags(session: Mapping[str, object]) -> list[str]:
     stored = [str(flag) for flag in (session.get("quality_flags") or ())]
     if SMART_RECORDING_FLAG in stored:
         stored = [SMART_RECORDING_FLAG] + [flag for flag in stored if flag != SMART_RECORDING_FLAG]
-    return _unique(stored)
+    return unique_flags(stored)
 
 
 def _response_features(features: Mapping[str, Feature], power_model: str | None) -> dict[str, object]:
@@ -234,7 +235,7 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
 
     return _response(
         session,
-        _unique(_session_flags(session) + derived_flags),
+        unique_flags(_session_flags(session) + derived_flags),
         _response_features(features, power_model),
         gap_coverage=gap_coverage,
         grade_clamped_fraction=descriptors.distance_fraction(clamped_m, D),
