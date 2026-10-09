@@ -912,19 +912,7 @@ def update_me(update: AthleteProfileUpdate) -> Athlete:
 # Appended below the earlier routes with its own imports, as the features and
 # profile routes are, so the lines cited above stay in place.
 # ---------------------------------------------------------------------------
-import json
-
 from runcoach_api.schemas import SessionLoad
-
-
-def _read_saved_load(conn, session_id: str) -> dict | None:
-    """The body ``db._save_session_load`` wrote for the session at its upload, JSON-decoded, or
-    ``None`` when the store holds no load for that id. One SELECT on the saved-load table
-    (``db.SESSION_LOADS_TABLE``); no anchor and no session row is read."""
-    row = conn.execute(
-        f"SELECT body FROM {db.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,)
-    ).fetchone()
-    return None if row is None else json.loads(row["body"])
 
 
 @app.get(
@@ -938,7 +926,8 @@ def get_session_load(session_id: str) -> SessionLoad:
 
     The body is the one ``db._save_session_load`` computed and wrote inside
     the upload's transaction, with every value used; the route serves it
-    unchanged and reads no anchor (user rulings C1-C3, 2026-10-08), so a
+    unchanged through ``db.read_session_load_body`` and reads no anchor
+    (user rulings C1-C3, 2026-10-08), so a
     later ``PATCH /me`` or a later upload that moves an anchor changes
     nothing here, and a corrupted anchor version log that makes ``GET /me``
     a 500 leaves this route a 200. Nothing is computed and nothing is
@@ -953,7 +942,7 @@ def get_session_load(session_id: str) -> SessionLoad:
     """
     conn = db.get_connection()
     try:
-        body = _read_saved_load(conn, session_id)
+        body = db.read_session_load_body(conn, session_id)
     finally:
         conn.close()
 

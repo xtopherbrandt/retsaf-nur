@@ -1157,3 +1157,17 @@ def read_session_load_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         ORDER BY s.start_time, s.session_id
         """
     ).fetchall()
+
+
+def read_session_load_body(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """The body ``_save_session_load`` wrote for the session at its upload, JSON-decoded, or
+    ``None`` when the store holds no load for that id (F017).
+
+    One SELECT on ``SESSION_LOADS_TABLE``; no anchor and no session row is
+    read, so the body comes back exactly as it was saved. No ``BEGIN``, as
+    with ``read_session_load_rows``.
+    """
+    row = conn.execute(
+        f"SELECT body FROM {SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return None if row is None else json.loads(row["body"])
