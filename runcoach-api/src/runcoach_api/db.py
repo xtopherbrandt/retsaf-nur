@@ -1131,3 +1131,29 @@ def _save_session_load(conn: sqlite3.Connection, session_id: str, *, resolved=No
     if inputs is None:
         raise ValueError(f"session {session_id} is not stored; nothing to compute a load from")
     _write_session_load(conn, session_id, compute_session_load(inputs))
+
+
+def read_session_load_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every stored session with its saved load, for the chart (F018, spec/03 section 3.5).
+
+    One statement, so the rows are one snapshot of the store: ``session_id``,
+    ``start_time``, ``load_value`` and ``load_reason`` (the last two as
+    ``_write_session_load`` mirrored them from the body), ordered by
+    ``start_time`` then ``session_id``, which is the order the chart lists a
+    day's sessions in. No ``BEGIN``: a read inside a caller's open
+    transaction is fine, and a lone read needs none.
+
+    A LEFT JOIN, deliberately: a session with no saved row comes back with
+    both load columns null rather than vanishing. Every persist saves a row
+    and startup's fill covers earlier sessions, so after startup that row
+    cannot occur; the route turns one into a named 500 instead of a chart
+    that silently omits a run, which an inner join would hide.
+    """
+    return conn.execute(
+        f"""
+        SELECT s.session_id, s.start_time, l.load_value, l.load_reason
+        FROM sessions s
+        LEFT JOIN {SESSION_LOADS_TABLE} l USING (session_id)
+        ORDER BY s.start_time, s.session_id
+        """
+    ).fetchall()
