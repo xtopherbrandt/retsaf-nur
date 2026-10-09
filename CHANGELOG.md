@@ -4,6 +4,31 @@
 
 ### Added
 
+F017: `GET /sessions/{session_id}/load` serves a stored session's training load (spec/03 section
+3.4): `hr_trimp` (the Banister exponential TRIMP over `hr_time_s`, the session's running time with
+usable HR, never stopped time), the threshold-hour reference on the session's own sex coefficients,
+`session_load` on the "threshold hour = 100" scale with its `driver`, and `rtss` and `srpe`
+unavailable as `no_threshold_pace` and `no_rpe` until threshold pace and an RPE input exist. The
+load is computed in the upload's own transaction, after the profile update, and saved with every
+value used: per field (`resting_hr_bpm`, `max_hr_bpm`, `threshold_hr_bpm`, `sex`) the value the
+session's own FIT file carried, else the anchor in effect at upload with its version; a later
+anchor change leaves the saved body unchanged, and a run is corrected by delete and re-upload,
+which removes the saved load too. Sessions gain the nullable `timer_time_s` column (the FIT
+`session.total_timer_time`), and `inputs` reports `hr_time_s`, `avg_hr_bpm`, `timer_time_s`,
+`hr_time_fraction` and each value used with its source. Sessions stored before this version get
+their load from a one-time fill at first start, the store's first startup data write: each session
+without a saved load is computed and saved as an upload would, with `timer_time_s` copied from the
+session's stored summary; a second start changes nothing. A fault computing or saving a load fails
+the upload with a 500 and rolls it back, and stops startup naming the session. The gates, in order,
+first match wins: `sport_not_running`, `declared_capture`, `no_hr`, `missing_anchor` (with
+`unavailable_fields`), `order_conflict` (the order rule re-applied to the values used),
+`avg_hr_below_resting` / `avg_hr_above_max`, `wrist_hr_threshold_unknown`, `wrist_hr_at_threshold`
+(a session whose HR source is not a chest strap is flagged `wrist_hr` whatever the outcome and
+refused at or above the usable threshold by average HR) and `not_representable` (an entered value
+that does not convert to a finite float); after TRIMP, `session_load` is `no_threshold_hr` or
+`threshold_order_conflict` without a usable threshold. `flags` carries `wrist_hr` and
+`sex_defaulted`. The operation is `getSessionLoad` in the contract.
+
 F018: `GET /metrics/load` serves the fitness, fatigue and form chart (spec/03 section 3.5): for
 each local date in `athlete_timezone` from the first running session to today, the day's `load` (the
 sum of the saved loads of its counted runs), `ctl` and `atl` (EWMAs at the fixed 42/7 constants) and

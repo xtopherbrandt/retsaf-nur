@@ -41,9 +41,10 @@ applies the ordering rule to the effective values of ``ANCHOR_FIELDS``:
   ``missing``;
 - no plausibility range: the spec has no range constants.
 
-So when resting and max are both served, ``max_hr_bpm - resting_hr_bpm > 0``,
-and the HR-TRIMP heart-rate-reserve ratio (spec/03 section 3.4.1) may divide by
-it unguarded.
+So when resting and max are both served, ``max_hr_bpm - resting_hr_bpm > 0``.
+The HR-TRIMP load (spec/03 section 3.4.1) does not rely on that served pair: it
+may mix a session file's resting with the anchor's max, so it re-applies the
+order rule to the values it uses before dividing.
 
 **The version** changes when, and only when, the anchor's served value
 changes: the source does not move it, and an unavailable period does not
