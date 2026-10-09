@@ -38,15 +38,29 @@ set only when TRIMP is computed. Equality at the bounds is computed: ``r =
 for ``resting_hrv_check`` or ``health_snapshot`` (rtss and srpe too), 3
 ``no_hr`` when ``hr_time_s`` is 0, 4 ``missing_anchor`` when resting or max
 has no value (``unavailable_fields`` names them), 5 ``order_conflict`` when
-resting >= max among the values used. After TRIMP, the reference needs the
-threshold: no value gives ``no_threshold_hr``; ``resting < threshold < max``
-failing gives ``threshold_order_conflict``; TRIMP is still served. Gates 6
-to 9 (average HR outside the bounds, the wrist path, a value that does not
-convert to a finite float) are the anchor-fallback and wrist-HR work and are
-not applied here. When TRIMP is unavailable ``session_load`` carries the same
-reason and ``driver`` is null; under gates 1 and 2 the inputs are still
-reported. Gate comparisons are on exact integers; a value becomes a float
-only in the formula step.
+resting >= max among the values used (equality included), 6
+``avg_hr_below_resting`` / ``avg_hr_above_max`` when the average HR lies
+outside the bounds (R3; equality is computed), 9 ``not_representable`` when
+resting, max or a present threshold does not convert to a finite float
+(``float(10**400)`` raises ``OverflowError``; it is caught per value, so no
+upload is a 500). After TRIMP, the reference needs the threshold: no value
+gives ``no_threshold_hr``; ``resting < threshold < max`` failing (equality at
+either bound included) gives ``threshold_order_conflict``; TRIMP is still
+served. Gates 7 and 8 (the wrist path) are not applied here. When TRIMP is
+unavailable ``session_load`` carries the same reason and ``driver`` is null;
+under gates 1 and 2 the inputs are still reported. Gate comparisons are on
+exact integers (Python compares an int of any size with a float exactly, so
+the average HR against ``10**400`` is a comparison, not a conversion); a value
+becomes a float only in the formula step. ``SERVED_REASONS`` lists every
+reason this module writes, in the reference's order.
+
+**Where the values come from.** This module reads the four value blocks as
+given. ``db._save_session_load`` builds them at upload: the session's own
+file value as ``session_file``, else the F016 anchor in effect inside the
+upload's transaction as ``anchor`` with its version, else an empty block whose
+``anchor_unavailable`` carries F016's reason (``missing`` or
+``order_conflict``), so gate 4 reports a conflicting anchor as missing here
+while the inputs say why.
 
 **Pure, by design.** No ``config``, ``db`` or ``fastapi`` import. ``inputs``
 is a plain mapping: ``session_id``, ``sport``, ``activity_tag``,
@@ -83,6 +97,34 @@ NO_THRESHOLD_PACE = "no_threshold_pace"
 NO_RPE = "no_rpe"
 SESSION_WIDE_REASONS = ("sport_not_running", "declared_capture")
 """Gates 1 and 2: the reasons rtss and srpe carry as well as hr_trimp."""
+
+SERVED_REASONS = (
+    "sport_not_running",
+    "declared_capture",
+    "no_hr",
+    "missing_anchor",
+    "order_conflict",
+    "avg_hr_below_resting",
+    "avg_hr_above_max",
+    "not_representable",
+    "no_threshold_hr",
+    "threshold_order_conflict",
+)
+"""Every reason this module writes into a body, in the reference's order; each is a member of the
+contract's closed ``SessionLoadReason`` enum (the route test holds that)."""
+
+
+def _finite(*values) -> bool:
+    """True when every value that is present converts to a finite float (gate 9)."""
+    for value in values:
+        if value is None:
+            continue
+        try:
+            if not math.isfinite(float(value)):
+                return False
+        except OverflowError:
+            return False
+    return True
 
 
 def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
@@ -147,10 +189,11 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
     }
     load_reason: str | None = None
 
-    # Gates 1-5, in the reference's order; exact integers only.
+    # Gates 1-6 and 9, in the reference's order; exact integers only.
     resting = values["resting_hr_bpm"]["value"]
     max_hr = values["max_hr_bpm"]["value"]
     threshold = values["threshold_hr_bpm"]["value"]
+    avg_hr = body_inputs["avg_hr_bpm"]
     if sport != RUNNING:
         hr_trimp["unavailable"] = "sport_not_running"
     elif inputs.get("activity_tag") in DECLARED_CAPTURE_TAGS:
@@ -164,6 +207,12 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
         ]
     elif resting >= max_hr:
         hr_trimp["unavailable"] = "order_conflict"
+    elif avg_hr < resting:  # type: ignore[operator]
+        hr_trimp["unavailable"] = "avg_hr_below_resting"
+    elif avg_hr > max_hr:  # type: ignore[operator]
+        hr_trimp["unavailable"] = "avg_hr_above_max"
+    elif not _finite(resting, max_hr, threshold):
+        hr_trimp["unavailable"] = "not_representable"
     else:
         # The formula step: the only place a value becomes a float.
         sex = values["sex"]["value"]
@@ -172,7 +221,7 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
             flags.append(SEX_DEFAULTED_FLAG)
         pair = COEFFICIENTS[sex]
         span = float(max_hr) - float(resting)
-        r = (float(body_inputs["avg_hr_bpm"]) - float(resting)) / span  # type: ignore[arg-type]
+        r = (float(avg_hr) - float(resting)) / span  # type: ignore[arg-type]
         hr_trimp["value"] = _trimp(hr_time_s / 60.0, r, pair)
         hr_trimp["coefficients"] = sex
         if threshold is None:

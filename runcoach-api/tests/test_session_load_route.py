@@ -30,6 +30,7 @@ import yaml
 from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
 from runcoach_api.main import app
+from runcoach_api.metrics import session_load as session_load_module
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -270,6 +271,19 @@ def test_the_reason_enum_lists_every_gate_reason() -> None:
     contract = _contract()["components"]["schemas"]["SessionLoadReason"]
     assert set(served["enum"]) == set(contract["enum"]) == set(GATE_REASONS)
     assert len(served["enum"]) == len(GATE_REASONS)
+
+
+def test_every_reason_the_module_serves_is_a_member_of_the_closed_enum() -> None:
+    """``session_load.SERVED_REASONS`` lists every reason ``compute_session_load`` can write into a
+    body (the gate tests check each expected row against it); each is in the contract's enum and
+    in the reference's order. The enum may be wider while a gate is not yet built; the module may
+    never be."""
+    enum = _contract()["components"]["schemas"]["SessionLoadReason"]["enum"]
+    served = session_load_module.SERVED_REASONS
+    print(f"  served {len(served)} of {len(enum)} enum reasons: {served}")
+    assert set(served) <= set(enum), set(served) - set(enum)
+    assert [reason for reason in GATE_REASONS if reason in served] == list(served)
+    assert "not_representable" in served and "avg_hr_above_max" in served and "avg_hr_below_resting" in served
 
 
 def test_the_hr_inputs_are_unbounded_integers_in_the_contract() -> None:

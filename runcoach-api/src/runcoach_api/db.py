@@ -492,8 +492,8 @@ def persist(
             _insert_records(conn, session.session_id, records)
             _insert_rr_intervals(conn, session.session_id, rr_intervals)
             _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
-            _sync_anchor_versions(conn)
-            _save_session_load(conn, session.session_id)
+            resolved = _sync_anchor_versions(conn)
+            _save_session_load(conn, session.session_id, resolved=resolved)
     except sqlite3.IntegrityError as exc:
         cur = conn.execute(
             "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
@@ -936,9 +936,11 @@ def _write_anchor_log(
     )
 
 
-def _sync_anchor_versions(conn: sqlite3.Connection) -> None:
+def _sync_anchor_versions(conn: sqlite3.Connection) -> dict[str, profile_module.FieldValue]:
     """Recompute the four HR anchors from what is stored and move each one's version
-    when its served value differs from the value the log holds.
+    when its served value differs from the value the log holds. Returns the
+    resolved profile it read, so ``persist`` can hand it to ``_save_session_load``
+    rather than read the profile inputs a second time in the same transaction.
 
     Called inside the transaction of every write that can change an effective
     value -- ``persist``, ``delete_session`` and ``write_profile_entries`` -- so
@@ -956,6 +958,7 @@ def _sync_anchor_versions(conn: sqlite3.Connection) -> None:
     sessions, entries = read_profile_inputs(conn)
     resolved = profile_module.resolve(sessions, entries)
     _write_anchor_log(conn, profile_module.next_versions(resolved, _read_anchor_log(conn)))
+    return resolved
 
 
 def read_hr_anchors(conn: sqlite3.Connection) -> dict[str, profile_module.Anchor]:
@@ -1115,21 +1118,52 @@ def _write_session_load(conn: sqlite3.Connection, session_id: str, body: Mapping
     )
 
 
-def _save_session_load(conn: sqlite3.Connection, session_id: str, *, resolved=None) -> None:
+def _from_anchor(anchor: profile_module.Anchor) -> dict:
+    """One ``inputs.<field>`` block for a field the file lacked: the anchor's value and version,
+    or an empty block carrying F016's reason (``missing`` or ``order_conflict``)."""
+    if anchor.reason is not None:
+        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": anchor.reason}
+    return {
+        "value": anchor.value,
+        "source": "anchor",
+        "session_id": None,
+        "anchor_version": anchor.version,
+        "anchor_unavailable": None,
+    }
+
+
+def _save_session_load(
+    conn: sqlite3.Connection, session_id: str, *, resolved: Mapping[str, profile_module.FieldValue] | None = None
+) -> None:
     """Compute and save the stored session's load inside the caller's transaction (F017 AC8).
 
-    Reads the inputs (``read_session_load_inputs``), calls
-    ``compute_session_load`` and writes the row (``_write_session_load``).
-    ``persist`` calls it right after ``_sync_anchor_versions`` inside its
-    ``with conn:``; it is the seam a test patches to force a fault, which
-    rolls the whole upload back. Never calls ``read_athlete``, whose ``BEGIN``
-    fails inside an open transaction. ``resolved`` is the profile the anchor
-    fallback reuses when a file lacks a value; it is accepted and unused
-    here, so every HR input is the session's own file value or empty.
+    Reads the inputs (``read_session_load_inputs``), fills each HR field the
+    session's own file lacked from the anchor in effect now (user ruling R1
+    with C1: the anchor at upload, with its version; an anchor F016 marks
+    ``missing`` or ``order_conflict`` is no value and the block's
+    ``anchor_unavailable`` carries that reason), calls ``compute_session_load``
+    and writes the row (``_write_session_load``). ``persist`` calls it right
+    after ``_sync_anchor_versions`` inside its ``with conn:`` and passes that
+    sync's ``resolved`` profile, so the anchors come from
+    ``profile.anchors(resolved, log)`` without a second profile read; a caller
+    without one (the one-time fill) leaves ``resolved`` None and the anchors
+    are read here with ``read_hr_anchors``. Either way the anchor read shares
+    the caller's open transaction, so it sees the rows just written and the
+    log the sync just moved. It is the seam a test patches to force a fault,
+    which rolls the whole upload back. Never calls ``read_athlete``, whose
+    ``BEGIN`` fails inside an open transaction.
     """
     inputs = read_session_load_inputs(conn, session_id)
     if inputs is None:
         raise ValueError(f"session {session_id} is not stored; nothing to compute a load from")
+    if any(inputs[field_name]["value"] is None for field_name in _LOAD_FIELDS):
+        if resolved is None:
+            anchors = read_hr_anchors(conn)
+        else:
+            anchors = profile_module.anchors(resolved, _read_anchor_log(conn))
+        for field_name in _LOAD_FIELDS:
+            if inputs[field_name]["value"] is None:
+                inputs[field_name] = _from_anchor(anchors[field_name])
     _write_session_load(conn, session_id, compute_session_load(inputs))
 
 
