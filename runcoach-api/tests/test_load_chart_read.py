@@ -68,12 +68,20 @@ def _keys(rows: list[sqlite3.Row]) -> list[tuple[str, str]]:
 
 
 def test_rows_come_back_in_start_time_then_session_id_order(persist_sessions) -> None:
-    """Inserted out of order, with two sessions sharing a start_time; read back sorted."""
+    """Inserted out of order, with two sessions sharing a start_time; read back sorted.
+
+    The tied pair goes in with the larger ``session_id`` first, decided at runtime from the
+    derived ids, so that SQLite's rowid order for the tie (insertion order) differs from the
+    ``session_id`` order: an ``ORDER BY s.start_time`` without the tiebreak returns the pair
+    reversed and the assertions below fail.
+    """
     third = _run("2026-03-03T07:00:00+00:00")
     first = _run("2026-03-01T07:00:00+00:00")
     same_time_a = _run("2026-03-02T07:00:00+00:00", device="fr945")
     same_time_b = _run("2026-03-02T07:00:00+00:00", device="fr955")
-    inserted = [third, same_time_b, first, same_time_a]
+    assert same_time_a.session_id != same_time_b.session_id
+    lo, hi = sorted([same_time_a, same_time_b], key=lambda s: s.session_id)
+    inserted = [third, hi, first, lo]
     persist_sessions(inserted)
 
     rows = _rows()
