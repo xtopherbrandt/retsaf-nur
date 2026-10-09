@@ -729,17 +729,20 @@ def test_deleting_the_only_session_on_first_day_moves_first_day_and_recomputes_t
 
 def test_a_session_without_a_saved_load_is_a_named_500(configure, freeze, persist_sessions) -> None:
     """A session whose ``session_loads`` row is gone (both load columns null in the LEFT JOIN) is a
-    500 naming the session, not a chart that silently omits a run."""
+    500 naming the session, not a chart that silently omits a run. The row is removed after the
+    client has started, because startup fills a load for every session still missing one."""
     configure("UTC")
     freeze(utc(date(2026, 3, 5)))
     kept = _session(at(date(2026, 3, 1)))
     stripped = _session(at(date(2026, 3, 2)))
     persist_sessions([kept, stripped])
     _plant(kept.session_id, value=30.0)
-    with _connection() as conn:
-        with conn:
-            conn.execute(f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (stripped.session_id,))
     with TestClient(app) as client:
+        with _connection() as conn:
+            with conn:
+                conn.execute(
+                    f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (stripped.session_id,)
+                )
         response = get(client)
     assert response.status_code == 500, response.text
     assert stripped.session_id in response.json()["detail"]
