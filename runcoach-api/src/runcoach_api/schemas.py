@@ -940,3 +940,172 @@ class Athlete(BaseModel):
     anchors: HrAnchors = Field(
         description="The resting, max and threshold HR and sex anchors under the ordering rule, each with its version."
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/load (F017)
+#
+# The body ``metrics.session_load.compute_session_load`` builds and
+# ``db._save_session_load`` saves in the upload's transaction, typed. The
+# route serves the saved body unchanged, so these models describe a stored
+# document: every field is required and a value or a reason is null, never
+# absent. Appended below the earlier models, as the profile models are, so
+# the lines cited above stay in place. The enum classes are named for the
+# feature (``SessionLoadReason``) because each feature's reason enum is its
+# own OpenAPI component and two components cannot share a name.
+# ---------------------------------------------------------------------------
+from enum import Enum
+
+
+class SessionLoadReason(str, Enum):
+    """Why HR-TRIMP, and with it `session_load`, has no value: the F017 reference's gates in order (first match
+    wins), then the two reference reasons that leave `hr_trimp.value` served while `session_load` is unavailable."""
+
+    SPORT_NOT_RUNNING = "sport_not_running"
+    DECLARED_CAPTURE = "declared_capture"
+    NO_HR = "no_hr"
+    MISSING_ANCHOR = "missing_anchor"
+    ORDER_CONFLICT = "order_conflict"
+    AVG_HR_BELOW_RESTING = "avg_hr_below_resting"
+    AVG_HR_ABOVE_MAX = "avg_hr_above_max"
+    WRIST_HR_THRESHOLD_UNKNOWN = "wrist_hr_threshold_unknown"
+    WRIST_HR_AT_THRESHOLD = "wrist_hr_at_threshold"
+    NOT_REPRESENTABLE = "not_representable"
+    NO_THRESHOLD_HR = "no_threshold_hr"
+    THRESHOLD_ORDER_CONFLICT = "threshold_order_conflict"
+
+
+_SESSION_WIDE_REASON_DESCRIPTION = (
+    "`sport_not_running` and `declared_capture` (gates 1 and 2) are carried by every metric; otherwise "
+    "the metric's own reason."
+)
+_LOAD_SOURCE_DESCRIPTION = (
+    "`session_file` when the session's own FIT file carried the value, `anchor` when the HR anchor in effect at "
+    "upload supplied it; null when neither did."
+)
+_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION = (
+    "When the file carried no value and the anchor at upload had none either, the anchor's own reason "
+    "(`missing` or `order_conflict`); null otherwise."
+)
+
+
+class SessionLoadValue(BaseModel):
+    """`session_load`: HR-TRIMP on the threshold-hour scale (one hour at threshold HR scores 100), or why not."""
+
+    value: float | None = Field(description="TRIMP / threshold_hour_reference * 100; null when unavailable.")
+    unavailable: SessionLoadReason | None = Field(
+        description="HR-TRIMP's reason when it has no value, else `no_threshold_hr` or `threshold_order_conflict`; null when `value` is served."
+    )
+    driver: Literal["hr_trimp"] | None = Field(description="The metric behind `value`; null whenever `value` is null.")
+
+
+class HrTrimp(BaseModel):
+    """Banister's HR-TRIMP over running time with usable HR, with the reference that scales it."""
+
+    value: float | None = Field(description="duration_min * r * k * e^(c r), r = (HR_avg - HR_rest) / (HR_max - HR_rest); null when unavailable.")
+    unavailable: SessionLoadReason | None = Field(description="The first gate that refused the session; null when `value` is served.")
+    unavailable_fields: list[Literal["resting_hr_bpm", "max_hr_bpm"]] = Field(
+        description="Under `missing_anchor`, the fields with no value used; empty otherwise."
+    )
+    threshold_hour_reference: float | None = Field(
+        description="60 * r_thr * k * e^(c r_thr) with the session's own coefficients; null when unavailable or when the threshold has no usable value."
+    )
+    coefficients: Literal["male", "female"] | None = Field(
+        description="The Banister pair used: `male` (0.64, 1.92) or `female` (0.86, 1.67); null when `value` is null."
+    )
+
+
+class Rtss(BaseModel):
+    """rTSS: unavailable until threshold pace exists (`no_threshold_pace`)."""
+
+    value: float | None = Field(description="Always null today: no threshold pace exists to compute it from.")
+    unavailable: Literal["no_threshold_pace", "sport_not_running", "declared_capture"] = Field(
+        description=f"`no_threshold_pace` on a counted running session. {_SESSION_WIDE_REASON_DESCRIPTION}"
+    )
+
+
+class Srpe(BaseModel):
+    """sRPE-load: unavailable until an RPE input exists (`no_rpe`)."""
+
+    value: float | None = Field(description="Always null today: no RPE input path exists.")
+    unavailable: Literal["no_rpe", "sport_not_running", "declared_capture"] = Field(
+        description=f"`no_rpe` on a counted running session. {_SESSION_WIDE_REASON_DESCRIPTION}"
+    )
+
+
+class SessionLoadMetrics(BaseModel):
+    """The three load metrics of spec/03 section 3.4; only HR-TRIMP is computed."""
+
+    hr_trimp: HrTrimp
+    rtss: Rtss
+    srpe: Srpe
+
+
+class SessionLoadHrInput(BaseModel):
+    """One HR value used (resting, max or threshold, in bpm) and where it came from. The value is an unbounded
+    integer: an entered max of 2^63 is saved and served exactly."""
+
+    value: int | None = Field(description="The value used, in bpm; null when neither the file nor the anchor had one.")
+    source: Literal["session_file", "anchor"] | None = Field(description=_LOAD_SOURCE_DESCRIPTION)
+    session_id: str | None = Field(description="The session whose file carried the value; null unless `source` is `session_file`.")
+    anchor_version: int | None = Field(description="The anchor's version at upload; null unless `source` is `anchor`.")
+    anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
+        description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
+    )
+
+
+class SessionLoadSexInput(BaseModel):
+    """The sex value used for the coefficients, and where it came from."""
+
+    value: Literal["male", "female"] | None = Field(
+        description="The value used; null when neither the file nor the anchor had one (the men's pair is used and `sex_defaulted` is flagged)."
+    )
+    source: Literal["session_file", "anchor"] | None = Field(description=_LOAD_SOURCE_DESCRIPTION)
+    session_id: str | None = Field(description="The session whose file carried the value; null unless `source` is `session_file`.")
+    anchor_version: int | None = Field(description="The anchor's version at upload; null unless `source` is `anchor`.")
+    anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
+        description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
+    )
+
+
+class SessionLoadInputs(BaseModel):
+    """Every value the load was computed from, saved with it (F017 reference, "Time basis" and "Which values")."""
+
+    hr_time_s: float = Field(
+        description="Running time with usable HR: the sum of dt over counted segments (0 < dt <= 5 s) whose start HR is present, above 0 and not `cadence_lock`. A pause adds nothing; nothing is imputed."
+    )
+    recorded_time_s: float | None = Field(description="F013's `duration_s`, reported beside `hr_time_s`; null when unavailable.")
+    timer_time_s: float | None = Field(description="The FIT `session.total_timer_time` stored at ingest; null when the file carried none.")
+    hr_time_fraction: float | None = Field(
+        description="hr_time_s / timer_time_s with no cut-off and no clamp (a full run reads within 0.01 of 1 on either side); null when `timer_time_s` is null or 0."
+    )
+    avg_hr_bpm: float | None = Field(description="F013's served `avg_hr_bpm`, the dt-weighted mean over the same segments; null when unavailable.")
+    hr_source: str | None = Field(description="The session's stored `hr_source` (`chest_strap`, `wrist_ppg` or null); anything but `chest_strap` takes the wrist path.")
+    resting_hr_bpm: SessionLoadHrInput
+    max_hr_bpm: SessionLoadHrInput
+    threshold_hr_bpm: SessionLoadHrInput
+    sex: SessionLoadSexInput
+
+
+class SessionLoad(BaseModel):
+    """The training load of one session, HR-TRIMP first (F017), as saved at its upload.
+
+    Computed once, in the upload's own transaction, from the session's own
+    file values (else the HR anchors in effect at upload) and saved with
+    every value used; a later anchor change moves nothing, and the load is
+    recomputed only by delete and re-upload. The route serves the saved body
+    and reads no anchor. A deleted session has no load (404, the envelope of
+    GET /sessions/{id}).
+    """
+
+    session_id: str
+    sport: str
+    session_load: SessionLoadValue
+    flags: list[Literal["wrist_hr", "sex_defaulted"]] = Field(
+        description="`wrist_hr` on every running session whose `hr_source` is not `chest_strap`, whatever the outcome; `sex_defaulted` when TRIMP was computed with the men's pair for want of a sex value."
+    )
+    input_flags: list[str] = Field(
+        description="F013's feature flags and the session's stored `quality_flags`, passed through, each at most once."
+    )
+    metrics: SessionLoadMetrics
+    inputs: SessionLoadInputs = Field(description="The values used and their sources, reported under every gate, gates 1 and 2 included.")

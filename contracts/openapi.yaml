@@ -15,13 +15,13 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-10-07 the implemented endpoints in retsaf-nur are GET /health,
+# As of 2026-10-09 the implemented endpoints in retsaf-nur are GET /health,
 # /sessions (POST ingest, GET detail, DELETE), GET /metrics/hrv (F005: the
 # per-day series plus the verdict blocks, `from`/`to` optional),
 # GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
-# descriptors, computed on read, nothing stored), GET /me (F016: each
-# profile field with its source, and the HR anchors) and PATCH /me (F016:
-# entered profile values, display_name and units); everything else
+# descriptors, computed on read), GET /sessions/{id}/load (F017: the load body
+# saved at upload), GET /me (F016: each profile field with its source, and the
+# HR anchors) and PATCH /me (F016: entries, display_name and units); the rest
 # is `planned` and is developed against a mock generated from this file until
 # the backend catches up. POST /sessions carries the F004 `resting_capture`
 # flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
@@ -66,7 +66,7 @@ tags:
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
-    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail + features)."
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail + features + load)."
   - name: Workouts
     description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
   - name: Subjective
@@ -594,6 +594,38 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionFeatures" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sessions/{session_id}/load:
+    get:
+      tags: [Sessions]
+      operationId: getSessionLoad
+      summary: The session's training load, HR-TRIMP first, as saved at its upload
+      description: >
+        F017. One load number per session on the "threshold hour = 100" scale
+        (spec/03 section 3.4): Banister's HR-TRIMP over running time with
+        usable HR, scaled by the threshold-hour reference computed with the
+        session's own sex coefficients. rTSS and sRPE-load report unavailable
+        (no threshold pace, no RPE input) until their inputs exist. The body is
+        computed once, inside the upload's own transaction, from the HR values
+        the session's file carried (else the HR anchors in effect at upload)
+        and saved with every value used, its source and its anchor version;
+        this route serves that saved body and reads no anchor, so a later
+        profile change moves nothing (delete and re-upload a session to
+        recompute it). A refused session names the first gate it met (a closed
+        enum) and still reports its inputs. A deleted session has no load (404,
+        the envelope of GET /sessions/{id}).
+      x-readiness: implemented
+      x-owner-spec: "spec/03 section 3.4 (as amended by F017); runcoach-api F017"
+      x-story: [view-workout]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: The session's load body, as saved at its upload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionLoad" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # --------------------------------------------------------------- Workouts
@@ -2269,3 +2301,147 @@ components:
         recorded_at: { type: string, nullable: true }
         version: { type: integer, nullable: true }
         entered_value: { type: string, nullable: true, enum: [female, male, unspecified], description: "The sex anchor's latest entry, `unspecified` included." }
+
+    # ---- Session load (F017, implemented) -------------------------------
+    SessionLoadReason:
+      type: string
+      description: >
+        Why HR-TRIMP, and with it session_load, has no value. The F017
+        reference's gates in order, first match wins: `sport_not_running`,
+        `declared_capture` (a resting_hrv_check or health_snapshot tag),
+        `no_hr` (no running time with usable HR), `missing_anchor` (resting or
+        max HR has no value used; unavailable_fields names them),
+        `order_conflict` (resting >= max among the values used),
+        `avg_hr_below_resting` and `avg_hr_above_max` (average HR outside the
+        bounds), `wrist_hr_threshold_unknown` (a wrist session with no usable
+        threshold) and `wrist_hr_at_threshold` (a wrist session averaging at
+        or above threshold), `not_representable` (a value used does not
+        convert to a finite float). Then, with hr_trimp.value served,
+        `no_threshold_hr` and `threshold_order_conflict` leave session_load
+        alone unavailable.
+      enum:
+        - sport_not_running
+        - declared_capture
+        - no_hr
+        - missing_anchor
+        - order_conflict
+        - avg_hr_below_resting
+        - avg_hr_above_max
+        - wrist_hr_threshold_unknown
+        - wrist_hr_at_threshold
+        - not_representable
+        - no_threshold_hr
+        - threshold_order_conflict
+    SessionLoadValue:
+      type: object
+      description: "session_load: HR-TRIMP on the threshold-hour scale (one hour at threshold HR scores 100), or why not."
+      required: [value, unavailable, driver]
+      properties:
+        value: { type: number, nullable: true, description: "TRIMP / threshold_hour_reference * 100; null when unavailable." }
+        unavailable:
+          allOf: [ { $ref: "#/components/schemas/SessionLoadReason" } ]
+          nullable: true
+          description: "HR-TRIMP's reason when it has no value, else no_threshold_hr or threshold_order_conflict; null when value is served."
+        driver: { type: string, nullable: true, enum: [hr_trimp], description: "The metric behind value; null whenever value is null." }
+    HrTrimp:
+      type: object
+      description: "Banister's HR-TRIMP over running time with usable HR, with the reference that scales it."
+      required: [value, unavailable, unavailable_fields, threshold_hour_reference, coefficients]
+      properties:
+        value: { type: number, nullable: true, description: "duration_min * r * k * e^(c r), r = (HR_avg - HR_rest) / (HR_max - HR_rest); null when unavailable." }
+        unavailable:
+          allOf: [ { $ref: "#/components/schemas/SessionLoadReason" } ]
+          nullable: true
+          description: "The first gate that refused the session; null when value is served."
+        unavailable_fields:
+          type: array
+          items: { type: string, enum: [resting_hr_bpm, max_hr_bpm] }
+          description: "Under missing_anchor, the fields with no value used; empty otherwise."
+        threshold_hour_reference: { type: number, nullable: true, description: "60 * r_thr * k * e^(c r_thr) with the session's own coefficients; null when unavailable or when the threshold has no usable value." }
+        coefficients: { type: string, nullable: true, enum: [male, female], description: "The Banister pair used: male (0.64, 1.92) or female (0.86, 1.67); null when value is null." }
+    Rtss:
+      type: object
+      description: "rTSS: unavailable until threshold pace exists."
+      required: [value, unavailable]
+      properties:
+        value: { type: number, nullable: true, description: "Always null today: no threshold pace exists to compute it from." }
+        unavailable: { type: string, enum: [no_threshold_pace, sport_not_running, declared_capture], description: "no_threshold_pace on a counted running session; gates 1 and 2 are carried by every metric." }
+    Srpe:
+      type: object
+      description: "sRPE-load: unavailable until an RPE input exists."
+      required: [value, unavailable]
+      properties:
+        value: { type: number, nullable: true, description: "Always null today: no RPE input path exists." }
+        unavailable: { type: string, enum: [no_rpe, sport_not_running, declared_capture], description: "no_rpe on a counted running session; gates 1 and 2 are carried by every metric." }
+    SessionLoadMetrics:
+      type: object
+      description: "The three load metrics of spec/03 section 3.4; only HR-TRIMP is computed."
+      required: [hr_trimp, rtss, srpe]
+      properties:
+        hr_trimp: { $ref: "#/components/schemas/HrTrimp" }
+        rtss: { $ref: "#/components/schemas/Rtss" }
+        srpe: { $ref: "#/components/schemas/Srpe" }
+    SessionLoadHrInput:
+      type: object
+      description: >
+        One HR value used (resting, max or threshold, in bpm) and where it
+        came from. The value is an unbounded integer, deliberately without a
+        format: an entered max of 2^63 is saved and served exactly.
+      required: [value, source, session_id, anchor_version, anchor_unavailable]
+      properties:
+        value: { type: integer, nullable: true, description: "The value used, in bpm; null when neither the file nor the anchor had one." }
+        source: { type: string, nullable: true, enum: [session_file, anchor], description: "session_file when the session's own FIT file carried the value, anchor when the HR anchor in effect at upload supplied it; null when neither did." }
+        session_id: { type: string, nullable: true, description: "The session whose file carried the value; null unless source is session_file." }
+        anchor_version: { type: integer, nullable: true, description: "The anchor's version at upload; null unless source is anchor." }
+        anchor_unavailable: { type: string, nullable: true, enum: [missing, order_conflict], description: "When the file carried no value and the anchor at upload had none either, the anchor's own reason; null otherwise." }
+    SessionLoadSexInput:
+      type: object
+      description: "The sex value used for the coefficients, and where it came from; fields as SessionLoadHrInput."
+      required: [value, source, session_id, anchor_version, anchor_unavailable]
+      properties:
+        value: { type: string, nullable: true, enum: [male, female], description: "The value used; null when neither the file nor the anchor had one (the men's pair is used and sex_defaulted is flagged)." }
+        source: { type: string, nullable: true, enum: [session_file, anchor] }
+        session_id: { type: string, nullable: true }
+        anchor_version: { type: integer, nullable: true }
+        anchor_unavailable: { type: string, nullable: true, enum: [missing, order_conflict] }
+    SessionLoadInputs:
+      type: object
+      description: "Every value the load was computed from, saved with it: the time basis and the four HR values used with their sources."
+      required: [hr_time_s, recorded_time_s, timer_time_s, hr_time_fraction, avg_hr_bpm, hr_source, resting_hr_bpm, max_hr_bpm, threshold_hr_bpm, sex]
+      properties:
+        hr_time_s: { type: number, description: "Running time with usable HR: the sum of dt over counted segments (0 < dt <= 5 s) whose start HR is present, above 0 and not cadence_lock. A pause adds nothing; nothing is imputed." }
+        recorded_time_s: { type: number, nullable: true, description: "F013's duration_s, reported beside hr_time_s; null when unavailable." }
+        timer_time_s: { type: number, nullable: true, description: "The FIT session.total_timer_time stored at ingest; null when the file carried none." }
+        hr_time_fraction: { type: number, nullable: true, description: "hr_time_s / timer_time_s with no cut-off and no clamp (a full run reads within 0.01 of 1 on either side); null when timer_time_s is null or 0." }
+        avg_hr_bpm: { type: number, nullable: true, description: "F013's served avg_hr_bpm, the dt-weighted mean over the same segments; null when unavailable." }
+        hr_source: { type: string, nullable: true, description: "The session's stored hr_source (chest_strap, wrist_ppg or null); anything but chest_strap takes the wrist path." }
+        resting_hr_bpm: { $ref: "#/components/schemas/SessionLoadHrInput" }
+        max_hr_bpm: { $ref: "#/components/schemas/SessionLoadHrInput" }
+        threshold_hr_bpm: { $ref: "#/components/schemas/SessionLoadHrInput" }
+        sex: { $ref: "#/components/schemas/SessionLoadSexInput" }
+    SessionLoad:
+      type: object
+      description: >
+        GET /sessions/{id}/load: the training load of one session, HR-TRIMP
+        first (F017), as saved at its upload. Computed once, in the upload's
+        own transaction, from the session's own file values (else the HR
+        anchors in effect at upload) and saved with every value used; a later
+        anchor change moves nothing, and the load is recomputed only by delete
+        and re-upload. The route serves the saved body and reads no anchor.
+      required: [session_id, sport, session_load, flags, input_flags, metrics, inputs]
+      properties:
+        session_id: { type: string }
+        sport: { type: string }
+        session_load: { $ref: "#/components/schemas/SessionLoadValue" }
+        flags:
+          type: array
+          items: { type: string, enum: [wrist_hr, sex_defaulted] }
+          description: "wrist_hr on every running session whose hr_source is not chest_strap, whatever the outcome; sex_defaulted when TRIMP was computed with the men's pair for want of a sex value."
+        input_flags:
+          type: array
+          items: { type: string }
+          description: "F013's feature flags and the session's stored quality_flags, passed through, each at most once."
+        metrics: { $ref: "#/components/schemas/SessionLoadMetrics" }
+        inputs:
+          allOf: [ { $ref: "#/components/schemas/SessionLoadInputs" } ]
+          description: "The values used and their sources, reported under every gate, gates 1 and 2 included."

@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "The resting, max and threshold HR and sex anchors under the ordering rule, each with its version.",
+        "The values used and their sources, reported under every gate, gates 1 and 2 included.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "The sex anchor's latest entry, `unspecified` included.",
+        "The values used and their sources, reported under every gate, gates 1 and 2 included.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

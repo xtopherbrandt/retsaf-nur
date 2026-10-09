@@ -904,3 +904,59 @@ def update_me(update: AthleteProfileUpdate) -> Athlete:
         return _athlete(conn)
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/load (F017)
+#
+# Appended below the earlier routes with its own imports, as the features and
+# profile routes are, so the lines cited above stay in place.
+# ---------------------------------------------------------------------------
+import json
+
+from runcoach_api.schemas import SessionLoad
+
+
+def _read_saved_load(conn, session_id: str) -> dict | None:
+    """The body ``db._save_session_load`` wrote for the session at its upload, JSON-decoded, or
+    ``None`` when the store holds no load for that id. One SELECT on the saved-load table
+    (``db.SESSION_LOADS_TABLE``); no anchor and no session row is read."""
+    row = conn.execute(
+        f"SELECT body FROM {db.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return None if row is None else json.loads(row["body"])
+
+
+@app.get(
+    "/sessions/{session_id}/load",
+    response_model=SessionLoad,
+    operation_id="getSessionLoad",
+    tags=["Sessions"],
+)
+def get_session_load(session_id: str) -> SessionLoad:
+    """The session's training load, HR-TRIMP first, as saved at its upload (F017).
+
+    The body is the one ``db._save_session_load`` computed and wrote inside
+    the upload's transaction, with every value used; the route serves it
+    unchanged and reads no anchor (user rulings C1-C3, 2026-10-08), so a
+    later ``PATCH /me`` or a later upload that moves an anchor changes
+    nothing here, and a corrupted anchor version log that makes ``GET /me``
+    a 500 leaves this route a 200. Nothing is computed and nothing is
+    written: the connection is opened and closed inline, as the features
+    route does.
+
+    An unknown ``session_id`` is the 404 ``get_session`` raises, with the same
+    message, and so is a read after ``DELETE /sessions/{id}``, which removes
+    the saved load with the session. A session stored before loads were saved
+    has none until the store's one-time fill at startup has run, and reads as
+    the same 404 until then.
+    """
+    conn = db.get_connection()
+    try:
+        body = _read_saved_load(conn, session_id)
+    finally:
+        conn.close()
+
+    if body is None:
+        raise HTTPException(404, f"session {session_id} not found")
+    return SessionLoad(**body)
