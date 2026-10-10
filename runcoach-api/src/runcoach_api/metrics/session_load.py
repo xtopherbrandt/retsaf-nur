@@ -67,7 +67,8 @@ that passes gate 7 is usable, so the reference step after TRIMP withholds
 ``session_load`` there only as ``not_representable``. Gate comparisons are on
 exact integers (Python compares an int of any size with a float exactly, so
 the average HR against ``10**400`` is a comparison, not a conversion); a value
-becomes a float only in gate 9's checks and the formula step.
+becomes a float only in gate 9's checks, the formula step and the reference
+step's span check.
 ``SERVED_REASONS`` lists every reason this module writes, in the reference's
 order.
 

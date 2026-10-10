@@ -29,7 +29,9 @@ gate 9 on the wrist path); and ``hr_source`` ``chest_strap``, ``wrist_ppg``,
 null and an unknown string, each under a threshold the average sits above.
 Only ``chest_strap`` escapes the wrist path; a non-running wrist session is
 refused by gate 1 and carries no flag, as the reference's flag rule names
-running sessions.
+running sessions. One row, a wrist threshold whose span with resting collapses
+in float, was added at review with the 2026-10-09 ruling; it tests the
+reference step after TRIMP, not gates 7-8.
 """
 
 from __future__ import annotations
@@ -266,6 +268,7 @@ ADVERSARIAL_ROWS = [
     ("unknown_source_at_threshold", {"hr_source": "optical_armband", "threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
     ("unknown_source_without_threshold", {"hr_source": "optical_armband", "threshold": None}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
     ("empty_string_source_below_threshold", {"hr_source": "", "threshold": 151}, None, None, True),
+    # added at review with the 2026-10-09 ruling; it tests the reference step, not gates 7-8:
     # a threshold that passes gate 7 as an integer but is one float with resting: only session_load is withheld
     (
         "wrist_threshold_span_collapsed_in_float_is_not_representable",
