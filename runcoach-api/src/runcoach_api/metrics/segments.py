@@ -169,21 +169,40 @@ def screen(rows: Iterable[Mapping[str, object]]) -> list[ScreenedRecord]:
     return out
 
 
-def _segment(k: int, start: ScreenedRecord, end: ScreenedRecord) -> Segment:
-    dt = end.t - start.t
+class Contribution(NamedTuple):
+    """What one segment adds to the recorded-time base: the rule of the module docstring, point 2."""
+
+    counted: bool  # 0 < dt <= SEGMENT_MAX_DT_S
+    contributed_m: float  # max(dd, 0) when counted and both distances present, else 0.0
+    regressed: bool  # counted, both present, dd < 0
+
+
+def _contribution(dt: float, d0: float | None, d1: float | None) -> Contribution:
+    """The one per-segment rule. ``_segment`` and ``recorded_totals`` both call it; nothing restates it.
+
+    ``dt`` is the segment's duration and ``d0``, ``d1`` the screened distances
+    at its two ends. Whether the segment is a break (``dt > SEGMENT_MAX_DT_S``)
+    is left to ``_segment``: a break and a ``dt = 0`` duplicate both contribute
+    nothing here, and only the per-segment view tells them apart.
+    """
     counted = 0.0 < dt <= SEGMENT_MAX_DT_S
-    is_break = dt > SEGMENT_MAX_DT_S
     contributed_m = 0.0
     regressed = False
-    if counted and start.distance is not None and end.distance is not None:
-        dd = end.distance - start.distance
+    if counted and d0 is not None and d1 is not None:
+        dd = d1 - d0
         regressed = dd < 0.0
         contributed_m = max(dd, 0.0)
+    return Contribution(counted, contributed_m, regressed)
+
+
+def _segment(k: int, start: ScreenedRecord, end: ScreenedRecord) -> Segment:
+    dt = end.t - start.t
+    counted, contributed_m, regressed = _contribution(dt, start.distance, end.distance)
     return Segment(
         k=k,
         dt=dt,
         counted=counted,
-        is_break=is_break,
+        is_break=dt > SEGMENT_MAX_DT_S,
         contributed_m=contributed_m,
         regressed=regressed,
         v_actual=contributed_m / dt if counted else None,
@@ -210,3 +229,38 @@ def build_time_base(records: Sequence[ScreenedRecord]) -> TimeBase:
         D=D,
         distance_regressed=any(seg.regressed for seg in segments),
     )
+
+
+# The record columns ``recorded_totals`` reads. A caller that selects columns
+# for it selects these; a rule that needs another input widens this tuple in
+# the same change as the rule, so the reader and the rule cannot drift apart.
+TOTALS_COLUMNS = ("t", "distance")
+
+
+def recorded_totals(rows: Iterable[Mapping[str, object]]) -> tuple[float, float]:
+    """Recorded time ``T`` and distance ``D`` of ``rows``, exactly ``build_time_base(screen(rows))``'s.
+
+    The lean path for a page that lists many sessions and needs only the two
+    totals. It applies the same finite screen (a row without a finite ``t`` is
+    skipped, a non-finite distance is absent) and the same ``_contribution``
+    rule, accumulating in the same order as ``build_time_base`` with no
+    per-record dataclass, so the two sums are bit-identical, not merely close.
+    Rows are taken in the order given, as ``build_time_base`` takes records.
+    """
+    T = 0.0
+    D = 0.0
+    prev_t: float | None = None
+    prev_d: float | None = None
+    for row in rows:
+        t = _finite(_get(row, "t"))
+        if t is None:
+            continue
+        d = _finite(_get(row, "distance"))
+        if prev_t is not None:
+            dt = t - prev_t
+            counted, contributed_m, _regressed = _contribution(dt, prev_d, d)
+            if counted:
+                T += dt
+                D += contributed_m
+        prev_t, prev_d = t, d
+    return T, D
