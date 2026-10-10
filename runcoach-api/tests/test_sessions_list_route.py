@@ -228,12 +228,16 @@ def test_a_constructed_moving_gap_run_matches_features_to_1e_9() -> None:
 
 
 def test_a_tie_on_start_time_lists_the_larger_session_id_first_and_a_run_with_no_records_is_null() -> None:
-    first = _persist(_session(_iso(1), "device-a"))
-    second = _persist(_session(_iso(1), "device-b"))
+    """The tiebreak is pinned against its removal: the two tied sessions are persisted SMALLER id
+    first, so ``ORDER BY start_time DESC`` alone (insertion order inside the tie) would list them the
+    other way round. The insertion order is asserted, so the pin cannot go vacuous if the ids change."""
+    tied = sorted((_session(_iso(1), "device-a"), _session(_iso(1), "device-b")), key=lambda s: s.session_id)
+    smaller, larger = [_persist(session) for session in tied]
+    assert smaller < larger
     bare_run = _persist(_session(_iso(2), "device-c", sport="running"))
     with TestClient(app) as client:
         items = _list(client)["items"]
-    assert [item["session_id"] for item in items] == [bare_run, max(first, second), min(first, second)]
+    assert [item["session_id"] for item in items] == [bare_run, larger, smaller]
     assert all(items[0][number] is None for number in NUMBERS)
 
 
