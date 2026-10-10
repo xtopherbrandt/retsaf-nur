@@ -1207,3 +1207,49 @@ class LoadChart(BaseModel):
     days: list[LoadChartDay] = Field(
         description="Every local date from the later of `from` and `first_day` to `to`, in order, rest days included; empty when history has no day in the range."
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions (F019)
+#
+# Appended below the earlier models, as the load chart's are, so the lines
+# cited by number stay in place.
+# ---------------------------------------------------------------------------
+
+
+class SessionSummary(BaseModel):
+    """One row of GET /sessions (F019): the list-view projection of a stored session.
+
+    duration_s, distance_m and avg_pace_s_per_km are the quantities
+    SessionFeatures serves under the same names (recorded time, not elapsed),
+    computed on read by the same segment rule over the session's records.
+    They are null for a session not stored as running, for a run whose
+    records count no segment, and for a row whose records could not be read
+    (user ruling 2026-10-09: such a session lists with blanks, and the page
+    is still served).
+    """
+
+    session_id: str
+    start_time: str = Field(description="As stored: ISO 8601 in UTC with a +00:00 offset, never re-spelt.")
+    sport: str = Field(description="The canonical sport as stored: `running` or `other`.")
+    activity_tag: str | None = Field(description="As stored.")
+    name: str | None = Field(
+        description="The name saved at upload (the FIT workout name, else the activity profile name); for a session stored before the name column existed, the profile name saved in its context, else null."
+    )
+    distance_m: float | None = Field(description="D: the sum of max(dd, 0) over counted segments; null when D is 0.")
+    duration_s: float | None = Field(description="Recorded time T: the sum of dt over counted segments; null when T is 0.")
+    avg_pace_s_per_km: float | None = Field(description="1000 * T / D; null when D is 0.")
+    quality_flags: list[str] = Field(description="As stored.")
+    workout_id: str | None = Field(description="Always null: no planned workout is linked.")
+
+
+class SessionPage(BaseModel):
+    """GET /sessions: the cursor-paged envelope (the contract's Page), newest first."""
+
+    items: list[SessionSummary] = Field(
+        description="Ordered by start_time descending, ties by session_id descending."
+    )
+    next_cursor: str | None = Field(
+        None,
+        description="Pass as `since` for the next page: URL-safe base64 of the last row's start_time and session_id. Null on the last page, so no page is ever empty but the first page of an empty store.",
+    )

@@ -221,6 +221,9 @@ _SCHEMA_DDL = """
       session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
       load_value REAL, load_reason TEXT, body TEXT NOT NULL
     );
+    -- F019: the list reads one session's (t, distance) in t order for every
+    -- row of a page; without this each read scanned the whole records table.
+    CREATE INDEX IF NOT EXISTS records_session_id_t ON records (session_id, t);
 """
 
 # The entered-values table's name, for callers and tests that address it.
@@ -743,10 +746,10 @@ def read_hrv_rows(conn: sqlite3.Connection, start_iso: str, end_iso: str) -> lis
     its response, the unserved inputs being PRIN-12's OPEN exceptions
     (PRIN-24, PRIN-27). Selection is the consumer's decision.
 
-    No index serves this scan -- the only composite index is
-    ``UNIQUE (source_device, start_time)``, whose leading column is not
-    ``start_time`` -- which is irrelevant at single-athlete scale and noted so
-    nobody adds a speculative one.
+    No index serves this scan: the composite indexes are ``UNIQUE
+    (source_device, start_time)`` and the list's ``records (session_id, t)``,
+    neither led by ``start_time`` -- irrelevant at single-athlete scale and
+    noted so nobody adds a speculative one.
     """
     cur = conn.execute(
         """
@@ -1290,3 +1293,81 @@ def read_session_load_body(conn: sqlite3.Connection, session_id: str) -> dict | 
 def session_exists(conn: sqlite3.Connection, session_id: str) -> bool:
     """Whether the ``sessions`` table holds ``session_id``: one SELECT, no ``BEGIN``, nothing else read."""
     return conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone() is not None
+
+
+# ---------------------------------------------------------------------------
+# F019: the session list
+#
+# Appended below the earlier readers with its own import, as the load
+# readers are, so the lines cited above stay in place.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics.segments import TOTALS_COLUMNS as _TOTALS_COLUMNS
+
+
+def read_session_page(
+    conn: sqlite3.Connection, *, limit: int, before: tuple[str, str] | None = None
+) -> list[dict]:
+    """Up to ``limit + 1`` session rows for ``GET /sessions``, newest first (F019 AC1, AC3).
+
+    Ordered by ``start_time`` descending then ``session_id`` descending, the
+    order the list serves. ``before`` is the last served row's stored
+    ``(start_time, session_id)``: only rows after it in that order are
+    returned, a keyset rather than an offset, so a session inserted or
+    deleted between two pages repeats or skips nothing. The extra row says
+    whether a next page exists; ``metrics.session_list.page`` drops it. One
+    statement, no ``BEGIN``. Each row carries ``session_id``, ``start_time``,
+    ``sport``, ``activity_tag``, ``name``, ``quality_flags`` (JSON-decoded,
+    ``[]`` when null) and ``context`` (JSON-decoded, ``{}`` when null).
+
+    Raises ``ValueError`` naming the column when ``sessions`` lacks one the
+    select names (a store that has not been through ``init_schema`` since
+    the ``name`` column was added), so the route can serve the named 500
+    ``get_me`` serves. Every other ``sqlite3.OperationalError`` (a store with
+    no tables) passes through as the bare 500 every route gives.
+    """
+    where = ""
+    params: dict[str, object] = {"limit": limit + 1}
+    if before is not None:
+        where = "WHERE start_time < :st OR (start_time = :st AND session_id < :sid)"
+        params["st"], params["sid"] = before
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT session_id, start_time, sport, activity_tag, name, quality_flags, context
+            FROM sessions {where}
+            ORDER BY start_time DESC, session_id DESC
+            LIMIT :limit
+            """,
+            params,
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such column" in str(exc):
+            raise ValueError(str(exc)) from exc
+        raise
+    return [
+        {
+            "session_id": r["session_id"],
+            "start_time": r["start_time"],
+            "sport": r["sport"],
+            "activity_tag": r["activity_tag"],
+            "name": r["name"],
+            "quality_flags": _json_load(r["quality_flags"], default=[]),
+            "context": _json_load(r["context"], default={}) or {},
+        }
+        for r in rows
+    ]
+
+
+def read_session_totals_rows(conn: sqlite3.Connection, session_id: str) -> list[sqlite3.Row]:
+    """The ``segments.TOTALS_COLUMNS`` rows of one session for ``segments.recorded_totals`` (F019 AC6).
+
+    ``ORDER BY t, rowid``, exactly as ``read_session_feature_inputs`` orders the
+    records the features route reads, so the two paths see one row order and
+    their totals agree. Served by the ``records (session_id, t)`` index. The
+    caller skips a session not stored as running; its numbers are null
+    without a read. Read-only, no ``BEGIN``.
+    """
+    columns = ", ".join(_TOTALS_COLUMNS)
+    return conn.execute(
+        f"SELECT {columns} FROM records WHERE session_id = ? ORDER BY t, rowid", (session_id,)
+    ).fetchall()

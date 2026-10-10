@@ -1037,3 +1037,80 @@ def get_load_chart(
     ]
     seed = None if chart.seed is None else LoadChartSeed.model_validate(dataclasses.asdict(chart.seed))
     return LoadChart(timezone=zone.key, today=today, first_day=chart.first_day, seed=seed, days=days)
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions (F019)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics import session_list
+from runcoach_api.schemas import SessionPage, SessionSummary
+
+
+@app.get("/sessions", response_model=SessionPage, operation_id="listSessions", tags=["Sessions"])
+def list_sessions(
+    since: str | None = Query(None),  # noqa: B008 -- FastAPI's parameter idiom
+    limit: int = Query(50, ge=1, le=200),  # noqa: B008
+) -> SessionPage:
+    """The stored sessions, newest first, keyset-paged (F019), on the contract's path
+    (``operationId: listSessions``).
+
+    ``db.read_session_page`` reads one page of ``limit`` rows plus one, ordered
+    by ``start_time`` descending then ``session_id`` descending, after the row
+    ``since`` names; ``metrics.session_list.page`` drops the extra row and
+    builds ``next_cursor`` from the last served one, null on the last page.
+    ``limit`` outside 1..200, or not an integer, is pydantic's 422. A ``since``
+    that ``session_list.decode_cursor`` refuses is a ``RequestValidationError``
+    with ``loc ("query", "since")``, as ``update_me`` raises its clock check,
+    so the body is FastAPI's default ``{detail: [...]}``.
+
+    Each running row's three numbers are ``segments.recorded_totals`` over
+    the ``(t, distance)`` records ``db.read_session_totals_rows`` reads
+    through the ``records (session_id, t)`` index; a row of any other sport
+    reads no records. Only that per-row computation is wrapped: any exception
+    in it serves the row with its three numbers null (user ruling 2026-10-09),
+    and never the page as an error. The session query itself is not wrapped:
+    a store whose ``sessions`` table lacks the ``name`` column (startup not
+    run since it was added) is the named 500 ``get_me`` serves, and a store
+    with no tables is the bare 500 every route gives. Nothing is written.
+    """
+    before = None
+    if since is not None:
+        try:
+            before = session_list.decode_cursor(since)
+        except ValueError as exc:
+            raise RequestValidationError(
+                [{"type": "value_error", "loc": ("query", "since"), "msg": f"Value error, {exc}", "input": since}]
+            ) from exc
+
+    conn = db.get_connection()
+    try:
+        try:
+            rows = db.read_session_page(conn, limit=limit, before=before)
+        except ValueError as exc:
+            raise HTTPException(
+                500, f"the session store is out of step ({exc}); restart the API, whose startup repairs it"
+            ) from exc
+        served, next_cursor = session_list.page(rows, limit)
+        items = [SessionSummary(**session_list.summary_row(row, _summary_numbers(conn, row))) for row in served]
+    finally:
+        conn.close()
+    return SessionPage(items=items, next_cursor=next_cursor)
+
+
+def _summary_numbers(conn, row: dict) -> dict[str, float | None]:
+    """The three numbers of one listed session, or three nulls.
+
+    A session not stored as running reads no records. For a running one the
+    records read and the totals are the AC5 seam: whatever they raise, the row
+    lists with blanks rather than failing the page.
+    """
+    if row["sport"] != session_features.RUNNING:
+        return dict(session_list.NO_NUMBERS)
+    try:
+        T, D = session_list.recorded_totals(db.read_session_totals_rows(conn, row["session_id"]))
+    except Exception:  # noqa: BLE001 -- the ruling: a row that cannot be computed lists blank
+        return dict(session_list.NO_NUMBERS)
+    return session_list.summary_numbers(T, D)

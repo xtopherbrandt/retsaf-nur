@@ -65,7 +65,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "in order, rest days included; empty when history has no day in the range.",
+        "so no page is ever empty but the first page of an empty store.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
