@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-09 — Sprint 014: saved session load and the load chart
+
 ### Added
 
 F017: `GET /sessions/{session_id}/load` serves a stored session's training load (spec/03 section
@@ -28,7 +30,8 @@ refused at or above the usable threshold by average HR) and `not_representable` 
 that does not convert to a finite float, or a max - resting that is not a positive finite float);
 after TRIMP, `session_load` is `no_threshold_hr` or `threshold_order_conflict` without a usable
 threshold, or `not_representable` when threshold - resting collapses in float. `flags` carries
-`wrist_hr` and `sex_defaulted`. The operation is `getSessionLoad` in the contract.
+`wrist_hr` and `sex_defaulted`. The operation is `getSessionLoad` in the contract. A stored
+session with no saved load answers a 404 that says so, distinct from an unknown id.
 
 F018: `GET /metrics/load` serves the fitness, fatigue and form chart (spec/03 section 3.5): for
 each local date in `athlete_timezone` from the first running session to today, the day's `load` (the
