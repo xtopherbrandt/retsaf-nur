@@ -333,21 +333,32 @@ def _invalid_bytes(field: FieldDef, big_endian: bool) -> bytes:
     return element * (field.size // len(element))
 
 
-def _span(data: bytes, start_s: float, end_s: float) -> tuple[list[Record], list[Record]]:
-    """``(every record of the walk, the record data messages in the span)``.
+def _record_timestamps(data: bytes) -> tuple[list[Record], list[tuple[Record, int]]]:
+    """``(every record of the walk, [(record data message, its timestamp in FIT seconds)])`` in file order.
 
-    The span is ``[start_s, end_s)`` seconds after the first record message's
-    timestamp (field 253, a ``uint32`` of FIT seconds), in file order.
+    The timestamp is field 253, a ``uint32`` of FIT seconds.
     """
     records = walk(data)
-    found = []
-    first: int | None = None
+    stamped = []
     for record in _data_records(records, RECORD_MESSAGE):
         offset, field = _field_offset(record, TIMESTAMP_FIELD)
         if field.size != 4:
             raise FitPatchError(f"record at offset {record.offset} has a timestamp of {field.size} bytes")
         order = ">" if record.definition.big_endian else "<"
-        timestamp = struct.unpack_from(order + "I", data, offset)[0]
+        stamped.append((record, struct.unpack_from(order + "I", data, offset)[0]))
+    return records, stamped
+
+
+def _span(data: bytes, start_s: float, end_s: float) -> tuple[list[Record], list[Record]]:
+    """``(every record of the walk, the record data messages in the span)``.
+
+    The span is ``[start_s, end_s)`` seconds after the first record message's
+    timestamp, in file order.
+    """
+    records, stamped = _record_timestamps(data)
+    found = []
+    first: int | None = None
+    for record, timestamp in stamped:
         if first is None:
             first = timestamp
         if start_s <= timestamp - first < end_s:
@@ -383,19 +394,6 @@ def _without(data: bytes, records: list[Record], dropped: set[int]) -> bytes:
             buf += data[r.offset : r.offset + r.length]
     buf += b"\x00\x00"
     return finalize(buf)
-
-
-def _record_timestamps(data: bytes) -> tuple[list[Record], list[tuple[Record, int]]]:
-    """``(every record of the walk, [(record data message, its timestamp in FIT seconds)])`` in file order."""
-    records = walk(data)
-    stamped = []
-    for record in _data_records(records, RECORD_MESSAGE):
-        offset, field = _field_offset(record, TIMESTAMP_FIELD)
-        if field.size != 4:
-            raise FitPatchError(f"record at offset {record.offset} has a timestamp of {field.size} bytes")
-        order = ">" if record.definition.big_endian else "<"
-        stamped.append((record, struct.unpack_from(order + "I", data, offset)[0]))
-    return records, stamped
 
 
 def decimate_records(data: bytes, every: int) -> bytes:
