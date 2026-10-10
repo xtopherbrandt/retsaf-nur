@@ -36,6 +36,16 @@ written into ``tests/fixtures/``.
 - ``drop_records(data, start_s, end_s)`` drops every ``record`` data message
   in that span. Every other message, the ``session`` and ``lap`` messages
   included, keeps its bytes, so ``total_timer_time`` is unchanged.
+- ``decimate_records(data, every)`` keeps the first ``record`` data message
+  and every ``every``-th one after it in file order; the rest are dropped.
+  ``decimate_records_randomly(data, low_s, high_s, seed)`` keeps the first
+  record, then each time the first record whose ``timestamp`` is at least a
+  seeded ``random.Random(seed).randint(low_s, high_s)`` seconds past the
+  last kept one. Neither forces the last record. Both leave every other
+  message in place, as ``drop_records`` does, so the decimated copy keeps
+  its ``session`` message, ``start_time`` and devices: uploaded beside the
+  original it is a duplicate. A decimated copy is a constructed sparse
+  recording, not a smart-recorded file (IDEA-129 owns a real one).
 
 Refused with ``FitPatchError``: a source whose file CRC does not match (so a
 corrupted file is never laundered into a CRC-valid one), a compressed-
@@ -46,8 +56,9 @@ the first message's definition does not carry, a value that does not fit
 the field (for a string, its UTF-8 bytes plus the terminating NUL), a string
 field asked of a non-string field, a string value that is neither ``str``
 nor ``None`` or that holds a NUL byte, a record span that holds no record message (an empty or reversed
-span included), a record message without a timestamp, and a record message
-in the span whose definition does not carry the field to blank.
+span included), a record message without a timestamp, a record message
+in the span whose definition does not carry the field to blank, a decimation
+step under 1, and a random spacing whose bounds are not ``1 <= low_s <= high_s``.
 
 **A moved start time leaves the records where they were.** Setting
 ``session.start_time`` on ``dev_fields_run.fit`` to ``sample_run.fit``'s start
@@ -59,6 +70,7 @@ is expected of this patch, not a fault in it.
 from __future__ import annotations
 
 import math
+import random
 import struct
 from typing import NamedTuple
 
@@ -359,7 +371,11 @@ def blank_record_field(data: bytes, field_num: int, start_s: float, end_s: float
 def drop_records(data: bytes, start_s: float, end_s: float) -> bytes:
     """Drop every record message in the span; every other record keeps its bytes."""
     records, in_span = _span(data, start_s, end_s)
-    dropped = {r.offset for r in in_span}
+    return _without(data, records, {r.offset for r in in_span})
+
+
+def _without(data: bytes, records: list[Record], dropped: set[int]) -> bytes:
+    """``data`` with the records at the ``dropped`` offsets left out, CRCs and header rewritten."""
     header_size = data[0]
     buf = bytearray(data[:header_size])
     for r in records:
@@ -367,6 +383,58 @@ def drop_records(data: bytes, start_s: float, end_s: float) -> bytes:
             buf += data[r.offset : r.offset + r.length]
     buf += b"\x00\x00"
     return finalize(buf)
+
+
+def _record_timestamps(data: bytes) -> tuple[list[Record], list[tuple[Record, int]]]:
+    """``(every record of the walk, [(record data message, its timestamp in FIT seconds)])`` in file order."""
+    records = walk(data)
+    stamped = []
+    for record in _data_records(records, RECORD_MESSAGE):
+        offset, field = _field_offset(record, TIMESTAMP_FIELD)
+        if field.size != 4:
+            raise FitPatchError(f"record at offset {record.offset} has a timestamp of {field.size} bytes")
+        order = ">" if record.definition.big_endian else "<"
+        stamped.append((record, struct.unpack_from(order + "I", data, offset)[0]))
+    return records, stamped
+
+
+def decimate_records(data: bytes, every: int) -> bytes:
+    """Keep the first record message and every ``every``-th one after it; drop the rest.
+
+    ``every = 1`` keeps every record. The kept set is by position in file
+    order, not by time, so across a pause the kept records sit further apart
+    in time than ``every`` seconds on a 1 Hz file, and the records after the
+    last kept one (fewer than ``every``) are dropped.
+    """
+    if not isinstance(every, int) or every < 1:
+        raise FitPatchError(f"decimation step {every!r} is not a whole number of at least 1")
+    records, stamped = _record_timestamps(data)
+    kept = {record.offset for i, (record, _) in enumerate(stamped) if i % every == 0}
+    return _without(data, records, {record.offset for record, _ in stamped} - kept)
+
+
+def decimate_records_randomly(data: bytes, low_s: int, high_s: int, seed: int) -> bytes:
+    """Keep records at a seeded random spacing of ``low_s`` to ``high_s`` seconds; drop the rest.
+
+    The first record is kept. After each kept record a spacing is drawn with
+    ``random.Random(seed).randint(low_s, high_s)`` and the next record whose
+    timestamp is at least that many seconds past the kept one is kept too; the
+    records after the last kept one, closer than the spacing drawn, are
+    dropped. The same ``seed`` on the same bytes always keeps the same records.
+    """
+    if not (isinstance(low_s, int) and isinstance(high_s, int)) or not 1 <= low_s <= high_s:
+        raise FitPatchError(f"random spacing bounds {low_s!r}..{high_s!r} are not 1 <= low_s <= high_s")
+    records, stamped = _record_timestamps(data)
+    rng = random.Random(seed)
+    kept = {stamped[0][0].offset}
+    last_kept = stamped[0][1]
+    spacing = rng.randint(low_s, high_s)
+    for record, timestamp in stamped[1:]:
+        if timestamp - last_kept >= spacing:
+            kept.add(record.offset)
+            last_kept = timestamp
+            spacing = rng.randint(low_s, high_s)
+    return _without(data, records, {record.offset for record, _ in stamped} - kept)
 
 
 def with_big_endian_definitions(data: bytes, global_num: int) -> bytes:

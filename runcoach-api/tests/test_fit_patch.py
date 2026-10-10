@@ -23,6 +23,17 @@ Patched bytes stay in memory. Nothing here writes into ``tests/fixtures/``.
   and a value holding a NUL byte are refused.
 - **Unknown targets.** A message number the file does not hold, or a field
   its definition does not carry, raises.
+- **Decimation.** ``decimate_records`` keeps the first record and every k-th
+  after it (the tail after the last kept one, fewer than k records, is
+  dropped), and the kept records are the original's, field for field; every
+  non-record message keeps its count and bytes, the ``session`` message
+  included. ``decimate_records_randomly`` keeps records 6 to 8 s apart on
+  ``sample_run`` (every kept-to-kept step at least 6 s and at most 8 s plus
+  the file's own largest irregular step of 2 s, all three spacings drawn,
+  the first record kept, the last kept one under 8 s before the last), is the
+  same set for the same seed and a different set for another, and never
+  fabricates a record. A step under 1
+  and reversed or zero spacing bounds are refused.
 - **Smoke upload.** The ``dev_fields_run`` patched to ``sample_run``'s start
   time is accepted by ``POST /sessions``.
 
@@ -375,6 +386,90 @@ def test_set_string_field_refuses_a_non_string_field() -> None:
 def test_set_string_field_refuses_a_non_string_value() -> None:
     with pytest.raises(fit_patch.FitPatchError, match="str or None"):
         fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, 5)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# decimation
+# ---------------------------------------------------------------------------
+
+RECORD = 20
+
+
+def _record_timestamps(messages: list) -> list[int]:
+    return [m.get_raw_value("timestamp") for m in messages if m.global_mesg_num == RECORD]
+
+
+def _records_only(values: list[tuple[int, list]]) -> list[tuple[int, list]]:
+    return [m for m in values if m[0] == RECORD]
+
+
+def _non_records(values: list[tuple[int, list]]) -> list[tuple[int, list]]:
+    return [m for m in values if m[0] != RECORD]
+
+
+@pytest.mark.parametrize("every", [1, 7], ids=["every_1", "every_7"])
+def test_decimate_keeps_the_first_and_every_kth_record(every: int) -> None:
+    raw = _raw("sample_run.fit")
+    _, before = _decode(raw)
+    records_before = _records_only(_field_values(before))
+
+    patched = fit_patch.decimate_records(raw, every)
+
+    _assert_header_rewritten(patched)
+    _, after = _decode(patched)
+    expected_positions = list(range(0, len(records_before), every))
+    print(f"sample_run every {every}: {len(records_before)} records -> {len(_record_timestamps(after))}, "
+          f"expected {len(expected_positions)}, last kept position {expected_positions[-1]} of {len(records_before) - 1}")
+    assert expected_positions[-1] <= len(records_before) - 1 < expected_positions[-1] + every
+    assert _records_only(_field_values(after)) == [records_before[i] for i in expected_positions]
+    assert _non_records(_field_values(after)) == _non_records(_field_values(before))
+    if every == 1:
+        assert patched == raw
+
+
+def test_decimate_randomly_spaces_kept_records_six_to_eight_seconds_apart() -> None:
+    raw = _raw("sample_run.fit")
+    _, before = _decode(raw)
+    stamps_before = _record_timestamps(before)
+    # sample_run is 1 Hz but for one 2 s and one 3 s step, so a kept-to-kept step can overshoot the
+    # drawn spacing by at most 2 s (the first record at or past the spacing is kept).
+    overshoot = max(b - a for a, b in itertools.pairwise(stamps_before)) - 1
+    assert overshoot == 2
+
+    patched = fit_patch.decimate_records_randomly(raw, 6, 8, seed=1)
+    again = fit_patch.decimate_records_randomly(raw, 6, 8, seed=1)
+    other = fit_patch.decimate_records_randomly(raw, 6, 8, seed=2)
+
+    _assert_header_rewritten(patched)
+    _, after = _decode(patched)
+    stamps = _record_timestamps(after)
+    steps = collections.Counter(b - a for a, b in itertools.pairwise(stamps))
+    print(f"sample_run seed 1: {len(stamps_before)} records -> {len(stamps)}; steps {dict(sorted(steps.items()))}; "
+          f"last kept {stamps_before[-1] - stamps[-1]} s before the last record")
+    assert stamps[0] == stamps_before[0]
+    assert 0 <= stamps_before[-1] - stamps[-1] < 8
+    assert min(steps) >= 6 and max(steps) <= 8 + overshoot
+    assert {6, 7, 8} <= set(steps)
+    assert sum(v for k, v in steps.items() if k > 8) <= 2
+    kept = _records_only(_field_values(after))
+    assert all(m in _records_only(_field_values(before)) for m in kept)
+    assert _non_records(_field_values(after)) == _non_records(_field_values(before))
+    assert again == patched
+    assert _record_timestamps(_decode(other)[1]) != stamps
+
+
+@pytest.mark.parametrize(
+    ("call", "match"),
+    [
+        (lambda raw: fit_patch.decimate_records(raw, 0), "at least 1"),
+        (lambda raw: fit_patch.decimate_records_randomly(raw, 8, 6, 1), "low_s <= high_s"),
+        (lambda raw: fit_patch.decimate_records_randomly(raw, 0, 6, 1), "low_s <= high_s"),
+    ],
+    ids=["step_0", "reversed_bounds", "zero_low"],
+)
+def test_decimation_refuses_a_bad_step_or_bounds(call, match: str) -> None:
+    with pytest.raises(fit_patch.FitPatchError, match=match):
+        call(_raw("sample_run.fit"))
 
 
 # ---------------------------------------------------------------------------
