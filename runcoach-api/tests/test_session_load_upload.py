@@ -37,7 +37,9 @@ import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
 from runcoach_api.ingestion import mapping, pipeline
+from runcoach_api.ingestion.mapping import derive_session_id
 from runcoach_api.main import app
+from runcoach_api.models import Session
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SUPPORT = Path(__file__).parent / "support"
@@ -221,6 +223,56 @@ def test_a_cycling_upload_saves_sport_not_running() -> None:
     assert body["session_load"] == {"value": None, "unavailable": "sport_not_running", "driver": None}
     assert (load_value, load_reason) == (None, "sport_not_running")
     assert body["inputs"]["max_hr_bpm"]["value"] == 188
+
+
+# --- gate 2 on a stored session: the tag reaches the saved body through the db read --------------
+
+
+def test_a_stored_health_snapshot_tagged_run_saves_declared_capture(
+    persist_sessions, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A running session stored with ``activity_tag`` ``health_snapshot`` goes through
+    ``db.persist`` and so ``_save_session_load``, which reads the tag back from the
+    ``sessions`` row (``read_session_load_inputs``) rather than from the object in memory.
+    The session carries no records, so with the tag lost the load would read gate 3's
+    ``no_hr`` instead of gate 2's ``declared_capture``."""
+    session = Session(
+        session_id=derive_session_id("fr945", "2026-10-01T07:00:00Z"),
+        sport="running",
+        source_vendor="garmin",
+        start_time="2026-10-01T07:00:00Z",
+        source_device="fr945",
+        activity_tag="health_snapshot",
+    )
+    saved_for: list[str] = []
+    real_save = db._save_session_load
+
+    def spy(conn, session_id, *, resolved=None):
+        saved_for.append(session_id)
+        real_save(conn, session_id, resolved=resolved)
+
+    with monkeypatch.context() as m:
+        m.setattr(db, "_save_session_load", spy)
+        persist_sessions([session])
+    assert saved_for == [session.session_id]
+
+    conn = db.get_connection()
+    try:
+        stored_tag = conn.execute(
+            "SELECT activity_tag FROM sessions WHERE session_id = ?", (session.session_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    load_value, load_reason, body = _saved(session.session_id)
+    print(f"stored tag {stored_tag}: saved {(load_value, load_reason)}, metrics {body['metrics']}")
+    assert stored_tag == "health_snapshot"
+    assert body["sport"] == "running"
+    assert body["session_load"] == {"value": None, "unavailable": "declared_capture", "driver": None}
+    assert body["metrics"]["hr_trimp"]["value"] is None
+    assert body["metrics"]["hr_trimp"]["unavailable"] == "declared_capture"
+    assert body["metrics"]["rtss"] == {"value": None, "unavailable": "declared_capture"}
+    assert body["metrics"]["srpe"] == {"value": None, "unavailable": "declared_capture"}
+    assert (load_value, load_reason) == (None, "declared_capture")
 
 
 # --- AC8: the forced fault rolls the whole upload back ------------------------------------------
