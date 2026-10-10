@@ -2460,7 +2460,7 @@ components:
       description: "Every value the load was computed from, saved with it: the time basis and the four HR values used with their sources."
       required: [hr_time_s, recorded_time_s, timer_time_s, hr_time_fraction, avg_hr_bpm, hr_source, resting_hr_bpm, max_hr_bpm, threshold_hr_bpm, sex]
       properties:
-        hr_time_s: { type: number, description: "Running time with usable HR: the sum of dt over counted segments (0 < dt <= 5 s) whose start HR is present, above 0 and not cadence_lock. A pause adds nothing; nothing is imputed." }
+        hr_time_s: { type: number, description: "Running time with usable HR: the sum of dt over counted segments (a stride of 0 < dt <= 5 s, or a moving gap over 5 s crossed at 0.5 m/s or more, which carries the HR at its start) whose start HR is present, above 0 and not cadence_lock. A stationary pause adds nothing; nothing is interpolated across a gap." }
         recorded_time_s: { type: number, nullable: true, description: "F013's duration_s, reported beside hr_time_s; null when unavailable." }
         timer_time_s: { type: number, nullable: true, description: "The FIT session.total_timer_time stored at ingest; null when the file carried none." }
         hr_time_fraction: { type: number, nullable: true, description: "hr_time_s / timer_time_s with no cut-off and no clamp (a full run reads within 0.01 of 1 on either side); null when timer_time_s is null or 0." }

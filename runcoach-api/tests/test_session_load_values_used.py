@@ -132,7 +132,7 @@ def _unavailable_block(reason: str) -> dict:
 def _oracle_mix(resting: int, max_hr: int, threshold: int, sex: str = "male") -> tuple[float, float, float]:
     """``(trimp, reference, session_load)`` for ``sample_run``'s HR time and average with these settings."""
     run = trimp_oracle.decode_run(FIXTURES / RUN)
-    hr_time_s, avg_hr = trimp_oracle.time_basis(run.records)
+    hr_time_s, avg_hr = trimp_oracle.time_basis(run.records, run.distances)
     span = float(max_hr - resting)
     value = trimp_oracle.trimp(hr_time_s / 60.0, (avg_hr - resting) / span, sex)
     reference = trimp_oracle.threshold_hour_reference((threshold - resting) / span, sex)

@@ -13,7 +13,10 @@ probe's ``-rA`` output shows the figures. Only fixtures with run proof ``yes``
 in ``fixtures/README.md`` are cited as runs
 (``.claude/rules/learnings/cite-only-real-activity-fixtures-as-proof.md``);
 all six carry their own resting, max, threshold and sex, so every HR input
-reads ``session_file``.
+reads ``session_file``. No fixture has a moving gap, so one row feeds the
+oracle ``sample_run`` with 60 records dropped mid-run: the oracle's own
+moving-gap branch (the gap counted at the HR of its start, IDEA-126) is what
+the saved body is compared with there.
 
 **The chaos row** patches ``db._save_session_load`` (the seam ``persist``
 calls after the anchor sync) to raise: the upload is a 500 and the store
@@ -158,6 +161,46 @@ def test_sample_run_saves_its_hr_trimp_at_upload(name: str) -> None:
     # The two columns mirror session_load.value and session_load.unavailable.
     assert load_value == body["session_load"]["value"]
     assert load_reason is None
+
+
+def test_the_oracle_carries_hr_across_a_patched_moving_gap(tmp_path: Path) -> None:
+    """No fixture has a moving gap, so this row is what exercises the oracle's gap branch: ``sample_run``
+    with records ``[1500, 1560)`` dropped has one 61 s segment crossed at running speed. The oracle,
+    by its own hand-written rule (IDEA-126, ruled 2026-10-10), counts it at the HR of its start, so its
+    ``hr_time_s`` equals the unpatched file's; the module's saved body agrees with it."""
+    raw = fit_patch.drop_records((FIXTURES / "sample_run.fit").read_bytes(), 1500, 1560)
+    patched_path = tmp_path / "sample_run_moving_gap.fit"
+    patched_path.write_bytes(raw)
+    unpatched = trimp_oracle.trimp_for_file(FIXTURES / "sample_run.fit")
+    oracle = trimp_oracle.trimp_for_file(patched_path)
+    run = trimp_oracle.decode_run(patched_path)
+    gaps = [
+        (t1 - t0, (d1 - d0) / (t1 - t0))
+        for (t0, _), (t1, _), d0, d1 in zip(run.records, run.records[1:], run.distances, run.distances[1:])
+        if t1 - t0 > 5.0
+    ]
+    with TestClient(app) as client:
+        base_id = _upload(client, "sample_run.fit")
+        _, _, base = _saved(base_id)
+        assert client.delete(f"/sessions/{base_id}").status_code == 204
+        session_id = _upload(client, "sample_run.fit", raw)
+        flags = client.get(f"/sessions/{session_id}/features").json()["flags"]
+    _, _, body = _saved(session_id)
+    print(
+        f"gaps over 5 s (dt, m/s) {gaps}; hr_time_s oracle {oracle.hr_time_s} unpatched {unpatched.hr_time_s} "
+        f"saved {body['inputs']['hr_time_s']} base {base['inputs']['hr_time_s']} | avg_hr oracle {oracle.avg_hr_bpm:.4f} "
+        f"saved {body['inputs']['avg_hr_bpm']:.4f} | trimp oracle {oracle.trimp:.4f} saved {body['metrics']['hr_trimp']['value']:.4f}"
+    )
+    assert session_id == base_id
+    assert len(gaps) == 1 and gaps[0][0] == 61.0 and gaps[0][1] >= 0.5
+    assert "moving_gap" in flags
+    assert oracle.hr_time_s == unpatched.hr_time_s == base["inputs"]["hr_time_s"]
+    assert body["inputs"]["hr_time_s"] == oracle.hr_time_s
+    assert body["inputs"]["hr_time_fraction"] == base["inputs"]["hr_time_fraction"]
+    assert body["inputs"]["avg_hr_bpm"] == pytest.approx(oracle.avg_hr_bpm, abs=TOLERANCE)
+    assert body["metrics"]["hr_trimp"]["value"] == pytest.approx(oracle.trimp, abs=TOLERANCE)
+    assert body["session_load"]["value"] == pytest.approx(oracle.session_load, abs=TOLERANCE)
+    assert body["session_load"]["driver"] == "hr_trimp"
 
 
 # --- AC2: hr_time_fraction on the full runs, no clamp ---------------------------------------------

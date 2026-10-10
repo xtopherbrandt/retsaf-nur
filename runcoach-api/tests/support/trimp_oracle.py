@@ -11,13 +11,19 @@ What it does, per file:
 
 - **records**: every ``record`` message with a timestamp, in timestamp order;
   ``t`` is seconds from the earliest record. HR is the decoded ``heart_rate``
-  (a FIT invalid decodes as ``None``).
+  (a FIT invalid decodes as ``None``); ``distances`` is the decoded
+  ``distance`` in metres per record, in the same order.
 - **time basis**: consecutive records form segments; a segment counts when
-  ``0 < dt <= 5`` s (a watch pause writes no records, so its gap is a break
-  and never counted); a counted segment is *usable* when the HR at its start
-  is present and > 0. ``hr_time_s`` is the sum of ``dt`` over usable
-  segments and ``avg_hr_bpm`` their ``dt``-weighted mean HR. A strap run
-  carries no ``cadence_lock`` tag, so the oracle does not model that tag.
+  ``0 < dt <= 5`` s, or when it is longer than 5 s and the distance advanced
+  across it at 0.5 m/s or more with both distances present (a *moving gap*,
+  IDEA-126 ruled 2026-10-10: the runner kept going while the watch wrote
+  nothing). A watch pause writes no records and its distance stands still,
+  so its gap is a break and never counted. A counted segment is *usable*
+  when the HR at its start is present and > 0; a moving gap is read at the
+  HR of its start, as every segment is, and nothing is interpolated.
+  ``hr_time_s`` is the sum of ``dt`` over usable segments and ``avg_hr_bpm``
+  their ``dt``-weighted mean HR. A strap run carries no ``cadence_lock``
+  tag, so the oracle does not model that tag.
 - **settings**: the first ``user_profile`` (``resting_heart_rate``,
   ``gender`` 0 female / 1 male) and the first ``zones_target``
   (``max_heart_rate``, ``threshold_heart_rate``); ``session.total_timer_time``
@@ -44,6 +50,7 @@ from pathlib import Path
 import fitdecode
 
 SEGMENT_MAX_DT_S = 5.0
+MOVING_GAP_MIN_SPEED_M_S = 0.5
 
 COEFFICIENTS = {"male": (0.64, 1.92), "female": (0.86, 1.67)}
 
@@ -53,6 +60,7 @@ class DecodedRun:
     """What the oracle read from one file before any formula."""
 
     records: list[tuple[float, float | None]]  # (t, heart_rate) in t order
+    distances: list[float | None]  # the decoded distance (m) per record, in the same order
     resting_hr_bpm: int | None
     max_hr_bpm: int | None
     threshold_hr_bpm: int | None
@@ -76,7 +84,7 @@ class OracleLoad:
 
 def decode_run(path: Path) -> DecodedRun:
     """Decode one FIT file with fitdecode: the records with HR, the HR settings and the timer time."""
-    stamped: list[tuple[object, float | None]] = []
+    stamped: list[tuple[object, float | None, float | None]] = []
     profile = None
     zones = None
     timer_time_s = None
@@ -88,25 +96,33 @@ def decode_run(path: Path) -> DecodedRun:
                 ts = frame.get_value("timestamp", fallback=None)
                 if ts is None:
                     continue
-                stamped.append((ts, frame.get_value("heart_rate", fallback=None)))
+                stamped.append((ts, frame.get_value("heart_rate", fallback=None), _metres(frame.get_value("distance", fallback=None))))
             elif frame.name == "user_profile" and profile is None:
                 profile = frame
             elif frame.name == "zones_target" and zones is None:
                 zones = frame
             elif frame.name == "session" and timer_time_s is None:
                 timer_time_s = frame.get_value("total_timer_time", fallback=None)
-    stamped.sort(key=lambda pair: pair[0])
+    stamped.sort(key=lambda triple: triple[0])
     start = stamped[0][0] if stamped else None
-    records = [((ts - start).total_seconds(), hr) for ts, hr in stamped]  # type: ignore[operator]
+    records = [((ts - start).total_seconds(), hr) for ts, hr, _ in stamped]  # type: ignore[operator]
     gender = _raw_int(profile, "gender")
     return DecodedRun(
         records=records,
+        distances=[d for _, _, d in stamped],
         resting_hr_bpm=_raw_int(profile, "resting_heart_rate"),
         max_hr_bpm=_raw_int(zones, "max_heart_rate"),
         threshold_hr_bpm=_raw_int(zones, "threshold_heart_rate"),
         sex={0: "female", 1: "male"}.get(gender) if gender is not None else None,
         timer_time_s=float(timer_time_s) if timer_time_s is not None else None,
     )
+
+
+def _metres(raw) -> float | None:
+    """The decoded distance as a finite float, else absent (a FIT invalid decodes as ``None``)."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        return None
+    return float(raw)
 
 
 def _raw_int(message, field_name: str) -> int | None:
@@ -117,13 +133,29 @@ def _raw_int(message, field_name: str) -> int | None:
     return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
 
 
-def time_basis(records: list[tuple[float, float | None]]) -> tuple[float, float | None]:
-    """``(hr_time_s, avg_hr_bpm)`` over counted segments whose start HR is present and > 0."""
+def _counts(dt: float, d0: float | None, d1: float | None) -> bool:
+    """A stride of ``0 < dt <= 5`` s, or a longer gap the runner crossed at 0.5 m/s or more."""
+    if 0.0 < dt <= SEGMENT_MAX_DT_S:
+        return True
+    if dt > SEGMENT_MAX_DT_S and d0 is not None and d1 is not None:
+        return (d1 - d0) / dt >= MOVING_GAP_MIN_SPEED_M_S
+    return False
+
+
+def time_basis(
+    records: list[tuple[float, float | None]], distances: list[float | None]
+) -> tuple[float, float | None]:
+    """``(hr_time_s, avg_hr_bpm)`` over counted segments whose start HR is present and > 0.
+
+    ``distances`` runs parallel to ``records``; it decides which gaps over 5 s
+    are moving gaps. Every counted segment, a moving gap included, is read at
+    the HR of its start.
+    """
     hr_time_s = 0.0
     weighted = 0.0
-    for (t0, hr), (t1, _) in pairwise(records):
+    for ((t0, hr), (t1, _)), (d0, d1) in zip(pairwise(records), pairwise(distances), strict=True):
         dt = t1 - t0
-        if not (0.0 < dt <= SEGMENT_MAX_DT_S):
+        if not _counts(dt, d0, d1):
             continue
         if hr is None or hr <= 0:
             continue
@@ -145,7 +177,7 @@ def trimp_for_file(path: Path, *, sex: str | None = None) -> OracleLoad:
     """The oracle's numbers for one running file whose own profile carries resting, max and threshold."""
     run = decode_run(path)
     pair = sex or run.sex or "male"
-    hr_time_s, avg_hr = time_basis(run.records)
+    hr_time_s, avg_hr = time_basis(run.records, run.distances)
     if avg_hr is None or run.resting_hr_bpm is None or run.max_hr_bpm is None or run.threshold_hr_bpm is None:
         raise ValueError(f"{path.name}: the oracle needs usable HR and the three HR settings from the file")
     span = float(run.max_hr_bpm - run.resting_hr_bpm)

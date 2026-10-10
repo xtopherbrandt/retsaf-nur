@@ -15,12 +15,18 @@ than 0.035 m/s, so none carries the flag and none changes value. The
 corpus walk prints the fastest over-5 s gap it saw per fixture, so the
 probe's ``-rA`` output shows the slice compared.
 
-**The means stay on sampled segments.** ``avg_hr_bpm``, ``avg_cadence_spm``,
-``avg_power_w`` and the load's ``hr_time_s`` read the ``0 < dt <= 5`` s
-segments only: the value at a gap's start is not carried across it here, so
-``avg_hr_bpm`` and ``hr_time_s`` stay on one set of segments.
-``gps_degraded_fraction`` keeps its numerator and denominator on the same
-counted segments, moving gaps included, so it is not understated.
+**A moving gap carries the value at its start** (IDEA-126, ruled 2026-10-10
+against the recommendation). ``avg_hr_bpm``, ``avg_cadence_spm``,
+``avg_power_w`` and the load's ``hr_time_s`` walk the counted segments: a
+moving gap weighs its start record's value by its whole ``dt``, exactly as a
+stride weighs its start record, so the gapped run and the gap-free 1 Hz run
+read the same ``hr_time_s`` and the same means when the dropped records
+carried the start value. The gap end's value is never used across the gap
+(the carry test puts a different HR there), nothing is interpolated, and a
+gap whose start HR is unusable adds no ``hr_time_s``. A stationary pause is
+not counted and adds nothing, as before. ``gps_degraded_fraction`` keeps its
+numerator and denominator on the same counted segments, so it is not
+understated.
 """
 
 from __future__ import annotations
@@ -179,32 +185,83 @@ def test_gps_drift_across_a_stationary_gap_counts_as_ruled():
 # -- the per-segment stream, the means and the fractions --------------------------------------------
 
 
-def test_segment_rows_mark_the_moving_gap_and_the_means_stay_on_sampled_segments():
+def test_segment_rows_mark_the_moving_gap_and_the_means_carry_it():
     stream = SF.segment_rows(_session(), GAPPED)
     gap_rows = [row for row in stream if row["moving_gap"]]
     assert len(stream) == 299 - 59  # 240 sampled strides and the one gap
     assert len(gap_rows) == 1 and gap_rows[0]["dt"] == 60.0 and gap_rows[0]["t_start"] == 100.0
     assert gap_rows[0]["contributed_m"] == 180.0 and gap_rows[0]["s_start"] == 300.0
+    assert gap_rows[0]["heart_rate"] == 150.0 and not gap_rows[0]["hr_excluded"]
     assert all(row["dt"] == 1.0 for row in stream if not row["moving_gap"])
-    # avg_hr and hr_time_s read the sampled segments only, so they stay on one set of segments.
+    # avg_hr and hr_time_s walk the counted segments, the gap weighted at its start: the gapped
+    # run reads the gap-free run's figures.
     plain = SF.compute_session_features(_session(), PLAIN)
     gapped = SF.compute_session_features(_session(), GAPPED)
     assert _value(gapped, "avg_hr_bpm") == _value(plain, "avg_hr_bpm") == 150.0
     assert _value(gapped, "avg_cadence_spm") == 170.0
-    assert SL._hr_time_s(stream) == 239.0
+    assert SL._hr_time_s(stream) == 299.0
     assert SL._hr_time_s(SF.segment_rows(_session(), PLAIN)) == 299.0
 
 
-def test_the_moving_gap_time_does_not_weight_the_means():
-    heart_rate = [150.0] * 101 + [100.0] * 199  # the gap starts at record 100: HR 150 there
-    cadence = [170.0] * 101 + [160.0] * 199
-    rows = _with_moving_gap(_ramp(300, 3.0, grade=0.0, heart_rate=heart_rate, cadence=cadence), 101, 59)
+# The gap starts at record 100 (HR 150, cadence 170, power 250) and ends at record 160 (HR 170,
+# cadence 180, power 300): a carry-end or interpolating rule reads a different mean.
+CARRY_HR = [150.0] * 101 + [170.0] * 199
+CARRY_CADENCE = [170.0] * 101 + [180.0] * 199
+CARRY_POWER = [250.0] * 101 + [300.0] * 199
+# The gap-free walk: 100 strides at the first value, the 60 s gap at the first value, 139 strides
+# at the second, over 299 s.
+OLD_RULE_HR_TIME_S = 239.0  # the gap left out: the rule before IDEA-126's carry ruling
+
+
+def _carry_rows(**extra) -> list[dict]:
+    rows = _ramp(300, 3.0, grade=0.0, heart_rate=list(CARRY_HR), cadence=CARRY_CADENCE, power=CARRY_POWER, **extra)
+    return _with_moving_gap(rows, 101, 59)
+
+
+def test_a_moving_gap_carries_the_hr_before_it_into_hr_time_and_the_mean():
+    rows = _carry_rows()
     out = SF.compute_session_features(_session(), rows)
-    # 100 sampled strides start at 150 and 139 at 100; the gap's 60 s at 150 would lift the mean to 126.8.
-    assert _value(out, "avg_hr_bpm") == pytest.approx((100 * 150.0 + 139 * 100.0) / 239)
-    assert _value(out, "avg_cadence_spm") == pytest.approx((100 * 170.0 + 139 * 160.0) / 239)
-    weighted = (100 * 150.0 + 60 * 150.0 + 139 * 100.0) / 299
-    assert _value(out, "avg_hr_bpm") != pytest.approx(weighted, rel=1e-3)
+    stream = SF.segment_rows(_session(), rows)
+    hr_time_s = SL._hr_time_s(stream)
+    carry_start = (100 * 150.0 + 60 * 150.0 + 139 * 170.0) / 299
+    carry_end = (100 * 150.0 + 60 * 170.0 + 139 * 170.0) / 299
+    interpolated = (100 * 150.0 + 60 * 160.0 + 139 * 170.0) / 299
+    old_rule = (100 * 150.0 + 139 * 170.0) / OLD_RULE_HR_TIME_S
+    print(f"hr_time_s {hr_time_s}; avg_hr {_value(out, 'avg_hr_bpm')} carry-start {carry_start} carry-end {carry_end} interpolated {interpolated} old rule {old_rule}")
+    assert hr_time_s == OLD_RULE_HR_TIME_S + 60.0 == 299.0
+    assert hr_time_s == SL._hr_time_s(SF.segment_rows(_session(), _ramp(300, 3.0, grade=0.0, heart_rate=150.0)))
+    assert _value(out, "avg_hr_bpm") == pytest.approx(carry_start)
+    assert _value(out, "avg_hr_bpm") != pytest.approx(carry_end, rel=1e-6)
+    assert _value(out, "avg_hr_bpm") != pytest.approx(interpolated, rel=1e-6)
+    assert _value(out, "avg_hr_bpm") != pytest.approx(old_rule, rel=1e-6)
+    assert _value(out, "avg_cadence_spm") == pytest.approx((100 * 170.0 + 60 * 170.0 + 139 * 180.0) / 299)
+    assert _value(out, "avg_power_w") == pytest.approx((100 * 250.0 + 60 * 250.0 + 139 * 300.0) / 299)
+    # A gap whose start HR is unusable adds no hr_time_s: absent, or carrying the gate's cadence_lock.
+    absent = _carry_rows()
+    absent[100]["heart_rate"] = None
+    assert SL._hr_time_s(SF.segment_rows(_session(), absent)) == OLD_RULE_HR_TIME_S
+    assert _value(SF.compute_session_features(_session(), absent), "avg_hr_bpm") == pytest.approx(old_rule)
+    locked = _carry_rows(sample_quality=[["cadence_lock"] if k == 100 else [] for k in range(300)])
+    locked_stream = SF.segment_rows(_session(), locked)
+    assert [row["hr_excluded"] for row in locked_stream if row["moving_gap"]] == [True]
+    assert SL._hr_time_s(locked_stream) == OLD_RULE_HR_TIME_S
+
+
+def test_hr_on_the_moving_gap_start_alone_is_present_hr():
+    """HR that sits only on the gap's start record is HR that was there: the gap counts it, and when
+    the gate locked that one record the reason is ``cadence_lock``, not ``no_heart_rate``."""
+    heart_rate = [150.0 if k == 100 else None for k in range(300)]
+    rows = _with_moving_gap(_ramp(300, 3.0, grade=0.0, heart_rate=heart_rate), 101, 59)
+    out = SF.compute_session_features(_session(), rows)
+    assert _value(out, "avg_hr_bpm") == 150.0
+    assert SL._hr_time_s(SF.segment_rows(_session(), rows)) == 60.0
+    tags = [["cadence_lock"] if k == 100 else [] for k in range(300)]
+    locked = _with_moving_gap(_ramp(300, 3.0, grade=0.0, heart_rate=heart_rate, sample_quality=tags), 101, 59)
+    out = SF.compute_session_features(_session(), locked)
+    assert out["features"]["avg_hr_bpm"] == {"value": None, "unavailable": "cadence_lock"}
+    assert SL._hr_time_s(SF.segment_rows(_session(), locked)) == 0.0
+    no_hr = _with_moving_gap(_ramp(300, 3.0, grade=0.0, heart_rate=[None] * 300), 101, 59)
+    assert SF.compute_session_features(_session(), no_hr)["features"]["avg_hr_bpm"] == {"value": None, "unavailable": "no_heart_rate"}
 
 
 def test_gps_degraded_fraction_counts_the_gap_in_numerator_and_denominator():

@@ -1076,7 +1076,7 @@ class SessionLoadInputs(BaseModel):
     """Every value the load was computed from, saved with it (F017 reference, "Time basis" and "Which values")."""
 
     hr_time_s: float = Field(
-        description="Running time with usable HR: the sum of dt over counted segments (0 < dt <= 5 s) whose start HR is present, above 0 and not `cadence_lock`. A pause adds nothing; nothing is imputed."
+        description="Running time with usable HR: the sum of dt over counted segments (a stride of 0 < dt <= 5 s, or a moving gap over 5 s crossed at 0.5 m/s or more, which carries the HR at its start) whose start HR is present, above 0 and not `cadence_lock`. A stationary pause adds nothing; nothing is interpolated across a gap."
     )
     recorded_time_s: float | None = Field(description="F013's `duration_s`, reported beside `hr_time_s`; null when unavailable.")
     timer_time_s: float | None = Field(description="The FIT `session.total_timer_time` stored at ingest; null when the file carried none.")
