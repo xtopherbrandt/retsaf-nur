@@ -47,9 +47,13 @@ average HR is at or above the threshold (R2; judged by average HR, user
 ruling 2026-10-08; equality refused), 9 ``not_representable`` when
 resting, max or a present threshold does not convert to a finite float
 (``float(10**400)`` raises ``OverflowError``; it is caught per value, so no
-upload is a 500). After TRIMP, the reference needs the threshold: no value
+upload is a 500) or when ``float(max) - float(resting)`` is not a positive
+finite float (``2**53`` and ``2**53 + 1`` pass gate 5 as integers and are one
+float). After TRIMP, the reference needs the threshold: no value
 gives ``no_threshold_hr``; ``resting < threshold < max`` failing (equality at
-either bound included) gives ``threshold_order_conflict``; TRIMP is still
+either bound included) gives ``threshold_order_conflict``;
+``float(threshold) - float(resting)`` not a positive finite float gives
+``not_representable``; TRIMP is still
 served. When TRIMP is unavailable ``session_load`` carries the same reason
 and ``driver`` is null; under gates 1 and 2 the inputs are still reported.
 
@@ -59,8 +63,8 @@ takes the wrist path. The flag ``wrist_hr`` is set on every running session
 on the wrist path whatever the outcome (REG-23: PPG input is flagged), so a
 session gates 2-6 or 9 refuse still carries it; a non-running session is
 refused whole by gate 1 and carries no flag. On the wrist path a threshold
-that passes gate 7 is usable, so the reference step after TRIMP never
-withholds ``session_load`` there. Gate comparisons are on
+that passes gate 7 is usable, so the reference step after TRIMP withholds
+``session_load`` there only as ``not_representable``. Gate comparisons are on
 exact integers (Python compares an int of any size with a float exactly, so
 the average HR against ``10**400`` is a comparison, not a conversion); a value
 becomes a float only in the formula step. ``SERVED_REASONS`` lists every
@@ -82,13 +86,15 @@ is a plain mapping: ``session_id``, ``sport``, ``activity_tag``,
 (``resting_hr_bpm``, ``max_hr_bpm``, ``threshold_hr_bpm``, ``sex``) a mapping
 ``{value, source, session_id, anchor_version, anchor_unavailable}`` holding
 the value used and where it came from; those four blocks are echoed in
-``inputs`` unchanged.
+``inputs`` unchanged. A block that is absent or not a mapping is the
+writer's defect and raises ``ValueError`` naming the field.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
+from types import MappingProxyType
 
 from runcoach_api.metrics.session_features import unique_flags
 
@@ -106,7 +112,11 @@ CHEST_STRAP = "chest_strap"
 """The one ``hr_source`` that escapes the wrist path (gates 7-8)."""
 
 ANCHOR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
-_EMPTY_VALUE = {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+EMPTY_VALUE: Mapping[str, None] = MappingProxyType(
+    {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+)
+"""The five keys of an ``inputs.<field>`` block, all null: the block for a field with no value used.
+Read-only; a writer copies it (``dict(EMPTY_VALUE)`` or ``{**EMPTY_VALUE, ...}``)."""
 
 NO_THRESHOLD_PACE = "no_threshold_pace"
 NO_RPE = "no_rpe"
@@ -144,11 +154,31 @@ def _finite(*values) -> bool:
     return True
 
 
+def _span(upper, lower) -> float | None:
+    """``float(upper) - float(lower)`` when it is a positive finite float, else None (gate 9).
+
+    Called only on values ``_finite`` passed and the exact-integer gates ordered, so the
+    conversion cannot raise; but two adjacent integers above ``2**53`` round to one float (a span
+    of 0.0) and two finite values far apart can differ by more than the largest float (inf).
+    """
+    span = float(upper) - float(lower)
+    return span if span > 0.0 and math.isfinite(span) else None
+
+
 def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
-    block = inputs.get(field_name)
+    """The ``inputs.<field>`` block as the caller built it, restricted to ``EMPTY_VALUE``'s keys.
+
+    A block that is absent or not a mapping is a defect of the writer (``db._save_session_load``
+    builds all four for every session), refused with a ``ValueError`` naming the field rather
+    than read as no value and served as ``missing_anchor``.
+    """
+    if field_name not in inputs:
+        raise ValueError(f"inputs.{field_name} is absent; every load input carries all four value blocks")
+    block = inputs[field_name]
     if not isinstance(block, Mapping):
-        return dict(_EMPTY_VALUE)
-    return {key: block.get(key) for key in _EMPTY_VALUE}
+        # A ValueError, as every writer defect here and in load_chart._place is.
+        raise ValueError(f"inputs.{field_name} is not a value block: {type(block).__name__} {block!r}")  # noqa: TRY004
+    return {key: block.get(key) for key in EMPTY_VALUE}
 
 
 def _hr_time_s(segment_rows: Iterable[Mapping[str, object]]) -> float:
@@ -235,7 +265,7 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
         hr_trimp["unavailable"] = "wrist_hr_threshold_unknown"
     elif wrist and avg_hr >= threshold:  # type: ignore[operator]
         hr_trimp["unavailable"] = "wrist_hr_at_threshold"
-    elif not _finite(resting, max_hr, threshold):
+    elif not _finite(resting, max_hr, threshold) or (span := _span(max_hr, resting)) is None:
         hr_trimp["unavailable"] = "not_representable"
     else:
         # The formula step: the only place a value becomes a float.
@@ -244,7 +274,6 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
             sex = MALE
             flags.append(SEX_DEFAULTED_FLAG)
         pair = COEFFICIENTS[sex]
-        span = float(max_hr) - float(resting)
         r = (float(avg_hr) - float(resting)) / span  # type: ignore[arg-type]
         hr_trimp["value"] = _trimp(hr_time_s / 60.0, r, pair)
         hr_trimp["coefficients"] = sex
@@ -252,8 +281,10 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
             load_reason = "no_threshold_hr"
         elif not (resting < threshold < max_hr):
             load_reason = "threshold_order_conflict"
+        elif (threshold_span := _span(threshold, resting)) is None:
+            load_reason = "not_representable"
         else:
-            r_thr = (float(threshold) - float(resting)) / span
+            r_thr = threshold_span / span
             hr_trimp["threshold_hour_reference"] = _trimp(60.0, r_thr, pair)
 
     trimp_reason = hr_trimp["unavailable"]

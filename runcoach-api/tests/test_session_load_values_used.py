@@ -39,6 +39,7 @@ import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
 from runcoach_api.main import app
+from runcoach_api.metrics.session_load import EMPTY_VALUE
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SUPPORT = Path(__file__).parent / "support"
@@ -51,7 +52,7 @@ GENDER = 1  # user_profile.gender: raw 0 female, 1 male; any other value stores 
 GENDER_FEMALE, GENDER_UNKNOWN = 0, 2
 
 HR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
-EMPTY_BLOCK = {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+EMPTY_BLOCK = dict(EMPTY_VALUE)
 
 
 def _load_support(name: str):

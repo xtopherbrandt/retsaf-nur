@@ -27,7 +27,9 @@ date. History runs from the first local date holding a counted or uncounted sess
 every date in between included; excluded sessions dated earlier do not move it and are not
 returned. With no counted or uncounted session, ``first_day`` and ``seed`` are ``None`` and
 ``days`` is empty. A history whose first day is after ``today`` (a watch clock ahead) has no days
-and no seed, since the seed is a mean over days that do not exist yet.
+and no seed, since the seed is a mean over days that do not exist yet. More generally, a session
+whose local date is after ``today`` is listed on no day until that date arrives: the series ends
+on ``today`` and nothing is projected.
 
 **The curves** (spec/03 section 3.5.2; research/00 REG-01, REG-20, IND-06): with ``load_d`` the
 sum of the day's counted loads,
@@ -151,7 +153,8 @@ def _is_running(placed: _Placed) -> bool:
 
 
 def build_chart(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, today: date) -> LoadChart:
-    """The daily series from ``first_day`` to ``today`` inclusive, computed from every row."""
+    """The daily series from ``first_day`` to ``today`` inclusive, computed from every row; a row
+    dated after ``today`` is on no day (and in no curve) until its date arrives."""
     by_day = _place(rows, zone)
     running_days = [day for day, placed in by_day.items() if any(_is_running(p) for p in placed)]
     if not running_days:

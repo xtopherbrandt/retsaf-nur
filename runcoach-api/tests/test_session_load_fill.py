@@ -176,9 +176,8 @@ def test_a_fault_while_filling_names_the_session_and_stops_startup(monkeypatch: 
 
     with monkeypatch.context() as m:
         m.setattr(db, "_save_session_load", boom)
-        with pytest.raises(db.SessionLoadFillError) as excinfo:
-            with TestClient(app):
-                pass
+        with pytest.raises(db.SessionLoadFillError) as excinfo, TestClient(app):
+            pass
     print(f"startup stopped: {excinfo.value}")
     assert session_id in str(excinfo.value)
     assert isinstance(excinfo.value.__cause__, RuntimeError)
@@ -214,8 +213,9 @@ def _stored_session(session_id: str, *, summary, timer_time_s=None, sport: str =
 def test_the_fill_copies_timer_time_s_from_the_stored_summary_only_when_the_column_is_null() -> None:
     """Rows written by ``_insert_session`` alone (no ``persist``, so no load), then one
     ``init_schema``: ``summary.duration_s`` is copied when ``timer_time_s`` is null and is a finite
-    number; a column that already holds a value keeps it; a summary without a number leaves the
-    column null and the body's ``timer_time_s`` null, as ``mapping`` reads such a field. No
+    number; a column that already holds a value keeps it; a summary without a finite number (none,
+    a string, ``true``, a list, ``NaN`` or ``Infinity``, all of which ``json.loads`` accepts) leaves
+    the column null and the body's ``timer_time_s`` null, as ``mapping`` reads such a field. No
     records, so every body is ``no_hr``; the fill saves it anyway."""
     rows = {
         "copied": _stored_session("copied", summary={"duration_s": 150.797}),
@@ -223,6 +223,12 @@ def test_the_fill_copies_timer_time_s_from_the_stored_summary_only_when_the_colu
         "no-summary": _stored_session("no-summary", summary=None),
         "no-duration": _stored_session("no-duration", summary={"distance_m": 5.0}),
         "unparseable": _stored_session("unparseable", summary={"duration_s": "150"}),
+        "bool": _stored_session("bool", summary={"duration_s": True}),
+        "list": _stored_session("list", summary={"duration_s": [150.797]}),
+        # SQLite binds a NaN as NULL, so this row holds with or without the fill's finite screen;
+        # the "infinite" row is the one that removing the screen reddens.
+        "nan": _stored_session("nan", summary={"duration_s": float("nan")}),
+        "infinite": _stored_session("infinite", summary={"duration_s": float("inf")}),
         "other-sport": _stored_session("other-sport", summary={"duration_s": 120.0}, sport="other"),
     }
     conn = db.get_connection()
@@ -254,6 +260,8 @@ def test_the_fill_copies_timer_time_s_from_the_stored_summary_only_when_the_colu
     assert stored["no-summary"][0] is None
     assert stored["no-duration"][0] is None
     assert stored["unparseable"][0] is None
+    for screened in ("bool", "list", "nan", "infinite"):
+        assert stored[screened][0] is None, screened
     assert stored["other-sport"][0] == 120.0
     assert stored["other-sport"][1] == "sport_not_running"
     assert all(stored[s][1] == "no_hr" for s in rows if s != "other-sport")

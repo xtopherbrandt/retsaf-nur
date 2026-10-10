@@ -16,7 +16,7 @@ Day loads are set through ``tests/support/session_loads.py``'s ``plant_load`` wh
 chosen counted value or uncounted reason; a cycling session and a declared capture get their
 exclusion reasons from ``db.persist`` itself.
 
-**The contract walk** is ``test_session_load_route.py``'s: every component reachable from
+**The contract walk** is ``tests/support/contract_walk.py``'s: every component reachable from
 ``getLoadChart`` compared property by property, recursing into array ``items``, and every F018
 component asserted visited.
 """
@@ -714,7 +714,7 @@ def test_deleting_the_only_session_on_first_day_moves_first_day_and_recomputes_t
     configure("UTC")
     today = date(2026, 3, 6)
     freeze(utc(today, 20))
-    day1, runs = _five_day_history(persist_sessions)
+    _, runs = _five_day_history(persist_sessions)
     with TestClient(app) as client:
         assert client.delete(f"/sessions/{runs[0].session_id}").status_code == 204
         response = get(client)
@@ -738,11 +738,10 @@ def test_a_session_without_a_saved_load_is_a_named_500(configure, freeze, persis
     persist_sessions([kept, stripped])
     _plant(kept.session_id, value=30.0)
     with TestClient(app) as client:
-        with _connection() as conn:
-            with conn:
-                conn.execute(
-                    f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (stripped.session_id,)
-                )
+        with _connection() as conn, conn:
+            conn.execute(
+                f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (stripped.session_id,)
+            )
         response = get(client)
     assert response.status_code == 500, response.text
     assert stripped.session_id in response.json()["detail"]
@@ -829,53 +828,10 @@ def test_the_reason_enum_is_f017s_minus_the_two_exclusions() -> None:
     assert len(served["LoadChartReason"]["enum"]) == len(CHART_REASONS)
 
 
-REF_PREFIX = "#/components/schemas/"
-# The keywords compared per property. A description, a title or a default is prose and is not compared.
-COMPARED_KEYWORDS = ("type", "enum", "format", "exclusiveMinimum")
-
-
-def _ref_name(ref: str) -> str:
-    assert ref.startswith(REF_PREFIX), ref
-    return ref[len(REF_PREFIX) :]
-
-
-def _normalised(prop: dict) -> dict:
-    """One schema node as ``{type, nullable, enum, format, exclusiveMinimum, ref, items}``, in either
-    document's spelling: the contract's ``nullable: true`` and FastAPI's ``anyOf: [X, {type: null}]``
-    both read as nullable X, a one-member ``allOf`` is its member, a ``const`` reads as a one-value
-    ``enum``, an enum's order is not compared, and an array's ``items`` is normalised the same way
-    (``test_session_load_route.py``'s extension over ``test_me_route.py``'s walker)."""
-    prop = dict(prop)
-    nullable = bool(prop.pop("nullable", False))
-    if "anyOf" in prop:
-        branches = prop.pop("anyOf")
-        rest = [b for b in branches if b != {"type": "null"}]
-        assert len(rest) == 1 and len(rest) < len(branches), f"not an optional single type: {branches}"
-        nullable = True
-        prop = {**prop, **rest[0]}
-    if "const" in prop:
-        prop["enum"] = [prop.pop("const")]
-    if "allOf" in prop:
-        (only,) = prop.pop("allOf")
-        prop = {**prop, **only}
-    out = {"nullable": nullable}
-    if "$ref" in prop:
-        out["ref"] = _ref_name(prop["$ref"])
-    for key in COMPARED_KEYWORDS:
-        if key in prop:
-            out[key] = sorted(prop[key]) if key == "enum" else prop[key]
-    if "items" in prop:
-        out["items"] = _normalised(prop["items"])
-    assert "ref" in out or "type" in out, f"a node with neither a type nor a $ref: {prop}"
-    return out
-
-
-def _refs(node: dict) -> list[str]:
-    """Every component a normalised node names, through ``ref`` and nested ``items``."""
-    found = [node["ref"]] if "ref" in node else []
-    if "items" in node:
-        found.extend(_refs(node["items"]))
-    return found
+contract_walk = _load_support("contract_walk")
+REF_PREFIX = contract_walk.REF_PREFIX
+_ref_name = contract_walk.ref_name
+_normalised = contract_walk.normalised
 
 
 def _chart_root(doc: dict) -> str:
@@ -893,28 +849,7 @@ def test_every_chart_component_matches_the_served_model_property_by_property() -
     contract = _contract()
     built = app.openapi()
     assert _chart_root(contract) == _chart_root(built) == "LoadChart"
-    queue, seen, compared = ["LoadChart"], set(), []
-    while queue:
-        name = queue.pop()
-        if name in seen:
-            continue
-        seen.add(name)
-        ours, theirs = contract["components"]["schemas"][name], built["components"]["schemas"][name]
-        if "properties" not in theirs:
-            assert "properties" not in ours, name
-            got, want = _normalised(ours), _normalised(theirs)
-            assert got == want, f"{name}: contract {got} != served {want}"
-            compared.append(name)
-            continue
-        assert set(ours["properties"]) == set(theirs["properties"]), name
-        for field in ours["properties"]:
-            want = _normalised(theirs["properties"][field])
-            got = _normalised(ours["properties"][field])
-            assert got == want, f"{name}.{field}: contract {got} != served {want}"
-            compared.append(f"{name}.{field}")
-            queue.extend(_refs(got))
-        assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
-        assert ours.get("additionalProperties", True) == theirs.get("additionalProperties", True), name
+    seen, compared = contract_walk.walk(contract, built, ["LoadChart"])
     print(f"  {len(compared)} properties over {sorted(seen)}")
     assert seen == NEW_COMPONENTS, seen
     # The array items were opened: the walk reached the per-session components through the lists.

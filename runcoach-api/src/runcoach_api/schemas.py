@@ -994,7 +994,7 @@ class SessionLoadValue(BaseModel):
 
     value: float | None = Field(description="TRIMP / threshold_hour_reference * 100; null when unavailable.")
     unavailable: SessionLoadReason | None = Field(
-        description="HR-TRIMP's reason when it has no value, else `no_threshold_hr` or `threshold_order_conflict`; null when `value` is served."
+        description="HR-TRIMP's reason when it has no value, else `no_threshold_hr`, `threshold_order_conflict` or `not_representable`; null when `value` is served."
     )
     driver: Literal["hr_trimp"] | None = Field(description="The metric behind `value`; null whenever `value` is null.")
 

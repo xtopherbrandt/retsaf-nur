@@ -125,7 +125,7 @@ def health() -> HealthResponse:
 
 @app.post("/sessions", response_model=IngestResponse, status_code=201)
 def create_session(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 -- FastAPI's parameter idiom
     resting_capture: bool = Form(False),
 ) -> IngestResponse:
     """Ingest one uploaded FIT file.
@@ -991,7 +991,8 @@ def get_load_chart(
     which withholds future days with a 200. Both are coerced by pydantic from
     ``YYYY-MM-DD`` and never hand-parsed. There is no range cap: one athlete,
     about 365 rows a year. A store with no running session is a 200 with
-    ``first_day`` and ``seed`` null and ``days`` empty.
+    ``first_day`` and ``seed`` null and ``days`` empty. A session whose local
+    date is after today is not listed until that date arrives (no projection).
 
     A session whose saved load row is missing (both load columns null in the
     LEFT JOIN) is the module's ``ValueError`` naming the session, served as

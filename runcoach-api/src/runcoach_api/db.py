@@ -1052,6 +1052,7 @@ def read_athlete(
 # ---------------------------------------------------------------------------
 from runcoach_api.metrics import session_features
 from runcoach_api.metrics.session_load import ANCHOR_FIELDS as _LOAD_FIELDS
+from runcoach_api.metrics.session_load import EMPTY_VALUE as _EMPTY_LOAD_VALUE
 from runcoach_api.metrics.session_load import compute_session_load
 
 # The saved-load table's name, for callers and tests that address it.
@@ -1061,7 +1062,7 @@ SESSION_LOADS_TABLE = "session_loads"
 def _from_session_file(value, session_id: str) -> dict:
     """One ``inputs.<field>`` block: the value the session's own file carried, or no value."""
     if value is None:
-        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+        return dict(_EMPTY_LOAD_VALUE)
     return {
         "value": value,
         "source": "session_file",
@@ -1137,7 +1138,7 @@ def _from_anchor(anchor: profile_module.Anchor) -> dict:
     """One ``inputs.<field>`` block for a field the file lacked: the anchor's value and version,
     or an empty block carrying F016's reason (``missing`` or ``order_conflict``)."""
     if anchor.reason is not None:
-        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": anchor.reason}
+        return {**_EMPTY_LOAD_VALUE, "anchor_unavailable": anchor.reason}
     return {
         "value": anchor.value,
         "source": "anchor",

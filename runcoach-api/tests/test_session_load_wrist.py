@@ -34,6 +34,7 @@ running sessions.
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import math
 import sys
@@ -42,7 +43,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api.main import app
-from runcoach_api.metrics import session_features, session_load
+from runcoach_api.metrics import session_load
 from runcoach_api.metrics.session_load import compute_session_load
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -57,7 +58,6 @@ FILE_MAX_HR = 188
 STRAP_AVG_HR = 146.81
 CADENCE_LOCKED_RECORDS = 154
 
-HR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
 HUGE = 10**400
 
 
@@ -189,51 +189,10 @@ def test_the_strap_run_takes_no_wrist_path() -> None:
 # --- the pure-function rows ------------------------------------------------------------------------
 
 
-def _from_file(value) -> dict:
-    if value is None:
-        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
-    return {"value": value, "source": "session_file", "session_id": "synthetic", "anchor_version": None, "anchor_unavailable": None}
-
-
-def _synthetic(
-    *,
-    heart_rate: float | None = 150.0,
-    resting=50,
-    max_hr=190,
-    threshold=170,
-    sex="male",
-    hr_source: str | None = "wrist_ppg",
-    sport: str = "running",
-    activity_tag: str | None = None,
-    seconds: int = 600,
-) -> dict:
-    """A 1 Hz run at a constant HR with the settings as the file's own values, on the wrist path by default."""
-    rows = [{"t": float(t), "distance": 3.0 * t, "heart_rate": heart_rate, "sample_quality": []} for t in range(seconds + 1)]
-    session = {
-        "session_id": "synthetic",
-        "sport": sport,
-        "activity_tag": activity_tag,
-        "hr_source": hr_source,
-        "quality_flags": [],
-        "context": {},
-        "timer_time_s": float(seconds),
-    }
-    inputs = {
-        **session,
-        "segment_rows": session_features.segment_rows(session, rows),
-        "features": session_features.compute_session_features(session, rows),
-    }
-    for field_name, value in zip(HR_FIELDS, (resting, max_hr, threshold, sex)):
-        inputs[field_name] = _from_file(value)
-    return inputs
-
-
-def _outcome(body: dict) -> tuple[str | None, str | None, bool]:
-    return (
-        body["metrics"]["hr_trimp"]["unavailable"],
-        body["session_load"]["unavailable"],
-        "wrist_hr" in body["flags"],
-    )
+session_load_inputs = _load_support("session_load_inputs")
+# The pure-function rows run on the wrist path unless a row names another ``hr_source``.
+_synthetic = functools.partial(session_load_inputs.synthetic, hr_source="wrist_ppg")
+_outcome = session_load_inputs.wrist_outcome
 
 
 def test_average_equal_to_threshold_is_unavailable_on_the_wrist_path() -> None:
@@ -260,13 +219,13 @@ def test_a_null_hr_source_takes_the_wrist_path() -> None:
 def test_wrist_hr_is_flagged_on_every_running_wrist_outcome() -> None:
     """Gates 2-6 and 9 refuse before the wrist gates; the flag is still set (REG-23: PPG input is flagged)."""
     refused = {
-        "declared_capture": dict(activity_tag="health_snapshot"),
-        "no_hr": dict(heart_rate=None),
-        "missing_anchor": dict(resting=None),
-        "order_conflict": dict(resting=190, max_hr=190),
-        "avg_hr_below_resting": dict(heart_rate=40.0),
-        "avg_hr_above_max": dict(heart_rate=200.0),
-        "not_representable": dict(max_hr=HUGE),
+        "declared_capture": {"activity_tag": "health_snapshot"},
+        "no_hr": {"heart_rate": None},
+        "missing_anchor": {"resting": None},
+        "order_conflict": {"resting": 190, "max_hr": 190},
+        "avg_hr_below_resting": {"heart_rate": 40.0},
+        "avg_hr_above_max": {"heart_rate": 200.0},
+        "not_representable": {"max_hr": HUGE},
     }
     for reason, overrides in refused.items():
         body = compute_session_load(_synthetic(**overrides))
@@ -289,29 +248,29 @@ def test_wrist_hr_precedes_sex_defaulted() -> None:
 # Written from the reference's gate table rows 7 and 8 and its hr_source rule before the gates were built.
 ADVERSARIAL_ROWS = [
     # the threshold, with the average (150) between resting (50) and max (190)
-    ("threshold_absent_is_unknown", dict(threshold=None), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_equal_resting_is_unknown", dict(threshold=50), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_equal_max_is_unknown", dict(threshold=190), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_above_max_is_unknown", dict(threshold=200), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_below_resting_is_unknown", dict(threshold=40), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_ten_to_the_400_is_unknown_before_gate_9", dict(threshold=HUGE), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("threshold_one_above_resting_is_at_threshold", dict(threshold=51), "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
-    ("threshold_one_below_max_is_computed", dict(threshold=189), None, None, True),
-    ("threshold_at_the_average_is_at_threshold", dict(threshold=150), "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
-    ("threshold_one_above_the_average_is_computed", dict(threshold=151), None, None, True),
+    ("threshold_absent_is_unknown", {"threshold": None}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_equal_resting_is_unknown", {"threshold": 50}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_equal_max_is_unknown", {"threshold": 190}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_above_max_is_unknown", {"threshold": 200}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_below_resting_is_unknown", {"threshold": 40}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_ten_to_the_400_is_unknown_before_gate_9", {"threshold": HUGE}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("threshold_one_above_resting_is_at_threshold", {"threshold": 51}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
+    ("threshold_one_below_max_is_computed", {"threshold": 189}, None, None, True),
+    ("threshold_at_the_average_is_at_threshold", {"threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
+    ("threshold_one_above_the_average_is_computed", {"threshold": 151}, None, None, True),
     # hr_source: only chest_strap escapes the wrist path
-    ("chest_strap_at_threshold_is_computed", dict(hr_source="chest_strap", threshold=150), None, None, False),
-    ("chest_strap_without_threshold_is_no_threshold_hr", dict(hr_source="chest_strap", threshold=None), None, "no_threshold_hr", False),
-    ("wrist_ppg_at_threshold", dict(hr_source="wrist_ppg", threshold=150), "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
-    ("null_source_at_threshold", dict(hr_source=None, threshold=150), "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
-    ("unknown_source_at_threshold", dict(hr_source="optical_armband", threshold=150), "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
-    ("unknown_source_without_threshold", dict(hr_source="optical_armband", threshold=None), "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
-    ("empty_string_source_below_threshold", dict(hr_source="", threshold=151), None, None, True),
+    ("chest_strap_at_threshold_is_computed", {"hr_source": "chest_strap", "threshold": 150}, None, None, False),
+    ("chest_strap_without_threshold_is_no_threshold_hr", {"hr_source": "chest_strap", "threshold": None}, None, "no_threshold_hr", False),
+    ("wrist_ppg_at_threshold", {"hr_source": "wrist_ppg", "threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
+    ("null_source_at_threshold", {"hr_source": None, "threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
+    ("unknown_source_at_threshold", {"hr_source": "optical_armband", "threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
+    ("unknown_source_without_threshold", {"hr_source": "optical_armband", "threshold": None}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
+    ("empty_string_source_below_threshold", {"hr_source": "", "threshold": 151}, None, None, True),
     # the earlier gates win; the flag stays
-    ("6_before_8_avg_above_max_and_above_threshold", dict(heart_rate=200.0, threshold=150), "avg_hr_above_max", "avg_hr_above_max", True),
-    ("5_before_7_order_conflict_without_threshold", dict(resting=190, max_hr=190, threshold=None), "order_conflict", "order_conflict", True),
-    ("3_before_7_no_hr_without_threshold", dict(heart_rate=None, threshold=None), "no_hr", "no_hr", True),
-    ("1_before_7_not_running_carries_no_flag", dict(sport="other", threshold=None), "sport_not_running", "sport_not_running", False),
+    ("6_before_8_avg_above_max_and_above_threshold", {"heart_rate": 200.0, "threshold": 150}, "avg_hr_above_max", "avg_hr_above_max", True),
+    ("5_before_7_order_conflict_without_threshold", {"resting": 190, "max_hr": 190, "threshold": None}, "order_conflict", "order_conflict", True),
+    ("3_before_7_no_hr_without_threshold", {"heart_rate": None, "threshold": None}, "no_hr", "no_hr", True),
+    ("1_before_7_not_running_carries_no_flag", {"sport": "other", "threshold": None}, "sport_not_running", "sport_not_running", False),
 ]
 
 

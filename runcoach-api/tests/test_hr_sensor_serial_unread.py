@@ -7,10 +7,12 @@ three ways, from the outside in:
 
 1. **Behaviourally**, over every metric route (``GET /metrics/hrv`` and
    ``GET /metrics/load``; the load route takes ``from``/``to`` the same way
-   and reads the saved loads the startup fill gave the seeded captures, none
-   of which is a running session, so it answers the empty chart in every
-   state -- the walk pins that the column does not change that answer, not
-   the curves themselves). One isolated store is seeded
+   and reads every session's saved load: the seeded captures are excluded
+   as ``declared_capture``, so one running session dated on ``SERIES_START``
+   carries a planted counted load (``tests/support/session_loads.py``) and
+   history starts on its date, which every window covers -- each window's
+   load response carries its days of curves, and the first carries the run).
+   One isolated store is seeded
    once through the real ``to_canonical -> classify -> db.persist`` path and
    then **mutated in place** -- never copied, never re-pointed -- through
    three states that differ *only* in ``hr_sensor_serial``:
@@ -48,7 +50,7 @@ so a new metric route reddens this module until it is added to the walk.
 
 Axes held constant (per ``a-sweep-must-name-the-axes-it-holds-constant``):
 tier ``chest_strap_raw``; **daily** capture density; one era, no tier
-switch; one fixed 70-day series ending on ``SERIES_END``; the three windows;
+switch; one running session with one planted counted load; one fixed 70-day series ending on ``SERIES_END``; the three windows;
 the ``UTC`` athlete zone; the declared profile name. The varied axis is
 ``hr_sensor_serial`` and nothing else. The windows are fixed past dates
 because ``to`` defaults to wall-clock today and future days are withheld,
@@ -57,9 +59,11 @@ so a defaulted request would compare whatever today happens to serve.
 
 from __future__ import annotations
 
+import importlib.util
 import io
+import sys
 import tokenize
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -67,7 +71,9 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
+from runcoach_api.ingestion.mapping import derive_session_id
 from runcoach_api.main import app
+from runcoach_api.models import Session
 
 STRAP = "chest_strap_raw"
 PROFILE = "HRV Snapshot"
@@ -119,6 +125,25 @@ READER_FILES: tuple[Path, ...] = tuple(
 )
 COLUMN = "hr_sensor_serial"
 
+# The one running session: dated on the first day of the series, so history (and the load chart)
+# starts there and every window covers it, with a planted counted load.
+LOAD_ROUTE = ("GET", "/metrics/load")
+RUN_DEVICE = "fr945-load-run"
+RUN_START = datetime(SERIES_START.year, SERIES_START.month, SERIES_START.day, 12, 0, tzinfo=UTC).isoformat()
+RUN_LOAD = 55.0
+
+
+def _load_support(name: str):
+    """``tests/`` is not a package (importlib mode), so support modules load from their path."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parent / "support" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+session_loads = _load_support("session_loads")
+
 
 def _metric_routes() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
@@ -163,6 +188,24 @@ def _seed(seed_hrv_series) -> int:
     return len(result.sessions)
 
 
+def _seed_run(persist_sessions) -> str:
+    """One running session on ``SERIES_START`` with a counted saved load of ``RUN_LOAD``."""
+    run = Session(
+        session_id=derive_session_id(RUN_DEVICE, RUN_START),
+        sport="running",
+        source_vendor="garmin",
+        start_time=RUN_START,
+        source_device=RUN_DEVICE,
+    )
+    persist_sessions([run])
+    conn = db_module.get_connection()
+    try:
+        session_loads.plant_load(conn, run.session_id, value=RUN_LOAD)
+    finally:
+        conn.close()
+    return run.session_id
+
+
 def test_metric_routes_are_the_enumerated_set() -> None:
     """A new metric route reddens this until it is added to the walk."""
     found = _metric_routes()
@@ -172,12 +215,13 @@ def test_metric_routes_are_the_enumerated_set() -> None:
 
 
 def test_every_metric_route_serves_identical_bytes_across_the_three_serial_states(
-    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch, seed_hrv_series
+    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch, seed_hrv_series, persist_sessions
 ) -> None:
     """F007 AC6 through HTTP: states A, B and C of one store, three windows,
     every metric route, byte-identical responses."""
     _configure_declared(isolated_data_dir, monkeypatch)
-    seeded = _seed(seed_hrv_series)
+    run_id = _seed_run(persist_sessions)
+    seeded = _seed(seed_hrv_series) + 1  # the captures and the one run
 
     states: list[tuple[str, str | None, tuple, set[int | None]]] = [
         ("A", None, (), {None}),
@@ -218,16 +262,25 @@ def test_every_metric_route_serves_identical_bytes_across_the_three_serial_state
                         serials = _distinct_serials(conn)
                     finally:
                         conn.close()
-                    print(
-                        f"\n[slice compared] state={name} serials={sorted(serials, key=str)} "
-                        f"route={method} {path} window={from_.isoformat()}..{to.isoformat()} rows={seeded}"
-                    )
                     assert serials == expected_serials, f"state {name} did not take: {serials}"
 
                     response = client.request(
                         method, path, params={"from": from_.isoformat(), "to": to.isoformat()}
                     )
                     assert response.status_code == 200, response.text
+                    days = ""
+                    if (method, path) == LOAD_ROUTE:
+                        chart = response.json()
+                        days = f" load days={len(chart['days'])} first_day={chart['first_day']}"
+                        # Every window covers the run's date, so each serves curves, not the empty chart.
+                        assert chart["first_day"] == SERIES_START.isoformat(), chart["first_day"]
+                        assert len(chart["days"]) == (to - from_).days + 1, chart["days"]
+                        if from_ == SERIES_START:
+                            assert chart["days"][0]["counted"] == [{"session_id": run_id, "load": RUN_LOAD}]
+                    print(
+                        f"\n[slice compared] state={name} serials={sorted(serials, key=str)} "
+                        f"route={method} {path} window={from_.isoformat()}..{to.isoformat()} rows={seeded}{days}"
+                    )
                     key = (method, path, from_, to)
                     if name == "A":
                         baseline[key] = response.content

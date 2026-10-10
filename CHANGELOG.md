@@ -25,8 +25,8 @@ first match wins: `sport_not_running`, `declared_capture`, `no_hr`, `missing_anc
 `avg_hr_below_resting` / `avg_hr_above_max`, `wrist_hr_threshold_unknown`, `wrist_hr_at_threshold`
 (a session whose HR source is not a chest strap is flagged `wrist_hr` whatever the outcome and
 refused at or above the usable threshold by average HR) and `not_representable` (an entered value
-that does not convert to a finite float); after TRIMP, `session_load` is `no_threshold_hr` or
-`threshold_order_conflict` without a usable threshold. `flags` carries `wrist_hr` and
+that does not convert to a finite float, or a max - resting that is not a positive finite float); after
+TRIMP, `session_load` is `no_threshold_hr`, `threshold_order_conflict` or `not_representable` without a usable threshold. `flags` carries `wrist_hr` and
 `sex_defaulted`. The operation is `getSessionLoad` in the contract.
 
 F018: `GET /metrics/load` serves the fitness, fatigue and form chart (spec/03 section 3.5): for

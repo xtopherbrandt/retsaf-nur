@@ -296,10 +296,10 @@ def test_the_schema_carries_the_column_and_the_table() -> None:
 # --- the timer time reads like the summary's duration: unparseable means null, never a 500 -----
 
 
-UNPARSEABLE_TIMER_TIMES = ((150.0, 1.0), "150", True)
+UNPARSEABLE_TIMER_TIMES = ((150.0, 1.0), "150", True, float("nan"), float("inf"))
 
 
-@pytest.mark.parametrize("timer_time", UNPARSEABLE_TIMER_TIMES, ids=("tuple", "string", "bool"))
+@pytest.mark.parametrize("timer_time", UNPARSEABLE_TIMER_TIMES, ids=("tuple", "string", "bool", "nan", "inf"))
 def test_an_unparseable_timer_time_maps_to_null(timer_time, synthetic) -> None:
     """``fitdecode`` types a field by the file's own declared base type, so a crafted
     or corrupt definition can hand ``total_timer_time`` over as a tuple or a string

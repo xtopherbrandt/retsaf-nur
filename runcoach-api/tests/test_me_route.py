@@ -24,7 +24,9 @@ max 188, threshold 169 and ``male``.
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import sqlite3
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -297,41 +299,19 @@ def test_the_contract_component_matches_the_response_model() -> None:
     )
 
 
-REF_PREFIX = "#/components/schemas/"
-# The keywords compared per property. A description or a default is prose and is not compared.
-COMPARED_KEYWORDS = ("type", "enum", "format", "exclusiveMinimum")
+def _load_support(name: str):
+    """``tests/`` is not a package (importlib mode), so support modules load from their path."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parent / "support" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
 
 
-def _ref_name(ref: str) -> str:
-    assert ref.startswith(REF_PREFIX), ref
-    return ref[len(REF_PREFIX) :]
-
-
-def _normalised(prop: dict) -> dict:
-    """One property as ``{type, nullable, enum, format, exclusiveMinimum, ref}``, in either document's
-    spelling: the contract's ``nullable: true`` and FastAPI's ``anyOf: [X, {type: null}]`` both read as
-    nullable X, a ``const`` reads as a one-value ``enum``, and an enum's order is not compared."""
-    prop = dict(prop)
-    nullable = bool(prop.pop("nullable", False))
-    if "anyOf" in prop:
-        branches = prop.pop("anyOf")
-        rest = [b for b in branches if b != {"type": "null"}]
-        assert len(rest) == 1 and len(rest) < len(branches), f"not an optional single type: {branches}"
-        nullable = True
-        prop = {**prop, **rest[0]}
-    if "const" in prop:
-        prop["enum"] = [prop.pop("const")]
-    if "allOf" in prop:
-        (only,) = prop.pop("allOf")
-        prop = {**prop, **only}
-    out = {"nullable": nullable}
-    if "$ref" in prop:
-        out["ref"] = _ref_name(prop["$ref"])
-    for key in COMPARED_KEYWORDS:
-        if key in prop:
-            out[key] = sorted(prop[key]) if key == "enum" else prop[key]
-    assert "ref" in out or "type" in out, f"a property with neither a type nor a $ref: {prop}"
-    return out
+contract_walk = _load_support("contract_walk")
+REF_PREFIX = contract_walk.REF_PREFIX
+_ref_name = contract_walk.ref_name
+_normalised = contract_walk.normalised
 
 
 def _me_roots(doc: dict) -> set[str]:
@@ -347,31 +327,15 @@ def _me_roots(doc: dict) -> set[str]:
 
 def test_every_me_component_matches_the_served_model_property_by_property() -> None:
     """Walk every component reachable from the ``/me`` operations, in the contract and in
-    ``app.openapi()`` alike, and compare each property's type, nullability, enum, format, minimum and
-    ``$ref`` target. A contract that narrows an enum, retypes a field or drops its null fails here,
+    ``app.openapi()`` alike (``tests/support/contract_walk.py``), and compare each property's type,
+    nullability, enum, format, minimum and ``$ref`` target, array ``items`` included. A contract that narrows an enum, retypes a field or drops its null fails here,
     which a comparison of property names alone does not see. Each component's ``required`` list is
     compared too, for every component: a contract that drops a ``required`` list the served model
     has (``UnitPrefs``' three keys included) fails here."""
     contract = _contract()
     built = app.openapi()
     assert _me_roots(contract) == _me_roots(built) == {"Athlete", "AthleteProfileUpdate"}
-    queue, seen, compared = sorted(_me_roots(contract)), set(), []
-    while queue:
-        name = queue.pop()
-        if name in seen:
-            continue
-        seen.add(name)
-        ours, theirs = contract["components"]["schemas"][name], built["components"]["schemas"][name]
-        assert set(ours["properties"]) == set(theirs["properties"]), name
-        for field in ours["properties"]:
-            want = _normalised(theirs["properties"][field])
-            got = _normalised(ours["properties"][field])
-            assert got == want, f"{name}.{field}: contract {got} != served {want}"
-            compared.append(f"{name}.{field}")
-            if "ref" in got:
-                queue.append(got["ref"])
-        assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
-        assert ours.get("additionalProperties", True) == theirs.get("additionalProperties", True), name
+    seen, compared = contract_walk.walk(contract, built, _me_roots(contract))
     print(f"  {len(compared)} properties over {sorted(seen)}")
     assert seen >= {
         "Athlete",

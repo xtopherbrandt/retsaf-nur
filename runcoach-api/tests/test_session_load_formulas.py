@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pytest
 from runcoach_api.ingestion import fit_parser, mapping, profile_values, quality_gates
-from runcoach_api.metrics import session_features
+from runcoach_api.metrics import session_load
 from runcoach_api.metrics.session_load import compute_session_load
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -52,7 +52,12 @@ trimp_oracle = importlib.util.module_from_spec(_SPEC)
 sys.modules["trimp_oracle"] = trimp_oracle
 _SPEC.loader.exec_module(trimp_oracle)  # type: ignore[union-attr]
 
-_UNSET = object()
+_INPUTS_SPEC = importlib.util.spec_from_file_location("session_load_inputs", ORACLE_PATH.parent / "session_load_inputs.py")
+session_load_inputs = importlib.util.module_from_spec(_INPUTS_SPEC)
+sys.modules["session_load_inputs"] = session_load_inputs
+_INPUTS_SPEC.loader.exec_module(session_load_inputs)  # type: ignore[union-attr]
+_synthetic = session_load_inputs.synthetic
+_from_file = session_load_inputs.from_file
 
 # The F017 reference's worked values ("Worked values (oracle for AC1)"): run proof `yes` on both rows.
 REFERENCE_VALUES = {
@@ -61,39 +66,7 @@ REFERENCE_VALUES = {
 }
 FEMALE_SAMPLE_RUN = (93.29, 189.38, 49.26)
 
-HR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
-
-
-def _from_file(value, session_id: str) -> dict:
-    """One ``inputs.<field>`` block for a value the session's own file carried (or none)."""
-    if value is None:
-        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
-    return {
-        "value": value,
-        "source": "session_file",
-        "session_id": session_id,
-        "anchor_version": None,
-        "anchor_unavailable": None,
-    }
-
-
-def _inputs(session: dict, rows: list[dict], **overrides) -> dict:
-    """The mapping ``compute_session_load`` takes, built as the upload path builds it."""
-    features = session_features.compute_session_features(session, rows)
-    inputs = {
-        "session_id": session["session_id"],
-        "sport": session["sport"],
-        "activity_tag": session.get("activity_tag"),
-        "hr_source": session.get("hr_source"),
-        "quality_flags": list(session.get("quality_flags") or []),
-        "timer_time_s": session.get("timer_time_s"),
-        "segment_rows": session_features.segment_rows(session, rows),
-        "features": features,
-    }
-    for field_name in HR_FIELDS:
-        inputs[field_name] = _from_file(session.get(field_name), session["session_id"])
-    inputs.update(overrides)
-    return inputs
+HR_FIELDS = session_load_inputs.HR_FIELDS
 
 
 def _fixture_inputs(name: str, **overrides) -> dict:
@@ -114,38 +87,7 @@ def _fixture_inputs(name: str, **overrides) -> dict:
         **{field_name: getattr(canonical, field_name) for field_name in HR_FIELDS},
     }
     rows = [dataclasses.asdict(r) for r in records]
-    return _inputs(session, rows, **overrides)
-
-
-def _synthetic(
-    *,
-    seconds: int = 600,
-    heart_rate: float | None = 150.0,
-    sport: str = "running",
-    activity_tag: str | None = None,
-    resting: int | None = 50,
-    max_hr: int | None = 190,
-    threshold: int | None = 170,
-    sex: str | None = "male",
-    timer_time_s: object = _UNSET,
-    **overrides,
-) -> dict:
-    """A 1 Hz run of ``seconds`` records at a constant HR, with the settings given as the file's own."""
-    rows = [{"t": float(t), "distance": 3.0 * t, "heart_rate": heart_rate, "sample_quality": []} for t in range(seconds + 1)]
-    session = {
-        "session_id": "synthetic",
-        "sport": sport,
-        "activity_tag": activity_tag,
-        "hr_source": "chest_strap",
-        "quality_flags": [],
-        "context": {},
-        "timer_time_s": float(seconds) if timer_time_s is _UNSET else timer_time_s,
-        "resting_hr_bpm": resting,
-        "max_hr_bpm": max_hr,
-        "threshold_hr_bpm": threshold,
-        "sex": sex,
-    }
-    return _inputs(session, rows, **overrides)
+    return session_load_inputs.inputs_for(session, rows, **overrides)
 
 
 def _expected_trimp(duration_min: float, r: float, sex: str) -> float:
@@ -374,3 +316,29 @@ def test_hr_time_fraction_is_null_without_a_timer_time() -> None:
     assert body["inputs"]["timer_time_s"] is None
     assert body["inputs"]["hr_time_fraction"] is None
     assert body["metrics"]["hr_trimp"]["value"] is not None
+
+
+def test_hr_time_fraction_is_null_when_the_timer_time_is_zero() -> None:
+    """A zero timer time is no denominator: the fraction is null, never a ``ZeroDivisionError``,
+    and TRIMP, which reads ``hr_time_s`` and not the timer, is still computed."""
+    body = compute_session_load(_synthetic(timer_time_s=0.0, seconds=100))
+    print(f"  timer_time_s 0.0 -> inputs {body['inputs']['hr_time_s'], body['inputs']['hr_time_fraction']}")
+    assert body["inputs"]["timer_time_s"] == 0.0
+    assert body["inputs"]["hr_time_s"] == 100.0
+    assert body["inputs"]["hr_time_fraction"] is None
+    assert body["metrics"]["hr_trimp"]["value"] == pytest.approx(_expected_trimp(100 / 60, 100 / 140, "male"))
+
+
+def test_the_empty_value_block_is_five_null_keys_and_read_only() -> None:
+    """``EMPTY_VALUE`` is the block ``db`` and these suites build every empty field from, so its
+    literal is pinned once here."""
+    assert dict(session_load.EMPTY_VALUE) == {
+        "value": None,
+        "source": None,
+        "session_id": None,
+        "anchor_version": None,
+        "anchor_unavailable": None,
+    }
+    assert list(session_load.EMPTY_VALUE) == ["value", "source", "session_id", "anchor_version", "anchor_unavailable"]
+    with pytest.raises(TypeError):
+        session_load.EMPTY_VALUE["value"] = 1  # type: ignore[index]

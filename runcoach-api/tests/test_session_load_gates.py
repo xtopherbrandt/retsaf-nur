@@ -27,94 +27,63 @@ which the route test holds inside the contract's closed enum.
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import sys
+from pathlib import Path
 
 import pytest
-from runcoach_api.metrics import session_features, session_load
+from runcoach_api.metrics import session_load
 from runcoach_api.metrics.session_load import compute_session_load
 
-HR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
 HUGE = 10**400
 BIG = 2**63
 
 
-def _from_file(value) -> dict:
-    if value is None:
-        return {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
-    return {"value": value, "source": "session_file", "session_id": "synthetic", "anchor_version": None, "anchor_unavailable": None}
+def _load_support(name: str):
+    """``tests/`` is not a package (importlib mode), so support modules load from their path."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parent / "support" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
 
 
-def _synthetic(
-    *,
-    seconds: int = 600,
-    heart_rate: float | None = 150.0,
-    resting=50,
-    max_hr=190,
-    threshold=170,
-    sex="male",
-    sport: str = "running",
-    activity_tag: str | None = None,
-) -> dict:
-    """A 1 Hz run of ``seconds`` records at a constant HR, the settings as the file's own values."""
-    rows = [{"t": float(t), "distance": 3.0 * t, "heart_rate": heart_rate, "sample_quality": []} for t in range(seconds + 1)]
-    session = {
-        "session_id": "synthetic",
-        "sport": sport,
-        "activity_tag": activity_tag,
-        "hr_source": "chest_strap",
-        "quality_flags": [],
-        "context": {},
-        "timer_time_s": float(seconds),
-    }
-    inputs = {
-        **session,
-        "segment_rows": session_features.segment_rows(session, rows),
-        "features": session_features.compute_session_features(session, rows),
-    }
-    for field_name, value in zip(HR_FIELDS, (resting, max_hr, threshold, sex)):
-        inputs[field_name] = _from_file(value)
-    return inputs
-
-
-def _outcome(body: dict) -> tuple[str | None, str | None, bool]:
-    """``(hr_trimp.unavailable, session_load.unavailable, hr_trimp.value is served)``."""
-    return (
-        body["metrics"]["hr_trimp"]["unavailable"],
-        body["session_load"]["unavailable"],
-        body["metrics"]["hr_trimp"]["value"] is not None,
-    )
+session_load_inputs = _load_support("session_load_inputs")
+_synthetic = session_load_inputs.synthetic
+_outcome = session_load_inputs.outcome
 
 
 # (id, inputs, expected hr_trimp reason, expected session_load reason, trimp served)
 # Written from the reference's gate table (rows 4, 5, 6, 9 and the reference step) before the build.
 GATE_ROWS = [
     # gate 4: resting or max without a value
-    ("4_no_resting_is_missing_anchor", dict(resting=None), "missing_anchor", "missing_anchor", False),
-    ("4_no_max_is_missing_anchor", dict(max_hr=None), "missing_anchor", "missing_anchor", False),
-    ("4_neither_is_missing_anchor", dict(resting=None, max_hr=None), "missing_anchor", "missing_anchor", False),
+    ("4_no_resting_is_missing_anchor", {"resting": None}, "missing_anchor", "missing_anchor", False),
+    ("4_no_max_is_missing_anchor", {"max_hr": None}, "missing_anchor", "missing_anchor", False),
+    ("4_neither_is_missing_anchor", {"resting": None, "max_hr": None}, "missing_anchor", "missing_anchor", False),
     # gate 5: resting >= max among the values used (equality refused: the surviving mutant)
-    ("5_resting_equal_max_is_order_conflict", dict(resting=190, max_hr=190), "order_conflict", "order_conflict", False),
-    ("5_resting_above_max_is_order_conflict", dict(resting=191, max_hr=190), "order_conflict", "order_conflict", False),
+    ("5_resting_equal_max_is_order_conflict", {"resting": 190, "max_hr": 190}, "order_conflict", "order_conflict", False),
+    ("5_resting_above_max_is_order_conflict", {"resting": 191, "max_hr": 190}, "order_conflict", "order_conflict", False),
     # gate 6: average HR outside the bounds (R3); equality is computed, see EQUALITY_ROWS
-    ("6_avg_below_resting", dict(heart_rate=40.0), "avg_hr_below_resting", "avg_hr_below_resting", False),
-    ("6_avg_above_max", dict(heart_rate=200.0), "avg_hr_above_max", "avg_hr_above_max", False),
+    ("6_avg_below_resting", {"heart_rate": 40.0}, "avg_hr_below_resting", "avg_hr_below_resting", False),
+    ("6_avg_above_max", {"heart_rate": 200.0}, "avg_hr_above_max", "avg_hr_above_max", False),
     # gate 9: a value used does not convert to a finite float
-    ("9_max_ten_to_the_400_is_not_representable", dict(max_hr=HUGE), "not_representable", "not_representable", False),
-    ("9_threshold_ten_to_the_400_is_not_representable", dict(threshold=HUGE), "not_representable", "not_representable", False),
+    ("9_max_ten_to_the_400_is_not_representable", {"max_hr": HUGE}, "not_representable", "not_representable", False),
+    ("9_threshold_ten_to_the_400_is_not_representable", {"threshold": HUGE}, "not_representable", "not_representable", False),
     # two gates met: the earlier one wins
-    ("4_before_6_no_resting_and_avg_above_max", dict(resting=None, heart_rate=200.0), "missing_anchor", "missing_anchor", False),
-    ("5_before_6_resting_equal_max_and_avg_below", dict(resting=190, max_hr=190, heart_rate=40.0), "order_conflict", "order_conflict", False),
-    ("5_before_9_resting_above_a_huge_max", dict(resting=HUGE + 1, max_hr=HUGE), "order_conflict", "order_conflict", False),
-    ("6_before_9_avg_above_max_with_a_huge_threshold", dict(heart_rate=200.0, threshold=HUGE), "avg_hr_above_max", "avg_hr_above_max", False),
-    ("3_before_4_no_hr_and_no_resting", dict(heart_rate=None, resting=None), "no_hr", "no_hr", False),
+    ("4_before_6_no_resting_and_avg_above_max", {"resting": None, "heart_rate": 200.0}, "missing_anchor", "missing_anchor", False),
+    ("5_before_6_resting_equal_max_and_avg_below", {"resting": 190, "max_hr": 190, "heart_rate": 40.0}, "order_conflict", "order_conflict", False),
+    ("5_before_9_resting_above_a_huge_max", {"resting": HUGE + 1, "max_hr": HUGE}, "order_conflict", "order_conflict", False),
+    ("6_before_9_avg_above_max_with_a_huge_threshold", {"heart_rate": 200.0, "threshold": HUGE}, "avg_hr_above_max", "avg_hr_above_max", False),
+    ("3_before_4_no_hr_and_no_resting", {"heart_rate": None, "resting": None}, "no_hr", "no_hr", False),
     # AC7: TRIMP computed, the reference withheld; hr_trimp.value still served
-    ("ref_no_threshold_is_no_threshold_hr", dict(threshold=None), None, "no_threshold_hr", True),
-    ("ref_threshold_equal_resting_is_threshold_order_conflict", dict(threshold=50), None, "threshold_order_conflict", True),
-    ("ref_threshold_equal_max_is_threshold_order_conflict", dict(threshold=190), None, "threshold_order_conflict", True),
-    ("ref_threshold_below_resting_is_threshold_order_conflict", dict(threshold=40), None, "threshold_order_conflict", True),
-    ("ref_threshold_above_max_is_threshold_order_conflict", dict(threshold=200), None, "threshold_order_conflict", True),
+    ("ref_no_threshold_is_no_threshold_hr", {"threshold": None}, None, "no_threshold_hr", True),
+    ("ref_threshold_equal_resting_is_threshold_order_conflict", {"threshold": 50}, None, "threshold_order_conflict", True),
+    ("ref_threshold_equal_max_is_threshold_order_conflict", {"threshold": 190}, None, "threshold_order_conflict", True),
+    ("ref_threshold_below_resting_is_threshold_order_conflict", {"threshold": 40}, None, "threshold_order_conflict", True),
+    ("ref_threshold_above_max_is_threshold_order_conflict", {"threshold": 200}, None, "threshold_order_conflict", True),
     # otherwise: computed and served
-    ("computed_in_order", dict(), None, None, True),
+    ("computed_in_order", {}, None, None, True),
 ]
 
 
@@ -163,7 +132,7 @@ def test_average_equal_to_max_is_computed_with_r_one() -> None:
 
 def test_sex_defaulted_is_flagged_only_when_trimp_is_computed() -> None:
     assert compute_session_load(_synthetic(sex=None))["flags"] == ["sex_defaulted"]
-    for refused in (dict(heart_rate=None), dict(resting=None), dict(resting=190, max_hr=190), dict(heart_rate=40.0), dict(max_hr=HUGE)):
+    for refused in ({"heart_rate": None}, {"resting": None}, {"resting": 190, "max_hr": 190}, {"heart_rate": 40.0}, {"max_hr": HUGE}):
         assert compute_session_load(_synthetic(sex=None, **refused))["flags"] == [], refused
     # The reference step comes after TRIMP, so the flag is still set under no_threshold_hr.
     assert compute_session_load(_synthetic(sex=None, threshold=None))["flags"] == ["sex_defaulted"]
@@ -173,22 +142,22 @@ def test_sex_defaulted_is_flagged_only_when_trimp_is_computed() -> None:
 
 # (id, inputs, expected hr_trimp reason, expected session_load reason)
 ADVERSARIAL_ROWS = [
-    ("resting_0_is_computed", dict(resting=0, threshold=100), None, None),
-    ("resting_0_max_0_is_order_conflict", dict(resting=0, max_hr=0), "order_conflict", "order_conflict"),
-    ("max_0_below_resting_is_order_conflict", dict(max_hr=0), "order_conflict", "order_conflict"),
-    ("threshold_0_is_threshold_order_conflict", dict(threshold=0), None, "threshold_order_conflict"),
-    ("smallest_ordered_pair_at_r_one", dict(resting=149, max_hr=150, threshold=None), None, "no_threshold_hr"),
-    ("smallest_ordered_pair_below_resting", dict(resting=151, max_hr=152), "avg_hr_below_resting", "avg_hr_below_resting"),
-    ("max_two_to_the_63_is_computed", dict(max_hr=BIG), None, None),
-    ("resting_two_to_the_63_is_order_conflict", dict(resting=BIG), "order_conflict", "order_conflict"),
-    ("resting_two_to_the_63_under_a_larger_max_is_avg_below_resting", dict(resting=BIG, max_hr=BIG + 1), "avg_hr_below_resting", "avg_hr_below_resting"),
-    ("max_ten_to_the_400_is_not_representable", dict(max_hr=HUGE), "not_representable", "not_representable"),
-    ("resting_ten_to_the_400_is_order_conflict", dict(resting=HUGE), "order_conflict", "order_conflict"),
-    ("resting_ten_to_the_400_under_a_larger_max_is_avg_below_resting", dict(resting=HUGE, max_hr=HUGE + 1), "avg_hr_below_resting", "avg_hr_below_resting"),
-    ("threshold_ten_to_the_400_is_not_representable", dict(threshold=HUGE), "not_representable", "not_representable"),
-    ("threshold_served_while_resting_and_max_conflict", dict(resting=190, max_hr=190, threshold=170), "order_conflict", "order_conflict"),
-    ("huge_threshold_while_resting_and_max_conflict", dict(resting=190, max_hr=190, threshold=HUGE), "order_conflict", "order_conflict"),
-    ("huge_threshold_under_no_hr", dict(heart_rate=None, threshold=HUGE), "no_hr", "no_hr"),
+    ("resting_0_is_computed", {"resting": 0, "threshold": 100}, None, None),
+    ("resting_0_max_0_is_order_conflict", {"resting": 0, "max_hr": 0}, "order_conflict", "order_conflict"),
+    ("max_0_below_resting_is_order_conflict", {"max_hr": 0}, "order_conflict", "order_conflict"),
+    ("threshold_0_is_threshold_order_conflict", {"threshold": 0}, None, "threshold_order_conflict"),
+    ("smallest_ordered_pair_at_r_one", {"resting": 149, "max_hr": 150, "threshold": None}, None, "no_threshold_hr"),
+    ("smallest_ordered_pair_below_resting", {"resting": 151, "max_hr": 152}, "avg_hr_below_resting", "avg_hr_below_resting"),
+    ("max_two_to_the_63_is_computed", {"max_hr": BIG}, None, None),
+    ("resting_two_to_the_63_is_order_conflict", {"resting": BIG}, "order_conflict", "order_conflict"),
+    ("resting_two_to_the_63_under_a_larger_max_is_avg_below_resting", {"resting": BIG, "max_hr": BIG + 1}, "avg_hr_below_resting", "avg_hr_below_resting"),
+    ("max_ten_to_the_400_is_not_representable", {"max_hr": HUGE}, "not_representable", "not_representable"),
+    ("resting_ten_to_the_400_is_order_conflict", {"resting": HUGE}, "order_conflict", "order_conflict"),
+    ("resting_ten_to_the_400_under_a_larger_max_is_avg_below_resting", {"resting": HUGE, "max_hr": HUGE + 1}, "avg_hr_below_resting", "avg_hr_below_resting"),
+    ("threshold_ten_to_the_400_is_not_representable", {"threshold": HUGE}, "not_representable", "not_representable"),
+    ("threshold_served_while_resting_and_max_conflict", {"resting": 190, "max_hr": 190, "threshold": 170}, "order_conflict", "order_conflict"),
+    ("huge_threshold_while_resting_and_max_conflict", {"resting": 190, "max_hr": 190, "threshold": HUGE}, "order_conflict", "order_conflict"),
+    ("huge_threshold_under_no_hr", {"heart_rate": None, "threshold": HUGE}, "no_hr", "no_hr"),
 ]
 
 
@@ -212,6 +181,73 @@ def test_adversarial_bounds(overrides: dict, trimp_reason, load_reason) -> None:
         assert echoed is None or isinstance(echoed, int), field_name
     for reason in (trimp_reason, load_reason):
         assert reason is None or reason in session_load.SERVED_REASONS, reason
+
+
+EXACT = 2**53  # 2**53 + 1 is the first integer a float cannot hold: float() rounds it to 2**53
+
+
+def test_a_span_that_collapses_in_float_is_not_representable() -> None:
+    """Gate 5 compares exact integers, so ``resting = 2**53`` and ``max = 2**53 + 1`` pass it; but
+    ``float(2**53 + 1) - float(2**53)`` is 0.0, and ``r`` would divide by it. Gate 9 refuses a span
+    that is not a positive finite float as ``not_representable``, so no input is a
+    ``ZeroDivisionError`` (a 500 at upload)."""
+    body = compute_session_load(_synthetic(resting=EXACT, max_hr=EXACT + 1, threshold=None, heart_rate=float(EXACT)))
+    print(f"  resting 2**53, max 2**53+1, avg {body['inputs']['avg_hr_bpm']!r} -> {_outcome(body)}")
+    assert body["inputs"]["avg_hr_bpm"] == float(EXACT)
+    assert _outcome(body) == ("not_representable", "not_representable", False)
+    assert body["session_load"] == {"value": None, "unavailable": "not_representable", "driver": None}
+    assert body["metrics"]["hr_trimp"]["coefficients"] is None
+    # A span that overflows to inf is refused the same way: both values convert, their difference does not.
+    wide = compute_session_load(_synthetic(resting=-(10**308), max_hr=10**308))
+    print(f"  resting -1e308, max 1e308 -> {_outcome(wide)}")
+    assert _outcome(wide) == ("not_representable", "not_representable", False)
+
+
+def test_a_threshold_span_that_collapses_in_float_withholds_the_load_as_not_representable() -> None:
+    """``threshold = 2**53 + 1`` sits exactly between ``resting = 2**53`` and the max, so the
+    reference's order check passes; in float it equals resting, ``r_thr`` is 0 and the reference 0,
+    and the load would divide by it. TRIMP is served and ``session_load`` is ``not_representable``,
+    the reference step's path, as ``no_threshold_hr`` and ``threshold_order_conflict`` are."""
+    max_hr = EXACT + 2**31
+    body = compute_session_load(
+        _synthetic(resting=EXACT, max_hr=max_hr, threshold=EXACT + 1, heart_rate=float(EXACT + 2**30))
+    )
+    trimp = body["metrics"]["hr_trimp"]
+    print(f"  resting 2**53, threshold 2**53+1, max 2**53+2**31 -> {_outcome(body)} trimp {trimp['value']}")
+    assert _outcome(body) == (None, "not_representable", True)
+    assert math.isfinite(trimp["value"]) and trimp["value"] > 0
+    assert trimp["threshold_hour_reference"] is None
+    assert trimp["coefficients"] == "male"
+    assert body["session_load"] == {"value": None, "unavailable": "not_representable", "driver": None}
+    assert body["inputs"]["threshold_hr_bpm"]["value"] == EXACT + 1
+
+
+@pytest.mark.parametrize("field_name", session_load.ANCHOR_FIELDS)
+@pytest.mark.parametrize("block", [pytest.param(None, id="absent"), 50, "50", [50], pytest.param(object(), id="object")])
+def test_a_malformed_value_block_is_a_writer_defect_not_missing_anchor(field_name: str, block) -> None:
+    """``db._save_session_load`` builds all four blocks for every session, so a block that is
+    absent or not a mapping is a defect of the writer, refused naming the field (as
+    ``load_chart._place`` refuses a row with neither a load nor a reason), never read as no value
+    and served as ``missing_anchor``."""
+    inputs = _synthetic()
+    if block is None:
+        del inputs[field_name]
+    else:
+        inputs[field_name] = block
+    with pytest.raises(ValueError, match=f"inputs.{field_name}") as excinfo:
+        compute_session_load(inputs)
+    print(f"  {field_name}={block!r} -> {excinfo.value}")
+
+
+def test_a_well_formed_empty_block_is_still_no_value() -> None:
+    """The control: the empty block itself (and a mapping missing some keys) reads as no value."""
+    inputs = _synthetic()
+    inputs["resting_hr_bpm"] = dict(session_load.EMPTY_VALUE)
+    inputs["max_hr_bpm"] = {"value": None}
+    body = compute_session_load(inputs)
+    assert _outcome(body) == ("missing_anchor", "missing_anchor", False)
+    assert body["metrics"]["hr_trimp"]["unavailable_fields"] == ["resting_hr_bpm", "max_hr_bpm"]
+    assert body["inputs"]["max_hr_bpm"] == dict(session_load.EMPTY_VALUE)
 
 
 def test_max_two_to_the_63_gives_a_tiny_finite_trimp() -> None:

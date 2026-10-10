@@ -2364,9 +2364,9 @@ components:
         `avg_hr_below_resting` and `avg_hr_above_max` (average HR outside the
         bounds), `wrist_hr_threshold_unknown` (a wrist session with no usable
         threshold) and `wrist_hr_at_threshold` (a wrist session averaging at
-        or above threshold), `not_representable` (a value used does not
-        convert to a finite float). Then, with hr_trimp.value served,
-        `no_threshold_hr` and `threshold_order_conflict` leave session_load
+        or above threshold), `not_representable` (a value used, or max - resting, is not a finite float, the span positive).
+        Then, with hr_trimp.value served, `no_threshold_hr`, `threshold_order_conflict` and
+        `not_representable` (threshold - resting not a positive finite float) leave session_load
         alone unavailable.
       enum:
         - sport_not_running
@@ -2390,7 +2390,7 @@ components:
         unavailable:
           allOf: [ { $ref: "#/components/schemas/SessionLoadReason" } ]
           nullable: true
-          description: "HR-TRIMP's reason when it has no value, else no_threshold_hr or threshold_order_conflict; null when value is served."
+          description: "HR-TRIMP's reason when it has no value, else no_threshold_hr, threshold_order_conflict or not_representable; null when value is served."
         driver: { type: string, nullable: true, enum: [hr_trimp], description: "The metric behind value; null whenever value is null." }
     HrTrimp:
       type: object

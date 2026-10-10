@@ -7,20 +7,21 @@ require the route's JSON to be that body exactly; one row corrupts the HR
 anchor version log after the upload (the write that makes ``GET /me`` a
 named 500) and shows the load still answers 200 with the saved body.
 
-**The contract walk.** ``test_me_route.py``'s walker compares every component
-reachable from an operation property by property, but its ``_normalised``
-reads a property's ``type``, ``enum``, ``format``, nullability and ``$ref``
-only: an array's ``items`` is never opened, so a contract that narrows or
-drops the enum behind ``flags[]`` or ``unavailable_fields[]`` would pass it
-vacuously. The walker here recurses into ``items``, compares an enum
-component (``SessionLoadReason``) by its own enum, and asserts that every
-new component was visited.
+**The contract walk** is ``tests/support/contract_walk.py``'s, shared with the
+``/me`` and ``getLoadChart`` walks: every component reachable from an operation
+compared property by property, recursing into array ``items`` (so a contract
+that narrows or drops the enum behind ``flags[]`` or ``unavailable_fields[]``
+fails it, not passes it vacuously) and comparing an enum component
+(``SessionLoadReason``) by its own enum; this module asserts that every new
+component was visited.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sqlite3
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -212,10 +213,9 @@ def test_a_saved_hr_value_of_two_to_the_63_is_served_exactly() -> None:
             "anchor_version": 3,
             "anchor_unavailable": None,
         }
-        with _connection() as conn:
-            with conn:
-                conn.execute(f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,))
-                db_module._write_session_load(conn, session_id, saved)
+        with _connection() as conn, conn:
+            conn.execute(f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,))
+            db_module._write_session_load(conn, session_id, saved)
         response = client.get(f"/sessions/{session_id}/load")
     assert response.status_code == 200, response.text
     assert response.json()["inputs"]["max_hr_bpm"]["value"] == 2**63
@@ -297,53 +297,19 @@ def test_the_hr_inputs_are_unbounded_integers_in_the_contract() -> None:
             assert "format" not in flat, f"{name}.value must not carry a format: {value}"
 
 
-REF_PREFIX = "#/components/schemas/"
-# The keywords compared per property. A description, a title or a default is prose and is not compared.
-COMPARED_KEYWORDS = ("type", "enum", "format", "exclusiveMinimum")
+def _load_support(name: str):
+    """``tests/`` is not a package (importlib mode), so support modules load from their path."""
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).parent / "support" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
 
 
-def _ref_name(ref: str) -> str:
-    assert ref.startswith(REF_PREFIX), ref
-    return ref[len(REF_PREFIX) :]
-
-
-def _normalised(prop: dict) -> dict:
-    """One schema node as ``{type, nullable, enum, format, exclusiveMinimum, ref, items}``, in either
-    document's spelling: the contract's ``nullable: true`` and FastAPI's ``anyOf: [X, {type: null}]``
-    both read as nullable X, a one-member ``allOf`` is its member, a ``const`` reads as a one-value
-    ``enum``, an enum's order is not compared, and an array's ``items`` is normalised the same way
-    (the extension over ``test_me_route.py``'s walker, which never opens ``items``)."""
-    prop = dict(prop)
-    nullable = bool(prop.pop("nullable", False))
-    if "anyOf" in prop:
-        branches = prop.pop("anyOf")
-        rest = [b for b in branches if b != {"type": "null"}]
-        assert len(rest) == 1 and len(rest) < len(branches), f"not an optional single type: {branches}"
-        nullable = True
-        prop = {**prop, **rest[0]}
-    if "const" in prop:
-        prop["enum"] = [prop.pop("const")]
-    if "allOf" in prop:
-        (only,) = prop.pop("allOf")
-        prop = {**prop, **only}
-    out = {"nullable": nullable}
-    if "$ref" in prop:
-        out["ref"] = _ref_name(prop["$ref"])
-    for key in COMPARED_KEYWORDS:
-        if key in prop:
-            out[key] = sorted(prop[key]) if key == "enum" else prop[key]
-    if "items" in prop:
-        out["items"] = _normalised(prop["items"])
-    assert "ref" in out or "type" in out, f"a node with neither a type nor a $ref: {prop}"
-    return out
-
-
-def _refs(node: dict) -> list[str]:
-    """Every component a normalised node names, through ``ref`` and nested ``items``."""
-    found = [node["ref"]] if "ref" in node else []
-    if "items" in node:
-        found.extend(_refs(node["items"]))
-    return found
+contract_walk = _load_support("contract_walk")
+REF_PREFIX = contract_walk.REF_PREFIX
+_ref_name = contract_walk.ref_name
+_normalised = contract_walk.normalised
 
 
 def _load_root(doc: dict) -> str:
@@ -360,28 +326,7 @@ def test_every_load_component_matches_the_served_model_property_by_property() ->
     contract = _contract()
     built = app.openapi()
     assert _load_root(contract) == _load_root(built) == "SessionLoad"
-    queue, seen, compared = ["SessionLoad"], set(), []
-    while queue:
-        name = queue.pop()
-        if name in seen:
-            continue
-        seen.add(name)
-        ours, theirs = contract["components"]["schemas"][name], built["components"]["schemas"][name]
-        if "properties" not in theirs:
-            assert "properties" not in ours, name
-            got, want = _normalised(ours), _normalised(theirs)
-            assert got == want, f"{name}: contract {got} != served {want}"
-            compared.append(name)
-            continue
-        assert set(ours["properties"]) == set(theirs["properties"]), name
-        for field in ours["properties"]:
-            want = _normalised(theirs["properties"][field])
-            got = _normalised(ours["properties"][field])
-            assert got == want, f"{name}.{field}: contract {got} != served {want}"
-            compared.append(f"{name}.{field}")
-            queue.extend(_refs(got))
-        assert set(ours.get("required", [])) == set(theirs.get("required", [])), name
-        assert ours.get("additionalProperties", True) == theirs.get("additionalProperties", True), name
+    seen, compared = contract_walk.walk(contract, built, ["SessionLoad"])
     print(f"  {len(compared)} properties over {sorted(seen)}")
     assert seen == NEW_COMPONENTS, seen
     # The array enums were opened: the walk compared the items behind flags and unavailable_fields.
@@ -392,8 +337,8 @@ def test_every_load_component_matches_the_served_model_property_by_property() ->
 
 
 def test_the_walker_opens_array_items() -> None:
-    """The extension itself, perturbed: two array nodes that agree on everything but their items' enum
-    are unequal here, where ``test_me_route.py``'s normaliser would call them equal."""
+    """The items recursion itself, perturbed: two array nodes that agree on everything but their
+    items' enum are unequal, which a normaliser that never opens ``items`` would call equal."""
     narrow = {"type": "array", "items": {"type": "string", "enum": ["wrist_hr"]}}
     full = {"type": "array", "items": {"type": "string", "enum": ["wrist_hr", "sex_defaulted"]}}
     assert _normalised(narrow) != _normalised(full)
