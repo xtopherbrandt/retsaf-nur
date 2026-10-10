@@ -1098,6 +1098,9 @@ _F016_COLUMNS = {
 # F017's one session column (the saved load is its own table, session_loads).
 _F017_COLUMNS = {"timer_time_s": "REAL"}
 
+# F019's one session column: the name saved at upload (workout.wkt_name, else the profile name).
+_F019_COLUMNS = {"name": "TEXT"}
+
 
 def _pre_f016_database_with_one_row(conn) -> None:
     conn.executescript(_PRE_F016_SESSIONS_DDL)
@@ -1118,7 +1121,11 @@ def test_the_pre_f016_ddl_is_the_current_ddl_minus_the_f016_columns():
     finally:
         probe.close()
     after = db._expected_schema()["sessions"]
-    assert {c: t for c, t in after.items() if c not in before} == {**_F016_COLUMNS, **_F017_COLUMNS}
+    assert {c: t for c, t in after.items() if c not in before} == {
+        **_F016_COLUMNS,
+        **_F017_COLUMNS,
+        **_F019_COLUMNS,
+    }
     assert set(before) <= set(after)
 
 
@@ -1325,3 +1332,43 @@ def test_init_schema_adds_timer_time_s_and_the_session_loads_table_to_an_existin
     assert [tuple(r) for r in loads] == [("pre-f016-1", None, "declared_capture")]
     assert load_columns == {"session_id": "TEXT", "load_value": "REAL", "load_reason": "TEXT", "body": "TEXT"}
     assert db.SESSION_LOADS_TABLE in db._child_tables()
+
+
+# ---------------------------------------------------------------------------
+# F019 -- the session name column
+# ---------------------------------------------------------------------------
+
+
+def test_init_schema_adds_the_name_column_to_a_store_created_without_it():
+    """F019 AC2 schema row. A store with every column through F017 but no
+    ``name`` gains it in place through ``_reconcile_columns``: nullable TEXT,
+    no default, the stored row intact and its ``name`` NULL. Nothing backfills
+    it (no FIT bytes are kept; the read side resolves such a row's name from
+    ``context.provenance.sport_profile_name``), and a second ``init_schema``
+    leaves it NULL."""
+    from runcoach_api.models import Session
+
+    conn = db.get_connection()
+    try:
+        _pre_f016_database_with_one_row(conn)
+        for column, decl_type in {**_F016_COLUMNS, **_F017_COLUMNS}.items():
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {decl_type}")
+        conn.commit()
+        assert "name" not in _columns(conn, "sessions")
+
+        db.init_schema(conn)
+        info = {row["name"]: row for row in conn.execute("PRAGMA table_info(sessions)")}
+        db.init_schema(conn)
+        row = conn.execute("SELECT * FROM sessions WHERE session_id = 'pre-f016-1'").fetchone()
+    finally:
+        conn.close()
+
+    assert info["name"]["type"] == "TEXT"
+    assert info["name"]["notnull"] == 0
+    assert info["name"]["dflt_value"] is None
+    assert info["name"]["pk"] == 0
+    assert row is not None
+    assert row["name"] is None
+    for column, value in _PRE_F016_ROW.items():
+        assert row[column] == value, column
+    assert Session.__dataclass_fields__["name"].default is None

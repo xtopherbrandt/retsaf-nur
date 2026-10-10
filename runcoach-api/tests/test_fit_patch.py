@@ -16,6 +16,11 @@ Patched bytes stay in memory. Nothing here writes into ``tests/fixtures/``.
 - **Set.** ``zones_target.max_heart_rate``, ``session.start_time`` (on the
   file with developer fields) and two ``user_profile`` fields are set; the
   decoded raw values match and no other field value moves.
+- **Strings.** ``set_string_field`` blanks ``session.sport_profile_name`` to
+  NUL bytes (``fitdecode`` decodes it to ``None``), writes spaces into it and
+  a short name into ``workout.wkt_name``, NUL-padded to the field's size; no
+  other field value moves. A non-string field, a value that does not fit
+  and a value holding a NUL byte are refused.
 - **Unknown targets.** A message number the file does not hold, or a field
   its definition does not carry, raises.
 - **Smoke upload.** The ``dev_fields_run`` patched to ``sample_run``'s start
@@ -272,6 +277,104 @@ def test_set_an_unknown_target_raises(global_num: int, field_num: int, match: st
 def test_set_a_value_too_wide_for_the_field_raises() -> None:
     with pytest.raises(fit_patch.FitPatchError, match="does not fit"):
         fit_patch.set_field(_raw("sample_run.fit"), ZONES_TARGET, 1, 256)
+
+
+# ---------------------------------------------------------------------------
+# strings
+# ---------------------------------------------------------------------------
+
+WORKOUT = 26
+SPORT_PROFILE_NAME, WKT_NAME = 110, 8
+
+
+def _first(messages: list, global_num: int):
+    return next(m for m in messages if m.global_mesg_num == global_num)
+
+
+def test_blank_string_field_decodes_to_none_and_moves_nothing_else() -> None:
+    raw = _raw("wrist_ppg_run.fit")
+    _, before = _decode(raw)
+    assert _first(before, SESSION).get_value("sport_profile_name") == "Run"
+
+    patched = fit_patch.set_string_field(raw, SESSION, SPORT_PROFILE_NAME, None)
+
+    _assert_header_rewritten(patched)
+    assert len(patched) == len(raw)
+    _, after = _decode(patched)
+    profile = _first(after, SESSION)
+    print(f"sport_profile_name raw now {profile.get_raw_value('sport_profile_name')!r}")
+    assert profile.get_value("sport_profile_name", fallback="<missing>") is None
+    _assert_only_field_moved(before, after, SESSION, {SPORT_PROFILE_NAME: None})
+    # The field's bytes are all NUL; the field is 128 bytes in every fixture.
+    record = next(
+        r for r in fit_patch.walk(patched) if not r.is_definition and r.definition.global_num == SESSION
+    )
+    offset, field = fit_patch._field_offset(record, SPORT_PROFILE_NAME)
+    assert field.size == 128
+    assert patched[offset : offset + field.size] == b"\x00" * field.size
+
+
+def test_spaces_written_into_a_string_field_decode_as_spaces() -> None:
+    raw = _raw("wrist_ppg_run.fit")
+    _, before = _decode(raw)
+
+    patched = fit_patch.set_string_field(raw, SESSION, SPORT_PROFILE_NAME, "   ")
+
+    _, after = _decode(patched)
+    print(f"sport_profile_name now {_first(after, SESSION).get_value('sport_profile_name')!r}")
+    assert _first(after, SESSION).get_value("sport_profile_name") == "   "
+    _assert_only_field_moved(before, after, SESSION, {SPORT_PROFILE_NAME: "   "})
+
+
+def test_a_name_written_into_wkt_name_is_nul_padded_to_the_field_size() -> None:
+    raw = _raw("sample_run.fit")
+    _, before = _decode(raw)
+    assert _first(before, WORKOUT).get_value("wkt_name") == "Easy Run"
+
+    patched = fit_patch.set_string_field(raw, WORKOUT, WKT_NAME, "Tempo")
+
+    assert len(patched) == len(raw)
+    _, after = _decode(patched)
+    print(f"wkt_name now {_first(after, WORKOUT).get_value('wkt_name')!r}")
+    assert _first(after, WORKOUT).get_value("wkt_name") == "Tempo"
+    _assert_only_field_moved(before, after, WORKOUT, {WKT_NAME: "Tempo"})
+    record = next(
+        r for r in fit_patch.walk(patched) if not r.is_definition and r.definition.global_num == WORKOUT
+    )
+    offset, field = fit_patch._field_offset(record, WKT_NAME)
+    assert patched[offset : offset + field.size] == b"Tempo" + b"\x00" * (field.size - 5)
+
+
+def test_a_string_that_fills_the_field_exactly_is_refused() -> None:
+    """The terminating NUL needs a byte of its own; 32 bytes of name in a 32-byte field is refused."""
+    with pytest.raises(fit_patch.FitPatchError, match="does not fit"):
+        fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, "x" * 32)
+    patched = fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, "x" * 31)
+    _, after = _decode(patched)
+    assert _first(after, WORKOUT).get_value("wkt_name") == "x" * 31
+
+
+def test_a_multibyte_name_is_measured_in_bytes() -> None:
+    patched = fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, "Ééé")
+    _, after = _decode(patched)
+    assert _first(after, WORKOUT).get_value("wkt_name") == "Ééé"
+    with pytest.raises(fit_patch.FitPatchError, match="does not fit"):
+        fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, "É" * 16)
+
+
+def test_a_value_holding_a_nul_byte_is_refused() -> None:
+    with pytest.raises(fit_patch.FitPatchError, match="NUL"):
+        fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, "Easy\x00Run")
+
+
+def test_set_string_field_refuses_a_non_string_field() -> None:
+    with pytest.raises(fit_patch.FitPatchError, match="not a string"):
+        fit_patch.set_string_field(_raw("sample_run.fit"), ZONES_TARGET, 1, None)
+
+
+def test_set_string_field_refuses_a_non_string_value() -> None:
+    with pytest.raises(fit_patch.FitPatchError, match="str or None"):
+        fit_patch.set_string_field(_raw("sample_run.fit"), WORKOUT, WKT_NAME, 5)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

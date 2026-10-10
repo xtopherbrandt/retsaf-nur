@@ -99,6 +99,15 @@ class Session:
     # the saved load can report ``hr_time_fraction``; None when the file
     # carries none. Set by ``mapping.to_canonical``.
     timer_time_s: float | None = None
+    # --- the session name (F019) -----------------------------------------
+    # The FIT ``workout.wkt_name``, else ``session.sport_profile_name``, as
+    # ``metrics.session_list.session_name`` resolves them at upload (a blank
+    # source falls through; None when neither has one). Stored verbatim,
+    # unstripped. None on a row stored before the column existed, whose
+    # name the list resolves on read from the profile name in
+    # ``context.provenance``. The uploaded file's name is never stored.
+    # Not in GET /sessions/{id}.
+    name: str | None = None
     quality_flags: list[str] = field(default_factory=list)
     summary: dict[str, Any] | None = None
     context: Context | None = None

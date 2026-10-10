@@ -58,6 +58,7 @@ import fitdecode
 from runcoach_api import __version__
 from runcoach_api.ingestion import rr_reconstruction
 from runcoach_api.ingestion.exceptions import MissingCanonicalFieldError
+from runcoach_api.metrics.session_list import session_name
 from runcoach_api.models import Context, Record, Session
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
@@ -626,6 +627,14 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         else None
     )
 
+    # F019 -- the session name: the first workout message's wkt_name
+    # (global 26, field 8; fit_parser.decode keeps the message), else the
+    # profile name above. The whitespace rule lives in session_name, which
+    # the list's read side shares for rows stored before the column existed.
+    workout_msg = _first_of(by_name, "workout")
+    workout_name = workout_msg.get_value("wkt_name", fallback=None) if workout_msg is not None else None
+    name = session_name(workout_name, sport_profile_name)
+
     record_msgs = by_name.get("record", [])
 
     start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
@@ -673,6 +682,7 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         hr_source=_infer_hr_source(messages),
         summary=_build_summary(session_msg),
         timer_time_s=_timer_time(session_msg),
+        name=name,
         context=_build_context(
             unresolved_developer_fields, raw_sport_value, sport_profile_name
         ),

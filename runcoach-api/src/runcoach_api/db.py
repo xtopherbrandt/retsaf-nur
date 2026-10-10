@@ -156,6 +156,14 @@ _SCHEMA_DDL = """
       -- one-time fill copies it from the stored summary. Added 2026-10-09;
       -- _reconcile_columns lands it.
       timer_time_s REAL,
+      -- F019: the session name saved at upload: the FIT workout.wkt_name,
+      -- else session.sport_profile_name, a blank source falling through
+      -- (metrics.session_list.session_name). NULL when the file carried
+      -- neither, and on a row stored before the column existed: nothing
+      -- backfills it (no FIT bytes are kept), so the list resolves such a
+      -- row's name on read from the profile name in its context JSON.
+      -- Added 2026-10-10; _reconcile_columns lands it. Not in GET /sessions/{id}.
+      name TEXT,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -341,7 +349,7 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
             hr_sensor_serial, sex, body_mass_kg, height_cm, resting_hr_bpm,
             max_hr_bpm, threshold_hr_bpm, garmin_activity_class, upload_order,
-            timer_time_s
+            timer_time_s, name
         ) VALUES (
             :session_id, :athlete_id, :start_time, :sport, :activity_tag,
             :source_vendor, :source_device, :recording_interval, :hr_source,
@@ -350,7 +358,7 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             :hr_sensor_serial, :sex, :body_mass_kg, :height_cm, :resting_hr_bpm,
             :max_hr_bpm, :threshold_hr_bpm, :garmin_activity_class,
             (SELECT COALESCE(MAX(upload_order), 0) + 1 FROM sessions),
-            :timer_time_s
+            :timer_time_s, :name
         )
         """,
         {
@@ -385,6 +393,8 @@ def _insert_session(conn: sqlite3.Connection, session: Session) -> None:
             "garmin_activity_class": session.garmin_activity_class,
             # The FIT timer time (F017); see models.Session.
             "timer_time_s": session.timer_time_s,
+            # The session name (F019); see models.Session.
+            "name": session.name,
             "quality_flags": _json_dump(session.quality_flags),
             "summary": _json_dump(session.summary),
             "context": _json_dump(dataclasses.asdict(session.context)) if session.context else None,

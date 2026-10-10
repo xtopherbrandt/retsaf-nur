@@ -13,6 +13,12 @@ written into ``tests/fixtures/``.
 - ``set_field(data, global_num, field_num, value)`` overwrites one field of
   the **first** data message of ``global_num`` with an unsigned raw value of
   the field's size (1, 2 or 4 bytes), in the definition's byte order.
+- ``set_string_field(data, global_num, field_num, value)`` overwrites one
+  ``string`` field of the **first** data message of ``global_num``: ``None``
+  blanks it to NUL bytes (the FIT invalid value for a string, which
+  ``fitdecode`` decodes to ``None``); a ``str`` is written UTF-8 encoded,
+  NUL-terminated and NUL-padded to the field's size, so spaces or a name can
+  be put into ``session.sport_profile_name`` or ``workout.wkt_name``.
 - ``remove_messages(data, global_num)`` drops every data message of
   ``global_num``. Its definitions stay; a definition with no data is valid FIT.
 - ``finalize(buf)`` rewrites the header data size (bytes 4-7), the header
@@ -37,7 +43,9 @@ timestamp record header (no fixture has one), a header that is not 12 or 14
 bytes, a record that runs past the data, a data size that does not match the
 file length, a message number the file holds no data message for, a field
 the first message's definition does not carry, a value that does not fit
-the field, a record span that holds no record message (an empty or reversed
+the field (for a string, its UTF-8 bytes plus the terminating NUL), a string
+field asked of a non-string field, a string value that is neither ``str``
+nor ``None`` or that holds a NUL byte, a record span that holds no record message (an empty or reversed
 span included), a record message without a timestamp, and a record message
 in the span whose definition does not carry the field to blank.
 
@@ -233,6 +241,39 @@ def set_field(data: bytes, global_num: int, field_num: int, value: int) -> bytes
         )
     buf = bytearray(data)
     struct.pack_into((">" if definition.big_endian else "<") + formats[field.size], buf, offset, value)
+    return finalize(buf)
+
+
+STRING_BASE_TYPE = 0x07
+
+
+def set_string_field(data: bytes, global_num: int, field_num: int, value: str | None) -> bytes:
+    """Set the ``string`` field ``field_num`` of the first ``global_num`` data message.
+
+    ``None`` writes NUL bytes over the whole field (the FIT invalid value for a
+    string; ``fitdecode`` decodes it to ``None``). A ``str`` is written as its
+    UTF-8 bytes followed by a NUL terminator and NUL padding to the field's
+    size, so a value of ``size - 1`` bytes is the longest that fits.
+    """
+    if value is not None and not isinstance(value, str):
+        raise FitPatchError(f"value {value!r} is not a str or None")
+    record = _data_records(walk(data), global_num)[0]
+    offset, field = _field_offset(record, field_num)
+    if field.base_type != STRING_BASE_TYPE:
+        raise FitPatchError(f"field {global_num}/{field_num} is not a string field (base type {field.base_type:#x})")
+    if value is None:
+        encoded = b""
+    else:
+        if "\x00" in value:
+            raise FitPatchError(f"value {value!r} holds a NUL byte, which would end the string early")
+        encoded = value.encode("utf-8")
+        if len(encoded) >= field.size:
+            raise FitPatchError(
+                f"value {value!r} of {len(encoded)} bytes does not fit field {global_num}/{field_num} "
+                f"of {field.size} bytes with its NUL terminator"
+            )
+    buf = bytearray(data)
+    buf[offset : offset + field.size] = encoded + b"\x00" * (field.size - len(encoded))
     return finalize(buf)
 
 
