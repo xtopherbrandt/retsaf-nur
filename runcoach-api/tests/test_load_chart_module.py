@@ -15,7 +15,7 @@ reference (to 0.01), so the oracle itself is checked against a number written by
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -367,6 +367,49 @@ def test_the_same_rows_land_on_their_london_dates_and_on_their_auckland_dates():
     assert auckland.first_day == date(2026, 10, 25)
     assert_matches_oracle(london, [30.0, 30.0, 0.0])
     assert_matches_oracle(auckland, [60.0, 0.0])
+
+
+VANCOUVER = ZoneInfo("America/Vancouver")
+PST = timezone(timedelta(hours=-8))
+PDT = timezone(timedelta(hours=-7))
+# The 2026 spring-forward: 02:00 PST on 2026-03-08 is 10:00Z, and the clocks read 03:00 PDT.
+VANCOUVER_SPRING_FORWARD_UTC = datetime(2026, 3, 8, 10, 0, tzinfo=timezone.utc)
+
+
+def vancouver_date_by_fixed_offset(start_time: str) -> date:
+    """The local date from first principles: PST (UTC-8) before the change instant, PDT (UTC-7) from it."""
+    instant = datetime.fromisoformat(start_time)
+    offset = PDT if instant >= VANCOUVER_SPRING_FORWARD_UTC else PST
+    return instant.astimezone(offset).date()
+
+
+def test_vancouver_spring_forward_runs_land_on_their_local_days():
+    # The athlete's zone. Row 1 is written with its own PST offset, 23:30 local on the 7th; row 2 is
+    # 07:30Z on the 8th, which is 23:30 PST on the 7th; row 3 is 10:30Z on the 8th, half an hour
+    # after the change, which is 03:30 PDT on the 8th. The UTC date would put rows 2 and 3 together.
+    rows = [
+        row("pst-local", "2026-03-07T23:30:00-08:00", load=30.0),
+        row("pst-utc", "2026-03-08T07:30:00+00:00", load=20.0),
+        row("pdt-utc", "2026-03-08T10:30:00+00:00", load=10.0),
+    ]
+    expected = {
+        "pst-local": date(2026, 3, 7),
+        "pst-utc": date(2026, 3, 7),
+        "pdt-utc": date(2026, 3, 8),
+    }
+    for r in rows:
+        assert vancouver_date_by_fixed_offset(r["start_time"]) == expected[r["session_id"]], r["session_id"]
+    chart = load_chart.build_chart(rows, VANCOUVER, today=date(2026, 3, 8))
+
+    served = {c.session_id: d.date for d in chart.days for c in d.counted}
+    print(f"  served {served}")
+    assert served == expected
+    assert chart.first_day == date(2026, 3, 7)
+    assert [(d.date, [c.session_id for c in d.counted]) for d in chart.days] == [
+        (date(2026, 3, 7), ["pst-local", "pst-utc"]),
+        (date(2026, 3, 8), ["pdt-utc"]),
+    ]
+    assert_matches_oracle(chart, [50.0, 10.0])
 
 
 def test_a_naive_start_time_is_refused_naming_the_row():

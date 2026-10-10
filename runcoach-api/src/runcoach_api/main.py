@@ -936,18 +936,21 @@ def get_session_load(session_id: str) -> SessionLoad:
 
     An unknown ``session_id`` is the 404 ``get_session`` raises, with the same
     message, and so is a read after ``DELETE /sessions/{id}``, which removes
-    the saved load with the session. A session stored before loads were saved
-    has none until the store's one-time fill at startup has run, and reads as
-    the same 404 until then.
+    the saved load with the session. A stored session with no saved load (one
+    a pre-F017 server wrote to an upgraded store, until the next startup's
+    fill has run) is also a 404, whose detail says so instead:
+    ``session {id} has no saved load``.
     """
     conn = db.get_connection()
     try:
         body = db.read_session_load_body(conn, session_id)
+        stored = body is not None or db.session_exists(conn, session_id)
     finally:
         conn.close()
 
     if body is None:
-        raise HTTPException(404, f"session {session_id} not found")
+        missing = "has no saved load" if stored else "not found"
+        raise HTTPException(404, f"session {session_id} {missing}")
     return SessionLoad(**body)
 
 

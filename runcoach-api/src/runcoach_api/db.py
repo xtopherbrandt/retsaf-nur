@@ -1275,3 +1275,8 @@ def read_session_load_body(conn: sqlite3.Connection, session_id: str) -> dict | 
         f"SELECT body FROM {SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,)
     ).fetchone()
     return None if row is None else json.loads(row["body"])
+
+
+def session_exists(conn: sqlite3.Connection, session_id: str) -> bool:
+    """Whether the ``sessions`` table holds ``session_id``: one SELECT, no ``BEGIN``, nothing else read."""
+    return conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone() is not None

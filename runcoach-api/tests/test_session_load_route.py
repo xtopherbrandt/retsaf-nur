@@ -179,6 +179,22 @@ def test_deleted_session_returns_404() -> None:
     assert load.json() == detail.json()
 
 
+def test_a_stored_session_without_a_saved_load_is_a_named_404() -> None:
+    """A stored session whose ``session_loads`` row is missing (a pre-F017 server wrote it to an
+    upgraded store, and the startup fill has not run since) is a 404 that says the session has no
+    saved load, not that the session is unknown: ``GET /sessions/{id}`` still answers 200."""
+    with TestClient(app) as client:
+        session_id = _upload(client, RUN_FIXTURE)
+        with _connection() as conn, conn:
+            conn.execute(f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,))
+        load = client.get(f"/sessions/{session_id}/load")
+        detail = client.get(f"/sessions/{session_id}")
+    print(f"  /load {load.status_code} {load.json()}; /sessions/{{id}} {detail.status_code}")
+    assert detail.status_code == 200, detail.text
+    assert load.status_code == 404
+    assert load.json() == {"detail": f"session {session_id} has no saved load"}
+
+
 def test_the_route_reads_no_anchor() -> None:
     """After the upload the HR anchor version log is corrupted so that it no longer holds a
     served value: ``db.read_hr_anchors`` raises on it and ``GET /me`` is the named 500. The
