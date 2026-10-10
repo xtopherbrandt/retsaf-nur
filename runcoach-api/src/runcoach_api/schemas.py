@@ -720,8 +720,8 @@ class SessionFeaturesResponse(BaseModel):
     unavailable and the reason named: an all-unavailable session is an
     answer, not an error. duration_s, distance_m and avg_pace_s_per_km are
     the same quantities SessionSummary names: recorded time, not elapsed
-    (sampled strides and moving gaps count; a standstill does not), so
-    listSessions projects these values.
+    (sampled strides and moving gaps count; a standstill does not), and
+    listSessions computes them by the same rule.
     """
 
     session_id: str

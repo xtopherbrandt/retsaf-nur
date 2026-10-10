@@ -68,7 +68,7 @@ tags:
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
-    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + detail + features + load)."
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + list + detail + features + load)."
   - name: Workouts
     description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
   - name: Subjective
@@ -505,7 +505,7 @@ paths:
       tags: [Sessions]
       operationId: listSessions
       summary: List ingested sessions (summaries), newest first
-      x-readiness: planned
+      x-readiness: implemented
       x-owner-spec: "spec/02"
       x-story: [view-calendar, view-workout]
       parameters:
@@ -524,6 +524,9 @@ paths:
                       items:
                         type: array
                         items: { $ref: "#/components/schemas/SessionSummary" }
+        "422":
+          description: "`limit` outside 1..200 or not an integer, or a `since` cursor that does not decode to a stored row's start_time and session_id (FastAPI-default {detail})"
+          content: { application/json: { schema: { type: object } } }
 
   /sessions/{session_id}:
     get:
@@ -1164,12 +1167,14 @@ components:
 
     SessionSummary:
       type: object
-      description: List-view projection of a session (planned shape).
+      description: "One row of GET /sessions (F019, implemented): the list-view projection of a stored session, newest first. distance_m, duration_s and avg_pace_s_per_km are the quantities SessionFeatures serves under the same names, computed on read by the same segment rule; null for a session not stored as running, for a run whose records count no segment, and for a row whose records could not be read (the page is still served)."
+      required: [session_id, start_time, sport, activity_tag, name, distance_m, duration_s, avg_pace_s_per_km, quality_flags, workout_id]
       properties:
         session_id: { type: string }
-        start_time: { type: string }
-        sport: { type: string }
+        start_time: { type: string, description: "As stored: ISO 8601 in UTC with a +00:00 offset." }
+        sport: { type: string, description: "The canonical sport as stored: running or other." }
         activity_tag: { type: string, nullable: true }
+        name: { type: string, nullable: true, description: "The name saved at upload (the FIT workout name, else the activity profile name); for a session stored before the name column existed, the profile name saved in its context, else null." }
         distance_m: { type: number, nullable: true }
         duration_s: { type: number, nullable: true }
         avg_pace_s_per_km: { type: number, nullable: true }
@@ -2181,7 +2186,7 @@ components:
         same quantities SessionSummary names: recorded time, not elapsed
         (consecutive records with 0 < dt <= 5 s count, and so does a moving gap:
         a gap over 5 s crossed at 0.5 m/s or more of device distance; a standstill
-        contributes neither time nor distance), so listSessions projects these values.
+        contributes neither time nor distance), and listSessions computes them by the same rule.
       required: [session_id, sport, flags, gap_coverage, grade_clamped_fraction, gps_degraded_fraction, features]
       properties:
         session_id: { type: string }

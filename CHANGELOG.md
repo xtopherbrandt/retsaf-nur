@@ -14,6 +14,31 @@ unchanged, so every served `ctl`, `atl` and `tsb` is what it was: no re-seed, an
 reused. A stretch still open today is listed nowhere and marks nothing. Both fields are additive in
 the contract (`LoadChartGap`, no version bump).
 
+F019: `GET /sessions` lists the stored sessions newest first (`start_time` descending, ties by
+`session_id` descending), cursor-paged: `limit` defaults to 50 (1 to 200, else 422), `next_cursor`
+is URL-safe base64 of the last row's `start_time` and `session_id` and is passed back as `since`
+(a cursor that does not decode to that shape is a 422 with FastAPI's default `{detail}` body), and
+it is null on the last page. Each row carries `session_id`, `start_time`, `sport`, `activity_tag`,
+`name`, `distance_m`, `duration_s`, `avg_pace_s_per_km`, `quality_flags` and `workout_id` (always
+null); the three numbers are the same recorded time and distance `GET /sessions/{session_id}/features`
+serves, computed by the same segment rule, and null for a session not stored as running, a run whose
+records count no segment, or a row whose records could not be read (the page is still served). The
+contract's `listSessions` is now `x-readiness: implemented` and `SessionSummary` gains `name` and a
+`required` list; the shared `Since`, `Limit` and `Page` components are unchanged.
+
+F019: `runcoach sessions` prints the 50 newest sessions, one line each: the display name (`name`,
+else the sport, followed by the start date and time in the computer's local zone), the sport, the
+distance in km, the duration as h:mm:ss, the pace as m:ss/km and the session id, with "-" for a
+null value. `--limit N` prints N, `--all` prints every page; an empty store prints "No sessions
+stored." and exits 0.
+
+F019: sessions gain the nullable `name` column, saved at upload as the FIT `workout.wkt_name`, else
+`session.sport_profile_name` (an empty or whitespace-only value falls through; null when neither has
+one). A session stored before this version has no saved name, so it lists under the profile name
+already stored in its `context.provenance.sport_profile_name`, else null; nothing is backfilled.
+Startup adds the index `records_session_id_t` on `records(session_id, t)` with `CREATE INDEX IF NOT
+EXISTS`, so a page of 50 reads each row's records through the index instead of scanning the table.
+
 ## 2026-10-09 — Sprint 014: saved session load and the load chart
 
 ### Added

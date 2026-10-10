@@ -335,7 +335,7 @@ def _deref(contract: dict, node: dict) -> dict:
 
 
 def test_the_contract_component_states_the_session_summary_shared_names() -> None:
-    """The note that a future listSessions projects these values, pinned by a whitespace-flattened phrase."""
+    """The note that listSessions computes these values by the same rule, pinned by a whitespace-flattened phrase."""
     contract = _contract()
     component = contract["components"]["schemas"]["SessionFeatures"]
     served = app.openapi()["components"]["schemas"]["SessionFeaturesResponse"]
