@@ -959,7 +959,8 @@ from enum import Enum
 
 class SessionLoadReason(str, Enum):
     """Why HR-TRIMP, and with it `session_load`, has no value: the F017 reference's gates in order (first match
-    wins), then the two reference reasons that leave `hr_trimp.value` served while `session_load` is unavailable."""
+    wins), then the reference step's no_threshold_hr, threshold_order_conflict and not_representable, which leave
+    `hr_trimp.value` served while `session_load` is unavailable (not_representable is also gate 9's reason)."""
 
     SPORT_NOT_RUNNING = "sport_not_running"
     DECLARED_CAPTURE = "declared_capture"

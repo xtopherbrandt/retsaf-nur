@@ -67,8 +67,9 @@ that passes gate 7 is usable, so the reference step after TRIMP withholds
 ``session_load`` there only as ``not_representable``. Gate comparisons are on
 exact integers (Python compares an int of any size with a float exactly, so
 the average HR against ``10**400`` is a comparison, not a conversion); a value
-becomes a float only in the formula step. ``SERVED_REASONS`` lists every
-reason this module writes, in the reference's order.
+becomes a float only in gate 9's checks and the formula step.
+``SERVED_REASONS`` lists every reason this module writes, in the reference's
+order.
 
 **Where the values come from.** This module reads the four value blocks as
 given. ``db._save_session_load`` builds them at upload: the session's own
@@ -268,7 +269,7 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
     elif not _finite(resting, max_hr, threshold) or (span := _span(max_hr, resting)) is None:
         hr_trimp["unavailable"] = "not_representable"
     else:
-        # The formula step: the only place a value becomes a float.
+        # The formula step: with gate 9's checks, the only place a value becomes a float.
         sex = values["sex"]["value"]
         if sex not in COEFFICIENTS:
             sex = MALE

@@ -266,6 +266,14 @@ ADVERSARIAL_ROWS = [
     ("unknown_source_at_threshold", {"hr_source": "optical_armband", "threshold": 150}, "wrist_hr_at_threshold", "wrist_hr_at_threshold", True),
     ("unknown_source_without_threshold", {"hr_source": "optical_armband", "threshold": None}, "wrist_hr_threshold_unknown", "wrist_hr_threshold_unknown", True),
     ("empty_string_source_below_threshold", {"hr_source": "", "threshold": 151}, None, None, True),
+    # a threshold that passes gate 7 as an integer but is one float with resting: only session_load is withheld
+    (
+        "wrist_threshold_span_collapsed_in_float_is_not_representable",
+        {"hr_source": "wrist_ppg", "resting": 2**53, "threshold": 2**53 + 1, "max_hr": 2**53 + 2**31, "heart_rate": float(2**53)},
+        None,
+        "not_representable",
+        True,
+    ),
     # the earlier gates win; the flag stays
     ("6_before_8_avg_above_max_and_above_threshold", {"heart_rate": 200.0, "threshold": 150}, "avg_hr_above_max", "avg_hr_above_max", True),
     ("5_before_7_order_conflict_without_threshold", {"resting": 190, "max_hr": 190, "threshold": None}, "order_conflict", "order_conflict", True),
