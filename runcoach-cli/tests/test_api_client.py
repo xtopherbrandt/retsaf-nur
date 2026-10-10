@@ -213,3 +213,61 @@ def test_upload_fit_spells_out_false_rather_than_sending_a_blank_part(
 
     assert b'name="resting_capture"' in captured[0]
     assert b"false" in captured[0]
+
+
+# ---------------------------------------------------------------------------
+# F019 -- GET /sessions, the list call
+# ---------------------------------------------------------------------------
+
+
+def test_list_sessions_gets_sessions_with_limit_and_since_and_a_30_second_timeout(
+    install_mock_client,
+) -> None:
+    # A 50-row page of long runs took about 4 s and a 200-row page about 15 s before the
+    # records index, against the shared client's 5 s default; the list call carries its own
+    # 30 s timeout, captured where httpx resolves it (request.extensions["timeout"]).
+    captured: list[httpx.Request] = []
+
+    def page_handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"items": [], "next_cursor": None})
+
+    install_mock_client(page_handler)
+
+    first = api_client.list_sessions("http://example.test", since=None, limit=200)
+    second = api_client.list_sessions("http://example.test", since="abc=", limit=50)
+
+    assert first.status_code == 200 and second.status_code == 200
+    assert [r.method for r in captured] == ["GET", "GET"]
+    assert [r.url.path for r in captured] == ["/sessions", "/sessions"]
+    assert captured[0].url.params["limit"] == "200"
+    assert "since" not in captured[0].url.params
+    assert captured[1].url.params["limit"] == "50"
+    assert captured[1].url.params["since"] == "abc="
+    for request in captured:
+        timeout = request.extensions["timeout"]
+        assert timeout["connect"] == 30.0
+        assert timeout["read"] == 30.0
+        assert timeout["write"] == 30.0
+        assert timeout["pool"] == 30.0
+    assert api_client.LIST_TIMEOUT == 30.0
+
+
+def test_list_sessions_raises_api_unreachable_on_transport_errors(install_mock_client) -> None:
+    def read_error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadError("boom", request=request)
+
+    install_mock_client(read_error_handler)
+    with pytest.raises(api_client.ApiUnreachableError) as exc_info:
+        api_client.list_sessions("http://example.test", since=None, limit=50)
+    assert exc_info.value.base_url == "http://example.test"
+
+
+def test_list_sessions_does_not_swallow_non_2xx_response(install_mock_client) -> None:
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": [{"loc": ["query", "since"]}]})
+
+    install_mock_client(error_handler)
+    response = api_client.list_sessions("http://example.test", since="bad", limit=50)
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["query", "since"]

@@ -95,3 +95,25 @@ def patch_me(base_url: str, changes: dict) -> httpx.Response:
         return client.patch(f"{base_url}/me", json=changes)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+# A page of session summaries is computed from each session's records on read; before the
+# records index a 200-row page of long runs took about 15 s, so the list call gets its own
+# timeout rather than the shared client's 5 s (as the upload call does).
+LIST_TIMEOUT = 30.0
+
+
+def list_sessions(base_url: str, since: str | None, limit: int) -> httpx.Response:
+    """Call GET {base_url}/sessions?limit=...&since=... and return the raw response.
+
+    ``since`` is the previous page's ``next_cursor``, passed through untouched; ``None`` omits
+    the parameter. Only network-layer failures are translated into ApiUnreachableError; status
+    and body are the caller's job.
+    """
+    params: dict[str, str | int] = {"limit": limit}
+    if since is not None:
+        params["since"] = since
+    try:
+        return client.get(f"{base_url}/sessions", params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
