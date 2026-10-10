@@ -457,3 +457,198 @@ def test_the_module_is_pure():
     for forbidden in ("config", "db", "fastapi", "sqlite3"):
         assert f"import {forbidden}" not in source and f"from runcoach_api import {forbidden}" not in source
     assert "hrv_trend" in source and "def local_day" not in source
+
+
+# --- A long gap in history (IDEA-143, ruled option B: carry on and mark) ----------------------
+#
+# The gap oracle below is written by hand from the ruling and never reads the module: an empty day
+# has no counted and no uncounted run (an excluded ride or capture does not end a stretch, an
+# uncounted-only day does); a stretch of MORE than 21 empty days that ends in a running day on or
+# before today is a gap; the first running day after it and the 41 days after that are after_gap.
+# The recursion is untouched, so oracle_series stays the oracle for every served value.
+
+ORACLE_GAP_MIN_EMPTY_DAYS = 21
+ORACLE_GAP_MARK_SPAN = 42
+EXCLUDED_REASONS = {"sport_not_running", "declared_capture"}
+
+
+def running_flags(rows: list[dict], n_days: int) -> list[bool]:
+    """Day-by-day (day 1 .. n_days): does the day hold a counted or uncounted run? UTC rows only."""
+    flags = [False] * n_days
+    for r in rows:
+        n = (datetime.fromisoformat(r["start_time"]).astimezone(timezone.utc).date() - DAY_ONE).days + 1
+        is_running = r["load_value"] is not None or r["load_reason"] not in EXCLUDED_REASONS
+        if is_running and 1 <= n <= n_days:
+            flags[n - 1] = True
+    return flags
+
+
+def oracle_gaps(flags: list[bool]) -> tuple[list[tuple[int, int, int]], list[bool]]:
+    """``([(first_empty_day_n, last_empty_day_n, empty_days), ...], [after_gap per day])``, day numbers 1-based."""
+    gaps: list[tuple[int, int, int]] = []
+    after = [False] * len(flags)
+    empty = 0
+    for i, is_running in enumerate(flags):
+        if not is_running:
+            empty += 1
+            continue
+        if empty > ORACLE_GAP_MIN_EMPTY_DAYS:
+            gaps.append((i - empty + 1, i, empty))
+            for j in range(i, min(i + ORACLE_GAP_MARK_SPAN, len(flags))):
+                after[j] = True
+        empty = 0
+    return gaps, after
+
+
+def day_loads(rows: list[dict], n_days: int) -> list[float]:
+    loads = [0.0] * n_days
+    for r in rows:
+        n = (datetime.fromisoformat(r["start_time"]).astimezone(timezone.utc).date() - DAY_ONE).days + 1
+        if r["load_value"] is not None and 1 <= n <= n_days:
+            loads[n - 1] += r["load_value"]
+    return loads
+
+
+def assert_matches_gap_oracle(chart, rows: list[dict], n_days: int) -> None:
+    gaps, after = oracle_gaps(running_flags(rows, n_days))
+    assert [g.empty_days for g in chart.gaps] == [g[2] for g in gaps]
+    assert [(g.first_empty_day, g.last_empty_day) for g in chart.gaps] == [(day(a), day(b)) for a, b, _ in gaps]
+    assert [d.after_gap for d in chart.days] == after
+    assert_matches_oracle(chart, day_loads(rows, n_days))
+
+
+def runs_from(first: int, last: int, step: int = 3, load: float = 40.0) -> list[dict]:
+    return [counted(n, load) for n in range(first, last + 1, step)]
+
+
+def test_the_42_days_after_a_22_day_gap_are_marked_and_values_are_unchanged():
+    # Day 1 runs, days 2..23 are empty (22 days), the athlete returns on day 24 and runs every third day.
+    rows = [counted(1, 60.0)] + runs_from(24, 70)
+    chart = load_chart.build_chart(rows, UTC, today=day(70))
+    plain = load_chart.build_chart(rows, UTC, today=day(70))
+
+    assert [d.after_gap for d in chart.days] == [False] * 23 + [True] * 42 + [False] * 5
+    assert chart.days[23].date == day(24) and chart.days[23].after_gap is True
+    assert chart.days[64].date == day(65) and chart.days[64].after_gap is True
+    assert chart.days[65].date == day(66) and chart.days[65].after_gap is False
+    (gap,) = chart.gaps
+    assert gap == load_chart.Gap(first_empty_day=day(2), last_empty_day=day(23), empty_days=22)
+    assert (gap.last_empty_day - gap.first_empty_day).days + 1 == gap.empty_days
+    assert_matches_gap_oracle(chart, rows, 70)
+    # Carry on, do not re-seed: seed, provisional and every served value are those of the plain rule.
+    assert chart.seed == plain.seed
+    assert values(chart) == values(plain)
+    assert [d.provisional for d in chart.days] == [True] * 42 + [False] * 28
+    assert [d.marked for d in chart.days] == [False] * 70
+
+
+def test_the_gap_constants_are_21_strict_and_the_42_day_ctl_span():
+    assert load_chart.GAP_MARK_DAYS == 21
+    assert load_chart.GAP_MARK_SPAN_DAYS == load_chart.CTL_DAYS == 42
+
+
+def test_a_21_day_gap_is_not_marked():
+    # Days 2..22 empty (21 days) -> the N-1 / N pin: nothing marked, no gap listed.
+    rows = [counted(1, 60.0)] + runs_from(23, 70)
+    chart = load_chart.build_chart(rows, UTC, today=day(70))
+
+    assert chart.gaps == ()
+    assert [d.after_gap for d in chart.days] == [False] * 70
+    assert_matches_gap_oracle(chart, rows, 70)
+    # One more empty day and the same history is a gap.
+    with_one_more = load_chart.build_chart([counted(1, 60.0)] + runs_from(24, 70), UTC, today=day(70))
+    assert [g.empty_days for g in with_one_more.gaps] == [22]
+
+
+def test_an_uncounted_only_day_inside_a_stretch_ends_it():
+    # Days 2..19 empty (18), an uncounted run on day 20, days 21..39 empty (19), a run on day 40.
+    rows = [counted(1, 60.0), uncounted(20, "no_hr")] + runs_from(40, 70)
+    chart = load_chart.build_chart(rows, UTC, today=day(70))
+
+    assert chart.gaps == ()
+    assert [d.after_gap for d in chart.days] == [False] * 70
+    assert chart.days[19].marked is True
+    assert_matches_gap_oracle(chart, rows, 70)
+
+
+def test_an_excluded_ride_or_capture_inside_a_stretch_does_not_end_it():
+    rows = [counted(1, 60.0)]
+    rows += [row("bike", at(10, 9), reason="sport_not_running"), row("rest", at(15, 7), reason="declared_capture")]
+    rows += runs_from(24, 70)
+    chart = load_chart.build_chart(rows, UTC, today=day(70))
+
+    assert [(g.first_empty_day, g.last_empty_day, g.empty_days) for g in chart.gaps] == [(day(2), day(23), 22)]
+    assert [d.after_gap for d in chart.days] == [False] * 23 + [True] * 42 + [False] * 5
+    assert [e.session_id for e in chart.days[9].excluded] == ["bike"]
+    assert [e.session_id for e in chart.days[14].excluded] == ["rest"]
+    assert_matches_gap_oracle(chart, rows, 70)
+
+
+def test_a_trailing_stretch_with_no_return_is_not_listed_and_marks_nothing():
+    rows = [counted(1, 60.0)]
+    chart = load_chart.build_chart(rows, UTC, today=day(31))
+
+    assert len(chart.days) == 31
+    assert chart.gaps == ()
+    assert [d.after_gap for d in chart.days] == [False] * 31
+    assert_matches_gap_oracle(chart, rows, 31)
+
+
+def test_a_second_gap_inside_the_first_window_restarts_the_42_days():
+    # Days 2..23 empty (22), a run on day 24, days 25..47 empty (23), runs from day 48.
+    rows = [counted(1, 60.0), counted(24, 30.0)] + runs_from(48, 100)
+    chart = load_chart.build_chart(rows, UTC, today=day(100))
+
+    assert [(g.first_empty_day, g.last_empty_day, g.empty_days) for g in chart.gaps] == [
+        (day(2), day(23), 22),
+        (day(25), day(47), 23),
+    ]
+    # 24..65 from the first return, 48..89 from the second: the union runs 24..89, day 90 is not marked.
+    assert [d.after_gap for d in chart.days] == [False] * 23 + [True] * 66 + [False] * 11
+    assert chart.days[88].date == day(89) and chart.days[88].after_gap is True
+    assert chart.days[89].date == day(90) and chart.days[89].after_gap is False
+    assert_matches_gap_oracle(chart, rows, 100)
+
+
+def test_a_gap_starting_on_the_day_after_an_uncounted_first_day():
+    rows = [uncounted(1, "no_hr")] + runs_from(24, 50)
+    chart = load_chart.build_chart(rows, UTC, today=day(50))
+
+    assert chart.first_day == day(1)
+    assert [(g.first_empty_day, g.last_empty_day, g.empty_days) for g in chart.gaps] == [(day(2), day(23), 22)]
+    assert chart.gaps[0].first_empty_day == chart.first_day + timedelta(days=1)
+    assert [d.after_gap for d in chart.days] == [False] * 23 + [True] * 27
+    assert_matches_gap_oracle(chart, rows, 50)
+
+
+def test_a_run_dated_after_today_does_not_close_a_gap():
+    rows = [counted(1, 60.0), counted(40, 50.0)]
+    chart = load_chart.build_chart(rows, UTC, today=day(31))
+
+    assert len(chart.days) == 31
+    assert chart.gaps == ()
+    assert [d.after_gap for d in chart.days] == [False] * 31
+    assert_matches_gap_oracle(chart, rows, 31)
+    # Once that date arrives the same rows list the gap and mark the return.
+    later = load_chart.build_chart(rows, UTC, today=day(40))
+    assert [(g.first_empty_day, g.last_empty_day, g.empty_days) for g in later.gaps] == [(day(2), day(39), 38)]
+    assert [d.after_gap for d in later.days] == [False] * 39 + [True]
+
+
+def test_a_gap_closed_by_a_run_on_today_is_listed_and_today_is_after_gap():
+    rows = [counted(1, 60.0), counted(24, 50.0)]
+    chart = load_chart.build_chart(rows, UTC, today=day(24))
+
+    assert chart.days[-1].date == day(24)
+    assert [(g.first_empty_day, g.last_empty_day, g.empty_days) for g in chart.gaps] == [(day(2), day(23), 22)]
+    assert chart.days[-1].after_gap is True
+    assert [d.after_gap for d in chart.days] == [False] * 23 + [True]
+    assert_matches_gap_oracle(chart, rows, 24)
+
+
+def test_the_gap_is_a_frozen_dataclass_with_named_fields():
+    gap = load_chart.Gap(first_empty_day=day(2), last_empty_day=day(23), empty_days=22)
+
+    assert (gap.first_empty_day, gap.last_empty_day, gap.empty_days) == (day(2), day(23), 22)
+    with pytest.raises(Exception):
+        gap.empty_days = 1  # type: ignore[misc]

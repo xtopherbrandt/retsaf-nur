@@ -46,6 +46,18 @@ all of it when shorter, rest and uncounted days counting 0; ``CTL_0 = ATL_0 = se
 the first day is 0. One rule for every history length, so the chart never jumps when history
 passes 42 days. Every day inside the first 42 days of history is ``provisional``: while history is
 shorter than that the seed moves each day, and every value after it moves with it.
+
+**A long gap in history** (IDEA-143; user ruling 2026-10-10, "carry on and mark"): the recursion
+runs on through a break, so every served value is what the formulas give and the return-to-running
+spike stays visible to the later ACWR. What the chart adds is a mark. An **empty day** holds no
+counted and no uncounted run; an excluded session (a ride, a resting or declared capture) does not
+end a stretch of empty days, a day with only an uncounted run does. A stretch of **more than**
+``GAP_MARK_DAYS`` empty days that ends in a running day on or before ``today`` is a ``Gap`` in
+``gaps`` (first and last empty day, and their count); the first running day after it and the
+``GAP_MARK_SPAN_DAYS - 1`` days after that are ``after_gap``, and a second gap inside that span
+restarts it from its own first day back. A trailing stretch that has not ended is listed nowhere
+and marks nothing. No re-seed, and ``provisional`` is not reused: consumers skip provisional days,
+which would switch the ramp guardrail off exactly when the athlete returns.
 """
 
 from __future__ import annotations
@@ -71,6 +83,17 @@ SEED_WINDOW_DAYS = CTL_DAYS
 EXCLUSION_REASONS = frozenset({"sport_not_running", "declared_capture"})
 """The two unavailable-load reasons that exclude a session without marking its day."""
 
+#: A stretch of **more than** this many consecutive empty local days (no counted and no
+#: uncounted run; an excluded ride or capture does not end it) is a gap in history (IDEA-143,
+#: user ruling 2026-10-10). 21 empty days are not a gap; 22 are. It is the same silence the HRV
+#: trend calls a break (``hrv_trend.GAP_RESET_DAYS``, also strict), so the two series agree on
+#: how long an absence has to be before it is one.
+GAP_MARK_DAYS = 21
+#: The first running day after a gap and the days after it, ``GAP_MARK_SPAN_DAYS`` in all, are
+#: ``after_gap``: the CTL time constant, the span over which a series carried on through the
+#: break is still mostly the break.
+GAP_MARK_SPAN_DAYS = CTL_DAYS
+
 
 @dataclass(frozen=True)
 class CountedSession:
@@ -94,6 +117,16 @@ class Seed:
 
 
 @dataclass(frozen=True)
+class Gap:
+    """A stretch of more than ``GAP_MARK_DAYS`` empty days that ended in a running day on or before
+    ``today``; ``empty_days`` is the length of the stretch, ``last_empty_day - first_empty_day + 1``."""
+
+    first_empty_day: date
+    last_empty_day: date
+    empty_days: int
+
+
+@dataclass(frozen=True)
 class Day:
     date: date
     load: float
@@ -106,6 +139,7 @@ class Day:
     counted: tuple[CountedSession, ...]
     uncounted: tuple[ReasonedSession, ...]
     excluded: tuple[ReasonedSession, ...]
+    after_gap: bool
 
 
 @dataclass(frozen=True)
@@ -113,6 +147,7 @@ class LoadChart:
     first_day: date | None
     seed: Seed | None
     days: tuple[Day, ...]
+    gaps: tuple[Gap, ...]
 
 
 @dataclass(frozen=True)
@@ -152,20 +187,41 @@ def _is_running(placed: _Placed) -> bool:
     return placed.load is not None or placed.reason not in EXCLUSION_REASONS
 
 
+def _find_gaps(dates: list[date], running: list[bool]) -> tuple[tuple[Gap, ...], list[bool]]:
+    """The gaps that ended in a running day inside ``dates`` and the ``after_gap`` flag per date.
+
+    A stretch still open at the end of ``dates`` (no return yet) is not a gap. The flags are a
+    union: a second gap inside the first's span restarts the span from its own first day back."""
+    gaps: list[Gap] = []
+    after_gap = [False] * len(dates)
+    empty = 0
+    for index, is_running in enumerate(running):
+        if not is_running:
+            empty += 1
+            continue
+        if empty > GAP_MARK_DAYS:
+            gaps.append(Gap(first_empty_day=dates[index - empty], last_empty_day=dates[index - 1], empty_days=empty))
+            for marked in range(index, min(index + GAP_MARK_SPAN_DAYS, len(dates))):
+                after_gap[marked] = True
+        empty = 0
+    return tuple(gaps), after_gap
+
+
 def build_chart(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, today: date) -> LoadChart:
     """The daily series from ``first_day`` to ``today`` inclusive, computed from every row; a row
     dated after ``today`` is on no day (and in no curve) until its date arrives."""
     by_day = _place(rows, zone)
     running_days = [day for day, placed in by_day.items() if any(_is_running(p) for p in placed)]
     if not running_days:
-        return LoadChart(first_day=None, seed=None, days=())
+        return LoadChart(first_day=None, seed=None, days=(), gaps=())
     first_day = min(running_days)
     if first_day > today:
-        return LoadChart(first_day=first_day, seed=None, days=())
+        return LoadChart(first_day=first_day, seed=None, days=(), gaps=())
 
     dates = [first_day + timedelta(days=n) for n in range((today - first_day).days + 1)]
     loads = [sum(p.load for p in by_day.get(d, ()) if p.load is not None) for d in dates]
     uncounted_counts = [sum(1 for p in by_day.get(d, ()) if p.load is None and _is_running(p)) for d in dates]
+    gaps, after_gap = _find_gaps(dates, [any(_is_running(p) for p in by_day.get(d, ())) for d in dates])
 
     window = loads[:SEED_WINDOW_DAYS]
     seed = Seed(
@@ -195,6 +251,7 @@ def build_chart(rows: Iterable[Mapping[str, Any]], zone: ZoneInfo, today: date) 
                 counted=tuple(CountedSession(p.session_id, p.load) for p in placed if p.load is not None),
                 uncounted=uncounted,
                 excluded=tuple(ReasonedSession(p.session_id, p.reason) for p in placed if not _is_running(p)),
+                after_gap=after_gap[index],
             )
         )
-    return LoadChart(first_day=first_day, seed=seed, days=tuple(days))
+    return LoadChart(first_day=first_day, seed=seed, days=tuple(days), gaps=gaps)
