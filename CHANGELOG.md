@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+IDEA-143: `GET /metrics/load` marks a comeback after a long break (spec/03 section 3.5.3; user
+ruling 2026-10-10). A stretch of more than 21 consecutive empty local days (no counted and no
+uncounted run; an excluded ride or capture does not end it) that ended in a running day on or before
+today is a gap: the chart lists every one in the new `gaps` field (`first_empty_day`,
+`last_empty_day`, `empty_days`, the whole history whatever `from` and `to` are), and each day gains
+`after_gap`, true on the first running day after a gap and the 41 days after it. The recursion is
+unchanged, so every served `ctl`, `atl` and `tsb` is what it was: no re-seed, and `provisional` is not
+reused. A stretch still open today is listed nowhere and marks nothing. Both fields are additive in
+the contract (`LoadChartGap`, no version bump).
+
 ## 2026-10-09 — Sprint 014: saved session load and the load chart
 
 ### Added

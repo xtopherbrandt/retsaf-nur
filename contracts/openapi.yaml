@@ -2558,7 +2558,7 @@ components:
     LoadChartDay:
       type: object
       description: "One local date of history, with the sessions it counted, could not count and excluded."
-      required: [date, load, ctl, atl, tsb, provisional, marked, uncounted_in_window, counted, uncounted, excluded]
+      required: [date, load, ctl, atl, tsb, provisional, marked, uncounted_in_window, counted, uncounted, excluded, after_gap]
       properties:
         date: { type: string, format: date, description: "The local date in athlete_timezone." }
         load: { type: number, description: "The sum of the counted sessions' saved loads; 0 on a rest day or a marked day." }
@@ -2580,6 +2580,20 @@ components:
           type: array
           items: { $ref: "#/components/schemas/LoadChartExcluded" }
           description: "Ordered by start_time then session_id."
+        after_gap: { type: boolean, description: "True on the first running day after a gap in history and the 41 days after it: the recursion carried on through the break, so these values are still mostly the break. Not a re-seed, and not provisional." }
+    LoadChartGap:
+      type: object
+      description: >
+        A gap in history: a stretch of more than 21 consecutive empty local
+        days (no counted and no uncounted run; an excluded ride or capture
+        does not end it) that ended in a running day on or before today. The
+        HRV trend's coverage-gap silence, also strict. A stretch still open
+        today is not listed and marks nothing.
+      required: [first_empty_day, last_empty_day, empty_days]
+      properties:
+        first_empty_day: { type: string, format: date, description: "The first local date of the stretch: the day after the last run before the gap." }
+        last_empty_day: { type: string, format: date, description: "The last local date of the stretch: the day before the first run back." }
+        empty_days: { type: integer, description: "last_empty_day - first_empty_day + 1; always more than 21." }
     LoadChart:
       type: object
       description: >
@@ -2588,7 +2602,7 @@ components:
         the sessions' start_time and the configured athlete_timezone; nothing
         is stored. The curves always run from the first day of history; from
         and to choose which days are returned.
-      required: [timezone, today, first_day, seed, days]
+      required: [timezone, today, first_day, seed, gaps, days]
       properties:
         timezone: { type: string, description: "The configured athlete_timezone the days were bucketed in." }
         today: { type: string, format: date, description: "The athlete's local today, resolved once per request: the default to." }
@@ -2597,6 +2611,10 @@ components:
           allOf: [ { $ref: "#/components/schemas/LoadChartSeed" } ]
           nullable: true
           description: "Null when first_day is null or after today."
+        gaps:
+          type: array
+          items: { $ref: "#/components/schemas/LoadChartGap" }
+          description: "Every gap in the whole history up to today, oldest first, whatever from and to are; empty when there is none."
         days:
           type: array
           items: { $ref: "#/components/schemas/LoadChartDay" }

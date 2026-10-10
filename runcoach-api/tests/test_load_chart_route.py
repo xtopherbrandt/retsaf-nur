@@ -89,16 +89,24 @@ DAY_KEYS = {
     "counted",
     "uncounted",
     "excluded",
+    "after_gap",
 }
+CHART_KEYS = {"timezone", "today", "first_day", "seed", "days", "gaps"}
+GAP_KEYS = {"first_empty_day", "last_empty_day", "empty_days"}
 NEW_COMPONENTS = {
     "LoadChart",
     "LoadChartSeed",
     "LoadChartDay",
+    "LoadChartGap",
     "LoadChartCounted",
     "LoadChartUncounted",
     "LoadChartExcluded",
     "LoadChartReason",
 }
+#: The gap rule (IDEA-143, user ruling 2026-10-10): a stretch of more than 21 empty local days
+#: is a gap; the first running day back and the 41 days after it are ``after_gap``.
+GAP_DAYS = 21
+GAP_SPAN_DAYS = 42
 
 ORACLE_K_CTL = 1 - math.exp(-1 / 42)
 ORACLE_K_ATL = 1 - math.exp(-1 / 7)
@@ -303,11 +311,40 @@ def _listed(body: dict) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_fixture_chart_matches_the_oracle(configure, freeze) -> None:
+def oracle_gaps(running_days: set[date], today: date) -> tuple[list[tuple[date, date, int]], set[date]]:
+    """The gap rule applied to the local dates holding a running session, from the first of them
+    to ``today``: the gaps as ``(first_empty_day, last_empty_day, empty_days)`` and the set of
+    ``after_gap`` dates. Written from the ruling, not from ``metrics.load_chart``."""
+    first = min(running_days)
+    gaps: list[tuple[date, date, int]] = []
+    after: set[date] = set()
+    empty = 0
+    for n in range((today - first).days + 1):
+        d = first + timedelta(days=n)
+        if d not in running_days:
+            empty += 1
+            continue
+        if empty > GAP_DAYS:
+            gaps.append((d - timedelta(days=empty), d - timedelta(days=1), empty))
+            after |= {d + timedelta(days=k) for k in range(GAP_SPAN_DAYS) if d + timedelta(days=k) <= today}
+        empty = 0
+    return gaps, after
+
+
+def test_the_fixture_chart_lists_both_gaps_and_marks_each_return(configure, freeze) -> None:
     """Every run-proof fixture plus the cool-down walk uploaded; each day's load is the sum of
     the saved loads on that Vancouver date and the curves equal the oracle to 1e-9. The history
     starts at ``dev_fields_run`` (2024-07-09), so the full series is asserted but only the days
-    holding a session and the last day are printed."""
+    holding a session and the last day are printed.
+
+    The running days, recomputed from the fixtures' ``session.start_time`` in America/Vancouver:
+    2024-07-09, 2026-08-09, 2026-08-21, 2026-09-01, 2026-09-06 (the run and the walk) and
+    2026-09-29. Two stretches exceed 21 empty days: 2024-07-10..2026-08-08 (760 days, after
+    ``dev_fields_run``) and 2026-09-07..2026-09-28 (22 days, before ``hilly_run_8k_fr945``); the
+    11, 10 and 4 empty days between the August and September runs are not gaps. So ``after_gap``
+    is true from 2026-08-09 for 42 days (through 2026-09-19), false on 2026-09-20, and true again
+    on 2026-09-29 and 2026-09-30. Every served value is still the oracle's: the rule marks, it
+    does not re-seed."""
     zone = "America/Vancouver"
     configure(zone)
     today = date(2026, 9, 30)
@@ -324,6 +361,42 @@ def test_the_fixture_chart_matches_the_oracle(configure, freeze) -> None:
     print(f"\n  {len(rows)} sessions, {len(counted_values)} counted; served {len(body['days'])} days in {zone}")
     print("  date        load served | oracle       ctl served | oracle     atl served | oracle     tsb served | oracle")
     assert_matches_oracle(body, rows, zone, today, show=session_days | {today})
+
+    # The gaps and the marks, against the rule applied to the fixtures' own dates.
+    running_days = {
+        local_date(r["start_time"], zone)
+        for r in rows
+        if r["load_value"] is not None or r["load_reason"] not in EXCLUSION_REASONS
+    }
+    want_gaps, want_after = oracle_gaps(running_days, today)
+    where = f"running days {sorted(d.isoformat() for d in running_days)}, today {today}"
+    assert sorted(running_days) == [
+        date(2024, 7, 9),
+        date(2026, 8, 9),
+        date(2026, 8, 21),
+        date(2026, 9, 1),
+        date(2026, 9, 6),
+        date(2026, 9, 29),
+    ], where
+    assert want_gaps == [
+        (date(2024, 7, 10), date(2026, 8, 8), 760),
+        (date(2026, 9, 7), date(2026, 9, 28), 22),
+    ], where
+    served_gaps = [(g["first_empty_day"], g["last_empty_day"], g["empty_days"]) for g in body["gaps"]]
+    print(f"  gaps served {served_gaps}")
+    assert served_gaps == [(a.isoformat(), b.isoformat(), n) for a, b, n in want_gaps], where
+    assert all(set(g) == GAP_KEYS for g in body["gaps"])
+    after = {d["date"]: d["after_gap"] for d in body["days"]}
+    assert after["2026-08-09"] is True and after["2026-09-19"] is True, where
+    assert after["2026-09-20"] is False and after["2026-08-08"] is False, where
+    assert after["2026-09-29"] is True and after["2026-09-30"] is True, where
+    assert after["2024-07-09"] is False, where
+    assert {d for d, flag in after.items() if flag} == {d.isoformat() for d in want_after}, where
+    assert sum(after.values()) == GAP_SPAN_DAYS + 2, where
+    # No re-seed: the seed is still the mean over the first 42 days from dev_fields_run, and
+    # provisional is not reused for the return.
+    assert body["seed"]["provisional_until"] == "2024-08-19"
+    assert after["2026-08-09"] and not next(d for d in body["days"] if d["date"] == "2026-08-09")["provisional"]
 
     assert body["timezone"] == zone and body["today"] == today.isoformat()
     assert body["first_day"] == "2024-07-09"
@@ -562,6 +635,7 @@ def test_an_empty_store_answers_200_with_nulls_and_no_days(configure, freeze) ->
         "first_day": None,
         "seed": None,
         "days": [],
+        "gaps": [],
     }
 
 
@@ -655,6 +729,32 @@ def test_a_days_values_are_the_same_under_two_froms(configure, freeze, persist_s
     assert whole["days"][3]["ctl"] == pytest.approx(30.53, abs=0.01)
     assert whole["days"][3]["atl"] == pytest.approx(27.90, abs=0.01)
     assert whole["days"][3]["tsb"] == pytest.approx(-0.92, abs=0.01)
+
+
+def test_gaps_list_the_whole_history_whatever_the_window(configure, freeze, persist_sessions) -> None:
+    """``gaps`` is unfiltered by ``from``/``to``: a window that holds neither the gap nor the return
+    lists the same one gap as the whole chart, and the window's days carry their ``after_gap``.
+    Runs on 2026-03-01 and 2026-03-24 with 22 empty days between (a gap), today 2026-04-30."""
+    configure("UTC")
+    today = date(2026, 4, 30)
+    freeze(utc(today, 20))
+    before, back = _session(at(date(2026, 3, 1))), _session(at(date(2026, 3, 24)))
+    persist_sessions([before, back])
+    _plant(before.session_id, value=40.0)
+    _plant(back.session_id, value=40.0)
+    gap = {"first_empty_day": "2026-03-02", "last_empty_day": "2026-03-23", "empty_days": 22}
+    with TestClient(app) as client:
+        whole = get(client).json()
+        windowed = client.get(CHART_PATH, params={"from": "2026-04-20", "to": "2026-04-25"}).json()
+        early = client.get(CHART_PATH, params={"from": "2026-03-01", "to": "2026-03-10"}).json()
+    assert whole["gaps"] == windowed["gaps"] == early["gaps"] == [gap]
+    assert [d["date"] for d in windowed["days"]] == [(date(2026, 4, 20) + timedelta(days=n)).isoformat() for n in range(6)]
+    # 2026-03-24 + 41 = 2026-05-04, so every windowed day is inside the span; every early day is before it.
+    assert all(d["after_gap"] for d in windowed["days"])
+    assert not any(d["after_gap"] for d in early["days"])
+    after = {d["date"]: d["after_gap"] for d in whole["days"]}
+    assert after["2026-03-23"] is False and after["2026-03-24"] is True and after[today.isoformat()] is True
+    assert_matches_oracle(whole, _saved_rows(), "UTC", today)
 
 
 def test_each_list_is_ordered_by_start_time_then_session_id(configure, freeze, persist_sessions) -> None:
@@ -883,8 +983,9 @@ def test_the_served_shape_is_the_reference_shape(configure, freeze, persist_sess
     _plant(unc.session_id, reason="no_hr")
     with TestClient(app) as client:
         body = get(client).json()
-    assert set(body) == {"timezone", "today", "first_day", "seed", "days"}
+    assert set(body) == CHART_KEYS
     assert set(body["seed"]) == {"value", "window_days", "provisional_until"}
+    assert body["gaps"] == []
     served = body["days"][0]
     assert set(served) == DAY_KEYS
     assert set(served["counted"][0]) == {"session_id", "load"}

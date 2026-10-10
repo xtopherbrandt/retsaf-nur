@@ -1187,6 +1187,20 @@ class LoadChartDay(BaseModel):
     counted: list[LoadChartCounted] = Field(description="Ordered by `start_time` then `session_id`.")
     uncounted: list[LoadChartUncounted] = Field(description="Ordered by `start_time` then `session_id`.")
     excluded: list[LoadChartExcluded] = Field(description="Ordered by `start_time` then `session_id`.")
+    after_gap: bool = Field(
+        description="True on the first running day after a gap in history and the 41 days after it: the recursion carried on through the break, so these values are still mostly the break (IDEA-143, user ruling 2026-10-10). Not a re-seed, and not `provisional`."
+    )
+
+
+class LoadChartGap(BaseModel):
+    """A gap in history (IDEA-143, user ruling 2026-10-10): a stretch of more than 21 consecutive empty
+    local days (no counted and no uncounted run; an excluded ride or capture does not end it) that ended
+    in a running day on or before `today`. The HRV trend's coverage-gap silence, also strict. A stretch
+    still open today is not listed and marks nothing."""
+
+    first_empty_day: datetime.date = Field(description="The first local date of the stretch: the day after the last run before the gap.")
+    last_empty_day: datetime.date = Field(description="The last local date of the stretch: the day before the first run back.")
+    empty_days: int = Field(description="`last_empty_day` - `first_empty_day` + 1; always more than 21.")
 
 
 class LoadChart(BaseModel):
@@ -1204,6 +1218,9 @@ class LoadChart(BaseModel):
         description="The first local date holding a counted or uncounted session; null when the store holds no running session."
     )
     seed: LoadChartSeed | None = Field(description="Null when `first_day` is null or after `today`.")
+    gaps: list[LoadChartGap] = Field(
+        description="Every gap in the whole history up to `today`, oldest first, whatever `from` and `to` are; empty when there is none."
+    )
     days: list[LoadChartDay] = Field(
         description="Every local date from the later of `from` and `first_day` to `to`, in order, rest days included; empty when history has no day in the range."
     )

@@ -963,7 +963,7 @@ def get_session_load(session_id: str) -> SessionLoad:
 import dataclasses
 
 from runcoach_api.metrics import load_chart
-from runcoach_api.schemas import LoadChart, LoadChartDay, LoadChartSeed
+from runcoach_api.schemas import LoadChart, LoadChartDay, LoadChartGap, LoadChartSeed
 
 
 @app.get(
@@ -1036,7 +1036,9 @@ def get_load_chart(
         LoadChartDay.model_validate(dataclasses.asdict(day)) for day in chart.days if from_ <= day.date <= to
     ]
     seed = None if chart.seed is None else LoadChartSeed.model_validate(dataclasses.asdict(chart.seed))
-    return LoadChart(timezone=zone.key, today=today, first_day=chart.first_day, seed=seed, days=days)
+    # The gaps list the whole history up to today, unfiltered by from/to (IDEA-143).
+    gaps = [LoadChartGap.model_validate(dataclasses.asdict(gap)) for gap in chart.gaps]
+    return LoadChart(timezone=zone.key, today=today, first_day=chart.first_day, seed=seed, gaps=gaps, days=days)
 
 
 # ---------------------------------------------------------------------------
