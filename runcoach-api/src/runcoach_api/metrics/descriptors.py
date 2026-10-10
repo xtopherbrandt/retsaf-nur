@@ -7,9 +7,13 @@ features and the gps-degraded fraction. Each is a small pure function over a
 3.2), so when nothing qualifies the reason stands in the value's place.
 
 **The means share one convention.** Every average is the time-weighted mean
-of a value read at the **start record** of each counted segment, weighted by
-that segment's ``dt``; breaks and dt = 0 segments carry no time and contribute
-nothing. The gate-aware screens are applied per start record:
+of a value read at the **start record** of each sampled segment (``0 < dt <=
+5`` s), weighted by that segment's ``dt``; breaks and dt = 0 segments carry
+no time and contribute nothing. A moving gap (a counted break, see
+``segments``) is left out of the means too: the value at its start is not
+carried across it here, so ``avg_hr_bpm`` and the load's ``hr_time_s`` read
+one and the same set of segments. The gate-aware screens are applied per
+start record:
 
 - HR is excluded when absent (the finite screen already made ``heart_rate <=
   0`` absent) or when the start record carries the gate's ``cadence_lock``
@@ -26,7 +30,9 @@ nothing. The gate-aware screens are applied per start record:
   is None the mean is reported with model None.
 - ``gps_degraded`` samples are **not** excluded from any mean: spec/02
   section 2.4.4 trusts pace once it is averaged. They are reported as a
-  contributed-distance fraction instead, None when D = 0.
+  contributed-distance fraction instead, None when D = 0, over the counted
+  segments (moving gaps included) so that numerator and denominator share
+  one population and the fraction is not understated.
 
 **Ascent and descent** are a 1 m hysteresis over the present altitude
 samples in ``t`` order (reference section 7). The threshold is a heuristic
@@ -69,8 +75,15 @@ def hr_excluded(record: ScreenedRecord) -> bool:
     return record.heart_rate is None or CADENCE_LOCK_TAG in record.sample_quality
 
 
+def _sampled_starts(tb: TimeBase) -> Iterator[tuple[Segment, ScreenedRecord]]:
+    """Each sampled segment with its start record: the one walk every mean below takes."""
+    for seg in tb.segments:
+        if seg.sampled:
+            yield seg, tb.records[seg.k]
+
+
 def _counted_starts(tb: TimeBase) -> Iterator[tuple[Segment, ScreenedRecord]]:
-    """Each counted segment with its start record: the one walk every descriptor below takes."""
+    """Each counted segment (sampled or a moving gap) with its start record: the fraction's walk."""
     for seg in tb.segments:
         if seg.counted:
             yield seg, tb.records[seg.k]
@@ -79,10 +92,10 @@ def _counted_starts(tb: TimeBase) -> Iterator[tuple[Segment, ScreenedRecord]]:
 def _time_weighted_mean(
     tb: TimeBase, value_of: Callable[[ScreenedRecord], float | None]
 ) -> float | None:
-    """The dt-weighted mean of ``value_of(start record)`` over counted segments; None if none qualify."""
+    """The dt-weighted mean of ``value_of(start record)`` over sampled segments; None if none qualify."""
     weighted = 0.0
     time = 0.0
-    for seg, start in _counted_starts(tb):
+    for seg, start in _sampled_starts(tb):
         value = value_of(start)
         if value is None:
             continue
@@ -92,18 +105,18 @@ def _time_weighted_mean(
 
 
 def avg_hr(tb: TimeBase) -> Feature:
-    """Time-weighted mean HR over counted segments whose start record passes ``hr_excluded``."""
+    """Time-weighted mean HR over sampled segments whose start record passes ``hr_excluded``."""
     mean = _time_weighted_mean(tb, lambda r: None if hr_excluded(r) else r.heart_rate)
     if mean is not None:
         return Feature(mean, None)
-    any_present = any(start.heart_rate is not None for _, start in _counted_starts(tb))
+    any_present = any(start.heart_rate is not None for _, start in _sampled_starts(tb))
     # Precedence: HR that was never there is `no_heart_rate`; HR that was there and all of it
     # locked is the gate's own flag.
     return Feature(None, CADENCE_LOCK_TAG if any_present else "no_heart_rate")
 
 
 def avg_cadence(tb: TimeBase) -> Feature:
-    """Time-weighted mean cadence over counted segments with cadence present and > 0."""
+    """Time-weighted mean cadence over sampled segments with cadence present and > 0."""
     mean = _time_weighted_mean(
         tb, lambda r: r.cadence if r.cadence is not None and r.cadence > 0.0 else None
     )
@@ -111,7 +124,7 @@ def avg_cadence(tb: TimeBase) -> Feature:
 
 
 def avg_power(tb: TimeBase) -> tuple[Feature, str | None]:
-    """Time-weighted mean power over counted segments with power present, and its one model.
+    """Time-weighted mean power over sampled segments with power present, and its one model.
 
     A record with power and a None model counts toward the mean; only non-null
     models are compared, and more than one distinct model gives
@@ -122,7 +135,7 @@ def avg_power(tb: TimeBase) -> tuple[Feature, str | None]:
         return Feature(None, "no_power"), None
     models = {
         start.power_model
-        for _, start in _counted_starts(tb)
+        for _, start in _sampled_starts(tb)
         if start.power is not None and start.power_model is not None
     }
     if len(models) > 1:
@@ -178,7 +191,9 @@ def gps_degraded_fraction(tb: TimeBase) -> float | None:
     """Contributed distance of counted segments whose start record is ``gps_degraded``, over D.
 
     None when D = 0 (reference section 5). Nothing is excluded on this tag; the
-    fraction is the report.
+    fraction is the report. The walk is over the counted segments, moving gaps
+    included, because D is their sum: numerator and denominator share one
+    population.
     """
     degraded = sum(
         seg.contributed_m

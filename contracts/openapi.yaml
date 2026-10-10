@@ -2179,9 +2179,9 @@ components:
         descriptors, computed on read from its stored canonical records (F013).
         Nothing is stored. duration_s, distance_m and avg_pace_s_per_km are the
         same quantities SessionSummary names: recorded time, not elapsed
-        (consecutive records with 0 < dt <= 5 s count; a pause or an unfilled gap
-        contributes neither time nor distance), so a future listSessions
-        projects these values rather than computing its own.
+        (consecutive records with 0 < dt <= 5 s count, and so does a moving gap:
+        a gap over 5 s crossed at 0.5 m/s or more of device distance; a standstill
+        contributes neither time nor distance), so listSessions projects these values.
       required: [session_id, sport, flags, gap_coverage, grade_clamped_fraction, gps_degraded_fraction, features]
       properties:
         session_id: { type: string }
@@ -2193,8 +2193,9 @@ components:
             The session's stored quality_flags first, in stored order with
             `smart_recording` moved to the front when present; then
             `distance_regressed`, `gap_unavailable` (D > 0 and gap_coverage < 1:
-            spec/03 section 3.3.4's raw-pace fallback applied to part of the run)
-            and `grade_clamped` (a grade was clamped to +/-0.45). Each at most once.
+            spec/03 section 3.3.4's raw-pace fallback applied to part of the run),
+            `grade_clamped` (a grade was clamped to +/-0.45) and `moving_gap` (a gap
+            over 5 s was counted for time and distance). Each at most once.
         gap_coverage:
           type: number
           nullable: true
@@ -2214,7 +2215,7 @@ components:
           properties:
             duration_s:
               allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
-              description: "Recorded time T: the sum of dt over counted segments (0 < dt <= 5 s). Pauses, gaps over 5 s and dt = 0 duplicates contribute nothing."
+              description: "Recorded time T: the sum of dt over counted segments: 0 < dt <= 5 s, or a moving gap (dt > 5 s with device distance advancing at 0.5 m/s or more across it). A standstill over 5 s and a dt = 0 duplicate contribute nothing."
             distance_m:
               allOf: [ { $ref: "#/components/schemas/FeatureValue" } ]
               description: "D: the sum of max(dd, 0) over counted segments; a regressing segment contributes 0 m and raises distance_regressed."

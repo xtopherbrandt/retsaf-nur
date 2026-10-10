@@ -33,17 +33,20 @@ session's ``quality_flags`` as the flags and leave the fractions null.
 
 **Flags** (reference section 8): the session's ``quality_flags`` in stored
 order, ``smart_recording`` moved to the front when present (F013 AC7); then
-``distance_regressed``, ``gap_unavailable`` (D > 0 and coverage < 1) and
-``grade_clamped``; each at most once. The caller's list is copied, never
-mutated.
+``distance_regressed``, ``gap_unavailable`` (D > 0 and coverage < 1),
+``grade_clamped`` and ``moving_gap`` (a counted segment is a moving gap: a
+gap over 5 s crossed at 0.5 m/s or more, counted for time and distance by
+``segments``); each at most once. The caller's list is copied, never mutated.
 
 **The per-segment stream is in-process only** (``segment_rows``): one dict per
-counted segment with the fields decoupling, EF and durability will read.
-``speed`` and ``block_id`` are the end record's, the record whose NGP sample
-this segment's g adjusts, so ``block_id`` is ``ngp.record_block_ids``'s
-numbering; ``heart_rate`` and ``hr_excluded`` are the start record's, as the
-descriptor means read them, through ``descriptors.hr_excluded`` so the rule
-exists once.
+counted segment, moving gaps included, with the fields decoupling, EF and
+durability will read. ``speed`` and ``block_id`` are the end record's, the
+record whose NGP sample this segment's g adjusts, so ``block_id`` is
+``ngp.record_block_ids``'s numbering; ``heart_rate`` and ``hr_excluded`` are
+the start record's, as the descriptor means read them, through
+``descriptors.hr_excluded`` so the rule exists once; ``moving_gap`` is the
+segment's, so a consumer that wants the sampled strides alone can drop the
+gaps.
 
 **Pure, by design.** No ``config``, ``db`` or ``fastapi`` import, no clock, no
 connection. ``session`` is a mapping with ``session_id``, ``sport``,
@@ -82,6 +85,7 @@ SMART_RECORDING_FLAG = "smart_recording"
 DISTANCE_REGRESSED_FLAG = "distance_regressed"
 GAP_UNAVAILABLE_FLAG = "gap_unavailable"
 GRADE_CLAMPED_FLAG = "grade_clamped"
+MOVING_GAP_FLAG = "moving_gap"
 
 
 @dataclass(frozen=True)
@@ -232,6 +236,8 @@ def compute_session_features(session: Mapping[str, object], rows: Iterable[Mappi
         derived_flags.append(GAP_UNAVAILABLE_FLAG)
     if any(gs.clamped for gs in graded):
         derived_flags.append(GRADE_CLAMPED_FLAG)
+    if any(seg.moving_gap for seg in tb.segments):
+        derived_flags.append(MOVING_GAP_FLAG)
 
     return _response(
         session,
@@ -247,9 +253,10 @@ def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, obje
     """The in-process per-segment stream: one dict per counted segment (reference section 8).
 
     Fields: ``t_start, dt, s_start, contributed_m, v_actual, speed, i, graded,
-    clamped, g, block_id, heart_rate, hr_excluded``. ``speed`` and ``block_id``
-    belong to the record the segment ends at (where NGP applies this g);
-    ``heart_rate`` and ``hr_excluded`` to the record it starts at. Empty when a
+    clamped, g, block_id, heart_rate, hr_excluded, moving_gap``. ``speed`` and
+    ``block_id`` belong to the record the segment ends at (where NGP applies
+    this g); ``heart_rate`` and ``hr_excluded`` to the record it starts at;
+    ``moving_gap`` is True on a counted gap over 5 s. Empty when a
     session-wide override applies.
     """
     tb, reason = _screened_time_base(session, rows)
@@ -278,6 +285,7 @@ def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, obje
                 "block_id": block_ids[seg.k + 1],
                 "heart_rate": start.heart_rate,
                 "hr_excluded": descriptors.hr_excluded(start),
+                "moving_gap": seg.moving_gap,
             }
         )
     return out

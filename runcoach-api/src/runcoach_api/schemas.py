@@ -634,7 +634,7 @@ class FeatureValue(BaseModel):
             "Why no value is served, null when one is. The reason codes, by feature: `sport_not_running` (every "
             "feature of a non-running session) and `no_records` (every feature of a running session with no "
             "records) take precedence over all others; then `no_counted_segments` (duration_s, when no segment "
-            "with 0 < dt <= 5 s exists), `no_distance` (distance_m, avg_pace_s_per_km and "
+            "with 0 < dt <= 5 s and no moving gap exists), `no_distance` (distance_m, avg_pace_s_per_km and "
             "gap_avg_pace_s_per_km, when the counted distance is 0: a zero is reported as unavailable, never as "
             "a value), `no_30s_block` and `no_motion` (ngp_speed_m_s and ngp_pace_s_per_km), `no_heart_rate` "
             "and `cadence_lock` (avg_hr_bpm), `no_cadence` (avg_cadence_spm), `no_power` and "
@@ -660,8 +660,9 @@ class SessionFeatureValues(BaseModel):
 
     duration_s: FeatureValue = Field(
         description=(
-            "Recorded time T: the sum of dt over counted segments (consecutive records 0 < dt <= 5 s apart). "
-            "A pause or an unfilled gap longer than 5 s contributes nothing; a dt = 0 duplicate contributes nothing."
+            "Recorded time T: the sum of dt over counted segments: consecutive records 0 < dt <= 5 s apart, or a "
+            "moving gap (dt > 5 s crossed at 0.5 m/s or more of device distance, counted in full; the session "
+            "carries the `moving_gap` flag). A standstill over 5 s and a dt = 0 duplicate contribute nothing."
         )
     )
     distance_m: FeatureValue = Field(
@@ -718,8 +719,9 @@ class SessionFeaturesResponse(BaseModel):
     non-running session, or one with no records, is a 200 with every feature
     unavailable and the reason named: an all-unavailable session is an
     answer, not an error. duration_s, distance_m and avg_pace_s_per_km are
-    the same quantities SessionSummary names: recorded time, not elapsed, so a
-    future listSessions projects these values.
+    the same quantities SessionSummary names: recorded time, not elapsed
+    (sampled strides and moving gaps count; a standstill does not), so
+    listSessions projects these values.
     """
 
     session_id: str
@@ -729,7 +731,8 @@ class SessionFeaturesResponse(BaseModel):
             "The session's stored `quality_flags` first, in stored order with `smart_recording` moved to the "
             "front when present; then `distance_regressed` (a counted segment whose distance decreased), "
             "`gap_unavailable` (D > 0 and gap_coverage < 1: spec/03 section 3.3.4's raw-pace fallback applied "
-            "to part of the run) and `grade_clamped` (a segment's grade was clamped to +/-0.45). Each at most once."
+            "to part of the run), `grade_clamped` (a segment's grade was clamped to +/-0.45) and `moving_gap` (a "
+            "gap over 5 s crossed at 0.5 m/s or more was counted for time and distance). Each at most once."
         )
     )
     gap_coverage: float | None = Field(

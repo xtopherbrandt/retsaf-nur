@@ -15,19 +15,25 @@ three things defined here, in this order:
    the screen is pinned at this seam with constructed records.
 2. **Segments and the recorded-time base** (``build_time_base``). A *segment*
    is the interval between consecutive records ``k`` and ``k + 1``. It is
-   **counted** when ``0 < dt <= SEGMENT_MAX_DT_S``; it is a **break** (a pause
-   or an unfilled gap) when ``dt > SEGMENT_MAX_DT_S`` and contributes neither
-   time nor distance; a ``dt = 0`` segment (the resampler can emit duplicate
-   instants) contributes nothing and is *not* a break. The duplicate record
-   itself stays in ``records``. Recorded time ``T = sum(dt)`` and distance
-   ``D = sum(max(dd, 0))`` run over counted segments only, so a 600 s pause and
-   a dt = 0 duplicate leave both unchanged: the time base is recorded time, not
-   elapsed time (F013 Decision Log, "recorded time"). A counted segment whose
-   distance decreases contributes 0 m and raises ``distance_regressed``; one
-   with either distance absent contributes 0 m and is still counted for time.
-   The **reconstructed distance** ``s`` is the running sum of those
-   contributions, monotone by construction, so the gradient window that walks
-   it can never become non-contiguous.
+   **sampled** when ``0 < dt <= SEGMENT_MAX_DT_S``; it is a **break** (a pause
+   or an unfilled gap) when ``dt > SEGMENT_MAX_DT_S``; a ``dt = 0`` segment
+   (the resampler can emit duplicate instants) contributes nothing and is
+   *not* a break. The duplicate record itself stays in ``records``. A break
+   across which the device distance advanced at ``MOVING_GAP_MIN_SPEED_M_S``
+   or more (``dd / dt``, both distances present, no length cap) is a **moving
+   gap**: the runner kept going while the watch wrote nothing (IDEA-126,
+   ruled 2026-10-10). A segment is **counted** when it is sampled or a moving
+   gap; any other break contributes neither time nor distance. Recorded time
+   ``T = sum(dt)`` and distance ``D = sum(max(dd, 0))`` run over counted
+   segments only, so a 600 s standstill and a dt = 0 duplicate leave both
+   unchanged while a 60 s dropout at running speed counts in full: the time
+   base is recorded time, not elapsed time (F013 Decision Log, "recorded
+   time"). A sampled segment whose distance decreases contributes 0 m and
+   raises ``distance_regressed``; one with either distance absent contributes
+   0 m and is still counted for time. A moving gap is still a break for the
+   rules that split at a gap (NGP's blocks). The **reconstructed distance**
+   ``s`` is the running sum of the contributions, monotone by construction, so
+   the gradient window that walks it can never become non-contiguous.
 3. **The shared ``Feature`` type**, ``{value, unavailable}`` with exactly one
    of the two set (reference section 7), which every descriptor returns.
 
@@ -49,6 +55,12 @@ from typing import NamedTuple, Self
 # spec/02 section 2.4.1's resampling gap bound (``quality_gates._MAX_INTERPOLATION_GAP_S``),
 # restated rather than imported: a segment longer than this is a break, not a stride.
 SEGMENT_MAX_DT_S = 5.0
+
+# The device speed across a gap over SEGMENT_MAX_DT_S that makes it a moving gap (IDEA-126, ruled
+# 2026-10-10): dd / dt at or above this counts the gap for time and distance. Every observed pause on a
+# run moves at most 0.035 m/s in the fixture corpus and 0.16 m/s in the athlete's store (GPS drift while
+# the timer was stopped); a walk is about 1.2 m/s. Half a metre a second sits between the two.
+MOVING_GAP_MIN_SPEED_M_S = 0.5
 
 
 class _FeatureFields(NamedTuple):
@@ -92,10 +104,12 @@ class ScreenedRecord:
 class Segment:
     k: int  # index of the start record; the segment runs k -> k+1
     dt: float
-    counted: bool  # 0 < dt <= SEGMENT_MAX_DT_S
+    sampled: bool  # 0 < dt <= SEGMENT_MAX_DT_S
     is_break: bool  # dt > SEGMENT_MAX_DT_S
+    moving_gap: bool  # a break with both distances present and dd / dt >= MOVING_GAP_MIN_SPEED_M_S
+    counted: bool  # sampled or moving_gap: contributes to T and D
     contributed_m: float  # max(dd, 0) when counted and both distances present, else 0.0
-    regressed: bool  # counted, both present, dd < 0
+    regressed: bool  # sampled, both present, dd < 0
     v_actual: float | None  # contributed_m / dt when counted, else None
 
 
@@ -172,37 +186,46 @@ def screen(rows: Iterable[Mapping[str, object]]) -> list[ScreenedRecord]:
 class Contribution(NamedTuple):
     """What one segment adds to the recorded-time base: the rule of the module docstring, point 2."""
 
-    counted: bool  # 0 < dt <= SEGMENT_MAX_DT_S
+    counted: bool  # sampled (0 < dt <= SEGMENT_MAX_DT_S) or a moving gap
     contributed_m: float  # max(dd, 0) when counted and both distances present, else 0.0
-    regressed: bool  # counted, both present, dd < 0
+    regressed: bool  # sampled, both present, dd < 0
 
 
 def _contribution(dt: float, d0: float | None, d1: float | None) -> Contribution:
     """The one per-segment rule. ``_segment`` and ``recorded_totals`` both call it; nothing restates it.
 
     ``dt`` is the segment's duration and ``d0``, ``d1`` the screened distances
-    at its two ends. Whether the segment is a break (``dt > SEGMENT_MAX_DT_S``)
-    is left to ``_segment``: a break and a ``dt = 0`` duplicate both contribute
-    nothing here, and only the per-segment view tells them apart.
+    at its two ends. A sampled segment (``0 < dt <= SEGMENT_MAX_DT_S``) is
+    counted whatever its distances say. A longer gap is counted only as a
+    moving gap: both distances present and ``dd / dt >= MOVING_GAP_MIN_SPEED_M_S``
+    (equality counts; a gap at 0.4999 m/s, or with a distance absent, is a
+    break that contributes nothing). Whether a segment is a break
+    (``dt > SEGMENT_MAX_DT_S``) is left to ``_segment``: a non-moving break and
+    a ``dt = 0`` duplicate both contribute nothing here, and only the
+    per-segment view tells them apart.
     """
-    counted = 0.0 < dt <= SEGMENT_MAX_DT_S
-    contributed_m = 0.0
-    regressed = False
-    if counted and d0 is not None and d1 is not None:
-        dd = d1 - d0
-        regressed = dd < 0.0
-        contributed_m = max(dd, 0.0)
-    return Contribution(counted, contributed_m, regressed)
+    sampled = 0.0 < dt <= SEGMENT_MAX_DT_S
+    if d0 is None or d1 is None:
+        return Contribution(sampled, 0.0, False)
+    dd = d1 - d0
+    if sampled:
+        return Contribution(True, max(dd, 0.0), dd < 0.0)
+    if dt > SEGMENT_MAX_DT_S and dd / dt >= MOVING_GAP_MIN_SPEED_M_S:
+        return Contribution(True, dd, False)
+    return Contribution(False, 0.0, False)
 
 
 def _segment(k: int, start: ScreenedRecord, end: ScreenedRecord) -> Segment:
     dt = end.t - start.t
     counted, contributed_m, regressed = _contribution(dt, start.distance, end.distance)
+    is_break = dt > SEGMENT_MAX_DT_S
     return Segment(
         k=k,
         dt=dt,
+        sampled=counted and not is_break,
+        is_break=is_break,
+        moving_gap=counted and is_break,
         counted=counted,
-        is_break=dt > SEGMENT_MAX_DT_S,
         contributed_m=contributed_m,
         regressed=regressed,
         v_actual=contributed_m / dt if counted else None,

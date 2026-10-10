@@ -440,7 +440,7 @@ def test_segment_rows_carry_the_reference_fields_for_every_counted_segment():
     counted = [seg for seg in tb.segments if seg.counted]
     assert len(stream) == len(counted) == 58
     fields = ["t_start", "dt", "s_start", "contributed_m", "v_actual", "speed", "i", "graded", "clamped", "g"]
-    fields += ["block_id", "heart_rate", "hr_excluded"]
+    fields += ["block_id", "heart_rate", "hr_excluded", "moving_gap"]
     for row, seg in zip(stream, counted):
         assert list(row) == fields
         assert row["t_start"] == tb.records[seg.k].t and row["dt"] == seg.dt

@@ -6,9 +6,13 @@ HR are integer-encoded), so the screen is pinned here, where the pure function
 is called with constructed records, and never through the route.
 
 The table of segment cases was authored from the reference's rule alone,
-before the module existed: a segment is counted when ``0 < dt <= 5`` s, is a
-break when ``dt > 5`` s, and is neither when ``dt = 0``. A counted segment
+before the module existed: a segment is sampled when ``0 < dt <= 5`` s, is a
+break when ``dt > 5`` s, and is neither when ``dt = 0``. A sampled segment
 whose distance decreases contributes 0 m and raises ``distance_regressed``.
+A break across which distance advanced at 0.5 m/s or more is a moving gap
+and is counted (IDEA-126, ruled 2026-10-10); the break pins below therefore
+hold their distance still (dd = 0, a true pause) and each has a moving-gap
+twin beside it. ``test_moving_gaps.py`` holds the rule's own table.
 """
 
 from __future__ import annotations
@@ -141,16 +145,37 @@ def test_sum_of_v_actual_times_dt_equals_distance():
         {"t": 0.5, "distance": 1.7},
         {"t": 1.5, "distance": 1.2},  # regression
         {"t": 4.5, "distance": 9.9},
-        {"t": 20.0, "distance": 50.0},  # break
-        {"t": 21.0, "distance": 52.3},
+        {"t": 20.0, "distance": 9.9},  # break: a 15.5 s standstill
+        {"t": 21.0, "distance": 12.2},
         {"t": 22.0, "distance": None},  # absent distance, counted for time
-        {"t": 23.0, "distance": 60.0},
+        {"t": 23.0, "distance": 19.9},
     ]
     tb = S.build_time_base(S.screen(rows))
     total = sum(seg.v_actual * seg.dt for seg in tb.segments if seg.counted)
     assert tb.D > 0
     assert math.isclose(total, tb.D, rel_tol=1e-9)
     assert tb.T == 0.5 + 1.0 + 3.0 + 1.0 + 1.0 + 1.0
+
+
+def test_sum_of_v_actual_times_dt_equals_distance_across_a_moving_gap():
+    # The same rows with the 15.5 s gap crossed at 40.1 m (2.59 m/s): it is counted, so T and D grow by it.
+    rows = [
+        {"t": 0.0, "distance": 0.0},
+        {"t": 0.5, "distance": 1.7},
+        {"t": 1.5, "distance": 1.2},  # regression
+        {"t": 4.5, "distance": 9.9},
+        {"t": 20.0, "distance": 50.0},  # moving gap
+        {"t": 21.0, "distance": 52.3},
+        {"t": 22.0, "distance": None},  # absent distance, counted for time
+        {"t": 23.0, "distance": 60.0},
+    ]
+    tb = S.build_time_base(S.screen(rows))
+    gap = tb.segments[3]
+    assert gap.is_break and gap.moving_gap and gap.counted and gap.contributed_m == pytest.approx(40.1)
+    total = sum(seg.v_actual * seg.dt for seg in tb.segments if seg.counted)
+    assert math.isclose(total, tb.D, rel_tol=1e-9)
+    assert tb.T == 0.5 + 1.0 + 3.0 + 15.5 + 1.0 + 1.0 + 1.0
+    assert tb.D == pytest.approx(1.7 + 8.7 + 40.1 + 2.3)
 
 
 # -- The dt boundaries ---------------------------------------------------------------------------
@@ -169,10 +194,12 @@ def test_sum_of_v_actual_times_dt_equals_distance():
     ids=["dt0", "dt0.5", "dt1", "dt5", "dt5.0001", "dt600"],
 )
 def test_segment_dt_boundaries(dt, counted, is_break):
-    tb = S.build_time_base(S.screen([{"t": 10.0, "distance": 0.0}, {"t": 10.0 + dt, "distance": 4.0}]))
+    # The break rows hold distance still (a true pause): 4 m in 5.0001 s would be 0.8 m/s, a moving gap.
+    end_distance = 4.0 if counted else 0.0
+    tb = S.build_time_base(S.screen([{"t": 10.0, "distance": 0.0}, {"t": 10.0 + dt, "distance": end_distance}]))
     (seg,) = tb.segments
     assert seg.dt == pytest.approx(dt)
-    assert (seg.counted, seg.is_break) == (counted, is_break)
+    assert (seg.counted, seg.sampled, seg.is_break, seg.moving_gap) == (counted, counted, is_break, False)
     if counted:
         assert seg.contributed_m == 4.0 and seg.v_actual == pytest.approx(4.0 / dt)
         assert (tb.T, tb.D) == (pytest.approx(dt), 4.0)
@@ -180,6 +207,18 @@ def test_segment_dt_boundaries(dt, counted, is_break):
         assert seg.contributed_m == 0.0 and seg.v_actual is None
         assert (tb.T, tb.D) == (0.0, 0.0)
     assert tb.s == [0.0, tb.D]
+
+
+@pytest.mark.parametrize("dt", [5.0001, 600.0], ids=["dt5.0001", "dt600"])
+def test_a_break_crossed_at_running_speed_is_a_counted_moving_gap(dt):
+    # The twin of the break rows above: 3 m/s across the gap, so it counts for time and distance.
+    distance = 3.0 * dt
+    tb = S.build_time_base(S.screen([{"t": 10.0, "distance": 0.0}, {"t": 10.0 + dt, "distance": distance}]))
+    (seg,) = tb.segments
+    assert (seg.counted, seg.sampled, seg.is_break, seg.moving_gap) == (True, False, True, True)
+    assert seg.contributed_m == distance and seg.v_actual == pytest.approx(3.0)
+    assert (tb.T, tb.D) == (pytest.approx(dt), distance)
+    assert tb.s == [0.0, distance]
 
 
 def test_segment_bound_restates_the_resampling_gap_constant():
@@ -355,13 +394,27 @@ def test_a_segment_with_either_distance_absent_contributes_zero_and_is_counted_f
 
 
 def test_a_break_contributes_neither_time_nor_distance():
-    rows = [{"t": 0.0, "distance": 0.0}, {"t": 100.0, "distance": 300.0}, {"t": 101.0, "distance": 303.0}]
+    # A 100 s standstill: distance held at 0 m, so the gap is a break and not a moving gap.
+    rows = [{"t": 0.0, "distance": 0.0}, {"t": 100.0, "distance": 0.0}, {"t": 101.0, "distance": 3.0}]
     tb = S.build_time_base(S.screen(rows))
     brk, stride = tb.segments
-    assert brk.is_break and not brk.counted and brk.contributed_m == 0.0 and brk.v_actual is None
+    assert brk.is_break and not brk.counted and not brk.moving_gap
+    assert brk.contributed_m == 0.0 and brk.v_actual is None
     assert stride.counted and stride.contributed_m == 3.0
     assert (tb.T, tb.D) == (1.0, 3.0)
     assert tb.s == [0.0, 0.0, 3.0]
+
+
+def test_a_moving_gap_contributes_both_time_and_distance():
+    # The twin: 300 m in 100 s (3 m/s) across the same gap is a moving gap, counted in full.
+    rows = [{"t": 0.0, "distance": 0.0}, {"t": 100.0, "distance": 300.0}, {"t": 101.0, "distance": 303.0}]
+    tb = S.build_time_base(S.screen(rows))
+    gap, stride = tb.segments
+    assert gap.is_break and gap.counted and gap.moving_gap and not gap.sampled
+    assert gap.contributed_m == 300.0 and gap.v_actual == pytest.approx(3.0)
+    assert stride.sampled and stride.contributed_m == 3.0
+    assert (tb.T, tb.D) == (101.0, 303.0)
+    assert tb.s == [0.0, 300.0, 303.0]
 
 
 # -- Shape of the time base ----------------------------------------------------------------------

@@ -14,7 +14,7 @@ absent and non-finite and boolean distances, a distance regression, rows with
 no place on the time axis), the records of every real run in the fixture corpus
 read back through the upload path (provenance table in ``fixtures/README.md``,
 run proof ``yes``), and a one-primitive pin: replace the primitive and both
-paths move together, so the moving-gap rule has exactly one place to change.
+paths move together, so the rule, moving gaps included, lives in one place.
 The timing test prints both paths' wall time over 50 x 6,000 rows and asserts
 nothing; the budget belongs to the list route's own speed pin.
 """
@@ -50,9 +50,10 @@ INF = float("inf")
 
 # One list that walks every branch of the segment rule, in this order:
 # a plain stride, a dt = 0 duplicate, a stride with the distance absent on one
-# side (None, nan, inf, -inf, bool), a regression, a break (dt > 5), a stride
-# exactly at the bound, a negative dt, then rows with no place on the time
-# axis (``t`` missing, None, nan, inf) between two counted strides.
+# side (None, nan, inf, -inf, bool), a regression, a break (dt > 5 at a
+# standstill), a stride exactly at the bound, a negative dt, rows with no place
+# on the time axis (``t`` missing, None, nan, inf) between two counted strides,
+# then a moving gap (dt > 5 crossed at 3 m/s), counted for time and distance.
 CONSTRUCTED_ROWS: list[dict] = [
     {"t": 0.0, "distance": 0.0},
     {"t": 1.0, "distance": 3.1},
@@ -65,16 +66,17 @@ CONSTRUCTED_ROWS: list[dict] = [
     {"t": 7.0, "distance": 20.0},
     {"t": 8.0, "distance": 19.0},  # regression: 0 m, counted for time
     {"t": 9.0, "distance": 22.3},
-    {"t": 15.5, "distance": 40.0},  # dt = 6.5 > 5: a break, nothing contributed
-    {"t": 20.5, "distance": 55.0},  # dt = 5.0 exactly: counted
-    {"t": 19.0, "distance": 60.0},  # negative dt: not counted, not a break
-    {"t": 20.0, "distance": 63.0},
-    {"distance": 64.0},  # no ``t`` key: dropped by the screen
-    {"t": None, "distance": 65.0},
-    {"t": NAN, "distance": 66.0},
-    {"t": INF, "distance": 67.0},
-    {"t": 21.0, "distance": 66.7},  # the stride from t = 20 spans the dropped rows
-    {"t": 22, "distance": 70},  # ints are finite numbers
+    {"t": 15.5, "distance": 22.3},  # dt = 6.5 > 5 at a standstill: a break, nothing contributed
+    {"t": 20.5, "distance": 37.3},  # dt = 5.0 exactly: counted
+    {"t": 19.0, "distance": 42.3},  # negative dt: not counted, not a break
+    {"t": 20.0, "distance": 45.3},
+    {"distance": 46.3},  # no ``t`` key: dropped by the screen
+    {"t": None, "distance": 47.3},
+    {"t": NAN, "distance": 48.3},
+    {"t": INF, "distance": 49.3},
+    {"t": 21.0, "distance": 49.0},  # the stride from t = 20 spans the dropped rows
+    {"t": 22, "distance": 52},  # ints are finite numbers
+    {"t": 30.0, "distance": 76.0},  # dt = 8 > 5 crossed at 3 m/s: a moving gap, counted in full
 ]
 
 # The same branches as single cases, so a failure names the branch.
@@ -83,9 +85,17 @@ CASES = {
     "dt_zero": [{"t": 0.0, "distance": 0.0}, {"t": 0.0, "distance": 0.5}, {"t": 1.0, "distance": 3.0}],
     "break_over_bound": [
         {"t": 0.0, "distance": 0.0},
+        {"t": 5.5, "distance": 0.0},
+        {"t": 6.5, "distance": 3.0},
+    ],
+    "moving_gap_over_bound": [
+        {"t": 0.0, "distance": 0.0},
         {"t": 5.5, "distance": 10.0},
         {"t": 6.5, "distance": 13.0},
     ],
+    "moving_gap_at_half_a_metre_per_second": [{"t": 0.0, "distance": 0.0}, {"t": 10.0, "distance": 5.0}],
+    "slow_gap_below_the_threshold": [{"t": 0.0, "distance": 0.0}, {"t": 10.0, "distance": 4.999}],
+    "gap_with_a_distance_absent": [{"t": 0.0, "distance": 0.0}, {"t": 10.0, "distance": None}],
     "at_the_bound": [{"t": 0.0, "distance": 0.0}, {"t": 5.0, "distance": 10.0}],
     "negative_dt": [{"t": 2.0, "distance": 6.0}, {"t": 1.0, "distance": 3.0}, {"t": 3.0, "distance": 9.0}],
     "distance_none": [{"t": 0.0, "distance": 0.0}, {"t": 1.0, "distance": None}, {"t": 2.0, "distance": 6.0}],
@@ -129,8 +139,8 @@ def test_recorded_totals_equals_the_time_base_on_constructed_rows():
     assert totals == (T, D)
     assert _same_bits(totals[0], T) and _same_bits(totals[1], D)
     # The list reaches every branch: the totals are not the trivial ones.
-    assert T == 17.0, T  # twelve unit strides and the one 5 s stride at the bound
-    assert D == pytest.approx(3.1 + 3.3 + 15.0 + 3.0 + 3.7 + 3.3), D
+    assert T == 25.0, T  # twelve unit strides, the one 5 s stride at the bound and the 8 s moving gap
+    assert D == pytest.approx(3.1 + 3.3 + 15.0 + 3.0 + 3.7 + 3.0 + 24.0), D
 
 
 @pytest.mark.parametrize("name", sorted(CASES))
@@ -211,7 +221,7 @@ def test_recorded_totals_equals_the_time_base_on_every_running_fixture(filename)
 
 
 def test_segment_and_recorded_totals_share_one_primitive(monkeypatch):
-    """Replace the rule and both paths move together: the moving-gap change edits one function."""
+    """Replace the rule and both paths move together: the rule, moving gaps included, is one function."""
     rows = [{"t": 0.0, "distance": 0.0}, {"t": 1.0, "distance": 3.0}, {"t": 2.0, "distance": 6.0}]
     before = S.recorded_totals(rows)
     assert before == _time_base_totals(rows) == (2.0, 6.0)
@@ -231,7 +241,12 @@ def test_contribution_is_the_rule_the_module_docstring_states():
     bound = S.SEGMENT_MAX_DT_S
     assert S._contribution(1.0, 0.0, 3.0) == (True, 3.0, False)
     assert S._contribution(bound, 0.0, 3.0) == (True, 3.0, False)
-    assert S._contribution(bound + 1e-9, 0.0, 3.0) == (False, 0.0, False)
+    assert S._contribution(bound + 1e-9, 0.0, 0.0) == (False, 0.0, False)  # a standstill over the bound
+    assert S._contribution(bound + 1e-9, 0.0, 3.0) == (True, 3.0, False)  # crossed at 0.6 m/s: a moving gap
+    assert S._contribution(10.0, 0.0, 5.0) == (True, 5.0, False)  # exactly 0.5 m/s counts
+    assert S._contribution(10.0, 0.0, 4.999) == (False, 0.0, False)  # just under does not
+    assert S._contribution(10.0, None, 5.0) == (False, 0.0, False)  # a distance absent: never a moving gap
+    assert S._contribution(10.0, 0.0, None) == (False, 0.0, False)
     assert S._contribution(0.0, 0.0, 3.0) == (False, 0.0, False)
     assert S._contribution(-1.0, 0.0, 3.0) == (False, 0.0, False)
     assert S._contribution(1.0, 3.0, 2.0) == (True, 0.0, True)

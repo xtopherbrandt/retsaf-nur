@@ -10,11 +10,13 @@ reconcile and ``session_load`` is HR-TRIMP on the common scale.
 **Time basis** (user ruling 2026-10-08; reference "Time basis"). TRIMP
 counts running time with usable HR and never stopped time:
 
-- ``hr_time_s`` is the sum of ``dt`` over F013's counted segments
-  (``session_features.segment_rows``: ``0 < dt <= 5`` s, so a watch pause
-  writes no records and is never counted) whose start HR is usable (present,
-  > 0, not ``cadence_lock``; the rows carry that as ``hr_excluded``, through
-  ``descriptors.hr_excluded``, so the rule exists once). Nothing is imputed.
+- ``hr_time_s`` is the sum of ``dt`` over F013's sampled segments
+  (``session_features.segment_rows`` with ``moving_gap`` False: ``0 < dt <=
+  5`` s, so a watch pause writes no records and is never counted, and a
+  moving gap's time is left out here as it is left out of ``avg_hr_bpm``)
+  whose start HR is usable (present, > 0, not ``cadence_lock``; the rows
+  carry that as ``hr_excluded``, through ``descriptors.hr_excluded``, so the
+  rule exists once). Nothing is imputed.
 - ``avg_hr_bpm`` is F013's served ``features.avg_hr_bpm``, the dt-weighted
   mean over the same segments; it is read, never re-summed.
 - ``timer_time_s`` is the FIT ``session.total_timer_time`` the session row
@@ -184,10 +186,10 @@ def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
 
 
 def _hr_time_s(segment_rows: Iterable[Mapping[str, object]]) -> float:
-    """The sum of ``dt`` over counted segments whose start HR is usable."""
+    """The sum of ``dt`` over sampled segments (no moving gap) whose start HR is usable."""
     total = 0.0
     for row in segment_rows:
-        if row.get("hr_excluded") or row.get("heart_rate") is None:
+        if row.get("moving_gap") or row.get("hr_excluded") or row.get("heart_rate") is None:
             continue
         total += float(row["dt"])  # type: ignore[arg-type]
     return total
