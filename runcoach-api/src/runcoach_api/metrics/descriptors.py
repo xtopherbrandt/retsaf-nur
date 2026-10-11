@@ -9,7 +9,8 @@ features and the gps-degraded fraction. Each is a small pure function over a
 **The means share one convention.** Every average is the time-weighted mean
 of a value read at the **start record** of each counted segment, weighted by
 that segment's ``dt``: a sampled stride (``0 < dt <= 5`` s), or a moving gap
-(a break crossed at running speed, see ``segments``), which carries the value
+(a break crossed at 0.5 m/s or more, ``segments.MOVING_GAP_MIN_SPEED_M_S``),
+which carries the value
 at its start across its whole ``dt`` (IDEA-126, ruled 2026-10-10). The
 gap-end value is never read across the gap and nothing is interpolated. A
 stationary pause and a dt = 0 segment carry no time and contribute nothing.

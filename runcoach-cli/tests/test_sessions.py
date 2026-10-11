@@ -7,13 +7,17 @@ feature's AC1 names (``items`` of ``session_id``, ``start_time``, ``sport``, ``a
 contract's ``Page`` envelope with ``next_cursor``). The server is a mocked client throughout.
 
 The local zone is injected through ``sessions.LOCAL_ZONE``: ``TZ`` does not change ``astimezone()``
-on Windows, and the CLI package has no tzdata, so the tests use a fixed ``timezone(timedelta(...))``
-rather than ``ZoneInfo``.
+on Windows, and the CLI package declares no tzdata, so most tests use a fixed
+``timezone(timedelta(...))``. One row sets ``LOCAL_ZONE`` to ``ZoneInfo("America/New_York")`` (and
+skips where no zone database is found) to show the seam takes a zone with daylight saving; another
+leaves it ``None`` and compares against ``astimezone()`` for a January and a July instant.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta, timezone
+import json
+import zoneinfo
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -207,6 +211,77 @@ def test_sessions_reads_a_z_suffixed_start_time(install_mock_client) -> None:
     assert _lines(result)[0].startswith("Run 1 2026-09-20 00:15")
 
 
+WINTER = "2026-01-15T17:00:00+00:00"
+SUMMER = "2026-07-15T17:00:00+00:00"
+
+
+def test_sessions_default_zone_applies_the_computers_rules_to_each_instant(
+    install_mock_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # LOCAL_ZONE None is the computer's zone, applied per instant: a January and a July start each
+    # print in the offset in force on their own date, not in today's offset.
+    monkeypatch.setattr(sessions, "LOCAL_ZONE", None)
+    install_mock_client(
+        _PagedServer([_session(1, start_time=WINTER), _session(2, start_time=SUMMER)])
+    )
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    winter, summer = _lines(result)
+    for line, start in ((winter, WINTER), (summer, SUMMER)):
+        expected = datetime.fromisoformat(start).astimezone().strftime("%Y-%m-%d %H:%M")
+        stamp = " ".join(line.split()[2:4])
+        print(start, "->", stamp, "expected", expected)
+        assert stamp == expected, line
+
+
+def test_sessions_zone_seam_accepts_a_real_zone_with_daylight_saving(
+    install_mock_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    try:
+        new_york = zoneinfo.ZoneInfo("America/New_York")
+    except zoneinfo.ZoneInfoNotFoundError:
+        pytest.skip("no time zone database on this machine")
+    monkeypatch.setattr(sessions, "LOCAL_ZONE", new_york)
+    install_mock_client(
+        _PagedServer([_session(1, start_time=WINTER), _session(2, start_time=SUMMER)])
+    )
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    winter, summer = _lines(result)
+    assert winter.startswith("Run 1 2026-01-15 12:00"), winter  # EST, UTC-5
+    assert summer.startswith("Run 2 2026-07-15 13:00"), summer  # EDT, UTC-4
+
+
+def test_sessions_prints_control_characters_in_a_name_as_question_marks(
+    install_mock_client,
+) -> None:
+    # ESC, BEL, CR, LF, TAB, DEL and the C1 CSI (U+009B): each prints as "?", one line in all.
+    name = "a\x1bb\x07c\rd\ne\tf\x7fg\x9bh"
+    install_mock_client(_PagedServer([_session(1, name=name)]))
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.count("\n") == 1, repr(result.stdout)
+    assert result.stdout.startswith("a?b?c?d?e?f?g?h 2026-09-20 00:15"), repr(result.stdout)
+    for control in ("\x1b", "\x07", "\r", "\t", "\x7f", "\x9b"):
+        assert control not in result.stdout
+
+
+def test_sessions_prints_ordinary_non_ascii_in_a_name_unchanged(install_mock_client) -> None:
+    name = "Lauf über 10 km – Zürich"
+    install_mock_client(_PagedServer([_session(1, name=name)]))
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[0].startswith(f"{name} 2026-09-20 00:15")
+
+
 # ---------------------------------------------------------------------------
 # paging: --limit and --all
 # ---------------------------------------------------------------------------
@@ -354,6 +429,30 @@ def test_sessions_a_row_missing_a_field_is_an_unparseable_body(install_mock_clie
 
     assert result.exit_code == 1
     assert "could not be understood" in result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("field", "raw"),
+    [
+        ("duration_s", "1e999"),  # JSON parses it to inf; flooring inf overflows
+        ("start_time", '"0001-01-01T00:00:00+00:00"'),  # UTC-7 moves it before year 1
+    ],
+)
+def test_sessions_an_overflowing_row_is_an_unparseable_body(
+    install_mock_client, field, raw
+) -> None:
+    row = _session(1)
+    row[field] = "PLACEHOLDER"
+    text = json.dumps({"items": [row], "next_cursor": None}).replace('"PLACEHOLDER"', raw)
+    install_mock_client(_Scripted(httpx.Response(200, content=text.encode("utf-8"))))
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit), repr(result.exception)
+    assert "could not be understood" in result.stderr
+    assert "Traceback" not in result.output
     assert result.stdout == ""
 
 

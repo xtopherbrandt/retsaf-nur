@@ -4,8 +4,9 @@ One line per session: the display name, the sport, the distance in km to 2 decim
 ``h:mm:ss`` (``0:mm:ss`` under an hour), the pace as ``m:ss/km`` and the session id, with ``-`` for a
 null value. The display name is the stored ``name`` followed by the start date and time
 (``YYYY-MM-DD HH:MM``) in the computer's local zone; with no name it is the sport followed by the date
-and time. Names print as stored, untruncated, and the output is written as UTF-8 whatever the
-console's own encoding.
+and time. Names print as stored, untruncated, except that each control character (C0, DEL and C1)
+prints as ``?`` so each session stays one line and a name cannot send terminal escapes; the stored
+and served name is unchanged. The output is written as UTF-8 whatever the console's own encoding.
 
 Durations and paces are rounded to whole seconds **half up** before they are split into minutes and
 seconds (298.5 s/km is "4:59", 299.5 is "5:00", never "4:60"; 3599.5 s is "1:00:00"). Python's
@@ -18,9 +19,10 @@ cursor is opaque: whatever ``next_cursor`` says is what ``since`` carries back. 
 ``items``, a row missing a field, or a ``next_cursor`` equal to the one just followed, is reported as
 an unparseable body (the same line ``runcoach profile`` prints), and the CLI exits 1.
 
-The local zone is ``LOCAL_ZONE`` when set, else the computer's. It is a module attribute rather than a
-read of ``TZ`` because ``TZ`` does not change ``astimezone()`` on Windows; the tests set it to a
-fixed ``timezone(timedelta(...))``.
+The local zone is ``LOCAL_ZONE`` when set, else the computer's, applied per instant by
+``astimezone()`` so each start time prints in the offset in force on its own date (not today's).
+``LOCAL_ZONE`` is a test seam, a module attribute rather than a read of ``TZ`` because ``TZ`` does
+not change ``astimezone()`` on Windows; it takes any ``tzinfo``, a fixed offset or a ``ZoneInfo``.
 """
 
 from __future__ import annotations
@@ -47,11 +49,14 @@ LOCAL_ZONE: tzinfo | None = None
 NULL = "-"
 
 
-def _local_zone() -> tzinfo:
-    if LOCAL_ZONE is not None:
-        return LOCAL_ZONE
-    zone = datetime.now().astimezone().tzinfo
-    return zone if zone is not None else timezone.utc
+# C0 controls, DEL and C1 controls: each prints as "?" so a name cannot move the cursor, retitle the
+# window or start a second line.
+_CONTROLS = {code: "?" for code in [*range(0x20), 0x7F, *range(0x80, 0xA0)]}
+
+
+def _printable(name: str) -> str:
+    """``name`` with each control character replaced by ``?``."""
+    return name.translate(_CONTROLS)
 
 
 def _half_up_seconds(value: float) -> int:
@@ -85,20 +90,25 @@ def format_distance(distance_m: float | None) -> str:
     return f"{float(distance_m) / 1000:.2f}"
 
 
-def _local_stamp(start_time: str, zone: tzinfo) -> str:
-    """``YYYY-MM-DD HH:MM`` of a stored (UTC) ISO start time in ``zone``."""
+def _local_stamp(start_time: str, zone: tzinfo | None) -> str:
+    """``YYYY-MM-DD HH:MM`` of a stored (UTC) ISO start time in ``zone``.
+
+    ``None`` is the computer's zone, whose rules ``astimezone()`` applies to this instant, so a
+    winter start prints in winter time and a summer start in summer time whatever today's offset.
+    """
     when = datetime.fromisoformat(start_time)
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     return when.astimezone(zone).strftime("%Y-%m-%d %H:%M")
 
 
-def render_line(row: dict[str, Any], zone: tzinfo) -> str:
-    """One session's line, or raise ``KeyError``/``TypeError``/``ValueError`` on a malformed row."""
+def render_line(row: dict[str, Any], zone: tzinfo | None) -> str:
+    """One session's line, or raise ``KeyError``/``TypeError``/``ValueError``/``OverflowError``
+    on a malformed row."""
     name = row["name"]
     sport = row["sport"]
     stamp = _local_stamp(row["start_time"], zone)
-    display = f"{name if name is not None else sport} {stamp}"
+    display = f"{_printable(str(name if name is not None else sport))} {stamp}"
     return "  ".join(
         [
             display,
@@ -159,7 +169,7 @@ def sessions(
 ) -> None:
     """List the stored sessions, newest first, one line each."""
     cfg = config.load_config()
-    zone = _local_zone()
+    zone = LOCAL_ZONE
     wanted: int | None = None if all_sessions else limit
     since: str | None = None
     printed = 0
@@ -171,7 +181,7 @@ def sessions(
             items = items[: wanted - printed]
         try:
             lines = [render_line(row, zone) for row in items]
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise _unparseable(f"missing or malformed {exc}") from None
         for line in lines:
             _write_utf8(line)

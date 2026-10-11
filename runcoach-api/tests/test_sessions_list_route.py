@@ -441,6 +441,25 @@ def test_a_store_missing_the_name_column_is_the_named_500() -> None:
     assert "OperationalError" not in detail
 
 
+@pytest.mark.parametrize("column", ["context", "quality_flags"])
+def test_a_corrupt_json_column_is_a_plain_500_that_does_not_promise_a_restart_repairs_it(column: str) -> None:
+    """A stored row whose JSON column does not decode is not a store out of step: startup does not
+    repair it, so the 500 must not tell the user to restart the API."""
+    with TestClient(app, raise_server_exceptions=False) as client:
+        session_id = _upload(client, "sample_run.fit")
+        conn = db_module.get_connection()
+        try:
+            conn.execute(f"UPDATE sessions SET {column} = '{{' WHERE session_id = ?", (session_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        response = client.get("/sessions")
+    print(column, response.status_code, response.text)
+    assert response.status_code == 500, response.text
+    assert "restart the API" not in response.text
+    assert "out of step" not in response.text
+
+
 # --- AC6: the index ---------------------------------------------------------------------------------
 
 

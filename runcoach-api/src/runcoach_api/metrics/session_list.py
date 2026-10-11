@@ -21,8 +21,9 @@ uploaded file's name is never a source (user ruling 2026-10-08).
 ``start_time`` and ``session_id`` joined by ``CURSOR_SEPARATOR``: a keyset,
 so a session inserted or deleted between two pages repeats or skips nothing.
 ``decode_cursor`` refuses, with ``ValueError``, anything that is not that
-shape: not base64 (``validate=True``, so a missing padding or a stray
-character is refused), not UTF-8, not exactly two parts, or a ``start_time``
+shape: not base64 (``validate=True``, so a missing padding or a character
+outside the alphabet is refused; the alphabet is the URL-safe one, and with
+``altchars`` the standard ``+`` and ``/`` decode too), not UTF-8, not exactly two parts, or a ``start_time``
 that is not an aware UTC timestamp. A ``Z`` time is aware UTC and is accepted,
 normalised to the stored ``+00:00`` spelling before the comparison; ``+02:00``
 is refused. A forged cursor of the right shape is served, not refused: the

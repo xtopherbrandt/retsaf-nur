@@ -29,7 +29,9 @@ contract's `listSessions` is now `x-readiness: implemented` and `SessionSummary`
 F019: `runcoach sessions` prints the 50 newest sessions, one line each: the display name (`name`,
 else the sport, followed by the start date and time in the computer's local zone), the sport, the
 distance in km, the duration as h:mm:ss, the pace as m:ss/km and the session id, with "-" for a
-null value. `--limit N` prints N, `--all` prints every page; an empty store prints "No sessions
+null value. Names print as stored, with no truncation, except that a control character prints as
+`?` so each session stays one line; the stored and served name is unchanged. `--limit N` prints N,
+`--all` prints every page; an empty store prints "No sessions
 stored." and exits 0.
 
 F019: sessions gain the nullable `name` column, saved at upload as the FIT `workout.wkt_name`, else
@@ -45,8 +47,10 @@ IDEA-126: a recording gap over 5 s across which the device distance advanced at 
 (`dd / dt`, both distances present, no length cap) is a moving gap: the runner kept going while the
 watch wrote nothing (spec/02 section 2.4.1, spec/03 sections 3.3.1 and 3.4.1; user ruling
 2026-10-10). It now counts in full toward `duration_s` and `distance_m` (and so toward the pace, GAP
-and the `GET /sessions` row), reconstructed distance advances across it so its altitude change is
-graded over the ground covered, and the session's features carry the `moving_gap` flag. The heart
+and the `GET /sessions` row), reconstructed distance advances across it by the ground covered (the
+gap segment is graded like any segment, from the altitude records inside its ±25 m window, so a
+gap over about 50 m has no grade and falls back to raw pace with `gap_unavailable`), and the
+session's features carry the `moving_gap` flag. The heart
 rate, cadence and power at its start are carried across its whole span into `avg_hr_bpm`,
 `avg_cadence_spm`, `avg_power_w` and HR-TRIMP's `hr_time_s`; nothing is interpolated. NGP still
 splits its blocks at every gap over 5 s, moving or not. Decoupling is unchanged: moving gaps stay

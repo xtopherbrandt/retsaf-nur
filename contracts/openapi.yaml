@@ -525,7 +525,7 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/SessionSummary" }
         "422":
-          description: "`limit` outside 1..200 or not an integer, or a `since` cursor that does not decode to a stored row's start_time and session_id (FastAPI-default {detail})"
+          description: "`limit` outside 1..200 or not an integer, or a `since` cursor that does not decode to an aware-UTC start_time and a session_id (a well-formed cursor naming no stored row is served) (FastAPI-default {detail})"
           content: { application/json: { schema: { type: object } } }
 
   /sessions/{session_id}:

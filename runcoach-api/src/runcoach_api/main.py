@@ -1075,8 +1075,10 @@ def list_sessions(
     in it serves the row with its three numbers null (user ruling 2026-10-09),
     and never the page as an error. The session query itself is not wrapped:
     a store whose ``sessions`` table lacks the ``name`` column (startup not
-    run since it was added) is the named 500 ``get_me`` serves, and a store
-    with no tables is the bare 500 every route gives. Nothing is written.
+    run since it was added) is the named 500 ``get_me`` serves; a store with
+    no tables, or a row whose stored ``context`` or ``quality_flags`` does
+    not decode, is the bare 500 every route gives, since a restart repairs
+    neither. Nothing is written.
     """
     before = None
     if since is not None:
@@ -1091,7 +1093,7 @@ def list_sessions(
     try:
         try:
             rows = db.read_session_page(conn, limit=limit, before=before)
-        except ValueError as exc:
+        except db.SessionStoreOutOfStepError as exc:
             raise HTTPException(
                 500, f"the session store is out of step ({exc}); restart the API, whose startup repairs it"
             ) from exc

@@ -17,8 +17,11 @@ not advance across it) and a distance regression (which contributes 0 m)
 cannot make it non-contiguous: both sides of a stationary pause sit at one
 ``s`` and fall in one window. A moving gap (a break crossed at
 ``segments.MOVING_GAP_MIN_SPEED_M_S`` or more; IDEA-126, ruled 2026-10-10) is
-counted, so ``s`` advances across it by the ground covered and the segment is
-graded over that distance like any other.
+counted, so ``s`` advances across it by the ground covered, and the segment
+is graded like any other, from the altitude records inside its +-25 m window
+around the gap's midpoint. Neither end record of a gap over about 50 m lies
+in that window, so such a gap has no grade and falls back to raw pace with
+``gap_unavailable``.
 
 **Why a distance window and not the gate's 3-sample smoothing window.** Every
 fixture's altitude is quantized at 0.2 m, so a grade taken over three samples

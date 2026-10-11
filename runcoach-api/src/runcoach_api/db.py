@@ -1304,6 +1304,12 @@ def session_exists(conn: sqlite3.Connection, session_id: str) -> bool:
 from runcoach_api.metrics.segments import TOTALS_COLUMNS as _TOTALS_COLUMNS
 
 
+class SessionStoreOutOfStepError(ValueError):
+    """``sessions`` lacks a column ``read_session_page`` selects: the store has not been through
+    ``init_schema`` since the column was added, so a restart repairs it. The message names the
+    column. A row whose stored JSON does not decode is not this error."""
+
+
 def read_session_page(
     conn: sqlite3.Connection, *, limit: int, before: tuple[str, str] | None = None
 ) -> list[dict]:
@@ -1319,11 +1325,14 @@ def read_session_page(
     ``sport``, ``activity_tag``, ``name``, ``quality_flags`` (JSON-decoded,
     ``[]`` when null) and ``context`` (JSON-decoded, ``{}`` when null).
 
-    Raises ``ValueError`` naming the column when ``sessions`` lacks one the
-    select names (a store that has not been through ``init_schema`` since
-    the ``name`` column was added), so the route can serve the named 500
-    ``get_me`` serves. Every other ``sqlite3.OperationalError`` (a store with
-    no tables) passes through as the bare 500 every route gives.
+    Raises ``SessionStoreOutOfStepError`` naming the column when ``sessions``
+    lacks one the select names (a store that has not been through
+    ``init_schema`` since the ``name`` column was added), so the route can
+    serve the named 500 ``get_me`` serves. Every other
+    ``sqlite3.OperationalError`` (a store with no tables), and the
+    ``json.JSONDecodeError`` of a row whose ``quality_flags`` or ``context``
+    does not decode, passes through as the bare 500 every route gives:
+    a restart repairs neither.
     """
     where = ""
     params: dict[str, object] = {"limit": limit + 1}
@@ -1342,7 +1351,7 @@ def read_session_page(
         ).fetchall()
     except sqlite3.OperationalError as exc:
         if "no such column" in str(exc):
-            raise ValueError(str(exc)) from exc
+            raise SessionStoreOutOfStepError(str(exc)) from exc
         raise
     return [
         {

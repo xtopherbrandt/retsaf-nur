@@ -12,7 +12,8 @@ counts running time with usable HR and never stopped time:
 
 - ``hr_time_s`` is the sum of ``dt`` over F013's counted segments
   (``session_features.segment_rows``: a stride of ``0 < dt <= 5`` s, or a
-  moving gap over 5 s crossed at running speed, which carries the HR at its
+  moving gap over 5 s crossed at 0.5 m/s or more
+  (``segments.MOVING_GAP_MIN_SPEED_M_S``), which carries the HR at its
   start across its whole ``dt`` as ``avg_hr_bpm`` does; IDEA-126, ruled
   2026-10-10) whose start HR is usable (present, > 0, not ``cadence_lock``;
   the rows carry that as ``hr_excluded``, through ``descriptors.hr_excluded``,
