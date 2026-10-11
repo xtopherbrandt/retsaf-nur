@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-11 — Sprint 015: list sessions, moving gaps and the comeback mark
+
 ### Added
 
 IDEA-143: `GET /metrics/load` marks a comeback after a long break (spec/03 section 3.5.3; user
