@@ -104,7 +104,8 @@ def _local_stamp(start_time: str, zone: tzinfo | None) -> str:
 
 def render_line(row: dict[str, Any], zone: tzinfo | None) -> str:
     """One session's line, or raise ``KeyError``/``TypeError``/``ValueError``/``OverflowError``
-    on a malformed row."""
+    on a malformed row, or ``OSError`` for a start time the computer's zone cannot convert (Windows
+    refuses an instant before 1970 or after 3000)."""
     name = row["name"]
     sport = row["sport"]
     stamp = _local_stamp(row["start_time"], zone)
@@ -181,7 +182,7 @@ def sessions(
             items = items[: wanted - printed]
         try:
             lines = [render_line(row, zone) for row in items]
-        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        except (KeyError, TypeError, ValueError, OverflowError, OSError) as exc:
             raise _unparseable(f"missing or malformed {exc}") from None
         for line in lines:
             _write_utf8(line)

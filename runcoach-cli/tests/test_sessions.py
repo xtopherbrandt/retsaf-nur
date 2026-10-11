@@ -16,8 +16,7 @@ leaves it ``None`` and compares against ``astimezone()`` for a January and a Jul
 from __future__ import annotations
 
 import json
-import zoneinfo
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import httpx
 import pytest
@@ -236,14 +235,26 @@ def test_sessions_default_zone_applies_the_computers_rules_to_each_instant(
         assert stamp == expected, line
 
 
+class _EasternLike(tzinfo):
+    """UTC-5, and UTC-4 from April to October: a zone whose offset depends on the date.
+
+    Hand-written so the row runs without a time zone database (the CLI environment has none).
+    """
+
+    def utcoffset(self, dt: datetime | None) -> timedelta:
+        return timedelta(hours=-5) + self.dst(dt)
+
+    def dst(self, dt: datetime | None) -> timedelta:
+        return timedelta(hours=1) if dt is not None and 4 <= dt.month <= 10 else timedelta(0)
+
+    def tzname(self, dt: datetime | None) -> str:
+        return "EDT" if self.dst(dt) else "EST"
+
+
 def test_sessions_zone_seam_accepts_a_real_zone_with_daylight_saving(
     install_mock_client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    try:
-        new_york = zoneinfo.ZoneInfo("America/New_York")
-    except zoneinfo.ZoneInfoNotFoundError:
-        pytest.skip("no time zone database on this machine")
-    monkeypatch.setattr(sessions, "LOCAL_ZONE", new_york)
+    monkeypatch.setattr(sessions, "LOCAL_ZONE", _EasternLike())
     install_mock_client(
         _PagedServer([_session(1, start_time=WINTER), _session(2, start_time=SUMMER)])
     )
@@ -454,6 +465,37 @@ def test_sessions_an_overflowing_row_is_an_unparseable_body(
     assert "could not be understood" in result.stderr
     assert "Traceback" not in result.output
     assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "start_time",
+    [
+        "0001-01-01T00:00:00+00:00",
+        "1900-01-01T00:00:00+00:00",
+        "1969-12-31T23:00:00+00:00",
+        "3001-01-20T00:00:00+00:00",
+    ],
+)
+def test_sessions_a_start_time_the_computers_zone_cannot_convert_never_tracebacks(
+    install_mock_client, monkeypatch: pytest.MonkeyPatch, start_time: str
+) -> None:
+    # In the computer's zone (LOCAL_ZONE None), Windows' astimezone() raises OSError for an instant
+    # before 1970 or after 3000; the row is then an unparseable body. Elsewhere it prints normally.
+    monkeypatch.setattr(sessions, "LOCAL_ZONE", None)
+    install_mock_client(_Scripted({"items": [_session(1, start_time=start_time)], "next_cursor": None}))
+
+    result = runner.invoke(app, ["sessions"])
+
+    print(start_time, "->", result.exit_code, repr(result.stdout), repr(result.stderr))
+    assert result.exception is None or isinstance(result.exception, SystemExit), repr(
+        result.exception
+    )
+    if result.exit_code == 1:
+        assert "could not be understood" in result.stderr
+        assert result.stdout == ""
+    else:
+        assert result.exit_code == 0, result.output
+        assert len(_lines(result)) == 1
 
 
 def test_all_a_repeated_next_cursor_is_an_unparseable_body_with_earlier_lines_kept(
