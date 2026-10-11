@@ -46,6 +46,15 @@ written into ``tests/fixtures/``.
   its ``session`` message, ``start_time`` and devices: uploaded beside the
   original it is a duplicate. A decimated copy is a constructed sparse
   recording, not a smart-recorded file (IDEA-129 owns a real one).
+- ``shift_timestamps(data, seconds)`` re-dates a copy: it adds ``seconds``
+  (negative moves it earlier) to field 253 (``timestamp``) of every data
+  message, and to every field the FIT profile types ``date_time`` or
+  ``local_date_time`` (``file_id.time_created``, the ``session`` and ``lap``
+  ``start_time``, ``event.start_timestamp``, ``activity.local_timestamp``,
+  the ``split`` start and end times, ...). A field holding the FIT invalid
+  value stays invalid. Every other byte is kept, so the copy decodes as its
+  source does, a whole number of seconds later, with a new
+  ``(source_device, start_time)``.
 
 Refused with ``FitPatchError``: a source whose file CRC does not match (so a
 corrupted file is never laundered into a CRC-valid one), a compressed-
@@ -58,7 +67,9 @@ field asked of a non-string field, a string value that is neither ``str``
 nor ``None`` or that holds a NUL byte, a record span that holds no record message (an empty or reversed
 span included), a record message without a timestamp, a record message
 in the span whose definition does not carry the field to blank, a decimation
-step under 1, and a random spacing whose bounds are not ``1 <= low_s <= high_s``.
+step under 1, a random spacing whose bounds are not ``1 <= low_s <= high_s``,
+a time field that is not 4 bytes, and a shift that moves a time out of the
+valid ``uint32`` range.
 
 **A moved start time leaves the records where they were.** Setting
 ``session.start_time`` on ``dev_fields_run.fit`` to ``sample_run.fit``'s start
@@ -74,6 +85,7 @@ import random
 import struct
 from typing import NamedTuple
 
+from fitdecode import profile
 from fitdecode.types import BASE_TYPES
 from fitdecode.utils import compute_crc
 
@@ -465,4 +477,45 @@ def with_big_endian_definitions(data: bytes, global_num: int) -> bytes:
             for elem in range(pos, pos + field.size, step):
                 buf[elem : elem + step] = buf[elem : elem + step][::-1]
             pos += field.size
+    return finalize(buf)
+
+
+_TIME_TYPE_NAMES = ("date_time", "local_date_time")
+
+
+def _time_field_nums(global_num: int) -> set[int]:
+    """Field 253 plus every field the FIT profile types as an absolute time in FIT seconds."""
+    nums = {TIMESTAMP_FIELD}
+    message = profile.MESSAGE_TYPES.get(global_num)
+    if message is not None:
+        nums |= {num for num, f in message.fields.items() if getattr(f.type, "name", None) in _TIME_TYPE_NAMES}
+    return nums
+
+
+def shift_timestamps(data: bytes, seconds: int) -> bytes:
+    """Add ``seconds`` to every time field of every data message; every other byte is kept."""
+    buf = bytearray(data)
+    time_fields: dict[int, set[int]] = {}
+    for r in walk(data):
+        if r.is_definition:
+            continue
+        d = r.definition
+        nums = time_fields.setdefault(d.global_num, _time_field_nums(d.global_num))
+        fmt = (">" if d.big_endian else "<") + "I"
+        offset = r.offset + 1
+        for field in d.fields:
+            if field.num in nums:
+                if field.size != 4:
+                    raise FitPatchError(
+                        f"time field {d.global_num}/{field.num} at offset {r.offset} has {field.size} bytes, not 4"
+                    )
+                value = struct.unpack_from(fmt, buf, offset)[0]
+                if value != _INVALID_INT[0x86]:
+                    moved = value + seconds
+                    if not 0 <= moved < _INVALID_INT[0x86]:
+                        raise FitPatchError(
+                            f"time {value} of field {d.global_num}/{field.num} shifted by {seconds} s is out of range"
+                        )
+                    struct.pack_into(fmt, buf, offset, moved)
+            offset += field.size
     return finalize(buf)

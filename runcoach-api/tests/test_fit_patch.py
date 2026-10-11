@@ -34,6 +34,12 @@ Patched bytes stay in memory. Nothing here writes into ``tests/fixtures/``.
   same set for the same seed and a different set for another, and never
   fabricates a record. A step under 1
   and reversed or zero spacing bounds are refused.
+- **Shift.** ``shift_timestamps`` moves every time field (``timestamp`` on
+  every message, ``file_id.time_created``, the session and lap
+  ``start_time`` and every other ``date_time`` field) by exactly the offset
+  and no other field value; the copy's ``(source_device, start_time)``
+  differs from its source's. A shift out of the ``uint32`` range and a
+  source with a bad CRC are refused.
 - **Smoke upload.** The ``dev_fields_run`` patched to ``sample_run``'s start
   time is accepted by ``POST /sessions``.
 
@@ -470,6 +476,80 @@ def test_decimate_randomly_spaces_kept_records_six_to_eight_seconds_apart() -> N
 def test_decimation_refuses_a_bad_step_or_bounds(call, match: str) -> None:
     with pytest.raises(fit_patch.FitPatchError, match=match):
         call(_raw("sample_run.fit"))
+
+
+# ---------------------------------------------------------------------------
+# shift
+# ---------------------------------------------------------------------------
+
+LAP = 19
+DAY_S = 86_400
+# The profile types of an absolute time in FIT seconds; ``fitdecode`` decodes
+# their raw value as the integer stored.
+_TIME_TYPES = ("date_time", "local_date_time")
+
+
+def _is_time_field(field) -> bool:
+    return field.def_num == fit_patch.TIMESTAMP_FIELD or getattr(field.type, "name", None) in _TIME_TYPES
+
+
+@pytest.mark.parametrize(
+    ("name", "seconds"),
+    [("sample_run.fit", -400 * DAY_S), ("strap_hrv_capture.fit", 3 * DAY_S + 17), ("dev_fields_run.fit", DAY_S)],
+)
+def test_a_shifted_copy_decodes_and_moves_every_timestamp(name: str, seconds: int) -> None:
+    """Every time field (``timestamp`` on every message, ``file_id.time_created``, the session
+    and lap ``start_time`` and the other ``date_time`` fields) moves by exactly ``seconds``;
+    no other field value moves, and both CRCs check."""
+    from runcoach_api.ingestion import fit_parser, mapping
+
+    raw = _raw(name)
+    shifted = fit_patch.shift_timestamps(raw, seconds)
+    _assert_header_rewritten(shifted)
+    _, before = _decode(raw)
+    _, after = _decode(shifted)
+    assert len(after) == len(before)
+    moved: collections.Counter = collections.Counter()
+    moved_253 = 0
+    for old, new in zip(before, after, strict=True):
+        assert new.global_mesg_num == old.global_mesg_num
+        for f_old, f_new in zip(old.fields, new.fields, strict=True):
+            assert f_new.def_num == f_old.def_num
+            if _is_time_field(f_old) and f_old.raw_value is not None:
+                assert f_new.raw_value == f_old.raw_value + seconds, (old.name, f_old.name)
+                moved[(old.name, f_old.name)] += 1
+                moved_253 += f_old.def_num == fit_patch.TIMESTAMP_FIELD
+            else:
+                assert f_new.raw_value == f_old.raw_value, (old.name, f_old.name)
+    print(f"{name} shifted by {seconds} s; moved: {sorted(moved.items())}")
+    counts = _counts(before)
+    assert moved[("file_id", "time_created")] == 1
+    assert moved[("session", "start_time")] == counts[SESSION] >= 1
+    assert moved[("lap", "start_time")] == counts[LAP] >= 1
+    assert moved[("record", "timestamp")] == counts[fit_patch.RECORD_MESSAGE] >= 1
+    # Field 253 moved on every message that carries a valid one, known to the profile or not.
+    assert moved_253 == sum(
+        1 for m in before if m.has_field(fit_patch.TIMESTAMP_FIELD) and m.get_raw_value(fit_patch.TIMESTAMP_FIELD) is not None
+    )
+
+    source, _ = mapping.to_canonical(fit_parser.decode(raw))
+    copy, _ = mapping.to_canonical(fit_parser.decode(shifted))
+    print(f"source ({source.source_device}, {source.start_time}); copy ({copy.source_device}, {copy.start_time})")
+    assert copy.source_device == source.source_device
+    assert (copy.source_device, copy.start_time) != (source.source_device, source.start_time)
+
+
+@pytest.mark.parametrize("seconds", [-(1 << 32), 1 << 32])
+def test_a_shift_out_of_the_uint32_range_is_refused(seconds: int) -> None:
+    with pytest.raises(fit_patch.FitPatchError, match="out of range"):
+        fit_patch.shift_timestamps(_raw("sample_run.fit"), seconds)
+
+
+def test_a_shift_refuses_a_source_with_a_bad_crc() -> None:
+    raw = bytearray(_raw("sample_run.fit"))
+    raw[-1] ^= 0xFF
+    with pytest.raises(fit_patch.FitPatchError, match="CRC"):
+        fit_patch.shift_timestamps(bytes(raw), DAY_S)
 
 
 # ---------------------------------------------------------------------------
