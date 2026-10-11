@@ -123,7 +123,7 @@ def _timed_page(client: TestClient, label: str, **params) -> dict:
     return page
 
 
-def test_a_page_of_50_from_600_long_sessions_returns_within_2_s(long_store: Path) -> None:
+def test_a_page_of_50_from_600_long_sessions_returns_within_the_budget(long_store: Path) -> None:
     indexes = _records_indexes()
     assert ["session_id", "t"] in indexes.values(), f"records has no (session_id, t) index: {indexes}"
     assert long_store.stat().st_size > 100_000_000, long_store.stat().st_size
