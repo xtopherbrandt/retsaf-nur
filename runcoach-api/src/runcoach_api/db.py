@@ -35,9 +35,10 @@ import json
 import math
 import sqlite3
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from runcoach_api import config as config_module
 from runcoach_api import profile as profile_module
@@ -78,12 +79,18 @@ def _load_config_cached() -> config_module.AppConfig:
     return config_module.load_config()
 
 
-def get_connection() -> sqlite3.Connection:
-    """Open (creating if needed) the SQLite database under AppConfig.data_dir."""
-    app_config = _load_config_cached()
-    data_dir: Path = app_config.data_dir
+def get_connection(data_dir: Path | None = None, timeout: float = 5.0) -> sqlite3.Connection:
+    """Open (creating if needed) the SQLite database under ``data_dir``.
+
+    With no ``data_dir`` the store is the one under ``AppConfig.data_dir``; an
+    archive import passes the data dir it captured at job start, so a config
+    re-read mid-job never moves its writes. ``timeout`` is the seconds a
+    statement waits on another connection's lock before failing with
+    "database is locked" (sqlite3's own default, 5.0, unless given)."""
+    if data_dir is None:
+        data_dir = _load_config_cached().data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(data_dir / DB_FILENAME)
+    conn = sqlite3.connect(data_dir / DB_FILENAME, timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -164,6 +171,10 @@ _SCHEMA_DDL = """
       -- row's name on read from the profile name in its context JSON.
       -- Added 2026-10-10; _reconcile_columns lands it. Not in GET /sessions/{id}.
       name TEXT,
+      -- F020: the archive import that stored the session (imports.import_id);
+      -- NULL for a POST /sessions upload. Added 2026-10-11; _reconcile_columns
+      -- lands it and nothing backfills it. Served by GET /sessions/{id}.
+      import_id TEXT,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -220,6 +231,24 @@ _SCHEMA_DDL = """
       -- table and delete_session removes the load with the session.
       session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
       load_value REAL, load_reason TEXT, body TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS imports (
+      -- F020: one row per archive import job (the Import the API serves,
+      -- without its files); counts is JSON text.
+      import_id TEXT PRIMARY KEY, archive_name TEXT, archive_bytes INTEGER,
+      status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL,
+      started_at TEXT, finished_at TEXT, fit_files_scanned INTEGER,
+      activities_total INTEGER, activities_processed INTEGER, counts TEXT
+    );
+    CREATE TABLE IF NOT EXISTS import_files (
+      -- F020: one report row per activity file of an import; quality_flags
+      -- is JSON text. The session column is named stored_session_id, with no
+      -- foreign key, so _child_tables never lists this table: the row
+      -- outlives a deleted session.
+      import_id TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT,
+      time_created TEXT, outcome TEXT, stored_session_id TEXT, sport TEXT,
+      activity_tag TEXT, quality_flags TEXT, status INTEGER, detail TEXT,
+      PRIMARY KEY (import_id, seq)
     );
     -- F019: the list reads one session's (t, distance) in t order for every
     -- row of a page; without this each read scanned the whole records table.
@@ -487,6 +516,9 @@ def persist(
     records: list[Record],
     rr_intervals: list[RRInterval],
     quarantine_values: dict,
+    *,
+    after_write: Callable[[sqlite3.Connection], None] | None = None,
+    zone: ZoneInfo | None = None,
 ) -> None:
     """Write one ingested session's rows in a single transaction.
 
@@ -513,7 +545,15 @@ def persist(
     written and saved (``_save_session_load``, F017 AC8). A fault in that
     step propagates and rolls the whole upload back: the user ruled
     (2026-10-08) that a run is not stored without its load.
+
+    ``after_write(conn)``, when given, runs last inside the same transaction
+    (F020: an archive import writes its report row and the session's
+    ``import_id`` there), so a fault in it rolls the session back with
+    everything above. ``zone``, when given, is handed to
+    ``_save_session_load`` as a keyword; when not, that call is made exactly
+    as without it.
     """
+    load_kwargs = {} if zone is None else {"zone": zone}
     try:
         with conn:
             _insert_session(conn, session)
@@ -521,7 +561,9 @@ def persist(
             _insert_rr_intervals(conn, session.session_id, rr_intervals)
             _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
             resolved = _sync_anchor_versions(conn)
-            _save_session_load(conn, session.session_id, resolved=resolved)
+            _save_session_load(conn, session.session_id, resolved=resolved, **load_kwargs)
+            if after_write is not None:
+                after_write(conn)
     except sqlite3.IntegrityError as exc:
         cur = conn.execute(
             "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
@@ -628,7 +670,8 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         SELECT session_id, athlete_id, start_time, sport, activity_tag,
                source_vendor, source_device, recording_interval, hr_source,
                rr_valid_fraction, quality_flags, summary, context,
-               rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source
+               rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
+               import_id
         FROM sessions WHERE session_id = ?
         """,
         (session_id,),
@@ -710,6 +753,9 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "quality_flags": _json_load(row["quality_flags"], default=[]),
         "summary": _json_load(row["summary"]),
         "context": _json_load(row["context"]),
+        # F020: the archive import that stored the session; null for a
+        # POST /sessions upload and for a row stored before the column.
+        "import_id": row["import_id"],
         "records": records,
         "rr_intervals": rr_intervals,
     }
@@ -1162,7 +1208,11 @@ def _from_anchor(anchor: profile_module.Anchor) -> dict:
 
 
 def _save_session_load(
-    conn: sqlite3.Connection, session_id: str, *, resolved: Mapping[str, profile_module.FieldValue] | None = None
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    resolved: Mapping[str, profile_module.FieldValue] | None = None,
+    zone: ZoneInfo | None = None,
 ) -> None:
     """Compute and save the stored session's load inside the caller's transaction (F017 AC8).
 
@@ -1182,6 +1232,11 @@ def _save_session_load(
     just moved. It is the seam a test patches to force a fault, which rolls
     the whole upload, or the whole startup, back. Never calls
     ``read_athlete``, whose ``BEGIN`` fails inside an open transaction.
+
+    ``zone`` is the athlete's zone as a caller captured it (an archive import
+    reads the config once per job, not once per file). It is accepted and
+    not read: the anchors above are the ones in effect now, which need no
+    date and so no zone.
     """
     inputs = read_session_load_inputs(conn, session_id)
     if inputs is None:

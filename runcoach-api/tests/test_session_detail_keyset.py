@@ -119,7 +119,10 @@ def test_session_detail_keys_match_the_pre_f007_set(post_fit) -> None:
     with TestClient(app) as client:
         body = _detail_response(client, post_fit, CANONICAL_FIXTURE).json()
 
-    assert set(body) == SESSION_KEYS_AT_C2839B6
+    # F020 adds exactly one key on purpose: the archive import that stored
+    # the session (null here, a POST /sessions upload). Named explicitly so
+    # any other added key still fails.
+    assert set(body) == SESSION_KEYS_AT_C2839B6 | {"import_id"}
     assert LEAK_FIELD not in body
 
     # A strap RR capture has both records and beats, so the nested levels

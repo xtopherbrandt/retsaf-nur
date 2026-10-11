@@ -10,7 +10,11 @@ fills in exactly one of the stub modules called below.
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from runcoach_api import db
 from runcoach_api.ingestion import (
@@ -22,15 +26,29 @@ from runcoach_api.ingestion import (
     quarantine,
     rr_reconstruction,
 )
+from runcoach_api.models import Session
 
 
 @dataclass
 class IngestResult:
     session_id: str
     quality_flags: list[str]
+    # True when ``keep`` refused the session: nothing was written and no
+    # connection was opened; ``session_id`` is the unstored session's id.
+    skipped: bool = False
 
 
-def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> IngestResult:
+def ingest_fit_bytes(
+    raw: bytes,
+    *,
+    resting_capture_override: bool = False,
+    keep: Callable[[Session], bool] | None = None,
+    data_dir: Path | None = None,
+    profile_names: list[str] | None = None,
+    zone: ZoneInfo | None = None,
+    timeout: float | None = None,
+    after_write: Callable[[sqlite3.Connection], None] | None = None,
+) -> IngestResult:
     """Ingest one FIT file's bytes and persist the session it describes.
 
     ``resting_capture_override`` is F004's upload-time Tier-1 declaration --
@@ -39,6 +57,19 @@ def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> I
     ``POST /sessions``'s form field and defaults to ``False``, so the CLI
     ingest path, a batch import and F004's own acceptance probe all keep their
     existing meaning.
+
+    The other keyword arguments are F020's archive-import seam; each defaults
+    to None, which is the one-file upload's behaviour:
+
+    - ``keep(session)`` runs on the classified session before any connection
+      is opened; False returns a result with ``skipped`` True and no store
+      touched.
+    - ``data_dir`` and ``timeout`` go to ``db.get_connection`` (the data dir
+      the import captured at job start; the lock wait in seconds).
+    - ``profile_names`` replaces the cached config's
+      ``resting_hrv_profile_names``.
+    - ``zone`` and ``after_write`` go to ``db.persist``: ``after_write(conn)``
+      runs inside the session's transaction, so a fault in it stores nothing.
     """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
@@ -70,18 +101,37 @@ def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> I
     # to drive `classify()` directly. `_load_config_cached` is
     # `lru_cache(maxsize=1)`, so editing `api.toml` needs a server restart to
     # take effect -- documented in F004's amendment as the athlete workflow,
-    # not a defect of this call site.
+    # not a defect of this call site. A caller that captured the list once
+    # (an archive import, per job) passes it as ``profile_names`` instead.
+    if profile_names is None:
+        profile_names = db._load_config_cached().resting_hrv_profile_names
     hrv_classification.classify(
         messages,
         session,
         rr_intervals,
-        profile_names=db._load_config_cached().resting_hrv_profile_names,
+        profile_names=profile_names,
         resting_capture_override=resting_capture_override,
     )
     quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
-    conn = db.get_connection()
+    if keep is not None and not keep(session):
+        return IngestResult(session_id=session.session_id, quality_flags=session.quality_flags, skipped=True)
+
+    # Only the arguments given are passed, so a one-file upload calls
+    # get_connection() and persist() exactly as before this seam existed.
+    connection_kwargs: dict = {}
+    if data_dir is not None:
+        connection_kwargs["data_dir"] = data_dir
+    if timeout is not None:
+        connection_kwargs["timeout"] = timeout
+    persist_kwargs: dict = {}
+    if after_write is not None:
+        persist_kwargs["after_write"] = after_write
+    if zone is not None:
+        persist_kwargs["zone"] = zone
+
+    conn = db.get_connection(**connection_kwargs)
     try:
         # Idempotent, and the reason it is here rather than only in
         # main.py's lifespan: the lifespan runs on *server startup*, so
@@ -97,7 +147,7 @@ def ingest_fit_bytes(raw: bytes, *, resting_capture_override: bool = False) -> I
         # violation is translated into DuplicateSessionError (see
         # code-review Fix 2) -- no local except clause here duplicating
         # that translation (see code-review Fix 6).
-        db.persist(conn, session, records, rr_intervals, quarantine_values)
+        db.persist(conn, session, records, rr_intervals, quarantine_values, **persist_kwargs)
     finally:
         conn.close()
 
