@@ -20,7 +20,9 @@ on 44 records, is in ``strap_hrv_sample_run``, a resting sample, not a run
 contiguous blocks:
 
 - a **break** segment (``dt > SEGMENT_MAX_DT_S``) ends the block before it and
-  starts a new one after it;
+  starts a new one after it, a moving gap included: the time base counts a
+  moving gap for time and distance (IDEA-126, ruled 2026-10-10), but the 1 s
+  grid does not hold across it, so it still splits the block;
 - a record whose **speed is absent** ends the block before it and is itself
   left out, so the next present speed starts a new block;
 - a record reached by a **dt = 0** segment (the resampler can emit duplicate

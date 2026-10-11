@@ -10,11 +10,15 @@ no grade. The rule, from the F013 reference (section 3):
     i = (altitude[l] - altitude[f]) / (s[l] - s[f])     f, l = first, last window record
 
 Fewer than two window records, or ``s[l] <= s[f]``, means **no grade**; so
-does a segment that is not counted (a break or a dt = 0 duplicate). The
-window clips one-sided at the session's ends. It walks ``s``, never the raw
-``distance`` and never time, so a pause (``s`` does not advance across a
-break) and a distance regression (which contributes 0 m) cannot make it
-non-contiguous: both sides of a pause sit at one ``s`` and fall in one window.
+does a segment that is not counted (a stationary break or a dt = 0
+duplicate). The window clips one-sided at the session's ends. It walks ``s``,
+never the raw ``distance`` and never time, so a stationary pause (``s`` does
+not advance across it) and a distance regression (which contributes 0 m)
+cannot make it non-contiguous: both sides of a stationary pause sit at one
+``s`` and fall in one window. A moving gap (a break crossed at
+``segments.MOVING_GAP_MIN_SPEED_M_S`` or more; IDEA-126, ruled 2026-10-10) is
+counted, so ``s`` advances across it by the ground covered and the segment is
+graded over that distance like any other.
 
 **Why a distance window and not the gate's 3-sample smoothing window.** Every
 fixture's altitude is quantized at 0.2 m, so a grade taken over three samples

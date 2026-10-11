@@ -39,6 +39,21 @@ already stored in its `context.provenance.sport_profile_name`, else null; nothin
 Startup adds the index `records_session_id_t` on `records(session_id, t)` with `CREATE INDEX IF NOT
 EXISTS`, so a page of 50 reads each row's records through the index instead of scanning the table.
 
+### Changed
+
+IDEA-126: a recording gap over 5 s across which the device distance advanced at 0.5 m/s or more
+(`dd / dt`, both distances present, no length cap) is a moving gap: the runner kept going while the
+watch wrote nothing (spec/02 section 2.4.1, spec/03 sections 3.3.1 and 3.4.1; user ruling
+2026-10-10). It now counts in full toward `duration_s` and `distance_m` (and so toward the pace, GAP
+and the `GET /sessions` row), reconstructed distance advances across it so its altitude change is
+graded over the ground covered, and the session's features carry the `moving_gap` flag. The heart
+rate, cadence and power at its start are carried across its whole span into `avg_hr_bpm`,
+`avg_cadence_spm`, `avg_power_w` and HR-TRIMP's `hr_time_s`; nothing is interpolated. NGP still
+splits its blocks at every gap over 5 s, moving or not. Decoupling is unchanged: moving gaps stay
+out of it, and the per-segment `moving_gap` field of the in-process segment rows lets the decoupling
+feature decide. A slower gap over 5 s (a pause or standstill) still contributes nothing. No stored
+session holds a moving gap, so no saved load was recomputed or refilled.
+
 ## 2026-10-09 — Sprint 014: saved session load and the load chart
 
 ### Added
