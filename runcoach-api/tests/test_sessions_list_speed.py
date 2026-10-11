@@ -1,8 +1,10 @@
-"""``GET /sessions`` speed: a page of 50 from 600 long sessions within 2 s (F019 AC6).
+"""``GET /sessions`` speed: a page of 50 from 600 long sessions within 3 s (F019 AC6).
 
-Run alone. The budget leaves under a second of margin on the dev machine, so a
-run beside parallel agents can miss it for reasons that are not the code's;
-the release gate's full suite runs it alone too.
+Run alone. A page measured 1.26 s on the dev machine on 2026-10-10 and 1.8 to
+2.1 s on the same code on 2026-10-11, so the first budget of 2 s failed about
+one run in three; the budget is 3 s (user ruling 2026-10-11). A run beside
+parallel agents can still miss it for reasons that are not the code's; the
+release gate's full suite runs it alone too.
 
 The store is constructed, not uploaded: 600 running sessions of 6,000 records
 each (3.6 M rows, about 0.4-0.5 GB) through ``db.init_schema`` (the real DDL,
@@ -42,7 +44,7 @@ from runcoach_api.main import app
 SESSIONS = 600
 RECORDS_PER_SESSION = 6_000
 LIMIT = 50
-BUDGET_S = 2.0
+BUDGET_S = 3.0
 # Each record is this many metres past the last, one second later.
 STEP_M = 3.0
 EXPECTED_DURATION_S = float(RECORDS_PER_SESSION - 1)
