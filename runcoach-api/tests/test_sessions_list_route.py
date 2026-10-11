@@ -276,7 +276,10 @@ def test_session_detail_is_unchanged_by_the_name_column() -> None:
         session_id = _upload(client, "sample_run.fit")
         detail = client.get(f"/sessions/{session_id}")
     assert detail.status_code == 200
-    assert set(detail.json()) == DETAIL_KEYS
+    # F020 adds exactly one key on purpose: the archive import that stored
+    # the session (null here, a POST /sessions upload). Named explicitly so
+    # any other added key, the saved name included, still fails.
+    assert set(detail.json()) == DETAIL_KEYS | {"import_id"}
     assert "name" not in detail.json()
 
 
