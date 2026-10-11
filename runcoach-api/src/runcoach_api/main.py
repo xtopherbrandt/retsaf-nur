@@ -1134,3 +1134,87 @@ def _summary_numbers(conn, row: dict) -> dict[str, float | None]:
     except Exception:  # noqa: BLE001 -- the ruling: a row that cannot be computed lists blank
         return dict(session_list.NO_NUMBERS)
     return session_list.summary_numbers(T, D)
+
+
+# ---------------------------------------------------------------------------
+# /me/hr-history (F021)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place.
+# ---------------------------------------------------------------------------
+from runcoach_api.schemas import HrHistoryEntry, HrHistoryEntryCreate
+
+
+@app.post(
+    "/me/hr-history",
+    response_model=HrHistoryEntry,
+    status_code=201,
+    operation_id="addHrHistoryEntry",
+    tags=["Auth & Athlete"],
+    responses={200: {"model": HrHistoryEntry, "description": "The entry for that field and date, replaced"}},
+)
+def add_hr_history_entry(entry: HrHistoryEntryCreate, response: Response) -> HrHistoryEntry:
+    """Store one dated HR setting (F021 AC1): 201 with the new entry, or 200 when an entry for the same
+    field and date existed, whose value is replaced and whose ``entry_id`` is kept.
+
+    ``HrHistoryEntryCreate`` screens the body; the one screen it cannot apply is the clock: an
+    ``effective_from`` after today in ``athlete_timezone`` (read through the ``_utcnow`` seam, as
+    ``update_me`` reads it) is a 422 here, before any write. Nothing here touches the anchor version
+    log: an entry changes neither ``GET /me`` nor an anchor.
+    """
+    today = _today_in(ZoneInfo(db._load_config_cached().athlete_timezone))
+    if datetime.date.fromisoformat(entry.effective_from) > today:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "effective_from"),
+                    "msg": f"Value error, effective_from {entry.effective_from} is after today ({today}) in the athlete's timezone",
+                    "input": entry.effective_from,
+                }
+            ]
+        )
+    conn = db.get_connection()
+    try:
+        stored, created = db.write_hr_history_entry(conn, entry.field, entry.value, entry.effective_from)
+    finally:
+        conn.close()
+    if not created:
+        response.status_code = 200
+    return HrHistoryEntry(**stored)
+
+
+@app.get(
+    "/me/hr-history",
+    response_model=list[HrHistoryEntry],
+    operation_id="listHrHistory",
+    tags=["Auth & Athlete"],
+)
+def list_hr_history() -> list[HrHistoryEntry]:
+    """Every dated HR entry, by field, then effective date (``db.read_hr_history``). Nothing is written."""
+    conn = db.get_connection()
+    try:
+        return [HrHistoryEntry(**entry) for entry in db.read_hr_history(conn)]
+    finally:
+        conn.close()
+
+
+@app.delete(
+    "/me/hr-history/{entry_id}",
+    status_code=204,
+    response_class=Response,
+    operation_id="deleteHrHistoryEntry",
+    tags=["Auth & Athlete"],
+    responses={404: {"description": "No dated HR entry has that entry_id"}},
+)
+def delete_hr_history_entry(entry_id: int) -> Response:
+    """Remove one dated HR entry (204); an unknown ``entry_id`` is a 404. A saved load that cited
+    the entry keeps the value it recorded."""
+    conn = db.get_connection()
+    try:
+        removed = db.delete_hr_history_entry(conn, entry_id)
+    finally:
+        conn.close()
+    if not removed:
+        raise HTTPException(404, f"hr history entry {entry_id} not found")
+    return Response(status_code=204)

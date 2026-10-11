@@ -250,6 +250,16 @@ _SCHEMA_DDL = """
       activity_tag TEXT, quality_flags TEXT, status INTEGER, detail TEXT,
       PRIMARY KEY (import_id, seq)
     );
+    CREATE TABLE IF NOT EXISTS hr_history (
+      -- F021: the athlete's dated HR settings, one row per field and
+      -- effective_from (YYYY-MM-DD); a second entry for the same pair
+      -- replaces value and set_at in place, keeping entry_id
+      -- (write_hr_history_entry). value is JSON text, as profile_entries
+      -- keeps it (PATCH /me accepts 10**400). No session_id column.
+      entry_id INTEGER PRIMARY KEY, field TEXT NOT NULL, value TEXT NOT NULL,
+      effective_from TEXT NOT NULL, set_at TEXT NOT NULL,
+      UNIQUE (field, effective_from)
+    );
     -- F019: the list reads one session's (t, distance) in t order for every
     -- row of a page; without this each read scanned the whole records table.
     CREATE INDEX IF NOT EXISTS records_session_id_t ON records (session_id, t);
@@ -1435,3 +1445,78 @@ def read_session_totals_rows(conn: sqlite3.Connection, session_id: str) -> list[
     return conn.execute(
         f"SELECT {columns} FROM records WHERE session_id = ? ORDER BY t, rowid", (session_id,)
     ).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# F021: dated HR entries (/me/hr-history)
+#
+# Appended below the earlier readers, as the list's are, so the lines cited
+# by number stay in place. The table is in _SCHEMA_DDL. No writer here moves
+# the anchor version log: a dated entry changes neither GET /me nor an anchor.
+# ---------------------------------------------------------------------------
+from runcoach_api.hr_history import HR_FIELDS as _HR_FIELDS
+
+# The dated-entries table's name, for callers and tests that address it.
+HR_HISTORY_TABLE = "hr_history"
+
+
+def _hr_history_entry(row: sqlite3.Row) -> dict:
+    return {
+        "entry_id": row["entry_id"],
+        "field": row["field"],
+        "value": _json_load(row["value"]),
+        "effective_from": row["effective_from"],
+        "set_at": row["set_at"],
+    }
+
+
+def write_hr_history_entry(
+    conn: sqlite3.Connection, field: str, value: object, effective_from: str, set_at: str | None = None
+) -> tuple[dict, bool]:
+    """Store one dated HR entry and return ``(entry, created)`` (F021 AC1).
+
+    A new ``(field, effective_from)`` pair inserts a row (``created`` true). An existing pair has its
+    ``value`` and ``set_at`` replaced in place, keeping its ``entry_id`` (``created`` false), so the
+    store never holds two entries for one field and date. The entry is ``entry_id``, ``field``,
+    ``value`` (JSON-decoded), ``effective_from`` and ``set_at`` (default: now in UTC,
+    ``isoformat()``). A field outside ``hr_history.HR_FIELDS`` raises ``ValueError`` before anything
+    is written; values and dates are not validated here: the route screens them. One transaction;
+    the caller has run ``init_schema``.
+    """
+    if field not in _HR_FIELDS:
+        raise ValueError(f"not a dated HR field: {field}")
+    if set_at is None:
+        set_at = datetime.now(UTC).isoformat()
+    with conn:
+        existing = conn.execute(
+            f"SELECT entry_id FROM {HR_HISTORY_TABLE} WHERE field = ? AND effective_from = ?",
+            (field, effective_from),
+        ).fetchone()
+        if existing is None:
+            entry_id = conn.execute(
+                f"INSERT INTO {HR_HISTORY_TABLE} (field, value, effective_from, set_at) VALUES (?, ?, ?, ?)",
+                (field, _json_dump(value), effective_from, set_at),
+            ).lastrowid
+        else:
+            entry_id = existing["entry_id"]
+            conn.execute(
+                f"UPDATE {HR_HISTORY_TABLE} SET value = ?, set_at = ? WHERE entry_id = ?",
+                (_json_dump(value), set_at, entry_id),
+            )
+        row = conn.execute(f"SELECT * FROM {HR_HISTORY_TABLE} WHERE entry_id = ?", (entry_id,)).fetchone()
+    return _hr_history_entry(row), existing is None
+
+
+def read_hr_history(conn: sqlite3.Connection) -> list[dict]:
+    """Every dated HR entry, ordered by ``field`` then ``effective_from`` (both as text, so the
+    ``YYYY-MM-DD`` dates sort by date), each as ``write_hr_history_entry`` returns it. Read-only."""
+    return [
+        _hr_history_entry(r)
+        for r in conn.execute(f"SELECT * FROM {HR_HISTORY_TABLE} ORDER BY field, effective_from")
+    ]
+
+
+def delete_hr_history_entry(conn: sqlite3.Connection, entry_id: int) -> bool:
+    """Remove one dated HR entry; whether a row with ``entry_id`` existed. One transaction."""
+    with conn:
+        return conn.execute(f"DELETE FROM {HR_HISTORY_TABLE} WHERE entry_id = ?", (entry_id,)).rowcount > 0

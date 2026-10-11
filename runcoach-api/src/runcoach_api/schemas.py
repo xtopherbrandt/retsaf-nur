@@ -1270,3 +1270,51 @@ class SessionPage(BaseModel):
         None,
         description="Pass as `since` for the next page: URL-safe base64 of the last row's start_time and session_id. Null on the last page, so no page is ever empty but the first page of an empty store.",
     )
+
+
+# ---------------------------------------------------------------------------
+# /me/hr-history (F021)
+#
+# Appended below the earlier models, as the list's are, so the lines cited by
+# number stay in place.
+# ---------------------------------------------------------------------------
+
+_HrField = Literal["resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm"]
+
+
+class HrHistoryEntryCreate(BaseModel):
+    """The body of ``POST /me/hr-history``: one HR setting and the date it took effect.
+
+    ``value`` takes ``PATCH /me``'s HR screen: a strict whole number of bpm above 0 (``true``,
+    ``"188"`` and ``188.5`` are refused). ``effective_from`` is a ``YYYY-MM-DD`` date; the route also
+    refuses one after today in ``athlete_timezone``. Sex and the body fields have no dated entries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: _HrField = Field(description="`resting_hr_bpm`, `max_hr_bpm` or `threshold_hr_bpm`.")
+    value: int = Field(gt=0, strict=True, description="A whole number of bpm above 0.")
+    effective_from: str = Field(
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        json_schema_extra={"format": "date"},
+        description="The `YYYY-MM-DD` date the value took effect, not after today in the athlete's timezone.",
+    )
+
+    @field_validator("effective_from")
+    @classmethod
+    def _a_calendar_date(cls, value: str) -> str:
+        """The pattern admits ``2016-13-01``; ``date.fromisoformat`` refuses it."""
+        datetime.date.fromisoformat(value)
+        return value
+
+
+class HrHistoryEntry(BaseModel):
+    """One stored dated HR entry (F021). The store holds at most one per field and effective date:
+    a second entry for the pair replaced the value and kept the entry_id."""
+
+    entry_id: int
+    field: _HrField
+    value: int
+    effective_from: str = Field(json_schema_extra={"format": "date"})
+    set_at: str = Field(
+        description="When the value was last written, ISO 8601 in UTC; a replacement moves it, and the entry keeps its entry_id."
+    )

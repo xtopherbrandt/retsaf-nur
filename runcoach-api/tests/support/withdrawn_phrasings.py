@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "so no page is ever empty but the first page of an empty store.",
+        "a replacement moves it, and the entry keeps its entry_id.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "in order, rest days included; empty when history has no day in the range.",
+        "ISO 8601 in UTC; a replacement moves it and keeps the entry_id.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
