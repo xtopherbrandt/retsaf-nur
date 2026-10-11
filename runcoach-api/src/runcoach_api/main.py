@@ -33,6 +33,9 @@ from runcoach_api.schemas import (
 )
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# POST /imports carries a whole export archive, so it gets its own ceiling.
+IMPORT_MAX_BYTES = 1024 * 1024 * 1024
+_IMPORT_PATHS = frozenset({"/imports", "/imports/"})
 
 # The precheck compares the request's declared Content-Length -- which
 # includes multipart boundary markers and part headers on top of the
@@ -75,13 +78,24 @@ class ContentLengthLimitMiddleware:
     not caught here. That residual gap is accepted rather than closed
     with a full ASGI-level streaming body-size limit -- see F003's
     Decision Log, 2026-09-03 "M1 upload buffering" entry for why, given
-    this feature's local-first single-athlete deployment model.
+    this feature's local-first single-athlete deployment model. The
+    same gap applies to ``/imports``.
+
+    The ceiling is chosen per request: ``/imports`` and ``/imports/``
+    get ``IMPORT_MAX_BYTES``, every other path ``MAX_UPLOAD_BYTES``
+    (or ``max_bytes`` when the middleware is built with one). Both
+    constants are read when a request arrives, not when the middleware
+    stack is built, and the 413 text names the limit that applied.
     """
 
-    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int | None = None) -> None:
         self.app = app
         self.max_bytes = max_bytes
-        self.precheck_ceiling = max_bytes + _MULTIPART_FRAMING_ALLOWANCE_BYTES
+
+    def _limit_for(self, path: str) -> int:
+        if path in _IMPORT_PATHS:
+            return IMPORT_MAX_BYTES
+        return MAX_UPLOAD_BYTES if self.max_bytes is None else self.max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -94,9 +108,11 @@ class ContentLengthLimitMiddleware:
                 declared_bytes = int(content_length)
             except ValueError:
                 declared_bytes = None
-            if declared_bytes is not None and declared_bytes > self.precheck_ceiling:
+            limit = self._limit_for(scope.get("path", ""))
+            precheck_ceiling = limit + _MULTIPART_FRAMING_ALLOWANCE_BYTES
+            if declared_bytes is not None and declared_bytes > precheck_ceiling:
                 response = PlainTextResponse(
-                    f"upload exceeds {self.max_bytes} byte limit", status_code=413
+                    f"upload exceeds {limit} byte limit", status_code=413
                 )
                 await response(scope, receive, send)
                 return
@@ -115,7 +131,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Run Coaching API", lifespan=lifespan)
-app.add_middleware(ContentLengthLimitMiddleware, max_bytes=MAX_UPLOAD_BYTES)
+app.add_middleware(ContentLengthLimitMiddleware)
 
 
 @app.get("/health", response_model=HealthResponse)
