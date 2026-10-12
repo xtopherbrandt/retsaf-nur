@@ -7,6 +7,8 @@ status happens exclusively at the ``main.py`` boundary.
 
 from __future__ import annotations
 
+import sqlite3
+
 
 class NotAFitFileError(Exception):
     """Raised when the uploaded bytes are not a FIT file at all."""
@@ -92,3 +94,31 @@ class TooManyRecordsError(Exception):
         self.count = count
         self.limit = limit
         self.unit = unit
+
+
+LOCKED_DETAIL = "database is locked"
+
+
+def http_status_detail(exc: BaseException) -> tuple[int | None, str]:
+    """``(status, detail)`` for an exception raised while ingesting one file.
+
+    For each typed exception above, the status and detail ``POST /sessions``
+    answers with, so the one-file route and an archive import report a file
+    the same way. Anything else has no HTTP status (``None``): a store held
+    locked past the busy timeout (``sqlite3.OperationalError`` "database is
+    locked") gives that message alone, so a re-run knows to pick the file up;
+    any other exception gives its type and message.
+    """
+    if isinstance(exc, NotAFitFileError):
+        return 400, f"not a valid FIT file: {exc}"
+    if isinstance(exc, FitParseFailure):
+        return 400, f"file could not be parsed: {exc}"
+    if isinstance(exc, TooManyRecordsError):
+        return 413, f"upload exceeds the limit of {exc.limit} {exc.unit} (reached {exc.count})"
+    if isinstance(exc, MissingCanonicalFieldError):
+        return 400, f"{exc.field} could not be determined: {exc}"
+    if isinstance(exc, DuplicateSessionError):
+        return 409, f"already ingested as session {exc.existing_session_id}"
+    if isinstance(exc, sqlite3.OperationalError) and str(exc) == LOCKED_DETAIL:
+        return None, LOCKED_DETAIL
+    return None, f"{type(exc).__name__}: {exc}"
