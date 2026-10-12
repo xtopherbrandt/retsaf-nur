@@ -190,6 +190,22 @@ def test_recompute_counts_a_session_once_however_many_blocks_are_out_of_period(s
     assert "Out of period: 1" in result.output
 
 
+@pytest.mark.parametrize("block", HR_FIELDS)
+def test_recompute_counts_each_hr_block_alone_as_out_of_period(serve, block: str) -> None:
+    def answer(session_id: str) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_load(session_id, out_of_period=block if session_id == "r1" else None),
+        )
+
+    serve([[_summary("r1"), _summary("r2")]], answer)
+
+    result = runner.invoke(app, ["loads", "recompute"])
+
+    assert result.exit_code == 0, result.output
+    assert "Out of period: 1" in result.output
+
+
 def test_recompute_does_not_count_the_sex_block_as_out_of_period(serve) -> None:
     def answer(session_id: str) -> httpx.Response:
         body = _load(session_id)
