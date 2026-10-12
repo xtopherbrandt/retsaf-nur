@@ -1,6 +1,6 @@
 import typer
 
-from runcoach_cli.commands import ingest, init, profile, sessions, status
+from runcoach_cli.commands import imports, ingest, init, profile, sessions, status
 
 app = typer.Typer(no_args_is_help=True)
 profile_app = typer.Typer(no_args_is_help=True, help="Show or set the athlete profile and HR anchors.")
@@ -15,6 +15,8 @@ app.command(name="init")(init.init)
 app.command(name="status")(status.status)
 app.command(name="ingest")(ingest.ingest)
 app.command(name="sessions")(sessions.sessions)
+app.command(name="import")(imports.import_archive)
+app.command(name="import-status")(imports.import_status)
 profile_app.command(name="show")(profile.show)
 profile_app.command(name="set")(profile.set_profile)
 app.add_typer(profile_app, name="profile")

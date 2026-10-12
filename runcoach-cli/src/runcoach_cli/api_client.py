@@ -1,4 +1,4 @@
-"""Thin httpx wrapper around the backend API's GET /health endpoint.
+"""Thin httpx wrapper around the backend API's endpoints.
 
 This is the only network call site in the CLI. It returns the raw
 `httpx.Response` on success and never parses or validates the response
@@ -115,5 +115,51 @@ def list_sessions(base_url: str, since: str | None, limit: int) -> httpx.Respons
         params["since"] = since
     try:
         return client.get(f"{base_url}/sessions", params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+# An archive upload may be up to 1 GiB (the API's import cap), so it gets far more than the 60 s a
+# 50 MB FIT upload gets.
+IMPORT_UPLOAD_TIMEOUT = 600.0
+
+
+def start_import(base_url: str, path: Path, upload_name: str | None = None) -> httpx.Response:
+    """Upload the zip at ``path`` as the multipart part ``file`` of POST {base_url}/imports.
+
+    ``upload_name`` is the file name sent with the part (the API stores it as ``archive_name``);
+    it defaults to ``path``'s own name. Only network-layer failures are translated into
+    ApiUnreachableError; status and body are the caller's job.
+    """
+    try:
+        with open(path, "rb") as f:
+            return client.post(
+                f"{base_url}/imports",
+                files={"file": (upload_name or path.name, f, "application/zip")},
+                timeout=IMPORT_UPLOAD_TIMEOUT,
+            )
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def get_import(base_url: str, import_id: str) -> httpx.Response:
+    """Call GET {base_url}/imports/{import_id} and return the raw response.
+
+    The body carries the job's per-file rows, which grow with the archive, so the call uses
+    ``LIST_TIMEOUT``. Only network-layer failures are translated into ApiUnreachableError.
+    """
+    try:
+        return client.get(f"{base_url}/imports/{import_id}", timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def list_imports(base_url: str) -> httpx.Response:
+    """Call GET {base_url}/imports (newest first, without per-file rows) and return the raw response.
+
+    Only network-layer failures are translated into ApiUnreachableError.
+    """
+    try:
+        return client.get(f"{base_url}/imports", timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
