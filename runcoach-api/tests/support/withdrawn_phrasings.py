@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "Newest first by created_at; no item carries files.",
+        "filling the dated-entry input keys' defaults on the old body; true when the session had no saved load.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "no item carries files, and a stored session's import is the one its import_id names.",
+        "compared after filling the dated-entry input keys' defaults on the old body; true when the session had no saved load.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

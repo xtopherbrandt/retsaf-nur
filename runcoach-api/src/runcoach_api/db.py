@@ -1189,7 +1189,8 @@ def _write_session_load(conn: sqlite3.Connection, session_id: str, body: Mapping
 
     A plain INSERT, so a second save for one session fails loudly
     (``sqlite3.IntegrityError`` on the primary key) rather than replacing a
-    saved load: a load is only ever recomputed by delete and re-upload.
+    saved load: only ``recompute_session_load`` replaces one, through its own
+    writer (``_replace_session_load``).
     """
     session_load = body.get("session_load") or {}
     conn.execute(
@@ -1251,15 +1252,32 @@ def _save_session_load(
     file, with no entry dated after that file's local date, is saved as F017
     saved it (F021 AC3).
     """
+    _write_session_load(conn, session_id, _session_load_body(conn, session_id, resolved=resolved, zone=zone))
+
+
+def _session_load_body(
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    resolved: Mapping[str, profile_module.FieldValue] | None = None,
+    zone: ZoneInfo | None = None,
+) -> dict:
+    """The load body ``_save_session_load`` saves and ``recompute_session_load`` replaces, computed
+    as that docstring says; writes nothing. An anchor log that does not hold a served value raises
+    ``AnchorLogOutOfStepError`` (a ``ValueError``), which only a write outside the app's write
+    paths causes."""
     inputs = read_session_load_inputs(conn, session_id)
     if inputs is None:
         raise ValueError(f"session {session_id} is not stored; nothing to compute a load from")
     if any(inputs[field_name]["value"] is None for field_name in _LOAD_FIELDS):
         if resolved is None:
             resolved = profile_module.resolve(*read_profile_inputs(conn))
-        anchors = profile_module.anchors(resolved, _read_anchor_log(conn))
+        try:
+            anchors = profile_module.anchors(resolved, _read_anchor_log(conn))
+        except ValueError as exc:
+            raise AnchorLogOutOfStepError(str(exc)) from exc
         _fill_by_run_date(conn, session_id, inputs, resolved, anchors, zone)
-    _write_session_load(conn, session_id, compute_session_load(inputs))
+    return compute_session_load(inputs)
 
 
 class SessionLoadFillError(RuntimeError):
@@ -1342,7 +1360,7 @@ def read_session_load_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def read_session_load_body(conn: sqlite3.Connection, session_id: str) -> dict | None:
-    """The body ``_save_session_load`` wrote for the session at its upload, JSON-decoded, or
+    """The body saved for the session (at its upload, or by its last recompute), JSON-decoded, or
     ``None`` when the store holds no load for that id (F017).
 
     One SELECT on ``SESSION_LOADS_TABLE``; no anchor and no session row is
@@ -1598,3 +1616,69 @@ def _fill_by_run_date(
     for field_name in _LOAD_FIELDS:
         if field_name not in _HR_FIELDS and inputs[field_name]["value"] is None:
             inputs[field_name] = _from_anchor(anchors[field_name])
+
+
+# ---------------------------------------------------------------------------
+# F021: recompute one session's saved load (AC5)
+#
+# Appended at the end, as the lookup is, so the lines cited above stay in
+# place. ``_session_load_body`` raises the error class below.
+# ---------------------------------------------------------------------------
+
+
+class AnchorLogOutOfStepError(ValueError):
+    """The anchor version log does not hold a value the anchors serve, so a load that needs an
+    anchor cannot name its version. Only a write outside ``persist``, ``delete_session`` and
+    ``write_profile_entries`` causes it; ``init_schema`` repairs it at the next startup."""
+
+
+def _replace_session_load(conn: sqlite3.Connection, session_id: str, body: Mapping[str, object]) -> None:
+    """Insert or replace one session's load row, mirroring ``load_value`` and ``load_reason`` from
+    the body as ``_write_session_load`` does. The replacing writer; the upload's save stays the
+    insert-only ``_write_session_load``."""
+    session_load = body.get("session_load") or {}
+    conn.execute(
+        f"""
+        INSERT INTO {SESSION_LOADS_TABLE} (session_id, load_value, load_reason, body) VALUES (?, ?, ?, ?)
+        ON CONFLICT (session_id) DO UPDATE SET
+            load_value = excluded.load_value, load_reason = excluded.load_reason, body = excluded.body
+        """,
+        (
+            session_id,
+            session_load.get("value"),  # type: ignore[union-attr]
+            session_load.get("unavailable"),  # type: ignore[union-attr]
+            json.dumps(body),
+        ),
+    )
+
+
+def recompute_session_load(
+    conn: sqlite3.Connection, session_id: str, *, zone: ZoneInfo | None = None
+) -> tuple[dict | None, dict] | None:
+    """Recompute one stored session's load with the current files, dated entries and anchors, and
+    replace its saved row (F021 AC5). Returns ``(old_body, new_body)``, ``old_body`` being the body
+    saved before (JSON-decoded) or ``None`` when the session had none; or ``None`` when
+    ``session_id`` is not stored, having written nothing.
+
+    One ``BEGIN IMMEDIATE`` transaction holds the write lock from the existence check to the commit,
+    so the body is computed and written from one snapshot. The body comes from
+    ``_session_load_body``, the computation the upload's save uses (a non-running session gets
+    ``sport_not_running`` as there), and is written by ``_replace_session_load``. It reads the
+    profile itself and never calls ``read_athlete``, whose ``BEGIN`` fails inside an open
+    transaction; an anchor log out of step raises ``AnchorLogOutOfStepError``. Any fault rolls the
+    whole transaction back and propagates, so the saved row is as it was. ``zone`` is as for
+    ``_save_session_load``.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not session_exists(conn, session_id):
+            conn.rollback()
+            return None
+        old_body = read_session_load_body(conn, session_id)
+        new_body = _session_load_body(conn, session_id, zone=zone)
+        _replace_session_load(conn, session_id, new_body)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return old_body, new_body

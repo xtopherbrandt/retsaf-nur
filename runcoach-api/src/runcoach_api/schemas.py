@@ -986,12 +986,12 @@ _SESSION_WIDE_REASON_DESCRIPTION = (
 _LOAD_SOURCE_DESCRIPTION = (
     "`session_file` when the session's own FIT file carried the value. Otherwise, for an HR value, the setting in "
     "effect on the run's date: `session_file_dated` (an earlier stored file, named by `session_id`), `history` (a "
-    "dated entry, named by `entry_id` and `effective_from`) or `anchor` (the HR anchor in effect at upload, the "
+    "dated entry, named by `entry_id` and `effective_from`) or `anchor` (the HR anchor in effect when the load was saved, the "
     "run's date having no file or entry, or that file being the anchor's own); for sex, `anchor`. Null when "
     "nothing supplied it. A body saved before dated entries existed has only `session_file` and `anchor`."
 )
 _LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION = (
-    "When the file carried no value and the anchor at upload had none either, the anchor's own reason "
+    "When the file carried no value and the anchor when the load was saved had none either, the anchor's own reason "
     "(`missing` or `order_conflict`); null otherwise."
 )
 _LOAD_OUT_OF_PERIOD_DESCRIPTION = (
@@ -1064,7 +1064,7 @@ class SessionLoadHrInput(BaseModel):
     session_id: str | None = Field(
         description="The session whose file carried the value; null unless `source` is `session_file` or `session_file_dated`."
     )
-    anchor_version: int | None = Field(description="The anchor's version at upload; null unless `source` is `anchor`.")
+    anchor_version: int | None = Field(description="The anchor's version when the load was saved; null unless `source` is `anchor`.")
     anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
         description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
     )
@@ -1087,7 +1087,7 @@ class SessionLoadSexInput(BaseModel):
     )
     source: Literal["session_file", "anchor"] | None = Field(description=_LOAD_SOURCE_DESCRIPTION)
     session_id: str | None = Field(description="The session whose file carried the value; null unless `source` is `session_file`.")
-    anchor_version: int | None = Field(description="The anchor's version at upload; null unless `source` is `anchor`.")
+    anchor_version: int | None = Field(description="The anchor's version when the load was saved; null unless `source` is `anchor`.")
     anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
         description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
     )
@@ -1116,14 +1116,14 @@ class SessionLoadInputs(BaseModel):
 
 
 class SessionLoad(BaseModel):
-    """The training load of one session, HR-TRIMP first (F017), as saved at its upload.
+    """The training load of one session, HR-TRIMP first (F017), as saved at its upload or its last recompute.
 
-    Computed once, in the upload's own transaction, from the session's own
-    file values (else the HR anchors in effect at upload) and saved with
-    every value used; a later anchor change moves nothing, and the load is
-    recomputed only by delete and re-upload. The route serves the saved body
-    and reads no anchor. A deleted session has no load (404, the envelope of
-    GET /sessions/{id}).
+    Computed in the upload's own transaction, from the session's own file
+    values (else the setting in effect on the run's date) and saved with
+    every value used; a later anchor change moves nothing until
+    POST /sessions/{id}/load/recompute replaces it. The route serves the saved
+    body and reads no anchor. A deleted session has no load (404, the envelope
+    of GET /sessions/{id}).
     """
 
     session_id: str
@@ -1420,3 +1420,21 @@ class ImportPage(BaseModel):
     """GET /imports: every import job, newest first, without files."""
 
     items: list[Import] = Field(description="Newest first by created_at; no item carries files.")
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/load/recompute (F021 AC5)
+#
+# Appended below the import models. Named exactly as the contract's
+# component, so the route test's walker compares like with like.
+# ---------------------------------------------------------------------------
+
+
+class SessionLoadRecompute(SessionLoad):
+    """recomputeSessionLoad: the recomputed body, as now saved, with the SessionLoad fields at the top
+    level, plus changed."""
+
+    changed: bool = Field(
+        description="Whether any field of the new body differs from the body saved before, compared after "
+        "filling the dated-entry input keys' defaults on the old body; true when the session had no saved load."
+    )

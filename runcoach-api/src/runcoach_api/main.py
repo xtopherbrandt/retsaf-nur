@@ -936,9 +936,9 @@ from runcoach_api.schemas import SessionLoad
 def get_session_load(session_id: str) -> SessionLoad:
     """The session's training load, HR-TRIMP first, as saved at its upload (F017).
 
-    The body is the one ``db._save_session_load`` computed and wrote inside
-    the upload's transaction, with every value used; the route serves it
-    unchanged through ``db.read_session_load_body`` and reads no anchor
+    The body is the one ``db._save_session_load`` wrote in the upload's
+    transaction (or a recompute last replaced), with every value used; it is
+    served unchanged through ``db.read_session_load_body``, reading no anchor
     (user rulings C1-C3, 2026-10-08), so a
     later ``PATCH /me`` or a later upload that moves an anchor changes
     nothing here, and a corrupted anchor version log that makes ``GET /me``
@@ -1360,3 +1360,68 @@ def get_import(import_id: str) -> Import:
     if body is None:
         raise HTTPException(404, f"import {import_id} not found")
     return Import.model_validate(body)
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/load/recompute (F021)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place.
+# ---------------------------------------------------------------------------
+import json
+
+from pydantic import ValidationError
+
+from runcoach_api.schemas import SessionLoadRecompute
+
+
+def _load_changed(old_body: dict | None, new_body: SessionLoad) -> bool:
+    """Whether the new body differs from the old in any field, the old read through ``SessionLoad``
+    so the dated-entry input keys it lacks take their defaults. No old body, or one that does not
+    read as a load, is a change."""
+    if old_body is None:
+        return True
+    try:
+        old = SessionLoad(**old_body)
+    except (ValidationError, TypeError):
+        return True
+    return old.model_dump(mode="json") != new_body.model_dump(mode="json")
+
+
+@app.post(
+    "/sessions/{session_id}/load/recompute",
+    response_model=SessionLoadRecompute,
+    operation_id="recomputeSessionLoad",
+    tags=["Sessions"],
+    responses={
+        404: {"description": "No stored session has that session_id"},
+        500: {"description": "The anchor version log is out of step; the detail names the cause and the repair"},
+    },
+)
+def recompute_session_load(session_id: str) -> SessionLoadRecompute:
+    """Recompute the session's saved load with the current files, dated entries and anchors (F021
+    AC5), replace it, and return it with ``changed``.
+
+    ``db.recompute_session_load`` computes and writes in one transaction, under the run-date lookup
+    a save uses; a non-running session is computed as an upload computes it, and a session with no
+    saved load gets one. 200 in every case, with the ``SessionLoad`` fields at the top level.
+    ``changed`` compares the new body with the old read through ``SessionLoad``, so a body saved
+    before dated entries existed differs only where a value does. An unknown ``session_id`` is the
+    404 ``get_session`` raises, writing nothing. An anchor version log out of step is the named 500
+    ``GET /me`` serves, writing nothing. This route is the only path that replaces a saved load.
+    """
+    zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    conn = db.get_connection()
+    try:
+        result = db.recompute_session_load(conn, session_id, zone=zone)
+    except db.AnchorLogOutOfStepError as exc:
+        raise HTTPException(
+            500, f"the profile store is out of step ({exc}); restart the API, whose startup repairs it"
+        ) from exc
+    finally:
+        conn.close()
+    if result is None:
+        raise HTTPException(404, f"session {session_id} not found")
+    old_body, new_body = result
+    body = SessionLoad(**json.loads(json.dumps(new_body)))
+    return SessionLoadRecompute(**body.model_dump(), changed=_load_changed(old_body, body))
