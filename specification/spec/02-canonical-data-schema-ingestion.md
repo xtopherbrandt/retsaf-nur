@@ -98,7 +98,7 @@ The context object carries the environmental and situational metadata a session 
 | `env_humidity_pct` | number | 0–100 | Ambient relative humidity, same sourcing. |
 | `env_wind_ms`, `env_wind_dir` | number, bearing/enum | m/s, direction | Ambient wind where available; feeds the same environmental-cost models used for the pace target (§1.4.4) when normalizing a session's pace. |
 | `subjective` | object | `research/03` instruments | Any self-report attached to this session (session-RPE, wellness, soreness/pain map). First-class input (`research/00` ARCH-07); the schema carries it, Section 6 interprets it. |
-| `ingested_at` | timestamp | UTC | When the ingestion layer processed this session; distinguishes bulk backfill from incremental arrival (§2.6.1). |
+| `ingested_at` | timestamp | UTC | When the ingestion layer processed this session. A timestamp only: it does not tell bulk backfill from incremental arrival; the session's import id does (§2.6.1). |
 | `provenance` | object | route + adapter version | Which access route (§2.7) and adapter version produced this object, for auditability and reprocessing. |
 
 ---
@@ -259,7 +259,7 @@ Every adapter obeys the same three invariants: it maps only raw measured signals
 The ingestion layer runs in two modes against the same adapter and schema:
 
 - **Bulk backfill.** At program start the athlete's history (§1.3) is ingested in one pass — potentially years of sessions — to establish the starting physiological state (Section 4). Bulk mode tolerates gaps and mixed recording modes across the history, flagging rather than rejecting, because the state estimator weights sessions by quality and recency.
-- **Incremental arrival.** Thereafter each new completed session is ingested as it syncs, one object at a time, and drives the recent-workout and daily loops (Section 6). `context.ingested_at` distinguishes the two so reprocessing and audit can tell backfilled from live-arriving data.
+- **Incremental arrival.** Thereafter each new completed session is ingested as it syncs, one object at a time, and drives the recent-workout and daily loops (Section 6). The import id, not `context.ingested_at` (a processing timestamp only), lets reprocessing and audit tell backfilled from live-arriving data: a session stored by an archive import (`POST /imports`, `runcoach import`) carries that import's `import_id` (served by `GET /sessions/{session_id}`, with the job's report at `GET /imports/{import_id}`); a session uploaded alone (`POST /sessions`) has a null `import_id`, and so does every session stored before archive import existed, since nothing backfills the column. A null import id therefore means "not stored by an archive import", not "arrived incrementally".
 
 Both modes are **post-session** by design: on the primary Garmin path, data arrives only after an activity finishes and syncs (`research/00` ARCH-01; `research/02` §6), so incremental ingestion is event-driven off sync/push notifications (§2.7), not a live stream.
 

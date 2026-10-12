@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Garmin archive import
+
+F020: `POST /imports` takes a Garmin "Export your data" archive, or any zip of FIT files, as the
+multipart part `file` and answers 202 with the new import in status `queued`; the job then runs in
+the background (`scanning`, `running`, then `completed`, or `failed` with `error`). The upload is a
+zip by content, not by name: one that does not open as a zip, a zero-byte upload included, is a 400.
+While another import is queued, scanning or running the answer is a 409 whose detail names that
+import's id; past 1 GiB it is a 413; with no `file` part a 422 (FastAPI's default `{detail}`); an
+archive that cannot be written to the data dir is a 500 naming the cause. A refused request leaves
+no import row and no temp files. The 1 GiB cap applies to `POST /imports` (and `/imports/`) only:
+`POST /sessions` keeps its 50 MB cap. `GET /imports` lists every import newest first, without
+`files`; `GET /imports/{import_id}` serves one with its status, progress, counts and `files` rows in
+processing order, and is a 404 for an unknown id. A job the previous API process left queued,
+scanning or running is marked `interrupted` at API startup and its temp files are removed.
+
+F020: the job screens every FIT file in the archive, and in each zip inside it one level down, by
+its `file_id`, and processes the activities oldest first by `file_id.time_created`. It stores runs
+and recognised resting captures (`activity_tag` `resting_hrv_check` or `health_snapshot`) through
+the same steps as `POST /sessions`; every other activity is skipped and counted under
+`skipped_sport` by the sport its file names, and writes nothing to the store but its report row. A
+FIT file that is not an activity is counted under `non_activity`, an entry that is not a FIT file
+under `not_fit` by extension, and an inner zip that cannot be read under `unreadable_archives`. A
+file already in the store is `already_stored` with the existing session id; a file that cannot be
+stored is `failed` with the status and detail `POST /sessions` would give, and the import goes on.
+Entry names are labels in the report only and are never extracted to a path.
+
+F020: `runcoach import PATH` uploads a zip, or zips a directory into a temp file (removed whatever
+the outcome) and uploads that, then polls the import and prints its progress and final report.
+`runcoach import-status [ID]` prints the status and report of the import ID, else of the newest.
+
+F020: new tables `imports` (one row per job) and `import_files` (one report row per activity file;
+a row outlives a session deleted later). Sessions gain the nullable `import_id` column, served by
+`GET /sessions/{session_id}`: the id of the import that stored the session, null for a session
+uploaded through `POST /sessions`. Existing sessions keep a null `import_id`; nothing is
+backfilled. spec/02 section 2.6.1 now says the import id, not `ingested_at`, tells backfilled
+sessions from incrementally arriving ones.
+
 ## 2026-10-11 — Sprint 015: list sessions, moving gaps and the comeback mark
 
 ### Added
