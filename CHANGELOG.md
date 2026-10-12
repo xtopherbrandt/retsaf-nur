@@ -35,8 +35,8 @@ F020: `runcoach import PATH` uploads a zip, or zips a directory into a temp file
 the outcome) and uploads that, then polls the import and prints its progress and final report.
 `runcoach import-status [ID]` prints the status and report of the import ID, else of the newest.
 
-F020: new tables `imports` (one row per job) and `import_files` (one report row per activity file;
-a row outlives a session deleted later). Sessions gain the nullable `import_id` column, served by
+F020: new tables `imports` (one row per job) and `import_files` (one report row per activity file,
+or per FIT file that could not be screened; a row outlives a session deleted later). Sessions gain the nullable `import_id` column, served by
 `GET /sessions/{session_id}`: the id of the import that stored the session, null for a session
 uploaded through `POST /sessions`. Existing sessions keep a null `import_id`; nothing is
 backfilled. spec/02 section 2.6.1 now says the import id, not `ingested_at`, tells backfilled

@@ -2921,7 +2921,7 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Import" }
-          description: "Newest first by created_at; no item carries files, and a stored session's import is the one its import_id names."
+          description: "Newest first by created_at; no item carries files."
     SessionLoadRecompute:
       type: object
       description: >
