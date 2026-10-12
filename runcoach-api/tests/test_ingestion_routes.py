@@ -171,6 +171,15 @@ def test_startup_closes_the_connection_it_opens(monkeypatch) -> None:
             self.closed = True
             self._real_conn.close()
 
+        # `with conn:` looks these up on the class, so __getattr__
+        # alone cannot forward the transaction the startup recovery opens.
+        def __enter__(self):
+            self._real_conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self._real_conn.__exit__(exc_type, exc, tb)
+
         def __getattr__(self, name: str):
             return getattr(self._real_conn, name)
 
