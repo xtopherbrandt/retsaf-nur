@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-12 — Sprint 016: Garmin archive import and dated HR settings
+
 ### Garmin archive import
 
 F020: `POST /imports` takes a Garmin "Export your data" archive, or any zip of FIT files, as the
