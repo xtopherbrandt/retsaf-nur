@@ -4,13 +4,17 @@ Every row builds its own store (the autouse ``isolated_data_dir``): dated ``mode
 through ``db.persist`` (the ``persist_sessions`` fixture), dated entries through
 ``db.write_hr_history_entry``, and the saved body is read back with ``db.read_session_load_body``.
 The sessions carry no records, so every load is ``no_hr``; the inputs are still reported, which is
-what these rows assert (source, value, ``entry_id``, ``effective_from``, ``out_of_period``).
+what these rows assert (source, value, ``entry_id``, ``effective_from``, ``out_of_period``). The one
+exception is the AC4 order row, a real upload of ``sample_run`` through ``POST /sessions`` (its HR
+reaches the gates) with its ``zones_target`` message removed, so it carries no max of its own.
 
 The expectations were written from F021's AC2 seam rows and AC4's source rule, not from the code.
 """
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -22,6 +26,15 @@ from runcoach_api.models import Session
 
 NEW_KEY_DEFAULTS = {"entry_id": None, "effective_from": None, "out_of_period": False}
 HR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm")
+FIXTURES = Path(__file__).parent / "fixtures"
+ZONES_TARGET = 7  # the FIT message carrying the file's max and threshold
+
+_SPEC = importlib.util.spec_from_file_location(
+    "fit_patch", Path(__file__).parent / "support" / "fit_patch.py"
+)
+assert _SPEC is not None and _SPEC.loader is not None
+fit_patch = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(fit_patch)
 
 
 def _session(session_id: str, start: str, sport: str = "running", **hr) -> Session:
@@ -260,6 +273,37 @@ def test_the_lookup_reads_no_profile_inputs_beyond_the_sync(persist_sessions, mo
         conn.close()
     assert len(calls) - before == 1
     assert _max("run-2019")["source"] == "history"
+
+
+# --- AC4: F017's order rule applies to a mixed body unchanged ---------------------------------
+
+
+def test_a_dated_max_below_the_files_resting_is_an_order_conflict(isolated_data_dir) -> None:
+    """``sample_run`` without ``zones_target`` keeps its own resting 47 (``session_file``) and has no
+    max; a dated max of 40 from 2000 is the setting on the run's date (``history``). Resting >= max
+    among the values used is F017's gate 5, so TRIMP and the load are ``order_conflict``, whatever
+    source each value came from."""
+    raw = fit_patch.remove_messages((FIXTURES / "sample_run.fit").read_bytes(), ZONES_TARGET)
+    with TestClient(app) as client:
+        added = client.post(
+            "/me/hr-history", json={"field": "max_hr_bpm", "value": 40, "effective_from": "2000-01-01"}
+        )
+        assert added.status_code == 201, added.text
+        response = client.post("/sessions", files={"file": ("sample_run.fit", raw)})
+        assert response.status_code == 201, response.text
+    session_id = response.json()["session_id"]
+    body = _saved(session_id)
+    inputs = body["inputs"]
+    print(f"  resting {inputs['resting_hr_bpm']} max {inputs['max_hr_bpm']}")
+    print(f"  hr_trimp {body['metrics']['hr_trimp']}")
+    assert (inputs["resting_hr_bpm"]["value"], inputs["resting_hr_bpm"]["source"]) == (47, "session_file")
+    assert inputs["resting_hr_bpm"]["session_id"] == session_id
+    assert (inputs["max_hr_bpm"]["value"], inputs["max_hr_bpm"]["source"]) == (40, "history")
+    assert inputs["max_hr_bpm"]["entry_id"] == added.json()["entry_id"]
+    assert inputs["max_hr_bpm"]["effective_from"] == "2000-01-01"
+    assert body["metrics"]["hr_trimp"]["unavailable"] == "order_conflict"
+    assert body["metrics"]["hr_trimp"]["value"] is None
+    assert body["session_load"] == {"value": None, "unavailable": "order_conflict", "driver": None}
 
 
 # --- AC3: a run uploaded today is saved as before ---------------------------------------------
