@@ -216,8 +216,9 @@ def test_a_later_anchor_change_leaves_the_saved_body_byte_identical() -> None:
 
 
 def test_delete_and_re_upload_saves_the_new_anchor_value() -> None:
-    """The one way to recompute (C2): after the anchor moves to 190, ``DELETE`` and re-upload the
-    same bytes; the new saved body uses 190 at version 2 and a different TRIMP."""
+    """F017's way to recompute (C2), still open beside ``POST /sessions/{id}/load/recompute``:
+    after the anchor moves to 190, ``DELETE`` and re-upload the same bytes; the new saved body
+    uses 190 at version 2 and a different TRIMP."""
     with TestClient(app) as client:
         _enter(client, max_hr_bpm=189, threshold_hr_bpm=169)
         raw = _without_zones()
