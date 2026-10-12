@@ -454,6 +454,21 @@ def test_import_status_with_an_id_shows_that_import_once(install_mock_client) ->
     assert "Processed 5 of 10" in result.output
 
 
+def test_import_status_names_an_unreadable_archive_by_its_label(install_mock_client) -> None:
+    """The API writes each ``counts.unreadable_archives`` item as ``{"label", "reason"}``."""
+    counts = _counts(unreadable_archives=[{"label": "DI_CONNECT/x.zip", "reason": "bad zip"}])
+    api = _Api([_import("completed", processed=0, total=0, counts=counts, files=[])])
+    install_mock_client(api)
+
+    result = _invoke("import-status", IMPORT_ID)
+
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if "DI_CONNECT/x.zip" in line]
+    print(lines)
+    assert len(lines) == 1 and "bad zip" in lines[0]
+    assert "None" not in result.output
+
+
 def test_import_status_with_an_unknown_id_prints_the_404_detail_and_exits_1(install_mock_client) -> None:
     api = _Api([httpx.Response(404, json={"detail": "no import nope-1"})])
     install_mock_client(api)

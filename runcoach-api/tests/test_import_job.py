@@ -447,8 +447,11 @@ def test_non_activity_and_non_fit_entries_are_counted_with_no_files_row(
 
     assert counts["non_activity"] == {"monitoring_b": 1, "monitoring_daily": 1}
     assert counts["not_fit"] == {"tcx": 1, "json": 1, "zip": 1}
-    assert [u["entry"] for u in counts["unreadable_archives"]] == [IA.CORRUPT_ZIP]
-    assert counts["unreadable_archives"][0]["reason"]
+    # Each item is exactly {"label", "reason"}: the CLI prints item["label"] (spec F020 section 4 Counts).
+    unreadable = counts["unreadable_archives"]
+    assert [sorted(u) for u in unreadable] == [["label", "reason"]]
+    assert unreadable[0]["label"] == IA.CORRUPT_ZIP
+    assert isinstance(unreadable[0]["reason"], str) and unreadable[0]["reason"]
     assert report["progress"]["fit_files_scanned"] == 10
     entries = set(_rows(report))
     for name in (IA.MONITORING_B, IA.TCX, IA.JSON, IA.NESTED_ZIP):

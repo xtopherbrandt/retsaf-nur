@@ -325,7 +325,7 @@ class _Job:
         self.counts["non_activity"] = dict(scan.non_activity)
         self.counts["not_fit"] = dict(scan.not_fit)
         self.counts["unreadable_archives"] = [
-            {"entry": u.label, "reason": u.reason} for u in scan.unreadable_archives
+            {"label": u.label, "reason": u.reason} for u in scan.unreadable_archives
         ]
         self.update(
             "UPDATE imports SET status = 'running', fit_files_scanned = ?, activities_total = ?, counts = ?"
