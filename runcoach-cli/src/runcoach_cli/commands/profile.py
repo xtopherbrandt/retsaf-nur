@@ -234,7 +234,7 @@ def _entry_line(entry: Any) -> str:
     )
 
 
-def _unparseable(exc: Exception) -> typer.Exit:
+def _unparseable_entry(exc: Exception) -> typer.Exit:
     return _fail(f"the API's response could not be understood: missing or malformed {exc}")
 
 
@@ -258,7 +258,7 @@ def history_add(
         verb = "Added" if resp.status_code == 201 else "Replaced"
         line = f"{verb} entry {entry['entry_id']}: {entry['field']} {entry['value']} from {entry['effective_from']}"
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise _unparseable(exc) from None
+        raise _unparseable_entry(exc) from None
     typer.echo(line)
 
 
@@ -272,7 +272,7 @@ def history_list() -> None:
             raise TypeError("the entries are not a JSON list")
         lines = [_entry_line(entry) for entry in entries]
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise _unparseable(exc) from None
+        raise _unparseable_entry(exc) from None
     typer.echo("\n".join(lines) if lines else "No dated HR entries.")
 
 
