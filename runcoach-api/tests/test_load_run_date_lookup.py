@@ -169,6 +169,29 @@ def test_a_file_and_an_entry_on_the_same_day_the_file_wins(persist_sessions) -> 
     }
 
 
+def test_a_file_starting_at_the_runs_own_instant_is_a_candidate(persist_sessions) -> None:
+    """A stored file from another device whose ``start_time`` equals the run's is "at or before" the
+    run, so the run borrows its value; the later 2025 file is the anchor's, and is what a strict
+    "before" would fall back to (out of period)."""
+    persist_sessions(
+        [
+            _session("file-same-instant", "2024-05-01T07:00:00+00:00", max_hr_bpm=188),
+            _session("file-2025", "2025-03-01T07:00:00+00:00", max_hr_bpm=185),
+        ]
+    )
+    persist_sessions([_session("run-2024", "2024-05-01T07:00:00+00:00")])
+    assert _max("run-2024") == {
+        "value": 188,
+        "source": "session_file_dated",
+        "session_id": "file-same-instant",
+        "anchor_version": None,
+        "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
+    }
+
+
 def test_max_and_threshold_borrow_only_from_running_files(persist_sessions) -> None:
     persist_sessions(
         [
