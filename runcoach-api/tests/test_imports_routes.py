@@ -262,6 +262,60 @@ def test_a_non_zip_is_400_and_leaves_no_row_or_dir(isolated_data_dir: Path, raw:
     _drain()
 
 
+def _zip_with_invalid_utf8_name() -> bytes:
+    """A one-entry zip whose name carries the UTF-8 flag (bit 11) but bytes that are not UTF-8."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        zf.writestr("abcd.fit", b"not read")
+    raw = buffer.getvalue()
+    for signature, flag_at in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        at = raw.index(signature)
+        flags = int.from_bytes(raw[at + flag_at : at + flag_at + 2], "little") | 0x800
+        raw = raw[: at + flag_at] + flags.to_bytes(2, "little") + raw[at + flag_at + 2 :]
+    assert raw.count(b"abcd.fit") == 2
+    return raw.replace(b"abcd.fit", b"\xff\xfe\xfd.fit\xc3")
+
+
+def test_an_archive_whose_name_is_not_utf8_is_400_and_leaves_no_row_or_dir(isolated_data_dir: Path) -> None:
+    """The outer zip's central directory does not decode (a UTF-8-flagged name that is not UTF-8):
+    it does not open as a zip, so 400, like any non-zip."""
+    with TestClient(app) as client:
+        response = _post_bytes(client, "export.zip", _zip_with_invalid_utf8_name())
+    print(response.status_code, response.text)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"].startswith("not a zip archive: UnicodeDecodeError: "), response.text
+    assert _import_rows(isolated_data_dir) == []
+    assert _temp_children(isolated_data_dir) == []
+    _drain()
+
+
+def test_a_worker_that_does_not_start_is_a_500_and_frees_the_slot(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``start_worker`` raising (no thread can start) is a 500 naming the cause; the job's row and
+    dir are removed, so the next import is not refused as active."""
+    real_start = job.start_worker
+
+    def no_thread(*args, **kwargs):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(job, "start_worker", no_thread)
+    archive_file = _plain_zip(tmp_path, "sample_run.fit")
+    with TestClient(app) as client:
+        refused = _post_archive(client, archive_file)
+        rows_after_refusal = _import_rows(isolated_data_dir)
+        children_after_refusal = _temp_children(isolated_data_dir)
+        monkeypatch.setattr(job, "start_worker", real_start)
+        accepted = _post_archive(client, archive_file)
+        _drain()
+    print(refused.status_code, refused.text, accepted.status_code)
+    assert refused.status_code == 500, refused.text
+    assert refused.json()["detail"] == "the import could not be started: RuntimeError: can't start new thread"
+    assert rows_after_refusal == []
+    assert children_after_refusal == []
+    assert accepted.status_code == 202, accepted.text
+
+
 def test_a_request_with_no_file_part_is_422(isolated_data_dir: Path) -> None:
     with TestClient(app) as client:
         no_part = client.post("/imports", data={"archive": "export.zip"})

@@ -10,8 +10,8 @@ the background (`scanning`, `running`, then `completed`, or `failed` with `error
 zip by content, not by name: one that does not open as a zip, a zero-byte upload included, is a 400.
 While another import is queued, scanning or running the answer is a 409 whose detail names that
 import's id; past 1 GiB it is a 413; with no `file` part a 422 (FastAPI's default `{detail}`); an
-archive that cannot be written to the data dir is a 500 naming the cause. A refused request leaves
-no import row and no temp files. The 1 GiB cap applies to `POST /imports` (and `/imports/`) only:
+archive that cannot be written to the data dir, or a worker thread that cannot start, is a 500
+naming the cause. A refused request leaves no import row and no temp files. The 1 GiB cap applies to `POST /imports` (and `/imports/`) only:
 `POST /sessions` keeps its 50 MB cap. `GET /imports` lists every import newest first, without
 `files`; `GET /imports/{import_id}` serves one with its status, progress, counts and `files` rows in
 processing order, and is a 404 for an unknown id. A job the previous API process left queued,
@@ -25,7 +25,10 @@ the same steps as `POST /sessions`; every other activity is skipped and counted 
 FIT file that is not an activity is counted under `non_activity`, an entry that is not a FIT file
 under `not_fit` by extension, and an inner zip that cannot be read under `unreadable_archives`. A
 file already in the store is `already_stored` with the existing session id; a file that cannot be
-stored is `failed` with the status and detail `POST /sessions` would give, and the import goes on.
+screened or stored is `failed`, and the import goes on: a file the pipeline refuses carries the
+status and detail `POST /sessions` would give, a file that cannot be screened a null status and the
+scan's reason (an encrypted or unreadable entry, an unreadable or untyped `file_id`), and any other
+failure a null status and "database is locked" or the exception's type and message.
 Entry names are labels in the report only and are never extracted to a path.
 
 F020: `runcoach import PATH` uploads a zip, or zips a directory into a temp file (removed whatever
@@ -61,8 +64,9 @@ file, else today's anchor.
   it with `changed` (unknown id 404; a session with no saved load gets one).
 - `inputs.<field>.source` gains `session_file_dated` (an earlier stored file, named by `session_id`)
   and `history` (a dated entry, with `entry_id` and `effective_from`); every HR input gains
-  `out_of_period`, true when no file or entry on or before the run carried the value and the anchor
-  borrowed came from a later file. A body saved before this release reads back with those keys at
+  `out_of_period`, true when no stored file starting at or before the run (a running file, for max
+  and threshold) and no entry effective on or before its local date carried the value, and the
+  anchor borrowed came from a later file. A body saved before this release reads back with those keys at
   their defaults (`out_of_period` false, `entry_id` and `effective_from` null).
 - CLI: `runcoach profile history add <field> <value> --from YYYY-MM-DD`, `runcoach profile history
   list` and `runcoach profile history remove <entry_id>` manage the entries; `runcoach loads

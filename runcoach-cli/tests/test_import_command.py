@@ -9,6 +9,7 @@ recorder, so no test waits, or to a function raising ``KeyboardInterrupt`` to si
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import zipfile
 from collections.abc import Callable
@@ -283,6 +284,59 @@ def test_a_directory_is_zipped_uploaded_and_the_zip_removed(
     assert sorted(p.relative_to(source).as_posix() for p in source.rglob("*")) == before
 
 
+def test_a_directory_file_dated_before_1980_is_zipped(
+    tmp_path: Path, install_mock_client, private_temp: Path
+) -> None:
+    """A zip cannot hold a time before 1980: such a file is zipped with the earliest time it can hold."""
+    source = tmp_path / "old-runs"
+    source.mkdir()
+    old = source / "run1.fit"
+    old.write_bytes(b"run one")
+    os.utime(old, (86_400 * 400, 86_400 * 400))  # 1971-02-05
+    api = _Api([_finished()])
+    install_mock_client(api)
+
+    result = _invoke("import", str(source))
+
+    assert result.exit_code == 0, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit), repr(result.exception)
+    [(_, payload)] = api.uploads
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        assert zf.read("run1.fit") == b"run one"
+        assert zf.getinfo("run1.fit").date_time[0] == 1980
+    assert list(private_temp.rglob("*")) == []
+
+
+def test_an_unreadable_directory_file_is_an_error_not_a_traceback(
+    tmp_path: Path, install_mock_client, private_temp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening a file the user may not read raises PermissionError (an OSError) inside
+    ``ZipFile.write``: the command prints ``Error: ...``, exits 1, uploads nothing and leaves no zip."""
+    source = tmp_path / "locked-runs"
+    source.mkdir()
+    (source / "run1.fit").write_bytes(b"run one")
+    (source / "locked.fit").write_bytes(b"locked")
+    real_write = zipfile.ZipFile.write
+
+    def write(self, filename, *args, **kwargs):
+        if Path(filename).name == "locked.fit":
+            raise PermissionError(13, "Permission denied", str(filename))
+        return real_write(self, filename, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", write)
+    api = _Api([_finished()])
+    install_mock_client(api)
+
+    result = _invoke("import", str(source))
+
+    print(result.output, repr(result.exception))
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit), repr(result.exception)
+    assert "Error: " in result.output and "locked.fit" in result.output and "Permission denied" in result.output
+    assert api.uploads == []
+    assert list(private_temp.rglob("*")) == []
+
+
 @pytest.mark.parametrize(
     "start",
     [
@@ -376,8 +430,10 @@ def test_two_failed_polls_then_a_good_one_carry_on(tmp_path: Path, install_mock_
     ("status", "error", "expected"),
     [
         ("failed", "disk full", "failed: disk full"),
+        ("failed", "bad\x1b[2Jname\x07", "failed: bad?[2Jname?"),
         ("interrupted", None, "was interrupted"),
     ],
+    ids=["failed", "failed-control-characters", "interrupted"],
 )
 def test_a_failed_or_interrupted_import_prints_its_report_and_exits_1(
     tmp_path: Path, install_mock_client, status: str, error: str | None, expected: str
@@ -389,6 +445,7 @@ def test_a_failed_or_interrupted_import_prints_its_report_and_exits_1(
     assert result.exit_code == 1, result.output
     assert f"Status: {status}" in result.output
     assert expected in result.output
+    assert "\x1b" not in result.output
     assert "Stored: 2 runs, 2 resting captures" in result.output
 
 

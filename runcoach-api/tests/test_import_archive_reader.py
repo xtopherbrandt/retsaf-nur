@@ -458,6 +458,26 @@ def test_an_encrypted_entry_is_reported_not_raised(tmp_path: Path, work_dir: Pat
     assert [a.label for a in scan.activities] == ["open.fit"]
 
 
+@pytest.mark.parametrize("entry", ["run.fit", "part.zip"])
+def test_a_work_dir_write_failure_raises(
+    tmp_path: Path, work_dir: Path, monkeypatch: pytest.MonkeyPatch, entry: str
+) -> None:
+    """A read error of one entry is reported, but a failing write to ``work_dir`` (an activity's
+    spill, or an inner zip's copy) is outside per-file handling and raises."""
+    contents = {"run.fit": _activity(2019), "part.zip": _zip([("in.fit", _activity(2020))])}
+    path = _write_zip(tmp_path / "a.zip", [(entry, contents[entry])])
+    real_open = open
+
+    def full_disk_open(file, mode="r", *args, **kwargs):
+        if "w" in mode:
+            raise OSError(28, "No space left on device")
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(archive, "open", full_disk_open, raising=False)
+    with pytest.raises(OSError, match="No space left on device"):
+        archive.scan(path, work_dir)
+
+
 def test_a_truncated_inner_zip_is_unreadable_and_the_rest_is_read(tmp_path: Path, work_dir: Path) -> None:
     inner = _zip([("a.fit", _activity(2018)), ("b.fit", _activity(2019))])
     path = IA.build_archive(tmp_path, extra_outer=[("cut/Part.zip", inner[: len(inner) // 2])])

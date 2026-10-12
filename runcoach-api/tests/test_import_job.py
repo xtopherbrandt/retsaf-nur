@@ -16,8 +16,9 @@ Fixtures cited by the provenance table's kind: ``sample_run`` and
 - **AC2** screening counts with no report row; **AC3** keep or skip, the
   cycling copy writing nothing in any table; **AC4** oldest first; **AC5** a
   second run reports ``already_stored``; **AC6** one bad file fails one row (a
-  truncated FIT, an untyped exception, a locked store, a failing report write);
-  **AC8** startup recovery and temp-dir cleanup.
+  truncated FIT, an untyped exception, a locked store, a failing report write,
+  a corrupt bzip2 or LZMA entry); **AC8** startup recovery from each active
+  status, and temp-dir cleanup.
 - Every test drains the worker registry with ``job.wait_idle`` before teardown
   (the autouse ``_drain_workers``), so no thread outlives its store.
 """
@@ -25,10 +26,13 @@ Fixtures cited by the provenance table's kind: ``sample_run`` and
 from __future__ import annotations
 
 import importlib.util
+import io
 import shutil
 import sqlite3
+import struct
 import threading
 import time
+import zipfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -435,6 +439,75 @@ def test_a_failing_import_files_write_leaves_no_session(
     assert report["status"] == "completed"
 
 
+# The exception a corrupt stream raises from each decompressor, as the row's detail names it.
+_CORRUPT_STREAM_ERRORS = {zipfile.ZIP_BZIP2: "OSError", zipfile.ZIP_LZMA: "LZMAError"}
+
+
+def _zip_with_corrupt_entry(entries: list[tuple[str, bytes]], corrupt: str | None, method: int) -> bytes:
+    """A stored zip of ``entries`` in which ``corrupt`` (unless None) is compressed by ``method`` and its
+    compressed stream is overwritten past its header, so reading it raises from the decompressor."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
+        for name, data in entries:
+            zf.writestr(name, data, compress_type=method if name == corrupt else zipfile.ZIP_STORED)
+    raw = bytearray(buffer.getvalue())
+    if corrupt is None:
+        return bytes(raw)
+    with zipfile.ZipFile(io.BytesIO(bytes(raw))) as zf:
+        info = zf.getinfo(corrupt)
+    name_len, extra_len = struct.unpack("<HH", raw[info.header_offset + 26 : info.header_offset + 30])
+    start = info.header_offset + 30 + name_len + extra_len + 9
+    assert info.compress_size > 9 + 30
+    for i in range(start, start + 30):
+        raw[i] ^= 0xA5
+    return bytes(raw)
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["bzip2", "lzma"])
+def test_a_corrupt_compressed_fit_entry_fails_one_row_and_the_job_completes(
+    isolated_data_dir: Path, tmp_path: Path, method: int
+) -> None:
+    """A FIT entry of an inner zip whose bzip2 or LZMA stream is corrupt fails its own row, with
+    status None; the good file beside it is stored and the job completes."""
+    good = (IA.FIXTURES / "sample_run.fit").read_bytes()
+    inner = _zip_with_corrupt_entry([("bad.fit", good)], "bad.fit", method)
+    archive_file = tmp_path / "corrupt_fit.zip"
+    archive_file.write_bytes(_zip_with_corrupt_entry([("good.fit", good), ("inner.zip", inner)], None, method))
+    import_id = _create(isolated_data_dir, tmp_path, archive=archive_file)
+    report = _run(isolated_data_dir, import_id)
+    print(report["error"], report["files"])
+
+    assert report["status"] == "completed", report["error"]
+    rows = _rows(report)
+    assert rows["good.fit"]["outcome"] == "stored"
+    bad = rows["inner.zip!bad.fit"]
+    assert (bad["outcome"], bad["status"]) == ("failed", None)
+    assert bad["detail"].startswith(f"entry could not be read: {_CORRUPT_STREAM_ERRORS[method]}: "), bad["detail"]
+    assert report["counts"]["unreadable_archives"] == []
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["bzip2", "lzma"])
+def test_a_corrupt_compressed_inner_zip_is_unreadable_and_the_job_completes(
+    isolated_data_dir: Path, tmp_path: Path, method: int
+) -> None:
+    """An inner zip whose own bzip2 or LZMA stream in the outer archive is corrupt is an
+    ``unreadable_archives`` item; the good file beside it is stored and the job completes."""
+    good = (IA.FIXTURES / "sample_run.fit").read_bytes()
+    inner = _zip_with_corrupt_entry([("other.fit", good)], None, zipfile.ZIP_STORED)
+    archive_file = tmp_path / "corrupt_inner.zip"
+    archive_file.write_bytes(_zip_with_corrupt_entry([("good.fit", good), ("inner.zip", inner)], "inner.zip", method))
+    import_id = _create(isolated_data_dir, tmp_path, archive=archive_file)
+    report = _run(isolated_data_dir, import_id)
+    print(report["error"], report["counts"]["unreadable_archives"])
+
+    assert report["status"] == "completed", report["error"]
+    assert [row["entry"] for row in report["files"]] == ["good.fit"]
+    assert report["files"][0]["outcome"] == "stored"
+    unreadable = report["counts"]["unreadable_archives"]
+    assert [u["label"] for u in unreadable] == ["inner.zip"]
+    assert unreadable[0]["reason"].startswith(f"could not be read: {_CORRUPT_STREAM_ERRORS[method]}: "), unreadable
+
+
 # --- AC2: screening counts -----------------------------------------------------------------------
 
 
@@ -484,13 +557,15 @@ class _ApiStopped(BaseException):
     """Stands in for the process ending under the daemon worker."""
 
 
+@pytest.mark.parametrize("left_status", ["queued", "scanning", "running"])
 def test_startup_recovery_marks_an_active_job_interrupted_and_removes_its_dir(
-    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, left_status: str
 ) -> None:
-    """A job stopped after two stored files is left ``running`` with its temp
-    dir; recovery marks it ``interrupted`` with ``finished_at``, removes the
-    dir, and keeps its two sessions (with their ``import_id``) and its two
-    report rows. A job already terminal is left as it was."""
+    """A job left in each active status keeps its temp dir: ``queued`` (never
+    run), ``scanning`` (stopped inside the scan) and ``running`` (stopped after
+    two stored files). Recovery marks it ``interrupted`` with ``finished_at``,
+    removes the dir, and keeps the sessions it stored (with their
+    ``import_id``) and its report rows. A job already terminal is left as it was."""
     not_a_zip = tmp_path / "not_a_zip.zip"
     not_a_zip.write_bytes(b"not a zip")
     finished = _create(isolated_data_dir, tmp_path, archive=not_a_zip)
@@ -504,16 +579,23 @@ def test_startup_recovery_marks_an_active_job_interrupted_and_removes_its_dir(
             raise _ApiStopped()
         return real(raw, **kwargs)
 
+    def stopped_scan(*args, **kwargs):
+        raise _ApiStopped()
+
     _wrap_ingest(monkeypatch, around)
+    if left_status == "scanning":
+        monkeypatch.setattr(job.archive, "scan", stopped_scan)
     stopped = _create(isolated_data_dir, tmp_path)
-    with pytest.raises(_ApiStopped):
-        job.run_job(stopped, isolated_data_dir, [CAPTURE_PROFILE], UTC_ZONE)
+    if left_status != "queued":
+        with pytest.raises(_ApiStopped):
+            job.run_job(stopped, isolated_data_dir, [CAPTURE_PROFILE], UTC_ZONE)
 
     left = _report(isolated_data_dir, stopped)
-    assert left["status"] == "running"
+    assert left["status"] == left_status
     assert left["finished_at"] is None
     assert job.job_dir(isolated_data_dir, stopped).is_dir()
-    assert [row["outcome"] for row in left["files"]] == ["stored", "stored"]
+    expected_outcomes = ["stored", "stored"] if left_status == "running" else []
+    assert [row["outcome"] for row in left["files"]] == expected_outcomes
 
     conn = db.get_connection(isolated_data_dir)
     try:
@@ -554,6 +636,25 @@ def test_discard_job_removes_the_row_and_the_dir(isolated_data_dir: Path, tmp_pa
         assert job.list_imports(conn) == []
     finally:
         conn.close()
+    assert not job.job_dir(isolated_data_dir, import_id).exists()
+
+
+def test_discard_job_removes_the_dir_when_the_row_delete_fails(isolated_data_dir: Path, tmp_path: Path) -> None:
+    """A store that refuses the DELETEs (a full disk) still gets the partial archive removed."""
+    import_id = _create(isolated_data_dir, tmp_path)
+
+    class FullStore:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=()):
+            raise sqlite3.OperationalError("database or disk is full")
+
+    with pytest.raises(sqlite3.OperationalError, match="disk is full"):
+        job.discard_job(FullStore(), isolated_data_dir, import_id)
     assert not job.job_dir(isolated_data_dir, import_id).exists()
 
 

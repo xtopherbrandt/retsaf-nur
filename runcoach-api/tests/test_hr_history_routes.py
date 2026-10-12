@@ -198,6 +198,18 @@ def test_delete_removes_one_entry_with_204_and_an_unknown_id_is_404() -> None:
     assert _rows() == [(kept["entry_id"], "max_hr_bpm", "195", "2016-01-01")]
 
 
+@pytest.mark.parametrize("entry_id", [2**63, 2**70, -(2**63) - 1, 2**63 - 1, -(2**63)])
+def test_an_entry_id_at_or_past_the_store_integer_range_is_404(entry_id: int) -> None:
+    """An id no row can carry (past SQLite's signed 64-bit range) is unknown, like any other: 404."""
+    with TestClient(app) as client:
+        kept = _post(client, "max_hr_bpm", 195, "2016-01-01").json()
+        response = client.delete(f"{COLLECTION}/{entry_id}")
+    print(f"  {entry_id}: {response.status_code} {response.text}")
+    assert response.status_code == 404, response.text
+    assert str(entry_id) in response.json()["detail"]
+    assert [row[0] for row in _rows()] == [kept["entry_id"]]
+
+
 def test_a_non_integer_entry_id_is_422() -> None:
     with TestClient(app) as client:
         response = client.delete(f"{COLLECTION}/abc")

@@ -13,10 +13,11 @@ rows' ``activity_tag``), already stored, skipped by sport, failed (then one line
 entry, status, detail), the non-activity total, not-FIT by extension, unreadable inner archives.
 
 Exit codes: 0 when the import ends ``completed`` (failed rows included); 1 when it ends ``failed`` or
-``interrupted``, when the upload is refused (non-2xx), the API is unreachable or a body cannot be
-understood, and after ``MAX_FAILED_POLLS`` consecutive polls that each failed in one of those ways
-(the job may still be running, so the status hint is printed). Ctrl-C stops only the CLI: it prints
-the hint naming ``runcoach import-status <id>`` and exits 130; the job keeps running in the API.
+``interrupted``, when a file under a directory cannot be read, when the upload is refused (non-2xx),
+the API is unreachable or a body cannot be understood, and after ``MAX_FAILED_POLLS`` consecutive
+polls that each failed in one of those ways (the job may still be running, so the status hint is
+printed). Ctrl-C stops only the CLI: it prints the hint naming ``runcoach import-status <id>`` and
+exits 130; the job keeps running in the API.
 
 ``runcoach import-status [ID]`` prints the status and the same report once, for ID or else the
 newest import ``GET /imports`` lists.
@@ -204,7 +205,7 @@ def _end(body: dict[str, Any]) -> None:
     _print_report(body)
     import_id = body["import_id"]
     if body["status"] == "failed":
-        raise _fail(f"import {import_id} failed: {body.get('error')}")
+        raise _fail(f"import {import_id} failed: {_printable(str(body.get('error')))}")
     if body["status"] == "interrupted":
         raise _fail(
             f"import {import_id} was interrupted (the API stopped while it ran); "
@@ -213,13 +214,17 @@ def _end(body: dict[str, Any]) -> None:
 
 
 def _zip_directory(directory: Path) -> Path:
-    """Write every file under ``directory`` (relative names) to a new temp zip outside it."""
+    """Write every file under ``directory`` (relative names) to a new temp zip outside it.
+
+    A file dated before 1980, which a zip cannot hold, is stored with 1980-01-01 00:00. A file
+    that cannot be read raises ``OSError``, and the temp zip is removed.
+    """
     entries = sorted(p for p in directory.rglob("*") if p.is_file())
     fd, name = tempfile.mkstemp(prefix="runcoach-import-", suffix=".zip")
     os.close(fd)
     target = Path(name)
     try:
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, strict_timestamps=False) as zf:
             for entry in entries:
                 zf.write(entry, entry.relative_to(directory).as_posix())
     except BaseException:
@@ -233,7 +238,10 @@ def _upload(api_url: str, path: Path) -> dict[str, Any]:
     zipped: Path | None = None
     try:
         if path.is_dir():
-            zipped = _zip_directory(path)
+            try:
+                zipped = _zip_directory(path)
+            except OSError as exc:
+                raise _fail(f"could not zip {_printable(str(path))}: {_printable(str(exc))}") from None
             resp = start_import(api_url, zipped, upload_name=path.resolve().name)
         else:
             resp = start_import(api_url, path)

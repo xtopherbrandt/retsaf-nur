@@ -3,7 +3,9 @@
 Nothing here drives the store. The served document is ``app.openapi()``; the contract is
 ``contracts/openapi.yaml``. ``check_drift.py`` compares only the 2xx codes, so the error codes of the
 F020 reference's section 6 are pinned here, on both documents: each operation's full set of response
-codes is the same in the contract and in the served document, and equals the set written below.
+codes in the contract, and in the served document, equals the set written below. They differ only
+where FastAPI declares a 422 the route never answers (``getImport``'s string path parameter always
+validates), which the contract leaves out.
 The components are walked property by property with ``tests/support/contract_walk.py`` (which
 compares ``required`` too), and ``SessionDetail`` carries ``import_id`` as a nullable string.
 """
@@ -21,13 +23,16 @@ CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 SUPPORT = Path(__file__).parent / "support"
 
 # (path, method) -> (operationId, every response code). 400/409/413 are the reference's section 6
-# errors, 422 the missing `file` part (and FastAPI's on a path parameter), 500 the copy that could
-# not be written; 404 an unknown import_id.
+# errors, 422 the missing `file` part, 500 the copy that could not be written or a worker that could
+# not start; 404 an unknown import_id.
 OPERATIONS = {
     ("/imports", "post"): ("startImport", {"202", "400", "409", "413", "422", "500"}),
     ("/imports", "get"): ("listImports", {"200"}),
-    ("/imports/{import_id}", "get"): ("getImport", {"200", "404", "422"}),
+    ("/imports/{import_id}", "get"): ("getImport", {"200", "404"}),
 }
+# The codes FastAPI serves beyond the contract's: a 422 for any route with a parameter, which a
+# string path parameter never triggers.
+SERVED_ONLY = {("/imports/{import_id}", "get"): {"422"}}
 SUCCESS_SCHEMA = {
     ("/imports", "post"): ("202", "Import"),
     ("/imports", "get"): ("200", "ImportPage"),
@@ -73,7 +78,8 @@ def test_imports_contract_matches_served_routes() -> None:
         assert op["x-readiness"] == "implemented", where
         assert op["tags"] == built_op["tags"] == ["Sessions"], where
         assert set(op["responses"]) == codes, (where, sorted(op["responses"]))
-        assert set(built_op["responses"]) == codes, (where, sorted(built_op["responses"]))
+        served_codes = codes | SERVED_ONLY.get((path, method), set())
+        assert set(built_op["responses"]) == served_codes, (where, sorted(built_op["responses"]))
         status, component = SUCCESS_SCHEMA[(path, method)]
         assert op["responses"][status]["content"]["application/json"]["schema"] == {
             "$ref": f"#/components/schemas/{component}"

@@ -1208,7 +1208,7 @@ def delete_hr_history_entry(entry_id: int) -> Response:
     the entry keeps the value it recorded."""
     conn = db.get_connection()
     try:
-        removed = db.delete_hr_history_entry(conn, entry_id)
+        removed = -(2**63) <= entry_id < 2**63 and db.delete_hr_history_entry(conn, entry_id)  # no row has an id past int64
     finally:
         conn.close()
     if not removed:
@@ -1239,8 +1239,10 @@ def _copy_archive(source, target) -> int:
     """Copy the uploaded part to ``target``, counting bytes; 413 past ``IMPORT_MAX_BYTES``.
 
     The cap is read when the request arrives (tests lower it). A read that
-    would take the count past the cap is refused before it is written, so at
-    most the cap is ever on disk; the caller removes what was written.
+    would take the count past the cap is refused before it is written, so the
+    copy never holds more than the cap; the caller removes what was written.
+    This bounds the copy only: the request body the server spooled before the
+    route ran is not bounded here.
     """
     limit = IMPORT_MAX_BYTES
     written = 0
@@ -1259,7 +1261,8 @@ def _check_zip(path) -> None:
     try:
         with zipfile.ZipFile(path):
             pass
-    except (zipfile.BadZipFile, EOFError) as exc:
+    except (zipfile.BadZipFile, EOFError, ValueError, NotImplementedError, OSError) as exc:
+        # ValueError covers a UTF-8-flagged entry name that does not decode (UnicodeDecodeError).
         raise HTTPException(400, f"not a zip archive: {type(exc).__name__}: {exc}") from exc
 
 
@@ -1273,7 +1276,10 @@ def _check_zip(path) -> None:
         400: {"description": "The upload does not open as a zip archive (a zero-byte upload included)"},
         409: {"description": "An import is queued, scanning or running; the detail names its import_id"},
         413: {"description": "The archive exceeds the 1 GiB limit"},
-        500: {"description": "The archive could not be stored (disk full, unwritable data dir); the detail names the cause"},
+        500: {
+            "description": "The archive could not be stored (disk full, unwritable data dir), or the "
+            "worker could not start; the detail names the cause"
+        },
     },
 )
 def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastAPI's parameter idiom
@@ -1288,7 +1294,9 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
     cause), removes the row and the temp dir. Then the worker starts with the
     data dir, ``resting_hrv_profile_names`` and ``athlete_timezone`` read here,
     once, and the response is the job as it was before the worker ran:
-    ``queued``, with ``files`` empty.
+    ``queued``, with ``files`` empty. A worker that cannot start is a 500
+    naming the cause, and the row and the temp dir are removed, so the next
+    import is not refused as active.
     """
     config = db._load_config_cached()
     data_dir = config.data_dir
@@ -1320,9 +1328,18 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
             raise
     finally:
         conn.close()
-    import_job.start_worker(
-        import_id, data_dir, list(config.resting_hrv_profile_names), ZoneInfo(config.athlete_timezone)
-    )
+    try:
+        import_job.start_worker(
+            import_id, data_dir, list(config.resting_hrv_profile_names), ZoneInfo(config.athlete_timezone)
+        )
+    except Exception as exc:
+        # A job no worker runs would hold the one active slot until the next startup.
+        conn = db.get_connection(data_dir)
+        try:
+            import_job.discard_job(conn, data_dir, import_id)
+        finally:
+            conn.close()
+        raise HTTPException(500, f"the import could not be started: {type(exc).__name__}: {exc}") from exc
     return Import.model_validate(body)
 
 

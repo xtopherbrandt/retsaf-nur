@@ -31,16 +31,19 @@ activities in processing order with their bytes copied to ``work_dir``.
   position; an activity without ``time_created`` (absent, or the invalid
   sentinel) comes after every dated one. ``Scan.processing_order()`` puts the
   failed candidates after every activity, in archive order.
-- **Reported, never raised.** An encrypted entry, an inner zip that does not
-  open (``BadZipFile``, truncated), or one that passes its cap is reported in
-  ``failed`` or ``unreadable_archives``. Only the outer archive failing to open
-  as a zip, or a write to ``work_dir`` failing, raises: those are errors outside
-  per-file handling.
+- **Reported, never raised.** An encrypted entry, an entry whose compressed
+  stream is corrupt (a bzip2 or LZMA stream included), an inner zip that does
+  not open (``BadZipFile``, truncated), or one that passes its cap is reported
+  in ``failed`` or ``unreadable_archives``. Only the outer archive failing to
+  open as a zip, or a write to ``work_dir`` failing, raises: those are errors
+  outside per-file handling, so the read errors are caught around each read
+  alone, never around a write.
 """
 
 from __future__ import annotations
 
 import io
+import lzma
 import posixpath
 import zipfile
 import zlib
@@ -60,9 +63,20 @@ _COPY_CHUNK = 1024 * 1024
 
 FIT_EPOCH = datetime(1989, 12, 31, tzinfo=UTC)
 _ENCRYPTED = 0x1
-# Errors reading one entry's bytes out of a zip: corrupt data, a bad CRC, an
-# unsupported compression method, an encrypted entry or a cut-off stream.
-_ENTRY_READ_ERRORS = (zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError, EOFError, ValueError)
+# Errors reading one entry's bytes out of a zip: corrupt data (a corrupt bzip2
+# stream raises OSError, a corrupt LZMA stream LZMAError), a bad CRC, an
+# unsupported compression method, an encrypted entry or a cut-off stream. They
+# are caught around reads only: OSError is also what a failing write raises.
+_ENTRY_READ_ERRORS = (
+    zipfile.BadZipFile,
+    zlib.error,
+    lzma.LZMAError,
+    OSError,
+    RuntimeError,
+    NotImplementedError,
+    EOFError,
+    ValueError,
+)
 
 
 @dataclass(frozen=True)
@@ -209,31 +223,44 @@ class _Scanner:
             reason = self._copy_capped(zf, info, path)
             if reason is None:
                 try:
-                    with zipfile.ZipFile(path) as inner:
-                        self.visit(inner, f"{label}!", inner=True)
-                except (zipfile.BadZipFile, zlib.error, NotImplementedError, EOFError, ValueError) as exc:
+                    inner = zipfile.ZipFile(path)
+                except _ENTRY_READ_ERRORS as exc:
                     reason = f"not a readable zip: {type(exc).__name__}: {exc}"
+                else:
+                    # Visiting writes activities to work_dir, so OSError is not caught here.
+                    try:
+                        with inner:
+                            self.visit(inner, f"{label}!", inner=True)
+                    except (zipfile.BadZipFile, zlib.error, NotImplementedError, EOFError, ValueError) as exc:
+                        reason = f"not a readable zip: {type(exc).__name__}: {exc}"
             if reason is not None:
                 self.scan.unreadable_archives.append(UnreadableArchive(label, reason))
         finally:
             path.unlink(missing_ok=True)
 
     def _copy_capped(self, zf: zipfile.ZipFile, info: zipfile.ZipInfo, path: Path) -> str | None:
-        """Copy one inner zip, writing at most ``INNER_ZIP_CAP`` bytes; a reason when it cannot be used."""
+        """Copy one inner zip, writing at most ``INNER_ZIP_CAP`` bytes; a reason when it cannot be used.
+
+        A read error is the reason; a write to ``path`` that fails raises.
+        """
         cap = INNER_ZIP_CAP
         total = 0
         try:
-            with zf.open(info) as source, open(path, "wb") as out:
-                while True:
-                    chunk = source.read(min(_COPY_CHUNK, cap + 1 - total))
-                    if not chunk:
-                        return None
-                    if total + len(chunk) > cap:
-                        return f"expands past the {cap} byte limit"
-                    out.write(chunk)
-                    total += len(chunk)
+            source = zf.open(info)
         except _ENTRY_READ_ERRORS as exc:
             return f"could not be read: {type(exc).__name__}: {exc}"
+        with source, open(path, "wb") as out:
+            while True:
+                try:
+                    chunk = source.read(min(_COPY_CHUNK, cap + 1 - total))
+                except _ENTRY_READ_ERRORS as exc:
+                    return f"could not be read: {type(exc).__name__}: {exc}"
+                if not chunk:
+                    return None
+                if total + len(chunk) > cap:
+                    return f"expands past the {cap} byte limit"
+                out.write(chunk)
+                total += len(chunk)
 
 
 def _order_key(activity: Activity) -> tuple[bool, int, str, int]:

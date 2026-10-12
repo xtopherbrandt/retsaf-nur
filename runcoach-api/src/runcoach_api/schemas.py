@@ -987,7 +987,7 @@ _LOAD_SOURCE_DESCRIPTION = (
     "`session_file` when the session's own FIT file carried the value. Otherwise, for an HR value, the setting in "
     "effect on the run's date: `session_file_dated` (an earlier stored file, named by `session_id`), `history` (a "
     "dated entry, named by `entry_id` and `effective_from`) or `anchor` (the HR anchor in effect when the load was saved, the "
-    "run's date having no file or entry, or that file being the anchor's own); for sex, `anchor`. Null when "
+    "run having no file at or before its start, nor entry on or before its date, or that file being the anchor's own); for sex, `anchor`. Null when "
     "nothing supplied it. A body saved before dated entries existed has only `session_file` and `anchor`."
 )
 _LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION = (
@@ -995,9 +995,9 @@ _LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION = (
     "(`missing` or `order_conflict`); null otherwise."
 )
 _LOAD_OUT_OF_PERIOD_DESCRIPTION = (
-    "True when `source` is `anchor` and that anchor came from a file dated after the run: no file or dated entry "
-    "on or before the run's date carried the value, so a later one was borrowed. False otherwise, and false on a "
-    "body saved before dated entries existed."
+    "True when `source` is `anchor` and that anchor came from a file dated after the run: no stored file starting at "
+    "or before the run's start (a running file, for max and threshold HR) and no dated entry effective on or before "
+    "the run's local date carried the value. False otherwise, and false on a body saved before dated entries existed."
 )
 
 
@@ -1365,7 +1365,7 @@ class ImportProgress(BaseModel):
 
 
 class ImportUnreadableArchive(BaseModel):
-    """An inner zip that did not open, or passed its 1 GiB cap; its entries were not read."""
+    """An inner zip that is encrypted, could not be read, did not open, or passed its 1 GiB cap; its entries were not read."""
 
     label: str = Field(description="The inner zip's path in the archive.")
     reason: str = Field(description="Why it was not read.")
@@ -1394,8 +1394,8 @@ class ImportFile(BaseModel):
     sport: str | None = Field(description="Canonical sport when stored; the FIT file's sport when skipped_sport.")
     activity_tag: str | None = Field(description="The stored session's activity_tag (resting_hrv_check and health_snapshot mark resting captures).")
     quality_flags: list[str] | None = Field(description="The stored session's quality flags; null for other outcomes.")
-    status: int | None = Field(description="On failed: the status POST /sessions answers for the file, else null.")
-    detail: str | None = Field(description="On failed: the message POST /sessions answers, else the exception's type and message.")
+    status: int | None = Field(description="On failed: for a file the pipeline refused, the status POST /sessions answers for it (413 for a FIT entry over its 50 MB cap); null for a candidate that could not be screened, and otherwise.")
+    detail: str | None = Field(description="On failed: for a file the pipeline refused, the message POST /sessions answers; for a candidate that could not be screened, the scan's reason (the entry is encrypted or could not be read, file_id carries no type, file_id could not be read); otherwise \"database is locked\", or the exception's type and message.")
 
 
 class Import(BaseModel):

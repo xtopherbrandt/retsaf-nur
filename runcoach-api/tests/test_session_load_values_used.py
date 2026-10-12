@@ -1,4 +1,10 @@
-"""The values a saved load used: per field, the session's own file, else the anchor at upload (F017 AC3, AC4, AC9).
+"""The values a saved load used: per field, the session's own file, else the setting in effect on the run's date.
+
+F017 AC3, AC4, AC9. As built (F021), an HR field the file lacks takes the latest
+stored file starting at or before the run (a running file, for max and threshold),
+or dated entry effective on or before its date, else today's anchor; sex takes
+today's anchor. Each row below is set up so that setting is the anchor, which is
+F017's rule:
 
 User ruling R1 with C1: each of resting, max, threshold HR and sex comes from
 the session's own FIT file when it carried one, else from F016's effective

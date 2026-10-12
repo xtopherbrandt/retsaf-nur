@@ -143,11 +143,16 @@ def create_job(conn: sqlite3.Connection, archive_name: str, archive_bytes: int |
 
 
 def discard_job(conn: sqlite3.Connection, data_dir: Path, import_id: str) -> None:
-    """Remove a job that never started (a refused upload): its rows and its temp dir."""
-    with conn:
-        conn.execute("DELETE FROM import_files WHERE import_id = ?", (import_id,))
-        conn.execute("DELETE FROM imports WHERE import_id = ?", (import_id,))
-    shutil.rmtree(job_dir(data_dir, import_id), ignore_errors=True)
+    """Remove a job that never started (a refused upload): its rows and its temp dir.
+
+    The dir is removed even when the DELETEs fail, so a full disk still frees the partial archive.
+    """
+    try:
+        with conn:
+            conn.execute("DELETE FROM import_files WHERE import_id = ?", (import_id,))
+            conn.execute("DELETE FROM imports WHERE import_id = ?", (import_id,))
+    finally:
+        shutil.rmtree(job_dir(data_dir, import_id), ignore_errors=True)
 
 
 def _import_body(row: sqlite3.Row) -> dict:
