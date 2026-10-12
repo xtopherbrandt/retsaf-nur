@@ -77,8 +77,10 @@ file, else today's anchor.
   operation's `x-readiness` says whether it is served.
 
 Existing saved loads change only when recomputed: entering, replacing or deleting a dated entry, a
-`PATCH /me` or a later upload moves no saved body. After entering the history, run `runcoach loads
-recompute` to apply it to the runs already stored.
+`PATCH /me`, or a later upload or import moves no saved body. That holds for an upload or import
+that stores files dated before runs already stored: those runs keep their saved loads although the
+run-date lookup would now pick the earlier file. After entering the history or importing older
+files, run `runcoach loads recompute` to apply them to the runs already stored.
 
 ## 2026-10-11 — Sprint 015: list sessions, moving gaps and the comeback mark
 
