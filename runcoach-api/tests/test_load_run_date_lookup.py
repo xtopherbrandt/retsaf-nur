@@ -219,25 +219,27 @@ def test_max_and_threshold_borrow_only_from_running_files(persist_sessions) -> N
 
 def test_the_zone_sets_the_runs_local_date(persist_sessions) -> None:
     """03:00 UTC on 2021-01-01 is still 2020-12-31 in New York: the 2021 entry is not yet in effect
-    there. ``persist``'s ``zone`` keyword reaches the lookup; without it the configured zone (UTC
-    in the tests) is used."""
+    there. 20:00 UTC on 2020-12-31 is already 2021-01-01 in Tokyo: the 2021 entry is in effect
+    there, so the store's date prefilter must use the run's local date too, not its UTC date.
+    ``persist``'s ``zone`` keyword reaches the lookup; without it the configured zone (UTC in the
+    tests) is used."""
     old = _entry("max_hr_bpm", 195, "2016-01-01")
     new = _entry("max_hr_bpm", 191, "2021-01-01")
     conn = db.get_connection()
     try:
-        db.persist(
-            conn,
-            _session("run-ny", "2021-01-01T03:00:00+00:00"),
-            [],
-            [],
-            {},
-            zone=ZoneInfo("America/New_York"),
-        )
+        for session_id, start, zone in (
+            ("run-ny", "2021-01-01T03:00:00+00:00", "America/New_York"),
+            ("run-tokyo", "2020-12-31T20:00:00+00:00", "Asia/Tokyo"),
+        ):
+            db.persist(conn, _session(session_id, start), [], [], {}, zone=ZoneInfo(zone))
     finally:
         conn.close()
     persist_sessions([_session("run-utc", "2021-01-01T03:00:01+00:00")])
+    print(f"  tokyo {_max('run-tokyo')}")
     assert (_max("run-ny")["value"], _max("run-ny")["entry_id"]) == (195, old["entry_id"])
     assert (_max("run-utc")["value"], _max("run-utc")["entry_id"]) == (191, new["entry_id"])
+    tokyo = _max("run-tokyo")
+    assert (tokyo["value"], tokyo["source"], tokyo["entry_id"]) == (191, "history", new["entry_id"])
 
 
 def test_the_lookup_reads_no_profile_inputs_beyond_the_sync(persist_sessions, monkeypatch) -> None:
