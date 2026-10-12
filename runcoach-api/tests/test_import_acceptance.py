@@ -189,6 +189,9 @@ def test_an_import_stores_what_one_file_uploads_store(
     assert all(r["import_id"] is None for r in rows_b.values())
 
     columns = set(next(iter(rows_a.values())))
+    # Exactly AC1's exclusions: a widened list would hide a real difference between the stores.
+    assert EXCLUDED_COLUMNS == {"session_id", "upload_order", "import_id"}
+    assert EXCLUDED_CONTEXT_KEYS == {"ingested_at"}
     assert EXCLUDED_COLUMNS <= columns
     assert {"name", "timer_time_s", "max_hr_bpm", "resting_hr_bpm", "threshold_hr_bpm", "context"} <= columns
     print("compared columns:", sorted(columns - EXCLUDED_COLUMNS))
