@@ -163,3 +163,55 @@ def list_imports(base_url: str) -> httpx.Response:
         return client.get(f"{base_url}/imports", timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+def add_hr_history_entry(base_url: str, field: str, value: int, effective_from: str) -> httpx.Response:
+    """POST {base_url}/me/hr-history with ``{field, value, effective_from}`` and return the raw response.
+
+    The body is sent as given; the API validates it (201 new, 200 replaced, 422 refused). Only
+    network-layer failures are translated into ApiUnreachableError.
+    """
+    body = {"field": field, "value": value, "effective_from": effective_from}
+    try:
+        return client.post(f"{base_url}/me/hr-history", json=body)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def list_hr_history(base_url: str) -> httpx.Response:
+    """Call GET {base_url}/me/hr-history (every dated HR entry) and return the raw response.
+
+    Only network-layer failures are translated into ApiUnreachableError.
+    """
+    try:
+        return client.get(f"{base_url}/me/hr-history")
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def delete_hr_history_entry(base_url: str, entry_id: int) -> httpx.Response:
+    """Call DELETE {base_url}/me/hr-history/{entry_id} and return the raw response (204, or 404).
+
+    Only network-layer failures are translated into ApiUnreachableError.
+    """
+    try:
+        return client.delete(f"{base_url}/me/hr-history/{entry_id}")
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+# A recompute reads the session's records and every stored file's HR values, then writes the load in
+# one transaction, so it gets more than the shared client's 5 s (as the list call does).
+RECOMPUTE_TIMEOUT = 30.0
+
+
+def recompute_session_load(base_url: str, session_id: str) -> httpx.Response:
+    """Call POST {base_url}/sessions/{session_id}/load/recompute and return the raw response.
+
+    The body is the session's ``SessionLoad`` plus ``changed``. Only network-layer failures
+    (timeouts included) are translated into ApiUnreachableError; status and body are the caller's job.
+    """
+    try:
+        return client.post(f"{base_url}/sessions/{session_id}/load/recompute", timeout=RECOMPUTE_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
