@@ -478,6 +478,55 @@ def test_a_work_dir_write_failure_raises(
         archive.scan(path, work_dir)
 
 
+class _FullDiskHandle:
+    """A real handle opened for writing whose ``write`` raises, as a disk that fills mid-copy does."""
+
+    def __init__(self, handle) -> None:
+        self._handle = handle
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self._handle.close()
+
+    def write(self, data) -> int:
+        raise OSError(28, "No space left on device")
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+
+@pytest.mark.parametrize(
+    ("entry", "failing_suffix"),
+    [("run.fit", ".fit"), ("part.zip", ".zip"), ("part.zip", ".fit")],
+    ids=["outer_fit_spill", "inner_zip_copy", "inner_fit_spill"],
+)
+def test_a_work_dir_write_that_fails_after_opening_raises(
+    tmp_path: Path, work_dir: Path, monkeypatch: pytest.MonkeyPatch, entry: str, failing_suffix: str
+) -> None:
+    """The file opens and the write itself fails: an activity's spill, an inner zip's copy, or an
+    activity's spill while an inner zip is visited. Each raises; none is reported as an unreadable
+    entry or archive, because the read error handling wraps reads only."""
+    contents = {"run.fit": _activity(2019), "part.zip": _zip([("in.fit", _activity(2020))])}
+    path = _write_zip(tmp_path / "a.zip", [(entry, contents[entry])])
+    real_open = open
+    failed_writes: list[str] = []
+
+    def write_failing_open(file, mode="r", *args, **kwargs):
+        handle = real_open(file, mode, *args, **kwargs)
+        if "w" in mode and str(file).endswith(failing_suffix):
+            failed_writes.append(Path(file).name)
+            return _FullDiskHandle(handle)
+        return handle
+
+    monkeypatch.setattr(archive, "open", write_failing_open, raising=False)
+    with pytest.raises(OSError, match="No space left on device"):
+        archive.scan(path, work_dir)
+    print("writes made to fail:", failed_writes)
+    assert len(failed_writes) == 1 and failed_writes[0].endswith(failing_suffix)
+
+
 def test_a_truncated_inner_zip_is_unreadable_and_the_rest_is_read(tmp_path: Path, work_dir: Path) -> None:
     inner = _zip([("a.fit", _activity(2018)), ("b.fit", _activity(2019))])
     path = IA.build_archive(tmp_path, extra_outer=[("cut/Part.zip", inner[: len(inner) // 2])])
