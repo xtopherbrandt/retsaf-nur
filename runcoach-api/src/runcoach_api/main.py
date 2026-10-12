@@ -15,6 +15,7 @@ from runcoach_api.ingestion.exceptions import (
     MissingCanonicalFieldError,
     NotAFitFileError,
     TooManyRecordsError,
+    http_status_detail,
 )
 from runcoach_api.ingestion.pipeline import ingest_fit_bytes
 from runcoach_api.metrics import hrv_trend
@@ -125,6 +126,9 @@ async def lifespan(app: FastAPI):
     conn = db.get_connection()
     try:
         db.init_schema(conn)
+        # F020: a job the previous process left active is marked interrupted, here only (never in
+        # init_schema, which every ingest calls). import_job is imported with the /imports routes.
+        import_job.recover_at_startup(conn, db._load_config_cached().data_dir)
     finally:
         conn.close()
     yield
@@ -165,28 +169,20 @@ def create_session(
         raise HTTPException(413, f"upload exceeds {MAX_UPLOAD_BYTES} byte limit")
     try:
         result = ingest_fit_bytes(raw, resting_capture_override=resting_capture)
-    except NotAFitFileError as exc:
-        raise HTTPException(400, f"not a valid FIT file: {exc}") from exc
-    except FitParseFailure as exc:
-        raise HTTPException(400, f"file could not be parsed: {exc}") from exc
-    except TooManyRecordsError as exc:
-        # 413, not 400 and not a quality flag: "this upload is too
-        # large" stays one semantic bucket whichever dimension trips it
-        # -- the byte cap or any of the parser's three decode ceilings.
-        # One bucket, one status, but ``exc.unit`` names the quantity
-        # that actually overflowed, so a beat overrun is not reported as
-        # a record overrun in a file that carries no records at all.
-        raise HTTPException(
-            413,
-            f"upload exceeds the limit of {exc.limit} {exc.unit} "
-            f"(reached {exc.count})",
-        ) from exc
-    except MissingCanonicalFieldError as exc:
-        raise HTTPException(400, f"{exc.field} could not be determined: {exc}") from exc
-    except DuplicateSessionError as exc:
-        raise HTTPException(
-            409, f"already ingested as session {exc.existing_session_id}"
-        ) from exc
+    except (
+        NotAFitFileError,
+        FitParseFailure,
+        TooManyRecordsError,
+        MissingCanonicalFieldError,
+        DuplicateSessionError,
+    ) as exc:
+        # One mapping, shared with the archive import's per-file rows, so the
+        # two cannot drift: 400 for a file that is not FIT, does not parse or
+        # lacks a canonical field; 413 for a decode ceiling, naming the
+        # quantity that overflowed (the byte cap's bucket, one status); 409
+        # naming the session a duplicate already is.
+        status, detail = http_status_detail(exc)
+        raise HTTPException(status, detail) from exc
     return IngestResponse(session_id=result.session_id, quality_flags=result.quality_flags)
 
 
@@ -1218,3 +1214,149 @@ def delete_hr_history_entry(entry_id: int) -> Response:
     if not removed:
         raise HTTPException(404, f"hr history entry {entry_id} not found")
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# /imports (F020)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place. Every SQL statement
+# lives in imports.job; the routes check the request, place the archive and
+# start the worker.
+# ---------------------------------------------------------------------------
+import zipfile
+
+from runcoach_api.imports import job as import_job
+from runcoach_api.schemas import Import, ImportPage
+
+#: The archive part is copied into the job's temp dir in reads of this size,
+#: counting bytes, so a body that passes the middleware without a declared
+#: length is still refused at IMPORT_MAX_BYTES.
+IMPORT_COPY_CHUNK_BYTES = 1024 * 1024
+
+
+def _copy_archive(source, target) -> int:
+    """Copy the uploaded part to ``target``, counting bytes; 413 past ``IMPORT_MAX_BYTES``.
+
+    The cap is read when the request arrives (tests lower it). A read that
+    would take the count past the cap is refused before it is written, so at
+    most the cap is ever on disk; the caller removes what was written.
+    """
+    limit = IMPORT_MAX_BYTES
+    written = 0
+    with target.open("wb") as out:
+        while chunk := source.read(IMPORT_COPY_CHUNK_BYTES):
+            written += len(chunk)
+            if written > limit:
+                raise HTTPException(413, f"upload exceeds {limit} byte limit")
+            out.write(chunk)
+    return written
+
+
+def _check_zip(path) -> None:
+    """400 unless ``path`` opens as a zip. Decided by content, never by the file name: a directory
+    upload is named after the directory and carries no ``.zip``."""
+    try:
+        with zipfile.ZipFile(path):
+            pass
+    except (zipfile.BadZipFile, EOFError) as exc:
+        raise HTTPException(400, f"not a zip archive: {type(exc).__name__}: {exc}") from exc
+
+
+@app.post(
+    "/imports",
+    response_model=Import,
+    status_code=202,
+    operation_id="startImport",
+    tags=["Sessions"],
+    responses={
+        400: {"description": "The upload does not open as a zip archive (a zero-byte upload included)"},
+        409: {"description": "An import is queued, scanning or running; the detail names its import_id"},
+        413: {"description": "The archive exceeds the 1 GiB limit"},
+        500: {"description": "The archive could not be stored (disk full, unwritable data dir); the detail names the cause"},
+    },
+)
+def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastAPI's parameter idiom
+    """Start an import of a Garmin export archive, or any zip of FIT files (F020 reference section 2.1).
+
+    The checks run in the reference's order: the middleware refuses a declared
+    length over ``IMPORT_MAX_BYTES``; an active job is a 409 naming it (the
+    check and the new row are one ``BEGIN IMMEDIATE`` transaction in
+    ``import_job.create_job``); the part is copied to the job's temp dir,
+    counting bytes, 413 past the cap; a copy that does not open as a zip is a
+    400. Any refusal, and a failure to write the copy (a 500 naming the
+    cause), removes the row and the temp dir. Then the worker starts with the
+    data dir, ``resting_hrv_profile_names`` and ``athlete_timezone`` read here,
+    once, and the response is the job as it was before the worker ran:
+    ``queued``, with ``files`` empty.
+    """
+    config = db._load_config_cached()
+    data_dir = config.data_dir
+    archive_name = file.filename or import_job.ARCHIVE_FILENAME
+    conn = db.get_connection(data_dir)
+    try:
+        try:
+            import_id = import_job.create_job(conn, archive_name, None)
+        except import_job.ImportActive as exc:
+            raise HTTPException(
+                409,
+                f"import {exc.import_id} is active; one import runs at a time (if it never finishes, "
+                "restart the API, whose startup marks it interrupted)",
+            ) from exc
+        try:
+            target = import_job.archive_path(data_dir, import_id)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                archive_bytes = _copy_archive(file.file, target)
+            except OSError as exc:
+                raise HTTPException(
+                    500, f"the archive could not be stored: {type(exc).__name__}: {exc}"
+                ) from exc
+            _check_zip(target)
+            import_job.set_archive_bytes(conn, import_id, archive_bytes)
+            body = import_job.read_import(conn, import_id)
+        except BaseException:
+            import_job.discard_job(conn, data_dir, import_id)
+            raise
+    finally:
+        conn.close()
+    import_job.start_worker(
+        import_id, data_dir, list(config.resting_hrv_profile_names), ZoneInfo(config.athlete_timezone)
+    )
+    return Import.model_validate(body)
+
+
+@app.get(
+    "/imports",
+    response_model=ImportPage,
+    operation_id="listImports",
+    tags=["Sessions"],
+    response_model_exclude={"items": {"__all__": {"files"}}},
+)
+def list_imports() -> ImportPage:
+    """Every import job, newest first, without ``files``. Nothing is written."""
+    conn = db.get_connection()
+    try:
+        rows = import_job.list_imports(conn)
+    finally:
+        conn.close()
+    return ImportPage(items=[Import.model_validate(row) for row in rows])
+
+
+@app.get(
+    "/imports/{import_id}",
+    response_model=Import,
+    operation_id="getImport",
+    tags=["Sessions"],
+    responses={404: {"description": "No import has that import_id"}},
+)
+def get_import(import_id: str) -> Import:
+    """One import job with its ``files`` rows in processing order; 404 for an unknown id."""
+    conn = db.get_connection()
+    try:
+        body = import_job.read_import(conn, import_id)
+    finally:
+        conn.close()
+    if body is None:
+        raise HTTPException(404, f"import {import_id} not found")
+    return Import.model_validate(body)

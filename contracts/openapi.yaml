@@ -1004,6 +1004,97 @@ paths:
             text/event-stream:
               schema: { type: string, description: "Server-sent chunks of the reply." }
 
+  # ------------------------------------------------------- Archive import
+  /imports:
+    post:
+      tags: [Sessions]
+      operationId: startImport
+      summary: Import a Garmin export archive (or any zip of FIT files)
+      description: >
+        F020. The multipart part `file` is a zip, matched by content, not by
+        name. Checked in order: a declared length over 1 GiB is 413 (text,
+        from the upload middleware, on /imports and /imports/ alike); an
+        import already queued, scanning or running is 409 naming its
+        import_id; the part is copied counting bytes, 413 past 1 GiB; a copy
+        that does not open as a zip (zero bytes included) is 400. A refused
+        request leaves no import and no temp dir. Then 202 with the Import in
+        status queued, and the job screens every FIT file by its file_id,
+        stores runs and recognised resting captures oldest first, and reports
+        every activity in files[] (getImport). As-built errors are FastAPI
+        {detail}.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F020"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: "A zip archive, at most 1 GiB." }
+      responses:
+        "202":
+          description: Import queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "400":
+          description: The upload does not open as a zip archive (a zero-byte upload included)
+          content: { application/json: { schema: { type: object } } }
+        "409":
+          description: An import is queued, scanning or running; the detail names its import_id
+          content: { application/json: { schema: { type: object } } }
+        "413":
+          description: The archive exceeds the 1 GiB limit (text/plain from the middleware on a declared length; {detail} when counted while copying)
+          content: { application/json: { schema: { type: object } } }
+        "422":
+          description: No `file` part (FastAPI-default {detail})
+          content: { application/json: { schema: { type: object } } }
+        "500":
+          description: The archive could not be stored (disk full, unwritable data dir); the detail names the cause
+          content: { application/json: { schema: { type: object } } }
+    get:
+      tags: [Sessions]
+      operationId: listImports
+      summary: Every import, newest first, without files
+      description: >
+        F020. Ordered by created_at descending; no item carries files. Nothing
+        is written.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F020"
+      responses:
+        "200":
+          description: Imports, newest first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportPage" }
+
+  /imports/{import_id}:
+    get:
+      tags: [Sessions]
+      operationId: getImport
+      summary: One import with its per-file rows
+      description: >
+        F020. The job's status, progress and counts, and files[] in processing
+        order (seq). Poll it while the status is queued, scanning or running.
+        A row outlives the session it names. 404 for an unknown import_id.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F020"
+      parameters:
+        - name: import_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The import
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Import" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
 components:
 
   securitySchemes:
@@ -1194,6 +1285,7 @@ components:
         rr_intervals:
           type: array
           items: { $ref: "#/components/schemas/RRInterval" }
+        import_id: { type: string, nullable: true, description: "The archive import that stored the session (F020); null for a one-file upload." }
 
     Record:
       type: object
@@ -2724,3 +2816,76 @@ components:
         value: { type: integer }
         effective_from: { type: string, format: date }
         set_at: { type: string, description: "When the value was last written, ISO 8601 in UTC; a replacement moves it and keeps the entry_id." }
+    ImportProgress:
+      type: object
+      description: "How far the job has got: candidates screened while scanning, activities done while running."
+      required: [fit_files_scanned, activities_total, activities_processed]
+      properties:
+        fit_files_scanned: { type: integer, description: "FIT candidates screened so far (written every 100 while scanning)." }
+        activities_total: { type: integer, description: "Rows the job will process: activities plus unreadable FIT candidates." }
+        activities_processed: { type: integer, description: "Rows written so far; equal to activities_total when the job completes." }
+    ImportUnreadableArchive:
+      type: object
+      description: "An inner zip that did not open, or passed its 1 GiB cap; its entries were not read."
+      required: [label, reason]
+      properties:
+        label: { type: string, description: "The inner zip's path in the archive." }
+        reason: { type: string }
+    ImportCounts:
+      type: object
+      description: "The job's tallies. The three maps are keyed by name and count files."
+      required: [stored, already_stored, failed, skipped_sport, non_activity, not_fit, unreadable_archives]
+      properties:
+        stored: { type: integer }
+        already_stored: { type: integer }
+        failed: { type: integer }
+        skipped_sport: { type: object, additionalProperties: { type: integer }, description: "By the sport the FIT file names (a number as its string)." }
+        non_activity: { type: object, additionalProperties: { type: integer }, description: "By FIT file type name (a number for a Garmin-private type)." }
+        not_fit: { type: object, additionalProperties: { type: integer }, description: "By lower-cased extension without the dot; (none) without one." }
+        unreadable_archives:
+          type: array
+          items: { $ref: "#/components/schemas/ImportUnreadableArchive" }
+    ImportFile:
+      type: object
+      description: "One processed activity (or unreadable FIT candidate), in processing order."
+      required: [seq, entry, time_created, outcome, session_id, sport, activity_tag, quality_flags, status, detail]
+      properties:
+        seq: { type: integer, description: "Processing order from 1: oldest time_created first." }
+        entry: { type: string, description: "The entry's path, or <outer path>!<inner path> inside an inner zip." }
+        time_created: { type: string, nullable: true, description: "file_id.time_created, ISO 8601 in UTC." }
+        outcome: { type: string, enum: [stored, already_stored, skipped_sport, failed] }
+        session_id: { type: string, nullable: true, description: "Kept after that session is deleted." }
+        sport: { type: string, nullable: true, description: "Canonical sport when stored; the FIT file's sport when skipped_sport." }
+        activity_tag: { type: string, nullable: true, description: "resting_hrv_check and health_snapshot mark resting captures." }
+        quality_flags: { type: array, nullable: true, items: { type: string } }
+        status: { type: integer, nullable: true, description: "On failed: the status POST /sessions answers for the file, else null." }
+        detail: { type: string, nullable: true }
+    Import:
+      type: object
+      description: "One archive import job (F020). files is served by getImport and startImport only."
+      required: [import_id, archive_name, archive_bytes, status, error, created_at, started_at, finished_at, progress, counts]
+      properties:
+        import_id: { type: string }
+        archive_name: { type: string, description: "The uploaded file's name, as sent." }
+        archive_bytes: { type: integer, nullable: true }
+        status: { type: string, enum: [queued, scanning, running, completed, failed, interrupted] }
+        error: { type: string, nullable: true, description: "On failed: the cause." }
+        created_at: { type: string, description: "ISO 8601 in UTC." }
+        started_at: { type: string, nullable: true }
+        finished_at: { type: string, nullable: true, description: "Also set when startup finds the job interrupted." }
+        progress: { $ref: "#/components/schemas/ImportProgress" }
+        counts: { $ref: "#/components/schemas/ImportCounts" }
+        files:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/ImportFile" }
+          description: "Every processed row in seq order; absent from listImports."
+    ImportPage:
+      type: object
+      description: "listImports: every import job, newest first, without files."
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Import" }
+          description: "Newest first by created_at; no item carries files, and a stored session's import is the one its import_id names."

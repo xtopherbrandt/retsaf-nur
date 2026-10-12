@@ -473,3 +473,13 @@ def wait_idle(timeout: float) -> bool:
     with _workers_lock:
         _workers[:] = [w for w in _workers if w.is_alive()]
         return not _workers
+
+
+def set_archive_bytes(conn: sqlite3.Connection, import_id: str, archive_bytes: int) -> None:
+    """Record the size of the archive once it has been copied into the job's temp dir.
+
+    ``create_job`` runs before the copy (the active-job check comes first), so
+    the row is inserted with the size unknown and given it here.
+    """
+    with conn:
+        conn.execute("UPDATE imports SET archive_bytes = ? WHERE import_id = ?", (archive_bytes, import_id))

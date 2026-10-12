@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "a replacement moves it, and the entry keeps its entry_id.",
+        "Newest first by created_at; no item carries files.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "ISO 8601 in UTC; a replacement moves it and keeps the entry_id.",
+        "no item carries files, and a stored session's import is the one its import_id names.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

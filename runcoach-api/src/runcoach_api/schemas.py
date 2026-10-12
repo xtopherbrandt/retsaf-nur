@@ -1342,3 +1342,81 @@ class HrHistoryEntry(BaseModel):
     set_at: str = Field(
         description="When the value was last written, ISO 8601 in UTC; a replacement moves it, and the entry keeps its entry_id."
     )
+
+
+# ---------------------------------------------------------------------------
+# /imports (F020)
+#
+# Appended below the earlier models, as the list's are, so the lines cited by
+# number stay in place. The shapes are the F020 reference's section 6; the
+# rows they serve are read by ``imports.job.read_import`` and ``list_imports``.
+# ---------------------------------------------------------------------------
+
+ImportStatus = Literal["queued", "scanning", "running", "completed", "failed", "interrupted"]
+ImportOutcome = Literal["stored", "already_stored", "skipped_sport", "failed"]
+
+
+class ImportProgress(BaseModel):
+    """How far the job has got: candidates screened while ``scanning``, activities done while ``running``."""
+
+    fit_files_scanned: int = Field(description="FIT candidates screened so far (written every 100 while scanning).")
+    activities_total: int = Field(description="Rows the job will process: activities plus unreadable FIT candidates.")
+    activities_processed: int = Field(description="Rows written so far; equal to activities_total when the job completes.")
+
+
+class ImportUnreadableArchive(BaseModel):
+    """An inner zip that did not open, or passed its 1 GiB cap; its entries were not read."""
+
+    label: str = Field(description="The inner zip's path in the archive.")
+    reason: str = Field(description="Why it was not read.")
+
+
+class ImportCounts(BaseModel):
+    """The job's tallies (reference section 4). The three maps are keyed by name and count files."""
+
+    stored: int
+    already_stored: int
+    failed: int
+    skipped_sport: dict[str, int] = Field(description="Skipped activities by the sport the FIT file names (a number as its string).")
+    non_activity: dict[str, int] = Field(description="FIT files that are not activities, by file type name (a number for a Garmin-private type).")
+    not_fit: dict[str, int] = Field(description="Entries that are not FIT files, by lower-cased extension without the dot; `(none)` without one.")
+    unreadable_archives: list[ImportUnreadableArchive]
+
+
+class ImportFile(BaseModel):
+    """One processed activity (or unreadable FIT candidate), in processing order."""
+
+    seq: int = Field(description="Processing order, from 1: oldest time_created first.")
+    entry: str = Field(description="The entry's label: its path, or `<outer path>!<inner path>` inside an inner zip.")
+    time_created: str | None = Field(description="file_id.time_created, ISO 8601 in UTC; null when absent or unreadable.")
+    outcome: ImportOutcome
+    session_id: str | None = Field(description="The stored or already stored session; kept after that session is deleted.")
+    sport: str | None = Field(description="Canonical sport when stored; the FIT file's sport when skipped_sport.")
+    activity_tag: str | None = Field(description="The stored session's activity_tag (resting_hrv_check and health_snapshot mark resting captures).")
+    quality_flags: list[str] | None = Field(description="The stored session's quality flags; null for other outcomes.")
+    status: int | None = Field(description="On failed: the status POST /sessions answers for the file, else null.")
+    detail: str | None = Field(description="On failed: the message POST /sessions answers, else the exception's type and message.")
+
+
+class Import(BaseModel):
+    """One archive import job (reference section 6). ``files`` is served by getImport and startImport only."""
+
+    import_id: str
+    archive_name: str = Field(description="The uploaded file's name, as sent.")
+    archive_bytes: int | None = Field(description="The archive's size in bytes, as copied.")
+    status: ImportStatus
+    error: str | None = Field(description="On failed: the cause; otherwise null.")
+    created_at: str = Field(description="ISO 8601 in UTC.")
+    started_at: str | None = Field(description="When scanning began, ISO 8601 in UTC.")
+    finished_at: str | None = Field(description="When the job ended (or was found interrupted at startup), ISO 8601 in UTC.")
+    progress: ImportProgress
+    counts: ImportCounts
+    files: list[ImportFile] | None = Field(
+        None, description="Every processed row in seq order; absent from listImports."
+    )
+
+
+class ImportPage(BaseModel):
+    """GET /imports: every import job, newest first, without files."""
+
+    items: list[Import] = Field(description="Newest first by created_at; no item carries files.")
