@@ -67,7 +67,16 @@ INPUT_KEYS = {
     "threshold_hr_bpm",
     "sex",
 }
-VALUE_BLOCK_KEYS = {"value", "source", "session_id", "anchor_version", "anchor_unavailable"}
+VALUE_BLOCK_KEYS = {
+    "value",
+    "source",
+    "session_id",
+    "anchor_version",
+    "anchor_unavailable",
+    "entry_id",
+    "effective_from",
+    "out_of_period",
+}
 NEW_COMPONENTS = {
     "SessionLoad",
     "SessionLoadValue",
@@ -228,6 +237,9 @@ def test_a_saved_hr_value_of_two_to_the_63_is_served_exactly() -> None:
             "session_id": None,
             "anchor_version": 3,
             "anchor_unavailable": None,
+            "entry_id": None,
+            "effective_from": None,
+            "out_of_period": False,
         }
         with _connection() as conn, conn:
             conn.execute(f"DELETE FROM {db_module.SESSION_LOADS_TABLE} WHERE session_id = ?", (session_id,))

@@ -984,12 +984,20 @@ _SESSION_WIDE_REASON_DESCRIPTION = (
     "the metric's own reason."
 )
 _LOAD_SOURCE_DESCRIPTION = (
-    "`session_file` when the session's own FIT file carried the value, `anchor` when the HR anchor in effect at "
-    "upload supplied it; null when neither did."
+    "`session_file` when the session's own FIT file carried the value. Otherwise, for an HR value, the setting in "
+    "effect on the run's date: `session_file_dated` (an earlier stored file, named by `session_id`), `history` (a "
+    "dated entry, named by `entry_id` and `effective_from`) or `anchor` (the HR anchor in effect at upload, the "
+    "run's date having no file or entry, or that file being the anchor's own); for sex, `anchor`. Null when "
+    "nothing supplied it. A body saved before dated entries existed has only `session_file` and `anchor`."
 )
 _LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION = (
     "When the file carried no value and the anchor at upload had none either, the anchor's own reason "
     "(`missing` or `order_conflict`); null otherwise."
+)
+_LOAD_OUT_OF_PERIOD_DESCRIPTION = (
+    "True when `source` is `anchor` and that anchor came from a file dated after the run: no file or dated entry "
+    "on or before the run's date carried the value, so a later one was borrowed. False otherwise, and false on a "
+    "body saved before dated entries existed."
 )
 
 
@@ -1050,12 +1058,25 @@ class SessionLoadHrInput(BaseModel):
     integer: an entered max of 2^63 is saved and served exactly."""
 
     value: int | None = Field(description="The value used, in bpm; null when neither the file nor the anchor had one.")
-    source: Literal["session_file", "anchor"] | None = Field(description=_LOAD_SOURCE_DESCRIPTION)
-    session_id: str | None = Field(description="The session whose file carried the value; null unless `source` is `session_file`.")
+    source: Literal["session_file", "anchor", "session_file_dated", "history"] | None = Field(
+        description=_LOAD_SOURCE_DESCRIPTION
+    )
+    session_id: str | None = Field(
+        description="The session whose file carried the value; null unless `source` is `session_file` or `session_file_dated`."
+    )
     anchor_version: int | None = Field(description="The anchor's version at upload; null unless `source` is `anchor`.")
     anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
         description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
     )
+    entry_id: int | None = Field(
+        default=None,
+        description="The dated entry that supplied the value; null unless `source` is `history`.",
+    )
+    effective_from: str | None = Field(
+        default=None,
+        description="That entry's effective date (YYYY-MM-DD); null unless `source` is `history`.",
+    )
+    out_of_period: bool = Field(default=False, description=_LOAD_OUT_OF_PERIOD_DESCRIPTION)
 
 
 class SessionLoadSexInput(BaseModel):
@@ -1070,6 +1091,9 @@ class SessionLoadSexInput(BaseModel):
     anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(
         description=_LOAD_ANCHOR_UNAVAILABLE_DESCRIPTION
     )
+    entry_id: int | None = Field(default=None, description="Always null: sex has no dated entries.")
+    effective_from: str | None = Field(default=None, description="Always null: sex has no dated entries.")
+    out_of_period: bool = Field(default=False, description="Always false: sex is the file's or the anchor's.")
 
 
 class SessionLoadInputs(BaseModel):

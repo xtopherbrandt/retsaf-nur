@@ -78,11 +78,14 @@ order.
 
 **Where the values come from.** This module reads the four value blocks as
 given. ``db._save_session_load`` builds them at upload: the session's own
-file value as ``session_file``, else the F016 anchor in effect inside the
-upload's transaction as ``anchor`` with its version, else an empty block whose
-``anchor_unavailable`` carries F016's reason (``missing`` or
-``order_conflict``), so gate 4 reports a conflicting anchor as missing here
-while the inputs say why.
+file value as ``session_file``; else, for an HR field, the setting in effect
+on the run's date (F021: ``hr_history.borrow``), which is an earlier stored
+file as ``session_file_dated``, a dated entry as ``history``, or the F016
+anchor in effect inside the upload's transaction as ``anchor`` with its
+version (``out_of_period`` when that anchor's file is dated after the run);
+else an empty block whose ``anchor_unavailable`` carries F016's reason
+(``missing`` or ``order_conflict``), so gate 4 reports a conflicting anchor as
+missing here while the inputs say why. ``sex`` is the file's or the anchor's.
 
 **Pure, by design.** No ``config``, ``db`` or ``fastapi`` import. ``inputs``
 is a plain mapping: ``session_id``, ``sport``, ``activity_tag``,
@@ -90,9 +93,10 @@ is a plain mapping: ``session_id``, ``sport``, ``activity_tag``,
 ``features`` (``session_features.segment_rows`` and
 ``compute_session_features`` for the session), and per HR field
 (``resting_hr_bpm``, ``max_hr_bpm``, ``threshold_hr_bpm``, ``sex``) a mapping
-``{value, source, session_id, anchor_version, anchor_unavailable}`` holding
-the value used and where it came from; those four blocks are echoed in
-``inputs`` unchanged. A block that is absent or not a mapping is the
+``{value, source, session_id, anchor_version, anchor_unavailable, entry_id,
+effective_from, out_of_period}`` holding the value used and where it came
+from; those four blocks are echoed in ``inputs`` with ``EMPTY_VALUE``'s keys,
+a missing key at its default. A block that is absent or not a mapping is the
 writer's defect and raises ``ValueError`` naming the field.
 """
 
@@ -118,11 +122,22 @@ CHEST_STRAP = "chest_strap"
 """The one ``hr_source`` that escapes the wrist path (gates 7-8)."""
 
 ANCHOR_FIELDS = ("resting_hr_bpm", "max_hr_bpm", "threshold_hr_bpm", "sex")
-EMPTY_VALUE: Mapping[str, None] = MappingProxyType(
-    {"value": None, "source": None, "session_id": None, "anchor_version": None, "anchor_unavailable": None}
+EMPTY_VALUE: Mapping[str, object] = MappingProxyType(
+    {
+        "value": None,
+        "source": None,
+        "session_id": None,
+        "anchor_version": None,
+        "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
+    }
 )
-"""The five keys of an ``inputs.<field>`` block, all null: the block for a field with no value used.
-Read-only; a writer copies it (``dict(EMPTY_VALUE)`` or ``{**EMPTY_VALUE, ...}``)."""
+"""The eight keys of an ``inputs.<field>`` block for a field with no value used: F017's five, null,
+then F021's ``entry_id`` and ``effective_from``, null, and ``out_of_period``, false. These are also
+the defaults ``_value_block`` gives a key a writer's block lacks (a body built before F021 has the
+first five only). Read-only; a writer copies it (``dict(EMPTY_VALUE)`` or ``{**EMPTY_VALUE, ...}``)."""
 
 NO_THRESHOLD_PACE = "no_threshold_pace"
 NO_RPE = "no_rpe"
@@ -172,7 +187,8 @@ def _span(upper, lower) -> float | None:
 
 
 def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
-    """The ``inputs.<field>`` block as the caller built it, restricted to ``EMPTY_VALUE``'s keys.
+    """The ``inputs.<field>`` block as the caller built it, restricted to ``EMPTY_VALUE``'s keys; a key
+    the block lacks takes ``EMPTY_VALUE``'s value (null, or false for ``out_of_period``).
 
     A block that is absent or not a mapping is a defect of the writer (``db._save_session_load``
     builds all four for every session), refused with a ``ValueError`` naming the field rather
@@ -184,7 +200,7 @@ def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
     if not isinstance(block, Mapping):
         # A ValueError, as every writer defect here and in load_chart._place is.
         raise ValueError(f"inputs.{field_name} is not a value block: {type(block).__name__} {block!r}")  # noqa: TRY004
-    return {key: block.get(key) for key in EMPTY_VALUE}
+    return {key: block.get(key, default) for key, default in EMPTY_VALUE.items()}
 
 
 def _hr_time_s(segment_rows: Iterable[Mapping[str, object]]) -> float:

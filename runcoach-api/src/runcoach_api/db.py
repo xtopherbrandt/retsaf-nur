@@ -1226,39 +1226,39 @@ def _save_session_load(
 ) -> None:
     """Compute and save the stored session's load inside the caller's transaction (F017 AC8).
 
-    Reads the inputs (``read_session_load_inputs``), fills each HR field the
-    session's own file lacked from the anchor in effect now (user ruling R1
-    with C1: the anchor at upload, with its version; an anchor F016 marks
-    ``missing`` or ``order_conflict`` is no value and the block's
-    ``anchor_unavailable`` carries that reason), calls ``compute_session_load``
-    and writes the row (``_write_session_load``). ``persist`` calls it right
-    after ``_sync_anchor_versions`` inside its ``with conn:`` and passes that
-    sync's ``resolved`` profile, so the anchors come from
-    ``profile.anchors(resolved, log)`` without a second profile read, and the
-    one-time fill (``_fill_session_loads``) passes ``init_schema``'s sync's; a
-    caller without one leaves ``resolved`` None and the anchors are read here
-    with ``read_hr_anchors``. Either way the anchor read shares the caller's
-    open transaction, so it sees the rows just written and the log the sync
-    just moved. It is the seam a test patches to force a fault, which rolls
-    the whole upload, or the whole startup, back. Never calls
-    ``read_athlete``, whose ``BEGIN`` fails inside an open transaction.
+    Reads the inputs (``read_session_load_inputs``), fills each field the
+    session's own file lacked (``_fill_by_run_date``: resting, max and
+    threshold HR with the setting in effect on the run's date, F021 AC2 and
+    AC4, through ``hr_history.borrow``; ``sex`` from the anchor in effect now,
+    as F017's ruling R1 with C1 has it), calls ``compute_session_load`` and
+    writes the row (``_write_session_load``). An anchor F016 marks ``missing``
+    or ``order_conflict`` is no value, and the block's ``anchor_unavailable``
+    carries that reason. ``persist`` calls it right after
+    ``_sync_anchor_versions`` inside its ``with conn:`` and passes that sync's
+    ``resolved`` profile, so the anchors come from ``profile.anchors(resolved,
+    log)`` without a second profile read, and the one-time fill
+    (``_fill_session_loads``) passes ``init_schema``'s sync's; a caller without
+    one leaves ``resolved`` None and the profile is read here once. Every read
+    shares the caller's open transaction, so it sees the rows just written and
+    the log the sync just moved. It is the seam a test patches to force a
+    fault, which rolls the whole upload, or the whole startup, back. Never
+    calls ``read_athlete``, whose ``BEGIN`` fails inside an open transaction.
 
     ``zone`` is the athlete's zone as a caller captured it (an archive import
-    reads the config once per job, not once per file). It is accepted and
-    not read: the anchors above are the ones in effect now, which need no
-    date and so no zone.
+    reads the config once per job, not once per file); without it the
+    configured ``athlete_timezone`` is read. It sets the run's local date,
+    which the dated entries are compared against. A run after every stored
+    file, with no entry dated after that file's local date, is saved as F017
+    saved it (F021 AC3).
     """
     inputs = read_session_load_inputs(conn, session_id)
     if inputs is None:
         raise ValueError(f"session {session_id} is not stored; nothing to compute a load from")
     if any(inputs[field_name]["value"] is None for field_name in _LOAD_FIELDS):
         if resolved is None:
-            anchors = read_hr_anchors(conn)
-        else:
-            anchors = profile_module.anchors(resolved, _read_anchor_log(conn))
-        for field_name in _LOAD_FIELDS:
-            if inputs[field_name]["value"] is None:
-                inputs[field_name] = _from_anchor(anchors[field_name])
+            resolved = profile_module.resolve(*read_profile_inputs(conn))
+        anchors = profile_module.anchors(resolved, _read_anchor_log(conn))
+        _fill_by_run_date(conn, session_id, inputs, resolved, anchors, zone)
     _write_session_load(conn, session_id, compute_session_load(inputs))
 
 
@@ -1520,3 +1520,81 @@ def delete_hr_history_entry(conn: sqlite3.Connection, entry_id: int) -> bool:
     """Remove one dated HR entry; whether a row with ``entry_id`` existed. One transaction."""
     with conn:
         return conn.execute(f"DELETE FROM {HR_HISTORY_TABLE} WHERE entry_id = ?", (entry_id,)).rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# F021: the run-date lookup a saved load uses (AC2, AC4)
+#
+# Appended at the end, as the entries' readers are, so the lines cited above
+# stay in place; ``_save_session_load`` calls it.
+# ---------------------------------------------------------------------------
+from runcoach_api import hr_history as _hr_history
+from runcoach_api.metrics.hrv_trend import local_day as _local_day
+
+
+def _run_date_candidates(
+    conn: sqlite3.Connection, field: str, run_start: str, run_date: str
+) -> tuple[list[tuple], list[tuple]]:
+    """The two candidates ``hr_history.borrow`` chooses between for one HR field, read with two
+    SELECTs inside the caller's transaction.
+
+    Files: the latest stored session carrying ``field`` whose ``start_time`` is at or before
+    ``run_start`` (max and threshold: sessions stored as ``running`` only, as F016 counts them),
+    by ``start_time`` then ``upload_order``; ``start_time`` is stored as ``isoformat()`` of an
+    aware UTC instant, so the text order is the time order, as F016's resolver relies on. At most
+    one row. Entries: every dated entry for ``field`` whose ``effective_from`` (``YYYY-MM-DD``) is
+    on or before ``run_date``, the value JSON-decoded. ``field`` is one of
+    ``hr_history.HR_FIELDS``, never caller text.
+    """
+    if field not in _HR_FIELDS:
+        raise ValueError(f"no dated HR lookup for field {field!r}")
+    running_only = " AND sport = ?" if field in profile_module.RUNNING_ONLY_FIELDS else ""
+    params: tuple = (run_start, profile_module.RUNNING_SPORT) if running_only else (run_start,)
+    files = conn.execute(
+        f"SELECT session_id, start_time, upload_order, sport, {field} FROM sessions "
+        f"WHERE {field} IS NOT NULL AND start_time <= ?{running_only} "
+        "ORDER BY start_time DESC, upload_order DESC LIMIT 1",
+        params,
+    ).fetchall()
+    entries = conn.execute(
+        f"SELECT entry_id, effective_from, value FROM {HR_HISTORY_TABLE} WHERE field = ? AND effective_from <= ?",
+        (field, run_date),
+    ).fetchall()
+    return (
+        [tuple(row) for row in files],
+        [(row["entry_id"], row["effective_from"], _json_load(row["value"])) for row in entries],
+    )
+
+
+def _fill_by_run_date(
+    conn: sqlite3.Connection,
+    session_id: str,
+    inputs: dict,
+    resolved: Mapping[str, profile_module.FieldValue],
+    anchors: Mapping[str, profile_module.Anchor],
+    zone: ZoneInfo | None,
+) -> None:
+    """Fill, in ``inputs``, each value block the session's own file left empty (F021 AC2, AC4).
+
+    Resting, max and threshold HR: ``hr_history.borrow`` over ``_run_date_candidates``, so the
+    block is the setting in effect on the run's date (``session_file_dated``, ``history``, or
+    F016's anchor with ``out_of_period``). ``sex``: the anchor in effect now (``_from_anchor``),
+    as F017 saves it. The run's local date is its stored ``start_time`` in ``zone``, or, when no
+    zone is given, in the configured ``athlete_timezone``. Reads no profile input: ``resolved``
+    and ``anchors`` are the caller's.
+    """
+    missing_hr = [f for f in _HR_FIELDS if inputs[f]["value"] is None]
+    if missing_hr:
+        row = conn.execute("SELECT start_time FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+        run_start = row["start_time"]
+        if zone is None:
+            zone = ZoneInfo(_load_config_cached().athlete_timezone)
+        run_date = _local_day(session_id, run_start, zone)[0].isoformat()
+        for field_name in missing_hr:
+            files, entries = _run_date_candidates(conn, field_name, run_start, run_date)
+            inputs[field_name] = _hr_history.borrow(
+                field_name, run_start, zone, files, entries, resolved[field_name], anchors[field_name]
+            )
+    for field_name in _LOAD_FIELDS:
+        if field_name not in _HR_FIELDS and inputs[field_name]["value"] is None:
+            inputs[field_name] = _from_anchor(anchors[field_name])

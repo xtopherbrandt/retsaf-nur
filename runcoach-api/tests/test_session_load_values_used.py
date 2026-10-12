@@ -118,11 +118,11 @@ def _anchor(field_name: str):
 
 
 def _file_block(value, session_id: str) -> dict:
-    return {"value": value, "source": "session_file", "session_id": session_id, "anchor_version": None, "anchor_unavailable": None}
+    return {**EMPTY_BLOCK, "value": value, "source": "session_file", "session_id": session_id}
 
 
 def _anchor_block(value, version: int) -> dict:
-    return {"value": value, "source": "anchor", "session_id": None, "anchor_version": version, "anchor_unavailable": None}
+    return {**EMPTY_BLOCK, "value": value, "source": "anchor", "anchor_version": version}
 
 
 def _unavailable_block(reason: str) -> dict:

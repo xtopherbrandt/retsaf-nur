@@ -288,6 +288,9 @@ def test_a_missing_file_value_is_missing_anchor_naming_the_field() -> None:
         "session_id": None,
         "anchor_version": None,
         "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
     }
     both = compute_session_load(_synthetic(resting=None, max_hr=None))
     assert both["metrics"]["hr_trimp"]["unavailable_fields"] == ["resting_hr_bpm", "max_hr_bpm"]
@@ -329,7 +332,7 @@ def test_hr_time_fraction_is_null_when_the_timer_time_is_zero() -> None:
     assert body["metrics"]["hr_trimp"]["value"] == pytest.approx(_expected_trimp(100 / 60, 100 / 140, "male"))
 
 
-def test_the_empty_value_block_is_five_null_keys_and_read_only() -> None:
+def test_the_empty_value_block_is_eight_keys_and_read_only() -> None:
     """``EMPTY_VALUE`` is the block ``db`` and these suites build every empty field from, so its
     literal is pinned once here."""
     assert dict(session_load.EMPTY_VALUE) == {
@@ -338,7 +341,19 @@ def test_the_empty_value_block_is_five_null_keys_and_read_only() -> None:
         "session_id": None,
         "anchor_version": None,
         "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
     }
-    assert list(session_load.EMPTY_VALUE) == ["value", "source", "session_id", "anchor_version", "anchor_unavailable"]
+    assert list(session_load.EMPTY_VALUE) == [
+        "value",
+        "source",
+        "session_id",
+        "anchor_version",
+        "anchor_unavailable",
+        "entry_id",
+        "effective_from",
+        "out_of_period",
+    ]
     with pytest.raises(TypeError):
         session_load.EMPTY_VALUE["value"] = 1  # type: ignore[index]

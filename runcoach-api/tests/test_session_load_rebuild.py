@@ -150,6 +150,9 @@ def test_a_run_that_borrowed_an_anchor_records_it_and_a_later_change_leaves_the_
         "session_id": None,
         "anchor_version": 1,
         "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
     }
     assert body["inputs"]["threshold_hr_bpm"]["value"] == 169
     assert body["inputs"]["threshold_hr_bpm"]["source"] == "anchor"
