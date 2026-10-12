@@ -65,6 +65,8 @@ STRAP_RUN = "strap_run_hrv.fit"
 CAPTURE = "strap_hrv_capture.fit"
 SNAPSHOT = "sample_health_snapshot.fit"
 SAMPLE_CAPTURE_RUN = "strap_hrv_sample_run.fit"
+# The FIT session message's ``rmssd_hrv`` field, the Tier-2 capability signal.
+SESSION_RMSSD_HRV_FIELD = 198
 STORED_NAMES = {IA.NO_HR_RUN, SNAPSHOT, SAMPLE_RUN, SAMPLE_CAPTURE_RUN, STRAP_RUN, CAPTURE}
 # The tables a stored session writes rows to (the import adds nothing else).
 SESSION_TABLES = ("sessions", "records", "rr_intervals", "quarantine_sidecar")
@@ -233,6 +235,37 @@ def test_an_undeclared_capture_profile_skips_the_capture_with_its_sport(
         "generic",
         None,
     )
+
+
+def test_a_recognised_capture_whose_reading_fails_is_stored_with_its_tag(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """Negative class 2(e): the classifier tags a file before its reading checks, so a recognised
+    capture that yields no reading is kept, as one-file upload keeps it. The health snapshot with
+    its session ``rmssd_hrv`` set to 0 is tagged ``health_snapshot`` and flagged
+    ``hrv_reading_unavailable`` (Tier 2's row 3); the import stores it with that tag and flag."""
+    snapshot = (IA.FIXTURES / SNAPSHOT).read_bytes()
+    no_reading = IA.fit_patch.set_field(snapshot, IA.SESSION, SESSION_RMSSD_HRV_FIELD, 0)
+    archive_file = tmp_path / "no_reading.zip"
+    with zipfile.ZipFile(archive_file, "w") as out:
+        out.writestr("no_reading.fit", no_reading)
+    import_id = _create(isolated_data_dir, tmp_path, archive=archive_file)
+    report = _run(isolated_data_dir, import_id, profile_names=())
+    print(report["error"], report["files"])
+
+    assert report["status"] == "completed", report["error"]
+    row = _rows(report)["no_reading.fit"]
+    assert (row["outcome"], row["sport"], row["activity_tag"]) == ("stored", "other", "health_snapshot")
+    assert "hrv_reading_unavailable" in row["quality_flags"], row["quality_flags"]
+    assert _session_import_ids(isolated_data_dir) == {row["session_id"]: import_id}
+    conn = sqlite3.connect(isolated_data_dir / db.DB_FILENAME)
+    try:
+        stored = conn.execute(
+            "SELECT activity_tag, resting_rmssd_ms FROM sessions WHERE session_id = ?", (row["session_id"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert stored == ("health_snapshot", None)
 
 
 def test_stored_rows_and_their_sessions_carry_the_import_id(isolated_data_dir: Path, tmp_path: Path) -> None:

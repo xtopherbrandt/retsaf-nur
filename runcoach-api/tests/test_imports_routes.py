@@ -454,6 +454,32 @@ def test_a_second_post_while_active_is_409_naming_the_import(
     _drain()
 
 
+@pytest.mark.parametrize("raw", [b"", b"plainly not a zip archive"], ids=["zero_bytes", "not_a_zip"])
+def test_a_non_zip_while_active_is_409_not_400(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raw: bytes
+) -> None:
+    """Reference section 2.1's order: the active-job check comes before the copy and its zip check,
+    so a body that would be a 400 on its own is a 409 naming the active import while one runs, and
+    it leaves no row and no temp dir of its own."""
+    gate = _gate_ingest(monkeypatch)
+    archive = _plain_zip(tmp_path, "sample_run.fit")
+    try:
+        with TestClient(app) as client:
+            first = _post_archive(client, archive)
+            assert first.status_code == 202, first.text
+            first_id = first.json()["import_id"]
+            _wait_for_status(client, first_id, "running")
+            second = _post_bytes(client, "export.zip", raw)
+            print(second.status_code, second.text)
+            assert second.status_code == 409, second.text
+            assert first_id in second.json()["detail"], second.json()
+            assert [row[0] for row in _import_rows(isolated_data_dir)] == [first_id]
+            assert _temp_children(isolated_data_dir) == [first_id]
+    finally:
+        gate.set()
+    _drain()
+
+
 def test_the_trailing_slash_path_starts_no_second_route(isolated_data_dir: Path, tmp_path: Path) -> None:
     """``POST /imports/`` is redirected to ``/imports``; the redirect itself creates nothing."""
     archive = _plain_zip(tmp_path, "sample_run.fit")
