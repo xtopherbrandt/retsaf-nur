@@ -220,10 +220,10 @@ _SCHEMA_DDL = """
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS session_loads (
-      -- F017: one session's load body, computed and saved inside the
-      -- upload's transaction (_save_session_load) with every value it used,
-      -- and never moved by a later anchor or profile change (user rulings
-      -- C1-C3, 2026-10-08). body is the JSON text of the whole body
+      -- F017: one session's load body, saved inside the upload's transaction
+      -- (_save_session_load) with every value it used; a later anchor, entry
+      -- or profile change moves it only through recompute_session_load (F021
+      -- AC5; F017 rulings C1-C3). body is the JSON text of the whole body
       -- metrics.session_load.compute_session_load returns; load_value and
       -- load_reason mirror its session_load.value and session_load.unavailable
       -- for a query. HR values live only in the body (2**63 overflows
@@ -1230,8 +1230,8 @@ def _save_session_load(
     Reads the inputs (``read_session_load_inputs``), fills each field the
     session's own file lacked (``_fill_by_run_date``: resting, max and
     threshold HR with the setting in effect on the run's date, F021 AC2 and
-    AC4, through ``hr_history.borrow``; ``sex`` from the anchor in effect now,
-    as F017's ruling R1 with C1 has it), calls ``compute_session_load`` and
+    AC4, through ``hr_history.borrow``; ``sex`` from today's anchor, as
+    F017's ruling R1 with C1 has it), calls ``compute_session_load`` and
     writes the row (``_write_session_load``). An anchor F016 marks ``missing``
     or ``order_conflict`` is no value, and the block's ``anchor_unavailable``
     carries that reason. ``persist`` calls it right after
@@ -1299,8 +1299,9 @@ def _fill_session_loads(
     (the FIT timer time its upload saved) when the column is null and the value
     is a finite number, as ``mapping`` reads that field (a bool, a string or a
     list stays null); then ``_save_session_load`` computes the load from the
-    stored rows, the session's own file values first and else the anchors
-    current now (``resolved``, the sync ``init_schema`` just ran), and saves it.
+    stored rows, the session's own file values first and else the setting in
+    effect on the run's date (``resolved``, the sync ``init_schema`` just ran,
+    supplies today's anchors for the fallback), and saves it.
     No other column is written.
 
     A fault computing or saving one session's load raises
@@ -1596,7 +1597,7 @@ def _fill_by_run_date(
 
     Resting, max and threshold HR: ``hr_history.borrow`` over ``_run_date_candidates``, so the
     block is the setting in effect on the run's date (``session_file_dated``, ``history``, or
-    F016's anchor with ``out_of_period``). ``sex``: the anchor in effect now (``_from_anchor``),
+    F016's anchor with ``out_of_period``). ``sex``: today's anchor (``_from_anchor``),
     as F017 saves it. The run's local date is its stored ``start_time`` in ``zone``, or, when no
     zone is given, in the configured ``athlete_timezone``. Reads no profile input: ``resolved``
     and ``anchors`` are the caller's.

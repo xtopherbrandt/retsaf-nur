@@ -948,8 +948,8 @@ class Athlete(BaseModel):
 # ---------------------------------------------------------------------------
 # GET /sessions/{session_id}/load (F017)
 #
-# The body ``metrics.session_load.compute_session_load`` builds and
-# ``db._save_session_load`` saves in the upload's transaction, typed. The
+# The body ``metrics.session_load.compute_session_load`` builds and ``db``
+# saves at upload or replaces at a recompute (F021), typed. The
 # route serves the saved body unchanged, so these models describe a stored
 # document: every field is required and a value or a reason is null, never
 # absent. Appended below the earlier models, as the profile models are, so
@@ -1230,7 +1230,7 @@ class LoadChartGap(BaseModel):
 class LoadChart(BaseModel):
     """GET /metrics/load: the fitness, fatigue and form series (F018, spec/03 section 3.5).
 
-    Computed on read from the loads F017 saved at upload, the sessions'
+    Computed on read from the saved loads (F017; a recompute replaces one), the sessions'
     `start_time` and the configured `athlete_timezone`; nothing is stored.
     The curves always run from the first day of history; `from` and `to`
     choose which days are returned.

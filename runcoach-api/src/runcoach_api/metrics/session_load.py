@@ -77,12 +77,13 @@ step's span check.
 order.
 
 **Where the values come from.** This module reads the four value blocks as
-given. ``db._save_session_load`` builds them at upload: the session's own
-file value as ``session_file``; else, for an HR field, the setting in effect
-on the run's date (F021: ``hr_history.borrow``), which is an earlier stored
-file as ``session_file_dated``, a dated entry as ``history``, or the F016
-anchor in effect inside the upload's transaction as ``anchor`` with its
-version (``out_of_period`` when that anchor's file is dated after the run);
+given. ``db._session_load_body`` builds them, at upload and at each
+recompute: the session's own file value as ``session_file``; else, for an
+HR field, the setting in effect on the run's date (F021:
+``hr_history.borrow``), which is an earlier stored file as
+``session_file_dated``, a dated entry as ``history``, or today's F016 anchor
+as ``anchor`` with its version (``out_of_period`` when that anchor's file is
+dated after the run);
 else an empty block whose ``anchor_unavailable`` carries F016's reason
 (``missing`` or ``order_conflict``), so gate 4 reports a conflicting anchor as
 missing here while the inputs say why. ``sex`` is the file's or the anchor's.
@@ -190,7 +191,7 @@ def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
     """The ``inputs.<field>`` block as the caller built it, restricted to ``EMPTY_VALUE``'s keys; a key
     the block lacks takes ``EMPTY_VALUE``'s value (null, or false for ``out_of_period``).
 
-    A block that is absent or not a mapping is a defect of the writer (``db._save_session_load``
+    A block that is absent or not a mapping is a defect of the writer (``db._session_load_body``
     builds all four for every session), refused with a ``ValueError`` naming the field rather
     than read as no value and served as ``missing_anchor``.
     """

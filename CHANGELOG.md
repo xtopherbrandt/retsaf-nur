@@ -39,6 +39,43 @@ uploaded through `POST /sessions`. Existing sessions keep a null `import_id`; no
 backfilled. spec/02 section 2.6.1 now says the import id, not `ingested_at`, tells backfilled
 sessions from incrementally arriving ones.
 
+### Dated HR settings
+
+F021: a run whose file lacks resting, max or threshold HR now borrows the setting in effect on the
+run's own date, not today's anchor (spec/03 section 3.1, spec/04 sections 4.1 and 4.2.7; user ruling
+2026-10-11). The value used is the latest of the stored files carrying the field dated at or before
+the run (max and threshold from running files only, as F016 reads them) and the athlete's dated
+entries effective on or before the run's local date in `athlete_timezone`; a file and an entry on the
+same local day: the file wins. With neither, it is F016's anchor as before. Sex still comes from the
+file, else today's anchor.
+
+- `POST /me/hr-history` stores a dated entry `{field, value, effective_from}` for
+  `resting_hr_bpm`, `max_hr_bpm` or `threshold_hr_bpm` (201 with its `entry_id`; a second entry for
+  the same field and date replaces the value, keeps the `entry_id` and answers 200; a future date,
+  another field or a value `PATCH /me` refuses is a 422). `GET /me/hr-history` lists the entries by
+  field, then date; `DELETE /me/hr-history/{entry_id}` removes one (204; unknown id 404). The entries
+  live in the new `hr_history` table, created by `init_schema`; `GET /me` and its anchors are
+  unchanged by them.
+- `POST /sessions/{session_id}/load/recompute` recomputes one session's load with the current files,
+  entries and anchors, replaces the saved body and its `load_value` in one transaction, and returns
+  it with `changed` (unknown id 404; a session with no saved load gets one).
+- `inputs.<field>.source` gains `session_file_dated` (an earlier stored file, named by `session_id`)
+  and `history` (a dated entry, with `entry_id` and `effective_from`); every HR input gains
+  `out_of_period`, true when no file or entry on or before the run carried the value and the anchor
+  borrowed came from a later file. A body saved before this release reads back with those keys at
+  their defaults (`out_of_period` false, `entry_id` and `effective_from` null).
+- CLI: `runcoach profile history add <field> <value> --from YYYY-MM-DD`, `runcoach profile history
+  list` and `runcoach profile history remove <entry_id>` manage the entries; `runcoach loads
+  recompute` recomputes every running session, printing progress every 100 and a summary
+  (recomputed, changed, out of period, failed); exit 1 when any failed or the API is unreachable.
+- The contract adds the four operations as `implemented` and the new `SessionLoad` input keys,
+  additively (no version bump). Its header no longer lists the implemented endpoints: each
+  operation's `x-readiness` says whether it is served.
+
+Existing saved loads change only when recomputed: entering, replacing or deleting a dated entry, a
+`PATCH /me` or a later upload moves no saved body. After entering the history, run `runcoach loads
+recompute` to apply it to the runs already stored.
+
 ## 2026-10-11 — Sprint 015: list sessions, moving gaps and the comeback mark
 
 ### Added

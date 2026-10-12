@@ -934,15 +934,15 @@ from runcoach_api.schemas import SessionLoad
     tags=["Sessions"],
 )
 def get_session_load(session_id: str) -> SessionLoad:
-    """The session's training load, HR-TRIMP first, as saved at its upload (F017).
+    """The session's training load, HR-TRIMP first, as its upload or last recompute saved it (F017).
 
     The body is the one ``db._save_session_load`` wrote in the upload's
     transaction (or a recompute last replaced), with every value used; it is
     served unchanged through ``db.read_session_load_body``, reading no anchor
-    (user rulings C1-C3, 2026-10-08), so a
-    later ``PATCH /me`` or a later upload that moves an anchor changes
-    nothing here, and a corrupted anchor version log that makes ``GET /me``
-    a 500 leaves this route a 200. Nothing is computed and nothing is
+    (user rulings C1-C3, 2026-10-08), so a later ``PATCH /me``, dated HR
+    entry or upload that moves an anchor changes nothing here until
+    ``POST /sessions/{id}/load/recompute`` replaces it, and a corrupted
+    anchor version log that makes ``GET /me`` a 500 leaves this route a 200. Nothing is computed and nothing is
     written: the connection is opened and closed inline, as the features
     route does.
 

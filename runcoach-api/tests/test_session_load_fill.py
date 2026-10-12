@@ -3,7 +3,8 @@
 User rulings 2026-10-08 and 2026-10-09: a session stored before this feature is
 not re-uploaded; ``db.init_schema`` (which the app's lifespan runs at startup,
 and every upload and test seeder runs too) computes and saves a load for each
-session without one, as an upload would, with the anchors current then, after
+session without one, as an upload would (the setting in effect on the run's
+date, F021, with the anchors current then as its fallback), after
 copying ``timer_time_s`` from the session's stored ``summary.duration_s`` (the
 FIT timer time its upload saved) when the column is null. A fault while filling
 one session raises ``db.SessionLoadFillError`` naming that session and stops

@@ -6,7 +6,10 @@ anchor as it stood inside the upload's transaction, with the anchor's version;
 an anchor F016 marks ``missing`` or ``order_conflict`` is no value, and its
 reason shows in ``inputs.<field>.anchor_unavailable``. The saved body never
 moves afterwards: a later ``PATCH /me`` or upload that changes the anchor
-leaves it byte-identical, and only a delete and re-upload recomputes it.
+leaves it byte-identical, and only a recompute (F021's
+``POST /sessions/{id}/load/recompute``) or a delete and re-upload replaces it.
+Each row's run is dated after every stored file and no dated HR entry exists,
+so F021's run-date rule borrows exactly this anchor (F021 AC3).
 
 Every row here is a real upload through ``POST /sessions`` of ``sample_run``
 patched in memory with ``tests/support/fit_patch.py``: ``remove_messages(raw,

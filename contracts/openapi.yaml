@@ -15,19 +15,19 @@ openapi: 3.1.0
 #   x-owner-spec: the engine section that OWNS the object (field-level truth)
 #   x-story:      the UI user story/stories the operation serves
 #
-# As of 2026-10-09 the implemented endpoints in retsaf-nur are GET /health,
-# /sessions (POST ingest, GET detail, DELETE), GET /metrics/hrv (F005: the
-# per-day series plus the verdict blocks, `from`/`to` optional),
-# GET /sessions/{id}/features (F013: grade-adjusted pace, NGP and the session
-# descriptors, computed on read), GET /sessions/{id}/load (F017: the load body
-# saved at upload), GET /metrics/load (F018: the fitness, fatigue and form
-# chart, daily load with CTL/ATL/TSB, computed on read from the saved loads),
-# GET /me (F016: each profile field with its source, and the
-# HR anchors) and PATCH /me (F016: entries, display_name and units); the rest
-# is `planned` and is developed against a mock generated from this file until
-# the backend catches up. POST /sessions carries the F004 `resting_capture`
-# flag; SessionDetail carries the resolved, nullable `resting_rmssd_ms` (see its
-# schema + x-invariant).
+# Each operation's own `x-readiness` says whether retsaf-nur serves it; this
+# header lists none, so it cannot fall behind them. An `implemented`
+# operation matches what the backend's /openapi.json serves (path, method,
+# success statuses, required request shape), which contracts/check_drift.py
+# checks; a `planned` one is developed against a mock generated from this
+# file until the backend catches up. A session's saved load
+# (GET /sessions/{id}/load, F017) is the body its upload saved, or the one
+# its last POST /sessions/{id}/load/recompute (F021) put in its place, and
+# GET /metrics/load (F018) is computed on read from those saved loads.
+# POST /sessions carries the F004 `resting_capture` flag; SessionDetail
+# carries the resolved, nullable `resting_rmssd_ms` (see its schema +
+# x-invariant).
+#
 #
 # OPEN backend alignments this contract assumes (see ui-development-plan.md):
 #   1. GET /sessions/{id} gets a typed SessionDetail response_model
@@ -60,7 +60,7 @@ tags:
   - name: System
     description: "Liveness/version. x-readiness: implemented."
   - name: Auth & Athlete
-    description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors) and PATCH /me (entries and settings); planned otherwise (backend is single-athlete/no-auth today). Owner: spec/01, spec/04 section 4.4."
+    description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors), PATCH /me (entries and settings) and the dated HR history (GET, POST /me/hr-history and DELETE /me/hr-history/{entry_id}); planned otherwise (backend is single-athlete/no-auth today); each operation's own x-readiness is authoritative. Owner: spec/01, spec/04 section 4.4."
   - name: Connections & Sync
     description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10."
   - name: Goal
@@ -68,7 +68,7 @@ tags:
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
-    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + list + detail + features + load)."
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + list + detail + delete + features + load + load recompute + archive imports); each operation's own x-readiness is authoritative."
   - name: Workouts
     description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
   - name: Subjective
@@ -680,7 +680,7 @@ paths:
     get:
       tags: [Sessions]
       operationId: getSessionLoad
-      summary: The session's training load, HR-TRIMP first, as saved at its upload
+      summary: The session's training load, HR-TRIMP first, as its upload or last recompute saved it
       description: >
         F017. One load number per session on the "threshold hour = 100" scale
         (spec/03 section 3.4): Banister's HR-TRIMP over running time with
@@ -702,7 +702,7 @@ paths:
         - $ref: "#/components/parameters/SessionId"
       responses:
         "200":
-          description: The session's load body, as saved at its upload
+          description: The session's load body, as its upload or last recompute saved it
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionLoad" }
@@ -902,8 +902,8 @@ paths:
         capture). A run without a saved load is never a 0: its day moves like
         a rest day and is marked. Both curves start at the seed, the mean daily
         load over the first 42 days of history (all of it when shorter), with
-        those days provisional. Computed on read from the loads F017 saved at
-        upload and the configured athlete_timezone; nothing is stored. The
+        those days provisional. Computed on read from the saved loads (F017; a
+        recompute replaces one) and the configured athlete_timezone; nothing is stored. The
         curves always run from the first day of history; from and to only
         choose which days are returned. Both parameters are optional: to
         defaults to the athlete's local today and from to the earlier of
@@ -2808,7 +2808,7 @@ components:
       type: object
       description: >
         GET /metrics/load: the fitness, fatigue and form series (F018, spec/03
-        section 3.5). Computed on read from the loads F017 saved at upload,
+        section 3.5). Computed on read from the saved loads (F017; a recompute replaces one),
         the sessions' start_time and the configured athlete_timezone; nothing
         is stored. The curves always run from the first day of history; from
         and to choose which days are returned.
