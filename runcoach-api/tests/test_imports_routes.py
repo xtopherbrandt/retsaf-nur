@@ -26,6 +26,7 @@ import io
 import sqlite3
 import threading
 import time
+import types
 import zipfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -292,27 +293,30 @@ def test_an_archive_whose_name_is_not_utf8_is_400_and_leaves_no_row_or_dir(isola
 def test_a_worker_that_does_not_start_is_a_500_and_frees_the_slot(
     isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``start_worker`` raising (no thread can start) is a 500 naming the cause; the job's row and
-    dir are removed, so the next import is not refused as active."""
-    real_start = job.start_worker
+    """The worker thread's ``start()`` raising (no thread can start) is a 500 naming the cause; the
+    job's row and dir are removed, so the next import is not refused as active, and ``wait_idle``
+    afterwards returns True: the thread that never started is not left registered for a join."""
 
-    def no_thread(*args, **kwargs):
-        raise RuntimeError("can't start new thread")
+    class UnstartableThread(threading.Thread):
+        def start(self) -> None:
+            raise RuntimeError("can't start new thread")
 
-    monkeypatch.setattr(job, "start_worker", no_thread)
+    monkeypatch.setattr(job, "threading", types.SimpleNamespace(Thread=UnstartableThread))
     archive_file = _plain_zip(tmp_path, "sample_run.fit")
     with TestClient(app) as client:
         refused = _post_archive(client, archive_file)
         rows_after_refusal = _import_rows(isolated_data_dir)
         children_after_refusal = _temp_children(isolated_data_dir)
-        monkeypatch.setattr(job, "start_worker", real_start)
+        idle_after_refusal = job.wait_idle(DRAIN_TIMEOUT_S)
+        monkeypatch.setattr(job, "threading", threading)
         accepted = _post_archive(client, archive_file)
         _drain()
-    print(refused.status_code, refused.text, accepted.status_code)
+    print(refused.status_code, refused.text, idle_after_refusal, accepted.status_code)
     assert refused.status_code == 500, refused.text
     assert refused.json()["detail"] == "the import could not be started: RuntimeError: can't start new thread"
     assert rows_after_refusal == []
     assert children_after_refusal == []
+    assert idle_after_refusal is True
     assert accepted.status_code == 202, accepted.text
 
 
@@ -399,6 +403,29 @@ def test_an_unwritable_temp_dir_is_a_500_naming_the_cause(
     detail = response.json()["detail"]
     assert detail.startswith("the archive could not be stored: "), detail
     assert "Error" in detail, detail
+    assert _import_rows(isolated_data_dir) == []
+    assert _temp_children(isolated_data_dir) == []
+    _drain()
+
+
+def test_a_stored_copy_that_cannot_be_read_back_is_a_500_not_a_400(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening the server's own copy fails with an I/O error (zipfile turns malformed input into
+    ``BadZipFile``, so an ``OSError`` here is a server-side fault): 500 naming the cause, not 400
+    "not a zip archive"; row and dir removed."""
+
+    def unreadable(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(main, "zipfile", types.SimpleNamespace(ZipFile=unreadable, BadZipFile=zipfile.BadZipFile))
+    with TestClient(app) as client:
+        response = _post_archive(client, _plain_zip(tmp_path, "sample_run.fit"))
+    print(response.status_code, response.text)
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == (
+        "the archive could not be stored: PermissionError: [Errno 13] Permission denied"
+    ), response.text
     assert _import_rows(isolated_data_dir) == []
     assert _temp_children(isolated_data_dir) == []
     _drain()

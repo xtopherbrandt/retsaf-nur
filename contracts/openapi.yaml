@@ -1085,7 +1085,7 @@ paths:
           description: No `file` part (FastAPI-default {detail})
           content: { application/json: { schema: { type: object } } }
         "500":
-          description: The archive could not be stored (disk full, unwritable data dir), or the worker could not start; the detail names the cause, and no import or temp dir is left
+          description: The archive could not be stored (disk full, unwritable data dir, the stored copy unreadable), or the worker could not start; the detail names the cause, and no import or temp dir is left
           content: { application/json: { schema: { type: object } } }
     get:
       tags: [Sessions]

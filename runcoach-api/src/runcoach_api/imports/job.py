@@ -455,16 +455,20 @@ _workers_lock = threading.Lock()
 def start_worker(
     import_id: str, data_dir: Path, profile_names: list[str], zone: ZoneInfo
 ) -> threading.Thread:
-    """Run ``run_job`` on a daemon thread, registered for ``wait_idle``; returns the started thread."""
+    """Run ``run_job`` on a daemon thread, registered for ``wait_idle``; returns the started thread.
+
+    The thread is registered only once ``start()`` has returned, so a start that raises leaves
+    nothing for ``wait_idle`` to join (joining an unstarted thread raises).
+    """
     worker = threading.Thread(
         target=run_job,
         args=(import_id, Path(data_dir), list(profile_names), zone),
         name=f"import-{import_id}",
         daemon=True,
     )
+    worker.start()
     with _workers_lock:
         _workers.append(worker)
-    worker.start()
     return worker
 
 

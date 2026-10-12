@@ -1261,8 +1261,10 @@ def _check_zip(path) -> None:
     try:
         with zipfile.ZipFile(path):
             pass
-    except (zipfile.BadZipFile, EOFError, ValueError, NotImplementedError, OSError) as exc:
+    except (zipfile.BadZipFile, EOFError, ValueError, NotImplementedError) as exc:
         # ValueError covers a UTF-8-flagged entry name that does not decode (UnicodeDecodeError).
+        # OSError is not caught: zipfile reports malformed input as BadZipFile, so an OSError is
+        # a fault reading the server's own copy, and the caller answers it 500.
         raise HTTPException(400, f"not a zip archive: {type(exc).__name__}: {exc}") from exc
 
 
@@ -1277,8 +1279,8 @@ def _check_zip(path) -> None:
         409: {"description": "An import is queued, scanning or running; the detail names its import_id"},
         413: {"description": "The archive exceeds the 1 GiB limit"},
         500: {
-            "description": "The archive could not be stored (disk full, unwritable data dir), or the "
-            "worker could not start; the detail names the cause"
+            "description": "The archive could not be stored (disk full, unwritable data dir, the "
+            "stored copy unreadable), or the worker could not start; the detail names the cause"
         },
     },
 )
@@ -1290,8 +1292,8 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
     check and the new row are one ``BEGIN IMMEDIATE`` transaction in
     ``import_job.create_job``); the part is copied to the job's temp dir,
     counting bytes, 413 past the cap; a copy that does not open as a zip is a
-    400. Any refusal, and a failure to write the copy (a 500 naming the
-    cause), removes the row and the temp dir. Then the worker starts with the
+    400. Any refusal, and a failure to write the copy or read it back (a 500
+    naming the cause), removes the row and the temp dir. Then the worker starts with the
     data dir, ``resting_hrv_profile_names`` and ``athlete_timezone`` read here,
     once, and the response is the job as it was before the worker ran:
     ``queued``, with ``files`` empty. A worker that cannot start is a 500
@@ -1316,11 +1318,11 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 archive_bytes = _copy_archive(file.file, target)
+                _check_zip(target)
             except OSError as exc:
                 raise HTTPException(
                     500, f"the archive could not be stored: {type(exc).__name__}: {exc}"
                 ) from exc
-            _check_zip(target)
             import_job.set_archive_bytes(conn, import_id, archive_bytes)
             body = import_job.read_import(conn, import_id)
         except BaseException:
