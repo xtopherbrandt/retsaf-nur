@@ -1,10 +1,12 @@
 """Thin httpx wrapper around the backend API's endpoints.
 
-This is the only network call site in the CLI. It returns the raw
+This is the CLI's only call site to the runcoach API (Garmin Connect is reached through
+``garmin_connect``). It returns the raw
 `httpx.Response` on success and never parses or validates the response
 body - that boundary belongs to the caller (see status command / T010-T011).
 """
 
+import uuid
 from pathlib import Path
 
 import httpx
@@ -213,5 +215,27 @@ def recompute_session_load(base_url: str, session_id: str) -> httpx.Response:
     """
     try:
         return client.post(f"{base_url}/sessions/{session_id}/load/recompute", timeout=RECOMPUTE_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def upload_fit_bytes(base_url: str, data: bytes, *, runs_and_captures_only: bool = True) -> httpx.Response:
+    """Upload ``data`` as the multipart part ``file`` of POST {base_url}/sessions.
+
+    For bytes read from a downloaded zip entry. The part's file name is generated per call
+    (``garmin-<32 hex>.fit``), never taken from the entry: the API screens a file by its content,
+    and an entry name is input the CLI does not pass on. ``runs_and_captures_only`` is sent as a
+    form field spelled "true"/"false" (as ``upload_fit`` spells ``resting_capture``, which is not
+    sent here). Only network-layer failures are translated into ApiUnreachableError; status and
+    body are the caller's job.
+    """
+    name = f"garmin-{uuid.uuid4().hex}.fit"
+    try:
+        return client.post(
+            f"{base_url}/sessions",
+            files={"file": (name, data, "application/octet-stream")},
+            data={"runs_and_captures_only": "true" if runs_and_captures_only else "false"},
+            timeout=UPLOAD_TIMEOUT,
+        )
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc

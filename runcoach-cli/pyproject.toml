@@ -8,6 +8,12 @@ dependencies = [
     "tomli-w>=1.0",
 ]
 
+[project.optional-dependencies]
+garmin = [
+    "garminconnect>=0.3.17,<0.4; python_version >= '3.12'",
+    "curl_cffi; python_version >= '3.12'",
+]
+
 [project.scripts]
 runcoach = "runcoach_cli.main:main"
 
