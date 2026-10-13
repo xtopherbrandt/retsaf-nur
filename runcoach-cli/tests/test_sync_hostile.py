@@ -142,10 +142,11 @@ def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path):
     monkeypatch.setattr(sync, "today", lambda: TODAY)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", timezone(timedelta(hours=-7)))
 
-    def go(fake: FakeGarmin) -> tuple[Any, Api]:
+    def go(fake: FakeGarmin | None, adapter: Any = None) -> tuple[Any, Api]:
         api = Api()
         install_mock_client(api)
-        monkeypatch.setattr(sync, "_adapter", lambda: SimpleNamespace(open_client=lambda: fake))
+        chosen = adapter if adapter is not None else SimpleNamespace(open_client=lambda: fake)
+        monkeypatch.setattr(sync, "_adapter", lambda: chosen)
         before = _listing(tmp_path)
         result = runner.invoke(app, ["sync", "--since", "2026-10-10"], input=b"")
         after = _listing(tmp_path)
@@ -569,6 +570,52 @@ def test_an_http_error_on_the_activity_list_stops_without_claiming_garmin_is_unr
     assert f"API Error {status}" in last, last
     assert last.endswith("run `runcoach sync --since 2026-10-10`"), last
     assert _requested(session)[-1] == "list"
+    assert api.uploads == []
+
+
+def test_an_activity_list_reply_that_is_not_json_stops_without_claiming_garmin_is_unreachable(
+    run, library_garmin
+) -> None:
+    client, session = _library_client(library_garmin, [])
+    client._garmin.client._api_session.answer = lambda method, url, params: b"<html>maintenance</html>"
+    result, api = run(client)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert "could not reach" not in last, last
+    assert "Garmin: " in last, last
+    assert last.endswith("run `runcoach sync --since 2026-10-10`"), last
+    assert _requested(session)[-1] == "list"
+    assert api.uploads == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "says", "never"),
+    [
+        (requests.ConnectionError("[WinError 10061] refused"), "could not reach Garmin Connect", "login"),
+        (requests.Timeout("Read timed out. (read timeout=15)"), "could not reach Garmin Connect", "login"),
+        (503, "Garmin: Failed to retrieve social profile", "could not reach"),
+        (429, "Garmin is limiting requests", "login"),
+        (401, sync.LOGIN_NEEDED, "could not reach"),
+    ],
+    ids=["refused", "timeout", "503", "429", "401"],
+)
+def test_loading_the_saved_token_at_sync_start_stops_per_the_ruling(
+    run, saved_token_session, answer, says, never
+) -> None:
+    # The real adapter's open_client over the real library: offline is not "Garmin login needed".
+    from runcoach_cli import garmin_connect
+
+    seen = saved_token_session(answer)
+    result, api = run(None, adapter=garmin_connect)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert says in last, last
+    assert never not in last, last
+    if says != sync.LOGIN_NEEDED:
+        assert last.endswith("run `runcoach sync --since 2026-10-10`"), last
+    assert seen and all("socialProfile" in url for url in seen), seen
     assert api.uploads == []
 
 

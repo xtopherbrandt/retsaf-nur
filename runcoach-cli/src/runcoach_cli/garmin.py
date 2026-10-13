@@ -29,8 +29,10 @@ class RateLimited(GarminError):
 class GarminUnreachable(GarminError):
     """No HTTP reply at all: network down, connection refused or a timeout (after the library's retries).
 
-    An HTTP error status is never this: a 4xx or 5xx other than 401, 403, 404 and 429 is a plain
-    ``GarminError``, so a download that gets one is ``failed`` and the sync goes on.
+    Only a network error in the cause chain is this, also while the saved token is loaded. A reply
+    Garmin made is never this: a 4xx or 5xx other than 401, 403, 404 and 429 is a plain
+    ``GarminError``, so a download that gets one is ``failed`` and the sync goes on, and so is a
+    reply with no status (a body that is not JSON).
     """
 
 

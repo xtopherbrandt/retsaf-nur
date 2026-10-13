@@ -31,18 +31,22 @@ summary counts stored, already stored, skipped by sport, not an activity and no 
 failed item is printed with a `runcoach sync --since DAY` line that recovers it, and the exit code
 is 1 when any item failed. A download that Garmin answers with an HTTP error status other than
 401, 403, 404 and 429 (4xx, or 5xx after the library's own retries) is a failed item and the sync
-goes on; a 404 is no snapshot for that day, or no FIT file for that activity. A stop (a login
-needed, including a 401 or 403 for a download or the activity list; a web page where a download
-was expected; a rate limit (429); Garmin unreachable, meaning a network error with no HTTP status
-at all; the API unreachable; any other error on the activity list, which has no item to fail; an
-API whose `/openapi.json` does not list the switch) prints the summary so far and its message,
+goes on; a 404 is no snapshot for that day, or no FIT file for that activity. A zip entry
+compressed with anything but stored or deflate is a failed item, without being decompressed. A
+stop (a login needed, including a 401 or 403 for a download or the activity list; a web page where
+a download was expected; a rate limit (429); Garmin unreachable, meaning a network error with no
+HTTP status at all, also while the saved token is loaded at the start (a reply Garmin made is never
+this); the API unreachable; any other error on the activity list, which has no item to fail, or
+while the saved token is loaded, which reads `Garmin: <reason>`; an API whose `/openapi.json` does
+not list the switch) prints the summary so far and its message,
 uploads nothing more and exits 1; the switch is checked through `GET /openapi.json` before the
 first upload, so an older API is sent nothing.
 
 F022: `runcoach sync login` asks for the Garmin email, the password (not echoed) and, only when
 Garmin asks, the MFA code, and saves the token in `~/.runcoach/garmin/` (`garmin_tokens.json`,
-beside the CLI config file) only once Garmin accepts the login; a refused login keeps any saved
-token. The email and password are never stored. `runcoach sync logout` deletes the token file; it
+beside the CLI config file) only once Garmin accepts the login; a failed login keeps any saved
+token and says what went wrong: Garmin refused the login, Garmin could not be reached, Garmin is
+limiting requests, or `Garmin: <reason>`. The email and password are never stored. `runcoach sync logout` deletes the token file; it
 does not revoke the token at Garmin, which stays usable until it expires or is revoked there.
 
 F022: the route is unofficial (spec/02 section 2.7.3): `sync` uses the third-party

@@ -130,6 +130,41 @@ def test_a_refusal_message_is_printed_without_control_characters(monkeypatch, pr
     assert "bad?[2Jlogin??forged line" in result.output
 
 
+@pytest.mark.parametrize(
+    ("error", "says", "never"),
+    [
+        (garmin.LoginNeeded("Invalid username or password"), "Garmin refused the login: Invalid username", ()),
+        (
+            garmin.GarminUnreachable("Connection error: refused"),
+            "could not reach Garmin Connect: Connection error: refused",
+            ("refused the login",),
+        ),
+        (
+            garmin.RateLimited("Too many login attempts"),
+            "Garmin is limiting requests (Too many login attempts): wait, then run `runcoach sync login`",
+            ("refused the login",),
+        ),
+        (
+            garmin.GarminError("Login failed: API Error 500"),
+            "Garmin: Login failed: API Error 500",
+            ("refused the login", "could not reach"),
+        ),
+    ],
+    ids=["refused", "unreachable", "rate-limited", "other"],
+)
+def test_a_failed_login_is_worded_by_what_went_wrong(monkeypatch, prompts, error, says, never) -> None:
+    _install(monkeypatch, FakeAdapter(refuse=error))
+
+    result = runner.invoke(app, ["sync", "login"])
+
+    assert result.exit_code == 1
+    flat = _flat(result.output)
+    assert says in flat, flat
+    assert "Any saved token is unchanged." in flat, flat
+    for text in never:
+        assert text not in flat, flat
+
+
 def test_a_token_that_cannot_be_saved_says_so_not_that_garmin_refused(monkeypatch, prompts) -> None:
     _install(monkeypatch, FakeAdapter(refuse=garmin.TokenNotSaved("[Errno 28] No space left on device")))
 

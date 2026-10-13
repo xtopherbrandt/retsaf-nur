@@ -93,15 +93,47 @@ def _status_of(exc: BaseException) -> int | None:
     return None
 
 
+def _translate_authentication_error(exc: Exception, message: str) -> GarminError:
+    """Map the library's authentication error by what caused it.
+
+    Loading a saved token (``Garmin.login(path)``) fetches the profile with the undecorated
+    ``Client.connectapi`` and, after its own retries, raises ``GarminConnectAuthenticationError
+    ("Failed to retrieve social profile")`` from the request's last error, whatever that was. So:
+    a network error in the chain is ``GarminUnreachable``; a cause with an HTTP status of 401 or
+    403 needs a login; a 429 is ``RateLimited``; any other status, or another cause that is not the
+    library's own authentication error (a reply that is not the profile), is a plain
+    ``GarminError``; an authentication error with no cause (no saved token, no credentials) needs
+    a login.
+    """
+    from garminconnect import GarminConnectAuthenticationError
+
+    cause = exc.__cause__
+    if cause is None:
+        return LoginNeeded(message)
+    detail = f"{message} ({str(cause) or type(cause).__name__})"
+    if _has_network_cause(exc):
+        return GarminUnreachable(detail)
+    status = _status_of(cause)
+    if status in _REFUSED:
+        return LoginNeeded(message)
+    if status == 429:
+        return RateLimited(detail)
+    if status is None and isinstance(cause, GarminConnectAuthenticationError):
+        return LoginNeeded(message)
+    return GarminError(detail)
+
+
 def translate_error(exc: Exception) -> GarminError:
     """Map a library exception to the CLI's own (the F022 reference, sections 5 and 6).
 
-    An authentication error, or an HTTP 401 or 403, needs a login (``LoginNeeded``); a rate-limit
-    error or a 429 is ``RateLimited``; a not-found error or a 404 is ``NotFound``; any other HTTP
-    4xx or 5xx (a 5xx after the library's own retries) is a plain ``GarminError``, so a download
-    with it is ``failed`` and the sync goes on; a connection error with no HTTP status at all
-    (network down, connection refused, timeout) is ``GarminUnreachable``; anything else is a plain
-    ``GarminError``.
+    An authentication error is mapped by its cause (``_translate_authentication_error``). A
+    rate-limit error or a 429 is ``RateLimited``; a not-found error or a 404 is ``NotFound``; an
+    HTTP 401 or 403 needs a login (``LoginNeeded``); any other HTTP 4xx or 5xx (a 5xx after the
+    library's own retries) is a plain ``GarminError``, so a download with it is ``failed`` and the
+    sync goes on. ``GarminUnreachable`` (a stop) only when a network error (connection refused,
+    network down, timeout) is in the cause chain: an error with no HTTP status and no network
+    cause (a reply that is not JSON, a pagination limit) means Garmin replied, so it is a plain
+    ``GarminError``, as is anything else.
     """
     from garminconnect import (
         GarminConnectAuthenticationError,
@@ -112,15 +144,15 @@ def translate_error(exc: Exception) -> GarminError:
 
     message = str(exc) or type(exc).__name__
     if isinstance(exc, GarminConnectAuthenticationError):
-        return LoginNeeded(message)
+        return _translate_authentication_error(exc, message)
     if isinstance(exc, GarminConnectTooManyRequestsError):
         return RateLimited(message)
     if isinstance(exc, GarminConnectNotFoundError):
         return NotFound(message)
     if isinstance(exc, GarminConnectConnectionError):
-        status = _status_of(exc)
-        if status is None:
+        if _has_network_cause(exc):
             return GarminUnreachable(message)
+        status = _status_of(exc)
         if status in _REFUSED:
             return LoginNeeded(message)
         if status == 429:

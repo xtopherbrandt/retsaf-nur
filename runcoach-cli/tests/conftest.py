@@ -151,3 +151,49 @@ def library_garmin() -> Callable[..., tuple[object, LibrarySession]]:
         return lib, session
 
     return make
+
+
+@pytest.fixture
+def saved_token_session(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
+    """A saved Garmin token in the tmp home, with every ``requests`` call answered by ``answer``.
+
+    ``saved_token_session(answer)`` returns the list of URLs requested. ``answer`` is an int (that
+    HTTP status, with an HTML body that is not JSON) or an exception to raise (a ``requests``
+    network error). ``Garmin.login(token_dir)`` then runs as ``runcoach sync`` runs it: the token
+    loads from the file, and the profile fetch goes through ``requests.Session.request``. The
+    library's one-second sleeps between its profile retries are zero, and its token refresh (which
+    posts through ``curl_cffi`` when that is installed, bypassing ``requests``) is refused as a
+    network error, so nothing leaves the test.
+    """
+    import json
+    import time
+
+    import requests
+    from garminconnect.client import Client
+
+    from runcoach_cli import garmin
+
+    token_file = garmin.token_dir() / "garmin_tokens.json"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text(
+        json.dumps({"di_token": "abc", "di_refresh_token": "def", "di_client_id": "ghi"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+
+    def no_refresh_post(self, url, **kwargs):
+        raise requests.ConnectionError("token refresh blocked in tests")
+
+    monkeypatch.setattr(Client, "_http_post", no_refresh_post)
+    seen: list[str] = []
+
+    def install(answer: object) -> list[str]:
+        def request(self, method, url, **kwargs):
+            seen.append(url)
+            if isinstance(answer, BaseException):
+                raise answer
+            return LibraryResponse(answer, b"<html>x</html>")  # type: ignore[arg-type]
+
+        monkeypatch.setattr(requests.Session, "request", request)
+        return seen
+
+    return install

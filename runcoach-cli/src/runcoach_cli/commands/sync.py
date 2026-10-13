@@ -732,10 +732,20 @@ def login() -> None:
             f"{sessions._printable(str(exc))}. Any saved token is unchanged."
         ) from None
     except garmin.GarminError as exc:
-        raise _fail(
-            f"Garmin refused the login: {sessions._printable(str(exc))}. Any saved token is unchanged."
-        ) from None
+        raise _fail(f"{_login_failure(exc)}. Any saved token is unchanged.") from None
     _write_utf8(f"Logged in. Token saved in {garmin.token_dir()}")
+
+
+def _login_failure(exc: garmin.GarminError) -> str:
+    """What went wrong with a ``sync login``, worded by the kind of Garmin error."""
+    reason = sessions._printable(str(exc))
+    if isinstance(exc, garmin.LoginNeeded):
+        return f"Garmin refused the login: {reason}"
+    if isinstance(exc, garmin.GarminUnreachable):
+        return f"could not reach Garmin Connect: {reason}"
+    if isinstance(exc, garmin.RateLimited):
+        return f"Garmin is limiting requests ({reason}): wait, then run `runcoach sync login`"
+    return f"Garmin: {reason}"
 
 
 @sync_app.command(name="logout")
