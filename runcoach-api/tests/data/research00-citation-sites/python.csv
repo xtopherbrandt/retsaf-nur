@@ -1,16 +1,16 @@
 space,file,line,old_citation,new_id
-repo,runcoach-api/src/runcoach_api/main.py,504,§5.4 (iii),HRV-22
-repo,runcoach-api/src/runcoach_api/main.py,508,§5.4 (iii),HRV-22
-repo,runcoach-api/src/runcoach_api/main.py,518,§5.4,HRV-31
-repo,runcoach-api/src/runcoach_api/schemas.py,194,§1.6,PRIN-12
-repo,runcoach-api/src/runcoach_api/schemas.py,315,1.6,PRIN-12
-repo,runcoach-api/src/runcoach_api/schemas.py,436,1.7,PRIN-14
-repo,runcoach-api/src/runcoach_api/schemas.py,529,1.6,PRIN-23
-repo,runcoach-api/src/runcoach_api/schemas.py,541,5.4 (v),HRV-31
-repo,runcoach-api/src/runcoach_api/schemas.py,572,5.4,HRV-57
-repo,runcoach-api/src/runcoach_api/schemas.py,591,5.4 (iii),HRV-22
-repo,runcoach-api/src/runcoach_api/schemas.py,610,1.7,PRIN-14
-repo,runcoach-api/src/runcoach_api/schemas.py,350,1.6,PRIN-12
+repo,runcoach-api/src/runcoach_api/main.py,566,§5.4 (iii),HRV-22
+repo,runcoach-api/src/runcoach_api/main.py,570,§5.4 (iii),HRV-22
+repo,runcoach-api/src/runcoach_api/main.py,580,§5.4,HRV-31
+repo,runcoach-api/src/runcoach_api/schemas.py,208,§1.6,PRIN-12
+repo,runcoach-api/src/runcoach_api/schemas.py,329,1.6,PRIN-12
+repo,runcoach-api/src/runcoach_api/schemas.py,450,1.7,PRIN-14
+repo,runcoach-api/src/runcoach_api/schemas.py,543,1.6,PRIN-23
+repo,runcoach-api/src/runcoach_api/schemas.py,555,5.4 (v),HRV-31
+repo,runcoach-api/src/runcoach_api/schemas.py,586,5.4,HRV-57
+repo,runcoach-api/src/runcoach_api/schemas.py,605,5.4 (iii),HRV-22
+repo,runcoach-api/src/runcoach_api/schemas.py,624,1.7,PRIN-14
+repo,runcoach-api/src/runcoach_api/schemas.py,364,1.6,PRIN-12
 repo,runcoach-api/tests/test_band_reconciliation.py,206,§3.7.3,literal
 repo,runcoach-api/tests/test_hrv_dataset_populations.py,235,§1.7,ARCH-13
 repo,runcoach-api/tests/test_hrv_dataset_populations.py,263,§1.7,PRIN-14
@@ -210,15 +210,15 @@ repo,runcoach-api/tests/test_source_change_rule_sweep.py,1489,Sec 5.4,HRV-44
 repo,runcoach-api/tests/test_spec_cost_figures.py,8,research/00:220,literal
 repo,runcoach-api/tests/test_spec_cost_figures.py,37,§1.7,PRIN-14
 repo,runcoach-api/tests/test_spec_cost_figures.py,206,5.4,FIG-01
-repo,runcoach-api/src/runcoach_api/main.py,334,,PRIN-27
-repo,runcoach-api/src/runcoach_api/main.py,538,,PRIN-27
-repo,runcoach-api/src/runcoach_api/main.py,334,,PRIN-24
-repo,runcoach-api/src/runcoach_api/main.py,537,,PRIN-24
-repo,runcoach-api/src/runcoach_api/schemas.py,24,,PRIN-27
-repo,runcoach-api/src/runcoach_api/schemas.py,458,,PRIN-27
-repo,runcoach-api/src/runcoach_api/schemas.py,24,,PRIN-24
-repo,runcoach-api/src/runcoach_api/schemas.py,458,,PRIN-24
-repo,runcoach-api/src/runcoach_api/schemas.py,193,,PRIN-24
+repo,runcoach-api/src/runcoach_api/main.py,396,,PRIN-27
+repo,runcoach-api/src/runcoach_api/main.py,600,,PRIN-27
+repo,runcoach-api/src/runcoach_api/main.py,396,,PRIN-24
+repo,runcoach-api/src/runcoach_api/main.py,599,,PRIN-24
+repo,runcoach-api/src/runcoach_api/schemas.py,38,,PRIN-27
+repo,runcoach-api/src/runcoach_api/schemas.py,472,,PRIN-27
+repo,runcoach-api/src/runcoach_api/schemas.py,38,,PRIN-24
+repo,runcoach-api/src/runcoach_api/schemas.py,472,,PRIN-24
+repo,runcoach-api/src/runcoach_api/schemas.py,207,,PRIN-24
 repo,runcoach-api/tests/test_hrv_trend_endpoint.py,2953,,PRIN-24
 repo,runcoach-api/src/runcoach_api/db.py,803,,PRIN-27
 repo,runcoach-api/src/runcoach_api/db.py,803,,PRIN-24

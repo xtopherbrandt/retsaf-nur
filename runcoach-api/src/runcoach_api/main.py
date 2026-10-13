@@ -9,6 +9,7 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from runcoach_api import __version__, db
+from runcoach_api.imports.archive import screen_file_id
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
@@ -30,6 +31,7 @@ from runcoach_api.schemas import (
     HrvTrendResponse,
     IncludedReading,
     IngestResponse,
+    IngestSkipped,
     Thresholds,
 )
 
@@ -143,11 +145,19 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version=__version__)
 
 
-@app.post("/sessions", response_model=IngestResponse, status_code=201)
+@app.post(
+    "/sessions",
+    response_model=IngestResponse | IngestSkipped,
+    status_code=201,
+    response_model_exclude_none=True,
+    responses={201: {"model": IngestResponse}, 200: {"model": IngestSkipped}},
+)
 def create_session(
+    response: Response,
     file: UploadFile = File(...),  # noqa: B008 -- FastAPI's parameter idiom
     resting_capture: bool = Form(False),
-) -> IngestResponse:
+    runs_and_captures_only: bool = Form(False),
+) -> IngestResponse | IngestSkipped:
     """Ingest one uploaded FIT file.
 
     ``resting_capture`` is F004's upload-time Tier-1 declaration: the athlete
@@ -163,12 +173,52 @@ def create_session(
     are coerced by pydantic and anything else is a 422: the one input on this
     path that carries nothing but the athlete's intent must never be guessed
     at.
+
+    ``runs_and_captures_only`` (F022) applies the archive import's rule to this
+    one file: ``imports.archive.screen_file_id`` before decoding, then
+    ``imports.job.keep_session`` on the classified session. A file the rule does
+    not keep is a 200 ``IngestSkipped`` and nothing is stored; a ``file_id`` the
+    screen fails is a 400 with the screen's detail; otherwise the replies are the
+    usual ones, and the 201 carries ``filter_applied: true``. The switch with
+    ``resting_capture`` is a 422: a declaration that bypasses the rule and a
+    request to apply it contradict each other. Without the switch the call and
+    every reply are as before the field existed (no ``filter_applied`` key).
     """
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"upload exceeds {MAX_UPLOAD_BYTES} byte limit")
+    if runs_and_captures_only and resting_capture:
+        # RequestValidationError is imported with the /me routes below, as update_me raises it.
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "runs_and_captures_only"),
+                    "msg": "Value error, runs_and_captures_only cannot be combined with resting_capture",
+                    "input": runs_and_captures_only,
+                }
+            ]
+        )
+    kept_sessions: list = []
     try:
-        result = ingest_fit_bytes(raw, resting_capture_override=resting_capture)
+        if not runs_and_captures_only:
+            result = ingest_fit_bytes(raw, resting_capture_override=resting_capture)
+        else:
+            screen = screen_file_id(raw)
+            if screen.outcome == "failed":
+                raise HTTPException(400, screen.detail)
+            if screen.outcome == "non_activity":
+                response.status_code = 200
+                return IngestSkipped(
+                    skipped=True, reason="non_activity", file_type=screen.file_type, filter_applied=True
+                )
+
+            def keep(session) -> bool:
+                kept_sessions.append(session)
+                # import_job is imported with the /imports routes below, as lifespan uses it.
+                return import_job.keep_session(session)
+
+            result = ingest_fit_bytes(raw, resting_capture_override=False, keep=keep)
     except (
         NotAFitFileError,
         FitParseFailure,
@@ -183,7 +233,19 @@ def create_session(
         # naming the session a duplicate already is.
         status, detail = http_status_detail(exc)
         raise HTTPException(status, detail) from exc
-    return IngestResponse(session_id=result.session_id, quality_flags=result.quality_flags)
+    if not runs_and_captures_only:
+        return IngestResponse(session_id=result.session_id, quality_flags=result.quality_flags)
+    if result.skipped:
+        response.status_code = 200
+        return IngestSkipped(
+            skipped=True,
+            reason="skipped_sport",
+            sport=import_job._skip_label(kept_sessions[-1]),
+            filter_applied=True,
+        )
+    return IngestResponse(
+        session_id=result.session_id, quality_flags=result.quality_flags, filter_applied=True
+    )
 
 
 @app.get("/sessions/{session_id}")

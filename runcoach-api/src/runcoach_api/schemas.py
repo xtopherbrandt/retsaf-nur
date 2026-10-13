@@ -14,6 +14,20 @@ class HealthResponse(BaseModel):
 class IngestResponse(BaseModel):
     session_id: str
     quality_flags: list[str]
+    # True only on an upload sent with ``runs_and_captures_only``; absent otherwise.
+    filter_applied: bool | None = None
+
+
+class IngestSkipped(BaseModel):
+    """``POST /sessions`` with ``runs_and_captures_only``: a file the rule does not keep; nothing stored."""
+
+    skipped: Literal[True]
+    reason: Literal["non_activity", "skipped_sport"]
+    file_type: str | None = Field(
+        default=None, description="non_activity: the file_id type name, or its number as a string."
+    )
+    sport: str | None = Field(default=None, description="skipped_sport: the sport as the FIT file names it.")
+    filter_applied: Literal[True]
 
 
 # ---------------------------------------------------------------------------
