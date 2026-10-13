@@ -26,7 +26,9 @@ activities in processing order with their bytes copied to ``work_dir``.
   ``file_id.type`` other than ``activity`` is counted under ``non_activity``
   by the decoder's type name, or by the number as a string for a Garmin-private
   type. A ``file_id`` that cannot be read, or has no usable ``type``, makes a
-  ``Failed`` candidate (it may be an activity) with ``status`` None.
+  ``Failed`` candidate (it may be an activity) with ``status`` None. That
+  ``file_id`` decision is the public ``screen_file_id(data)``, so a caller
+  screening one file applies the same rule.
 - **Order.** ``time_created`` ascending, ties by label, then by archive
   position; an activity without ``time_created`` (absent, or the invalid
   sentinel) comes after every dated one. ``Scan.processing_order()`` puts the
@@ -52,6 +54,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import fitdecode
 
@@ -132,6 +135,23 @@ def _extension(name: str) -> str:
     return ext[1:].lower() if ext else "(none)"
 
 
+@dataclass(frozen=True)
+class FileIdScreen:
+    """What a FIT file's ``file_id`` says it is, before any decoding past ``file_id``.
+
+    ``outcome`` is ``"activity"`` (``time_created`` is the raw value, None when
+    absent or the invalid sentinel), ``"non_activity"`` (``file_type`` is the
+    label the archive import counts: the decoder's type name, or the number as a
+    string for a Garmin-private type) or ``"failed"`` (``detail`` says why; the
+    file may still be an activity).
+    """
+
+    outcome: Literal["activity", "non_activity", "failed"]
+    time_created: int | None = None
+    file_type: str | None = None
+    detail: str | None = None
+
+
 def _read_file_id(data: bytes) -> tuple[str | int | None, int | None]:
     """``(file_id.type, raw time_created)``, reading no further than ``file_id``; raises if it cannot be read."""
     with fitdecode.FitReader(io.BytesIO(data), check_crc=fitdecode.CrcCheck.DISABLED) as reader:
@@ -142,6 +162,24 @@ def _read_file_id(data: bytes) -> tuple[str | int | None, int | None]:
                     frame.get_raw_value("time_created", fallback=None),
                 )
     raise LookupError("no file_id message")
+
+
+def screen_file_id(data: bytes) -> FileIdScreen:
+    """Screen one FIT file's bytes by its ``file_id`` alone, with CRC checking off; never raises.
+
+    The rule the archive import applies to every FIT candidate: a ``file_id``
+    that cannot be read, or carries no usable ``type``, fails; a ``type`` other
+    than ``activity`` is a non-activity; otherwise an activity.
+    """
+    try:
+        file_type, time_created = _read_file_id(data)
+    except Exception as exc:  # noqa: BLE001 -- any decoder error fails this file only
+        return FileIdScreen("failed", detail=f"file_id could not be read: {type(exc).__name__}: {exc}")
+    if file_type is None:
+        return FileIdScreen("failed", detail="file_id carries no type")
+    if file_type != "activity":
+        return FileIdScreen("non_activity", file_type=str(file_type))
+    return FileIdScreen("activity", time_created=time_created)
 
 
 class _Scanner:
@@ -198,21 +236,17 @@ class _Scanner:
         if len(data) > cap:
             self._fail(label, position, 413, f"upload exceeds {cap} byte limit")
             return
-        try:
-            file_type, time_created = _read_file_id(data)
-        except Exception as exc:  # noqa: BLE001 -- any decoder error fails this candidate only
-            self._fail(label, position, None, f"file_id could not be read: {type(exc).__name__}: {exc}")
+        screened = screen_file_id(data)
+        if screened.outcome == "failed":
+            self._fail(label, position, None, screened.detail or "")
             return
-        if file_type is None:
-            self._fail(label, position, None, "file_id carries no type")
-            return
-        if file_type != "activity":
-            self.non_activity[str(file_type)] += 1
+        if screened.outcome == "non_activity":
+            self.non_activity[screened.file_type or ""] += 1
             return
         path = self._next_name(".fit")
         with open(path, "wb") as out:
             out.write(data)
-        self.scan.activities.append(Activity(label, time_created, path, position))
+        self.scan.activities.append(Activity(label, screened.time_created, path, position))
 
     def _inner_zip(self, zf: zipfile.ZipFile, info: zipfile.ZipInfo, label: str) -> None:
         if info.flag_bits & _ENCRYPTED:
