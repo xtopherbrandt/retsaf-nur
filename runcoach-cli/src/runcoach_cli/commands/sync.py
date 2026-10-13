@@ -7,19 +7,22 @@ This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands
   computer's zone (``sessions.LOCAL_ZONE``), of the newest stored run or recognised resting
   capture, found by walking ``GET /sessions`` newest first; it starts 29 days before today when
   there is none, and ends today (the ``today`` seam). A newest date after today is replaced by
-  today, with a warning naming the session. ``--since`` replaces the start; one after today is a
-  usage error. One activity-list call covers the range; then, day by day oldest first, the day's
-  Health Snapshot zip and the day's running-family and ``other`` activities (by local start, then
-  id) are downloaded, and every entry of every zip is read in memory and uploaded with
+  today, with a warning naming the session. ``--since`` (``YYYY-MM-DD`` only) replaces the start,
+  and then ``GET /sessions`` is not walked; one after today is a usage error. One activity-list
+  call covers the range; then, day by day oldest first, the day's Health Snapshot zip and the
+  day's running-family and ``other`` activities (by local start, then id) are downloaded, and
+  every entry of every zip is read in memory and uploaded with
   ``runs_and_captures_only`` set. A manual activity is never downloaded (``no_fit_original``).
   Before the first upload, ``GET /openapi.json`` must list the switch on ``POST /sessions``.
   Each item is recorded in an ``ItemResult`` with its outcome (reference section 5): ``stored``,
   ``already_stored``, ``skipped_sport``, ``non_activity``, ``no_fit_original`` or ``failed``. The
-  summary follows the ``From`` line; the exit code is 1 when any item failed. A stop (reference
-  section 6: a login needed, a web page for a download, a rate limit, Garmin or the API
-  unreachable, an API without the switch) prints the summary so far and its message, uploads
+  summary follows the ``From`` line; the exit code is 1 when any item failed. A download that
+  Garmin answers with an HTTP error status other than 401, 403, 404 and 429 is ``failed`` and the
+  sync goes on. A stop (reference section 6: a login needed, a web page for a download, a rate
+  limit, Garmin unreachable (no HTTP reply at all) or the API unreachable, any error on the
+  activity list, an API without the switch) prints the summary so far and its message, uploads
   nothing more and exits 1. Downloads are read in memory only, each entry capped at
-  ``FIT_ENTRY_CAP`` (reference section 7). ``sync`` never reads stdin.
+  ``FIT_ENTRY_CAP`` and only stored or deflated (reference section 7). ``sync`` never reads stdin.
 
 - ``sync login`` asks for the email, the password (not echoed) and, only when Garmin asks for one,
   the MFA code, through the module-level prompt seams ``ask_text`` and ``ask_secret`` (tests replace
@@ -40,6 +43,7 @@ import importlib.util
 import io
 import json
 import lzma
+import re
 import sys
 import zipfile
 import zlib
@@ -144,10 +148,15 @@ SWITCH_FIELD = "runs_and_captures_only"
 # The most one zip entry may hold to be uploaded: ``POST /sessions``'s own cap; tests lower it.
 FIT_ENTRY_CAP = 50 * 1024 * 1024
 _CAP_TEXT = "50 MB"
+# The only compression methods read: CPython decompresses a whole bzip2 or LZMA entry before
+# ``read(n)`` slices it, so ``FIT_ENTRY_CAP`` bounds memory only for stored and deflated entries.
+_SAFE_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 # Errors reading a zip or one entry's bytes out of it (the archive import's list): corrupt data
 # (a corrupt bzip2 stream raises OSError, a corrupt LZMA stream LZMAError), a bad CRC, an
-# unsupported compression method, an encrypted entry or a cut-off stream.
+# unsupported compression method, an encrypted entry or a cut-off stream; and, as a backstop,
+# running out of memory.
 _ENTRY_READ_ERRORS = (
+    MemoryError,
     zipfile.BadZipFile,
     zlib.error,
     lzma.LZMAError,
@@ -161,6 +170,10 @@ _ENTRY_READ_ERRORS = (
 _STOPPING = (garmin.LoginNeeded, garmin.RateLimited, garmin.GarminUnreachable)
 # A failed reply's detail is cut to this many characters in the summary.
 _DETAIL_CHARS = 300
+# The API's reply text in the range walk's stop is cut to this many characters.
+_RANGE_TEXT_CHARS = 200
+# ``--since``'s only accepted form (ASCII digits).
+_SINCE_FORM = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 STORED = "stored"
 ALREADY_STORED = "already_stored"
@@ -204,13 +217,14 @@ class ItemResult:
 
 
 def _parse_since(value: str, end: date) -> date:
-    try:
-        since = date.fromisoformat(value)
-    except ValueError:
-        raise typer.BadParameter(
-            f"{value!r} is not a date in YYYY-MM-DD form", param_hint="'--since'"
-        ) from None
-    if len(value) != 10 or value[4] != "-":
+    """``value`` as a date; only ``YYYY-MM-DD`` (``date.fromisoformat`` also takes ``2026-W41-1``)."""
+    since = None
+    if _SINCE_FORM.fullmatch(value):
+        try:
+            since = date.fromisoformat(value)
+        except ValueError:
+            since = None
+    if since is None:
         raise typer.BadParameter(f"{value!r} is not a date in YYYY-MM-DD form", param_hint="'--since'")
     if since > end:
         raise typer.BadParameter(f"{value} is after today ({end.isoformat()})", param_hint="'--since'")
@@ -224,9 +238,8 @@ def _range_page(api_url: str, cursor: str | None) -> dict[str, Any]:
     except api_client.ApiUnreachableError:
         raise SyncStop(_api_unreachable(api_url, None)) from None
     if resp.status_code != 200:
-        raise SyncStop(
-            f"API returned {resp.status_code} while finding the newest stored session: {resp.text}"
-        )
+        text = sessions._printable(resp.text[:_RANGE_TEXT_CHARS])
+        raise SyncStop(f"API returned {resp.status_code} while finding the newest stored session: {text}")
     try:
         body = resp.json()
     except json.JSONDecodeError as exc:
@@ -274,7 +287,13 @@ def _newest_stored(api_url: str) -> tuple[date, dict[str, Any]] | None:
 
 
 def find_range(api_url: str, since: date | None, end: date) -> tuple[date, str | None]:
-    """``(start, warning)`` for a sync ending on ``end`` (reference section 2)."""
+    """``(start, warning)`` for a sync ending on ``end`` (reference section 2).
+
+    With ``since``, the start is ``since`` and ``GET /sessions`` is not walked: the walk only finds
+    the start that ``since`` replaces, so a future-dated stored session cannot warn.
+    """
+    if since is not None:
+        return since, None
     newest = _newest_stored(api_url)
     warning = None
     if newest is None:
@@ -290,8 +309,6 @@ def find_range(api_url: str, since: date | None, end: date) -> tuple[date, str |
             )
             newest_day = end
         start = newest_day - timedelta(days=1)
-    if since is not None:
-        start = since
     return start, warning
 
 
@@ -525,8 +542,10 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
     """Upload every entry of the zip ``data``, read in memory, in archive order.
 
     A web page stops the sync. Bytes that are not a zip, an activity download holding no file, an
-    entry that cannot be read and an entry over ``FIT_ENTRY_CAP`` are ``failed``; an empty
-    snapshot zip is zero items. Entry names are never used as paths.
+    entry compressed other than stored or deflated (refused before it is opened, since only those
+    two are read in bounded memory), an entry that cannot be read and an entry over
+    ``FIT_ENTRY_CAP`` are ``failed``; an empty snapshot zip is zero items. Entry names are never
+    used as paths.
     """
     if _looks_like_page(data):
         raise SyncStop(WEB_PAGE)
@@ -542,6 +561,16 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
             return
         for info in entries:
             item = f"{label}: {info.filename}"
+            if info.compress_type not in _SAFE_COMPRESSION:
+                method = zipfile.compressor_names.get(info.compress_type, f"method {info.compress_type}")
+                uploader.fail(
+                    day,
+                    item,
+                    activity_id,
+                    f"the entry is compressed with {method}, which sync does not read "
+                    "(only stored or deflated entries)",
+                )
+                continue
             try:
                 with archive.open(info) as handle:
                     entry = handle.read(FIT_ENTRY_CAP + 1)
@@ -697,8 +726,15 @@ def login() -> None:
     prompt_mfa: Callable[[], str] = lambda: ask_text("Garmin MFA code")
     try:
         _adapter().login(email, password, prompt_mfa)
+    except garmin.TokenNotSaved as exc:
+        raise _fail(
+            f"Garmin accepted the login, but the token could not be saved in {garmin.token_dir()}: "
+            f"{sessions._printable(str(exc))}. Any saved token is unchanged."
+        ) from None
     except garmin.GarminError as exc:
-        raise _fail(f"Garmin refused the login: {exc}. Any saved token is unchanged.") from None
+        raise _fail(
+            f"Garmin refused the login: {sessions._printable(str(exc))}. Any saved token is unchanged."
+        ) from None
     _write_utf8(f"Logged in. Token saved in {garmin.token_dir()}")
 
 

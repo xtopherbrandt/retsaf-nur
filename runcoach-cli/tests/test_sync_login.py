@@ -120,6 +120,46 @@ def test_a_refused_login_keeps_the_old_token_and_exits_1(monkeypatch, prompts) -
     assert [p.name for p in _token_file().parent.iterdir()] == [sync.TOKEN_FILE_NAME]
 
 
+def test_a_refusal_message_is_printed_without_control_characters(monkeypatch, prompts) -> None:
+    _install(monkeypatch, FakeAdapter(refuse=garmin.LoginNeeded("bad\x1b[2Jlogin\r\nforged line")))
+
+    result = runner.invoke(app, ["sync", "login"])
+
+    assert result.exit_code == 1
+    assert "\x1b" not in result.output and "\r" not in result.output
+    assert "bad?[2Jlogin??forged line" in result.output
+
+
+def test_a_token_that_cannot_be_saved_says_so_not_that_garmin_refused(monkeypatch, prompts) -> None:
+    _install(monkeypatch, FakeAdapter(refuse=garmin.TokenNotSaved("[Errno 28] No space left on device")))
+
+    result = runner.invoke(app, ["sync", "login"])
+
+    assert result.exit_code == 1
+    flat = _flat(result.output)
+    assert "refused" not in flat, flat
+    assert "Garmin accepted the login, but the token could not be saved" in flat, flat
+    assert "No space left on device" in flat
+
+
+def test_the_real_adapter_raises_token_not_saved_when_the_dump_fails(monkeypatch) -> None:
+    pytest.importorskip("garminconnect")
+    from garminconnect import Garmin
+    from garminconnect.client import Client
+    from runcoach_cli import garmin_connect
+
+    def fake_login(self, /, tokenstore=None):
+        return None, None
+
+    def failing_dump(self, path):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Garmin, "login", fake_login)
+    monkeypatch.setattr(Client, "dump", failing_dump)
+    with pytest.raises(garmin.TokenNotSaved):
+        garmin_connect.login(EMAIL, SENTINEL_PASSWORD, lambda: "123456")
+
+
 def test_logout_deletes_the_token_and_says_garmin_keeps_it(monkeypatch) -> None:
     _token_file().parent.mkdir(parents=True)
     _token_file().write_bytes(TOKEN_BYTES)

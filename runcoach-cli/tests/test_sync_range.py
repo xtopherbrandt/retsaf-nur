@@ -235,7 +235,9 @@ def test_since_after_today_is_a_usage_error(install_mock_client, fake: EmptyGarm
     assert store.requests == []
 
 
-@pytest.mark.parametrize("since", ["2026-13-01", "yesterday", "2026/10/01"])
+@pytest.mark.parametrize(
+    "since", ["2026-13-01", "yesterday", "2026/10/01", "2026-W41-1", "20261010", "2026-10-1 ", "\uff12026-10-10"]
+)
 def test_since_not_a_date_is_a_usage_error(install_mock_client, fake: EmptyGarmin, since: str) -> None:
     store = Store([[]])
 
@@ -265,4 +267,35 @@ def test_api_error_while_finding_the_range_exits_1(install_mock_client, fake: Em
 
     assert result.exit_code == 1
     assert "500" in result.output
+    assert fake.listed == []
+
+
+def test_since_skips_the_walk_and_never_warns_about_a_future_dated_session(
+    install_mock_client, fake: EmptyGarmin
+) -> None:
+    # The walk only finds the start that --since replaces: it is not made, so the newest stored
+    # session (here dated 2119) can neither warn nor stop the sync.
+    store = Store([[_row("bad-clock-1", "2119-01-01T08:00:00+00:00", name="Run")]])
+
+    result = _run(install_mock_client, store, "--since", "2026-10-12")
+
+    assert result.exit_code == 0, result.output
+    assert _first_line(result.output) == "From 2026-10-12 to 2026-10-13"
+    assert "Warning" not in result.output
+    assert "after today" not in result.output
+    assert store.requests == []
+
+
+def test_an_api_error_body_while_finding_the_range_is_printed_safely_and_cut(
+    install_mock_client, fake: EmptyGarmin
+) -> None:
+    body = "boom\x1b[2J\r\nforged line" + "x" * 5000
+    install_mock_client(lambda request: httpx.Response(500, text=body))
+
+    result = runner.invoke(app, ["sync"])
+
+    assert result.exit_code == 1
+    assert "\x1b" not in result.output and "\r" not in result.output
+    assert "boom?[2J??forged line" in result.output
+    assert "x" * 201 not in result.output
     assert fake.listed == []

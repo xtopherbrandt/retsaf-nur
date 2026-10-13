@@ -91,3 +91,63 @@ def install_mock_client(
         monkeypatch.setattr(api_client, "client", mock_client)
 
     return _install_mock_client
+
+
+class LibraryResponse:
+    """What ``requests`` would hand the Garmin library: a status, a body and (maybe) JSON."""
+
+    def __init__(self, status_code: int, content: bytes = b"", payload: object = None) -> None:
+        self.status_code = status_code
+        self.content = content
+        self.payload = payload
+        self.text = content.decode("latin-1")
+
+    def json(self) -> object:
+        if self.payload is None:
+            raise ValueError("not json")
+        return self.payload
+
+
+class LibrarySession:
+    """Stands in for the library client's HTTP session; ``answer(method, url, params)`` decides.
+
+    ``answer`` returns an int (that HTTP status, with an HTML body), bytes (a 200 download), a list
+    or dict (a 200 JSON reply), or an exception to raise (a ``requests`` network error).
+    """
+
+    def __init__(self, answer: Callable[[str, str, dict], object]) -> None:
+        self.answer = answer
+        self.requests: list[tuple[str, str]] = []
+
+    def request(self, method: str, url: str, **kwargs: object) -> LibraryResponse:
+        self.requests.append((method, url))
+        result = self.answer(method, url, dict(kwargs.get("params") or {}))  # type: ignore[call-overload]
+        if isinstance(result, BaseException):
+            raise result
+        if isinstance(result, int):
+            return LibraryResponse(result, b"<html>denied</html>")
+        if isinstance(result, bytes):
+            return LibraryResponse(200, result)
+        return LibraryResponse(200, b"json", payload=result)
+
+
+@pytest.fixture
+def library_garmin() -> Callable[..., tuple[object, LibrarySession]]:
+    """A factory for the installed library's real ``Garmin`` with only its HTTP session stubbed.
+
+    ``library_garmin(answer, retry_attempts=0)`` returns ``(garmin, session)``. Everything between
+    the session and the caller (``Client._run_request``, the ``_handle_api_errors`` decorator and its
+    retries) is the installed code; the token refresh and API headers are stubbed and the retry
+    back-off is zero seconds, so nothing reaches Garmin and no test waits.
+    """
+    from garminconnect import Garmin
+
+    def make(answer: Callable[[str, str, dict], object], retry_attempts: int = 0):
+        lib = Garmin(retry_attempts=retry_attempts, retry_min_wait=0.0, retry_max_wait=0.0)
+        session = LibrarySession(answer)
+        lib.client._api_session = session
+        lib.client.get_api_headers = dict
+        lib.client._refresh_session = lambda: None
+        return lib, session
+
+    return make

@@ -350,7 +350,8 @@ def test_rate_limit_on_the_activity_list_names_the_range_start(env) -> None:
 
 
 def test_garmin_unreachable_names_garmin(env) -> None:
-    fake = FakeGarmin(originals={201: garmin.GarminUnreachable("502 Bad Gateway")})
+    # Unreachable is a network error with no HTTP reply; a 502 would be a failed item instead.
+    fake = FakeGarmin(originals={201: garmin.GarminUnreachable("Connection error: connection refused")})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")

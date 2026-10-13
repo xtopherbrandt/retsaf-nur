@@ -1,7 +1,8 @@
 """Tests for the real Garmin adapter (``runcoach_cli.garmin_connect``) against the installed library.
 
-Every exception here is the installed ``garminconnect`` package's own class, constructed directly,
-and every ``Garmin`` is the package's real class with only its network-facing ``login`` replaced.
+Every exception here is the installed ``garminconnect`` package's own class, constructed directly
+in the shape the package raises it or raised by the package itself, and every ``Garmin`` is the
+package's real class with only its network-facing ``login`` or its HTTP session replaced.
 Nothing reaches Garmin and no real token is read: the token directory is the autouse
 ``isolated_config_path`` tmp home's ``garmin`` folder.
 
@@ -11,10 +12,14 @@ Library facts these tests rely on (read from the installed 0.3.17 source):
   silently picks up the environment variable.
 - ``Garmin.login`` with a path whose token file is missing and no credentials raises
   ``GarminConnectAuthenticationError("Username and password are required")`` without a request.
-- The API decorator turns a 401 into ``GarminConnectAuthenticationError``, a 429 into
-  ``GarminConnectTooManyRequestsError``, a 404 into ``GarminConnectNotFoundError`` and any other
-  failure into ``GarminConnectConnectionError`` with ``response`` kept when there was one, logging
-  the last with ``logger.exception``.
+- ``Client._run_request`` raises ``GarminConnectConnectionError("API Error NNN")`` for a status of
+  400 or more, with no ``response`` attached. The API decorator turns a 401 into
+  ``GarminConnectAuthenticationError``, a 429 into ``GarminConnectTooManyRequestsError``, a 404
+  into ``GarminConnectNotFoundError``, any other 4xx into ``GarminConnectConnectionError("<label>
+  client error (NNN): ...")``, a 5xx (after its retries) into ``"<label> HTTP error: ..."`` and a
+  ``requests`` network error into ``"Connection error: ..."``, logging the last two with
+  ``logger.exception``. So the status is only in the message, which is why the status rows below
+  drive the real ``Garmin`` with only its HTTP session stubbed (the ``library_garmin`` fixture).
 - ``Client.dump(path)`` writes ``<path>/garmin_tokens.json``.
 """
 
@@ -26,6 +31,7 @@ from pathlib import Path
 
 import garminconnect
 import pytest
+import requests
 from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,
@@ -41,41 +47,37 @@ SENTINEL_EMAIL = "sentinel-email-7f3a@example.invalid"
 SENTINEL_PASSWORD = "sentinel-password-91c2-do-not-store"
 
 
-class FakeResponse:
-    def __init__(self, status_code: int) -> None:
-        self.status_code = status_code
-
-
-def _connection_error(status: int | None) -> GarminConnectConnectionError:
-    exc = GarminConnectConnectionError(f"Download client error ({status})")
-    if status is not None:
-        exc.response = FakeResponse(status)
-    return exc
-
-
 def _not_found() -> GarminConnectNotFoundError:
-    exc = GarminConnectNotFoundError("Download client error (404)")
-    exc.response = FakeResponse(404)
-    return exc
+    # What the decorator raises for a 404 (``Client._run_request`` attaches no response).
+    return GarminConnectNotFoundError("Download client error (404): API Error 404")
+
+
+# A refused connection as ``requests`` words it on Windows: "WinError 10061" holds "Error 100",
+# which the library's own message parser reads as a status.
+REFUSED_CONNECTION = (
+    "HTTPSConnectionPool(host='connectapi.garmin.com', port=443): Max retries exceeded with url: "
+    "/x (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object>: Failed to "
+    "establish a new connection: [WinError 10061] No connection could be made because the target "
+    "machine actively refused it'))"
+)
 
 
 @pytest.mark.parametrize(
     ("make", "expected"),
     [
         (lambda: GarminConnectAuthenticationError("Authentication failed"), garmin.LoginNeeded),
-        (lambda: _connection_error(401), garmin.LoginNeeded),
-        (lambda: _connection_error(403), garmin.LoginNeeded),
         (lambda: GarminConnectTooManyRequestsError("Rate limit exceeded"), garmin.RateLimited),
-        (lambda: _connection_error(429), garmin.RateLimited),
         (_not_found, garmin.NotFound),
-        (lambda: _connection_error(404), garmin.NotFound),
-        (lambda: _connection_error(500), garmin.GarminUnreachable),
-        (lambda: _connection_error(400), garmin.GarminUnreachable),
-        (lambda: _connection_error(None), garmin.GarminUnreachable),
         (lambda: GarminConnectInvalidFileFormatError("bad"), garmin.GarminError),
+        # The load path's own wrapping ("Login failed: <the request's error>").
+        (lambda: GarminConnectConnectionError("Login failed: API Error 403"), garmin.LoginNeeded),
+        (lambda: GarminConnectConnectionError("Login failed: API Error 401"), garmin.LoginNeeded),
+        (lambda: GarminConnectConnectionError("Login failed: API Error 429"), garmin.RateLimited),
+        (lambda: GarminConnectConnectionError("Login failed: API Error 500"), garmin.GarminError),
+        (lambda: GarminConnectConnectionError("Pagination exceeded 1000 requests"), garmin.GarminUnreachable),
     ],
-    ids=["auth", "conn401", "conn403", "toomany", "conn429", "notfound", "conn404", "conn500",
-         "conn400", "conn-no-response", "other-library-error"],
+    ids=["auth", "toomany", "notfound", "other-library-error", "load403", "load401", "load429",
+         "load500", "no-status"],
 )
 def test_library_exceptions_map_to_the_cli_exceptions(make, expected) -> None:
     mapped = garmin_connect.translate_error(make())
@@ -87,10 +89,96 @@ def test_a_library_404_is_not_read_as_unreachable() -> None:
     # GarminConnectNotFoundError subclasses GarminConnectConnectionError: the subclass must win,
     # also when the library had no response to attach (it sets ``response`` only when present).
     assert issubclass(GarminConnectNotFoundError, GarminConnectConnectionError)
-    assert type(garmin_connect.translate_error(_not_found())) is garmin.NotFound
-    bare = GarminConnectNotFoundError("Download client error (404)")
+    bare = _not_found()
     assert bare.response is None
     assert type(garmin_connect.translate_error(bare)) is garmin.NotFound
+
+
+def _answer_status(status: int):
+    def answer(method, url, params):
+        return status
+
+    return answer
+
+
+def _answer_raise(exc: Exception):
+    def answer(method, url, params):
+        return exc
+
+    return answer
+
+
+# Every HTTP status per the user's ruling of 2026-10-13: 401/403 need a login, 404 is not found,
+# 429 is a rate limit, any other 4xx or 5xx is a plain GarminError (a download's item fails), and an
+# error with no HTTP status at all is GarminUnreachable.
+_STATUS_ROWS = [
+    (_answer_status(400), garmin.GarminError),
+    (_answer_status(401), garmin.LoginNeeded),
+    (_answer_status(403), garmin.LoginNeeded),
+    (_answer_status(404), garmin.NotFound),
+    (_answer_status(410), garmin.GarminError),
+    (_answer_status(429), garmin.RateLimited),
+    (_answer_status(500), garmin.GarminError),
+    (_answer_status(503), garmin.GarminError),
+    (_answer_raise(requests.ConnectionError(REFUSED_CONNECTION)), garmin.GarminUnreachable),
+    (_answer_raise(requests.Timeout("Read timed out. (read timeout=15)")), garmin.GarminUnreachable),
+]
+_STATUS_IDS = ["400", "401", "403", "404", "410", "429", "500", "503", "refused", "timeout"]
+
+
+@pytest.mark.parametrize(("answer", "expected"), _STATUS_ROWS, ids=_STATUS_IDS)
+@pytest.mark.parametrize("call", ["snapshot", "original", "list"])
+def test_each_status_through_the_real_library_maps_per_the_ruling(
+    library_garmin, call, answer, expected
+) -> None:
+    lib, session = library_garmin(answer)
+    client = garmin_connect.GarminConnectClient(lib)
+    calls = {
+        "snapshot": lambda: client.download_snapshot(date(2026, 10, 12)),
+        "original": lambda: client.download_original(24686524347),
+        "list": lambda: client.list_activities(date(2026, 10, 10), date(2026, 10, 13)),
+    }
+    with pytest.raises(garmin.GarminError) as info:
+        calls[call]()
+    assert type(info.value) is expected, (info.value, info.value.__cause__)
+    # The library's own exception is the cause, and the request went through the stubbed session.
+    assert type(info.value.__cause__).__module__.startswith("garminconnect")
+    assert session.requests
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Download client error (403): API Error 403", garmin.LoginNeeded),
+        ("Login failed: API Error 403", garmin.LoginNeeded),
+        ("Download HTTP error: API Error 500", garmin.GarminError),
+        ("Download client error (410): x", garmin.GarminError),
+        ("Connection error: " + REFUSED_CONNECTION, garmin.GarminUnreachable),
+    ],
+    ids=["client403", "load403", "http500", "client410", "refused"],
+)
+def test_the_status_is_read_from_the_message_without_the_library_parser(
+    monkeypatch, message, expected
+) -> None:
+    # A later library line may drop its private parser: the adapter's own reading still holds.
+    monkeypatch.delattr(garminconnect, "_extract_status_code")
+    assert type(garmin_connect.translate_error(GarminConnectConnectionError(message))) is expected
+
+
+def test_a_network_cause_has_no_status_whatever_its_text(library_garmin) -> None:
+    # A network error whose text happens to read like a status is still "no reply".
+    lib, _ = library_garmin(_answer_raise(requests.ConnectionError("upstream said API Error 403")))
+    with pytest.raises(garmin.GarminUnreachable):
+        garmin_connect.GarminConnectClient(lib).download_snapshot(date(2026, 10, 12))
+
+
+def test_a_5xx_is_a_plain_garmin_error_after_the_library_retries(library_garmin) -> None:
+    lib, session = library_garmin(_answer_status(503), retry_attempts=2)
+    client = garmin_connect.GarminConnectClient(lib)
+    with pytest.raises(garmin.GarminError) as info:
+        client.download_snapshot(date(2026, 10, 12))
+    assert type(info.value) is garmin.GarminError
+    assert len(session.requests) == 3
 
 
 def test_a_token_that_cannot_be_saved_is_a_garmin_error(monkeypatch) -> None:
@@ -270,9 +358,10 @@ def test_adapter_calls_the_library_with_its_own_shapes() -> None:
         (GarminConnectTooManyRequestsError("Rate limit exceeded"), garmin.RateLimited),
         (GarminConnectAuthenticationError("Authentication failed"), garmin.LoginNeeded),
         (_not_found(), garmin.NotFound),
-        (_connection_error(503), garmin.GarminUnreachable),
+        (GarminConnectConnectionError("Download HTTP error: API Error 503"), garmin.GarminError),
+        (GarminConnectConnectionError("Connection error: " + REFUSED_CONNECTION), garmin.GarminUnreachable),
     ],
-    ids=["429", "auth", "404", "503"],
+    ids=["429", "auth", "404", "503", "no-status"],
 )
 def test_adapter_calls_raise_the_cli_exceptions(raised, expected) -> None:
     client = garmin_connect.GarminConnectClient(FakeGarmin(raises=raised))

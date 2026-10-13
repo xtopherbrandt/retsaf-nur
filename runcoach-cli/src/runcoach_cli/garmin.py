@@ -27,11 +27,23 @@ class RateLimited(GarminError):
 
 
 class GarminUnreachable(GarminError):
-    """A network failure or a server error that survived the library's own retries."""
+    """No HTTP reply at all: network down, connection refused or a timeout (after the library's retries).
+
+    An HTTP error status is never this: a 4xx or 5xx other than 401, 403, 404 and 429 is a plain
+    ``GarminError``, so a download that gets one is ``failed`` and the sync goes on.
+    """
 
 
 class NotFound(GarminError):
     """Garmin answered 404 for the requested activity or day."""
+
+
+class TokenNotSaved(GarminError):
+    """Garmin accepted a login, but the token could not be written to ``token_dir()``.
+
+    The library writes a temporary file and replaces the token file with it, so a failed write
+    leaves any saved token as it was.
+    """
 
 
 @runtime_checkable

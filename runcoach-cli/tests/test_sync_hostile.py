@@ -11,7 +11,9 @@ zero items); a non-FIT entry (uploaded; the 400 is failed); an entry over the ca
 failed) and one at the cap (uploaded); entry names ``../x.fit`` and ``C:\\x.fit`` (read in memory,
 never written); a corrupt entry (failed, the rest go on); summaries lacking ``typeId``,
 ``activityId`` or ``startTimeLocal`` (failed, naming it); a snapshot day answering 404 or an empty
-body (zero items); any other snapshot or activity download error (failed).
+body (zero items); any other HTTP error status for a snapshot or activity download (failed, the sync going on: driven
+through the real library with only its HTTP session stubbed); a 401 or 403 or no reply at all for a
+download, and an error on the activity list (stops).
 """
 
 from __future__ import annotations
@@ -25,7 +27,8 @@ from typing import Any
 
 import httpx
 import pytest
-from runcoach_cli import garmin
+import requests
+from runcoach_cli import garmin, garmin_connect
 from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
@@ -285,6 +288,59 @@ def test_a_corrupt_entry_is_failed_and_the_rest_go_on(run) -> None:
     assert len(failed) == 1 and failed[0].startswith("Failed: 2026-10-10, activity 101 (run 101): a.fit, ")
 
 
+def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch) -> None:
+    # CPython decompresses a whole bzip2 or LZMA entry before read(n) slices it, so the entry cap
+    # cannot bound memory for them: a 471-byte bzip2 zip peaked at 870 MB. They are refused unread.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("a.fit", b"ACT-bz", compress_type=zipfile.ZIP_BZIP2)
+        archive.writestr("b.fit", b"ACT-xz", compress_type=zipfile.ZIP_LZMA)
+        archive.writestr("c.fit", b"ACT-c", compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr("d.fit", b"ACT-d", compress_type=zipfile.ZIP_STORED)
+    decompressors: list[int] = []
+    real = zipfile._get_decompressor
+
+    def spy(compress_type: int):
+        decompressors.append(compress_type)
+        return real(compress_type)
+
+    monkeypatch.setattr(zipfile, "_get_decompressor", spy)
+    fake = FakeGarmin([_activity(101)], originals={101: buffer.getvalue()})
+    result, api = run(fake)
+
+    assert result.exit_code == 1, result.output
+    assert api.uploads == [b"ACT-c", b"ACT-d"]
+    assert decompressors == [zipfile.ZIP_DEFLATED, zipfile.ZIP_STORED]
+    assert _failed(result.output) == [
+        (
+            f"Failed: 2026-10-10, activity 101 (run 101): {name}, the entry is compressed with {method}, "
+            "which sync does not read (only stored or deflated entries), runcoach sync --since 2026-10-10"
+        )
+        for name, method in (("a.fit", "bzip2"), ("b.fit", "lzma"))
+    ]
+
+
+def test_running_out_of_memory_reading_an_entry_is_failed(run, monkeypatch) -> None:
+    # The backstop: a MemoryError while an entry is read fails that entry and the sync goes on.
+    download = _zip([("a.fit", b"ACT-a"), ("b.fit", b"ACT-b")])
+    real_open = zipfile.ZipFile.open
+
+    def open_entry(self, name, *args, **kwargs):
+        if getattr(name, "filename", name) == "a.fit":
+            raise MemoryError
+        return real_open(self, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", open_entry)
+    fake = FakeGarmin([_activity(101)], originals={101: download})
+    result, api = run(fake)
+
+    assert result.exit_code == 1, result.output
+    assert api.uploads == [b"ACT-b"]
+    assert _failed(result.output) == [
+        "Failed: 2026-10-10, activity 101 (run 101): a.fit, MemoryError, runcoach sync --since 2026-10-10"
+    ]
+
+
 @pytest.mark.parametrize(
     ("summary", "named"),
     [
@@ -399,28 +455,142 @@ def test_a_snapshot_day_answering_an_empty_body_is_zero_items(run) -> None:
     assert _failed(result.output) == []
 
 
-def test_any_other_snapshot_error_status_is_failed(run) -> None:
-    fake = FakeGarmin([_activity(101)], snapshots={START: garmin.GarminError("500 Internal Server Error")})
-    result, api = run(fake)
+def _library_client(library_garmin, activities, snapshots=None, originals=None):
+    """The real adapter over the real library, with only the library's HTTP session stubbed.
+
+    ``snapshots`` and ``originals`` map a day or an activity id to what Garmin answers: an HTTP
+    status, zip bytes or a ``requests`` error. A day with no entry answers 404 (no snapshot); an
+    activity with no entry answers a one-entry zip. Returns ``(client, session)``.
+    """
+    snapshots = snapshots or {}
+    originals = originals or {}
+
+    def answer(method: str, url: str, params: dict) -> object:
+        tail = url.rsplit("/", 1)[1]
+        if "/activitylist-service/" in url:
+            return list(activities) if params.get("start") == "0" else []
+        if "/download-service/files/wellness/" in url:
+            return snapshots.get(date.fromisoformat(tail), 404)
+        if "/download-service/files/activity/" in url:
+            activity_id = int(tail)
+            return originals.get(activity_id, _zip([(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())]))
+        raise AssertionError(f"unexpected Garmin request {method} {url}")
+
+    lib, session = library_garmin(answer)
+    return garmin_connect.GarminConnectClient(lib), session
+
+
+def _requested(session) -> list[str]:
+    """The Garmin requests made, as ``snapshot <day>`` / ``original <id>`` / ``list``."""
+    names = []
+    for _, url in session.requests:
+        tail = url.rsplit("/", 1)[1]
+        if "/files/wellness/" in url:
+            names.append(f"snapshot {tail}")
+        elif "/files/activity/" in url:
+            names.append(f"original {tail}")
+        else:
+            names.append("list")
+    return names
+
+
+# Any HTTP status but 401, 403, 404 and 429 on a download is the item's failure (the user's ruling,
+# 2026-10-13): 4xx at once, 5xx after the library's own retries. Driven through the real library.
+OTHER_STATUSES = [400, 410, 500, 503]
+
+
+@pytest.mark.parametrize("status", OTHER_STATUSES)
+def test_any_other_snapshot_error_status_is_failed(run, library_garmin, status) -> None:
+    client, session = _library_client(library_garmin, [_activity(101)], snapshots={START: status})
+    result, api = run(client)
 
     assert result.exit_code == 1, result.output
-    assert _failed(result.output) == [
-        "Failed: 2026-10-10, snapshot 2026-10-10, Garmin: 500 Internal Server Error, runcoach sync --since 2026-10-10"
-    ]
+    (failed,) = _failed(result.output)
+    assert failed.startswith("Failed: 2026-10-10, snapshot 2026-10-10, Garmin: "), failed
+    assert f"API Error {status}" in failed
+    assert failed.endswith(", runcoach sync --since 2026-10-10")
     # Not a stop: the day's activity and the next day are still fetched.
     assert api.uploads == [b"ACT-101"]
-    assert fake.events[-1] == ("snapshot", TODAY)
+    downloads = [name for name in _requested(session) if name != "list"]
+    assert downloads == ["snapshot 2026-10-10", "original 101", "snapshot 2026-10-11"]
 
 
-def test_any_other_activity_download_error_is_failed(run) -> None:
-    fake = FakeGarmin(
-        [_activity(101), _activity(102, "2026-10-10 08:00:00")],
-        originals={101: garmin.GarminError("418 teapot")},
+@pytest.mark.parametrize("status", OTHER_STATUSES)
+def test_any_other_activity_download_error_status_is_failed(run, library_garmin, status) -> None:
+    client, session = _library_client(
+        library_garmin, [_activity(101), _activity(102, "2026-10-10 08:00:00")], originals={101: status}
     )
-    result, api = run(fake)
+    result, api = run(client)
 
     assert result.exit_code == 1, result.output
-    assert _failed(result.output) == [
-        "Failed: 2026-10-10, activity 101 (run 101), Garmin: 418 teapot, runcoach sync --since 2026-10-10"
-    ]
+    (failed,) = _failed(result.output)
+    assert failed.startswith("Failed: 2026-10-10, activity 101 (run 101), Garmin: "), failed
+    assert f"API Error {status}" in failed
+    assert failed.endswith(", runcoach sync --since 2026-10-10")
     assert api.uploads == [b"ACT-102"]
+    assert _requested(session)[-2:] == ["original 102", "snapshot 2026-10-11"]
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_refused_download_stops_with_login_needed(run, library_garmin, status) -> None:
+    client, session = _library_client(library_garmin, [_activity(101)], originals={101: status})
+    result, api = run(client)
+
+    assert result.exit_code == 1, result.output
+    assert result.output.rstrip().endswith(sync.LOGIN_NEEDED), result.output
+    assert api.uploads == []
+    assert "snapshot 2026-10-11" not in _requested(session)
+
+
+def test_a_network_error_on_a_download_stops_as_unreachable(run, library_garmin) -> None:
+    refused = requests.ConnectionError("Failed to establish a new connection: [WinError 10061] refused")
+    client, session = _library_client(library_garmin, [_activity(101)], originals={101: refused})
+    result, api = run(client)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert "could not reach Garmin Connect" in last, result.output
+    assert last.endswith("run `runcoach sync --since 2026-10-10`")
+    assert "snapshot 2026-10-11" not in _requested(session)
+    assert api.uploads == []
+
+
+@pytest.mark.parametrize("status", [400, 404, 500, 503])
+def test_an_http_error_on_the_activity_list_stops_without_claiming_garmin_is_unreachable(
+    run, library_garmin, status
+) -> None:
+    client, session = _library_client(library_garmin, [])
+    client._garmin.client._api_session.answer = lambda method, url, params: status
+    result, api = run(client)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert "could not reach" not in last, last
+    assert f"API Error {status}" in last, last
+    assert last.endswith("run `runcoach sync --since 2026-10-10`"), last
+    assert _requested(session)[-1] == "list"
+    assert api.uploads == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "ending"),
+    [
+        (403, sync.LOGIN_NEEDED),
+        (429, "wait, then run `runcoach sync --since 2026-10-10`"),
+        (requests.Timeout("Read timed out. (read timeout=15)"), "run `runcoach sync --since 2026-10-10`"),
+    ],
+    ids=["403", "429", "timeout"],
+)
+def test_the_activity_list_stops_on_a_refusal_a_rate_limit_or_no_reply(
+    run, library_garmin, answer, ending
+) -> None:
+    client, _ = _library_client(library_garmin, [])
+    client._garmin.client._api_session.answer = lambda method, url, params: answer
+    result, api = run(client)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert last.endswith(ending), last
+    if isinstance(answer, Exception):
+        assert "could not reach Garmin Connect" in last, last
+    assert api.uploads == []
