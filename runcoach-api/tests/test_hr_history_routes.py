@@ -436,3 +436,51 @@ def test_hr_history_contract_matches_served_routes() -> None:
     assert create["properties"]["value"]["exclusiveMinimum"] == 0
     assert sorted(create["properties"]["field"]["enum"]) == ["max_hr_bpm", "resting_hr_bpm", "threshold_hr_bpm"]
     assert set(contract["components"]["schemas"]["HrHistoryEntry"]["required"]) == ENTRY_KEYS
+
+
+# ---------------------------------------------------------------------------
+# A second writer of the same field and date while a POST is writing
+# ---------------------------------------------------------------------------
+
+
+def test_an_entry_written_by_another_connection_mid_write_is_not_a_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``write_hr_history_entry`` takes the write lock before it reads whether the pair exists, so
+    another connection writing the same field and date in the middle of the POST is refused at its
+    insert ("database is locked") and the POST answers 201 with the store holding one row. Without
+    the lock, that writer's row lands between the read and the insert and the POST's insert breaks
+    ``UNIQUE (field, effective_from)``: a 500. With only a deferred ``BEGIN``, the read takes a
+    shared lock that lets the writer insert and refuses it only at its commit, after the read: the
+    lock is not held from the read on."""
+    with TestClient(app, raise_server_exceptions=False) as client:
+        real = db_module._json_dump
+        outcomes: list[str] = []
+
+        def second_writer(value):
+            if not outcomes:
+                other = sqlite3.connect(db_module._load_config_cached().data_dir / db_module.DB_FILENAME, timeout=0)
+                stage = "insert"
+                try:
+                    other.execute(
+                        f"INSERT INTO {db_module.HR_HISTORY_TABLE} (field, value, effective_from, set_at) "
+                        "VALUES ('max_hr_bpm', '191', '2016-01-01', 'other')"
+                    )
+                    stage = "commit"
+                    other.commit()
+                except sqlite3.OperationalError as exc:
+                    other.rollback()
+                    outcomes.append(f"refused at its {stage}: {exc}")
+                else:
+                    outcomes.append("written")
+                finally:
+                    other.close()
+            return real(value)
+
+        monkeypatch.setattr(db_module, "_json_dump", second_writer)
+        response = _post(client, "max_hr_bpm", 195, "2016-01-01")
+    print(f"  POST: {response.status_code} {response.text}")
+    print(f"  second writer: {outcomes}")
+    print(f"  rows={_rows()}")
+    assert response.status_code != 500, response.text
+    assert response.status_code == 201, response.text
+    assert _rows() == [(response.json()["entry_id"], "max_hr_bpm", "195", "2016-01-01")]
+    assert outcomes == ["refused at its insert: database is locked"], outcomes

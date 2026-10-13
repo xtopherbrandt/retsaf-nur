@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Saved loads and dated HR entries
+
+- Deleting a session recomputes no other saved load: a load that borrowed a value from that session's
+  file (`source` `session_file_dated`) keeps its `session_id` and value, naming a session no longer
+  stored, until it is recomputed. The `session_id` description in `SessionLoadHrInput` says so.
+- `POST /sessions/{session_id}/load/recompute` builds and checks its response before it replaces the
+  saved load, so a computed body it cannot serve is a 500 that leaves the saved load as it was.
+- `POST /me/hr-history` takes the write lock before it reads whether the field and date exist, so a
+  second write of the same pair at the same moment waits for the first and then replaces it (200)
+  instead of failing with a 500.
+
 ## 2026-10-12 — Sprint 016: Garmin archive import and dated HR settings
 
 ### Garmin archive import

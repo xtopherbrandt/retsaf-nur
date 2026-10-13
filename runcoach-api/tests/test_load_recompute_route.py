@@ -386,3 +386,59 @@ def test_a_fault_after_the_write_rolls_the_recompute_back(monkeypatch: pytest.Mo
     assert response.status_code == 500
     assert _saved_text(session_id) == text
     assert _row(session_id)["load_value"] == value
+
+
+def test_a_body_that_does_not_read_as_a_load_is_a_500_and_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The route's response is built and validated inside the recompute's transaction, before the
+    replacing write: a computed body that ``SessionLoad`` refuses is a 500, and the saved body and
+    its ``load_value`` stay as they were rather than being replaced by a body the route cannot serve."""
+    with TestClient(app, raise_server_exceptions=False) as client:
+        session_id = _setup(client)
+        text = _saved_text(session_id)
+        value = _row(session_id)["load_value"]
+        refused = {"session_load": {"value": 1.0, "unavailable": None}, "not_a_load_field": True}
+        monkeypatch.setattr(db, "_session_load_body", lambda conn, sid, zone=None: refused)
+        response = client.post(f"/sessions/{session_id}/load/recompute")
+    print(f"refused body: {response.status_code} {response.text}")
+    assert response.status_code == 500
+    assert _saved_text(session_id) == text
+    assert _row(session_id)["load_value"] == value
+
+
+def test_the_recompute_takes_the_write_lock_before_its_first_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recompute holds the write lock from its ``BEGIN`` on, not from its first write: at the
+    moment it first reads the store (the existence check), a second connection that does not wait
+    is refused the write lock. A deferred ``BEGIN`` would let that connection in, and the body would
+    no longer be computed and written from one snapshot."""
+    import sqlite3
+
+    with TestClient(app) as client:
+        session_id = _setup(client)
+    real = db.session_exists
+    outcomes: list[str] = []
+
+    def probe(conn, sid):
+        if not outcomes:
+            other = sqlite3.connect(db._load_config_cached().data_dir / db.DB_FILENAME, timeout=0)
+            try:
+                other.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                outcomes.append(f"refused: {exc}")
+            else:
+                other.rollback()
+                outcomes.append("taken")
+            finally:
+                other.close()
+        return real(conn, sid)
+
+    monkeypatch.setattr(db, "session_exists", probe)
+    conn = db.get_connection()
+    try:
+        assert db.recompute_session_load(conn, session_id) is not None
+    finally:
+        conn.close()
+    print(f"\n  second connection's BEGIN IMMEDIATE at the first read: {outcomes}")
+    assert len(outcomes) == 1, outcomes
+    assert outcomes[0].startswith("refused") and "database is locked" in outcomes[0], outcomes

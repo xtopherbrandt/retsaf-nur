@@ -380,3 +380,40 @@ def test_a_pre_f021_body_reads_back_with_defaults(persist_sessions) -> None:
     served["inputs"] = {k: v for k, v in served["inputs"].items() if k not in (*HR_FIELDS, "sex")}
     saved["inputs"] = {k: v for k, v in saved["inputs"].items() if k not in (*HR_FIELDS, "sex")}
     assert served == saved
+
+
+def test_deleting_a_cited_session_leaves_the_citing_load_as_saved(persist_sessions) -> None:
+    """A saved load that borrowed a value from an earlier file keeps that file's ``session_id``
+    after the file's session is deleted: the delete recomputes nothing, so the citing body is
+    served as it was saved, naming a session that is no longer stored, until it is recomputed."""
+    _entry("max_hr_bpm", 191, "2023-03-01")
+    persist_sessions(
+        [
+            _session("file-2023", "2023-03-01T07:00:00+00:00", max_hr_bpm=188),
+            _session("file-2025", "2025-03-01T07:00:00+00:00", max_hr_bpm=185),
+        ]
+    )
+    persist_sessions([_session("run-2024", "2024-05-01T07:00:00+00:00")])
+    before = _saved("run-2024")
+    assert before["inputs"]["max_hr_bpm"]["source"] == "session_file_dated"
+    assert before["inputs"]["max_hr_bpm"]["session_id"] == "file-2023"
+    with TestClient(app) as client:
+        deleted = client.delete("/sessions/file-2023")
+        gone = client.get("/sessions/file-2023")
+        served = client.get("/sessions/run-2024/load")
+    print(f"  delete {deleted.status_code}, then get {gone.status_code}; run-2024 load {served.status_code}")
+    assert deleted.status_code == 204, deleted.text
+    assert gone.status_code == 404, gone.text
+    assert served.status_code == 200, served.text
+    assert _saved("run-2024") == before
+    assert served.json()["inputs"]["max_hr_bpm"] == {
+        "value": 188,
+        "source": "session_file_dated",
+        "session_id": "file-2023",
+        "anchor_version": None,
+        "anchor_unavailable": None,
+        "entry_id": None,
+        "effective_from": None,
+        "out_of_period": False,
+    }
+    assert served.json()["session_load"] == before["session_load"]

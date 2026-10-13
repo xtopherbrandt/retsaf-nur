@@ -1062,7 +1062,7 @@ class SessionLoadHrInput(BaseModel):
         description=_LOAD_SOURCE_DESCRIPTION
     )
     session_id: str | None = Field(
-        description="The session whose file carried the value; null unless `source` is `session_file` or `session_file_dated`."
+        description="The session whose file carried the value; null unless `source` is `session_file` or `session_file_dated`. With `session_file_dated` the session may since have been deleted; the value stays until recomputed."
     )
     anchor_version: int | None = Field(description="The anchor's version when the load was saved; null unless `source` is `anchor`.")
     anchor_unavailable: Literal["missing", "order_conflict"] | None = Field(

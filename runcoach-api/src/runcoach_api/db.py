@@ -1499,14 +1499,18 @@ def write_hr_history_entry(
     store never holds two entries for one field and date. The entry is ``entry_id``, ``field``,
     ``value`` (JSON-decoded), ``effective_from`` and ``set_at`` (default: now in UTC,
     ``isoformat()``). A field outside ``hr_history.HR_FIELDS`` raises ``ValueError`` before anything
-    is written; values and dates are not validated here: the route screens them. One transaction;
-    the caller has run ``init_schema``.
+    is written; values and dates are not validated here: the route screens them. One
+    ``BEGIN IMMEDIATE`` transaction takes the write lock before the read of the pair, as
+    ``imports.job.create_job`` does, so a second writer of the same pair waits (or, not waiting, is
+    refused) rather than inserting between the read and the insert; any fault rolls it back. The
+    caller has run ``init_schema`` and holds no open transaction.
     """
     if field not in _HR_FIELDS:
         raise ValueError(f"not a dated HR field: {field}")
     if set_at is None:
         set_at = datetime.now(UTC).isoformat()
-    with conn:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
         existing = conn.execute(
             f"SELECT entry_id FROM {HR_HISTORY_TABLE} WHERE field = ? AND effective_from = ?",
             (field, effective_from),
@@ -1523,6 +1527,10 @@ def write_hr_history_entry(
                 (_json_dump(value), set_at, entry_id),
             )
         row = conn.execute(f"SELECT * FROM {HR_HISTORY_TABLE} WHERE entry_id = ?", (entry_id,)).fetchone()
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
     return _hr_history_entry(row), existing is None
 
 
@@ -1654,7 +1662,11 @@ def _replace_session_load(conn: sqlite3.Connection, session_id: str, body: Mappi
 
 
 def recompute_session_load(
-    conn: sqlite3.Connection, session_id: str, *, zone: ZoneInfo | None = None
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    zone: ZoneInfo | None = None,
+    build: Callable[[dict | None, dict], object] | None = None,
 ) -> tuple[dict | None, dict] | None:
     """Recompute one stored session's load with the current files, dated entries and anchors, and
     replace its saved row (F021 AC5). Returns ``(old_body, new_body)``, ``old_body`` being the body
@@ -1668,7 +1680,9 @@ def recompute_session_load(
     profile itself and never calls ``read_athlete``, whose ``BEGIN`` fails inside an open
     transaction; an anchor log out of step raises ``AnchorLogOutOfStepError``. Any fault rolls the
     whole transaction back and propagates, so the saved row is as it was. ``zone`` is as for
-    ``_save_session_load``.
+    ``_save_session_load``. ``build``, when given, is called as ``build(old_body, new_body)`` after
+    the body is computed and before it is written, inside the transaction: the caller builds and
+    validates its response there, so a body it cannot serve raises before anything is replaced.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -1677,6 +1691,8 @@ def recompute_session_load(
             return None
         old_body = read_session_load_body(conn, session_id)
         new_body = _session_load_body(conn, session_id, zone=zone)
+        if build is not None:
+            build(old_body, new_body)
         _replace_session_load(conn, session_id, new_body)
     except BaseException:
         conn.rollback()

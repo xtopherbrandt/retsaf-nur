@@ -1428,11 +1428,19 @@ def recompute_session_load(session_id: str) -> SessionLoadRecompute:
     before dated entries existed differs only where a value does. An unknown ``session_id`` is the
     404 ``get_session`` raises, writing nothing. An anchor version log out of step is the named 500
     ``GET /me`` serves, writing nothing. This route is the only path that replaces a saved load.
+    The response is built inside the transaction, before the write, so a computed body that does
+    not read as a ``SessionLoad`` is a 500 that writes nothing.
     """
     zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    built: list[SessionLoadRecompute] = []
+
+    def build(old_body: dict | None, new_body: dict) -> None:
+        body = SessionLoad(**json.loads(json.dumps(new_body)))
+        built.append(SessionLoadRecompute(**body.model_dump(), changed=_load_changed(old_body, body)))
+
     conn = db.get_connection()
     try:
-        result = db.recompute_session_load(conn, session_id, zone=zone)
+        result = db.recompute_session_load(conn, session_id, zone=zone, build=build)
     except db.AnchorLogOutOfStepError as exc:
         raise HTTPException(
             500, f"the profile store is out of step ({exc}); restart the API, whose startup repairs it"
@@ -1441,6 +1449,4 @@ def recompute_session_load(session_id: str) -> SessionLoadRecompute:
         conn.close()
     if result is None:
         raise HTTPException(404, f"session {session_id} not found")
-    old_body, new_body = result
-    body = SessionLoad(**json.loads(json.dumps(new_body)))
-    return SessionLoadRecompute(**body.model_dump(), changed=_load_changed(old_body, body))
+    return built[0]
