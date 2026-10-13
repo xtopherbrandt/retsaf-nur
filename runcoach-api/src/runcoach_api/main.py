@@ -85,20 +85,20 @@ class ContentLengthLimitMiddleware:
     same gap applies to ``/imports``.
 
     The ceiling is chosen per request: ``/imports`` and ``/imports/``
-    get ``IMPORT_MAX_BYTES``, every other path ``MAX_UPLOAD_BYTES``
-    (or ``max_bytes`` when the middleware is built with one). Both
-    constants are read when a request arrives, not when the middleware
-    stack is built, and the 413 text names the limit that applied.
+    get ``IMPORT_MAX_BYTES`` and every other path gets
+    ``MAX_UPLOAD_BYTES``; the middleware takes no ceiling of its own.
+    Both constants are read when a request arrives, not when the
+    middleware stack is built, and the 413 text names the limit that
+    applied.
     """
 
-    def __init__(self, app: ASGIApp, max_bytes: int | None = None) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
-        self.max_bytes = max_bytes
 
     def _limit_for(self, path: str) -> int:
         if path in _IMPORT_PATHS:
             return IMPORT_MAX_BYTES
-        return MAX_UPLOAD_BYTES if self.max_bytes is None else self.max_bytes
+        return MAX_UPLOAD_BYTES
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -1127,8 +1127,8 @@ from runcoach_api.schemas import SessionPage, SessionSummary
 
 @app.get("/sessions", response_model=SessionPage, operation_id="listSessions", tags=["Sessions"])
 def list_sessions(
-    since: str | None = Query(None),  # noqa: B008 -- FastAPI's parameter idiom
-    limit: int = Query(50, ge=1, le=200),  # noqa: B008
+    since: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
 ) -> SessionPage:
     """The stored sessions, newest first, keyset-paged (F019), on the contract's path
     (``operationId: listSessions``).

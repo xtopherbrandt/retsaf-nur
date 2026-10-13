@@ -29,6 +29,7 @@ see pyproject.toml -- so each test drives its own event loop via
 from __future__ import annotations
 
 import asyncio
+import inspect
 
 from fastapi.testclient import TestClient
 
@@ -67,7 +68,7 @@ def test_oversized_content_length_is_rejected_before_inner_app_runs() -> None:
     async def send(message) -> None:
         sent.append(message)
 
-    middleware = ContentLengthLimitMiddleware(inner_app, max_bytes=MAX_UPLOAD_BYTES)
+    middleware = ContentLengthLimitMiddleware(inner_app)
     over_the_framing_allowance = MAX_UPLOAD_BYTES + _MULTIPART_FRAMING_ALLOWANCE_BYTES + 1
     scope = _make_scope(str(over_the_framing_allowance))
 
@@ -102,7 +103,7 @@ def test_content_length_within_multipart_framing_allowance_reaches_inner_app() -
     async def send(message) -> None:
         sent.append(message)
 
-    middleware = ContentLengthLimitMiddleware(inner_app, max_bytes=MAX_UPLOAD_BYTES)
+    middleware = ContentLengthLimitMiddleware(inner_app)
     scope = _make_scope(str(MAX_UPLOAD_BYTES + 200))  # typical multipart framing overhead
 
     _run(middleware(scope, receive, send))
@@ -126,7 +127,7 @@ def test_content_length_within_limit_reaches_inner_app() -> None:
     async def send(message) -> None:
         sent.append(message)
 
-    middleware = ContentLengthLimitMiddleware(inner_app, max_bytes=MAX_UPLOAD_BYTES)
+    middleware = ContentLengthLimitMiddleware(inner_app)
     scope = _make_scope(str(MAX_UPLOAD_BYTES - 1))
 
     _run(middleware(scope, receive, send))
@@ -189,9 +190,18 @@ def test_missing_content_length_passes_through_as_accepted_residual_gap() -> Non
     async def send(message) -> None:
         sent.append(message)
 
-    middleware = ContentLengthLimitMiddleware(inner_app, max_bytes=MAX_UPLOAD_BYTES)
+    middleware = ContentLengthLimitMiddleware(inner_app)
     scope = _make_scope(None)
 
     _run(middleware(scope, receive, send))
 
     assert len(inner_app_calls) == 1
+
+
+def test_the_precheck_has_no_max_bytes_seam() -> None:
+    """The middleware is built with the app alone: the ceiling is always the per-path constant."""
+    params = list(inspect.signature(ContentLengthLimitMiddleware.__init__).parameters)
+    assert params == ["self", "app"]
+    middleware = ContentLengthLimitMiddleware(app)
+    assert not hasattr(middleware, "max_bytes")
+    assert middleware._limit_for("/sessions") == MAX_UPLOAD_BYTES

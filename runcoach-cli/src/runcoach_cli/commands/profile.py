@@ -142,18 +142,18 @@ def show() -> None:
 
 
 def set_profile(
-    sex: Sex | None = typer.Option(None, "--sex", help="female, male or unspecified."),
+    sex: Sex | None = typer.Option(None, "--sex", help="female, male or unspecified."),  # noqa: B008 -- Typer's parameter idiom
     birth_date: str | None = typer.Option(None, "--birth-date", help="YYYY-MM-DD."),
     body_mass_kg: float | None = typer.Option(None, "--body-mass-kg", help="Body mass in kg."),
     height_cm: float | None = typer.Option(None, "--height-cm", help="Height in cm."),
     resting_hr: int | None = typer.Option(None, "--resting-hr", help="Resting HR in bpm (integer)."),
     max_hr: int | None = typer.Option(None, "--max-hr", help="Max HR in bpm (integer)."),
     threshold_hr: int | None = typer.Option(None, "--threshold-hr", help="Threshold HR in bpm (integer)."),
-    clear: list[str] | None = typer.Option(
+    clear: list[str] | None = typer.Option(  # noqa: B008 -- Typer's parameter idiom
         None,
         "--clear",
         metavar="FIELD",
-        help=f"Clear an entered field (sends null); repeatable. One of: {', '.join(PROFILE_FIELDS)}.",
+        help=f"Clear an entered field (sends null); repeatable. One of: {', '.join(PROFILE_FIELDS)}.",  # noqa: B008 -- Typer's parameter idiom
     ),
 ) -> None:
     """Enter or clear profile fields via PATCH /me, then print the returned profile."""
@@ -239,7 +239,7 @@ def _unparseable_entry(exc: Exception) -> typer.Exit:
 
 
 def history_add(
-    field: HrField = typer.Argument(..., help="resting_hr_bpm, max_hr_bpm or threshold_hr_bpm."),
+    field: HrField = typer.Argument(..., help="resting_hr_bpm, max_hr_bpm or threshold_hr_bpm."),  # noqa: B008 -- Typer's parameter idiom
     value: int = typer.Argument(..., help="The setting in bpm (a whole number)."),
     effective_from: str = typer.Option(..., "--from", help="The date it took effect, YYYY-MM-DD."),
 ) -> None:

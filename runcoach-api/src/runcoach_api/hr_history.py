@@ -64,7 +64,7 @@ def _anchor_block(anchor: profile.Anchor, *, out_of_period: bool) -> dict:
 
 def _as_date(value: date | str) -> date:
     if isinstance(value, datetime):
-        raise ValueError(f"effective_from {value!r} is a datetime; a dated entry carries a date")
+        raise TypeError(f"effective_from {value!r} is a datetime; a dated entry carries a date")
     return value if isinstance(value, date) else date.fromisoformat(value)
 
 

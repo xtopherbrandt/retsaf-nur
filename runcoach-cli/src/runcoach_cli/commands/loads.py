@@ -24,10 +24,8 @@ exits 1 at once, whether on a page or on a recompute. Each recompute has its own
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import httpx
-import typer
 
 from runcoach_cli import config
 from runcoach_cli.api_client import ApiUnreachableError, recompute_session_load

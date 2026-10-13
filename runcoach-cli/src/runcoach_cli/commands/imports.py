@@ -213,13 +213,21 @@ def _end(body: dict[str, Any]) -> None:
         )
 
 
+def _raise(exc: OSError) -> None:
+    """``os.walk``'s ``onerror``: a folder that cannot be listed stops the walk."""
+    raise exc
+
+
 def _zip_directory(directory: Path) -> Path:
     """Write every file under ``directory`` (relative names) to a new temp zip outside it.
 
     A file dated before 1980, which a zip cannot hold, is stored with 1980-01-01 00:00. A file
-    that cannot be read raises ``OSError``, and the temp zip is removed.
+    that cannot be read, or a folder that cannot be listed, raises ``OSError``, and the temp zip
+    is removed (``Path.rglob`` would skip such a folder silently). The walk does not follow a
+    symlinked directory.
     """
-    entries = sorted(p for p in directory.rglob("*") if p.is_file())
+    walked = (Path(root) / name for root, _dirs, files in os.walk(directory, onerror=_raise) for name in files)
+    entries = sorted(p for p in walked if p.is_file())
     fd, name = tempfile.mkstemp(prefix="runcoach-import-", suffix=".zip")
     os.close(fd)
     target = Path(name)
@@ -257,7 +265,7 @@ def _upload(api_url: str, path: Path) -> dict[str, Any]:
 
 
 def import_archive(
-    path: Path = typer.Argument(..., exists=True, help="A zip of FIT files, or a directory to zip."),
+    path: Path = typer.Argument(..., exists=True, help="A zip of FIT files, or a directory to zip."),  # noqa: B008 -- Typer's parameter idiom
 ) -> None:
     """Import every activity in a Garmin export zip (or a zip or directory of FIT files).
 

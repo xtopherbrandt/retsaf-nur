@@ -15,6 +15,7 @@ that anchor is a file dated after the run. AC4: the anchor's own file is reporte
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -224,6 +225,13 @@ def test_an_entry_dated_after_the_run_does_not_apply():
     entries = [_entry(1, "2024-01-01", 180), _entry(2, "2024-04-02", 185)]
     block, _ = _borrow(MAX, "2024-04-01T23:00:00+00:00", [], entries)
     assert block == _history(180, 1, "2024-01-01")
+
+
+def test_an_entry_dated_by_a_datetime_is_a_type_error():
+    """An entry's ``effective_from`` is a date or an ISO date string; a datetime is the wrong type."""
+    entries = [(1, datetime(2024, 1, 1, 12, 0, tzinfo=UTC), 180)]
+    with pytest.raises(TypeError, match="is a datetime; a dated entry carries a date"):
+        _borrow(MAX, "2024-04-01T07:00:00+00:00", [], entries)
 
 
 _ENTRIES_JUNE = [_entry(1, "2024-01-01", 180), _entry(2, "2024-06-02", 185)]

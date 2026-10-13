@@ -337,6 +337,38 @@ def test_an_unreadable_directory_file_is_an_error_not_a_traceback(
     assert list(private_temp.rglob("*")) == []
 
 
+def test_an_unlistable_subfolder_is_an_error_not_a_silent_skip(
+    tmp_path: Path, install_mock_client, private_temp: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A subfolder ``os.scandir`` cannot list (PermissionError) stops the zip: the command prints
+    ``Error: could not zip ...``, exits 1, uploads nothing and leaves no zip. Python 3.12's
+    ``Path.rglob`` skips such a folder silently, which would upload an archive missing its files."""
+    source = tmp_path / "runs"
+    (source / "locked-sub").mkdir(parents=True)
+    (source / "run1.fit").write_bytes(b"run one")
+    (source / "locked-sub" / "run2.fit").write_bytes(b"run two")
+    real_scandir = os.scandir
+
+    def scandir(path=None):
+        if path is not None and Path(path).name == "locked-sub":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_scandir() if path is None else real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    api = _Api([_finished()])
+    install_mock_client(api)
+
+    result = _invoke("import", str(source))
+
+    print(result.output, repr(result.exception))
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit), repr(result.exception)
+    assert "Error: could not zip " in result.output and "locked-sub" in result.output
+    assert "Permission denied" in result.output
+    assert api.uploads == []
+    assert list(private_temp.rglob("*")) == []
+
+
 @pytest.mark.parametrize(
     "start",
     [

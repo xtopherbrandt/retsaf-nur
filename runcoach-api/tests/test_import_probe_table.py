@@ -32,6 +32,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import fitdecode
 import pytest
 from fastapi.testclient import TestClient
 from fitdecode.utils import compute_crc
@@ -83,6 +84,18 @@ def _fit_seconds(year: int, month: int = 6, day: int = 1) -> int:
 def _activity(year: int, month: int = 6) -> bytes:
     """A lone activity ``file_id``: screened as an activity, refused by the pipeline (400)."""
     return IA.minimal_fit(FILE_TYPE_ACTIVITY, time_created=_fit_seconds(year, month))
+
+
+def _session_start(name: str) -> datetime:
+    """The ``session`` message's ``start_time`` of a corpus fixture, decoded with fitdecode."""
+    with fitdecode.FitReader(io.BytesIO(_fixture(name))) as reader:
+        starts = [
+            frame.get_value("start_time")
+            for frame in reader
+            if isinstance(frame, fitdecode.FitDataMessage) and frame.name == "session"
+        ]
+    (start,) = starts
+    return start
 
 
 def _stamped(name: str, raw_time_created: int) -> bytes:
@@ -312,8 +325,10 @@ def row_hostile_names(client, data_dir, tmp_path, monkeypatch) -> None:
         odd: "stored",
         "probe_deeper_q7.fit": "stored",
     }
-    rows = {row["entry"]: row for row in done["files"]}
-    assert rows["/abs/probe_abs_q7.fit"]["status"] == 400
+    rows = {row["entry"].replace("\\", "/").rsplit("/", 1)[-1]: row for row in done["files"]}
+    refused = "sport could not be determined: no session or sport message found -- cannot determine sport"
+    for base in ("probe_drive_back_q7.fit", "probe_abs_q7.fit"):
+        assert (rows[base]["status"], rows[base]["detail"]) == (400, refused), rows[base]
 
 
 @pytest.mark.filterwarnings("ignore:Duplicate name")
@@ -416,7 +431,7 @@ def row_stamp_2119(client, data_dir, tmp_path, monkeypatch) -> None:
     session = client.get(f"/sessions/{done['files'][-1]['session_id']}").json()
     started = datetime.fromisoformat(session["start_time"])
     print("2119-stamped file's session start:", started)
-    assert started.year < 2119
+    assert started == _session_start("wrist_ppg_run")
     # Processed after runs that start later than it does: the accepted cost of ordering by time_created.
     earlier = [datetime.fromisoformat(r["time_created"]) for r in done["files"][:-1]]
     assert all(t.year < 2119 for t in earlier)
