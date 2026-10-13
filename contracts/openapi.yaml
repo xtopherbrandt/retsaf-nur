@@ -24,9 +24,10 @@ openapi: 3.1.0
 # (GET /sessions/{id}/load, F017) is the body its upload saved, or the one
 # its last POST /sessions/{id}/load/recompute (F021) put in its place, and
 # GET /metrics/load (F018) is computed on read from those saved loads.
-# POST /sessions carries the F004 `resting_capture` flag; SessionDetail
-# carries the resolved, nullable `resting_rmssd_ms` (see its schema +
-# x-invariant).
+# POST /sessions carries the F004 `resting_capture` flag and the F022
+# `runs_and_captures_only` switch (a file its rule does not keep is a 200
+# IngestSkipped); SessionDetail carries the resolved, nullable
+# `resting_rmssd_ms` (see its schema + x-invariant).
 #
 #
 # OPEN backend alignments this contract assumes (see ui-development-plan.md):
@@ -62,7 +63,7 @@ tags:
   - name: Auth & Athlete
     description: "Session, profile, onboarding. x-readiness: implemented for GET /me (the profile and HR anchors), PATCH /me (entries and settings) and the dated HR history (GET, POST /me/hr-history and DELETE /me/hr-history/{entry_id}); planned otherwise (backend is single-athlete/no-auth today); each operation's own x-readiness is authoritative. Owner: spec/01, spec/04 section 4.4."
   - name: Connections & Sync
-    description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10."
+    description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10. `runcoach sync` (F022) implements none of these operations: it is a CLI client of ingestSession."
   - name: Goal
     description: "Goal contract + pace target + system-proposed goal changes. x-readiness: planned. Owner: spec/01, spec/08 §8.5.2."
   - name: Plan & Calendar
@@ -277,6 +278,7 @@ paths:
       operationId: getGarminConnection
       summary: Garmin connection status
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-owner-spec: "spec/02; research/07 §4.3"
       x-story: [connect-garmin]
       responses:
@@ -291,6 +293,7 @@ paths:
       summary: Begin the Garmin OAuth authorization handoff
       description: Returns the provider authorize URL the client redirects to. Token exchange is server-side.
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-owner-spec: "research/07 §4.3, §10 (Garmin Connect Developer OAuth)"
       x-story: [connect-garmin]
       responses:
@@ -308,6 +311,7 @@ paths:
       operationId: disconnectGarmin
       summary: Revoke the Garmin connection
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-story: [connect-garmin]
       responses:
         "204": { description: Disconnected }
@@ -318,6 +322,7 @@ paths:
       operationId: getSyncStatus
       summary: Last-synced (completed data) and last-pushed (plan) state
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-owner-spec: "spec/02; research/07 §4.7, §4.8"
       x-story: [sync-completed-from-garmin, sync-plan-to-garmin]
       responses:
@@ -337,6 +342,7 @@ paths:
         (research/07 §10), so this reconciles against already-pushed data and
         surfaces gaps; the manual-upload fallback is POST /sessions.
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-owner-spec: "spec/02; research/07 §4.7, §10"
       x-story: [sync-completed-from-garmin]
       responses:
@@ -356,6 +362,7 @@ paths:
         (research/07 §10). Normally automatic on plan change (apply-and-notify);
         this is the manual "push now" control.
       x-readiness: planned
+      x-note: "Not implemented by `runcoach sync`, a CLI client of ingestSession."
       x-owner-spec: "research/07 §4.8, §10"
       x-story: [sync-plan-to-garmin]
       responses:
@@ -558,14 +565,32 @@ paths:
                     file was a resting-HRV capture (config-based profile names cannot
                     reclassify an already-recorded file). Optional; a real bool
                     (true/1/on/yes and negatives coerced), anything else → 422.
+                runs_and_captures_only:
+                  type: boolean
+                  default: false
+                  description: >
+                    F022: apply the archive import's keep rule to this one file
+                    (runs and resting-HRV captures only). A file the rule does not
+                    keep is a 200 IngestSkipped and nothing is stored; a kept file's
+                    201 carries `filter_applied: true`. Sent with `resting_capture`
+                    true → 422 (the declaration bypasses the rule). Optional; without
+                    it the call and every reply are unchanged.
       responses:
         "201":
           description: Ingested (or re-derived deterministically)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IngestResponse" }
+        "200":
+          description: >
+            Skipped, only when `runs_and_captures_only` is sent: the file is not
+            an activity, or it is neither a run nor a recognised resting capture.
+            Nothing stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestSkipped" }
         "400":
-          description: Not a FIT file / parse failure / a required canonical field could not be determined
+          description: Not a FIT file / parse failure / a required canonical field could not be determined / (with `runs_and_captures_only`) a file_id the screen fails
           content: { text/plain: { schema: { type: string } } }
         "409":
           description: Duplicate — already ingested (body names the existing session id)
@@ -573,6 +598,7 @@ paths:
         "413":
           description: Upload exceeds the size/record/beat limit
           content: { text/plain: { schema: { type: string } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
       # NOTE (as-built): errors are FastAPI-default {detail: "..."} / plain text,
       # not the Error envelope below. Alignment #3 migrates these to Error.
 
@@ -1256,6 +1282,27 @@ components:
           type: array
           items: { type: string }
           description: Data-quality flags raised at ingest (never hidden). See spec/02 §2.4.
+        filter_applied:
+          type: boolean
+          nullable: true
+          description: "True only on an upload sent with `runs_and_captures_only`; absent otherwise."
+
+    IngestSkipped:
+      type: object
+      description: "ingestSession's 200, only with `runs_and_captures_only`: a file the rule does not keep; nothing stored."
+      required: [skipped, reason, filter_applied]
+      properties:
+        skipped: { type: boolean, enum: [true] }
+        reason: { type: string, enum: [non_activity, skipped_sport] }
+        file_type:
+          type: string
+          nullable: true
+          description: "non_activity: the file_id type name, or its number as a string."
+        sport:
+          type: string
+          nullable: true
+          description: "skipped_sport: the sport as the FIT file names it."
+        filter_applied: { type: boolean, enum: [true] }
 
     SessionDetail:
       type: object
