@@ -131,6 +131,7 @@ def test_newest_snapshot_today_covers_yesterday_and_today(install_mock_client, f
 
     assert result.exit_code == 0, result.output
     assert _first_line(result.output) == "From 2026-10-12 to 2026-10-13"
+    assert "after today" not in " ".join(result.output.split())
     assert fake.listed == [(date(2026, 10, 12), TODAY)]
 
 
