@@ -239,3 +239,15 @@ def upload_fit_bytes(base_url: str, data: bytes, *, runs_and_captures_only: bool
         )
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+def get_openapi(base_url: str) -> httpx.Response:
+    """Call GET {base_url}/openapi.json and return the raw response.
+
+    The served schema can be large, so the call gets the list call's timeout. Only network-layer
+    failures are translated into ApiUnreachableError; status and body are the caller's job.
+    """
+    try:
+        return client.get(f"{base_url}/openapi.json", timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc

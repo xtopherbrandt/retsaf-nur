@@ -486,8 +486,8 @@ class _Uploader:
 
     def _check_switch(self, day: date) -> None:
         try:
-            resp = api_client.client.get(f"{self.api_url}/openapi.json", timeout=api_client.LIST_TIMEOUT)
-        except httpx.TransportError:
+            resp = api_client.get_openapi(self.api_url)
+        except api_client.ApiUnreachableError:
             raise SyncStop(_api_unreachable(self.api_url, day)) from None
         if resp.status_code != 200 or not _lists_switch(_body(resp)):
             raise SyncStop(f"{OLD_API} and restart the API")
