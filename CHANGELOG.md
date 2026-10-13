@@ -13,6 +13,59 @@
   second write of the same pair at the same moment waits for the first and then replaces it (200)
   instead of failing with a 500.
 
+### Garmin Connect sync
+
+F022: `runcoach sync [--since YYYY-MM-DD]` fetches new runs and Health Snapshots from Garmin Connect
+and uploads them to the API, which must be running. The range starts one day before the local date
+of the newest stored run or recognised resting capture (`activity_tag` `resting_hrv_check` or
+`health_snapshot`), or 30 days back counting today when there is none, and ends today; a newest date
+after today is replaced by today with a warning naming the session. `--since` replaces the start; a
+date after today is a usage error. One activity-list call covers the range; then, day by day oldest
+first, the day's Health Snapshot zip and the day's running-family and `other` activities are
+downloaded from Garmin (activities as their original files), read in memory (never written to
+disk) and every entry uploaded to `POST /sessions` with `runs_and_captures_only` set, so the API stores only
+what the archive import would. A manual activity has no FIT file and is listed, not fetched. The
+summary counts stored, already stored, skipped by sport, not an activity and no FIT file; each
+failed item is printed with a `runcoach sync --since DAY` line that recovers it, and the exit code
+is 1 when any item failed. A stop (a login needed, a web page where a download was expected, a
+rate limit, Garmin or the API unreachable, an API whose `/openapi.json` does not list the switch)
+prints the summary so far and its message, uploads nothing more and exits 1; the switch is checked
+through `GET /openapi.json` before the first upload, so an older API is sent nothing.
+
+F022: `runcoach sync login` asks for the Garmin email, the password (not echoed) and, only when
+Garmin asks, the MFA code, and saves the token in `~/.runcoach/garmin/` (`garmin_tokens.json`,
+beside the CLI config file) only once Garmin accepts the login; a refused login keeps any saved
+token. The email and password are never stored. `runcoach sync logout` deletes the token file; it
+does not revoke the token at Garmin, which stays usable until it expires or is revoked there.
+
+F022: the route is unofficial (spec/02 section 2.7.3): `sync` uses the third-party
+`garminconnect` library, not an API Garmin offers, so it may break when Garmin changes its login,
+and its use is at the account holder's own risk under Garmin's terms. On Windows the token file is
+not protected by file permissions, only by the user profile's own permissions: anyone who can read
+it can use the Garmin account until the token expires.
+
+F022: installing. The library is the optional `garmin` extra of the CLI (`garminconnect>=0.3.17,<0.4`),
+which needs Python 3.12 or later: `uv sync --all-packages --all-groups --extra garmin`. On Python
+3.11 the extra installs nothing, and `runcoach sync` and `sync login` print that command and exit
+1. `sync logout` and every other command work without the extra.
+
+F022: to sync daily, a Windows Task Scheduler entry created from the athlete's own account (the
+token lives in that profile), with `runcoach` on the PATH (else its full path in the venv's
+`Scripts` folder) and the API running at that time:
+
+    schtasks /Create /SC DAILY /ST 07:00 /TN "runcoach sync" /TR "cmd /c runcoach sync >> %USERPROFILE%\.runcoach\sync.log 2>&1"
+
+Each run appends its output to `sync.log`; a failed item or a stop shows there with its
+`runcoach sync --since` line.
+
+F022: `POST /sessions` takes an optional form field `runs_and_captures_only` (bool, default false)
+that applies the archive import's rule to the one file. A file the rule keeps answers as before,
+201 `IngestResponse` with `filter_applied: true`; one it does not keep is a 200 `IngestSkipped`
+(`skipped`, `reason` `non_activity` with the `file_type`, or `skipped_sport` with the `sport`,
+`filter_applied: true`) and stores nothing; a `file_id` the screen fails is a 400 with the screen's
+detail; the switch with `resting_capture` is a 422. Without the switch the call and every reply are
+unchanged, with no `filter_applied` key. Additive in the contract (no version bump).
+
 ## 2026-10-12 — Sprint 016: Garmin archive import and dated HR settings
 
 ### Garmin archive import
