@@ -114,8 +114,23 @@ def _part(body: bytes, field: str) -> tuple[bytes, bytes]:
     raise AssertionError(f"no part {field}")
 
 
+# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body.
+OPENAPI = {
+    "paths": {
+        "/sessions": {
+            "post": {
+                "requestBody": {
+                    "content": {"multipart/form-data": {"schema": {"$ref": "#/components/schemas/Body"}}}
+                }
+            }
+        }
+    },
+    "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
+}
+
+
 class Api:
-    """Serves an empty ``GET /sessions`` and answers each upload 201, recording it."""
+    """Serves an empty ``GET /sessions`` and ``/openapi.json``; answers each upload 201, recording it."""
 
     def __init__(self) -> None:
         self.uploads: list[tuple[bytes, bytes, bytes]] = []
@@ -123,6 +138,8 @@ class Api:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if request.method == "GET" and request.url.path == "/sessions":
             return httpx.Response(200, json={"items": [], "next_cursor": None})
+        if request.method == "GET" and request.url.path == "/openapi.json":
+            return httpx.Response(200, json=OPENAPI)
         if request.method == "POST" and request.url.path == "/sessions":
             body = request.read()
             head, content = _part(body, "file")

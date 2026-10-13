@@ -12,7 +12,14 @@ This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands
   Health Snapshot zip and the day's running-family and ``other`` activities (by local start, then
   id) are downloaded, and every entry of every zip is read in memory and uploaded with
   ``runs_and_captures_only`` set. A manual activity is never downloaded (``no_fit_original``).
-  Each item's raw upload reply is recorded in an ``ItemResult``. ``sync`` never reads stdin.
+  Before the first upload, ``GET /openapi.json`` must list the switch on ``POST /sessions``.
+  Each item is recorded in an ``ItemResult`` with its outcome (reference section 5): ``stored``,
+  ``already_stored``, ``skipped_sport``, ``non_activity``, ``no_fit_original`` or ``failed``. The
+  summary follows the ``From`` line; the exit code is 1 when any item failed. A stop (reference
+  section 6: a login needed, a web page for a download, a rate limit, Garmin or the API
+  unreachable, an API without the switch) prints the summary so far and its message, uploads
+  nothing more and exits 1. Downloads are read in memory only, each entry capped at
+  ``FIT_ENTRY_CAP`` (reference section 7). ``sync`` never reads stdin.
 
 - ``sync login`` asks for the email, the password (not echoed) and, only when Garmin asks for one,
   the MFA code, through the module-level prompt seams ``ask_text`` and ``ask_secret`` (tests replace
@@ -32,8 +39,10 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import lzma
 import sys
 import zipfile
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -125,6 +134,40 @@ RUNNING_TYPE_ID = 1
 OTHER_TYPE_KEY = "other"
 
 LOGIN_NEEDED = "Garmin login needed: run `runcoach sync login`"
+WEB_PAGE = (
+    "Garmin returned a web page instead of the file (a login or maintenance page): "
+    "run `runcoach sync login` if this repeats"
+)
+OLD_API = "the API does not support runs_and_captures_only: update it"
+SWITCH_FIELD = "runs_and_captures_only"
+
+# The most one zip entry may hold to be uploaded: ``POST /sessions``'s own cap; tests lower it.
+FIT_ENTRY_CAP = 50 * 1024 * 1024
+_CAP_TEXT = "50 MB"
+# Errors reading a zip or one entry's bytes out of it (the archive import's list): corrupt data
+# (a corrupt bzip2 stream raises OSError, a corrupt LZMA stream LZMAError), a bad CRC, an
+# unsupported compression method, an encrypted entry or a cut-off stream.
+_ENTRY_READ_ERRORS = (
+    zipfile.BadZipFile,
+    zlib.error,
+    lzma.LZMAError,
+    OSError,
+    RuntimeError,
+    NotImplementedError,
+    EOFError,
+    ValueError,
+)
+# The Garmin errors that end the sync; a ``NotFound`` is never one of them.
+_STOPPING = (garmin.LoginNeeded, garmin.RateLimited, garmin.GarminUnreachable)
+# A failed reply's detail is cut to this many characters in the summary.
+_DETAIL_CHARS = 300
+
+STORED = "stored"
+ALREADY_STORED = "already_stored"
+SKIPPED_SPORT = "skipped_sport"
+NON_ACTIVITY = "non_activity"
+NO_FIT_ORIGINAL = "no_fit_original"
+FAILED = "failed"
 
 
 def today() -> date:
@@ -138,10 +181,13 @@ class SyncStop(Exception):
 
 @dataclass
 class ItemResult:
-    """One thing sync handled: an uploaded zip entry, or an activity it did not upload.
+    """One thing sync handled: an uploaded zip entry, or a download it did not upload.
 
-    ``response`` is the raw ``POST /sessions`` reply for an upload, else ``None``; ``outcome`` is
-    set when the item was decided without an upload (``no_fit_original`` or ``failed``).
+    ``response`` is the raw ``POST /sessions`` reply for an upload, else ``None``. ``outcome`` is
+    one of the reference section 5 outcomes; ``detail`` says why an item failed, or names the
+    sport of a ``skipped_sport`` and the file type of a ``non_activity``. ``name`` is what the
+    summary calls the item (the activity, for an entry of an activity's download); ``day`` is
+    ``None`` only for an activity summary too broken to place.
     """
 
     day: date | None
@@ -150,6 +196,11 @@ class ItemResult:
     response: httpx.Response | None = None
     outcome: str | None = None
     detail: str = ""
+    name: str = ""
+
+    @property
+    def summary_name(self) -> str:
+        return self.name or self.item
 
 
 def _parse_since(value: str, end: date) -> date:
@@ -171,9 +222,7 @@ def _range_page(api_url: str, cursor: str | None) -> dict[str, Any]:
     try:
         resp = api_client.list_sessions(api_url, since=cursor, limit=RANGE_PAGE_SIZE)
     except api_client.ApiUnreachableError:
-        raise SyncStop(
-            f"could not reach API at {api_url}. Is it running? Start it with `runcoach-api`."
-        ) from None
+        raise SyncStop(_api_unreachable(api_url, None)) from None
     if resp.status_code != 200:
         raise SyncStop(
             f"API returned {resp.status_code} while finding the newest stored session: {resp.text}"
@@ -233,9 +282,10 @@ def find_range(api_url: str, since: date | None, end: date) -> tuple[date, str |
     else:
         newest_day, row = newest
         if newest_day > end:
-            label = row.get("name") or row.get("sport")
+            label = sessions._printable(str(row.get("name") or row.get("sport")))
+            session_id = sessions._printable(str(row.get("session_id")))
             warning = (
-                f"Warning: the newest stored session, {label} ({row.get('session_id')}), is dated "
+                f"Warning: the newest stored session, {label} ({session_id}), is dated "
                 f"{newest_day.isoformat()}, after today; the range starts from today instead."
             )
             newest_day = end
@@ -253,34 +303,61 @@ def _is_fetched_type(activity_type: dict[str, Any]) -> bool:
     )
 
 
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _read_summary(summary: Any) -> tuple[int, datetime, dict[str, Any]]:
+    """``(activityId, local start, activityType)`` of a listed summary; raises naming the field.
+
+    A summary lacking any of the three is unreadable whatever its type, so it is never skipped
+    silently as an activity of another sport.
+    """
+    if not isinstance(summary, dict):
+        raise TypeError("the summary is not an object")
+    activity_type = summary.get("activityType")
+    if not isinstance(activity_type, dict):
+        raise TypeError(f"activityType {activity_type!r} is missing or not an object")
+    type_id = activity_type.get("typeId")
+    if not _is_int(type_id):
+        raise ValueError(f"activityType.typeId {type_id!r} is missing or not a number")
+    activity_id = summary.get("activityId")
+    if not _is_int(activity_id):
+        raise ValueError(f"activityId {activity_id!r} is missing or not a number")
+    start_local = summary.get("startTimeLocal")
+    if not isinstance(start_local, str):
+        raise TypeError(f"startTimeLocal {start_local!r} is missing or not text")
+    try:
+        local = datetime.fromisoformat(start_local)
+    except ValueError:
+        raise ValueError(f"startTimeLocal {start_local!r} is not a date and time") from None
+    return activity_id, local, activity_type
+
+
 def _plan_activities(
     listed: Any, start: date, end: date, results: list[ItemResult]
 ) -> dict[date, list[tuple[datetime, int, dict[str, Any]]]]:
     """The fetched-type activities in the range, by day, each day's sorted by local start then id.
 
-    An activity whose summary cannot be read is recorded as ``failed``, naming it.
+    An activity whose summary cannot be read is recorded as ``failed`` with no day, naming it.
     """
+    if not isinstance(listed, list):
+        raise SyncStop(
+            f"Garmin's activity list could not be understood: run `runcoach sync --since {start.isoformat()}`"
+        )
     by_day: dict[date, list[tuple[datetime, int, dict[str, Any]]]] = {}
-    for summary in listed if isinstance(listed, list) else []:
+    for summary in listed:
         try:
-            activity_type = summary["activityType"]
-            if not isinstance(activity_type, dict):
-                raise TypeError("activityType is not an object")
-            if not _is_fetched_type(activity_type):
-                continue
-            activity_id = summary["activityId"]
-            if not isinstance(activity_id, int) or isinstance(activity_id, bool):
-                raise TypeError(f"activityId {activity_id!r} is not a number")
-            local = datetime.fromisoformat(summary["startTimeLocal"])
-        except (KeyError, TypeError, ValueError) as exc:
+            activity_id, local, activity_type = _read_summary(summary)
+        except (TypeError, ValueError) as exc:
+            label = f"activity {_describe(summary)}"
             results.append(
                 ItemResult(
-                    day=None,
-                    item=f"activity {_describe(summary)}",
-                    outcome="failed",
-                    detail=f"unreadable summary: {exc}",
+                    day=None, item=label, outcome=FAILED, detail=f"unreadable summary: {exc}", name=label
                 )
             )
+            continue
+        if not _is_fetched_type(activity_type):
             continue
         day = local.date()
         if start <= day <= end:
@@ -298,44 +375,200 @@ def _describe(summary: Any) -> str:
     return f"{activity_id} ({name})" if name is not None else str(activity_id)
 
 
-def _upload_zip(
-    api_url: str, day: date, label: str, data: bytes, activity_id: int | None, results: list[ItemResult]
-) -> None:
-    """Upload every entry of the zip ``data``, read in memory, in archive order."""
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile as exc:
-        results.append(
-            ItemResult(
-                day=day, item=label, activity_id=activity_id, outcome="failed", detail=f"not a zip: {exc}"
-            )
-        )
-        return
-    with archive:
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
-            item = f"{label}: {info.filename}"
-            try:
-                entry = archive.read(info)
-            except (zipfile.BadZipFile, OSError, ValueError, NotImplementedError) as exc:
-                results.append(
-                    ItemResult(day=day, item=item, activity_id=activity_id, outcome="failed", detail=str(exc))
-                )
-                continue
-            try:
-                resp = api_client.upload_fit_bytes(api_url, entry, runs_and_captures_only=True)
-            except api_client.ApiUnreachableError:
-                raise SyncStop(
-                    f"could not reach API at {api_url}. Start it and run `runcoach sync --since {day.isoformat()}`."
-                ) from None
-            results.append(ItemResult(day=day, item=item, activity_id=activity_id, response=resp))
+def _api_unreachable(api_url: str, day: date | None) -> str:
+    recover = "runcoach sync" if day is None else f"runcoach sync --since {day.isoformat()}"
+    return f"could not reach API at {api_url}: start it with `runcoach-api`, then run `{recover}`"
 
 
 def _garmin_stop(exc: garmin.GarminError, day: date) -> SyncStop:
+    """The stop for a Garmin error that ends the sync on ``day``."""
     if isinstance(exc, garmin.LoginNeeded):
         return SyncStop(LOGIN_NEEDED)
-    return SyncStop(f"Garmin: {exc}. Run `runcoach sync --since {day.isoformat()}` to go on.")
+    reason = sessions._printable(str(exc))
+    recover = f"runcoach sync --since {day.isoformat()}"
+    if isinstance(exc, garmin.RateLimited):
+        return SyncStop(f"Garmin is limiting requests ({reason}): wait, then run `{recover}`")
+    if isinstance(exc, garmin.GarminUnreachable):
+        return SyncStop(f"could not reach Garmin Connect ({reason}): run `{recover}`")
+    return SyncStop(f"Garmin: {reason}: run `{recover}`")
+
+
+def _looks_like_page(data: bytes) -> bool:
+    """True for a body that starts (after a byte-order mark and white space) with ``<``."""
+    head = data[:256]
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:]
+    return head.lstrip().startswith(b"<")
+
+
+def _body(resp: httpx.Response) -> Any:
+    try:
+        return resp.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _reply_detail(resp: httpx.Response) -> str:
+    body = _body(resp)
+    detail = body.get("detail") if isinstance(body, dict) else None
+    text = detail if isinstance(detail, str) else resp.text
+    return f"API returned {resp.status_code}: {text[:_DETAIL_CHARS]}"
+
+
+def _classify(resp: httpx.Response) -> tuple[str, str, bool]:
+    """``(outcome, detail, switch_applied)`` of an upload reply (reference section 5).
+
+    ``switch_applied`` is False for a 201 or 200 whose body lacks ``filter_applied: true``: an API
+    that ignored ``runs_and_captures_only``, which stops the sync.
+    """
+    status = resp.status_code
+    if status == 409:
+        return ALREADY_STORED, "", True
+    if status not in (200, 201):
+        return FAILED, _reply_detail(resp), True
+    body = _body(resp)
+    applied = isinstance(body, dict) and body.get("filter_applied") is True
+    if status == 201:
+        return STORED, "", applied
+    if not applied:
+        return FAILED, f"API returned 200 without filter_applied: {resp.text[:_DETAIL_CHARS]}", False
+    reason = body.get("reason") if body.get("skipped") is True else None
+    if reason == SKIPPED_SPORT:
+        return SKIPPED_SPORT, str(body.get("sport")), True
+    if reason == NON_ACTIVITY:
+        return NON_ACTIVITY, str(body.get("file_type")), True
+    return FAILED, f"API returned 200 with an unknown skip reason {reason!r}", True
+
+
+def _resolve(doc: dict[str, Any], schema: Any) -> Any:
+    """``schema`` with local ``$ref``s followed (a bounded walk)."""
+    for _ in range(8):
+        if not isinstance(schema, dict) or "$ref" not in schema:
+            return schema
+        ref = schema["$ref"]
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            return None
+        node: Any = doc
+        for part in ref[2:].split("/"):
+            node = node.get(part) if isinstance(node, dict) else None
+        schema = node
+    return None
+
+
+def _lists_switch(doc: Any) -> bool:
+    """True when the served ``POST /sessions`` (``ingestSession``) lists the switch as a form field."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("paths"), dict):
+        return False
+    operation = None
+    for item in doc["paths"].values():
+        for op in item.values() if isinstance(item, dict) else []:
+            if isinstance(op, dict) and op.get("operationId") == "ingestSession":
+                operation = op
+    if operation is None:
+        sessions_path = doc["paths"].get("/sessions")
+        operation = sessions_path.get("post") if isinstance(sessions_path, dict) else None
+    try:
+        schema = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    except (KeyError, TypeError):
+        return False
+    properties = _resolve(doc, schema)
+    properties = properties.get("properties") if isinstance(properties, dict) else None
+    return isinstance(properties, dict) and SWITCH_FIELD in properties
+
+
+class _Uploader:
+    """Uploads entries for one sync, checking the API's switch once, before the first upload."""
+
+    def __init__(self, api_url: str, results: list[ItemResult]) -> None:
+        self.api_url = api_url
+        self.results = results
+        self.checked = False
+
+    def _check_switch(self, day: date) -> None:
+        try:
+            resp = api_client.client.get(f"{self.api_url}/openapi.json", timeout=api_client.LIST_TIMEOUT)
+        except httpx.TransportError:
+            raise SyncStop(_api_unreachable(self.api_url, day)) from None
+        if resp.status_code != 200 or not _lists_switch(_body(resp)):
+            raise SyncStop(f"{OLD_API} and restart the API")
+        self.checked = True
+
+    def upload(self, day: date, item: str, name: str, activity_id: int | None, data: bytes) -> None:
+        if not self.checked:
+            self._check_switch(day)
+        try:
+            resp = api_client.upload_fit_bytes(self.api_url, data, runs_and_captures_only=True)
+        except api_client.ApiUnreachableError:
+            raise SyncStop(_api_unreachable(self.api_url, day)) from None
+        outcome, detail, applied = _classify(resp)
+        self.results.append(
+            ItemResult(
+                day=day,
+                item=item,
+                activity_id=activity_id,
+                response=resp,
+                outcome=outcome,
+                detail=detail,
+                name=name,
+            )
+        )
+        if not applied:
+            raise SyncStop(OLD_API)
+
+    def fail(self, day: date, item: str, activity_id: int | None, detail: str) -> None:
+        self.results.append(
+            ItemResult(day=day, item=item, activity_id=activity_id, outcome=FAILED, detail=detail, name=item)
+        )
+
+
+def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activity_id: int | None) -> None:
+    """Upload every entry of the zip ``data``, read in memory, in archive order.
+
+    A web page stops the sync. Bytes that are not a zip, an activity download holding no file, an
+    entry that cannot be read and an entry over ``FIT_ENTRY_CAP`` are ``failed``; an empty
+    snapshot zip is zero items. Entry names are never used as paths.
+    """
+    if _looks_like_page(data):
+        raise SyncStop(WEB_PAGE)
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except _ENTRY_READ_ERRORS as exc:
+        uploader.fail(day, label, activity_id, f"not a zip: {exc}")
+        return
+    with archive:
+        entries = [info for info in archive.infolist() if not info.is_dir()]
+        if not entries and activity_id is not None:
+            uploader.fail(day, label, activity_id, "the download holds no file")
+            return
+        for info in entries:
+            item = f"{label}: {info.filename}"
+            try:
+                with archive.open(info) as handle:
+                    entry = handle.read(FIT_ENTRY_CAP + 1)
+            except _ENTRY_READ_ERRORS as exc:
+                uploader.fail(day, item, activity_id, str(exc) or type(exc).__name__)
+                continue
+            if len(entry) > FIT_ENTRY_CAP:
+                uploader.fail(day, item, activity_id, f"the entry is over {_CAP_TEXT} and was not uploaded")
+                continue
+            uploader.upload(day, item, label if activity_id is not None else item, activity_id, entry)
+
+
+def _download(fetch_bytes: Callable[[Any], Any], arg: Any, day: date) -> bytes | str:
+    """The downloaded bytes (``b""`` for a 404), or the detail of a download error that is not a stop."""
+    try:
+        data = fetch_bytes(arg)
+    except garmin.NotFound:
+        return b""
+    except _STOPPING as exc:
+        raise _garmin_stop(exc, day) from None
+    except garmin.GarminError as exc:
+        return f"Garmin: {sessions._printable(str(exc))}"
+    if data is None:
+        return b""
+    if not isinstance(data, bytes | bytearray):
+        return f"the download is not bytes but {type(data).__name__}"
+    return bytes(data)
 
 
 def fetch(
@@ -345,11 +578,12 @@ def fetch(
     end: date,
     results: list[ItemResult] | None = None,
 ) -> list[ItemResult]:
-    """Download and upload everything for ``start`` to ``end`` (reference section 3).
+    """Download and upload everything for ``start`` to ``end`` (reference sections 3, 5 to 7).
 
     Appends to ``results`` as it goes (so a ``SyncStop`` leaves what was done in it) and returns it.
     """
     results = [] if results is None else results
+    uploader = _Uploader(api_url, results)
     try:
         listed = client.list_activities(start, end)
     except garmin.GarminError as exc:
@@ -357,35 +591,64 @@ def fetch(
     by_day = _plan_activities(listed, start, end, results)
     day = start
     while day <= end:
-        try:
-            snapshot = client.download_snapshot(day)
-        except garmin.NotFound:
-            snapshot = b""
-        except garmin.GarminError as exc:
-            raise _garmin_stop(exc, day) from None
-        if snapshot:
-            _upload_zip(api_url, day, f"snapshot {day.isoformat()}", snapshot, None, results)
+        label = f"snapshot {day.isoformat()}"
+        snapshot = _download(client.download_snapshot, day, day)
+        if isinstance(snapshot, str):
+            uploader.fail(day, label, None, snapshot)
+        elif snapshot:
+            _upload_zip(uploader, day, label, snapshot, None)
         for _, activity_id, summary in by_day.get(day, []):
             label = f"activity {_describe(summary)}"
             if summary.get("manualActivity") is True:
                 results.append(
-                    ItemResult(day=day, item=label, activity_id=activity_id, outcome="no_fit_original")
+                    ItemResult(
+                        day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+                    )
                 )
                 continue
-            try:
-                original = client.download_original(activity_id)
-            except garmin.NotFound:
-                original = b""
-            except garmin.GarminError as exc:
-                raise _garmin_stop(exc, day) from None
-            if not original:
+            original = _download(client.download_original, activity_id, day)
+            if isinstance(original, str):
+                uploader.fail(day, label, activity_id, original)
+            elif not original:
                 results.append(
-                    ItemResult(day=day, item=label, activity_id=activity_id, outcome="no_fit_original")
+                    ItemResult(
+                        day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+                    )
                 )
-                continue
-            _upload_zip(api_url, day, label, original, activity_id, results)
+            else:
+                _upload_zip(uploader, day, label, original, activity_id)
         day += timedelta(days=1)
     return results
+
+
+def summary_lines(results: list[ItemResult], start: date) -> list[str]:
+    """The summary after the ``From`` line (reference section 5); every name printed safely.
+
+    A failed item with no day (an unreadable activity summary) reads ``day unknown`` and is
+    recovered from ``start``, the first day the activity list covered.
+    """
+    printable = sessions._printable
+
+    def count(outcome: str) -> list[ItemResult]:
+        return [r for r in results if r.outcome == outcome]
+
+    lines = [f"Stored: {len(count(STORED))}", f"Already stored: {len(count(ALREADY_STORED))}"]
+    by_sport: dict[str, list[str]] = {}
+    for r in count(SKIPPED_SPORT):
+        by_sport.setdefault(r.detail, []).append(printable(r.summary_name))
+    for sport in sorted(by_sport):
+        names = by_sport[sport]
+        lines.append(f"Skipped {printable(sport)}: {len(names)} ({', '.join(names)})")
+    lines.append(f"Not an activity: {len(count(NON_ACTIVITY))}")
+    no_fit = [printable(r.summary_name) for r in count(NO_FIT_ORIGINAL)]
+    lines.append(f"No FIT file: {len(no_fit)}" + (f" ({', '.join(no_fit)})" if no_fit else ""))
+    for r in count(FAILED):
+        day = r.day.isoformat() if r.day is not None else "day unknown"
+        since = (r.day or start).isoformat()
+        lines.append(
+            f"Failed: {day}, {printable(r.item)}, {printable(r.detail)}, runcoach sync --since {since}"
+        )
+    return lines
 
 
 @sync_app.callback()
@@ -405,6 +668,7 @@ def sync(
     since_day = _parse_since(since, end) if since is not None else None
     cfg = config.load_config()
     results: list[ItemResult] = []
+    start: date | None = None
     try:
         start, warning = find_range(cfg.api_url, since_day, end)
         _write_utf8(f"From {start.isoformat()} to {end.isoformat()}")
@@ -416,7 +680,12 @@ def sync(
             raise _garmin_stop(exc, start) from None
         fetch(client, cfg.api_url, start, end, results)
     except SyncStop as exc:
+        if start is not None:
+            _write_utf8("\n".join(summary_lines(results, start)))
         raise _fail(str(exc)) from None
+    _write_utf8("\n".join(summary_lines(results, start)))
+    if any(r.outcome == FAILED for r in results):
+        raise typer.Exit(code=1)
 
 
 @sync_app.command(name="login")

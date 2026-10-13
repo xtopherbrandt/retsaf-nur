@@ -189,6 +189,20 @@ def test_future_dated_newest_is_capped_with_a_warning(install_mock_client, fake:
     assert fake.listed == [(date(2026, 10, 12), TODAY)]
 
 
+def test_the_future_dated_warning_prints_the_name_with_controls_replaced(
+    install_mock_client, fake: EmptyGarmin
+) -> None:
+    """The stored name and id are printed as ``runcoach sessions`` prints them: controls become ``?``."""
+    store = Store([[_row("bad\x07id", "2119-01-01T12:00:00+00:00", name="Run\x1b[2J\r\nFake line")]])
+
+    result = _run(install_mock_client, store)
+
+    assert result.exit_code == 0, result.output
+    warning = [line for line in result.output.splitlines() if line.startswith("Warning")]
+    assert warning and "Run?[2J??Fake line (bad?id)" in warning[0], result.output
+    assert "\x1b" not in result.output and "\x07" not in result.output
+
+
 def test_since_replaces_the_start(install_mock_client, fake: EmptyGarmin) -> None:
     store = Store([[_row("r1", "2026-10-11T14:38:00+00:00")]])
 
