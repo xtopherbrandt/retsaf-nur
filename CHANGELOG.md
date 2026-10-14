@@ -36,7 +36,8 @@ compressed with anything but stored or deflate is a failed item, without being d
 stop (a login needed, including a 401 or 403 for a download or the activity list; a web page where
 a download was expected; a rate limit (429); Garmin unreachable, meaning a network error with no
 HTTP status at all, also while the saved token is loaded at the start (a reply Garmin made is never
-this); the API unreachable; any other error on the activity list, which has no item to fail, or
+this); the API unreachable; an upload the API did not answer within 60 s, which says so (the next
+run reports the item as already stored if the API stored it); any other error on the activity list, which has no item to fail, or
 while the saved token is loaded, which reads `Garmin: <reason>`; an API whose `/openapi.json` does
 not list the switch) prints the summary so far and its message,
 uploads nothing more and exits 1; the switch is checked through `GET /openapi.json` before the

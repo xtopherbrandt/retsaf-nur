@@ -222,13 +222,50 @@ def test_a_manual_activity_is_recorded_as_no_fit_original_and_never_downloaded(e
     manual = [r for r in results if r.activity_id == 203]
     assert len(manual) == 1
     assert manual[0].outcome == "no_fit_original"
-    assert manual[0].response is None
+    assert manual[0].status is None
     assert manual[0].day == date(2026, 10, 11)
     assert ("original", 203) not in fake.events
     assert all(r.activity_id != 103 for r in results)
-    uploaded = [r for r in results if r.response is not None]
-    assert [r.response.status_code for r in uploaded] == [201] * len(EXPECTED_UPLOADS)
+    uploaded = [r for r in results if r.status is not None]
+    assert [r.status for r in uploaded] == [201] * len(EXPECTED_UPLOADS)
     assert [r.day for r in uploaded] == [START] * 5 + [date(2026, 10, 11)] * 3 + [TODAY]
+
+
+def test_an_item_result_keeps_no_reply_and_no_upload_body_alive(env, monkeypatch) -> None:
+    """Each ``ItemResult`` holds the reply's status, never the ``httpx.Response`` (or the 1 MiB
+    multipart request body it references), so a long sync does not keep every upload in memory."""
+    import dataclasses
+    import gc
+    import weakref
+
+    from runcoach_cli import api_client
+
+    big = b"\x00" * (1024 * 1024)
+    originals = {
+        activity_id: _zip([(f"{activity_id}_{n}.fit", big + bytes([n])) for n in range(10)])
+        for activity_id in (101, 102, 201, 202, 301)
+    }
+    fake = FakeGarmin(ACTIVITIES, SNAPSHOTS, originals)
+    env(fake)
+    replies: list[weakref.ref] = []
+    real_upload = api_client.upload_fit_bytes
+
+    def tracking_upload(*args, **kwargs):
+        resp = real_upload(*args, **kwargs)
+        replies.append(weakref.ref(resp))
+        return resp
+
+    monkeypatch.setattr(api_client, "upload_fit_bytes", tracking_upload)
+
+    results = sync.fetch(fake, API_URL, START, TODAY)
+    gc.collect()
+
+    assert len(replies) == 50 + 4  # 50 activity entries of 1 MiB, 4 snapshot entries
+    assert [r.status for r in results if r.status is not None] == [201] * 54
+    for result in results:
+        for field in dataclasses.fields(result):
+            assert not isinstance(getattr(result, field.name), httpx.Response | httpx.Request), field.name
+    assert [ref for ref in replies if ref() is not None] == []
 
 
 def test_every_zip_entry_is_uploaded_with_the_switch(env) -> None:

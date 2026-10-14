@@ -196,17 +196,18 @@ class SyncStop(Exception):
 class ItemResult:
     """One thing sync handled: an uploaded zip entry, or a download it did not upload.
 
-    ``response`` is the raw ``POST /sessions`` reply for an upload, else ``None``. ``outcome`` is
-    one of the reference section 5 outcomes; ``detail`` says why an item failed, or names the
-    sport of a ``skipped_sport`` and the file type of a ``non_activity``. ``name`` is what the
-    summary calls the item (the activity, for an entry of an activity's download); ``day`` is
+    ``status`` is the HTTP status of the ``POST /sessions`` reply for an upload, else ``None``;
+    the reply itself is not kept, so a long sync does not hold every upload's body in memory.
+    ``outcome`` is one of the reference section 5 outcomes; ``detail`` says why an item failed, or
+    names the sport of a ``skipped_sport`` and the file type of a ``non_activity``. ``name`` is what
+    the summary calls the item (the activity, for an entry of an activity's download); ``day`` is
     ``None`` only for an activity summary too broken to place.
     """
 
     day: date | None
     item: str
     activity_id: int | None = None
-    response: httpx.Response | None = None
+    status: int | None = None
     outcome: str | None = None
     detail: str = ""
     name: str = ""
@@ -397,6 +398,20 @@ def _api_unreachable(api_url: str, day: date | None) -> str:
     return f"could not reach API at {api_url}: start it with `runcoach-api`, then run `{recover}`"
 
 
+def _upload_unanswered(api_url: str, item: str, day: date) -> str:
+    """The stop for an upload the API took but did not answer within ``UPLOAD_TIMEOUT``.
+
+    The API is running (it accepted the connection), so this is not "could not reach API"; it may
+    still have stored the item, which the next run then reports as already stored.
+    """
+    seconds = f"{api_client.UPLOAD_TIMEOUT:g}"
+    return (
+        f"the API at {api_url} did not answer within {seconds} s while storing "
+        f"{sessions._printable(item)}; if it stored it, the next run reports it as already stored: "
+        f"run `runcoach sync --since {day.isoformat()}`"
+    )
+
+
 def _garmin_stop(exc: garmin.GarminError, day: date) -> SyncStop:
     """The stop for a Garmin error that ends the sync on ``day``."""
     if isinstance(exc, garmin.LoginNeeded):
@@ -515,7 +530,9 @@ class _Uploader:
             self._check_switch(day)
         try:
             resp = api_client.upload_fit_bytes(self.api_url, data, runs_and_captures_only=True)
-        except api_client.ApiUnreachableError:
+        except api_client.ApiUnreachableError as exc:
+            if isinstance(exc.__cause__, httpx.ReadTimeout):
+                raise SyncStop(_upload_unanswered(self.api_url, item, day)) from None
             raise SyncStop(_api_unreachable(self.api_url, day)) from None
         outcome, detail, applied = _classify(resp)
         self.results.append(
@@ -523,7 +540,7 @@ class _Uploader:
                 day=day,
                 item=item,
                 activity_id=activity_id,
-                response=resp,
+                status=resp.status_code,
                 outcome=outcome,
                 detail=detail,
                 name=name,

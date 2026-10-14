@@ -454,6 +454,23 @@ def test_login_dumps_the_real_token_without_the_credentials(monkeypatch, tmp_pat
             assert encoded not in data
 
 
+def test_a_successful_login_replaces_an_older_saved_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("GARMINTOKENS", str(tmp_path / "decoy-tokens"))
+    token_file = garmin.token_dir() / "garmin_tokens.json"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_bytes(b'{"di_token": "old"}')
+    calls: list = []
+    _record_login(monkeypatch, calls)
+
+    garmin_connect.login(SENTINEL_EMAIL, SENTINEL_PASSWORD, lambda: "123456")
+
+    assert len(calls) == 1
+    data = token_file.read_bytes()
+    assert b"old" not in data
+    assert b"di-token-value" in data and b"di-refresh-value" in data
+    assert [p.name for p in token_file.parent.iterdir()] == ["garmin_tokens.json"]
+
+
 def test_a_failed_login_keeps_the_old_token(monkeypatch) -> None:
     token_file = garmin.token_dir() / "garmin_tokens.json"
     token_file.parent.mkdir(parents=True)

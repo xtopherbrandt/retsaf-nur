@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 import pytest
 import typer.testing
-from runcoach_cli import garmin
+from runcoach_cli import api_client, garmin
 from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
@@ -393,6 +393,33 @@ def test_api_unreachable_names_the_api(env) -> None:
     assert "Garmin" not in last
     assert last.endswith("runcoach sync --since 2026-10-11`")
     assert "Stored: 1" in result.output
+    assert api.uploads == [b"ACT-101"]
+    assert ("original", 301) not in fake.events
+
+
+def test_an_upload_the_api_does_not_answer_in_time_is_not_called_unreachable(
+    env, install_mock_client
+) -> None:
+    fake = FakeGarmin()
+    api = Api()
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and len(api.uploads) == 1:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return api(request)
+
+    env(fake, api)
+    install_mock_client(slow)
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    last = " ".join(result.output.rstrip().splitlines()[-1].split())
+    assert "could not reach API" not in result.output
+    assert "start it with" not in result.output
+    assert f"the API at http://example.test did not answer within {int(api_client.UPLOAD_TIMEOUT)} s" in last
+    assert "already stored" in last
+    assert last.endswith("runcoach sync --since 2026-10-11`"), last
     assert api.uploads == [b"ACT-101"]
     assert ("original", 301) not in fake.events
 
