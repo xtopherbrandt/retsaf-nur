@@ -155,6 +155,28 @@ def test_each_status_through_the_real_library_maps_per_the_ruling(
     assert session.requests
 
 
+@pytest.mark.parametrize("status", [400, 408, 410, 500, 503])
+@pytest.mark.parametrize("call", ["snapshot", "original"])
+def test_a_failed_download_carries_its_http_status(library_garmin, call, status) -> None:
+    """Sync decides whether a failed download is retried from the status (reference section 2)."""
+    lib, _ = library_garmin(_answer_status(status))
+    client = garmin_connect.GarminConnectClient(lib)
+    download = client.download_snapshot if call == "snapshot" else client.download_original
+    arg = date(2026, 10, 12) if call == "snapshot" else 24686524347
+    with pytest.raises(garmin.GarminError) as info:
+        download(arg)
+    assert type(info.value) is garmin.GarminError
+    assert info.value.status == status
+
+
+def test_a_garmin_error_with_no_reply_carries_no_status(library_garmin) -> None:
+    lib, _ = library_garmin(_answer_raise(requests.Timeout("Read timed out. (read timeout=15)")))
+    with pytest.raises(garmin.GarminUnreachable) as info:
+        garmin_connect.GarminConnectClient(lib).download_snapshot(date(2026, 10, 12))
+    assert info.value.status is None
+    assert garmin.GarminError("unclassified").status is None
+
+
 @pytest.mark.parametrize(
     ("make", "expected"),
     [

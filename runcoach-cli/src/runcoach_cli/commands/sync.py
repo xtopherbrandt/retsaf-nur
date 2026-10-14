@@ -11,9 +11,11 @@ This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands
   earliest of it, the day before ``last_completed`` and ``oldest_failed``, read from the sync
   state (``sync-state.json`` beside the CLI config; ``read_state``, ``apply_state``) and written
   atomically at the end of every run that found its range (``next_state``, ``write_state``): a
-  run that reaches its end sets ``last_completed`` to it, a stop leaves it, and ``oldest_failed``
-  keeps the oldest day still holding a failed item. A missing or bad file falls back to the store
-  rule with one line naming it. ``--since`` (``YYYY-MM-DD`` only) replaces the start (the state
+  run that reaches its end sets ``last_completed`` to it when its start joins on to the previous
+  value, a stop leaves it, and ``oldest_failed`` keeps the oldest day still holding a temporary
+  failure (a permanent one is reported, not remembered) or, after a stop, a day the stop left
+  unfetched. A missing or bad file falls back to the store rule with one line naming it; a date
+  after today is read as today. ``--since`` (``YYYY-MM-DD`` only) replaces the start (the state
   does not move it, but is still updated), and then ``GET /sessions`` is not walked; one after
   today is a usage error. One activity-list
   call covers the range; then, day by day oldest first, the day's Health Snapshot zip and the
@@ -191,6 +193,22 @@ NON_ACTIVITY = "non_activity"
 NO_FIT_ORIGINAL = "no_fit_original"
 FAILED = "failed"
 
+# What a permanent failure's Failed line says before its recover command (reference section 5).
+NOT_RETRIED = "not retried: it would fail the same way again"
+# The 4xx a download can meet that are not a refusal of that file: a login (401, 403), not found
+# (404), a timeout (408) and a rate limit (429). Any other 4xx on a download is permanent.
+_GARMIN_4XX_NOT_REFUSALS = frozenset({401, 403, 404, 408, 429})
+# The upload status that means the API rejected the file itself as invalid: permanent.
+_API_INVALID_FILE = 400
+
+
+@dataclass(frozen=True)
+class _DownloadFailed:
+    """A download error that is the item's failure (not a stop): its detail and whether it is retried."""
+
+    detail: str
+    retry: bool
+
 
 def today() -> date:
     """Today's date on this computer (a seam the tests fix)."""
@@ -216,7 +234,9 @@ class ItemResult:
     ``outcome`` is one of the reference section 5 outcomes; ``detail`` says why an item failed, or
     names the sport of a ``skipped_sport`` and the file type of a ``non_activity``. ``name`` is what
     the summary calls the item (the activity, for an entry of an activity's download); ``day`` is
-    ``None`` only for an activity summary too broken to place.
+    ``None`` only for an activity summary too broken to place. ``retry`` is False for a permanent
+    failure (reference section 2: one that fails the same way on every try), which the sync state
+    does not remember and whose Failed line says it is not retried.
     """
 
     day: date | None
@@ -226,6 +246,7 @@ class ItemResult:
     outcome: str | None = None
     detail: str = ""
     name: str = ""
+    retry: bool = True
 
     @property
     def summary_name(self) -> str:
@@ -337,7 +358,8 @@ _STATE_KEYS = ("last_completed", "oldest_failed")
 @dataclass(frozen=True)
 class SyncState:
     """``last_completed``: the end of the last run that reached the end of its range.
-    ``oldest_failed``: the oldest day that still has a ``failed`` item."""
+    ``oldest_failed``: the oldest day that may still hold a temporary ``failed`` item (after a
+    stop, the day the stop came on, when the run had fetched past the previous one)."""
 
     last_completed: date | None = None
     oldest_failed: date | None = None
@@ -349,15 +371,13 @@ def state_path() -> Path:
 
 
 def _state_day(value: Any, end: date) -> date | None:
-    """A state value as a date: null, or ``YYYY-MM-DD`` on or before ``end``; raises ``ValueError``."""
+    """A state value as a date: null, or ``YYYY-MM-DD``, a date after ``end`` read as ``end`` (the
+    clock moved back); anything else raises ``ValueError``. Each key is read on its own."""
     if value is None:
         return None
     if not isinstance(value, str) or not _SINCE_FORM.fullmatch(value):
         raise ValueError(f"{value!r} is not null or a YYYY-MM-DD date")
-    day = date.fromisoformat(value)
-    if day > end:
-        raise ValueError(f"{value} is after today")
-    return day
+    return min(date.fromisoformat(value), end)
 
 
 def read_state(end: date) -> tuple[SyncState, str | None]:
@@ -430,16 +450,23 @@ def next_state(
     """The state after a run of ``start`` to ``end`` (reference section 2).
 
     ``stopped_on`` is the day a stop ended the run on (``start`` for a stop before any day was
-    fetched), or ``None`` for a run that reached ``end``. Only a run that reached ``end`` moves
-    ``last_completed``. The previous ``oldest_failed`` is kept only when this run did not fetch
-    that day: it lies before ``start``, or the run stopped on or before it.
+    fetched), or ``None`` for a run that reached ``end``. Only a run that reached ``end`` and
+    joined on to what was already complete (no ``last_completed``, or ``start`` on or before the
+    day after it) moves ``last_completed``. ``oldest_failed`` is the earliest of this run's
+    temporary failures' days; the previous ``oldest_failed`` when it lies before ``start``; and,
+    after a stop, the later of it and ``stopped_on``: the run did not fetch the days from
+    ``stopped_on`` on, where a failed day newer than the previous ``oldest_failed`` may lie.
     """
-    failed = [r.day or start for r in results if r.outcome == FAILED]
+    failed = [r.day or start for r in results if r.outcome == FAILED and r.retry]
     old = previous.oldest_failed
-    if old is not None and (old < start or (stopped_on is not None and old >= stopped_on)):
-        failed.append(old)
+    if old is not None:
+        if old < start:
+            failed.append(old)
+        elif stopped_on is not None:
+            failed.append(max(old, stopped_on))
+    joined = previous.last_completed is None or start <= previous.last_completed + timedelta(days=1)
     return SyncState(
-        last_completed=end if stopped_on is None else previous.last_completed,
+        last_completed=end if stopped_on is None and joined else previous.last_completed,
         oldest_failed=min(failed, default=None),
     )
 
@@ -488,7 +515,8 @@ def _plan_activities(
 ) -> dict[date, list[tuple[datetime, int, dict[str, Any]]]]:
     """The fetched-type activities in the range, by day, each day's sorted by local start then id.
 
-    An activity whose summary cannot be read is recorded as ``failed`` with no day, naming it.
+    An activity whose summary cannot be read is recorded as ``failed`` with no day, naming it; it
+    is permanent (not retried), since the next listing returns the same summary.
     """
     if not isinstance(listed, list):
         raise SyncStop(
@@ -502,7 +530,12 @@ def _plan_activities(
             label = f"activity {_describe(summary)}"
             results.append(
                 ItemResult(
-                    day=None, item=label, outcome=FAILED, detail=f"unreadable summary: {exc}", name=label
+                    day=None,
+                    item=label,
+                    outcome=FAILED,
+                    detail=f"unreadable summary: {exc}",
+                    name=label,
+                    retry=False,
                 )
             )
             continue
@@ -675,14 +708,24 @@ class _Uploader:
                 outcome=outcome,
                 detail=detail,
                 name=name,
+                # A 400 is the API rejecting the file as invalid; any other failed reply may pass later.
+                retry=resp.status_code != _API_INVALID_FILE,
             )
         )
         if not applied:
             raise SyncStop(OLD_API)
 
-    def fail(self, day: date, item: str, activity_id: int | None, detail: str) -> None:
+    def fail(self, day: date, item: str, activity_id: int | None, detail: str, *, retry: bool) -> None:
         self.results.append(
-            ItemResult(day=day, item=item, activity_id=activity_id, outcome=FAILED, detail=detail, name=item)
+            ItemResult(
+                day=day,
+                item=item,
+                activity_id=activity_id,
+                outcome=FAILED,
+                detail=detail,
+                name=item,
+                retry=retry,
+            )
         )
 
 
@@ -693,19 +736,20 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
     entry compressed other than stored or deflated (refused before it is opened, since only those
     two are read in bounded memory), an entry that cannot be read and an entry over
     ``FIT_ENTRY_CAP`` are ``failed``; an empty snapshot zip is zero items. Entry names are never
-    used as paths.
+    used as paths. The compression and cap failures are permanent; the others are temporary, since
+    a broken transfer can cause them (reference section 2).
     """
     if _looks_like_page(data):
         raise SyncStop(WEB_PAGE)
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except _ENTRY_READ_ERRORS as exc:
-        uploader.fail(day, label, activity_id, f"not a zip: {exc}")
+        uploader.fail(day, label, activity_id, f"not a zip: {exc}", retry=True)
         return
     with archive:
         entries = [info for info in archive.infolist() if not info.is_dir()]
         if not entries and activity_id is not None:
-            uploader.fail(day, label, activity_id, "the download holds no file")
+            uploader.fail(day, label, activity_id, "the download holds no file", retry=True)
             return
         for info in entries:
             item = f"{label}: {info.filename}"
@@ -717,22 +761,35 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
                     activity_id,
                     f"the entry is compressed with {method}, which sync does not read "
                     "(only stored or deflated entries)",
+                    retry=False,
                 )
                 continue
             try:
                 with archive.open(info) as handle:
                     entry = handle.read(FIT_ENTRY_CAP + 1)
             except _ENTRY_READ_ERRORS as exc:
-                uploader.fail(day, item, activity_id, str(exc) or type(exc).__name__)
+                uploader.fail(day, item, activity_id, str(exc) or type(exc).__name__, retry=True)
                 continue
             if len(entry) > FIT_ENTRY_CAP:
-                uploader.fail(day, item, activity_id, f"the entry is over {_CAP_TEXT} and was not uploaded")
+                uploader.fail(
+                    day, item, activity_id, f"the entry is over {_CAP_TEXT} and was not uploaded", retry=False
+                )
                 continue
             uploader.upload(day, item, label if activity_id is not None else item, activity_id, entry)
 
 
-def _download(fetch_bytes: Callable[[Any], Any], arg: Any, day: date) -> bytes | str:
-    """The downloaded bytes (``b""`` for a 404), or the detail of a download error that is not a stop."""
+def _garmin_refused(exc: garmin.GarminError) -> bool:
+    """True for a download Garmin answered with a 4xx that refuses the file (400, 410): permanent."""
+    status = getattr(exc, "status", None)
+    return isinstance(status, int) and 400 <= status <= 499 and status not in _GARMIN_4XX_NOT_REFUSALS
+
+
+def _download(fetch_bytes: Callable[[Any], Any], arg: Any, day: date) -> bytes | _DownloadFailed:
+    """The downloaded bytes (``b""`` for a 404), or the failure of a download error that is not a stop.
+
+    A Garmin 4xx refusal is permanent; a 5xx, a 408, an error with no status and a body that is not
+    bytes are temporary (reference section 2).
+    """
     try:
         data = fetch_bytes(arg)
     except garmin.NotFound:
@@ -740,11 +797,11 @@ def _download(fetch_bytes: Callable[[Any], Any], arg: Any, day: date) -> bytes |
     except _STOPPING as exc:
         raise _garmin_stop(exc, day) from None
     except garmin.GarminError as exc:
-        return f"Garmin: {sessions._printable(str(exc))}"
+        return _DownloadFailed(f"Garmin: {sessions._printable(str(exc))}", retry=not _garmin_refused(exc))
     if data is None:
         return b""
     if not isinstance(data, bytes | bytearray):
-        return f"the download is not bytes but {type(data).__name__}"
+        return _DownloadFailed(f"the download is not bytes but {type(data).__name__}", retry=True)
     return bytes(data)
 
 
@@ -772,8 +829,8 @@ def fetch(
         while day <= end:
             label = f"snapshot {day.isoformat()}"
             snapshot = _download(client.download_snapshot, day, day)
-            if isinstance(snapshot, str):
-                uploader.fail(day, label, None, snapshot)
+            if isinstance(snapshot, _DownloadFailed):
+                uploader.fail(day, label, None, snapshot.detail, retry=snapshot.retry)
             elif snapshot:
                 _upload_zip(uploader, day, label, snapshot, None)
             for _, activity_id, summary in by_day.get(day, []):
@@ -786,8 +843,8 @@ def fetch(
                     )
                     continue
                 original = _download(client.download_original, activity_id, day)
-                if isinstance(original, str):
-                    uploader.fail(day, label, activity_id, original)
+                if isinstance(original, _DownloadFailed):
+                    uploader.fail(day, label, activity_id, original.detail, retry=original.retry)
                 elif not original:
                     results.append(
                         ItemResult(
@@ -807,7 +864,8 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
     """The summary after the ``From`` line (reference section 5); every name printed safely.
 
     A failed item with no day (an unreadable activity summary) reads ``day unknown`` and is
-    recovered from ``start``, the first day the activity list covered.
+    recovered from ``start``, the first day the activity list covered. A permanent failure's line
+    says ``NOT_RETRIED`` before its recover command.
     """
     printable = sessions._printable
 
@@ -827,8 +885,9 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
     for r in count(FAILED):
         day = r.day.isoformat() if r.day is not None else "day unknown"
         since = (r.day or start).isoformat()
+        kind = "" if r.retry else f"{NOT_RETRIED}, "
         lines.append(
-            f"Failed: {day}, {printable(r.item)}, {printable(r.detail)}, runcoach sync --since {since}"
+            f"Failed: {day}, {printable(r.item)}, {printable(r.detail)}, {kind}runcoach sync --since {since}"
         )
     return lines
 

@@ -254,7 +254,7 @@ def test_a_failed_item_prints_its_since_command_and_exits_1(env) -> None:
     assert failed == [
         (
             "Failed: 2026-10-11, activity 201 (Bad): 201_ACTIVITY.fit, API returned 400: not a FIT file, "
-            "runcoach sync --since 2026-10-11"
+            "not retried: it would fail the same way again, runcoach sync --since 2026-10-11"
         )
     ]
     # A failed item does not stop the sync.
@@ -336,7 +336,7 @@ def test_hostile_names_and_details_are_printed_with_controls_replaced(env) -> No
     assert failed == [
         (
             "Failed: 2026-10-10, activity 101 (Run??): 101_ACTIVITY.fit, API returned 400: bad?[31m, "
-            "runcoach sync --since 2026-10-10"
+            "not retried: it would fail the same way again, runcoach sync --since 2026-10-10"
         )
     ]
     assert "\x1b" not in result.output and "\x07" not in result.output

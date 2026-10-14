@@ -114,7 +114,8 @@ def _file_part(body: bytes) -> bytes:
 
 
 class Api:
-    """Answers an upload 400 when its bytes start with ``NOTFIT``, else 201 stored."""
+    """Answers an upload 400 when its bytes start with ``NOTFIT``, 503 when they start with ``BUSY``
+    and 413 when they start with ``HUGE``, else 201 stored."""
 
     def __init__(self) -> None:
         self.uploads: list[bytes] = []
@@ -129,6 +130,10 @@ class Api:
             self.uploads.append(content)
             if content.startswith(b"NOTFIT"):
                 return httpx.Response(400, json={"detail": "not a FIT file"})
+            if content.startswith(b"BUSY"):
+                return httpx.Response(503, json={"detail": "the store is busy"})
+            if content.startswith(b"HUGE"):
+                return httpx.Response(413, json={"detail": "too large"})
             return httpx.Response(201, json={"session_id": f"s{len(self.uploads)}", "filter_applied": True})
         raise AssertionError(f"unexpected request {request.method} {request.url}")
 
@@ -228,7 +233,7 @@ def test_a_non_fit_entry_is_uploaded_and_its_400_is_failed(run) -> None:
     assert _failed(result.output) == [
         (
             "Failed: 2026-10-10, activity 101 (run 101): notes.txt, API returned 400: not a FIT file, "
-            "runcoach sync --since 2026-10-10"
+            "not retried: it would fail the same way again, runcoach sync --since 2026-10-10"
         )
     ]
     assert "Stored: 1" in result.output
@@ -247,7 +252,7 @@ def test_an_entry_over_the_cap_is_not_uploaded_and_is_failed(run, monkeypatch) -
     assert _failed(result.output) == [
         (
             "Failed: 2026-10-10, activity 101 (run 101): big.fit, the entry is over 50 MB and was not uploaded, "
-            "runcoach sync --since 2026-10-10"
+            "not retried: it would fail the same way again, runcoach sync --since 2026-10-10"
         )
     ]
 
@@ -335,7 +340,8 @@ def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch
     assert _failed(result.output) == [
         (
             f"Failed: 2026-10-10, activity 101 (run 101): {name}, the entry is compressed with {method}, "
-            "which sync does not read (only stored or deflated entries), runcoach sync --since 2026-10-10"
+            "which sync does not read (only stored or deflated entries), "
+            "not retried: it would fail the same way again, runcoach sync --since 2026-10-10"
         )
         for name, method in (("a.fit", "bzip2"), ("b.fit", "lzma"))
     ]
@@ -692,3 +698,107 @@ def test_the_activity_list_stops_on_a_refusal_a_rate_limit_or_no_reply(
     if isinstance(answer, Exception):
         assert "could not reach Garmin Connect" in last, last
     assert api.uploads == []
+
+
+# --- temporary and permanent failures (the user's ruling of 2026-10-13, at review) ----------------
+# Only a temporary failure is remembered in the sync state's ``oldest_failed``; a permanent one is
+# still ``failed`` (its line, exit 1) and its line says it is not retried. One row per kind of the
+# reference's section 2 table, each driven through ``runcoach sync --since 2026-10-10`` with no
+# state before it, so ``oldest_failed`` afterwards is the failed day or null.
+
+NOT_RETRIED = "not retried: it would fail the same way again"
+
+
+def _bzip2_entry() -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("a.fit", b"ACT-bz", compress_type=zipfile.ZIP_BZIP2)
+    return buffer.getvalue()
+
+
+def _corrupt_entry() -> bytes:
+    good = _zip([("a.fit", b"ACT-a" * 20)])
+    return good.replace(b"ACT-aACT-a", b"XXXXXXXXXX", 1)
+
+
+def _fake_original(value: Any):
+    return lambda library_garmin, monkeypatch: FakeGarmin([_activity(101)], originals={101: value})
+
+
+def _library_original(status: int):
+    return lambda library_garmin, monkeypatch: _library_client(
+        library_garmin, [_activity(101)], originals={101: status}
+    )[0]
+
+
+def _over_cap(library_garmin, monkeypatch):
+    monkeypatch.setattr(sync, "FIT_ENTRY_CAP", 64)
+    return FakeGarmin([_activity(101)], originals={101: _zip([("big.fit", b"B" * 65)])})
+
+
+def _unreadable(field: str):
+    def build(library_garmin, monkeypatch):
+        summary = _activity(101)
+        if field == "typeId":
+            del summary["activityType"]["typeId"]
+        else:
+            del summary[field]
+        return FakeGarmin([summary])
+
+    return build
+
+
+class _NotBytes(FakeGarmin):
+    def download_original(self, activity_id: int) -> Any:
+        return "a text body"
+
+
+PERMANENT_ROWS = {
+    "entry-over-50-MB": _over_cap,
+    "bzip2-entry": _fake_original(_bzip2_entry()),
+    "api-400-invalid-file": _fake_original(_zip([("a.fit", b"NOTFIT x")])),
+    "garmin-400": _library_original(400),
+    "garmin-410": _library_original(410),
+    "summary-without-typeId": _unreadable("typeId"),
+    "summary-without-activityId": _unreadable("activityId"),
+    "summary-without-startTimeLocal": _unreadable("startTimeLocal"),
+}
+
+TEMPORARY_ROWS = {
+    "garmin-500": _library_original(500),
+    "garmin-503": _library_original(503),
+    "garmin-408": _library_original(408),
+    "garmin-error-without-status": _fake_original(garmin.GarminError("a reply that is not JSON")),
+    "download-not-bytes": lambda library_garmin, monkeypatch: _NotBytes([_activity(101)]),
+    "api-503-busy-store": _fake_original(_zip([("a.fit", b"BUSY x")])),
+    "api-413": _fake_original(_zip([("a.fit", b"HUGE x")])),
+    "not-a-zip": _fake_original(b"\x00\x01garbage"),
+    "truncated-zip": _fake_original(b"PK\x03\x04truncated"),
+    "empty-activity-zip": _fake_original(_zip([])),
+    "corrupt-entry-crc": _fake_original(_corrupt_entry()),
+}
+
+
+@pytest.mark.parametrize("build", PERMANENT_ROWS.values(), ids=PERMANENT_ROWS.keys())
+def test_a_permanent_failure_is_reported_not_retried_and_not_remembered(
+    run, library_garmin, monkeypatch, build
+) -> None:
+    result, _ = run(build(library_garmin, monkeypatch))
+
+    assert result.exit_code == 1, result.output
+    (failed,) = _failed(result.output)
+    assert failed.endswith(f", {NOT_RETRIED}, runcoach sync --since 2026-10-10"), failed
+    state = json.loads(sync.state_path().read_bytes().decode("utf-8"))
+    assert state == {"last_completed": "2026-10-11", "oldest_failed": None}
+
+
+@pytest.mark.parametrize("build", TEMPORARY_ROWS.values(), ids=TEMPORARY_ROWS.keys())
+def test_a_temporary_failure_is_remembered_until_fetched(run, library_garmin, monkeypatch, build) -> None:
+    result, _ = run(build(library_garmin, monkeypatch))
+
+    assert result.exit_code == 1, result.output
+    (failed,) = _failed(result.output)
+    assert "not retried" not in failed, failed
+    assert failed.endswith(", runcoach sync --since 2026-10-10"), failed
+    state = json.loads(sync.state_path().read_bytes().decode("utf-8"))
+    assert state == {"last_completed": "2026-10-11", "oldest_failed": "2026-10-10"}

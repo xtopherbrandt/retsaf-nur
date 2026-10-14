@@ -153,9 +153,9 @@ def translate_error(exc: Exception) -> GarminError:
     An authentication error is mapped by its cause (``_translate_authentication_error``). A
     rate-limit error or a 429 is ``RateLimited``; a not-found error or a 404 is ``NotFound``; an
     HTTP 401 or 403 needs a login (``LoginNeeded``); any other HTTP 4xx or 5xx (a 5xx after the
-    library's own retries) is a plain ``GarminError``, so a download with it is ``failed`` and the
-    sync goes on. ``GarminUnreachable`` (a stop) only when a network error (connection refused,
-    network down, timeout) is in the cause chain: an error with no HTTP status and no network
+    library's own retries) is a plain ``GarminError`` carrying that ``status``, so a download with
+    it is ``failed`` and the sync goes on. ``GarminUnreachable`` (a stop) only when a network
+    error (connection refused, network down, timeout) is in the cause chain: an error with no HTTP status and no network
     cause (a reply that is not JSON, a pagination limit) means Garmin replied, so it is a plain
     ``GarminError``, as is anything else. A credential login whose every strategy failed with a
     network error (``_no_login_strategy_got_a_reply``) is ``GarminUnreachable`` too, though the
@@ -185,7 +185,7 @@ def translate_error(exc: Exception) -> GarminError:
             return RateLimited(message)
         if status == 404:
             return NotFound(message)
-        return GarminError(message)
+        return GarminError(message, status=status)
     return GarminError(message)
 
 

@@ -15,7 +15,15 @@ from runcoach_cli import config
 
 
 class GarminError(Exception):
-    """Base of every Garmin failure the CLI reports; also raised for an unclassified one."""
+    """Base of every Garmin failure the CLI reports; also raised for an unclassified one.
+
+    ``status`` is the HTTP status Garmin answered with, when the adapter read one, else ``None``;
+    sync reads it to decide whether a failed download is retried by later runs.
+    """
+
+    def __init__(self, *args: object, status: int | None = None) -> None:
+        super().__init__(*args)
+        self.status = status
 
 
 class LoginNeeded(GarminError):
