@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-13 through 2026-10-14 — Sprint 017: Garmin Connect sync
+
 ### Saved loads and dated HR entries
 
 - Deleting a session recomputes no other saved load: a load that borrowed a value from that session's
