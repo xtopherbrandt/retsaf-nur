@@ -254,7 +254,7 @@ def test_a_failed_item_prints_its_since_command_and_exits_1(env) -> None:
     assert failed == [
         (
             "Failed: 2026-10-11, activity 201 (Bad): 201_ACTIVITY.fit, API returned 400: not a FIT file, "
-            "not retried: it would fail the same way again, runcoach sync --since 2026-10-11"
+            "later runs do not return for it: it would fail the same way again, runcoach sync --since 2026-10-11"
         )
     ]
     # A failed item does not stop the sync.
@@ -264,7 +264,11 @@ def test_a_failed_item_prints_its_since_command_and_exits_1(env) -> None:
 @pytest.mark.parametrize(
     ("reply", "detail"),
     [
-        (httpx.Response(413, text="too large"), "API returned 413: too large"),
+        (
+            httpx.Response(413, text="too large"),
+            # A 413 rejects the file itself (over a size or decode ceiling): permanent.
+            "API returned 413: too large, later runs do not return for it: it would fail the same way again",
+        ),
         (httpx.Response(500, json={"detail": ["x"]}), 'API returned 500: {"detail":["x"]}'),
         (
             httpx.Response(200, json={"skipped": True, "reason": "mystery", "filter_applied": True}),
@@ -336,7 +340,7 @@ def test_hostile_names_and_details_are_printed_with_controls_replaced(env) -> No
     assert failed == [
         (
             "Failed: 2026-10-10, activity 101 (Run??): 101_ACTIVITY.fit, API returned 400: bad?[31m, "
-            "not retried: it would fail the same way again, runcoach sync --since 2026-10-10"
+            "later runs do not return for it: it would fail the same way again, runcoach sync --since 2026-10-10"
         )
     ]
     assert "\x1b" not in result.output and "\x07" not in result.output

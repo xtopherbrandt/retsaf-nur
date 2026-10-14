@@ -24,16 +24,18 @@ of the newest stored run or recognised resting capture (`activity_tag` `resting_
 after today is replaced by today with a warning naming the session. The start moves earlier when
 the sync state says so: it is the earliest of that store date, the day before the last sync that
 completed (reached the end of its range) and the oldest day that still has a failed item, so a
-temporary failure (a Garmin 5xx or 408 on a download, an API 5xx or other failed reply but a 400, a
-download that is not a readable zip, an empty activity zip, an entry that cannot be read) is
-retried on every run until it is fetched, and days skipped while sync was stopped are fetched even
-after a newer item reached the store another way. A permanent failure, one that fails the same way
-every time (an entry over 50 MB or compressed with anything but stored or deflate, a file the API
-rejects as invalid with a 400, a Garmin 4xx on a download other than 401, 403, 404, 408 and 429,
-an activity summary missing its type, id or start time), is reported as failed with `not retried`
-on its line and exit 1, but is not retried by later runs. A stop never drops a failed day it did
-not reach: when the run had fetched past the oldest failed day, the next run starts from the day
-the stop came on, since a newer failed day may lie after it.
+temporary failure (a Garmin 5xx or 408 on a download, an API 5xx or other failed reply but a 400
+or 413, a download that is not a readable zip, an empty activity zip, an entry that cannot be read)
+is retried on every run until it is fetched, and days skipped while sync was stopped are fetched
+even after a newer item reached the store another way. A permanent failure, one that fails the
+same way every time (an entry over 50 MB, encrypted, or compressed with anything but stored or
+deflate, a file the API rejects as invalid with a 400 or as too large with a 413, a Garmin 4xx on a
+download other than 401, 403, 404, 408 and 429, an activity summary that is not an object or lacks
+or has an unreadable type, id or start time), is reported as failed with exit 1, and its line says
+`later runs do not return for it`: a later run whose range still covers its day fetches it and
+reports it again, but its day is not remembered, so no run goes back for it. A stop never drops a
+failed day it did not reach: when the run had fetched past the oldest failed day, the next run
+starts no later than the day the stop came on, since a newer failed day may lie after it.
 A completed run that started after the day after the last completed sync (a `--since` past an
 unfetched gap) does not move `last_completed`. The state is `~/.runcoach/sync-state.json`, beside
 the CLI config file and not in `garmin/`, so `sync logout` keeps it: `last_completed` and

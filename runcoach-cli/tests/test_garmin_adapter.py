@@ -158,7 +158,8 @@ def test_each_status_through_the_real_library_maps_per_the_ruling(
 @pytest.mark.parametrize("status", [400, 408, 410, 500, 503])
 @pytest.mark.parametrize("call", ["snapshot", "original"])
 def test_a_failed_download_carries_its_http_status(library_garmin, call, status) -> None:
-    """Sync decides whether a failed download is retried from the status (reference section 2)."""
+    """Sync decides from the status whether a failed download is temporary or permanent (reference
+    section 2)."""
     lib, _ = library_garmin(_answer_status(status))
     client = garmin_connect.GarminConnectClient(lib)
     download = client.download_snapshot if call == "snapshot" else client.download_original

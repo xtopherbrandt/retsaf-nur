@@ -10,7 +10,9 @@ home is the autouse ``isolated_config_path`` tmp folder, so the real ``~/.runcoa
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 from datetime import date, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -389,8 +391,82 @@ def test_a_failed_item_with_no_day_is_permanent_and_not_remembered(run) -> None:
 
     assert result.exit_code == 1, result.output
     assert "Failed: day unknown" in result.output
-    assert "not retried" in result.output
+    assert NOT_REVISITED in result.output
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
+
+
+NOT_REVISITED = "later runs do not return for it: it would fail the same way again"
+
+
+def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_day(run) -> None:
+    """A Garmin 410 on today's snapshot in a daily sync (the review scan's timeline): the next two
+    days' ranges still cover that day, so it is fetched and reported again with the same line; no
+    run goes back for it once the range has moved past it, since it never sets ``oldest_failed``."""
+    refused = {d("2026-10-13"): garmin.GarminError("Download client error (410)", status=410)}
+    store = [_row("r1", d("2026-10-12"))]
+    _write_state("2026-10-12", None)
+
+    first = FakeGarmin(dict(refused))
+    result = run(d("2026-10-13"), store, first)
+    assert result.exit_code == 1, result.output
+    failed = [line for line in _lines(result.output) if line.startswith("Failed:")]
+    assert failed == [
+        (
+            "Failed: 2026-10-13, snapshot 2026-10-13, Garmin: Download client error (410), "
+            f"{NOT_REVISITED}, runcoach sync --since 2026-10-13"
+        )
+    ]
+    assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
+
+    store.insert(0, _row("r2", d("2026-10-13")))
+    second = FakeGarmin(dict(refused))
+    result = run(d("2026-10-14"), store, second)
+    assert result.exit_code == 1, result.output
+    assert _lines(result.output)[0] == "From 2026-10-12 to 2026-10-14"
+    assert d("2026-10-13") in second.snapshot_days
+    again = [line for line in _lines(result.output) if line.startswith("Failed:")]
+    assert again == failed
+    assert _state() == {"last_completed": "2026-10-14", "oldest_failed": None}
+
+    # The day before the last completed sync (10-14) still covers 10-13 on 10-15.
+    store.insert(0, _row("r3", d("2026-10-14")))
+    third = FakeGarmin(dict(refused))
+    result = run(d("2026-10-15"), store, third)
+    assert result.exit_code == 1, result.output
+    assert _lines(result.output)[0] == "From 2026-10-13 to 2026-10-15"
+    assert [line for line in _lines(result.output) if line.startswith("Failed:")] == failed
+    assert _state() == {"last_completed": "2026-10-15", "oldest_failed": None}
+
+    store.insert(0, _row("r4", d("2026-10-15")))
+    later = FakeGarmin(dict(refused))
+    result = run(d("2026-10-16"), store, later)
+    assert result.exit_code == 0, result.output
+    assert _lines(result.output)[0] == "From 2026-10-14 to 2026-10-16"
+    assert d("2026-10-13") not in later.snapshot_days
+
+
+def _string_constants(path: Path) -> list[str]:
+    return [
+        node.value
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+
+
+def test_no_output_string_or_changelog_line_says_a_failure_is_not_retried() -> None:
+    """A permanent failure is fetched again by any run whose range covers its day; what is true is
+    that later runs do not go back for it. Whitespace is flattened so a wrapped phrase is found."""
+    old = re.compile(r"not\s+retried", re.IGNORECASE)
+    sync_source = Path(sync.__file__)
+    changelog = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+    assert changelog.is_file(), changelog
+    strings = _string_constants(sync_source)
+    assert any("later runs do not return for it" in s for s in strings)
+    hits = [s for s in strings if old.search(s)]
+    assert hits == [], hits
+    flat = re.sub(r"\s+", " ", changelog.read_text(encoding="utf-8"))
+    assert "Garmin Connect sync" in flat or "runcoach sync" in flat
+    assert old.findall(flat) == [], [flat[m.start() - 80 : m.end() + 40] for m in old.finditer(flat)]
 
 
 def test_since_replaces_the_start_and_keeps_an_older_failed_day(run) -> None:

@@ -164,8 +164,8 @@ _CAP_TEXT = "50 MB"
 _SAFE_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 # Errors reading a zip or one entry's bytes out of it (the archive import's list): corrupt data
 # (a corrupt bzip2 stream raises OSError, a corrupt LZMA stream LZMAError), a bad CRC, an
-# unsupported compression method, an encrypted entry or a cut-off stream; and, as a backstop,
-# running out of memory.
+# unsupported compression method or a cut-off stream (an encrypted entry is refused before it is
+# opened); and, as a backstop, running out of memory.
 _ENTRY_READ_ERRORS = (
     MemoryError,
     zipfile.BadZipFile,
@@ -194,17 +194,23 @@ NO_FIT_ORIGINAL = "no_fit_original"
 FAILED = "failed"
 
 # What a permanent failure's Failed line says before its recover command (reference section 5).
-NOT_RETRIED = "not retried: it would fail the same way again"
+# A later run whose range still covers the day fetches it again; no run goes back for it.
+NOT_REVISITED = "later runs do not return for it: it would fail the same way again"
 # The 4xx a download can meet that are not a refusal of that file: a login (401, 403), not found
 # (404), a timeout (408) and a rate limit (429). Any other 4xx on a download is permanent.
 _GARMIN_4XX_NOT_REFUSALS = frozenset({401, 403, 404, 408, 429})
-# The upload status that means the API rejected the file itself as invalid: permanent.
-_API_INVALID_FILE = 400
+# The upload statuses that reject the file itself, so it fails the same way again: permanent. A 400
+# is a file the API finds invalid; a 413 one over a size or decode ceiling. A 5xx (a busy store)
+# and any other failed reply are temporary.
+_API_PERMANENT_STATUSES = frozenset({400, 413})
+# The zip general-purpose flag bit that marks an encrypted entry (read without a password: never).
+_ZIP_ENCRYPTED = 0x1
 
 
 @dataclass(frozen=True)
 class _DownloadFailed:
-    """A download error that is the item's failure (not a stop): its detail and whether it is retried."""
+    """A download error that is the item's failure (not a stop): its detail and whether it is
+    temporary (``retry``), so the sync state remembers its day."""
 
     detail: str
     retry: bool
@@ -236,7 +242,7 @@ class ItemResult:
     the summary calls the item (the activity, for an entry of an activity's download); ``day`` is
     ``None`` only for an activity summary too broken to place. ``retry`` is False for a permanent
     failure (reference section 2: one that fails the same way on every try), which the sync state
-    does not remember and whose Failed line says it is not retried.
+    does not remember and whose Failed line says later runs do not return for it.
     """
 
     day: date | None
@@ -516,7 +522,7 @@ def _plan_activities(
     """The fetched-type activities in the range, by day, each day's sorted by local start then id.
 
     An activity whose summary cannot be read is recorded as ``failed`` with no day, naming it; it
-    is permanent (not retried), since the next listing returns the same summary.
+    is permanent (not remembered in the sync state), since the next listing returns the same summary.
     """
     if not isinstance(listed, list):
         raise SyncStop(
@@ -708,8 +714,8 @@ class _Uploader:
                 outcome=outcome,
                 detail=detail,
                 name=name,
-                # A 400 is the API rejecting the file as invalid; any other failed reply may pass later.
-                retry=resp.status_code != _API_INVALID_FILE,
+                # A 400 or 413 rejects the file itself; any other failed reply may pass later.
+                retry=resp.status_code not in _API_PERMANENT_STATUSES,
             )
         )
         if not applied:
@@ -734,10 +740,11 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
 
     A web page stops the sync. Bytes that are not a zip, an activity download holding no file, an
     entry compressed other than stored or deflated (refused before it is opened, since only those
-    two are read in bounded memory), an entry that cannot be read and an entry over
-    ``FIT_ENTRY_CAP`` are ``failed``; an empty snapshot zip is zero items. Entry names are never
-    used as paths. The compression and cap failures are permanent; the others are temporary, since
-    a broken transfer can cause them (reference section 2).
+    two are read in bounded memory), an encrypted entry (refused before it is opened), an entry that
+    cannot be read and an entry over ``FIT_ENTRY_CAP`` are ``failed``; an empty snapshot zip is zero
+    items. Entry names are never used as paths. The compression, encryption and cap failures are
+    permanent; the others are temporary, since a broken transfer can cause them (reference
+    section 2).
     """
     if _looks_like_page(data):
         raise SyncStop(WEB_PAGE)
@@ -762,6 +769,11 @@ def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activit
                     f"the entry is compressed with {method}, which sync does not read "
                     "(only stored or deflated entries)",
                     retry=False,
+                )
+                continue
+            if info.flag_bits & _ZIP_ENCRYPTED:
+                uploader.fail(
+                    day, item, activity_id, "the entry is encrypted, which sync does not read", retry=False
                 )
                 continue
             try:
@@ -865,7 +877,7 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
 
     A failed item with no day (an unreadable activity summary) reads ``day unknown`` and is
     recovered from ``start``, the first day the activity list covered. A permanent failure's line
-    says ``NOT_RETRIED`` before its recover command.
+    says ``NOT_REVISITED`` before its recover command.
     """
     printable = sessions._printable
 
@@ -885,7 +897,7 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
     for r in count(FAILED):
         day = r.day.isoformat() if r.day is not None else "day unknown"
         since = (r.day or start).isoformat()
-        kind = "" if r.retry else f"{NOT_RETRIED}, "
+        kind = "" if r.retry else f"{NOT_REVISITED}, "
         lines.append(
             f"Failed: {day}, {printable(r.item)}, {printable(r.detail)}, {kind}runcoach sync --since {since}"
         )
