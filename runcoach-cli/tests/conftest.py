@@ -153,17 +153,93 @@ def library_garmin() -> Callable[..., tuple[object, LibrarySession]]:
     return make
 
 
+def _refuse_curl_cffi(monkeypatch: pytest.MonkeyPatch, seen: list[str]) -> None:
+    """Make every ``curl_cffi`` entry point the Garmin library uses raise ``curl_cffi``'s own
+    ``ConnectionError``, recording the URL in ``seen``.
+
+    The library's login strategies open ``curl_cffi.requests.Session`` and call its ``get`` and
+    ``post`` (which go through ``Session.request``), and ``Client._http_post`` calls
+    ``curl_cffi.requests.post``; none of them goes through ``requests``, so a ``requests`` stub
+    alone does not keep a login off Garmin's SSO. Nothing happens when ``curl_cffi`` is not
+    installed.
+    """
+    try:
+        from curl_cffi import requests as cffi_requests
+        from curl_cffi.requests.exceptions import ConnectionError as CffiConnectionError
+        from curl_cffi.requests.session import AsyncSession, Session
+    except ImportError:
+        return
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        url = kwargs.get("url") or next((a for a in args if isinstance(a, str) and "://" in a), None)
+        seen.append(str(url))
+        raise CffiConnectionError(f"curl_cffi blocked in tests: {url}")
+
+    for name in ("request", "get", "post", "put", "patch", "delete", "head", "options"):
+        if hasattr(cffi_requests, name):
+            monkeypatch.setattr(cffi_requests, name, refuse)
+    monkeypatch.setattr(Session, "request", refuse)
+    monkeypatch.setattr(AsyncSession, "request", refuse)
+
+
+def _library_reply(answer: object, url: str) -> LibraryResponse:
+    """``answer`` (or ``answer(url)`` when it is callable) as the reply ``requests`` would give."""
+    if callable(answer) and not isinstance(answer, BaseException):
+        answer = answer(url)
+    if isinstance(answer, BaseException):
+        raise answer
+    if isinstance(answer, int):
+        return LibraryResponse(answer, b"<html>x</html>")
+    return LibraryResponse(200, b"json", payload=answer)
+
+
+@pytest.fixture
+def credential_login_network(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
+    """Every request a credential login (``Garmin(email, password).login()``) makes, answered offline.
+
+    ``credential_login_network(answer)`` returns the list of URLs requested. ``requests.Session.request``
+    and ``Client._http_post`` answer with ``answer`` (an int status with an HTML body, or an
+    exception to raise); every ``curl_cffi`` entry point raises ``curl_cffi``'s connection error, as
+    it does offline. The library's anti-bot sleeps are zero, so no test waits and nothing leaves it.
+    """
+    import time
+
+    import requests
+    from garminconnect.client import Client
+
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    seen: list[str] = []
+    _refuse_curl_cffi(monkeypatch, seen)
+
+    def install(answer: object) -> list[str]:
+        def request(self, method, url, **kwargs):
+            seen.append(url)
+            return _library_reply(answer, url)
+
+        def http_post(self, url, **kwargs):
+            seen.append(url)
+            return _library_reply(answer, url)
+
+        monkeypatch.setattr(requests.Session, "request", request)
+        monkeypatch.setattr(Client, "_http_post", http_post)
+        return seen
+
+    return install
+
+
 @pytest.fixture
 def saved_token_session(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
     """A saved Garmin token in the tmp home, with every ``requests`` call answered by ``answer``.
 
     ``saved_token_session(answer)`` returns the list of URLs requested. ``answer`` is an int (that
-    HTTP status, with an HTML body that is not JSON) or an exception to raise (a ``requests``
-    network error). ``Garmin.login(token_dir)`` then runs as ``runcoach sync`` runs it: the token
+    HTTP status, with an HTML body that is not JSON), an exception to raise (a ``requests``
+    network error), a list or dict (a 200 JSON reply), or a callable taking the URL and returning
+    one of those. ``Garmin.login(token_dir)`` then runs as ``runcoach sync`` runs it: the token
     loads from the file, and the profile fetch goes through ``requests.Session.request``. The
-    library's one-second sleeps between its profile retries are zero, and its token refresh (which
+    library's one-second sleeps between its profile retries are zero, its token refresh (which
     posts through ``curl_cffi`` when that is installed, bypassing ``requests``) is refused as a
-    network error, so nothing leaves the test.
+    network error, and every ``curl_cffi`` entry point the login strategies use raises, so nothing
+    leaves the test even if a later test gives the library credentials.
     """
     import json
     import time
@@ -185,13 +261,12 @@ def saved_token_session(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], l
 
     monkeypatch.setattr(Client, "_http_post", no_refresh_post)
     seen: list[str] = []
+    _refuse_curl_cffi(monkeypatch, seen)
 
     def install(answer: object) -> list[str]:
         def request(self, method, url, **kwargs):
             seen.append(url)
-            if isinstance(answer, BaseException):
-                raise answer
-            return LibraryResponse(answer, b"<html>x</html>")  # type: ignore[arg-type]
+            return _library_reply(answer, url)
 
         monkeypatch.setattr(requests.Session, "request", request)
         return seen

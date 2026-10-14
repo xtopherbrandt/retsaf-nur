@@ -45,8 +45,8 @@ first upload, so an older API is sent nothing.
 F022: `runcoach sync login` asks for the Garmin email, the password (not echoed) and, only when
 Garmin asks, the MFA code, and saves the token in `~/.runcoach/garmin/` (`garmin_tokens.json`,
 beside the CLI config file) only once Garmin accepts the login; a failed login keeps any saved
-token and says what went wrong: Garmin refused the login, Garmin could not be reached, Garmin is
-limiting requests, or `Garmin: <reason>`. The email and password are never stored. `runcoach sync logout` deletes the token file; it
+token and says what went wrong: Garmin refused the login, Garmin could not be reached (every login
+attempt failed with a network error), Garmin is limiting requests, or `Garmin: <reason>`. The email and password are never stored. `runcoach sync logout` deletes the token file; it
 does not revoke the token at Garmin, which stays usable until it expires or is revoked there.
 
 F022: the route is unofficial (spec/02 section 2.7.3): `sync` uses the third-party

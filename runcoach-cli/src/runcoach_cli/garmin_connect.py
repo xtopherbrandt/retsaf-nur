@@ -33,6 +33,14 @@ _TOKEN_ENV = "GARMINTOKENS"
 _REFUSED = frozenset({401, 403})
 # How the library words a status in its messages, when it attaches no response.
 _STATUS_IN_MESSAGE = re.compile(r"client error \((\d{3})\)|API Error (\d{3})")
+# A credential login whose every strategy failed: ``Client.login`` raises "All login strategies
+# exhausted: <type>: <text>" naming the last strategy's error, with no cause attached.
+_ALL_STRATEGIES_FAILED = re.compile(r"All login strategies exhausted: (\w+): ")
+# The network error types (``requests``' and ``curl_cffi``'s) that mean no strategy got a reply.
+_NETWORK_ERROR_NAMES = frozenset({"ConnectionError", "ConnectTimeout", "ReadTimeout", "Timeout", "DNSError"})
+# The library's authentication errors, raised with no cause, for a 200 whose JSON is not the
+# profile or the settings: Garmin replied and refused nothing, so they are not a login.
+_NOT_THE_PROFILE = frozenset({"Invalid profile data found", "Invalid user settings found"})
 
 
 def _silence_library_logger() -> None:
@@ -58,6 +66,18 @@ def _has_network_cause(exc: BaseException) -> bool:
             return True
         current = current.__cause__ or current.__context__
     return False
+
+
+def _no_login_strategy_got_a_reply(exc: BaseException) -> bool:
+    """True when a credential login failed because every strategy hit a network error.
+
+    ``Client.login`` names only the last strategy's error, as text, and attaches no cause, so the
+    error's type name is read from the message: a ``requests`` or ``curl_cffi`` connection error,
+    timeout or name-resolution error means no reply. Any other type (the library's own error for
+    a status or a page it could not use) means Garmin replied, and keeps the usual mapping.
+    """
+    match = _ALL_STRATEGIES_FAILED.search(str(exc))
+    return match is not None and match.group(1) in _NETWORK_ERROR_NAMES
 
 
 def _status_from_message(exc: BaseException) -> int | None:
@@ -102,13 +122,17 @@ def _translate_authentication_error(exc: Exception, message: str) -> GarminError
     a network error in the chain is ``GarminUnreachable``; a cause with an HTTP status of 401 or
     403 needs a login; a 429 is ``RateLimited``; any other status, or another cause that is not the
     library's own authentication error (a reply that is not the profile), is a plain
-    ``GarminError``; an authentication error with no cause (no saved token, no credentials) needs
-    a login.
+    ``GarminError``. An authentication error with no cause needs a login (no saved token, no
+    credentials), except the library's "Invalid profile data found" and "Invalid user settings
+    found": Garmin answered 200 with JSON that is not the profile or the settings, so those are a
+    plain ``GarminError`` too.
     """
     from garminconnect import GarminConnectAuthenticationError
 
     cause = exc.__cause__
     if cause is None:
+        if message in _NOT_THE_PROFILE:
+            return GarminError(message)
         return LoginNeeded(message)
     detail = f"{message} ({str(cause) or type(cause).__name__})"
     if _has_network_cause(exc):
@@ -133,7 +157,9 @@ def translate_error(exc: Exception) -> GarminError:
     sync goes on. ``GarminUnreachable`` (a stop) only when a network error (connection refused,
     network down, timeout) is in the cause chain: an error with no HTTP status and no network
     cause (a reply that is not JSON, a pagination limit) means Garmin replied, so it is a plain
-    ``GarminError``, as is anything else.
+    ``GarminError``, as is anything else. A credential login whose every strategy failed with a
+    network error (``_no_login_strategy_got_a_reply``) is ``GarminUnreachable`` too, though the
+    library attaches no cause to it.
     """
     from garminconnect import (
         GarminConnectAuthenticationError,
@@ -150,7 +176,7 @@ def translate_error(exc: Exception) -> GarminError:
     if isinstance(exc, GarminConnectNotFoundError):
         return NotFound(message)
     if isinstance(exc, GarminConnectConnectionError):
-        if _has_network_cause(exc):
+        if _has_network_cause(exc) or _no_login_strategy_got_a_reply(exc):
             return GarminUnreachable(message)
         status = _status_of(exc)
         if status in _REFUSED:

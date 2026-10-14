@@ -223,6 +223,84 @@ def test_loading_the_saved_token_maps_each_answer_per_the_ruling(
     assert seen and all("socialProfile" in url for url in seen), seen
 
 
+def _profile_then_settings(profile: object, settings: object):
+    # The saved-token load fetches the social profile, then the user settings.
+    def answer(url: str) -> object:
+        return profile if "socialProfile" in url else settings
+
+    return answer
+
+
+@pytest.mark.parametrize(
+    ("answer", "says"),
+    [
+        (["not", "the", "profile"], "Invalid profile data found"),
+        (_profile_then_settings({"displayName": "runner"}, {"preferences": {}}), "Invalid user settings found"),
+    ],
+    ids=["profile-is-a-list", "settings-without-userdata"],
+)
+def test_a_saved_token_load_answered_with_json_that_is_not_the_profile_is_a_plain_garmin_error(
+    saved_token_session, answer, says
+) -> None:
+    # Garmin answered 200 with JSON, but not the profile or the settings: the library raises its
+    # authentication error with no cause. Garmin replied and refused nothing, so not "login needed".
+    seen = saved_token_session(answer)
+    with pytest.raises(garmin.GarminError) as info:
+        garmin_connect.open_client()
+    assert type(info.value) is garmin.GarminError, (info.value, info.value.__cause__)
+    assert says in str(info.value)
+    assert isinstance(info.value.__cause__, GarminConnectAuthenticationError)
+    assert info.value.__cause__.__cause__ is None
+    assert seen and any("socialProfile" in url for url in seen), seen
+
+
+def test_saved_token_session_refuses_curl_cffi(saved_token_session) -> None:
+    # The login strategies and the token refresh post through curl_cffi, not requests.
+    cffi_requests = pytest.importorskip("curl_cffi.requests")
+    from curl_cffi.requests.exceptions import ConnectionError as CffiConnectionError
+
+    seen = saved_token_session(401)
+    with pytest.raises(CffiConnectionError):
+        cffi_requests.post("https://diauth.garmin.com/di-oauth2-service/oauth/token")
+    with pytest.raises(CffiConnectionError):
+        cffi_requests.Session(impersonate="chrome").get("https://sso.garmin.com/portal/sso/en-US/sign-in")
+    assert seen == [
+        "https://diauth.garmin.com/di-oauth2-service/oauth/token",
+        "https://sso.garmin.com/portal/sso/en-US/sign-in",
+    ]
+
+
+def _all_strategies_failed(last: str) -> GarminConnectConnectionError:
+    # How a credential login reports that every strategy failed: ``Client.login`` raises "All login
+    # strategies exhausted: <type>: <text>" with no cause, and ``Garmin.login`` wraps it.
+    inner = GarminConnectConnectionError("All login strategies exhausted: " + last)
+    try:
+        raise GarminConnectConnectionError(f"Login failed: {inner}") from inner
+    except GarminConnectConnectionError as exc:
+        return exc
+
+
+@pytest.mark.parametrize(
+    ("last", "expected"),
+    [
+        ("ConnectionError: " + REFUSED_CONNECTION, garmin.GarminUnreachable),
+        ("ConnectTimeout: Connection to sso.garmin.com timed out.", garmin.GarminUnreachable),
+        ("ReadTimeout: Read timed out. (read timeout=30)", garmin.GarminUnreachable),
+        ("Timeout: Failed to perform, curl: (28) Operation timed out", garmin.GarminUnreachable),
+        ("DNSError: Failed to perform, curl: (6) Could not resolve host: sso.garmin.com", garmin.GarminUnreachable),
+        # A strategy that got a reply keeps today's mapping.
+        ("GarminConnectConnectionError: Portal login failed (non-JSON): HTTP 500", garmin.GarminError),
+        ("GarminConnectConnectionError: portal+requests: token rejected by API tier", garmin.GarminError),
+        ("ValueError: ConnectionError: not a network error", garmin.GarminError),
+        ("no strategies ran", garmin.GarminError),
+    ],
+    ids=["connection-error", "connect-timeout", "read-timeout", "timeout", "dns", "http-500",
+         "token-rejected", "other-type", "none-ran"],
+)
+def test_a_login_whose_strategies_all_failed_is_unreachable_only_for_a_network_error(last, expected) -> None:
+    assert type(garmin_connect.translate_error(_all_strategies_failed(last))) is expected
+
+
 def test_a_network_cause_has_no_status_whatever_its_text(library_garmin) -> None:
     # A network error whose text happens to read like a status is still "no reply".
     lib, _ = library_garmin(_answer_raise(requests.ConnectionError("upstream said API Error 403")))

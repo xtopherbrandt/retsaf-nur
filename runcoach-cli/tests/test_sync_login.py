@@ -150,7 +150,9 @@ def test_a_refusal_message_is_printed_without_control_characters(monkeypatch, pr
             ("refused the login", "could not reach"),
         ),
     ],
-    ids=["refused", "unreachable", "rate-limited", "other"],
+    # The fake adapter's rows pin the wording only; what the real adapter raises offline is pinned by
+    # test_an_offline_login_over_the_real_library_could_not_reach_garmin below.
+    ids=["refused", "unreachable-wording", "rate-limited", "other"],
 )
 def test_a_failed_login_is_worded_by_what_went_wrong(monkeypatch, prompts, error, says, never) -> None:
     _install(monkeypatch, FakeAdapter(refuse=error))
@@ -163,6 +165,72 @@ def test_a_failed_login_is_worded_by_what_went_wrong(monkeypatch, prompts, error
     assert "Any saved token is unchanged." in flat, flat
     for text in never:
         assert text not in flat, flat
+
+
+def _network_errors() -> list:
+    requests = pytest.importorskip("requests")
+    return [
+        requests.ConnectionError(
+            "HTTPSConnectionPool(host='sso.garmin.com', port=443): Max retries exceeded with url: /x "
+            "(Caused by NameResolutionError(\"Failed to resolve 'sso.garmin.com' ([Errno 11001] getaddrinfo failed)\"))"
+        ),
+        requests.ConnectTimeout("Connection to sso.garmin.com timed out. (connect timeout=30)"),
+        requests.ReadTimeout("Read timed out. (read timeout=30)"),
+    ]
+
+
+@pytest.mark.parametrize("which", [0, 1, 2], ids=["connection-error", "connect-timeout", "read-timeout"])
+def test_an_offline_login_over_the_real_library_could_not_reach_garmin(
+    monkeypatch, prompts, credential_login_network, which
+) -> None:
+    # Offline, every login strategy fails: the library's curl_cffi strategies with curl_cffi's
+    # connection error and its requests strategies with requests' error. It then raises "All login
+    # strategies exhausted: <the last error>" with no cause, and Garmin.login wraps that as "Login
+    # failed: ...". That is "could not reach Garmin Connect", not "Garmin: Login failed".
+    pytest.importorskip("garminconnect")
+    from runcoach_cli import garmin_connect
+
+    seen = credential_login_network(_network_errors()[which])
+
+    with pytest.raises(garmin.GarminUnreachable) as info:
+        garmin_connect.login(EMAIL, SENTINEL_PASSWORD, lambda: "123456")
+    assert "All login strategies exhausted" in str(info.value), info.value
+    assert any("sso.garmin.com" in url for url in seen), seen
+
+    monkeypatch.setattr(sync, "_adapter", lambda: garmin_connect)
+    result = runner.invoke(app, ["sync", "login"])
+
+    assert result.exit_code == 1, result.output
+    flat = _flat(result.output)
+    assert "could not reach Garmin Connect: Login failed: All login strategies exhausted" in flat, flat
+    assert "Any saved token is unchanged." in flat, flat
+    assert "Garmin: Login failed" not in flat, flat
+    assert not _token_file().exists()
+
+
+def test_a_login_every_strategy_of_which_got_a_reply_is_not_unreachable(
+    monkeypatch, prompts, credential_login_network
+) -> None:
+    # The negative class: the requests strategies get an HTTP 500 page (the curl_cffi ones are
+    # offline), so the last strategy's error is the library's own, not a network error. Garmin
+    # replied, so the login keeps its "Garmin: <reason>" wording.
+    pytest.importorskip("garminconnect")
+    from runcoach_cli import garmin_connect
+
+    credential_login_network(500)
+
+    with pytest.raises(garmin.GarminError) as info:
+        garmin_connect.login(EMAIL, SENTINEL_PASSWORD, lambda: "123456")
+    assert "All login strategies exhausted" in str(info.value), info.value
+    assert not isinstance(info.value, garmin.GarminUnreachable), info.value
+
+    monkeypatch.setattr(sync, "_adapter", lambda: garmin_connect)
+    result = runner.invoke(app, ["sync", "login"])
+
+    assert result.exit_code == 1, result.output
+    flat = _flat(result.output)
+    assert "could not reach" not in flat, flat
+    assert not _token_file().exists()
 
 
 def test_a_token_that_cannot_be_saved_says_so_not_that_garmin_refused(monkeypatch, prompts) -> None:

@@ -620,6 +620,37 @@ def test_loading_the_saved_token_at_sync_start_stops_per_the_ruling(
 
 
 @pytest.mark.parametrize(
+    ("answer", "says"),
+    [
+        (["not", "the", "profile"], "Garmin: Invalid profile data found"),
+        (
+            lambda url: {"displayName": "runner"} if "socialProfile" in url else {"preferences": {}},
+            "Garmin: Invalid user settings found",
+        ),
+    ],
+    ids=["profile-is-a-list", "settings-without-userdata"],
+)
+def test_a_saved_token_load_answered_with_json_that_is_not_the_profile_stops_with_garmin_reason(
+    run, saved_token_session, answer, says
+) -> None:
+    # Garmin replied 200 with JSON that is not the profile (or settings without userData): the
+    # stop is "Garmin: <reason>", not "login needed" and not "could not reach".
+    from runcoach_cli import garmin_connect
+
+    seen = saved_token_session(answer)
+    result, api = run(None, adapter=garmin_connect)
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert says in last, last
+    assert sync.LOGIN_NEEDED not in last, last
+    assert "could not reach" not in last, last
+    assert last.endswith("run `runcoach sync --since 2026-10-10`"), last
+    assert seen, seen
+    assert api.uploads == []
+
+
+@pytest.mark.parametrize(
     ("answer", "ending"),
     [
         (403, sync.LOGIN_NEEDED),
