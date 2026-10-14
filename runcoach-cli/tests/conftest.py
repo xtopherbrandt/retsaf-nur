@@ -76,6 +76,17 @@ def prewritten_config(isolated_config_path: Path) -> Path:
 
 
 @pytest.fixture
+def fresh_sync_state(prewritten_config: Path) -> Path:
+    """``prewritten_config`` plus a ``sync-state.json`` holding no dates, as a sync leaves it when it
+    has never completed and nothing has failed: the range is the store rule's, and no line about a
+    missing state file is printed, so a test can compare the output that follows the ``From`` line.
+    """
+    state_path = prewritten_config.parent / "sync-state.json"
+    state_path.write_bytes(b'{"last_completed": null, "oldest_failed": null}')
+    return state_path
+
+
+@pytest.fixture
 def install_mock_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Callable[[Callable[[httpx.Request], httpx.Response]], None]:

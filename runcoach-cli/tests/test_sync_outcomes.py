@@ -5,7 +5,8 @@ the bytes it was sent (every file is opaque bytes naming itself; nothing is deco
 follows the ``From`` line: ``Stored``, ``Already stored``, one ``Skipped <sport>`` line per sport
 naming each item, ``Not an activity`` (a count), ``No FIT file`` (naming each) and one ``Failed``
 line per failed item ending with ``runcoach sync --since <its day>``. Exit 0 when nothing failed,
-else 1.
+else 1. A sync state file holding no dates is present (``fresh_sync_state``), so no line about a
+missing one comes between the ``From`` line and the summary.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
 
-pytestmark = pytest.mark.usefixtures("prewritten_config")
+pytestmark = pytest.mark.usefixtures("fresh_sync_state")
 
 runner = CliRunner()
 

@@ -21,7 +21,15 @@ F022: `runcoach sync [--since YYYY-MM-DD]` fetches new runs and Health Snapshots
 and uploads them to the API, which must be running. The range starts one day before the local date
 of the newest stored run or recognised resting capture (`activity_tag` `resting_hrv_check` or
 `health_snapshot`), or 30 days back counting today when there is none, and ends today; a newest date
-after today is replaced by today with a warning naming the session. `--since` replaces the start; a
+after today is replaced by today with a warning naming the session. The start moves earlier when
+the sync state says so: it is the earliest of that store date, the day before the last sync that
+completed (reached the end of its range) and the oldest day that still has a failed item, so a
+failed item is retried on every run until it is fetched, and days skipped while sync was stopped
+are fetched even after a newer item reached the store another way. The state is
+`~/.runcoach/sync-state.json`, beside the CLI config file and not in `garmin/`, so `sync logout`
+keeps it: `last_completed` and `oldest_failed`, each a `YYYY-MM-DD` date or null, written at the end
+of each run. A missing or unreadable state file falls back to the store date, with a line naming the
+file, and is rewritten. `--since` replaces the start; a
 date after today is a usage error. One activity-list call covers the range; then, day by day oldest
 first, the day's Health Snapshot zip and the day's running-family and `other` activities are
 downloaded from Garmin (activities as their original files), read in memory (never written to

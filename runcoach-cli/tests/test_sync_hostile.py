@@ -3,8 +3,10 @@
 One test per row of the section 7 table. Each runs ``runcoach sync`` through ``CliRunner`` with a
 fake Garmin client and a mock API, under ``monkeypatch.chdir(tmp_path)``; the test home (the CLI
 config, and the Garmin token directory beside it) is under ``tmp_path`` too. Each asserts that no
-file was written under ``tmp_path`` (a listing before and after) and that no exception escaped
-(``result.exception`` is ``None`` or the ``SystemExit`` of a clean exit code).
+file was written under ``tmp_path`` (a listing before and after) other than the sync state file
+beside the config, which must then hold only its two keys, each null or a date (so no downloaded
+byte reaches it), and that no exception escaped (``result.exception`` is ``None`` or the
+``SystemExit`` of a clean exit code).
 
 Rows: bytes that are not a zip (activity and snapshot); an empty zip (activity: failed; snapshot:
 zero items); a non-FIT entry (uploaded; the 400 is failed); an entry over the cap (not uploaded,
@@ -19,6 +21,7 @@ download, and an error on the activity list (stops).
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from datetime import date, timedelta, timezone
 from pathlib import Path
@@ -131,7 +134,23 @@ class Api:
 
 
 def _listing(root: Path) -> dict[str, tuple[int, int]]:
-    return {str(p.relative_to(root)): (p.stat().st_size, p.stat().st_mtime_ns) for p in root.rglob("*")}
+    """Every path under ``root`` with its size and mtime, except the sync state file, which sync
+    rewrites at the end of each run, and its folder's mtime, which that rewrite moves."""
+    state = sync.state_path()
+    listing = {}
+    for p in root.rglob("*"):
+        if p == state:
+            continue
+        stat = p.stat()
+        listing[str(p.relative_to(root))] = (stat.st_size, 0 if p == state.parent else stat.st_mtime_ns)
+    return listing
+
+
+def _assert_state_holds_only_dates() -> None:
+    body = json.loads(sync.state_path().read_bytes().decode("utf-8"))
+    assert sorted(body) == ["last_completed", "oldest_failed"], body
+    for value in body.values():
+        assert value is None or (isinstance(value, str) and date.fromisoformat(value)), body
 
 
 @pytest.fixture
@@ -151,6 +170,7 @@ def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path):
         result = runner.invoke(app, ["sync", "--since", "2026-10-10"], input=b"")
         after = _listing(tmp_path)
         assert after == before, sorted(set(after) ^ set(before))
+        _assert_state_holds_only_dates()
         assert result.exception is None or type(result.exception) is SystemExit, repr(result.exception)
         assert "Traceback" not in result.output
         return result, api

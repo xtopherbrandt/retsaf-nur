@@ -7,8 +7,15 @@ This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands
   computer's zone (``sessions.LOCAL_ZONE``), of the newest stored run or recognised resting
   capture, found by walking ``GET /sessions`` newest first; it starts 29 days before today when
   there is none, and ends today (the ``today`` seam). A newest date after today is replaced by
-  today, with a warning naming the session. ``--since`` (``YYYY-MM-DD`` only) replaces the start,
-  and then ``GET /sessions`` is not walked; one after today is a usage error. One activity-list
+  today, with a warning naming the session. That store rule is one candidate: the start is the
+  earliest of it, the day before ``last_completed`` and ``oldest_failed``, read from the sync
+  state (``sync-state.json`` beside the CLI config; ``read_state``, ``apply_state``) and written
+  atomically at the end of every run that found its range (``next_state``, ``write_state``): a
+  run that reaches its end sets ``last_completed`` to it, a stop leaves it, and ``oldest_failed``
+  keeps the oldest day still holding a failed item. A missing or bad file falls back to the store
+  rule with one line naming it. ``--since`` (``YYYY-MM-DD`` only) replaces the start (the state
+  does not move it, but is still updated), and then ``GET /sessions`` is not walked; one after
+  today is a usage error. One activity-list
   call covers the range; then, day by day oldest first, the day's Health Snapshot zip and the
   day's running-family and ``other`` activities (by local start, then id) are downloaded, and
   every entry of every zip is read in memory and uploaded with
@@ -43,6 +50,7 @@ import importlib.util
 import io
 import json
 import lzma
+import os
 import re
 import sys
 import zipfile
@@ -50,6 +58,7 @@ import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -189,7 +198,13 @@ def today() -> date:
 
 
 class SyncStop(Exception):
-    """The sync cannot go on; ``str(exc)`` is the message to print."""
+    """The sync cannot go on; ``str(exc)`` is the message to print.
+
+    ``stopped_on`` is the day ``fetch`` was on when the stop came (the range's start for a stop on
+    the activity list), or ``None`` for a stop outside ``fetch``.
+    """
+
+    stopped_on: date | None = None
 
 
 @dataclass
@@ -311,6 +326,122 @@ def find_range(api_url: str, since: date | None, end: date) -> tuple[date, str |
             newest_day = end
         start = newest_day - timedelta(days=1)
     return start, warning
+
+
+# The sync state (reference section 2): beside the CLI config, not in the token directory, so
+# ``sync logout`` keeps it.
+STATE_FILE_NAME = "sync-state.json"
+_STATE_KEYS = ("last_completed", "oldest_failed")
+
+
+@dataclass(frozen=True)
+class SyncState:
+    """``last_completed``: the end of the last run that reached the end of its range.
+    ``oldest_failed``: the oldest day that still has a ``failed`` item."""
+
+    last_completed: date | None = None
+    oldest_failed: date | None = None
+
+
+def state_path() -> Path:
+    """``sync-state.json`` beside the CLI config file, resolved from ``config.CONFIG_PATH`` at each call."""
+    return config.CONFIG_PATH.parent / STATE_FILE_NAME
+
+
+def _state_day(value: Any, end: date) -> date | None:
+    """A state value as a date: null, or ``YYYY-MM-DD`` on or before ``end``; raises ``ValueError``."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not _SINCE_FORM.fullmatch(value):
+        raise ValueError(f"{value!r} is not null or a YYYY-MM-DD date")
+    day = date.fromisoformat(value)
+    if day > end:
+        raise ValueError(f"{value} is after today")
+    return day
+
+
+def read_state(end: date) -> tuple[SyncState, str | None]:
+    """``(state, line)``: the saved state, or an empty one and the line naming the file that explains why."""
+    path = state_path()
+    shown = sessions._printable(str(path))
+    if not path.exists():
+        return SyncState(), (
+            f"No sync state at {shown}: the range follows the store alone; it is written at the end of this run."
+        )
+    try:
+        body = json.loads(path.read_bytes().decode("utf-8"))
+        if not isinstance(body, dict) or any(key not in body for key in _STATE_KEYS):
+            raise ValueError(f"it is not an object holding {' and '.join(_STATE_KEYS)}")
+        state = SyncState(*(_state_day(body[key], end) for key in _STATE_KEYS))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        reason = sessions._printable(str(exc)[:_RANGE_TEXT_CHARS])
+        return SyncState(), (
+            f"Warning: the sync state at {shown} could not be read ({reason}); the range follows "
+            "the store alone and the file is rewritten at the end of this run."
+        )
+    return state, None
+
+
+def write_state(state: SyncState) -> str | None:
+    """Save ``state`` atomically (a temporary file in the same folder, then a replace).
+
+    Returns a warning line when the file cannot be written, else ``None``.
+    """
+    path = state_path()
+    body = {key: (getattr(state, key).isoformat() if getattr(state, key) else None) for key in _STATE_KEYS}
+    temp = path.with_name(f".{STATE_FILE_NAME}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_bytes(json.dumps(body).encode("utf-8"))
+        os.replace(temp, path)
+    except OSError as exc:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return (
+            f"Warning: could not save the sync state at {sessions._printable(str(path))}: "
+            f"{sessions._printable(str(exc))}"
+        )
+    return None
+
+
+def apply_state(store_start: date, state: SyncState) -> tuple[date, str | None]:
+    """``(start, line)``: the earliest of the store rule's start, the day before ``last_completed``
+    and ``oldest_failed``, with the line saying why when the state moved the start earlier."""
+    start, line = store_start, None
+    if state.oldest_failed is not None and state.oldest_failed < start:
+        start = state.oldest_failed
+        line = f"Starting at {start.isoformat()}: a failed item on that day"
+    if state.last_completed is not None:
+        day_before = state.last_completed - timedelta(days=1)
+        if day_before < start:
+            start = day_before
+            line = (
+                f"Starting at {start.isoformat()}: the last completed sync ended "
+                f"{state.last_completed.isoformat()}"
+            )
+    return start, line
+
+
+def next_state(
+    previous: SyncState, results: list[ItemResult], start: date, end: date, stopped_on: date | None
+) -> SyncState:
+    """The state after a run of ``start`` to ``end`` (reference section 2).
+
+    ``stopped_on`` is the day a stop ended the run on (``start`` for a stop before any day was
+    fetched), or ``None`` for a run that reached ``end``. Only a run that reached ``end`` moves
+    ``last_completed``. The previous ``oldest_failed`` is kept only when this run did not fetch
+    that day: it lies before ``start``, or the run stopped on or before it.
+    """
+    failed = [r.day or start for r in results if r.outcome == FAILED]
+    old = previous.oldest_failed
+    if old is not None and (old < start or (stopped_on is not None and old >= stopped_on)):
+        failed.append(old)
+    return SyncState(
+        last_completed=end if stopped_on is None else previous.last_completed,
+        oldest_failed=min(failed, default=None),
+    )
 
 
 def _is_fetched_type(activity_type: dict[str, Any]) -> bool:
@@ -627,43 +758,48 @@ def fetch(
     """Download and upload everything for ``start`` to ``end`` (reference sections 3, 5 to 7).
 
     Appends to ``results`` as it goes (so a ``SyncStop`` leaves what was done in it) and returns it.
+    A ``SyncStop`` carries the day it stopped on as ``stopped_on``.
     """
     results = [] if results is None else results
     uploader = _Uploader(api_url, results)
-    try:
-        listed = client.list_activities(start, end)
-    except garmin.GarminError as exc:
-        raise _garmin_stop(exc, start) from None
-    by_day = _plan_activities(listed, start, end, results)
     day = start
-    while day <= end:
-        label = f"snapshot {day.isoformat()}"
-        snapshot = _download(client.download_snapshot, day, day)
-        if isinstance(snapshot, str):
-            uploader.fail(day, label, None, snapshot)
-        elif snapshot:
-            _upload_zip(uploader, day, label, snapshot, None)
-        for _, activity_id, summary in by_day.get(day, []):
-            label = f"activity {_describe(summary)}"
-            if summary.get("manualActivity") is True:
-                results.append(
-                    ItemResult(
-                        day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+    try:
+        try:
+            listed = client.list_activities(start, end)
+        except garmin.GarminError as exc:
+            raise _garmin_stop(exc, start) from None
+        by_day = _plan_activities(listed, start, end, results)
+        while day <= end:
+            label = f"snapshot {day.isoformat()}"
+            snapshot = _download(client.download_snapshot, day, day)
+            if isinstance(snapshot, str):
+                uploader.fail(day, label, None, snapshot)
+            elif snapshot:
+                _upload_zip(uploader, day, label, snapshot, None)
+            for _, activity_id, summary in by_day.get(day, []):
+                label = f"activity {_describe(summary)}"
+                if summary.get("manualActivity") is True:
+                    results.append(
+                        ItemResult(
+                            day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+                        )
                     )
-                )
-                continue
-            original = _download(client.download_original, activity_id, day)
-            if isinstance(original, str):
-                uploader.fail(day, label, activity_id, original)
-            elif not original:
-                results.append(
-                    ItemResult(
-                        day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+                    continue
+                original = _download(client.download_original, activity_id, day)
+                if isinstance(original, str):
+                    uploader.fail(day, label, activity_id, original)
+                elif not original:
+                    results.append(
+                        ItemResult(
+                            day=day, item=label, activity_id=activity_id, outcome=NO_FIT_ORIGINAL, name=label
+                        )
                     )
-                )
-            else:
-                _upload_zip(uploader, day, label, original, activity_id)
-        day += timedelta(days=1)
+                else:
+                    _upload_zip(uploader, day, label, original, activity_id)
+            day += timedelta(days=1)
+    except SyncStop as exc:
+        exc.stopped_on = day
+        raise
     return results
 
 
@@ -713,13 +849,20 @@ def sync(
     end = today()
     since_day = _parse_since(since, end) if since is not None else None
     cfg = config.load_config()
+    previous, state_line = read_state(end)
     results: list[ItemResult] = []
     start: date | None = None
     try:
         start, warning = find_range(cfg.api_url, since_day, end)
+        reason = None
+        if since_day is None:
+            start, reason = apply_state(start, previous)
         _write_utf8(f"From {start.isoformat()} to {end.isoformat()}")
-        if warning is not None:
-            typer.echo(warning, err=True)
+        if reason is not None:
+            _write_utf8(reason)
+        for line in (warning, state_line):
+            if line is not None:
+                typer.echo(line, err=True)
         try:
             client = _adapter().open_client()
         except garmin.GarminError as exc:
@@ -728,10 +871,18 @@ def sync(
     except SyncStop as exc:
         if start is not None:
             _write_utf8("\n".join(summary_lines(results, start)))
+            _save_state(next_state(previous, results, start, end, exc.stopped_on or start))
         raise _fail(str(exc)) from None
     _write_utf8("\n".join(summary_lines(results, start)))
+    _save_state(next_state(previous, results, start, end, None))
     if any(r.outcome == FAILED for r in results):
         raise typer.Exit(code=1)
+
+
+def _save_state(state: SyncState) -> None:
+    warning = write_state(state)
+    if warning is not None:
+        typer.echo(warning, err=True)
 
 
 @sync_app.command(name="login")
