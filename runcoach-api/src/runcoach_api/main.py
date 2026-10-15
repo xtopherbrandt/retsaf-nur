@@ -1544,3 +1544,135 @@ def set_race_tags(update: RaceTagsUpdate) -> RaceTagsResult:
     for result in results:
         counts[result["outcome"]] += 1
     return RaceTagsResult(items=results, counts=RaceTagCounts(**counts))
+
+
+# ---------------------------------------------------------------------------
+# GET /state (F024)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place. The estimator lives
+# in metrics.threshold_pace; db.read_threshold_race_rows reads its rows.
+# ---------------------------------------------------------------------------
+import re
+
+from runcoach_api.metrics import threshold_pace
+from runcoach_api.schemas import Determinant, StateModel
+
+_AS_OF_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_AS_OF_DATE_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T.+")
+ESTIMATE_NOT_FINITE = "estimate_not_finite"
+
+
+def parse_as_of(value: str | None, zone: ZoneInfo, now: datetime.datetime) -> datetime.datetime:
+    """The instant ``GET /state`` estimates at, in UTC (F024 reference section 5); pure.
+
+    ``None`` is ``now``. A ``YYYY-MM-DD`` date is compared with today in ``zone`` first, before
+    any day arithmetic, so a date after today (``9999-12-31`` included) raises; otherwise it
+    means the last instant (one microsecond) before the next local midnight, clamped to
+    ``now``, so today's date is accepted. Any other value must be an extended-form ISO 8601
+    date-time (``YYYY-MM-DDT...``) with a zone, at or before ``now``. A basic or week-form date
+    (``20261014``, ``2026-W42-3``), a naive or future date-time, an instant outside the
+    calendar in UTC and anything unparseable raise ``ValueError``.
+    """
+    if value is None:
+        return now
+    try:
+        if _AS_OF_DATE.fullmatch(value):
+            day = datetime.date.fromisoformat(value)
+            today = now.astimezone(zone).date()
+            if day > today:
+                raise ValueError(f"the date {value} is after today ({today.isoformat()}) in {zone.key}")
+            midnight = datetime.datetime.combine(day + datetime.timedelta(days=1), datetime.time.min, tzinfo=zone)
+            return min(midnight - datetime.timedelta(microseconds=1), now).astimezone(datetime.UTC)
+        if not _AS_OF_DATE_TIME.fullmatch(value):
+            raise ValueError(f"{value!r} is neither a YYYY-MM-DD date nor an ISO 8601 date-time with a zone")
+        instant = datetime.datetime.fromisoformat(value)
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            raise ValueError(f"{value!r} has no zone; an instant needs one")
+        instant = instant.astimezone(datetime.UTC)
+    except OverflowError as exc:
+        raise ValueError(f"{value!r} is outside the calendar in UTC") from exc
+    if instant > now:
+        raise ValueError(f"{value!r} is after now ({now.isoformat()}); the estimate is not projected")
+    return instant
+
+
+def _threshold_determinant(
+    result: threshold_pace.ThresholdPace, unreadable: list[dict]
+) -> Determinant:
+    """The ``functional_threshold_pace`` entry: the estimator's result, with the races the reader
+    could not read merged into ``excluded`` (those at or before ``as_of``, in start-time order).
+
+    An estimate with a non-finite published number (a finite but absurd GAP pace overflows the
+    interval) is served as ``estimate_not_finite`` with every number null, never as a value JSON
+    cannot carry; ``efforts`` still lists the races used, so the athlete can find the one."""
+    excluded = [
+        {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason} for e in result.excluded
+    ]
+    for row in unreadable:
+        start = datetime.datetime.fromisoformat(row["start_time"])
+        if start <= result.as_of:
+            excluded.append({**row, "start_time": start})
+    excluded.sort(key=lambda e: (e["start_time"], e["session_id"]))
+
+    numbers = (result.value, result.interval_low, result.interval_high, result.error)
+    unavailable = result.unavailable
+    if unavailable is None and not all(math.isfinite(n) for n in numbers):
+        unavailable = ESTIMATE_NOT_FINITE
+    estimate = None
+    if unavailable is None:
+        estimate = {
+            "value": result.value,
+            "unit": "s/km",
+            "interval": {"low": result.interval_low, "high": result.interval_high},
+            "confidence": result.confidence,
+            "provisional": False,
+        }
+    return Determinant(
+        name="functional_threshold_pace",
+        estimate=estimate,
+        unavailable=unavailable,
+        trend={"direction": "unknown", "rate": None},
+        error=None if unavailable else result.error,
+        short_races_only=False if unavailable else result.short_races_only,
+        efforts=[dataclasses.asdict(effort) for effort in result.efforts],
+        excluded=excluded,
+        parameters=dict(result.parameters),
+    )
+
+
+@app.get("/state", response_model=StateModel, operation_id="getState", tags=["State & Metrics"])
+def get_state(as_of: str | None = Query(None)) -> StateModel:
+    """The determinant profile at ``as_of`` (F024): threshold pace from the tagged races, with its
+    80 % interval and confidence, on the contract's path (``operationId: getState``).
+
+    The zone is read from the config per request. ``parse_as_of`` reads ``as_of`` against the
+    ``_utcnow`` seam; a value it refuses is a ``RequestValidationError`` on ``("query",
+    "as_of")``, as ``list_sessions`` raises its cursor check. ``db.read_threshold_race_rows``
+    reads the tagged races (records only for those in the duration band) and
+    ``metrics.threshold_pace.estimate`` replays them to the instant, recomputed on every
+    request. Stored data never fails the read: a race whose stored values do not read is
+    excluded with its reason. ``readiness`` and ``gap_to_goal`` are null. Nothing is written.
+    """
+    zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    try:
+        instant = parse_as_of(as_of, zone, _utcnow())
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
+        ) from exc
+
+    conn = db.get_connection()
+    try:
+        rows, unreadable = db.read_threshold_race_rows(conn)
+    finally:
+        conn.close()
+
+    result = threshold_pace.estimate(rows, instant)
+    return StateModel(
+        as_of=result.as_of,
+        timezone=zone.key,
+        determinants=[_threshold_determinant(result, unreadable)],
+        readiness=None,
+        gap_to_goal=None,
+    )

@@ -65,7 +65,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "One per request item, in request order.",
+        "Not computed yet: always null; no goal is modelled.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",

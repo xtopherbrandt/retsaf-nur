@@ -1762,3 +1762,111 @@ def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[
         raise
     conn.commit()
     return [decision.as_dict() for decision in decisions]
+
+
+# ---------------------------------------------------------------------------
+# F024: the tagged races GET /state reads
+#
+# Appended at the end so the lines cited above stay in place. The rule lives in
+# ``metrics.threshold_pace``; this reads its candidate rows.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics import threshold_pace as _threshold_pace
+
+#: Why a tagged running race was not handed to the estimator: a stored value it needs does not read.
+SUMMARY_UNREADABLE = "summary_unreadable"
+QUALITY_FLAGS_UNREADABLE = "quality_flags_unreadable"
+FEATURES_UNAVAILABLE = "features_unavailable"
+
+_UNREADABLE = object()
+
+
+def _decoded(value):
+    """``json.loads(value)``, or ``_UNREADABLE`` when it does not decode (``None`` reads as ``None``)."""
+    try:
+        return _json_load(value)
+    except (TypeError, ValueError):
+        return _UNREADABLE
+
+
+def _race_features(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """F013's features of one in-band race, or ``None`` when its stored rows do not compute."""
+    try:
+        session, rows = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
+        return session_features.compute_session_features(session, rows)
+    except Exception:  # noqa: BLE001 -- a race whose records cannot be read is excluded, never a 500
+        return None
+
+
+def read_threshold_race_rows(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
+    """The tagged running races ``metrics.threshold_pace.estimate`` reads (F024 reference section 2).
+
+    One ``SELECT`` reads ``session_id, start_time, sport, activity_tag, timer_time_s, summary,
+    quality_flags`` for sport ``running`` tagged ``race`` (row 1), ordered by ``start_time`` then
+    ``session_id``. Row 2 is applied next, before any record is read: the duration is
+    ``timer_time_s``, else the summary's ``duration_s``, judged by the estimator's own rule (a
+    bool, a string or a non-finite value is refused), so a half or a marathon costs no record
+    read. Only a race in the band goes through ``read_session_feature_inputs`` and
+    ``session_features.compute_session_features``; its row carries F013's ``flags`` (the
+    session's and F013's together) as ``quality_flags``, and ``gap_avg_pace_s_per_km``,
+    ``gap_coverage`` and ``gps_degraded_fraction``. A stored ``distance_regressed`` is never
+    trusted in place of the records: F013 computes it from them.
+
+    Returns ``(rows, unreadable)``. ``unreadable`` holds ``session_id``, ``start_time`` and
+    ``reason`` for each race a stored value it needs does not read: ``summary_unreadable`` (the
+    timer is null and the summary is not a JSON object), ``quality_flags_unreadable`` (not a JSON
+    list) or ``features_unavailable`` (its feature inputs or records raise). Those races are
+    excluded with that reason, so stored data never fails the read. Read-only: the reads share
+    one deferred transaction, rolled back, so the rows are one snapshot.
+    """
+    conn.execute("BEGIN")
+    try:
+        stored = conn.execute(
+            "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
+            " FROM sessions WHERE sport = ? AND activity_tag = ? ORDER BY start_time, session_id",
+            (_threshold_pace.RUNNING, _threshold_pace.RACE),
+        ).fetchall()
+        rows: list[dict] = []
+        unreadable: list[dict] = []
+        for r in stored:
+            row = {
+                "session_id": r["session_id"],
+                "start_time": r["start_time"],
+                "sport": r["sport"],
+                "activity_tag": r["activity_tag"],
+                "timer_time_s": r["timer_time_s"],
+                "duration_s": None,
+            }
+            if row["timer_time_s"] is None:
+                summary = _decoded(r["summary"])
+                if summary is not None and not isinstance(summary, dict):
+                    unreadable.append({**_place(row), "reason": SUMMARY_UNREADABLE})
+                    continue
+                row["duration_s"] = (summary or {}).get("duration_s")
+            duration = _threshold_pace._duration(row)
+            if duration is None or not _threshold_pace.BAND_MIN_S <= duration <= _threshold_pace.BAND_MAX_S:
+                rows.append(row)  # the estimator excludes it, outside_threshold_band
+                continue
+            flags = _decoded(r["quality_flags"])
+            if flags is not None and not isinstance(flags, list):
+                unreadable.append({**_place(row), "reason": QUALITY_FLAGS_UNREADABLE})
+                continue
+            features = _race_features(conn, row["session_id"])
+            if features is None:
+                unreadable.append({**_place(row), "reason": FEATURES_UNAVAILABLE})
+                continue
+            rows.append(
+                {
+                    **row,
+                    "quality_flags": list(features["flags"]),
+                    "gap_avg_pace_s_per_km": features["features"]["gap_avg_pace_s_per_km"]["value"],
+                    "gap_coverage": features["gap_coverage"],
+                    "gps_degraded_fraction": features["gps_degraded_fraction"],
+                }
+            )
+    finally:
+        conn.rollback()
+    return rows, unreadable
+
+
+def _place(row: Mapping) -> dict:
+    return {"session_id": row["session_id"], "start_time": row["start_time"]}

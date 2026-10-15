@@ -1568,3 +1568,105 @@ class RaceTagsResult(BaseModel):
 
     items: list[RaceTagItemResult] = Field(description="One per request item, in request order.")
     counts: RaceTagCounts
+
+
+# ---------------------------------------------------------------------------
+# GET /state (F024): threshold pace from tagged races
+#
+# Appended at the end so the lines cited above stay in place.
+# ---------------------------------------------------------------------------
+
+
+class ThresholdPaceInterval(BaseModel):
+    """The 80 % interval in s/km, fast end first (symmetric in log speed, so not in pace)."""
+
+    low: float
+    high: float
+
+
+class ThresholdPaceValue(BaseModel):
+    """The contract's ``ConfidenceValue`` for threshold pace."""
+
+    value: float = Field(description="Threshold pace in s/km: 1000 / exp(x).")
+    unit: Literal["s/km"]
+    interval: ThresholdPaceInterval
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="`high` while P <= R, `medium` while P <= 4 R, `low` above (F024 reference section 1)."
+    )
+    provisional: bool = Field(description="Always false: no seed exists, so an estimate is never provisional.")
+
+
+class DeterminantTrend(BaseModel):
+    """Not computed yet: always `unknown` with a null rate."""
+
+    direction: Literal["unknown"]
+    rate: None
+
+
+class ThresholdEffort(BaseModel):
+    """A tagged race the filter used, with the gain it entered with (1 for the first)."""
+
+    session_id: str
+    start_time: datetime.datetime
+    duration_s: float = Field(description="`timer_time_s`, else the summary's `duration_s`.")
+    gap_pace_s_per_km: float = Field(description="F013's grade-adjusted pace of the race.")
+    gap_coverage: float | None = Field(description="F013's graded share of the distance; below 1 counts at flat pace.")
+    gps_degraded_fraction: float | None = Field(description="F013's degraded-GPS share of the distance; shown, never judged.")
+    gain: float
+
+
+class ThresholdExclusion(BaseModel):
+    """A tagged running race at or before `as_of` that was not used, and why."""
+
+    session_id: str
+    start_time: datetime.datetime
+    reason: Literal[
+        "outside_threshold_band",
+        "distance_regressed",
+        "smart_recording",
+        "gap_pace_unavailable",
+        "summary_unreadable",
+        "quality_flags_unreadable",
+        "features_unavailable",
+    ] = Field(
+        description="The first of reference section 2's rows the race fails; or, when a stored value it needs "
+        "does not read, `summary_unreadable`, `quality_flags_unreadable` or `features_unavailable`."
+    )
+
+
+class ThresholdPaceParameters(BaseModel):
+    """The constants the estimate was computed with (F024 reference section 1)."""
+
+    typical_error: float
+    doubling_days: int
+    coverage: float
+    high_max_error: float
+    medium_max_error: float
+    short_race_s: int
+
+
+class Determinant(BaseModel):
+    """One determinant of the state model; only `functional_threshold_pace` is served."""
+
+    name: Literal["functional_threshold_pace"]
+    estimate: ThresholdPaceValue | None
+    unavailable: Literal["no_qualifying_effort", "estimate_not_finite"] | None = Field(
+        description="`no_qualifying_effort` before the first qualifying race; `estimate_not_finite` when a "
+        "race's GAP pace is so far out of range that the estimate overflows. Null with an estimate."
+    )
+    trend: DeterminantTrend
+    error: float | None = Field(description="sqrt(P) as a fraction of speed (0.025 is 2.5 %); null when unavailable.")
+    short_races_only: bool = Field(description="Every race used lasted under 1800 s: the pace likely reads fast.")
+    efforts: list[ThresholdEffort] = Field(description="The races used, in start-time order.")
+    excluded: list[ThresholdExclusion] = Field(description="Every tagged running race not used, in start-time order.")
+    parameters: ThresholdPaceParameters
+
+
+class StateModel(BaseModel):
+    """``GET /state``: the determinant profile, computed on read from the tagged races; nothing is stored."""
+
+    as_of: datetime.datetime = Field(description="The instant the estimate is for.")
+    timezone: str = Field(description="The configured `athlete_timezone`, which an `as_of` date was read in.")
+    determinants: list[Determinant]
+    readiness: None = Field(description="Not computed yet: always null.")
+    gap_to_goal: None = Field(description="Not computed yet: always null; no goal is modelled.")
