@@ -69,7 +69,7 @@ tags:
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
-    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + list + detail + delete + features + load + load recompute + archive imports); each operation's own x-readiness is authoritative."
+    description: "Ingested activity records (raw canonical). x-readiness: implemented (ingest + list + detail + delete + features + load + load recompute + archive imports + race tags); each operation's own x-readiness is authoritative."
   - name: Workouts
     description: "Engine-planned/structured workouts + compliance. x-readiness: planned. Owner: spec/05."
   - name: Subjective
@@ -1152,6 +1152,43 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Import" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /race-tags:
+    put:
+      tags: [Sessions]
+      operationId: setRaceTags
+      summary: Carry Garmin Connect race marks onto stored runs
+      description: >
+        F023. {items: [...]}, 1 to 500 items with distinct connect_activity_id,
+        each {connect_activity_id, start_time, distance_m, duration_s, race}:
+        start_time is Connect's startTimeGMT as YYYY-MM-DDTHH:MM:SS in UTC,
+        whole seconds, ending Z or +00:00; distance_m and duration_s are
+        numbers at or above 0, or null (zero is accepted and agrees only with a
+        stored 0; null never agrees); race is a boolean. Each item is matched
+        to the stored running sessions at its start second (resting captures
+        excluded) and confirmed by distance and duration within 1 %. race true
+        tags an untagged run race; race false clears a race tag; any other tag
+        is left as is. 200 with one outcome per item, in request order, and
+        every outcome's count (all seven keys, zeros included); re-sending the
+        same items is idempotent. 422, with nothing written, for any other
+        key, a non-integer id, a repeated id, 0 or more than 500 items, a
+        start_time in another zone, with a fraction of a second or that does
+        not parse, a negative, NaN or infinite number, or a non-boolean race.
+        Only activity_tag changes. As-built errors are FastAPI {detail}.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F023"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaceTagsUpdate" }
+      responses:
+        "200":
+          description: One outcome per item, in request order, and the counts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RaceTagsResult" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
 components:
 
@@ -2992,3 +3029,63 @@ components:
           allOf: [ { $ref: "#/components/schemas/SessionLoadInputs" } ]
           description: "As SessionLoad.inputs; each HR block carries out_of_period."
         changed: { type: boolean, description: "Whether any field of the new body differs from the body saved before, compared after filling the dated-entry input keys' defaults on the old body; true when the session had no saved load." }
+    RaceTagsUpdate:
+      type: object
+      description: "setRaceTags' body: 1 to 500 items with distinct connect_activity_id. Any other key is a 422."
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/RaceTagItem" }
+          description: "Each connect_activity_id once; a repeated id is a 422."
+    RaceTagItem:
+      type: object
+      description: "One Connect activity's race mark. Strict: any other key, a non-integer id, a non-boolean race, a negative or non-finite number, or another start_time form is a 422."
+      required: [connect_activity_id, start_time, distance_m, duration_s, race]
+      additionalProperties: false
+      properties:
+        connect_activity_id: { type: integer, description: "The Connect activityId." }
+        start_time:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|\+00:00)$'
+          description: "Connect's startTimeGMT in UTC, whole seconds, ending Z or +00:00; a date or time that does not exist is a 422."
+        distance_m: { type: number, nullable: true, minimum: 0, description: "Connect's distance in metres, or null. Zero is accepted and agrees only with a stored 0; null never agrees." }
+        duration_s: { type: number, nullable: true, minimum: 0, description: "Connect's duration in seconds, or null. Zero is accepted and agrees only with a stored 0; null never agrees." }
+        race: { type: boolean, description: "Whether Connect's event type is race." }
+    RaceTagItemResult:
+      type: object
+      description: "One item's outcome, in request order."
+      required: [connect_activity_id, outcome, session_id, candidates]
+      properties:
+        connect_activity_id: { type: integer }
+        outcome: { type: string, enum: [tagged, cleared, unchanged, not_stored, mismatch, ambiguous, other_tag] }
+        session_id: { type: string, nullable: true, description: "The session tagged, cleared, left unchanged or left with another tag, or the one mismatch candidate; null for not_stored and ambiguous." }
+        candidates:
+          type: array
+          items: { type: string }
+          description: "Every stored running session at the item's start second, resting captures excluded; empty for not_stored."
+    RaceTagCounts:
+      type: object
+      description: "How many items had each outcome; every key is present, zero included."
+      required: [tagged, cleared, unchanged, not_stored, mismatch, ambiguous, other_tag]
+      properties:
+        tagged: { type: integer }
+        cleared: { type: integer }
+        unchanged: { type: integer }
+        not_stored: { type: integer }
+        mismatch: { type: integer }
+        ambiguous: { type: integer }
+        other_tag: { type: integer }
+    RaceTagsResult:
+      type: object
+      description: "setRaceTags' 200 body."
+      required: [items, counts]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RaceTagItemResult" }
+          description: "One per request item, in request order."
+        counts: { $ref: "#/components/schemas/RaceTagCounts" }

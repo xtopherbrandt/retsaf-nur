@@ -1452,3 +1452,119 @@ class SessionLoadRecompute(SessionLoad):
         description="Whether any field of the new body differs from the body saved before, compared after "
         "filling the dated-entry input keys' defaults on the old body; true when the session had no saved load."
     )
+
+
+# ---------------------------------------------------------------------------
+# PUT /race-tags (F023)
+#
+# Appended below the earlier models, as the list's are, so the lines cited by
+# number stay in place. Named exactly as the contract's components, so the
+# route test's walker compares like with like.
+# ---------------------------------------------------------------------------
+from collections import Counter
+
+from pydantic import model_validator
+
+from runcoach_api import race_tags as _race_tags
+
+#: ``YYYY-MM-DDTHH:MM:SS`` in UTC, whole seconds, ``Z`` or ``+00:00``, ASCII digits only (``\d``
+#: would admit other scripts' digits, which ``fromisoformat`` reads).
+RACE_TAG_START_PATTERN = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|\+00:00)$"
+RACE_TAG_MAX_ITEMS = 500
+
+_RaceTagOutcome = Literal["tagged", "cleared", "unchanged", "not_stored", "mismatch", "ambiguous", "other_tag"]
+
+_ZERO_NOTE = (
+    "Zero is accepted, not refused: a treadmill run without a foot pod reads 0 m in Connect and on the watch, "
+    "and is still matched by its start second; under the 1 % rule 0 agrees with a stored 0 and with nothing else. "
+    "Null never agrees."
+)
+
+
+class RaceTagItem(BaseModel):
+    """One Connect activity's race mark (F023 AC1). Strict: any other key, a non-integer id, a
+    non-boolean ``race``, a negative or non-finite number, or a start time in any other form is a
+    422. ``start_time`` is a string, never pydantic's ``datetime``, which accepts other zones,
+    fractions of a second and epoch numbers; the pattern fixes the form and
+    ``datetime.fromisoformat`` refuses a date or time that does not exist."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connect_activity_id: int = Field(strict=True, description="The Connect activityId.")
+    start_time: str = Field(
+        strict=True,
+        pattern=RACE_TAG_START_PATTERN,
+        description="Connect's startTimeGMT as YYYY-MM-DDTHH:MM:SS in UTC, whole seconds, ending Z or +00:00; "
+        "any other zone, a fraction of a second or another form is a 422.",
+    )
+    distance_m: float | None = Field(
+        ge=0, strict=True, allow_inf_nan=False, description=f"Connect's distance in metres, or null. {_ZERO_NOTE}"
+    )
+    duration_s: float | None = Field(
+        ge=0, strict=True, allow_inf_nan=False, description=f"Connect's duration in seconds, or null. {_ZERO_NOTE}"
+    )
+    race: bool = Field(strict=True, description="Whether Connect's event type is race.")
+
+    @field_validator("start_time")
+    @classmethod
+    def _an_existing_instant(cls, value: str) -> str:
+        """The pattern admits ``2024-02-30T25:00:00Z``; ``fromisoformat`` refuses it."""
+        datetime.datetime.fromisoformat(value)
+        return value
+
+
+class RaceTagsUpdate(BaseModel):
+    """The body of ``PUT /race-tags``: 1 to 500 items with distinct ``connect_activity_id``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[RaceTagItem] = Field(
+        min_length=1,
+        max_length=RACE_TAG_MAX_ITEMS,
+        description="1 to 500 items, each connect_activity_id once; a repeated id is a 422.",
+    )
+
+    @model_validator(mode="after")
+    def _distinct_ids(self) -> "RaceTagsUpdate":
+        uses = Counter(item.connect_activity_id for item in self.items)
+        repeated = sorted(activity_id for activity_id, n in uses.items() if n > 1)
+        if repeated:
+            raise ValueError(f"connect_activity_id repeated: {', '.join(str(r) for r in repeated)}")
+        return self
+
+
+class RaceTagItemResult(BaseModel):
+    """One item's outcome, in request order."""
+
+    connect_activity_id: int
+    outcome: _RaceTagOutcome
+    session_id: str | None = Field(
+        description="The session tagged, cleared, left unchanged or left with another tag, or the one mismatch "
+        "candidate; null for not_stored and ambiguous."
+    )
+    candidates: list[str] = Field(
+        description="Every stored running session at the item's start second, resting captures excluded; "
+        "empty for not_stored."
+    )
+
+
+class RaceTagCounts(BaseModel):
+    """How many items had each outcome; every key is present, zero included."""
+
+    tagged: int
+    cleared: int
+    unchanged: int
+    not_stored: int
+    mismatch: int
+    ambiguous: int
+    other_tag: int
+
+
+assert tuple(RaceTagCounts.model_fields) == _race_tags.OUTCOMES
+
+
+class RaceTagsResult(BaseModel):
+    """``PUT /race-tags``'s 200 body."""
+
+    items: list[RaceTagItemResult] = Field(description="One per request item, in request order.")
+    counts: RaceTagCounts

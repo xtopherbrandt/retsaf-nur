@@ -1512,3 +1512,35 @@ def recompute_session_load(session_id: str) -> SessionLoadRecompute:
     if result is None:
         raise HTTPException(404, f"session {session_id} not found")
     return built[0]
+
+
+# ---------------------------------------------------------------------------
+# PUT /race-tags (F023)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place. The matching rule
+# lives in race_tags; db.apply_race_tags reads and writes in one transaction.
+# ---------------------------------------------------------------------------
+from runcoach_api.schemas import RaceTagCounts, RaceTagsResult, RaceTagsUpdate
+
+
+@app.put("/race-tags", response_model=RaceTagsResult, operation_id="setRaceTags", tags=["Sessions"])
+def set_race_tags(update: RaceTagsUpdate) -> RaceTagsResult:
+    """Carry Connect's race marks onto stored runs (F023 AC1): one outcome per item, in request
+    order, and every outcome's count.
+
+    ``RaceTagsUpdate`` screens the whole body before anything is read, so a 422 writes nothing.
+    ``db.apply_race_tags`` matches each item to the stored running sessions at its start second,
+    confirms by distance and duration within 1 %, and writes only ``activity_tag``, in one
+    transaction. Re-sending the same items is idempotent: what was tagged or cleared is then
+    ``unchanged``.
+    """
+    conn = db.get_connection()
+    try:
+        results = db.apply_race_tags(conn, [item.model_dump() for item in update.items])
+    finally:
+        conn.close()
+    counts = dict.fromkeys(RaceTagCounts.model_fields, 0)
+    for result in results:
+        counts[result["outcome"]] += 1
+    return RaceTagsResult(items=results, counts=RaceTagCounts(**counts))

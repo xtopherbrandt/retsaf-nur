@@ -65,11 +65,11 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "filling the dated-entry input keys' defaults on the old body; true when the session had no saved load.",
+        "One per request item, in request order.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "compared after filling the dated-entry input keys' defaults on the old body; true when the session had no saved load.",
+        "One per request item, in request order.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",
