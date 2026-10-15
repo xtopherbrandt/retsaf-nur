@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Race tags from Garmin Connect
+
+F023: races are marked in Garmin Connect. Marking an activity's event type as Race in Connect, time
+trials included, is how a race is marked: sync reads that mark and sets `activity_tag` `race` on the
+stored run it matches; any other event type clears a `race` tag the run carries. Nothing in runcoach
+sets the tag by hand, and the FIT file does not carry Connect's event type.
+
+`runcoach sync tags [--since YYYY-MM-DD]` reads race tags for stored runs: it lists Connect
+activities for the range (default today and the 29 days before it) and downloads nothing. To tag
+races already in the store, run the backfill once: `runcoach sync tags --since 2016-01-01`. Before it
+opens the Garmin client it checks that the API's `/openapi.json` lists `setRaceTags`; an older API is
+sent nothing ("the API does not support race tags: update it and restart the API"), exit 1. It never
+reads or writes `sync-state.json`. `runcoach sync --since X tags` is a usage error naming `sync tags
+--since`.
+
+`runcoach sync` re-reads race tags for the last 30 days after its uploads: once the uploads end
+without a stop (failed items do not prevent it), it reads tags from the earlier of its start and
+29 days before today, to today, so a run uploaded in a sync is tagged in that same sync. It reuses its upload
+listing when that covers the window, else it lists once more, and reads `/openapi.json` once per run.
+When it reuses its listing, a summary it cannot read is reported twice, as a failed upload and as a
+skipped tag.
+
+Both commands send one item per listed running-family or `other` activity that is not manual (once
+per `activityId`, oldest first, in batches of 500) and print `Race tags: tagged N, cleared N,
+unchanged N, not stored N, mismatch N, ambiguous N, other tag N, skipped N`, then one line per race
+not stored, mismatched or ambiguous and per skipped activity. An activity whose `eventType` or
+`startTimeGMT` cannot be read is skipped and reported, never sent, so a listing hiccup cannot clear a
+tag. A login needed prints the login message; Garmin not answering or the listing failing prints its reason and `Race tags not read: run
+runcoach sync tags --since <day>`; an API error on a batch keeps the batches before it and prints
+`Race tags stopped at <day>: run runcoach sync tags --since <day>`. Each exits 1; races not stored,
+mismatched or ambiguous and skipped activities do not change the exit code.
+
+`PUT /race-tags` (operation `setRaceTags`) takes 1 to 500 items, each `connect_activity_id`,
+`start_time`, `distance_m`, `duration_s` and `race`, and answers each item's outcome and every
+outcome's count. `start_time` is UTC to the whole second, `YYYY-MM-DDTHH:MM:SS` ending `Z` (as sync
+sends it) or `+00:00`; another zone or a fraction of a second is a 422. An item matches the stored
+running sessions that start on that second, resting captures excluded, and is confirmed by distance
+and duration, each within 1 % of Connect's value: one agreeing candidate is tagged (`race`) or
+cleared, a single disagreeing candidate is `mismatch`, and several candidates without exactly one
+agreeing are `ambiguous`; both leave the store as it is. A zero distance or duration is accepted and
+agrees only with a stored 0; a null never agrees. A run carrying another tag is left as it is
+(`other_tag`). Only `activity_tag` is written, in one transaction; re-sending the same items reports
+what was tagged or cleared as `unchanged`.
+
 ## 2026-10-13 through 2026-10-14 — Sprint 017: Garmin Connect sync
 
 ### Saved loads and dated HR entries
