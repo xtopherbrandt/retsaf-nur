@@ -288,6 +288,21 @@ def test_duration_falls_back_to_summary_and_refuses_non_numbers() -> None:
     assert estimate([paused], _at(0)).efforts[0].duration_s == 3000
 
 
+def test_an_int_too_large_for_a_float_is_refused_never_raises() -> None:
+    """``json.loads`` returns an int beyond float range as an int; ``float()`` of it raises
+    ``OverflowError``, which the screen reads as not a number."""
+    huge = 10**400
+    summary = _race("s", 0, 260.0, timer_time_s=None, duration_s=huge)
+    timer = _race("t", 0, 260.0, timer_time_s=huge, duration_s=2000)
+    pace = _race("p", 0, huge)
+    result = estimate([summary, timer, pace], _at(0))
+    assert [(e.session_id, e.reason) for e in result.excluded] == [
+        ("p", "gap_pace_unavailable"),
+        ("s", "outside_threshold_band"),
+        ("t", "outside_threshold_band"),
+    ]
+
+
 def test_parameters_and_constants() -> None:
     assert threshold_pace.PARAMETERS == {
         "typical_error": 0.025,

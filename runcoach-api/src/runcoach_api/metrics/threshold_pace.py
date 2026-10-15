@@ -144,10 +144,14 @@ def _aware(value: Any, what: str) -> datetime:
 
 
 def _real(value: Any) -> float | None:
-    """``value`` as a finite float, or ``None`` for a bool, a string, ``None`` or a non-finite number."""
+    """``value`` as a finite float, or ``None`` for a bool, a string, ``None``, a non-finite number
+    or an int beyond float range (``json.loads`` keeps one as an int)."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
     return number if math.isfinite(number) else None
 
 

@@ -669,6 +669,16 @@ def test_a_bool_or_string_number_never_agrees(persist_sessions) -> None:
     assert [g["outcome"] for g in got] == ["mismatch", "mismatch"]
 
 
+def test_an_int_too_large_for_a_float_never_agrees_never_raises() -> None:
+    """``json.loads`` returns an int beyond float range as an int; ``float()`` of it raises
+    ``OverflowError``, which the screen reads as not a number."""
+    huge = 10**400
+    item = {"distance_m": 5000.0, "duration_s": 1800.0}
+    assert race_tags.agrees(item, {"distance_m": 5000.0, "duration_s": 1800.0})
+    assert not race_tags.agrees(item, {"distance_m": huge, "duration_s": 1800.0})
+    assert not race_tags.agrees({"distance_m": 5000.0, "duration_s": huge}, dict(item))
+
+
 def test_a_null_summary_never_agrees(persist_sessions) -> None:
     session = _run("fr945", START)
     session.summary = None

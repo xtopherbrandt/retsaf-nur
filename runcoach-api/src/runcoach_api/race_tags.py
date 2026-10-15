@@ -76,10 +76,14 @@ def normalise_start_time(value: str) -> str:
 
 
 def _finite(value: object) -> float | None:
-    """``value`` as a float when it is a real, finite number (a bool is not one), else ``None``."""
+    """``value`` as a float when it is a real, finite number (a bool is not one), else ``None``.
+    An int beyond float range (``json.loads`` keeps one as an int) is not one either."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
     return number if math.isfinite(number) else None
 
 
