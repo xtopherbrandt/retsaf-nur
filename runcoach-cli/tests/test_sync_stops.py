@@ -19,7 +19,7 @@ import getpass
 import io
 import sys
 import zipfile
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,12 +70,19 @@ def _zip(entries: list[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
+def _gmt(local: str) -> str:
+    """``startTimeGMT`` for a local start in the tests' UTC-7 zone, as Connect lists it."""
+    return (datetime.fromisoformat(local) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _activity(activity_id: int, local: str) -> dict[str, Any]:
     return {
         "activityId": activity_id,
         "activityName": f"run {activity_id}",
         "startTimeLocal": local,
+        "startTimeGMT": _gmt(local),
         "activityType": {"typeKey": "running", "typeId": 1, "parentTypeId": 17},
+        "eventType": {"typeKey": "uncategorized", "typeId": 9},
         "manualActivity": False,
     }
 
@@ -89,7 +96,8 @@ RUNS = [
 
 
 def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
-    """``/openapi.json`` shaped as FastAPI serves it: a generated operationId and a ``$ref`` body."""
+    """``/openapi.json`` shaped as FastAPI serves it: a generated operationId and a ``$ref`` body,
+    and ``PUT /race-tags`` as ``setRaceTags``."""
     fields = {"file": {"type": "string"}, "resting_capture": {"type": "boolean"}}
     if with_switch:
         fields["runs_and_captures_only"] = {"type": "boolean", "default": False}
@@ -107,7 +115,8 @@ def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
                         }
                     },
                 },
-            }
+            },
+            "/race-tags": {"put": {"operationId": "setRaceTags"}},
         },
         "components": {"schemas": {"Body_create_session_sessions_post": {"properties": fields}}},
     }
@@ -471,7 +480,8 @@ def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env, fake_garmin
                         }
                     },
                 }
-            }
+            },
+            "/race-tags": {"put": {"operationId": "setRaceTags"}},
         }
     }
     api = env(fake_garmin(), fake_api(doc=doc))

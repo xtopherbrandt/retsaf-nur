@@ -4,8 +4,11 @@
 starts at the earliest of the store rule, the day before ``last_completed`` and ``oldest_failed``.
 Each row of the reference's state table and each of its timelines is a test through the ``sync``
 command; the temporary and permanent failure rows are in ``test_sync_hostile.py``. Garmin is a fake client (snapshots only, unless a test lists an activity) and the
-API a mock that serves ``GET /sessions`` and refuses any upload, so nothing is uploaded. The config
-home is the autouse ``isolated_config_path`` tmp folder, so the real ``~/.runcoach`` is never read.
+API a mock that serves ``GET /sessions``, ``/openapi.json`` and ``PUT /race-tags`` and refuses any
+upload, so nothing is uploaded. After a run that does not stop, the race tags step lists Connect
+activities once more for today and the 29 days before it when the range starts later than that.
+The config home is the autouse ``isolated_config_path`` tmp folder, so the real ``~/.runcoach`` is
+never read.
 """
 
 from __future__ import annotations
@@ -69,7 +72,7 @@ def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, fake_api):
 
     def invoke(today: date, rows: list[dict[str, Any]], client: Any, *args: str):
         monkeypatch.setattr(sync, "today", lambda: today)
-        install_mock_client(fake_api(pages=[rows], doc=None, accept_uploads=False))
+        install_mock_client(fake_api(pages=[rows], accept_uploads=False))
 
         def open_client():
             if isinstance(client, Exception):
@@ -117,7 +120,7 @@ def test_row_last_completed_10_05_starts_the_day_before_it(run, fake_garmin) -> 
     lines = _lines(result.output)
     assert lines[0] == "From 2026-10-04 to 2026-10-13"
     assert lines[1] == "Starting at 2026-10-04: the last completed sync ended 2026-10-05"
-    assert fake.listed == [(d("2026-10-04"), TODAY)]
+    assert fake.listed == [(d("2026-10-04"), TODAY), (TODAY - timedelta(days=29), TODAY)]
     assert fake.snapshot_days[0] == d("2026-10-04")
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
@@ -132,7 +135,7 @@ def test_row_oldest_failed_10_08_starts_on_that_day(run, fake_garmin) -> None:
     lines = _lines(result.output)
     assert lines[0] == "From 2026-10-08 to 2026-10-13"
     assert lines[1] == "Starting at 2026-10-08: a failed item on that day"
-    assert fake.listed == [(d("2026-10-08"), TODAY)]
+    assert fake.listed == [(d("2026-10-08"), TODAY), (TODAY - timedelta(days=29), TODAY)]
 
 
 def test_row_state_after_the_store_rule_leaves_the_store_rule(run, fake_garmin) -> None:

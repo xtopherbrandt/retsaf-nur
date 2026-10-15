@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -40,6 +40,11 @@ def _zip(entries: list[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
+def _gmt(local: str) -> str:
+    """``startTimeGMT`` for a local start in the tests' UTC-7 zone, as Connect lists it."""
+    return (datetime.fromisoformat(local) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _activity(
     activity_id: int, local: str, name: str, type_key: str = "running", manual: bool = False
 ) -> dict[str, Any]:
@@ -48,7 +53,9 @@ def _activity(
         "activityId": activity_id,
         "activityName": name,
         "startTimeLocal": local,
+        "startTimeGMT": _gmt(local),
         "activityType": {"typeKey": type_key, "typeId": type_id, "parentTypeId": 17},
+        "eventType": {"typeKey": "uncategorized", "typeId": 9},
         "manualActivity": manual,
     }
 
@@ -81,6 +88,14 @@ def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
 
 def _sync(*args: str):
     return runner.invoke(app, ["sync", "--since", "2026-10-10", *args], input=b"")
+
+
+def _tags_line(unchanged: int = 0) -> str:
+    """The race tags step's counts line, which follows the summary of a run that did not stop."""
+    return (
+        f"Race tags: tagged 0, cleared 0, unchanged {unchanged}, not stored 0, mismatch 0, "
+        "ambiguous 0, other tag 0, skipped 0"
+    )
 
 
 def _summary(output: str) -> list[str]:
@@ -132,6 +147,8 @@ def test_each_outcome_row_has_its_summary_line(env, fake_garmin, fake_api) -> No
         "Skipped yoga: 1 (activity 303 (Yoga?[2J))",
         "Not an activity: 2",
         "No FIT file: 3 (activity 203 (Typed In), activity 204 (Gone), activity 205 (Empty))",
+        # The race tags step sends the seven non-manual activities; none is a race.
+        _tags_line(unchanged=7),
     ]
     assert len(api.uploads) == 8
 
@@ -164,6 +181,7 @@ def test_an_empty_range_prints_zero_counts_and_exits_0(env, fake_garmin, fake_ap
         "Already stored: 0",
         "Not an activity: 0",
         "No FIT file: 0",
+        _tags_line(),
     ]
 
 

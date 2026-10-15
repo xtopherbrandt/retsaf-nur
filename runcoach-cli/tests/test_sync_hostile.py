@@ -23,7 +23,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -53,7 +53,8 @@ SWITCH_DOC = {
                     }
                 }
             }
-        }
+        },
+        "/race-tags": {"put": {"operationId": "setRaceTags"}},
     }
 }
 
@@ -68,12 +69,19 @@ def _zip(entries: list[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
+def _gmt(local: str) -> str:
+    """``startTimeGMT`` for a local start in the tests' UTC-7 zone, as Connect lists it."""
+    return (datetime.fromisoformat(local) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _activity(activity_id: int, local: str = "2026-10-10 07:00:00") -> dict[str, Any]:
     return {
         "activityId": activity_id,
         "activityName": f"run {activity_id}",
         "startTimeLocal": local,
+        "startTimeGMT": _gmt(local),
         "activityType": {"typeKey": "running", "typeId": 1, "parentTypeId": 17},
+        "eventType": {"typeKey": "uncategorized", "typeId": 9},
         "manualActivity": False,
     }
 
@@ -512,7 +520,9 @@ def test_any_other_activity_download_error_status_is_failed(run, library_garmin,
     assert f"API Error {status}" in failed
     assert failed.endswith(", runcoach sync --since 2026-10-10")
     assert api.uploads == [b"ACT-102"]
-    assert _requested(session)[-2:] == ["original 102", "snapshot 2026-10-11"]
+    # The race tags step's listing comes after the downloads; only the downloads are compared.
+    downloads = [name for name in _requested(session) if name != "list"]
+    assert downloads[-2:] == ["original 102", "snapshot 2026-10-11"]
 
 
 @pytest.mark.parametrize("status", [401, 403])

@@ -1,8 +1,10 @@
 """``runcoach sync``: the date range (F022 reference section 2).
 
 Each row of the reference's range table is a test. ``GET /sessions`` is served by
-``install_mock_client``; Garmin is a fake client that lists nothing and has no snapshot for any
-day, so no test reaches Garmin or uploads anything. ``sync.today`` fixes today and
+``install_mock_client``, with ``/openapi.json`` and ``PUT /race-tags`` for the race tags step that
+follows a run; Garmin is a fake client that lists nothing and has no snapshot for any day, so no
+test reaches Garmin or uploads anything. A range starting after today - 29 days is followed by one
+more listing, from today - 29 days, for that step. ``sync.today`` fixes today and
 ``sessions.LOCAL_ZONE`` fixes the computer zone (Vancouver summer time, UTC-7).
 """
 
@@ -23,6 +25,8 @@ pytestmark = pytest.mark.usefixtures("prewritten_config")
 runner = CliRunner()
 
 TODAY = date(2026, 10, 13)
+# The race tags step covers today and the 29 days before it.
+TAGS_START = TODAY - timedelta(days=29)
 ZONE = timezone(timedelta(hours=-7))
 
 
@@ -43,9 +47,9 @@ def _row(
 
 @pytest.fixture
 def sessions_store(fake_api):
-    """``sessions_store(pages)``: an API serving ``GET /sessions`` from ``pages`` (a cursor chain) that
-    fails any other request."""
-    return lambda pages: fake_api(pages=pages, doc=None, accept_uploads=False)
+    """``sessions_store(pages)``: an API serving ``GET /sessions`` from ``pages`` (a cursor chain),
+    ``/openapi.json`` and ``PUT /race-tags``, that fails any upload."""
+    return lambda pages: fake_api(pages=pages, accept_uploads=False)
 
 
 @pytest.fixture
@@ -78,7 +82,7 @@ def test_newest_run_2026_10_11_covers_10_10_to_10_13(install_mock_client, fake: 
 
     assert result.exit_code == 0, result.output
     assert _first_line(result.output) == "From 2026-10-10 to 2026-10-13"
-    assert fake.listed == [(date(2026, 10, 10), TODAY)]
+    assert fake.listed == [(date(2026, 10, 10), TODAY), (TAGS_START, TODAY)]
     assert fake.snapshot_days == [date(2026, 10, 10), date(2026, 10, 11), date(2026, 10, 12), TODAY]
     assert store.requests[0].url.params["limit"] == "50"
 
@@ -105,7 +109,7 @@ def test_newest_snapshot_today_covers_yesterday_and_today(
     assert result.exit_code == 0, result.output
     assert _first_line(result.output) == "From 2026-10-12 to 2026-10-13"
     assert "after today" not in " ".join(result.output.split())
-    assert fake.listed == [(date(2026, 10, 12), TODAY)]
+    assert fake.listed == [(date(2026, 10, 12), TODAY), (TAGS_START, TODAY)]
 
 
 def test_newest_strap_check_counts_as_a_capture(install_mock_client, fake: Any, sessions_store) -> None:
@@ -146,7 +150,7 @@ def test_only_cycling_pages_every_session_and_covers_30_days(
 
     assert result.exit_code == 0, result.output
     assert _first_line(result.output) == "From 2026-09-14 to 2026-10-13"
-    gets = [r for r in store.requests if r.method == "GET"]
+    gets = [r for r in store.requests if r.method == "GET" and r.url.path == "/sessions"]
     assert [r.url.params.get("since") for r in gets] == [None, "cursor-1", "cursor-2"]
     assert all(r.url.params["limit"] == "50" for r in gets)
 
@@ -163,7 +167,7 @@ def test_future_dated_newest_is_capped_with_a_warning(install_mock_client, fake:
     assert "bad-clock-1" in warning
     assert "2119-01-01" in warning
     assert "after today" in warning
-    assert fake.listed == [(date(2026, 10, 12), TODAY)]
+    assert fake.listed == [(date(2026, 10, 12), TODAY), (TAGS_START, TODAY)]
 
 
 def test_the_future_dated_warning_prints_the_name_with_controls_replaced(
@@ -264,7 +268,8 @@ def test_since_skips_the_walk_and_never_warns_about_a_future_dated_session(
     assert _first_line(result.output) == "From 2026-10-12 to 2026-10-13"
     assert "Warning" not in result.output
     assert "after today" not in result.output
-    assert store.requests == []
+    # The only request is the race tags step's ``/openapi.json`` read (nothing is listed to send).
+    assert store.calls == ["GET /openapi.json"]
 
 
 def test_an_api_error_body_while_finding_the_range_is_printed_safely_and_cut(

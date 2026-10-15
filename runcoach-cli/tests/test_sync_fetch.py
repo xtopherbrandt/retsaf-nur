@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -38,6 +38,11 @@ def _zip(entries: list[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
+def _gmt(local: str) -> str:
+    """``startTimeGMT`` for a local start in the tests' UTC-7 zone, as Connect lists it."""
+    return (datetime.fromisoformat(local) + timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _activity(
     activity_id: int, local: str, type_key: str, type_id: int, parent: int, manual: bool = False
 ) -> dict[str, Any]:
@@ -45,7 +50,9 @@ def _activity(
         "activityId": activity_id,
         "activityName": f"activity {activity_id}",
         "startTimeLocal": local,
+        "startTimeGMT": _gmt(local),
         "activityType": {"typeKey": type_key, "typeId": type_id, "parentTypeId": parent},
+        "eventType": {"typeKey": "uncategorized", "typeId": 9},
         "manualActivity": manual,
     }
 
@@ -135,6 +142,8 @@ def test_snapshot_zip_first_then_activities_by_start_then_id(env, fake_garmin) -
         ("original", 202),
         ("snapshot", date(2026, 10, 12)),
         ("original", 301),
+        # The race tags step: the range starts after today - 29 days, so one more listing.
+        ("list", (TODAY - timedelta(days=29), TODAY)),
     ]
     assert api.uploads == EXPECTED_UPLOADS
 

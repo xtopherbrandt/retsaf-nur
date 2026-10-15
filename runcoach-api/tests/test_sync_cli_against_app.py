@@ -3,7 +3,9 @@
 ``runcoach sync`` runs through Typer's ``CliRunner`` with ``runcoach_cli.api_client.client`` set to
 a ``TestClient(app)`` (an ``httpx.Client``), so its ``/openapi.json`` switch check, its range walk
 over ``GET /sessions`` and every ``POST /sessions`` upload are answered by the real routes on the
-isolated store (the autouse ``isolated_data_dir``). ``runcoach_cli.config.CONFIG_PATH`` points at a
+isolated store (the autouse ``isolated_data_dir``), and so is the race tags step that follows a
+run that did not stop: its ``setRaceTags`` check on the same ``/openapi.json`` read and its
+``PUT /race-tags``. ``runcoach_cli.config.CONFIG_PATH`` points at a
 ``cli.toml`` under the test's tmp dir, so ``garmin.token_dir()`` never resolves to the athlete's
 home. A fake ``GarminClient`` stands in for Garmin Connect, serving zips of corpus files; nothing
 reaches the network and no token is read.
@@ -94,11 +96,15 @@ def _zip(entries: list[tuple[str, bytes]]) -> bytes:
 def _activity(
     activity_id: int, local: str, type_key: str, type_id: int, parent: int, manual: bool = False
 ) -> dict[str, Any]:
+    """A listed summary. ``startTimeGMT`` repeats the local start, as no stored file starts then: the
+    race tags step reads every listed run as not stored, and none is a race."""
     return {
         "activityId": activity_id,
         "activityName": f"activity {activity_id}",
         "startTimeLocal": local,
+        "startTimeGMT": local,
         "activityType": {"typeKey": type_key, "typeId": type_id, "parentTypeId": parent},
+        "eventType": {"typeKey": "uncategorized", "typeId": 9},
         "manualActivity": manual,
     }
 
@@ -223,6 +229,15 @@ def _first_sync(client: TestClient, monkeypatch: pytest.MonkeyPatch, declared_co
     assert "Not an activity: 4" in lines
     assert "No FIT file: 1 (activity 302 (activity 302))" in lines
     assert not any(line.startswith("Failed:") for line in lines)
+    assert _tags_line(not_stored=5) in lines
+
+
+def _tags_line(not_stored: int) -> str:
+    """The race tags step's counts line: every listed non-manual activity sent, none matched."""
+    return (
+        f"Race tags: tagged 0, cleared 0, unchanged 0, not stored {not_stored}, mismatch 0, "
+        "ambiguous 0, other tag 0, skipped 0"
+    )
 
 
 def test_first_sync_stores_the_runs_the_strap_check_and_the_snapshot(
@@ -258,6 +273,7 @@ def test_resync_of_the_ac5_range_stores_nothing(
     assert "Not an activity: 4" in lines
     assert "No FIT file: 1 (activity 302 (activity 302))" in lines
     assert not any(line.startswith("Failed:") for line in lines)
+    assert _tags_line(not_stored=5) in lines
     assert sorted(row["session_id"] for row in _stored(client)) == before
 
 
@@ -352,6 +368,7 @@ def test_a_run_without_settings_borrows_the_same_mornings_snapshot(
     result = _run("sync")
     assert result.exit_code == 0, result.output
     assert "Stored: 2" in result.output.splitlines()
+    assert _tags_line(not_stored=1) in result.output.splitlines()
     run_id, snapshot_id = _run_and_snapshot(client)
     resting = _resting_input(client, run_id)
     print(f"resting input: {resting}")
