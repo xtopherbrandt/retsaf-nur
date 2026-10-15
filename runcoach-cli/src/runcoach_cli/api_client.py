@@ -265,3 +265,17 @@ def put_race_tags(base_url: str, items: list[dict]) -> httpx.Response:
         return client.put(f"{base_url}/race-tags", json={"items": items}, timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+def get_state(base_url: str, as_of: str | None) -> httpx.Response:
+    """Call GET {base_url}/state (threshold pace from the tagged races) and return the raw response.
+
+    ``as_of`` is sent as given; ``None`` omits it (the API's default is now). The API replays every
+    tagged race on each read, so the call gets the list call's timeout. Only network-layer failures
+    are translated into ApiUnreachableError; status and body are the caller's job.
+    """
+    params = {} if as_of is None else {"as_of": as_of}
+    try:
+        return client.get(f"{base_url}/state", params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc

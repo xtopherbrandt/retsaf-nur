@@ -15,7 +15,10 @@ from runcoach_cli.api_client import ApiUnreachableError, get_health
 
 
 def status() -> None:
-    """Call GET /health on the configured API and print its status/version."""
+    """Show whether the API is running and its version.
+
+    This is the API's health, not the training state; for that, see runcoach state.
+    """
     cfg = config.load_config()  # T008's guard -- exits before this point if config is missing
 
     try:
