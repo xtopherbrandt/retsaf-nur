@@ -1770,7 +1770,11 @@ def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[
 # Appended at the end so the lines cited above stay in place. The rule lives in
 # ``metrics.threshold_pace``; this reads its candidate rows.
 # ---------------------------------------------------------------------------
+import logging
+
 from runcoach_api.metrics import threshold_pace as _threshold_pace
+
+logger = logging.getLogger(__name__)
 
 #: Why a tagged running race was not handed to the estimator: a stored value it needs does not read.
 SUMMARY_UNREADABLE = "summary_unreadable"
@@ -1789,11 +1793,15 @@ def _decoded(value):
 
 
 def _race_features(conn: sqlite3.Connection, session_id: str) -> dict | None:
-    """F013's features of one in-band race, or ``None`` when its stored rows do not compute."""
+    """F013's features of one in-band race, or ``None`` when its stored rows do not compute (logged
+    with the session id, so a defect in the computation is not silent)."""
     try:
         session, rows = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
         return session_features.compute_session_features(session, rows)
-    except Exception:  # noqa: BLE001 -- a race whose records cannot be read is excluded, never a 500
+    except Exception:  # a race whose records cannot be read is excluded, never a 500
+        logger.exception(
+            "race %s: its features did not compute; excluded as %s", session_id, FEATURES_UNAVAILABLE
+        )
         return None
 
 

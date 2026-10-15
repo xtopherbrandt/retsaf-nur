@@ -526,6 +526,31 @@ def test_an_undecodable_in_band_race_is_excluded_with_its_reason(column: str, va
     assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == [(bad, reason)]
 
 
+def test_a_raising_feature_computation_is_excluded_and_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The reader's broad except keeps the route answering, and logs what it swallowed with the
+    session id, so a defect in F013's computation is not silent."""
+    good = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), pace=270.0)
+    bad = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), pace=260.0)
+    real = db_module.session_features.compute_session_features
+
+    def compute(session, rows):
+        if session["session_id"] == bad:
+            raise RuntimeError("a defect in the feature computation")
+        return real(session, rows)
+
+    monkeypatch.setattr(db_module.session_features, "compute_session_features", compute)
+    with TestClient(app) as client, caplog.at_level("ERROR", logger="runcoach_api.db"):
+        determinant = _ftp(_ok(client))
+    assert [e["session_id"] for e in determinant["efforts"]] == [good]
+    excluded = [(e["session_id"], e["reason"]) for e in determinant["excluded"]]
+    assert excluded == [(bad, "features_unavailable")]
+    logged = [r for r in caplog.records if r.name == "runcoach_api.db" and bad in r.getMessage()]
+    assert len(logged) == 1, caplog.records
+    assert logged[0].exc_info is not None and isinstance(logged[0].exc_info[1], RuntimeError)
+
+
 @pytest.mark.parametrize(
     ("summary", "reason"),
     [
