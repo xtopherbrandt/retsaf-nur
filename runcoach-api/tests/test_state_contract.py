@@ -275,6 +275,7 @@ def test_contract_lists_as_of_and_is_implemented(contract: dict) -> None:
 
     state = _schema(contract, "StateModel")
     assert set(state["properties"]) == set(served["components"]["schemas"]["StateModel"]["properties"])
+    assert set(state.get("required", [])) == set(served["components"]["schemas"]["StateModel"]["required"])
     assert state["properties"]["timezone"]["type"] == "string"
     assert state["properties"]["gap_to_goal"] == {
         "allOf": [{"$ref": "#/components/schemas/GapToGoal"}],

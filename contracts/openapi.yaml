@@ -1806,6 +1806,7 @@ components:
     StateModel:
       type: object
       description: "Owned determinant profile with confidence + gap-to-goal (spec/04)."
+      required: [as_of, timezone, determinants, readiness, gap_to_goal]
       properties:
         as_of: { type: string, format: date-time, description: "The instant the estimate is for (UTC)." }
         timezone:
