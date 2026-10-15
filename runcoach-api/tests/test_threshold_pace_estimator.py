@@ -6,7 +6,7 @@ things it did not write:
 
 - **The oracle** (``tests/support/threshold_oracle.py``), written from the reference before the
   module, restating the filter in information form and importing nothing from ``runcoach_api``
-  (``test_the_oracle_imports_nothing_from_the_estimator`` reads ``sys.modules`` to pin that).
+  (``test_the_oracle_imports_nothing_from_the_estimator`` parses the oracle's imports to pin that).
 - **The reference's section 4 table**, typed into the oracle module as ``WORKED_EXAMPLE``, to
   0.01 s/km for paces and interval ends and 0.001 percentage points for the error.
 
@@ -16,6 +16,7 @@ rules: labels compare P with R and 4 R directly.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import math
 import sys
@@ -27,13 +28,10 @@ import pytest
 ORACLE_PATH = Path(__file__).parent / "support" / "threshold_oracle.py"
 
 # ``tests/`` is not a package (importlib mode), so the oracle is loaded from its path, as trimp_oracle is.
-# The estimator's module set is read before and after, so the pin below sees what the oracle pulled in.
-_BEFORE_ORACLE = set(sys.modules)
 _SPEC = importlib.util.spec_from_file_location("threshold_oracle", ORACLE_PATH)
 threshold_oracle = importlib.util.module_from_spec(_SPEC)
 sys.modules["threshold_oracle"] = threshold_oracle
 _SPEC.loader.exec_module(threshold_oracle)  # type: ignore[union-attr]
-_ORACLE_IMPORTS = set(sys.modules) - _BEFORE_ORACLE
 
 from runcoach_api.metrics import threshold_pace
 from runcoach_api.metrics.threshold_pace import estimate
@@ -92,7 +90,17 @@ def _assert_matches_table(name: str) -> None:
 
 
 def test_the_oracle_imports_nothing_from_the_estimator() -> None:
-    assert not any(name.startswith("runcoach_api") for name in _ORACLE_IMPORTS), _ORACLE_IMPORTS
+    # Read from the oracle's source, not sys.modules: conftest has imported runcoach_api.db (and so
+    # metrics.threshold_pace) before this file loads, so a module-set diff can never see that import.
+    tree = ast.parse(ORACLE_PATH.read_text(encoding="utf-8"))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            names.add("." * node.level + (node.module or ""))
+    forbidden = {n for n in names if n.split(".")[0] == "runcoach_api" or n.startswith(".")}
+    assert not forbidden, forbidden
     assert not any(hasattr(threshold_oracle, attr) for attr in ("threshold_pace", "estimate"))
 
 

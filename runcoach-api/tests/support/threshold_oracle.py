@@ -2,7 +2,7 @@
 
 Written from the F024 reference (section 1's constants, section 3's filter, section 4's worked
 example), not from ``metrics.threshold_pace``. It imports nothing from ``runcoach_api`` and
-``test_threshold_pace_estimator.py`` pins that by reading ``sys.modules`` after the import, so the
+``test_threshold_pace_estimator.py`` pins that by parsing this file's imports, so the
 expected values it produces cannot share code with the module they check
 (``.claude/rules/learnings/contract-tables-need-an-independent-oracle.md``).
 
