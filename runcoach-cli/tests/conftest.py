@@ -41,6 +41,7 @@ different filename (``api.toml``) in a different workspace package.
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from collections.abc import Callable
 from datetime import date
@@ -312,7 +313,7 @@ class FakeGarmin:
     """A ``GarminClient`` that serves what the test gives it and records what it was asked.
 
     ``activities`` is the activity list (each call answers a copy; ``list_error``, when set, is
-    raised instead). ``originals`` and ``snapshots`` map an activity id or a day to what its download
+    raised instead, on every call or, with ``list_error_on=n``, on the n-th call only). ``originals`` and ``snapshots`` map an activity id or a day to what its download
     answers: bytes (or any other value) are returned, an exception is raised. An activity with no
     entry answers a one-entry zip holding ``ACT-<id>``; a day with no entry raises ``NotFound``.
     With ``allow_originals=False`` any activity download fails the test.
@@ -330,11 +331,13 @@ class FakeGarmin:
         snapshots: dict[date, Any] | None = None,
         list_error: Exception | None = None,
         allow_originals: bool = True,
+        list_error_on: int | None = None,
     ) -> None:
         self.activities = activities or []
         self.originals = originals or {}
         self.snapshots = snapshots or {}
         self.list_error = list_error
+        self.list_error_on = list_error_on
         self.allow_originals = allow_originals
         self.events: list[tuple[str, Any]] = []
 
@@ -352,7 +355,7 @@ class FakeGarmin:
 
     def list_activities(self, start: date, end: date) -> list[Any]:
         self.events.append(("list", (start, end)))
-        if self.list_error is not None:
+        if self.list_error is not None and self.list_error_on in (None, len(self.listed)):
             raise self.list_error
         return list(self.activities)
 
@@ -379,7 +382,8 @@ class FakeGarmin:
         return value
 
 
-# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body.
+# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body, and
+# ``PUT /race-tags`` is listed as ``setRaceTags``.
 OPENAPI_WITH_SWITCH: dict[str, Any] = {
     "paths": {
         "/sessions": {
@@ -388,7 +392,8 @@ OPENAPI_WITH_SWITCH: dict[str, Any] = {
                     "content": {"multipart/form-data": {"schema": {"$ref": "#/components/schemas/Body"}}}
                 }
             }
-        }
+        },
+        "/race-tags": {"put": {"operationId": "setRaceTags"}},
     },
     "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
 }
@@ -415,6 +420,11 @@ class FakeApi:
     ``replies[content]`` when the bytes are listed there, else ``reply(n, content)`` (``n`` counts
     the uploads, this one included), else 201 stored as ``s<n>`` with ``filter_applied``.
     ``unreachable_on_upload=n`` makes the n-th upload a connect error, before it is recorded.
+    ``PUT /race-tags`` records each batch's items in ``tag_batches`` (all of them in ``sent``) and
+    answers every item with ``tag_outcomes[connect_activity_id]`` (default ``unchanged``): an
+    outcome, an ``(outcome, session_id, candidates)`` tuple, or a callable taking the item and
+    returning either. ``fail_tags`` answers every ``PUT`` with that status instead (after recording
+    the batch), or, as ``"unreachable"``, makes it a connect error.
     ``requests`` holds every request; ``calls`` the same as ``"<method> <path>"``.
     """
 
@@ -428,8 +438,13 @@ class FakeApi:
         accept_uploads: bool = True,
         unreachable_on_upload: int | None = None,
         check: Callable[[bytes], None] | None = None,
+        tag_outcomes: dict[int, Any] | None = None,
+        fail_tags: int | str | None = None,
     ) -> None:
         self.reply = reply
+        self.tag_outcomes = tag_outcomes or {}
+        self.fail_tags = fail_tags
+        self.tag_batches: list[list[dict[str, Any]]] = []
         self.replies = replies or {}
         self.doc = doc
         self.pages = [[]] if pages is None else pages
@@ -474,7 +489,40 @@ class FakeApi:
             if self.reply is not None:
                 return self.reply(n, content)
             return httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
+        if request.method == "PUT" and request.url.path == "/race-tags":
+            return self._race_tags(request)
         raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    @property
+    def sent(self) -> list[dict[str, Any]]:
+        """Every item sent to ``PUT /race-tags``, in order."""
+        return [item for batch in self.tag_batches for item in batch]
+
+    def _race_tags(self, request: httpx.Request) -> httpx.Response:
+        if self.fail_tags == "unreachable":
+            raise httpx.ConnectError("connection refused", request=request)
+        items = json.loads(request.read())["items"]
+        self.tag_batches.append(items)
+        if self.fail_tags is not None:
+            return httpx.Response(int(self.fail_tags), json={"detail": "the store is busy"})
+        answers = []
+        for item in items:
+            outcome = self.tag_outcomes.get(item["connect_activity_id"], "unchanged")
+            if callable(outcome):
+                outcome = outcome(item)
+            name, session_id, candidates = (outcome, None, []) if isinstance(outcome, str) else outcome
+            answers.append(
+                {
+                    "connect_activity_id": item["connect_activity_id"],
+                    "outcome": name,
+                    "session_id": session_id,
+                    "candidates": candidates,
+                }
+            )
+        counts: dict[str, int] = {}
+        for answer in answers:
+            counts[answer["outcome"]] = counts.get(answer["outcome"], 0) + 1
+        return httpx.Response(200, json={"items": answers, "counts": counts})
 
 
 @pytest.fixture

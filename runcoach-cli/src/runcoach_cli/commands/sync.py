@@ -32,6 +32,13 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   activity list, an API without the switch) prints the summary so far and its message, uploads
   nothing more and exits 1. Downloads are read in memory only, each entry capped at
   ``FIT_ENTRY_CAP`` and only stored or deflated (reference section 7). ``sync`` never reads stdin.
+  After uploads that end without a stop (failed items do not prevent it) and after the sync state
+  is written, ``sync`` reads race tags as ``sync tags`` does, for the earlier of its start and
+  today - 29 days to today: the upload listing is reused when it covers that, else one more
+  listing is made; the ``/openapi.json`` the switch check read is checked for ``setRaceTags``
+  (read here when nothing was uploaded), so it is read once per run. The tags step prints its
+  lines after the summary, never reads or writes the sync state, and a failure of it (as for
+  ``sync tags``) exits 1.
 
 - ``sync tags [--since YYYY-MM-DD]`` (default today and the 29 days before it; after today, or the
   parent's ``--since`` given with it, is a usage error) checks that ``/openapi.json`` lists
@@ -708,12 +715,22 @@ def _lists_switch(doc: Any) -> bool:
     return isinstance(properties, dict) and SWITCH_FIELD in properties
 
 
+@dataclass
+class ServedDoc:
+    """The API's ``/openapi.json`` as one run read it, so it is read at most once per run: ``read``
+    is True once the upload switch check has read it, and ``doc`` is the document it read."""
+
+    doc: Any = None
+    read: bool = False
+
+
 class _Uploader:
     """Uploads entries for one sync, checking the API's switch once, before the first upload."""
 
-    def __init__(self, api_url: str, results: list[ItemResult]) -> None:
+    def __init__(self, api_url: str, results: list[ItemResult], served: ServedDoc | None = None) -> None:
         self.api_url = api_url
         self.results = results
+        self.served = ServedDoc() if served is None else served
         self.checked = False
 
     def _check_switch(self, day: date) -> None:
@@ -721,8 +738,10 @@ class _Uploader:
             resp = api_client.get_openapi(self.api_url)
         except api_client.ApiUnreachableError:
             raise SyncStop(_api_unreachable(self.api_url, day)) from None
-        if resp.status_code != 200 or not _lists_switch(_body(resp)):
+        doc = _body(resp) if resp.status_code == 200 else None
+        if not _lists_switch(doc):
             raise SyncStop(f"{OLD_API} and restart the API")
+        self.served.doc, self.served.read = doc, True
         self.checked = True
 
     def upload(self, day: date, item: str, name: str, activity_id: int | None, data: bytes) -> None:
@@ -853,14 +872,19 @@ def fetch(
     start: date,
     end: date,
     results: list[ItemResult] | None = None,
+    *,
+    listing_out: list[Any] | None = None,
+    served: ServedDoc | None = None,
 ) -> list[ItemResult]:
     """Download and upload everything for ``start`` to ``end`` (reference sections 3, 5 to 7).
 
     Appends to ``results`` as it goes (so a ``SyncStop`` leaves what was done in it) and returns it.
-    A ``SyncStop`` carries the day it stopped on as ``stopped_on``.
+    A ``SyncStop`` carries the day it stopped on as ``stopped_on``. ``listing_out``, when given,
+    receives the raw activity listing (unreadable summaries included), so the race tags step can
+    reuse it; ``served`` receives the ``/openapi.json`` the switch check read.
     """
     results = [] if results is None else results
-    uploader = _Uploader(api_url, results)
+    uploader = _Uploader(api_url, results, served)
     day = start
     try:
         try:
@@ -868,6 +892,8 @@ def fetch(
         except garmin.GarminError as exc:
             raise _garmin_stop(exc, start) from None
         by_day = _plan_activities(listed, start, end, results)
+        if listing_out is not None:
+            listing_out.extend(listed)
         while day <= end:
             label = f"snapshot {day.isoformat()}"
             snapshot = _download(client.download_snapshot, day, day)
@@ -1201,17 +1227,21 @@ def tags_report_lines(to_send: list[TagEntry], skipped: list[TagEntry]) -> list[
     return lines
 
 
-def run_tags(client: garmin.GarminClient, api_url: str, start: date, end: date) -> list[str]:
+def run_tags(
+    client: garmin.GarminClient, api_url: str, start: date, end: date, *, listed: list[Any] | None = None
+) -> list[str]:
     """List Connect activities for ``start`` to ``end``, send their race tags and return the report
     lines. Downloads nothing; never reads or writes the sync state. The caller has checked the API
-    lists ``setRaceTags`` (``read_tags_openapi`` or ``check_race_tags``).
+    lists ``setRaceTags`` (``read_tags_openapi`` or ``check_race_tags``). ``listed``, when given, is
+    a listing already made that covers the range, used instead of a new call.
 
     A ``TagsStop`` after the listing carries the report so far as ``lines``.
     """
-    try:
-        listed = client.list_activities(start, end)
-    except garmin.GarminError as exc:
-        raise tags_garmin_stop(exc, start) from None
+    if listed is None:
+        try:
+            listed = client.list_activities(start, end)
+        except garmin.GarminError as exc:
+            raise tags_garmin_stop(exc, start) from None
     to_send, skipped = tag_entries(listed, start, end)
     try:
         send_tags(api_url, to_send)
@@ -1244,6 +1274,8 @@ def sync(
     cfg = config.load_config()
     previous, state_line = read_state(end)
     results: list[ItemResult] = []
+    listing: list[Any] = []
+    served = ServedDoc()
     start: date | None = None
     try:
         start, warning = find_range(cfg.api_url, since_day, end)
@@ -1260,7 +1292,7 @@ def sync(
             client = _adapter().open_client()
         except garmin.GarminError as exc:
             raise _garmin_stop(exc, start) from None
-        fetch(client, cfg.api_url, start, end, results)
+        fetch(client, cfg.api_url, start, end, results, listing_out=listing, served=served)
     except SyncStop as exc:
         if start is not None:
             _write_utf8("\n".join(summary_lines(results, start)))
@@ -1268,8 +1300,34 @@ def sync(
         raise _fail(str(exc)) from None
     _write_utf8("\n".join(summary_lines(results, start)))
     _save_state(next_state(previous, results, start, end, None))
+    _read_tags_after_uploads(client, cfg.api_url, start, end, listing, served)
     if any(r.outcome == FAILED for r in results):
         raise typer.Exit(code=1)
+
+
+def _read_tags_after_uploads(
+    client: garmin.GarminClient, api_url: str, start: date, end: date, listing: list[Any], served: ServedDoc
+) -> None:
+    """The race tags step of ``sync`` (F023 AC4): read tags for ``[min(start, today - 29 days), end]``.
+
+    The upload pass's listing is reused when it covers that window, else one more listing is made.
+    The ``/openapi.json`` the switch check read is checked for ``setRaceTags``; with no upload it
+    was never read, and is read here. A stop prints the report so far and its message and exits 1.
+    Never reads or writes the sync state.
+    """
+    tags_start = min(start, end - timedelta(days=TAGS_DAYS - 1))
+    try:
+        if served.read:
+            check_race_tags(served.doc)
+        else:
+            read_tags_openapi(api_url, tags_start)
+        reused = listing if start <= tags_start else None
+        lines = run_tags(client, api_url, tags_start, end, listed=reused)
+    except TagsStop as exc:
+        if exc.lines:
+            _write_utf8("\n".join(exc.lines))
+        raise _fail(str(exc)) from None
+    _write_utf8("\n".join(lines))
 
 
 def _save_state(state: SyncState) -> None:
