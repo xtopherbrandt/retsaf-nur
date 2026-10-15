@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from runcoach_cli import garmin
 from runcoach_cli.commands import sessions, sync
@@ -353,6 +354,72 @@ def test_openapi_read_once_per_run(env, fake_garmin, fake_api) -> None:
     assert "POST /sessions" not in api.calls
     assert api.calls.count("GET /openapi.json") == 1
     assert api.calls.index("GET /openapi.json") < api.calls.index("PUT /race-tags")
+
+
+def _openapi_down(fake_api: Any, status: int | None, **kwargs: Any) -> Any:
+    """A ``fake_api`` whose ``GET /openapi.json`` is a connect error (``status`` None) or answers
+    its document with ``status``."""
+
+    class OpenApiDown(fake_api):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            if status is None and request.method == "GET" and request.url.path == "/openapi.json":
+                self.requests.append(request)
+                raise httpx.ConnectError("connection refused", request=request)
+            return super().__call__(request)
+
+    return OpenApiDown(doc_status=status or 200, **kwargs)
+
+
+@pytest.mark.parametrize("since", [None, "2026-08-01"])
+def test_api_not_running_at_the_tags_openapi_read_names_the_tags_start(
+    env, fake_garmin, fake_api, fresh_sync_state: Path, since: str | None
+) -> None:
+    """Nothing to upload, so the tags step makes the run's one ``/openapi.json`` read, and it is a
+    connect error: one ``sync tags`` recovery command naming the tags start (today - 29, or a
+    ``--since`` earlier than it), nothing sent, the state file as the uploads left it."""
+    fake = fake_garmin([] if since else [_activity(913, WINDOW_START, race=True)])
+    api = env(fake, _openapi_down(fake_api, None, pages=RECENT_STORE))
+
+    result = _sync(*(("--since", since) if since else ()))
+
+    tags_start = since or WINDOW_START.isoformat()
+    assert result.exit_code == 1, result.output
+    assert "POST /sessions" not in api.calls
+    assert api.calls.count("GET /openapi.json") == 1
+    assert "PUT /race-tags" not in api.calls
+    lines = result.output.splitlines()
+    assert lines[-1] == f"Race tags not read: run runcoach sync tags --since {tags_start}", lines
+    assert any("could not reach API at http://example.test" in line for line in lines), lines
+    assert "Stored: 0" in lines
+    assert _flat(result.output).count("runcoach sync tags --since") == 1
+    assert "runcoach sync --since" not in result.output
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}
+
+
+def test_a_503_tags_openapi_document_is_not_read(env, fake_garmin, fake_api, fresh_sync_state: Path) -> None:
+    """Nothing to upload and a 503 ``/openapi.json``: not read, even though its body lists
+    ``setRaceTags`` (as for the switch check), so the old-API line; nothing sent."""
+    fake = fake_garmin([_activity(913, WINDOW_START, race=True)])
+    api = env(fake, _openapi_down(fake_api, 503, pages=RECENT_STORE, doc=_switch_and_tags_doc()))
+
+    result = _sync()
+
+    assert result.exit_code == 1, result.output
+    assert "POST /sessions" not in api.calls
+    assert api.calls.count("GET /openapi.json") == 1
+    assert "PUT /race-tags" not in api.calls
+    assert result.output.splitlines()[-1] == f"Error: {OLD_API_TAGS}"
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}
+
+
+def _switch_and_tags_doc() -> dict[str, Any]:
+    doc = _switch_only_doc()
+    doc["paths"]["/race-tags"] = {"put": {"operationId": "setRaceTags"}}
+    return doc
 
 
 def test_old_api_without_set_race_tags_exits_1_after_upload_summary(env, fake_garmin, fake_api) -> None:

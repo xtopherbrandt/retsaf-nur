@@ -456,6 +456,89 @@ def test_unreachable_api_on_a_batch_stops_and_names_since(env, monkeypatch) -> N
     assert result.output.count("runcoach sync tags --since") == 1
 
 
+def test_oldest_first_is_start_order_not_activity_id_order(env, monkeypatch) -> None:
+    """Activity ids fall as start times rise, so an id sort sends 400 and 300 first and names
+    10-02 on the stop; start order sends 500 and 400 first and stops at the second batch's 10-03,
+    with no unsent item dated before it."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(
+        [
+            _summary(300, "2026-10-03 07:00:00", event="race"),
+            _summary(500, "2026-10-01 07:00:00", event="race"),
+            _summary(200, "2026-10-04 07:00:00", event="race"),
+            _summary(400, "2026-10-02 07:00:00", event="race"),
+        ]
+    )
+    api = env(fake, TagsApi(fail_batch={2: 500}))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    sent_ids = [[item["connect_activity_id"] for item in batch] for batch in api.batches]
+    assert sent_ids == [[500, 400], [300, 200]]
+    lines = _lines(result.output)
+    assert lines[-1] == "Race tags stopped at 2026-10-03: run runcoach sync tags --since 2026-10-03"
+    unsent = [item["start_time"] for item in api.batches[1]]
+    assert min(unsent) == "2026-10-03T14:00:00Z", unsent
+    assert _counts(unchanged=2) in lines
+
+
+class _OpenApiDown(TagsApi):
+    """``TagsApi`` whose ``GET /openapi.json`` is a connect error (``status`` None) or answers
+    its document with ``status``."""
+
+    def __init__(self, status: int | None = None) -> None:
+        super().__init__()
+        self.status = status
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/openapi.json":
+            self.requests.append(f"{request.method} {request.url.path}")
+            if self.status is None:
+                raise httpx.ConnectError("connection refused", request=request)
+            return httpx.Response(self.status, json=self.doc)
+        return super().__call__(request)
+
+
+@pytest.mark.parametrize("since", [None, "2026-08-01"])
+def test_api_not_running_at_the_openapi_read_names_the_tags_start(env, since: str | None) -> None:
+    """A connect error on ``GET /openapi.json``: one ``sync tags`` recovery command naming the
+    tags start (the default, or a ``--since`` earlier than today - 29), nothing listed or sent."""
+    fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="race")])
+    api = env(fake, _OpenApiDown())
+
+    result = _tags(*(("--since", since) if since else ()))
+
+    start = since or DEFAULT_SINCE.isoformat()
+    assert result.exit_code == 1, result.output
+    lines = _lines(result.output)
+    assert lines[-1] == f"Race tags not read: run runcoach sync tags --since {start}", lines
+    assert any("could not reach API at http://example.test" in line for line in lines), lines
+    assert result.output.count("runcoach sync tags --since") == 1
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "PUT /race-tags" not in api.requests
+    assert fake.listed == []
+    assert not env.state_file.exists()
+
+
+def test_a_503_openapi_document_is_not_read_and_sends_nothing(env) -> None:
+    """A non-200 ``/openapi.json`` is not read, even when its body lists ``setRaceTags``, as for
+    the upload switch check: the API is taken not to list it (F023 AC6)."""
+    fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="race")])
+    api = env(fake, _OpenApiDown(status=503))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    assert _lines(result.output)[-1].endswith(OLD_API_LINE), result.output
+    assert "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "PUT /race-tags" not in api.requests
+    assert api.requests.count("GET /openapi.json") == 1
+    assert not env.state_file.exists()
+
+
 def test_api_without_set_race_tags_sends_nothing(env) -> None:
     fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="race")])
     api = env(fake, TagsApi(doc=openapi_doc(with_race_tags=False)))
