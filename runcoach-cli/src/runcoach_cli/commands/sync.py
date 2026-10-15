@@ -1,6 +1,6 @@
-"""``runcoach sync``: fetch new runs and snapshots from Garmin Connect (F022).
+"""``runcoach sync``: fetch new runs and snapshots from Garmin Connect (F022), and read race tags (F023).
 
-This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands.
+This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`` commands.
 
 - ``sync [--since YYYY-MM-DD]`` works out a date range and uploads what Garmin holds for it
   (the F022 reference, sections 2 and 3). The range starts one day before the date, in the
@@ -33,6 +33,19 @@ This module holds the ``sync`` sub-app and its ``login`` and ``logout`` commands
   nothing more and exits 1. Downloads are read in memory only, each entry capped at
   ``FIT_ENTRY_CAP`` and only stored or deflated (reference section 7). ``sync`` never reads stdin.
 
+- ``sync tags [--since YYYY-MM-DD]`` (default today and the 29 days before it; after today, or the
+  parent's ``--since`` given with it, is a usage error) checks that ``/openapi.json`` lists
+  ``setRaceTags``, makes one activity-list call for ``[since, today]`` and sends one item per
+  fetched-type, non-manual activity whose local start is in the range (once per ``activityId``) to
+  ``PUT /race-tags``, in batches of ``RACE_TAGS_BATCH`` oldest first; ``race`` is
+  ``eventType.typeKey == "race"``. A summary whose type, ``eventType`` or ``startTimeGMT`` cannot be
+  read is skipped and reported, never sent; with nothing to send no ``PUT`` is made. It prints the
+  ``From`` line, the counts line and one line per race not stored, mismatched or ambiguous and per
+  skipped activity (``tags_report_lines``). It downloads nothing and never reads or writes the sync
+  state. A login needed prints the login message; another Garmin error, its reason and the one
+  ``runcoach sync tags --since`` command; an API without ``setRaceTags`` sends nothing; a batch the
+  API fails or cannot be reached for stops later batches and names the batch's first local day.
+  Each exits 1; not stored, mismatch, ambiguous and skipped items do not change the exit code.
 - ``sync login`` asks for the email, the password (not echoed) and, only when Garmin asks for one,
   the MFA code, through the module-level prompt seams ``ask_text`` and ``ask_secret`` (tests replace
   them). It calls the adapter's ``login`` (``runcoach_cli.garmin_connect.login``), which saves the
@@ -52,6 +65,7 @@ import importlib.util
 import io
 import json
 import lzma
+import math
 import os
 import re
 import sys
@@ -586,13 +600,21 @@ def _garmin_stop(exc: garmin.GarminError, day: date) -> SyncStop:
     """The stop for a Garmin error that ends the sync on ``day``."""
     if isinstance(exc, garmin.LoginNeeded):
         return SyncStop(LOGIN_NEEDED)
-    reason = sessions._printable(str(exc))
+    reason = _garmin_reason(exc)
     recover = f"runcoach sync --since {day.isoformat()}"
     if isinstance(exc, garmin.RateLimited):
-        return SyncStop(f"Garmin is limiting requests ({reason}): wait, then run `{recover}`")
+        return SyncStop(f"{reason}: wait, then run `{recover}`")
+    return SyncStop(f"{reason}: run `{recover}`")
+
+
+def _garmin_reason(exc: garmin.GarminError) -> str:
+    """What a Garmin error that is not a login stops on, without a recovery command."""
+    reason = sessions._printable(str(exc))
+    if isinstance(exc, garmin.RateLimited):
+        return f"Garmin is limiting requests ({reason})"
     if isinstance(exc, garmin.GarminUnreachable):
-        return SyncStop(f"could not reach Garmin Connect ({reason}): run `{recover}`")
-    return SyncStop(f"Garmin: {reason}: run `{recover}`")
+        return f"could not reach Garmin Connect ({reason})"
+    return f"Garmin: {reason}"
 
 
 def _looks_like_page(data: bytes) -> bool:
@@ -657,15 +679,23 @@ def _resolve(doc: dict[str, Any], schema: Any) -> Any:
     return None
 
 
+def _find_operation(doc: Any, op_id: str) -> dict[str, Any] | None:
+    """The served operation whose ``operationId`` is ``op_id`` (the last one found), or ``None``."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("paths"), dict):
+        return None
+    operation = None
+    for item in doc["paths"].values():
+        for op in item.values() if isinstance(item, dict) else []:
+            if isinstance(op, dict) and op.get("operationId") == op_id:
+                operation = op
+    return operation
+
+
 def _lists_switch(doc: Any) -> bool:
     """True when the served ``POST /sessions`` (``ingestSession``) lists the switch as a form field."""
     if not isinstance(doc, dict) or not isinstance(doc.get("paths"), dict):
         return False
-    operation = None
-    for item in doc["paths"].values():
-        for op in item.values() if isinstance(item, dict) else []:
-            if isinstance(op, dict) and op.get("operationId") == "ingestSession":
-                operation = op
+    operation = _find_operation(doc, "ingestSession")
     if operation is None:
         sessions_path = doc["paths"].get("/sessions")
         operation = sessions_path.get("post") if isinstance(sessions_path, dict) else None
@@ -904,6 +934,293 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
     return lines
 
 
+# Race tags (F023): Connect's event type, sent to ``PUT /race-tags`` (``setRaceTags``), which
+# matches each item to a stored run on the server.
+RACE_TAGS_OPERATION = "setRaceTags"
+# The most items one ``PUT /race-tags`` takes; batches are sent oldest first.
+RACE_TAGS_BATCH = 500
+# ``sync tags`` without ``--since`` covers today and the 29 days before it.
+TAGS_DAYS = 30
+RACE_EVENT = "race"
+OLD_API_TAGS = "the API does not support race tags: update it and restart the API"
+# The outcomes ``PUT /race-tags`` answers with, in the order the counts line prints them.
+TAG_OUTCOMES = {
+    "tagged": "tagged",
+    "cleared": "cleared",
+    "unchanged": "unchanged",
+    "not_stored": "not stored",
+    "mismatch": "mismatch",
+    "ambiguous": "ambiguous",
+    "other_tag": "other tag",
+}
+# The outcomes of a ``race`` item that get a line of their own.
+_REPORTED_RACE = ("not_stored", "mismatch", "ambiguous")
+# ``startTimeGMT`` as Connect lists it: a date and a time to the second, a fraction and a zone optional.
+_GMT_FORM = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})?"
+)
+
+
+class TagsStop(Exception):
+    """Reading or sending race tags cannot go on; ``str(exc)`` is the message to print, its last
+    line the one recovery command when there is one. ``lines`` is the report so far, printed
+    before it (empty for a stop before anything was sent)."""
+
+    lines: tuple[str, ...] = ()
+
+
+@dataclass
+class TagEntry:
+    """One listed activity the tags step handled.
+
+    ``item`` is what is sent to ``PUT /race-tags``, or ``None`` for an activity that is skipped
+    (its summary, ``eventType`` or ``startTimeGMT`` could not be read), with ``reason`` saying why.
+    ``local`` is the summary's local start, ``None`` only when it could not be read. ``outcome``,
+    ``session_id`` and ``candidates`` are the API's answer, once its batch has been answered.
+    """
+
+    label: str
+    local: datetime | None
+    item: dict[str, Any] | None = None
+    reason: str = ""
+    start_utc: datetime | None = None
+    outcome: str | None = None
+    session_id: str | None = None
+    candidates: list[str] | None = None
+
+
+def _finite_number(value: Any) -> float | int | None:
+    """``value`` when it is a finite number (not a bool), else ``None`` (sent as null)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def _read_gmt(value: Any) -> datetime:
+    """``startTimeGMT`` as an aware UTC datetime to the second; raises ``ValueError`` naming it.
+
+    A value with no zone is UTC, as Connect lists it. A date alone, or a time with a fraction of a
+    second, is refused: the API matches a stored run's start to the second.
+    """
+    if not isinstance(value, str) or not _GMT_FORM.fullmatch(value):
+        raise ValueError(f"startTimeGMT {value!r} is missing or not a date and time")
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"startTimeGMT {value!r} is not a date and time") from None
+    if when.microsecond:
+        raise ValueError(f"startTimeGMT {value!r} has a fraction of a second")
+    if when.tzinfo is None:
+        return when.replace(tzinfo=UTC)
+    return when.astimezone(UTC)
+
+
+def _event_race(summary: dict[str, Any]) -> bool:
+    """True when the summary's ``eventType.typeKey`` is ``race``; raises ``TypeError`` when the
+    event type is missing, null or has no ``typeKey`` text (never read as not-race)."""
+    event = summary.get("eventType")
+    key = event.get("typeKey") if isinstance(event, dict) else None
+    if not isinstance(key, str):
+        raise TypeError(f"eventType {event!r} is missing or has no typeKey")
+    return key == RACE_EVENT
+
+
+def tag_entries(listed: Any, start: date, end: date) -> tuple[list[TagEntry], list[TagEntry]]:
+    """``(to_send, skipped)`` for a Connect listing covering ``start`` to ``end``.
+
+    The fetched-type, non-manual activities whose local start falls in the range (the listing is
+    not trusted to filter), each once by ``activityId`` (the first listed wins), sorted oldest
+    first by UTC start then id. A summary that cannot be read, or whose ``eventType`` or
+    ``startTimeGMT`` cannot, is skipped and never sent, so a listing hiccup cannot clear a tag.
+    """
+    if not isinstance(listed, list):
+        raise TagsStop(f"Garmin's activity list could not be understood\n{_tags_not_read(start)}")
+    to_send: list[TagEntry] = []
+    skipped: list[TagEntry] = []
+    seen: set[int] = set()
+    for summary in listed:
+        label = f"activity {_describe(summary)}"
+        try:
+            activity_id, local, activity_type = _read_summary(summary)
+        except (TypeError, ValueError) as exc:
+            local_text = summary.get("startTimeLocal") if isinstance(summary, dict) else None
+            try:
+                local = datetime.fromisoformat(local_text) if isinstance(local_text, str) else None
+            except ValueError:
+                local = None
+            skipped.append(TagEntry(label=label, local=local, reason=f"unreadable summary: {exc}"))
+            continue
+        if not _is_fetched_type(activity_type) or summary.get("manualActivity") is True:
+            continue
+        if not start <= local.date() <= end or activity_id in seen:
+            continue
+        seen.add(activity_id)
+        try:
+            race = _event_race(summary)
+            start_utc = _read_gmt(summary.get("startTimeGMT"))
+        except (TypeError, ValueError) as exc:
+            skipped.append(TagEntry(label=label, local=local, reason=str(exc)))
+            continue
+        item = {
+            "connect_activity_id": activity_id,
+            "start_time": start_utc.replace(tzinfo=None).isoformat(timespec="seconds") + "Z",
+            "distance_m": _finite_number(summary.get("distance")),
+            "duration_s": _finite_number(summary.get("duration")),
+            "race": race,
+        }
+        to_send.append(TagEntry(label=label, local=local, item=item, start_utc=start_utc))
+    to_send.sort(key=lambda entry: (entry.start_utc, entry.item["connect_activity_id"]))  # type: ignore[index]
+    return to_send, skipped
+
+
+def _tags_not_read(start: date) -> str:
+    return f"Race tags not read: run runcoach sync tags --since {start.isoformat()}"
+
+
+def _tags_stopped(day: date) -> str:
+    return f"Race tags stopped at {day.isoformat()}: run runcoach sync tags --since {day.isoformat()}"
+
+
+def tags_garmin_stop(exc: garmin.GarminError, start: date) -> TagsStop:
+    """The stop for a Garmin error before race tags were read: the login message alone, or the
+    error's reason without F022's recovery command, then the one ``sync tags`` command."""
+    if isinstance(exc, garmin.LoginNeeded):
+        return TagsStop(LOGIN_NEEDED)
+    return TagsStop(f"{_garmin_reason(exc)}\n{_tags_not_read(start)}")
+
+
+def read_tags_openapi(api_url: str, start: date) -> Any:
+    """The served ``/openapi.json``, checked to list ``setRaceTags``, or raise ``TagsStop``."""
+    try:
+        resp = api_client.get_openapi(api_url)
+    except api_client.ApiUnreachableError:
+        raise TagsStop(
+            f"could not reach API at {api_url}: start it with `runcoach-api`\n{_tags_not_read(start)}"
+        ) from None
+    doc = _body(resp) if resp.status_code == 200 else None
+    check_race_tags(doc)
+    return doc
+
+
+def check_race_tags(doc: Any) -> None:
+    """Raise ``TagsStop`` unless the served document lists ``setRaceTags`` (its presence only)."""
+    if _find_operation(doc, RACE_TAGS_OPERATION) is None:
+        raise TagsStop(OLD_API_TAGS)
+
+
+def _apply_answers(batch: list[TagEntry], resp: httpx.Response) -> bool:
+    """Record a 200 reply's outcomes on ``batch``; False when the reply does not answer it item by item."""
+    body = _body(resp)
+    answers = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(answers, list) or len(answers) != len(batch):
+        return False
+    parsed = []
+    for entry, answer in zip(batch, answers, strict=True):
+        if (
+            not isinstance(answer, dict)
+            or answer.get("connect_activity_id") != entry.item["connect_activity_id"]  # type: ignore[index]
+            or answer.get("outcome") not in TAG_OUTCOMES
+        ):
+            return False
+        session_id = answer.get("session_id")
+        candidates = answer.get("candidates")
+        parsed.append(
+            (
+                answer["outcome"],
+                str(session_id) if session_id is not None else None,
+                [str(c) for c in candidates] if isinstance(candidates, list) else [],
+            )
+        )
+    for entry, (outcome, session_id, candidates) in zip(batch, parsed, strict=True):
+        entry.outcome, entry.session_id, entry.candidates = outcome, session_id, candidates
+    return True
+
+
+def send_tags(api_url: str, to_send: list[TagEntry]) -> None:
+    """Send ``to_send`` in batches of ``RACE_TAGS_BATCH``, oldest first, recording each answer.
+
+    No items, no request. An unreachable API or a reply that is not a 200 answering every item of
+    a batch stops: the earlier batches stand, no later one is sent, and the ``TagsStop`` names the
+    first local day of the batch it stopped on.
+    """
+    for first in range(0, len(to_send), RACE_TAGS_BATCH):
+        batch = to_send[first : first + RACE_TAGS_BATCH]
+        day = batch[0].local.date()  # type: ignore[union-attr]
+        try:
+            resp = api_client.put_race_tags(api_url, [entry.item for entry in batch])  # type: ignore[misc]
+        except api_client.ApiUnreachableError as exc:
+            if isinstance(exc.__cause__, httpx.ReadTimeout):
+                reason = (
+                    f"the API at {api_url} did not answer within {api_client.LIST_TIMEOUT:g} s "
+                    "while matching race tags"
+                )
+            else:
+                reason = f"could not reach API at {api_url}: start it with `runcoach-api`"
+            raise TagsStop(f"{reason}\n{_tags_stopped(day)}") from None
+        if resp.status_code != 200:
+            raise TagsStop(f"{sessions._printable(_reply_detail(resp))}\n{_tags_stopped(day)}")
+        if not _apply_answers(batch, resp):
+            raise TagsStop(
+                f"the API's answer to race tags could not be understood: "
+                f"{sessions._printable(resp.text[:_DETAIL_CHARS])}\n{_tags_stopped(day)}"
+            )
+
+
+def tags_report_lines(to_send: list[TagEntry], skipped: list[TagEntry]) -> list[str]:
+    """The counts line, then one line per ``race`` item not stored, mismatched or ambiguous and per
+    skipped activity, naming the Connect activity, its local start and any session ids. Items not
+    yet answered (after a stop) are not counted."""
+    printable = sessions._printable
+    counts = dict.fromkeys(TAG_OUTCOMES, 0)
+    for entry in to_send:
+        if entry.outcome is not None:
+            counts[entry.outcome] += 1
+    words = [f"{TAG_OUTCOMES[key]} {n}" for key, n in counts.items()] + [f"skipped {len(skipped)}"]
+    lines = [f"Race tags: {', '.join(words)}"]
+
+    def where(entry: TagEntry) -> str:
+        local = entry.local.isoformat(sep=" ") if entry.local is not None else "start unknown"
+        return f"{printable(entry.label)}, {local}"
+
+    for entry in to_send:
+        if entry.outcome not in _REPORTED_RACE or not entry.item or entry.item["race"] is not True:
+            continue
+        line = f"Race {TAG_OUTCOMES[entry.outcome]}: {where(entry)}"  # type: ignore[index]
+        ids = (
+            entry.candidates
+            if entry.outcome == "ambiguous"
+            else ([entry.session_id] if entry.session_id else [])
+        )
+        if ids:
+            line += f", {'session' if len(ids) == 1 else 'sessions'} {', '.join(printable(i) for i in ids)}"
+        lines.append(line)
+    for entry in skipped:
+        lines.append(f"Skipped: {where(entry)}, {printable(entry.reason)}")
+    return lines
+
+
+def run_tags(client: garmin.GarminClient, api_url: str, start: date, end: date) -> list[str]:
+    """List Connect activities for ``start`` to ``end``, send their race tags and return the report
+    lines. Downloads nothing; never reads or writes the sync state. The caller has checked the API
+    lists ``setRaceTags`` (``read_tags_openapi`` or ``check_race_tags``).
+
+    A ``TagsStop`` after the listing carries the report so far as ``lines``.
+    """
+    try:
+        listed = client.list_activities(start, end)
+    except garmin.GarminError as exc:
+        raise tags_garmin_stop(exc, start) from None
+    to_send, skipped = tag_entries(listed, start, end)
+    try:
+        send_tags(api_url, to_send)
+    except TagsStop as exc:
+        exc.lines = tuple(tags_report_lines(to_send, skipped))
+        raise
+    return tags_report_lines(to_send, skipped)
+
+
 @sync_app.callback()
 def sync(
     ctx: typer.Context,
@@ -914,6 +1231,11 @@ def sync(
         help="Start the range on this day instead of the day before the newest stored run or capture.",
     ),
 ) -> None:
+    if ctx.invoked_subcommand == "tags" and since is not None:
+        raise typer.BadParameter(
+            "the tags command takes its own date: run `runcoach sync tags --since YYYY-MM-DD`",
+            param_hint="'--since'",
+        )
     if ctx.invoked_subcommand is not None:
         return
     _require_library()
@@ -954,6 +1276,39 @@ def _save_state(state: SyncState) -> None:
     warning = write_state(state)
     if warning is not None:
         typer.echo(warning, err=True)
+
+
+@sync_app.command(name="tags")
+def tags(
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        metavar="YYYY-MM-DD",
+        help="Read tags from this day instead of 29 days before today (2016-01-01 reads them all).",
+    ),
+) -> None:
+    """Read race tags from Garmin Connect for stored runs; lists activities, downloads nothing.
+
+    An activity whose event type is Race in Connect marks the stored run it matches as a race; any
+    other event type clears a race tag. The sync state is not read or written.
+    """
+    _require_library()
+    end = today()
+    start = _parse_since(since, end) if since is not None else end - timedelta(days=TAGS_DAYS - 1)
+    cfg = config.load_config()
+    _write_utf8(f"From {start.isoformat()} to {end.isoformat()}")
+    try:
+        read_tags_openapi(cfg.api_url, start)
+        try:
+            client = _adapter().open_client()
+        except garmin.GarminError as exc:
+            raise tags_garmin_stop(exc, start) from None
+        lines = run_tags(client, cfg.api_url, start, end)
+    except TagsStop as exc:
+        if exc.lines:
+            _write_utf8("\n".join(exc.lines))
+        raise _fail(str(exc)) from None
+    _write_utf8("\n".join(lines))
 
 
 @sync_app.command(name="login")

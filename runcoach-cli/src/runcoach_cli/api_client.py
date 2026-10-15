@@ -251,3 +251,17 @@ def get_openapi(base_url: str) -> httpx.Response:
         return client.get(f"{base_url}/openapi.json", timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
+
+
+def put_race_tags(base_url: str, items: list[dict]) -> httpx.Response:
+    """Send ``items`` as ``{"items": items}``, the JSON body of PUT {base_url}/race-tags, and return
+    the raw response.
+
+    The API matches up to 500 items against the stored sessions in one call, so the call gets the
+    list call's timeout. The items are sent as given; the API validates them. Only network-layer
+    failures (timeouts included) are translated into ApiUnreachableError.
+    """
+    try:
+        return client.put(f"{base_url}/race-tags", json={"items": items}, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
