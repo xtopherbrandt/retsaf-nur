@@ -361,6 +361,35 @@ def test_both_flags_name_distance_regressed() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Section 2 row 4: GAP pace unavailable
+# ---------------------------------------------------------------------------
+
+
+def _store_without_distance(start: datetime) -> str:
+    """An in-band race whose 1801 one-second records hold distance 0 and speed 0 throughout, so F013
+    serves ``gap_avg_pace_s_per_km`` null with ``no_distance`` and raises no flag of its own."""
+    records = [
+        Record(t=float(t), distance=0.0, speed=0.0, altitude=100.0, heart_rate=150.0) for t in range(1801)
+    ]
+    race = _store(start, records=records)
+    with TestClient(app) as client:
+        features = _features(client, race)
+    gap = features["features"]["gap_avg_pace_s_per_km"]
+    print(f"  no distance {race}: gap {gap}; flags {features['flags']}")
+    assert gap == {"value": None, "unavailable": "no_distance"}
+    assert features["flags"] == []
+    return race
+
+
+def test_null_gap_pace_excludes() -> None:
+    """A race F013 serves with a null GAP pace is excluded ``gap_pace_unavailable``. Only the null
+    row of section 2 row 4 is reachable end to end: F013's ``_pace`` gives a positive finite value
+    or null, never 0, a negative, NaN or an infinity, so those values are pinned by the estimator's
+    own unit tests, not here."""
+    _assert_excluded_changes_nothing(lambda: _store_without_distance(RACE_START), "gap_pace_unavailable")
+
+
+# ---------------------------------------------------------------------------
 # What does not exclude: degraded GPS, no altitude, GAP coverage 0
 # ---------------------------------------------------------------------------
 
