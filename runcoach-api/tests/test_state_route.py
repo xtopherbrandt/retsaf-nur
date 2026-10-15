@@ -238,6 +238,45 @@ def test_only_a_flagged_race_is_unavailable() -> None:
     ]
 
 
+def _store_regressing(start: datetime, *, flags: list[str]) -> str:
+    """An in-band race whose records hold one 1 s segment where distance goes down.
+
+    F013's ``build_time_base`` marks a sampled segment (0 < dt <= 5 s) with a negative distance
+    step as regressed, so ``compute_session_features`` reports ``distance_regressed`` from these
+    records whatever the stored ``quality_flags`` say.
+    """
+    race = _store(start, flags=flags)
+    conn = db_module.get_connection()
+    try:
+        moved = conn.execute(
+            "UPDATE records SET distance = distance - 10.0 WHERE session_id = ? AND t = 900.0", (race,)
+        ).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    assert moved == 1, "the regressing record must exist"
+    return race
+
+
+def test_a_smart_recording_race_whose_records_regress_reads_distance_regressed() -> None:
+    """The stored ``smart_recording`` is never a short-cut: ``distance_regressed`` comes from the
+    records and is first in the reason order (reference section 2 row 3)."""
+    race = _store_regressing(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), flags=["smart_recording"])
+    with TestClient(app) as client:
+        determinant = _ftp(_ok(client))
+    _assert_no_qualifying_effort(determinant)
+    assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == [(race, "distance_regressed")]
+
+
+def test_an_unflagged_race_whose_records_regress_reads_distance_regressed() -> None:
+    """No stored flag at all: the exclusion can only come from F013's flags computed from records."""
+    race = _store_regressing(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), flags=[])
+    with TestClient(app) as client:
+        determinant = _ftp(_ok(client))
+    _assert_no_qualifying_effort(determinant)
+    assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == [(race, "distance_regressed")]
+
+
 # ---------------------------------------------------------------------------
 # AC2: the worked example through the route
 # ---------------------------------------------------------------------------
