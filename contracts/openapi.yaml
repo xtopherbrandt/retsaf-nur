@@ -75,7 +75,7 @@ tags:
   - name: Subjective
     description: "Session-RPE, wellness, pain reports. x-readiness: planned. Owner: research/03, routed per spec/08 §8.4."
   - name: State & Metrics
-    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
+    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getState (GET /state, threshold pace only), getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
   - name: Decisions & Changes
     description: "Decision log (explainability) + apply-and-notify change feed. x-readiness: planned. Owner: spec/09, spec/06 §6.8."
   - name: Coach
@@ -857,15 +857,34 @@ paths:
       tags: [State & Metrics]
       operationId: getState
       summary: Physiological state model + gap-to-goal, each with confidence
-      x-readiness: planned
-      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal)"
+      x-readiness: implemented
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15)"
       x-story: [view-state]
+      description: >
+        Computed on read from the tagged races; nothing is stored or written. Only
+        `functional_threshold_pace` is served (F024): one determinant, with its 80 % interval,
+        its confidence and the races it was computed from. `readiness` and `gap_to_goal` are
+        null; the other determinants are absent.
+      parameters:
+        - name: as_of
+          in: query
+          required: false
+          description: >
+            The instant to estimate at; default now. An ISO 8601 extended-form date-time with a
+            zone, at or before now; or a `YYYY-MM-DD` date, meaning the last instant before the
+            next local midnight in `athlete_timezone`, clamped to now (so today is accepted). A
+            date after today in `athlete_timezone`, a naive or future date-time, a basic or
+            week-form date (`20261014`, `2026-W42-3`) and an unparseable value are 422.
+          schema: { type: string }
       responses:
         "200":
           description: Current state estimate
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StateModel" }
+        "422":
+          description: "`as_of` refused, as a query validation error on `as_of` (FastAPI-default {detail})"
+          content: { application/json: { schema: { type: object } } }
 
   /metrics/hrv:
     get:
@@ -1783,12 +1802,15 @@ components:
         overnight_settle: { type: boolean, nullable: true }
         weekly_trend: { type: string, enum: [improving, stable, worsening], nullable: true }
 
-    # ---- State & metrics (planned) --------------------------------------
+    # ---- State & metrics -------------------------------------------------
     StateModel:
       type: object
       description: "Owned determinant profile with confidence + gap-to-goal (spec/04)."
       properties:
-        as_of: { type: string }
+        as_of: { type: string, format: date-time, description: "The instant the estimate is for (UTC)." }
+        timezone:
+          type: string
+          description: "The configured `athlete_timezone`, which an `as_of` date was read in; dates print in it."
         determinants:
           type: array
           items: { $ref: "#/components/schemas/Determinant" }
@@ -1798,16 +1820,55 @@ components:
           properties:
             verdict: { type: string, enum: [ready, caution, back_off], nullable: true }
             confidence: { type: string, enum: [low, medium, high], nullable: true }
-        gap_to_goal: { $ref: "#/components/schemas/GapToGoal" }
+        gap_to_goal:
+          allOf: [{ $ref: "#/components/schemas/GapToGoal" }]
+          nullable: true
+          description: "Null while no goal is modelled."
 
     Determinant:
       type: object
+      description: >
+        One determinant with its estimate and trend. Only `functional_threshold_pace` is served
+        (F024); the other names are planned. Beside the estimate, the served entry carries what
+        reproduces it by hand (research/00 PRIN-12): `error`, `short_races_only`, the races used
+        (`efforts`), the tagged races not used (`excluded`) and the constants (`parameters`).
+        Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
+      required: [name, estimate, unavailable, trend, error, short_races_only, efforts, excluded, parameters]
       properties:
         name:
           type: string
           enum: [critical_speed, d_prime, vvo2max, functional_threshold_pace, running_economy, durability, riegel_exponent]
-        estimate: { $ref: "#/components/schemas/ConfidenceValue" }
+        estimate:
+          allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
+          nullable: true
+          description: "Threshold pace in s/km with its 80 % interval (fast end `low`); null when `unavailable` is set."
+        unavailable:
+          type: string
+          enum: [no_qualifying_effort, estimate_not_finite]
+          nullable: true
+          description: >
+            Null with an estimate. `no_qualifying_effort` before the first qualifying race;
+            `estimate_not_finite` when a race's GAP pace is so far out of range that the estimate
+            overflows: `estimate` and `error` are null and `short_races_only` false, while
+            `efforts` (each with its GAP pace and gain) and `parameters` are still served, so
+            the race can be found.
         trend: { $ref: "#/components/schemas/Trend" }
+        error:
+          type: number
+          nullable: true
+          description: "sqrt(P) as a fraction of speed (0.025 is 2.5 %); null when unavailable."
+        short_races_only:
+          type: boolean
+          description: "Every race used lasted under 1800 s, so the pace likely reads fast; false when unavailable."
+        efforts:
+          type: array
+          description: "The races used, in start-time order."
+          items: { $ref: "#/components/schemas/ThresholdEffort" }
+        excluded:
+          type: array
+          description: "Every tagged running race at or before `as_of` not used, in start-time order."
+          items: { $ref: "#/components/schemas/ThresholdExclusion" }
+        parameters: { $ref: "#/components/schemas/ThresholdPaceParameters" }
 
     HrvTrend:
       type: object
@@ -3089,3 +3150,40 @@ components:
           items: { $ref: "#/components/schemas/RaceTagItemResult" }
           description: "One per request item, in request order."
         counts: { $ref: "#/components/schemas/RaceTagCounts" }
+    ThresholdEffort:
+      type: object
+      description: "getState: a tagged race the threshold estimate used, with the gain it entered with (1 for the first)."
+      required: [session_id, start_time, duration_s, gap_pace_s_per_km, gap_coverage, gps_degraded_fraction, gain]
+      properties:
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        duration_s: { type: number, description: "`timer_time_s`, else the summary's `duration_s`." }
+        gap_pace_s_per_km: { type: number, description: "F013's grade-adjusted pace of the race." }
+        gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance; below 1 counts at flat pace." }
+        gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance; shown, never judged." }
+        gain: { type: number }
+    ThresholdExclusion:
+      type: object
+      description: "getState: a tagged running race at or before `as_of` that the threshold estimate did not use, and why."
+      required: [session_id, start_time, reason]
+      properties:
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        reason:
+          type: string
+          enum: [outside_threshold_band, distance_regressed, smart_recording, gap_pace_unavailable, summary_unreadable, quality_flags_unreadable, features_unavailable]
+          description: >
+            The first of the F024 reference's section 2 rows the race fails; or, when a stored
+            value the reader needs does not read, `summary_unreadable`, `quality_flags_unreadable`
+            or `features_unavailable`.
+    ThresholdPaceParameters:
+      type: object
+      description: "getState: the constants the threshold estimate was computed with, so it can be redone by hand."
+      required: [typical_error, doubling_days, coverage, high_max_error, medium_max_error, short_race_s]
+      properties:
+        typical_error: { type: number }
+        doubling_days: { type: integer }
+        coverage: { type: number }
+        high_max_error: { type: number }
+        medium_max_error: { type: number }
+        short_race_s: { type: integer }

@@ -1604,8 +1604,8 @@ def _threshold_determinant(
     could not read merged into ``excluded`` (those at or before ``as_of``, in start-time order).
 
     An estimate with a non-finite published number (a finite but absurd GAP pace overflows the
-    interval) is served as ``estimate_not_finite`` with every number null, never as a value JSON
-    cannot carry; ``efforts`` still lists the races used, so the athlete can find the one."""
+    interval) is served as ``estimate_not_finite`` with ``estimate`` and ``error`` null, never as a value JSON
+    cannot carry; ``efforts`` (with GAP pace and gain) and ``parameters`` stay, so the race can be found."""
     excluded = [
         {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason} for e in result.excluded
     ]
