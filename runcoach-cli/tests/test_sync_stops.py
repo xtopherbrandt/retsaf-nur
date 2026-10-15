@@ -436,28 +436,35 @@ def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fak
 
 
 @pytest.mark.parametrize(
-    "doc",
+    ("status", "doc"),
     [
-        {"paths": {}},
-        {"paths": {"/sessions": {"post": {"operationId": "ingestSession"}}}},
-        [],
-        {
-            "paths": {
-                "/sessions": {
-                    "post": {
-                        "requestBody": {
-                            "content": {
-                                "multipart/form-data": {"schema": {"$ref": "#/components/schemas/Missing"}}
+        (200, {"paths": {}}),
+        (200, {"paths": {"/sessions": {"post": {"operationId": "ingestSession"}}}}),
+        (200, []),
+        (
+            200,
+            {
+                "paths": {
+                    "/sessions": {
+                        "post": {
+                            "requestBody": {
+                                "content": {
+                                    "multipart/form-data": {"schema": {"$ref": "#/components/schemas/Missing"}}
+                                }
                             }
                         }
                     }
                 }
-            }
-        },
+            },
+        ),
+        # A non-200 answer is not read, even when its body lists the switch and setRaceTags.
+        (503, openapi_doc()),
     ],
 )
-def test_an_unreadable_openapi_document_stops_before_any_upload(env, doc, fake_garmin, fake_api) -> None:
-    api = env(fake_garmin(), fake_api(doc=doc))
+def test_an_unreadable_openapi_document_stops_before_any_upload(
+    env, status, doc, fake_garmin, fake_api
+) -> None:
+    api = env(fake_garmin(), fake_api(doc=doc, doc_status=status))
 
     result = _sync("--since", "2026-10-10")
 

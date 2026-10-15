@@ -291,6 +291,34 @@ def test_tags_failure_leaves_state_file_as_uploads_left_it(
             assert api.tag_batches == [], name
 
 
+@pytest.mark.parametrize("failure", [500, "unreachable"])
+def test_batch_stop_keeps_earlier_batches_through_sync(
+    env, fake_garmin, fake_api, fresh_sync_state: Path, monkeypatch: pytest.MonkeyPatch, failure: int | str
+) -> None:
+    """Batches of one: the first batch is answered and its count printed, the second fails (an API
+    error or an unreachable API), so the stop names the second batch's first day and no later batch
+    is sent. The counts line sits between the upload summary and the stop line; the state file is
+    as the uploads left it."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 1)
+    second_day = WINDOW_START + timedelta(days=1)
+    fake = fake_garmin([_activity(913, WINDOW_START, race=True), _activity(914, second_day, race=True)])
+    api = env(
+        fake,
+        fake_api(pages=RECENT_STORE, tag_outcomes={913: "tagged"}, fail_tags=failure, fail_tags_on=2),
+    )
+
+    result = _sync()
+
+    assert result.exit_code == 1, result.output
+    assert api.calls.count("PUT /race-tags") == 2
+    sent_ids = [[item["connect_activity_id"] for item in batch] for batch in api.tag_batches]
+    assert sent_ids == ([[913], [914]] if failure == 500 else [[913]])
+    lines = result.output.splitlines()
+    assert lines[-1] == f"Race tags stopped at {second_day.isoformat()}: run runcoach sync tags --since {second_day.isoformat()}"
+    assert lines.index("Stored: 0") < lines.index(_counts(tagged=1)) < len(lines) - 1
+    assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}
+
+
 def _switch_only_doc() -> dict[str, Any]:
     """``/openapi.json`` of an API that has the upload switch but not ``setRaceTags``."""
     return {

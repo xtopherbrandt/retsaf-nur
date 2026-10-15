@@ -424,7 +424,9 @@ class FakeApi:
     answers every item with ``tag_outcomes[connect_activity_id]`` (default ``unchanged``): an
     outcome, an ``(outcome, session_id, candidates)`` tuple, or a callable taking the item and
     returning either. ``fail_tags`` answers every ``PUT`` with that status instead (after recording
-    the batch), or, as ``"unreachable"``, makes it a connect error.
+    the batch), or, as ``"unreachable"``, makes it a connect error; with ``fail_tags_on=n`` only
+    the n-th ``PUT`` fails so, and the others are answered as above. ``doc_status`` is the status
+    ``GET /openapi.json`` answers ``doc`` with (default 200).
     ``requests`` holds every request; ``calls`` the same as ``"<method> <path>"``.
     """
 
@@ -440,10 +442,15 @@ class FakeApi:
         check: Callable[[bytes], None] | None = None,
         tag_outcomes: dict[int, Any] | None = None,
         fail_tags: int | str | None = None,
+        fail_tags_on: int | None = None,
+        doc_status: int = 200,
     ) -> None:
         self.reply = reply
         self.tag_outcomes = tag_outcomes or {}
         self.fail_tags = fail_tags
+        self.fail_tags_on = fail_tags_on
+        self.tag_puts = 0
+        self.doc_status = doc_status
         self.tag_batches: list[list[dict[str, Any]]] = []
         self.replies = replies or {}
         self.doc = doc
@@ -468,7 +475,7 @@ class FakeApi:
             next_cursor = f"cursor-{index + 1}" if index + 1 < len(self.pages) else None
             return httpx.Response(200, json={"items": self.pages[index], "next_cursor": next_cursor})
         if request.method == "GET" and request.url.path == "/openapi.json" and self.doc is not None:
-            return httpx.Response(200, json=self.doc)
+            return httpx.Response(self.doc_status, json=self.doc)
         if request.method == "POST" and request.url.path == "/sessions" and self.accept_uploads:
             if self.unreachable_on_upload == len(self.uploads) + 1:
                 raise httpx.ConnectError("connection refused", request=request)
@@ -499,11 +506,13 @@ class FakeApi:
         return [item for batch in self.tag_batches for item in batch]
 
     def _race_tags(self, request: httpx.Request) -> httpx.Response:
-        if self.fail_tags == "unreachable":
+        self.tag_puts += 1
+        failing = self.fail_tags is not None and self.fail_tags_on in (None, self.tag_puts)
+        if failing and self.fail_tags == "unreachable":
             raise httpx.ConnectError("connection refused", request=request)
         items = json.loads(request.read())["items"]
         self.tag_batches.append(items)
-        if self.fail_tags is not None:
+        if failing:
             return httpx.Response(int(self.fail_tags), json={"detail": "the store is busy"})
         answers = []
         for item in items:
