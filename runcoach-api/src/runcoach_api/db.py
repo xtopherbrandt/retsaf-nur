@@ -1823,7 +1823,9 @@ def read_threshold_race_rows(conn: sqlite3.Connection) -> tuple[list[dict], list
     ``reason`` for each race a stored value it needs does not read: ``summary_unreadable`` (the
     timer is null and the summary is not a JSON object), ``quality_flags_unreadable`` (not a JSON
     list) or ``features_unavailable`` (its feature inputs or records raise). Those races are
-    excluded with that reason, so stored data never fails the read. Read-only: the reads share
+    excluded with that reason, so none of those three fails the read. A stored ``start_time`` is
+    trusted, as the ingest writes it with its offset: a naive or unparseable one, which only a
+    write from outside the API could leave, raises in the estimator. Read-only: the reads share
     one deferred transaction, rolled back, so the rows are one snapshot.
     """
     conn.execute("BEGIN")

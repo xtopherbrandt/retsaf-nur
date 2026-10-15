@@ -1651,8 +1651,11 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     "as_of")``, as ``list_sessions`` raises its cursor check. ``db.read_threshold_race_rows``
     reads the tagged races (records only for those in the duration band) and
     ``metrics.threshold_pace.estimate`` replays them to the instant, recomputed on every
-    request. Stored data never fails the read: a race whose stored values do not read is
-    excluded with its reason. ``readiness`` and ``gap_to_goal`` are null. Nothing is written.
+    request. A race whose summary, quality flags or feature inputs do not read is excluded with
+    its reason (``summary_unreadable``, ``quality_flags_unreadable``, ``features_unavailable``)
+    rather than failing the read. A stored ``start_time`` is trusted, as the ingest writes it with
+    its offset; a naive or unparseable one, which only a write from outside the API could leave,
+    fails the read. ``readiness`` and ``gap_to_goal`` are null. Nothing is written.
     """
     zone = ZoneInfo(db._load_config_cached().athlete_timezone)
     try:
