@@ -1699,3 +1699,66 @@ def recompute_session_load(
         raise
     conn.commit()
     return old_body, new_body
+
+
+# ---------------------------------------------------------------------------
+# F023: race tags read from Garmin Connect (AC2, AC3)
+#
+# Appended at the end so the lines cited above stay in place. The rule lives in
+# ``race_tags``; this reads its candidate rows and writes its decisions.
+# ---------------------------------------------------------------------------
+from runcoach_api import race_tags as _race_tags
+
+
+def _write_race_tag(conn: sqlite3.Connection, session_id: str, tag: str | None) -> None:
+    """Set one session's ``activity_tag``; the only column a race-tag apply writes."""
+    conn.execute("UPDATE sessions SET activity_tag = ? WHERE session_id = ?", (tag, session_id))
+
+
+def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[dict]:
+    """Match Connect race items to stored runs and write the tags they decide (F023 AC2, AC3).
+
+    ``items`` are ``race_tags`` items (``connect_activity_id``, ``start_time``, ``distance_m``,
+    ``duration_s``, ``race``), already validated by the caller. Returns one dict per item, in
+    request order: ``connect_activity_id``, ``outcome``, ``session_id``, ``candidates`` (a list of
+    session ids).
+
+    Candidates are read with one ``SELECT`` over the items' start times (``Z`` normalised to
+    ``+00:00``): sport ``running`` and an ``activity_tag`` that is null or not one of
+    ``race_tags.RESTING_CAPTURE_TAGS`` (a bare ``NOT IN`` is null for an untagged row and would
+    drop it). Only ``sessions.activity_tag`` is written, and only for ``tagged`` and ``cleared``.
+    One ``BEGIN IMMEDIATE`` transaction holds the write lock from the read to the commit, so the
+    decisions are made and written from one snapshot; any fault rolls every write back and
+    propagates. The caller has run ``init_schema`` and holds no open transaction. An empty
+    ``items`` reads and writes nothing.
+    """
+    if not items:
+        return []
+    starts = sorted({_race_tags.normalise_start_time(item["start_time"]) for item in items})
+    capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
+    sql = (
+        "SELECT session_id, start_time, activity_tag, summary FROM sessions"
+        " WHERE sport = 'running'"
+        f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
+        f" AND start_time IN ({', '.join('?' * len(starts))})"
+    )
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        rows = [
+            {
+                "session_id": row["session_id"],
+                "start_time": row["start_time"],
+                "activity_tag": row["activity_tag"],
+                "summary": _json_load(row["summary"]),
+            }
+            for row in conn.execute(sql, (*capture_tags, *starts))
+        ]
+        decisions = _race_tags.decide(items, rows)
+        for decision in decisions:
+            if decision.write:
+                _write_race_tag(conn, decision.session_id, decision.new_tag)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return [decision.as_dict() for decision in decisions]
