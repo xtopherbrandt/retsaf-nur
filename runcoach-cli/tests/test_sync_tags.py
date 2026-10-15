@@ -387,6 +387,35 @@ def test_unparseable_start_is_skipped(env) -> None:
     )
 
 
+def test_a_number_the_api_would_refuse_is_sent_as_null(env) -> None:
+    """A negative distance or duration would 422 the whole batch (``RaceTagItem`` is ``ge=0``) and
+    every later one; it is sent as null, which never agrees, as are null, text and a bool."""
+    fake = TagsGarmin(
+        [
+            _summary(1, "2026-10-10 07:00:00", event="race", distance=-1.0),
+            _summary(2, "2026-10-10 08:00:00", event="race", duration=-5),
+            _summary(3, "2026-10-10 09:00:00", distance=None, duration=None),
+            _summary(4, "2026-10-10 10:00:00", distance="5000", duration="1500"),
+            _summary(5, "2026-10-10 11:00:00", distance=True, duration=False),
+            _summary(6, "2026-10-10 12:00:00", distance=0, duration=0.0),
+        ]
+    )
+    api = env(fake)
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert [(item["distance_m"], item["duration_s"]) for item in api.sent] == [
+        (None, 1500.0),
+        (5000.0, None),
+        (None, None),
+        (None, None),
+        (None, None),
+        (0, 0.0),
+    ]
+    assert _lines(result.output)[1] == _counts(unchanged=6)
+
+
 def test_duplicate_activity_ids_are_sent_once(env) -> None:
     race = _summary(101, "2026-10-10 07:00:00", event="race")
     fake = TagsGarmin([race, _summary(201, "2026-10-11 07:00:00"), dict(race), dict(race)])

@@ -1016,12 +1016,14 @@ class TagEntry:
 
 
 def _finite_number(value: Any) -> float | int | None:
-    """``value`` when it is a finite number (not a bool), else ``None`` (sent as null)."""
+    """``value`` when it is a finite number (not a bool) and not negative, else ``None`` (sent as
+    null, which never agrees). The API refuses a negative distance or duration, and with it the
+    whole batch, every sync while that activity is in the window."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     if isinstance(value, float) and not math.isfinite(value):
         return None
-    return value
+    return value if value >= 0 else None
 
 
 def _read_gmt(value: Any) -> datetime:
