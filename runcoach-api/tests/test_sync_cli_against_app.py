@@ -15,7 +15,9 @@ The files, by their rows in ``fixtures/README.md``'s provenance table: ``sample_
 an HRV capture on the HRV Snapshot profile; ``sample_health_snapshot`` is a health snapshot. The ski
 day is ``sample_run`` with its session sport patched to alpine skiing (13) and its timestamps moved,
 so it is a different file from the run rather than a duplicate of it. The four monitoring-type
-entries are one-message files built by ``support/import_archive.minimal_fit``.
+entries are one-message files built by ``support/import_archive.minimal_fit``. The race tag tests
+(F023) use ``sample_run`` and ``dev_fields_run``, two real runs (run proof yes) recorded on
+different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second.
 
 Resting HR is the observable input of the order tests: F021 borrows max and threshold HR from
 running files only, but resting HR from any stored file, so a snapshot stored before a run that
@@ -410,3 +412,172 @@ def test_uploaded_before_the_snapshot_the_run_recomputes_changed(
     after = _resting_input(client, run_id)
     print(f"resting input after the recompute: {after}")
     _assert_borrowed_from_snapshot(client, after, snapshot_id)
+
+
+# --- F023: race tags read from Connect's event type, end to end --------------------------------
+
+# Connect's own distance (m) and duration (s) for each run, to Connect's precision: the decoded
+# session values are 8325.91 m and 2816.667 s for ``sample_run``, 10021.48 m and 3117.009 s for
+# ``dev_fields_run``. Each agrees within 1 % with its own run only.
+SAMPLE_RUN_CONNECT = (8325.9, 2816.7)
+DEV_FIELDS_RUN_CONNECT = (10021.5, 3117.0)
+# ``sample_run`` starts 2026-09-01T12:34:21Z, before the default 30-day tags window of TODAY.
+SHARED_START_GMT = "2026-09-01 12:34:21"
+SHARED_START_LOCAL = "2026-09-01 14:34:21"
+SHARED_START_STORED = "2026-09-01T12:34:21+00:00"
+BACKFILL = ("sync", "tags", "--since", "2016-01-01")
+RACE = {"typeKey": "race", "typeId": 1}
+NOT_RACE = {"typeKey": "uncategorized", "typeId": 9}
+
+
+def _connect_run(
+    activity_id: int, local: str, gmt: str, measured: tuple[float, float], event: dict[str, Any]
+) -> dict[str, Any]:
+    """A listed Connect running activity with its UTC start, distance, duration and event type."""
+    distance, duration = measured
+    return {
+        "activityId": activity_id,
+        "activityName": f"activity {activity_id}",
+        "startTimeLocal": local,
+        "startTimeGMT": gmt,
+        "activityType": {"typeKey": "running", "typeId": 1, "parentTypeId": 17},
+        "eventType": dict(event),
+        "distance": distance,
+        "duration": duration,
+        "manualActivity": False,
+    }
+
+
+def _counts(**outcomes: int) -> str:
+    """The race tags counts line with the named outcomes set and every other count 0."""
+    words = {"tagged": 0, "cleared": 0, "unchanged": 0, "not_stored": 0, "mismatch": 0, "ambiguous": 0}
+    words.update(outcomes)
+    return (
+        f"Race tags: tagged {words['tagged']}, cleared {words['cleared']}, unchanged "
+        f"{words['unchanged']}, not stored {words['not_stored']}, mismatch {words['mismatch']}, "
+        f"ambiguous {words['ambiguous']}, other tag 0, skipped 0"
+    )
+
+
+def _upload(client: TestClient, name: str, data: bytes) -> str:
+    response = client.post(
+        "/sessions",
+        files={"file": (name, data, "application/octet-stream")},
+        data={"runs_and_captures_only": "true"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["session_id"]
+
+
+def _two_runs_at_one_second(client: TestClient) -> tuple[str, str]:
+    """Upload ``sample_run`` and ``dev_fields_run`` moved onto its first second; return their ids.
+
+    Both are stored as sport ``running`` with the same ``start_time``, so each Connect item at that
+    second has both as candidates and only distance and duration can tell them apart."""
+    sample = _fixture("sample_run")
+    dev = _fixture("dev_fields_run")
+    moved = fit_patch.shift_timestamps(dev, _start(sample) - _start(dev))
+    sample_id = _upload(client, "sample_run.fit", sample)
+    dev_id = _upload(client, "dev_fields_run.fit", moved)
+    rows = {row["session_id"]: row for row in _stored(client)}
+    assert {rows[sample_id]["start_time"], rows[dev_id]["start_time"]} == {SHARED_START_STORED}
+    assert (rows[sample_id]["sport"], rows[dev_id]["sport"]) == ("running", "running")
+    return sample_id, dev_id
+
+
+def _shared_second_listing(sample_event: dict[str, Any]) -> FakeGarmin:
+    """Connect lists both runs at the shared second, ``sample_run`` with ``sample_event``."""
+    return FakeGarmin(
+        [
+            _connect_run(501, SHARED_START_LOCAL, SHARED_START_GMT, SAMPLE_RUN_CONNECT, sample_event),
+            _connect_run(502, SHARED_START_LOCAL, SHARED_START_GMT, DEV_FIELDS_RUN_CONNECT, NOT_RACE),
+        ],
+        {},
+        {},
+    )
+
+
+def _tags(client: TestClient) -> dict[str, str | None]:
+    return {row["session_id"]: row.get("activity_tag") for row in _stored(client)}
+
+
+def test_of_two_real_runs_at_one_second_only_the_agreeing_one_is_tagged(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two real runs from two watches start on one second; Connect marks one of them a race with
+    its own distance and duration. Only that run is tagged, and ``GET /sessions`` shows it; the
+    other run's item agrees with the other run and leaves it untagged."""
+    client = cli_against_app
+    sample_id, dev_id = _two_runs_at_one_second(client)
+    fake = _shared_second_listing(RACE)
+    _serve(monkeypatch, fake)
+    result = _run(*BACKFILL)
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert _counts(tagged=1, unchanged=1) in lines
+    assert not any(line.startswith(("Race ambiguous", "Race mismatch")) for line in lines)
+    assert _tags(client) == {sample_id: "race", dev_id: None}
+    assert fake.downloads == []
+
+
+def test_sync_tags_backfill_tags_then_resend_is_unchanged(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backfill ``runcoach sync tags --since 2016-01-01`` reaches a run older than the default
+    30 days and tags it; sending the same listing again changes nothing."""
+    client = cli_against_app
+    sample_id, dev_id = _two_runs_at_one_second(client)
+    _serve(monkeypatch, _shared_second_listing(RACE))
+    default = _run("sync", "tags")
+    assert default.exit_code == 0, default.output
+    assert _counts() in default.output.splitlines()
+    assert _tags(client) == {sample_id: None, dev_id: None}
+    first = _run(*BACKFILL)
+    assert first.exit_code == 0, first.output
+    assert "From 2016-01-01 to 2026-10-12" in first.output.splitlines()
+    assert _counts(tagged=1, unchanged=1) in first.output.splitlines()
+    again = _run(*BACKFILL)
+    assert again.exit_code == 0, again.output
+    assert _counts(unchanged=2) in again.output.splitlines()
+    assert _tags(client) == {sample_id: "race", dev_id: None}
+
+
+def test_untagged_in_connect_clears_the_race_tag(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the race is un-marked in Connect, the next read clears the stored race tag."""
+    client = cli_against_app
+    sample_id, dev_id = _two_runs_at_one_second(client)
+    _serve(monkeypatch, _shared_second_listing(RACE))
+    assert _run(*BACKFILL).exit_code == 0
+    assert _tags(client) == {sample_id: "race", dev_id: None}
+    _serve(monkeypatch, _shared_second_listing(NOT_RACE))
+    result = _run(*BACKFILL)
+    assert result.exit_code == 0, result.output
+    assert _counts(cleared=1, unchanged=1) in result.output.splitlines()
+    assert _tags(client) == {sample_id: None, dev_id: None}
+
+
+def test_a_run_uploaded_and_tagged_in_one_sync(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``runcoach sync`` uploads a new race and its tags step, reusing the upload listing, tags it:
+    the run is stored and tagged by the one command."""
+    client = cli_against_app
+    run = fit_patch.shift_timestamps(_fixture("sample_run"), 40 * 86_400)  # 2026-10-11T12:34:21Z
+    fake = FakeGarmin(
+        [_connect_run(601, "2026-10-11 14:34:21", "2026-10-11 12:34:21", SAMPLE_RUN_CONNECT, RACE)],
+        {601: _zip([("601_ACTIVITY.fit", run)])},
+        {},
+    )
+    _serve(monkeypatch, fake)
+    result = _run("sync")
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert "Stored: 1" in lines
+    assert _counts(tagged=1) in lines
+    stored = _stored(client)
+    assert [(row["start_time"], row["activity_tag"]) for row in stored] == [
+        ("2026-10-11T12:34:21+00:00", "race")
+    ]
+    assert ("original", 601) in fake.downloads
