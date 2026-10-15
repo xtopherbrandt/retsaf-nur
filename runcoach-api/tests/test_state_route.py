@@ -556,6 +556,59 @@ def test_the_summary_duration_counts_when_the_timer_is_null() -> None:
     assert [(e["session_id"], e["duration_s"]) for e in determinant["efforts"]] == [(race, 2000.0)]
 
 
+def test_races_of_exactly_1200_s_and_3600_s_are_read_and_used() -> None:
+    """The band is closed at both ends in the reader's pre-filter, as in the estimator."""
+    short = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), duration_s=1200.0)
+    long = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), duration_s=3600.0)
+    with TestClient(app) as client:
+        determinant = _ftp(_ok(client))
+    assert [(e["session_id"], e["duration_s"]) for e in determinant["efforts"]] == [(short, 1200.0), (long, 3600.0)]
+    assert determinant["excluded"] == []
+
+
+def test_untagged_and_non_running_rows_are_never_read() -> None:
+    """Rows 1 of reference section 2 are SQL filters: an untagged running race and a tagged ride,
+    both in the band and both unreadable, appear nowhere, so neither was read."""
+    untagged = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), tag=None)
+    ride = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), sport="cycling")
+    with TestClient(app) as client:
+        _corrupt(untagged, "quality_flags", "not json")
+        _corrupt(ride, "quality_flags", "not json")
+        determinant = _ftp(_ok(client))
+    _assert_no_qualifying_effort(determinant)
+    assert determinant["excluded"] == []
+
+
+def test_a_date_time_with_an_offset_is_served_in_utc() -> None:
+    with TestClient(app) as client:
+        body = _ok(client, "2026-10-10T12:00:00+02:00")
+    assert body["as_of"] == "2026-10-10T10:00:00Z"
+
+
+def test_an_unreadable_race_after_as_of_is_not_excluded() -> None:
+    late = _store(datetime(2026, 9, 20, 7, 0, tzinfo=UTC))
+    with TestClient(app) as client:
+        _corrupt(late, "quality_flags", "not json")
+        determinant = _ftp(_ok(client, "2026-09-10T00:00:00+00:00"))
+        everything = _ftp(_ok(client))
+    assert determinant["excluded"] == []
+    assert [(e["session_id"], e["reason"]) for e in everything["excluded"]] == [(late, "quality_flags_unreadable")]
+
+
+def test_an_unreadable_race_is_merged_into_excluded_in_start_order() -> None:
+    first = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), duration_s=11400.0, with_records=False)
+    middle = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC))
+    last = _store(datetime(2026, 9, 20, 7, 0, tzinfo=UTC), duration_s=11400.0, with_records=False)
+    with TestClient(app) as client:
+        _corrupt(middle, "quality_flags", "not json")
+        determinant = _ftp(_ok(client))
+    assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == [
+        (first, "outside_threshold_band"),
+        (middle, "quality_flags_unreadable"),
+        (last, "outside_threshold_band"),
+    ]
+
+
 def test_a_finite_but_absurd_gap_pace_never_serves_a_non_finite_number(monkeypatch: pytest.MonkeyPatch) -> None:
     """A GAP pace of 1.7e308 s/km is finite and > 0, so it qualifies, and its interval's slow end
     overflows to infinity, which JSON cannot carry: the route serves no estimate instead."""
