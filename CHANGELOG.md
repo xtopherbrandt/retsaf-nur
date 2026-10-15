@@ -88,8 +88,14 @@ duration, GAP pace, gain, degraded-GPS share) and one per tagged race excluded, 
 (for example "not 20 to 60 minutes long"), with dates in the response's `timezone`. With no
 qualifying race it prints how to tag one (`Threshold pace unavailable: no tagged race of 20 to 60
 minutes. ...`); when the estimate is not finite it says a race's grade-adjusted pace is out of range
-and still lists the races used. Both exit 0; an unreachable API exits 1. `runcoach status` is
-unchanged; both help texts say what each shows.
+and still lists the races used. Both exit 0; an unreachable API exits 1. `runcoach status` behaves
+as before; both help texts say what each shows.
+
+Known issue: a race enters at the GAP pace and timer duration of its whole activity, so a warm-up and
+cool-down saved in the same activity as the race make the race read slow, and can push a race past
+3600 s and out of the band. On the athlete's store the 2026-09-30 race, about 6 km at 4:20-4:30/km
+between a 2.2 km warm-up with a stop and a 2 km cool-down, entered at 5:02/km and the estimate read
+5:01/km. Finding the raced part of an activity is IDEA-165.
 
 ## 2026-10-13 through 2026-10-14 — Sprint 017: Garmin Connect sync
 
