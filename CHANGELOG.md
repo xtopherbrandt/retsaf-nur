@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-15 — Sprint 018: Race tags and threshold pace
+
 ### Race tags from Garmin Connect
 
 F023: races are marked in Garmin Connect. Marking an activity's event type as Race in Connect, time
