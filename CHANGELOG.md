@@ -46,6 +46,51 @@ agrees only with a stored 0; a null never agrees. A run carrying another tag is 
 (`other_tag`). Only `activity_tag` is written, in one transaction; re-sending the same items reports
 what was tagged or cleared as `unchanged`.
 
+### Threshold pace from tagged races: `GET /state` and `runcoach state`
+
+F024: the system serves its first owned fitness estimate, functional threshold pace, from the races
+and time trials the athlete marks Race in Garmin Connect. A race qualifies when it is a running
+session tagged `race`, lasting 1200 to 3600 s (`timer_time_s`, else the summary duration), flagged
+neither `distance_regressed` nor `smart_recording`, with a finite GAP pace above zero. Degraded GPS
+excludes no race (its fraction is shown for each race used), and a race with no altitude counts at
+its flat pace.
+
+The qualifying races are replayed oldest first through spec/04's scalar Kalman filter, in log speed,
+with four constants the user ruled on 2026-10-14 (spec/04 section 4.3.4, `research/00` REG-31): a
+typical error of 2.5 % of speed for every race; an error that doubles over 42 days without a race;
+an 80 % interval; and a label that reads `high` while the error is no wider than one fresh race,
+`medium` until it has doubled, and `low` above. Before the first qualifying race there is no
+estimate: no population threshold pace is held, in tension with `research/00` IND-03 (IDEA-161).
+
+`GET /state` (operation `getState`, now `x-readiness: implemented` in `contracts/openapi.yaml`; a
+response validator in the tests checks served estimate and unavailable bodies against the
+contract's `Determinant` fields) serves one determinant, `functional_threshold_pace`: its pace in
+s/km with the 80 % interval (fast end first) and label, `error`, every race used (`efforts`: start,
+duration, GAP pace, GAP coverage, degraded-GPS fraction and the gain it entered with), every tagged
+running race excluded with its reason (`outside_threshold_band`, `distance_regressed`,
+`smart_recording`, `gap_pace_unavailable`, `summary_unreadable`, `quality_flags_unreadable` or
+`features_unavailable`), and `parameters`, the constants. With no qualifying race `estimate` is null
+and `unavailable` is `no_qualifying_effort`; when a race's GAP pace makes the estimate overflow, it is
+`estimate_not_finite`. `trend` is `unknown`, `readiness` and `gap_to_goal` are null, and the response
+carries the athlete's `timezone`. `as_of` takes a zoned date-time or a `YYYY-MM-DD` date (the end of
+that day in `athlete_timezone`, today's date clamped to now); a later date, a naive or future
+date-time, a basic or week-form date and an unparseable value are 422. Nothing is stored: every
+request recomputes, so a race untagged in Connect drops out at the next read after sync clears its
+tag. F017's `rtss` still reads `no_threshold_pace`.
+
+The short-races warning: when every race used lasted under 30 minutes, `short_races_only` is true. A
+20 to 30 minute race reads threshold 5 to 6.5 % fast, so a history of 5Ks alone can read `high` while
+too fast; the 2.5 % error is kept, and a 10K race or time trial corrects it.
+
+`runcoach state [--as-of X]` prints `Threshold pace 4:22/km (80 %: 4:15-4:30), high, from 2 races,
+the last on 2026-09-20`, the short-races warning when the flag is set, one line per race used (date,
+duration, GAP pace, gain, degraded-GPS share) and one per tagged race excluded, its reason in words
+(for example "not 20 to 60 minutes long"), with dates in the response's `timezone`. With no
+qualifying race it prints how to tag one (`Threshold pace unavailable: no tagged race of 20 to 60
+minutes. ...`); when the estimate is not finite it says a race's grade-adjusted pace is out of range
+and still lists the races used. Both exit 0; an unreachable API exits 1. `runcoach status` is
+unchanged; both help texts say what each shows.
+
 ## 2026-10-13 through 2026-10-14 — Sprint 017: Garmin Connect sync
 
 ### Saved loads and dated HR entries

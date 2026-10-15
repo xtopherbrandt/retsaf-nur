@@ -477,7 +477,7 @@ TRACEABILITY_ROW_SHA256 = {
     "GOAL-06": "f0d054ca660e.2b8b3b5512d6.8f7a50b83591.f0d054ca660e.bda050585a00.9390298f3fb0.bda050585a00",
     "ARCH-00": "379875c57851.e8e67f6e2230.5e9b00ff6f83.379875c57851.bda050585a00.9390298f3fb0.bda050585a00",
     "ARCH-01": "3497384177b1.b8bb673a86b0.2d139a584015.3497384177b1.bda050585a00.9390298f3fb0.bda050585a00",
-    "ARCH-02": "572ed3eb3f94.04d06b59bb62.30bbd43e174d.572ed3eb3f94.bda050585a00.9390298f3fb0.bda050585a00",
+    "ARCH-02": "572ed3eb3f94.04d06b59bb62.30bbd43e174d.f85a266cf05f.bda050585a00.9390298f3fb0.bda050585a00",
     "ARCH-03": "3700935a39b8.485ad4f767e3.38cce7a3b9e5.0bf25ec06d7c.bda050585a00.9390298f3fb0.bda050585a00",
     "ARCH-04": "0daf71d9638a.a44d250c7628.b757487a4aec.aba11c510cae.bda050585a00.9390298f3fb0.bda050585a00",
     "ARCH-05": "a4c29cfc88a4.0eb9375dfd33.ff5727d9c886.a4c29cfc88a4.bda050585a00.9390298f3fb0.bda050585a00",
@@ -767,6 +767,7 @@ PINNED_SHA256 = {
     "REG-28/Pinned": "6f6a2e0e1e2d",
     "REG-29/Pinned": "6f6a2e0e1e2d",
     "REG-30/Pinned": "6f6a2e0e1e2d",
+    "REG-31/Pinned": "dcd9dd3c915e",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -959,7 +960,7 @@ RESEARCH_STRUCTURE = (
     "DOC-06", "DOC-07", "DOC-08", "DOC-17", "DOC-18", "REG-01", "REG-02", "REG-03", "REG-04", "REG-05",
     "REG-06", "REG-07", "REG-08", "REG-09", "REG-10", "REG-11", "REG-12", "REG-13", "REG-14", "REG-15",
     "REG-16", "REG-17", "REG-18", "REG-19", "REG-20", "REG-21", "REG-22", "REG-23", "REG-24", "REG-25",
-    "REG-26", "REG-27", "REG-28", "REG-29", "REG-30", "HRV-07",
+    "REG-26", "REG-27", "REG-28", "REG-29", "REG-30", "REG-31", "HRV-07",
     "### 3.1 Individualization — the governing rule (resolved)",
     "IND-01", "IND-02", "IND-03", "IND-04", "IND-05", "IND-06",
     "### 3.2 Cold-start — establishing day-one state (resolved, amends `research/05` §3.2)",
@@ -1040,6 +1041,7 @@ HISTORY_SHA256 = {
     "H-39": "ea77338acc5e",
     "H-40": "ff2a30c98d83",
     "H-41": "0843f60b2521",
+    "H-42": "4630568aa9aa",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -4853,7 +4855,7 @@ def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
     print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
           f"{errors[:10]}")
     assert errors == []
-    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 42)]
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 43)]
     assert listed == derived and listed
     assert not set(listed) & set(rule_ids(research))
 
