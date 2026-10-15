@@ -32,20 +32,6 @@ TODAY = date(2026, 10, 12)
 START = date(2026, 10, 10)
 API_URL = "http://example.test"
 
-SWITCH_DOC = {
-    "paths": {
-        "/sessions": {
-            "post": {
-                "requestBody": {
-                    "content": {"multipart/form-data": {"schema": {"$ref": "#/components/schemas/Body"}}}
-                }
-            }
-        }
-    },
-    "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
-}
-
-
 def _zip(entries: list[tuple[str, bytes]]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -67,42 +53,6 @@ def _activity(
     }
 
 
-class FakeGarmin:
-    def __init__(self, activities, originals=None, snapshots=None) -> None:
-        self.activities = activities
-        self.originals = originals or {}
-        self.snapshots = snapshots or {}
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        value = self.originals.get(
-            activity_id, _zip([(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())])
-        )
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-    def download_snapshot(self, day: date) -> bytes:
-        value = self.snapshots.get(day, garmin.NotFound("404"))
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-
-def _file_part(body: bytes) -> bytes:
-    for part in body.split(b"\r\n--"):
-        head, _, content = part.partition(b"\r\n\r\n")
-        if b'name="file"' in head:
-            return content.removesuffix(b"\r\n")
-    raise AssertionError("no file part")
-
-
-def _stored(n: int) -> httpx.Response:
-    return httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
-
-
 def _skipped_sport(sport: str) -> httpx.Response:
     return httpx.Response(
         200, json={"skipped": True, "reason": "skipped_sport", "sport": sport, "filter_applied": True}
@@ -115,32 +65,13 @@ def _non_activity(file_type: str) -> httpx.Response:
     )
 
 
-class Api:
-    """Answers each upload from ``replies[content]`` (default 201 stored)."""
-
-    def __init__(self, replies: dict[bytes, httpx.Response] | None = None) -> None:
-        self.replies = replies or {}
-        self.uploads: list[bytes] = []
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/sessions":
-            return httpx.Response(200, json={"items": [], "next_cursor": None})
-        if request.method == "GET" and request.url.path == "/openapi.json":
-            return httpx.Response(200, json=SWITCH_DOC)
-        if request.method == "POST" and request.url.path == "/sessions":
-            content = _file_part(request.read())
-            self.uploads.append(content)
-            return self.replies.get(content, _stored(len(self.uploads)))
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
-
-
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
     monkeypatch.setattr(sync, "today", lambda: TODAY)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", timezone(timedelta(hours=-7)))
 
-    def setup(fake: FakeGarmin, api: Api) -> Api:
+    def setup(fake: Any, api: Any) -> Any:
         install_mock_client(api)
         monkeypatch.setattr(sync, "_adapter", lambda: SimpleNamespace(open_client=lambda: fake))
         return api
@@ -159,11 +90,11 @@ def _summary(output: str) -> list[str]:
     return lines[1:]
 
 
-def test_each_outcome_row_has_its_summary_line(env) -> None:
+def test_each_outcome_row_has_its_summary_line(env, fake_garmin, fake_api) -> None:
     snapshot = _zip(
         [("1_WELLNESS.fit", b"MON-1"), ("2_METRICS.fit", b"MON-2"), ("3_ACTIVITY.fit", b"SNAP-ACT")]
     )
-    fake = FakeGarmin(
+    fake = fake_garmin(
         [
             _activity(101, "2026-10-10 07:00:00", "Morning Run"),
             _activity(102, "2026-10-10 08:00:00", "Old Run"),
@@ -179,8 +110,8 @@ def test_each_outcome_row_has_its_summary_line(env) -> None:
     )
     api = env(
         fake,
-        Api(
-            {
+        fake_api(
+            replies={
                 b"MON-1": _non_activity("monitoring_b"),
                 b"MON-2": _non_activity("44"),
                 b"ACT-102": httpx.Response(409, json={"detail": "duplicate"}),
@@ -205,12 +136,13 @@ def test_each_outcome_row_has_its_summary_line(env) -> None:
     assert len(api.uploads) == 8
 
 
-def test_outcomes_are_recorded_on_each_result(env) -> None:
-    fake = FakeGarmin(
+def test_outcomes_are_recorded_on_each_result(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin(
         [_activity(101, "2026-10-10 07:00:00", "Run"), _activity(102, "2026-10-10 08:00:00", "Dup")],
         snapshots={START: _zip([("1_WELLNESS.fit", b"MON-1")])},
     )
-    env(fake, Api({b"MON-1": _non_activity("monitoring_b"), b"ACT-102": httpx.Response(409, json={})}))
+    replies = {b"MON-1": _non_activity("monitoring_b"), b"ACT-102": httpx.Response(409, json={})}
+    env(fake, fake_api(replies=replies))
 
     results = sync.fetch(fake, API_URL, START, TODAY)
 
@@ -221,8 +153,8 @@ def test_outcomes_are_recorded_on_each_result(env) -> None:
     ]
 
 
-def test_an_empty_range_prints_zero_counts_and_exits_0(env) -> None:
-    env(FakeGarmin([]), Api())
+def test_an_empty_range_prints_zero_counts_and_exits_0(env, fake_garmin, fake_api) -> None:
+    env(fake_garmin([]), fake_api())
 
     result = _sync()
 
@@ -235,15 +167,15 @@ def test_an_empty_range_prints_zero_counts_and_exits_0(env) -> None:
     ]
 
 
-def test_a_failed_item_prints_its_since_command_and_exits_1(env) -> None:
-    fake = FakeGarmin(
+def test_a_failed_item_prints_its_since_command_and_exits_1(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin(
         [
             _activity(101, "2026-10-10 07:00:00", "Run"),
             _activity(201, "2026-10-11 07:00:00", "Bad"),
             _activity(301, "2026-10-12 07:00:00", "Later"),
         ]
     )
-    api = env(fake, Api({b"ACT-201": httpx.Response(400, json={"detail": "not a FIT file"})}))
+    api = env(fake, fake_api(replies={b"ACT-201": httpx.Response(400, json={"detail": "not a FIT file"})}))
 
     result = _sync()
 
@@ -277,9 +209,11 @@ def test_a_failed_item_prints_its_since_command_and_exits_1(env) -> None:
         (httpx.Response(201, text="not json"), None),
     ],
 )
-def test_any_other_reply_is_failed(env, reply: httpx.Response, detail: str | None) -> None:
-    fake = FakeGarmin([_activity(101, "2026-10-10 07:00:00", "Run")])
-    env(fake, Api({b"ACT-101": reply}))
+def test_any_other_reply_is_failed(
+    env, reply: httpx.Response, detail: str | None, fake_garmin, fake_api
+) -> None:
+    fake = fake_garmin([_activity(101, "2026-10-10 07:00:00", "Run")])
+    env(fake, fake_api(replies={b"ACT-101": reply}))
 
     result = _sync()
 
@@ -294,8 +228,8 @@ def test_any_other_reply_is_failed(env, reply: httpx.Response, detail: str | Non
         ]
 
 
-def test_no_fit_original_is_not_a_failure(env) -> None:
-    fake = FakeGarmin(
+def test_no_fit_original_is_not_a_failure(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin(
         [
             _activity(203, "2026-10-10 06:00:00", "Typed In", manual=True),
             _activity(204, "2026-10-11 07:00:00", "Gone"),
@@ -303,7 +237,7 @@ def test_no_fit_original_is_not_a_failure(env) -> None:
         ],
         originals={204: garmin.NotFound("404"), 205: b""},
     )
-    api = env(fake, Api())
+    api = env(fake, fake_api())
 
     result = _sync()
 
@@ -314,12 +248,12 @@ def test_no_fit_original_is_not_a_failure(env) -> None:
     assert api.uploads == []
 
 
-def test_a_failure_with_no_day_names_the_range_start(env) -> None:
+def test_a_failure_with_no_day_names_the_range_start(env, fake_garmin, fake_api) -> None:
     """An unreadable summary has no day: its Failed line says so and recovers from the range start."""
-    fake = FakeGarmin(
+    fake = fake_garmin(
         [{"activityName": "No Id", "startTimeLocal": "2026-10-11 07:00:00", "activityType": {"typeId": 1}}]
     )
-    env(fake, Api())
+    env(fake, fake_api())
 
     result = _sync()
 
@@ -330,9 +264,9 @@ def test_a_failure_with_no_day_names_the_range_start(env) -> None:
     assert failed[0].endswith(", runcoach sync --since 2026-10-10")
 
 
-def test_hostile_names_and_details_are_printed_with_controls_replaced(env) -> None:
-    fake = FakeGarmin([_activity(101, "2026-10-10 07:00:00", "Run\r\x07")])
-    env(fake, Api({b"ACT-101": httpx.Response(400, json={"detail": "bad\x1b[31m"})}))
+def test_hostile_names_and_details_are_printed_with_controls_replaced(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin([_activity(101, "2026-10-10 07:00:00", "Run\r\x07")])
+    env(fake, fake_api(replies={b"ACT-101": httpx.Response(400, json={"detail": "bad\x1b[31m"})}))
 
     result = _sync()
 

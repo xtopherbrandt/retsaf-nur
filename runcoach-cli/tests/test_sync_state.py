@@ -18,7 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import httpx
 import pytest
 from runcoach_cli import config, garmin
 from runcoach_cli.commands import sessions, sync
@@ -36,30 +35,16 @@ def d(text: str) -> date:
     return date.fromisoformat(text)
 
 
-class FakeGarmin:
-    """Lists ``activities``; a day's snapshot is ``snapshots[day]`` (an exception is raised), else 404."""
+@pytest.fixture
+def fake_garmin(fake_garmin):
+    """The shared fake Garmin client, taking ``snapshots`` first: ``fake_garmin(snapshots, activities)``.
+    A day's snapshot is ``snapshots[day]`` (an exception, raised), else 404; no activity is
+    downloaded in these tests."""
 
-    def __init__(
-        self, snapshots: dict[date, Exception] | None = None, activities: list | None = None
-    ) -> None:
-        self.snapshots = snapshots or {}
-        self.activities = activities or []
-        self.listed: list[tuple[date, date]] = []
-        self.snapshot_days: list[date] = []
+    def make(snapshots: dict[date, Exception] | None = None, activities: list | None = None):
+        return fake_garmin(activities, snapshots=snapshots, allow_originals=False)
 
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        self.listed.append((start, end))
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        raise AssertionError("no activity is downloaded in these tests")
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.snapshot_days.append(day)
-        value = self.snapshots.get(day)
-        if value is not None:
-            raise value
-        raise garmin.NotFound(f"no snapshot on {day}")
+    return make
 
 
 def _row(session_id: str, local_day: date, tag: str | None = None) -> dict[str, Any]:
@@ -73,27 +58,18 @@ def _row(session_id: str, local_day: date, tag: str | None = None) -> dict[str, 
     }
 
 
-def _store(rows: list[dict[str, Any]]):
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/sessions":
-            return httpx.Response(200, json={"items": rows, "next_cursor": None})
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
-
-    return handler
-
-
 @pytest.fixture
-def run(monkeypatch: pytest.MonkeyPatch, install_mock_client):
+def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, fake_api):
     """``run(today, rows, client, *args)``: one ``runcoach sync`` on ``today`` against a store of ``rows``.
 
-    ``client`` is a ``FakeGarmin`` or an exception ``open_client`` raises (a login needed).
+    ``client`` is a ``fake_garmin`` client or an exception ``open_client`` raises (a login needed).
     """
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", ZONE)
 
     def invoke(today: date, rows: list[dict[str, Any]], client: Any, *args: str):
         monkeypatch.setattr(sync, "today", lambda: today)
-        install_mock_client(_store(rows))
+        install_mock_client(fake_api(pages=[rows], doc=None, accept_uploads=False))
 
         def open_client():
             if isinstance(client, Exception):
@@ -131,9 +107,9 @@ TODAY = d("2026-10-13")
 # --- the state table, one test per row -----------------------------------------------------------
 
 
-def test_row_last_completed_10_05_starts_the_day_before_it(run) -> None:
+def test_row_last_completed_10_05_starts_the_day_before_it(run, fake_garmin) -> None:
     _write_state("2026-10-05", None)
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -146,9 +122,9 @@ def test_row_last_completed_10_05_starts_the_day_before_it(run) -> None:
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
 
-def test_row_oldest_failed_10_08_starts_on_that_day(run) -> None:
+def test_row_oldest_failed_10_08_starts_on_that_day(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -159,9 +135,9 @@ def test_row_oldest_failed_10_08_starts_on_that_day(run) -> None:
     assert fake.listed == [(d("2026-10-08"), TODAY)]
 
 
-def test_row_state_after_the_store_rule_leaves_the_store_rule(run) -> None:
+def test_row_state_after_the_store_rule_leaves_the_store_rule(run, fake_garmin) -> None:
     _write_state("2026-10-12", None)
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -173,9 +149,9 @@ def test_row_state_after_the_store_rule_leaves_the_store_rule(run) -> None:
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
 
-def test_row_no_state_file_uses_the_store_rule_names_the_file_and_writes_it(run) -> None:
+def test_row_no_state_file_uses_the_store_rule_names_the_file_and_writes_it(run, fake_garmin) -> None:
     assert not _state_path().exists()
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -202,9 +178,11 @@ def test_row_no_state_file_uses_the_store_rule_names_the_file_and_writes_it(run)
         b'{"last_completed": null, "oldest_failed": ["2026-10-01"]}',
     ],
 )
-def test_row_a_bad_state_file_warns_uses_the_store_rule_and_is_rewritten(run, content: bytes) -> None:
+def test_row_a_bad_state_file_warns_uses_the_store_rule_and_is_rewritten(
+    run, content: bytes, fake_garmin
+) -> None:
     _state_path().write_bytes(content)
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -217,10 +195,10 @@ def test_row_a_bad_state_file_warns_uses_the_store_rule_and_is_rewritten(run, co
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
 
-def test_a_future_last_completed_does_not_discard_a_valid_oldest_failed(run) -> None:
+def test_a_future_last_completed_does_not_discard_a_valid_oldest_failed(run, fake_garmin) -> None:
     """The clock moved back a day: ``last_completed`` is after today, ``oldest_failed`` still counts."""
     _write_state("2026-10-13", "2026-10-01")
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(d("2026-10-12"), [_row("r1", d("2026-10-11"))], fake)
 
@@ -243,9 +221,11 @@ def test_a_future_last_completed_does_not_discard_a_valid_oldest_failed(run) -> 
         ("2119-01-01", "2026-10-14"),
     ],
 )
-def test_a_date_after_today_is_read_as_today_without_a_warning(run, last_completed, oldest_failed) -> None:
+def test_a_date_after_today_is_read_as_today_without_a_warning(
+    run, last_completed, oldest_failed, fake_garmin
+) -> None:
     _write_state(last_completed, oldest_failed)
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -268,9 +248,9 @@ def test_a_date_after_today_is_kept_as_today_by_a_stop(run) -> None:
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": "2026-10-13"}
 
 
-def test_a_state_path_that_cannot_be_read_or_written_warns_and_keeps_the_exit_code(run) -> None:
+def test_a_state_path_that_cannot_be_read_or_written_warns_and_keeps_the_exit_code(run, fake_garmin) -> None:
     _state_path().mkdir()
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -297,9 +277,9 @@ def test_a_stop_leaves_the_state_unchanged(run) -> None:
     assert _state() == before
 
 
-def test_a_stop_on_the_failed_day_keeps_it_and_last_completed(run) -> None:
+def test_a_stop_on_the_failed_day_keeps_it_and_last_completed(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin({d("2026-10-08"): garmin.RateLimited("429")})
+    fake = fake_garmin({d("2026-10-08"): garmin.RateLimited("429")})
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -307,11 +287,11 @@ def test_a_stop_on_the_failed_day_keeps_it_and_last_completed(run) -> None:
     assert _state() == {"last_completed": "2026-10-12", "oldest_failed": "2026-10-08"}
 
 
-def test_a_stop_after_the_failed_day_was_fetched_cleanly_moves_it_to_the_stop_day(run) -> None:
+def test_a_stop_after_the_failed_day_was_fetched_cleanly_moves_it_to_the_stop_day(run, fake_garmin) -> None:
     """The run fetched 10-08 and 10-09 cleanly but not 10-10 on: a failed day after 10-08 that the
     state does not record may lie there, so the stop day is kept, and last_completed is unchanged."""
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin({d("2026-10-10"): garmin.RateLimited("429")})
+    fake = fake_garmin({d("2026-10-10"): garmin.RateLimited("429")})
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -320,7 +300,7 @@ def test_a_stop_after_the_failed_day_was_fetched_cleanly_moves_it_to_the_stop_da
     assert _state() == {"last_completed": "2026-10-12", "oldest_failed": "2026-10-10"}
 
 
-def test_timeline_a_stop_never_drops_a_newer_failed_day(run) -> None:
+def test_timeline_a_stop_never_drops_a_newer_failed_day(run, fake_garmin) -> None:
     """Failed days 10-03 and 10-07; a run fetches 10-03 cleanly and stops on 10-05; 10-07 is still
     fetched by the run after it (the review scan's three-run timeline)."""
     store = [_row("r1", d("2026-10-12"))]
@@ -328,27 +308,27 @@ def test_timeline_a_stop_never_drops_a_newer_failed_day(run) -> None:
         d("2026-10-03"): garmin.GarminError("Daily snapshot HTTP error: 503"),
         d("2026-10-07"): garmin.GarminError("Daily snapshot HTTP error: 503"),
     }
-    first = FakeGarmin(broken)
+    first = fake_garmin(broken)
     result = run(d("2026-10-12"), store, first, "--since", "2026-10-01")
     assert result.exit_code == 1, result.output
     assert _state() == {"last_completed": "2026-10-12", "oldest_failed": "2026-10-03"}
 
-    second = FakeGarmin({d("2026-10-05"): garmin.RateLimited("429")})
+    second = fake_garmin({d("2026-10-05"): garmin.RateLimited("429")})
     result = run(d("2026-10-13"), store, second)
     assert result.exit_code == 1, result.output
     assert _lines(result.output)[0] == "From 2026-10-03 to 2026-10-13"
     assert second.snapshot_days == [d("2026-10-03"), d("2026-10-04"), d("2026-10-05")]
 
-    third = FakeGarmin()
+    third = fake_garmin()
     result = run(d("2026-10-14"), store, third)
     assert result.exit_code == 0, result.output
     assert d("2026-10-07") in third.snapshot_days, (result.output, third.snapshot_days)
     assert _state() == {"last_completed": "2026-10-14", "oldest_failed": None}
 
 
-def test_a_stop_after_a_new_failure_records_that_day(run) -> None:
+def test_a_stop_after_a_new_failure_records_that_day(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin(
+    fake = fake_garmin(
         {
             d("2026-10-09"): garmin.GarminError("Daily snapshot HTTP error: 503"),
             d("2026-10-10"): garmin.RateLimited("429"),
@@ -361,9 +341,9 @@ def test_a_stop_after_a_new_failure_records_that_day(run) -> None:
     assert _state() == {"last_completed": "2026-10-12", "oldest_failed": "2026-10-09"}
 
 
-def test_the_failed_day_is_cleared_once_fetched_cleanly(run) -> None:
+def test_the_failed_day_is_cleared_once_fetched_cleanly(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -372,9 +352,9 @@ def test_the_failed_day_is_cleared_once_fetched_cleanly(run) -> None:
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
 
-def test_a_failure_on_a_later_day_than_the_old_one_still_clears_the_old_one(run) -> None:
+def test_a_failure_on_a_later_day_than_the_old_one_still_clears_the_old_one(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-08")
-    fake = FakeGarmin({d("2026-10-12"): garmin.GarminError("Daily snapshot HTTP error: 503")})
+    fake = fake_garmin({d("2026-10-12"): garmin.GarminError("Daily snapshot HTTP error: 503")})
 
     result = run(TODAY, RUN_10_12, fake)
 
@@ -382,10 +362,10 @@ def test_a_failure_on_a_later_day_than_the_old_one_still_clears_the_old_one(run)
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": "2026-10-12"}
 
 
-def test_a_failed_item_with_no_day_is_permanent_and_not_remembered(run) -> None:
+def test_a_failed_item_with_no_day_is_permanent_and_not_remembered(run, fake_garmin) -> None:
     """An unreadable activity summary fails the same way on every run: reported, not remembered."""
     unreadable = {"activityId": 77, "activityName": "broken", "activityType": {"typeKey": "running"}}
-    fake = FakeGarmin(activities=[unreadable])
+    fake = fake_garmin(activities=[unreadable])
 
     result = run(TODAY, RUN_10_12, fake, "--since", "2026-10-11")
 
@@ -398,7 +378,7 @@ def test_a_failed_item_with_no_day_is_permanent_and_not_remembered(run) -> None:
 NOT_REVISITED = "later runs do not return for it: it would fail the same way again"
 
 
-def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_day(run) -> None:
+def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_day(run, fake_garmin) -> None:
     """A Garmin 410 on today's snapshot in a daily sync (the review scan's timeline): the next two
     days' ranges still cover that day, so it is fetched and reported again with the same line; no
     run goes back for it once the range has moved past it, since it never sets ``oldest_failed``."""
@@ -406,7 +386,7 @@ def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_
     store = [_row("r1", d("2026-10-12"))]
     _write_state("2026-10-12", None)
 
-    first = FakeGarmin(dict(refused))
+    first = fake_garmin(dict(refused))
     result = run(d("2026-10-13"), store, first)
     assert result.exit_code == 1, result.output
     failed = [line for line in _lines(result.output) if line.startswith("Failed:")]
@@ -419,7 +399,7 @@ def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
     store.insert(0, _row("r2", d("2026-10-13")))
-    second = FakeGarmin(dict(refused))
+    second = fake_garmin(dict(refused))
     result = run(d("2026-10-14"), store, second)
     assert result.exit_code == 1, result.output
     assert _lines(result.output)[0] == "From 2026-10-12 to 2026-10-14"
@@ -430,7 +410,7 @@ def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_
 
     # The day before the last completed sync (10-14) still covers 10-13 on 10-15.
     store.insert(0, _row("r3", d("2026-10-14")))
-    third = FakeGarmin(dict(refused))
+    third = fake_garmin(dict(refused))
     result = run(d("2026-10-15"), store, third)
     assert result.exit_code == 1, result.output
     assert _lines(result.output)[0] == "From 2026-10-13 to 2026-10-15"
@@ -438,7 +418,7 @@ def test_timeline_a_permanent_failure_is_fetched_again_while_a_range_covers_its_
     assert _state() == {"last_completed": "2026-10-15", "oldest_failed": None}
 
     store.insert(0, _row("r4", d("2026-10-15")))
-    later = FakeGarmin(dict(refused))
+    later = fake_garmin(dict(refused))
     result = run(d("2026-10-16"), store, later)
     assert result.exit_code == 0, result.output
     assert _lines(result.output)[0] == "From 2026-10-14 to 2026-10-16"
@@ -469,9 +449,9 @@ def test_no_output_string_or_changelog_line_says_a_failure_is_not_retried() -> N
     assert old.findall(flat) == [], [flat[m.start() - 80 : m.end() + 40] for m in old.finditer(flat)]
 
 
-def test_since_replaces_the_start_and_keeps_an_older_failed_day(run) -> None:
+def test_since_replaces_the_start_and_keeps_an_older_failed_day(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-05")
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake, "--since", "2026-10-10")
 
@@ -482,9 +462,9 @@ def test_since_replaces_the_start_and_keeps_an_older_failed_day(run) -> None:
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": "2026-10-05"}
 
 
-def test_since_covering_the_failed_day_clears_it(run) -> None:
+def test_since_covering_the_failed_day_clears_it(run, fake_garmin) -> None:
     _write_state("2026-10-12", "2026-10-05")
-    fake = FakeGarmin()
+    fake = fake_garmin()
 
     result = run(TODAY, RUN_10_12, fake, "--since", "2026-10-05")
 
@@ -504,7 +484,7 @@ def test_logout_keeps_the_sync_state(run) -> None:
 # --- the reference's timelines, end to end --------------------------------------------------------
 
 
-def test_timeline_a_failed_day_is_retried_every_run_until_fetched(run) -> None:
+def test_timeline_a_failed_day_is_retried_every_run_until_fetched(run, fake_garmin) -> None:
     """A daily sync fails D's snapshot (temporary); D is fetched again every day until it is fetched."""
     failed_day = d("2026-10-10")
     broken = {failed_day: garmin.GarminError("Daily snapshot HTTP error: 503")}
@@ -517,7 +497,7 @@ def test_timeline_a_failed_day_is_retried_every_run_until_fetched(run) -> None:
     seen: dict[date, tuple[str, bool, int]] = {}
     for offset, fixed in [(0, False), (1, False), (2, False), (3, False), (4, False), (5, True), (6, True)]:
         today = failed_day + timedelta(days=offset)
-        fake = FakeGarmin({} if fixed else broken)
+        fake = fake_garmin({} if fixed else broken)
         result = run(today, store_rows(today), fake)
         seen[today] = (_lines(result.output)[0], failed_day in fake.snapshot_days, result.exit_code)
 
@@ -534,9 +514,9 @@ def test_timeline_a_failed_day_is_retried_every_run_until_fetched(run) -> None:
     assert _state() == {"last_completed": "2026-10-16", "oldest_failed": None}
 
 
-def test_timeline_ten_days_of_login_needed_then_a_hand_upload_still_fetches_the_gap(run) -> None:
+def test_timeline_ten_days_of_login_needed_then_a_hand_upload_still_fetches_the_gap(run, fake_garmin) -> None:
     store = [_row("r0", d("2026-10-01"))]
-    first = FakeGarmin()
+    first = fake_garmin()
     result = run(d("2026-10-02"), store, first)
     assert result.exit_code == 0, result.output
     assert _state() == {"last_completed": "2026-10-02", "oldest_failed": None}
@@ -549,7 +529,7 @@ def test_timeline_ten_days_of_login_needed_then_a_hand_upload_still_fetches_the_
 
     # A run dated 10-12 reaches the store by hand; the store rule alone would start on 10-11.
     store = [_row("hand", d("2026-10-12")), *store]
-    fake = FakeGarmin()
+    fake = fake_garmin()
     result = run(TODAY, store, fake)
 
     assert result.exit_code == 0, result.output
@@ -560,17 +540,17 @@ def test_timeline_ten_days_of_login_needed_then_a_hand_upload_still_fetches_the_
     assert _state() == {"last_completed": "2026-10-13", "oldest_failed": None}
 
 
-def test_timeline_a_since_past_the_gap_does_not_move_last_completed(run) -> None:
+def test_timeline_a_since_past_the_gap_does_not_move_last_completed(run, fake_garmin) -> None:
     """As above, but the athlete runs ``sync --since 10-11`` after logging in: it completes, but
     10-03 to 10-10 were never fetched, so the next sync still starts the day before 10-02."""
     _write_state("2026-10-02", None)
     store = [_row("hand", d("2026-10-12")), _row("r0", d("2026-10-01"))]
 
-    since = run(TODAY, store, FakeGarmin(), "--since", "2026-10-11")
+    since = run(TODAY, store, fake_garmin(), "--since", "2026-10-11")
     assert since.exit_code == 0, since.output
     assert _state() == {"last_completed": "2026-10-02", "oldest_failed": None}
 
-    fake = FakeGarmin()
+    fake = fake_garmin()
     result = run(d("2026-10-14"), store, fake)
     assert result.exit_code == 0, result.output
     assert _lines(result.output)[0] == "From 2026-10-01 to 2026-10-14"
@@ -586,10 +566,12 @@ def test_timeline_a_since_past_the_gap_does_not_move_last_completed(run) -> None
         ("2026-10-04", "2026-10-02"),  # one day past it: a gap of one day
     ],
 )
-def test_a_since_run_moves_last_completed_only_when_it_joins_on(run, since, last_completed) -> None:
+def test_a_since_run_moves_last_completed_only_when_it_joins_on(
+    run, since, last_completed, fake_garmin
+) -> None:
     _write_state("2026-10-02", None)
 
-    result = run(TODAY, RUN_10_12, FakeGarmin(), "--since", since)
+    result = run(TODAY, RUN_10_12, fake_garmin(), "--since", since)
 
     assert result.exit_code == 0, result.output
     assert _state() == {"last_completed": last_completed, "oldest_failed": None}

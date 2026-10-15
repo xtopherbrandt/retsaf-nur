@@ -40,8 +40,12 @@ different filename (``api.toml``) in a different workspace package.
 
 from __future__ import annotations
 
+import io
+import zipfile
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -283,3 +287,203 @@ def saved_token_session(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], l
         return seen
 
     return install
+
+
+# ---------------------------------------------------------------------------
+# The sync tests' fake Garmin client and API stub.
+#
+# Every ``test_sync_*.py`` module drives ``runcoach sync`` against a fake Garmin client (handed to
+# the command through ``sync._adapter``) and a mock API (installed with ``install_mock_client``).
+# Both live here, each configured per test, and are exposed as fixtures returning the class
+# (``fake_garmin``, ``fake_api``): under ``--import-mode=importlib`` a test module cannot import
+# from ``conftest``.
+# ---------------------------------------------------------------------------
+
+
+def _one_entry_zip(activity_id: int) -> bytes:
+    """The download a fake activity answers by default: one entry holding ``ACT-<id>``."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())
+    return buffer.getvalue()
+
+
+class FakeGarmin:
+    """A ``GarminClient`` that serves what the test gives it and records what it was asked.
+
+    ``activities`` is the activity list (each call answers a copy; ``list_error``, when set, is
+    raised instead). ``originals`` and ``snapshots`` map an activity id or a day to what its download
+    answers: bytes (or any other value) are returned, an exception is raised. An activity with no
+    entry answers a one-entry zip holding ``ACT-<id>``; a day with no entry raises ``NotFound``.
+    With ``allow_originals=False`` any activity download fails the test.
+
+    ``events`` holds every call in order, as ``("list", (start, end))``, ``("original", id)`` and
+    ``("snapshot", day)``; ``downloads`` is the same without the list calls; ``listed`` and
+    ``snapshot_days`` hold the list ranges and the snapshot days asked for.
+    """
+
+    def __init__(
+        self,
+        activities: list[Any] | None = None,
+        *,
+        originals: dict[int, Any] | None = None,
+        snapshots: dict[date, Any] | None = None,
+        list_error: Exception | None = None,
+        allow_originals: bool = True,
+    ) -> None:
+        self.activities = activities or []
+        self.originals = originals or {}
+        self.snapshots = snapshots or {}
+        self.list_error = list_error
+        self.allow_originals = allow_originals
+        self.events: list[tuple[str, Any]] = []
+
+    @property
+    def downloads(self) -> list[tuple[str, Any]]:
+        return [event for event in self.events if event[0] != "list"]
+
+    @property
+    def listed(self) -> list[tuple[date, date]]:
+        return [arg for kind, arg in self.events if kind == "list"]
+
+    @property
+    def snapshot_days(self) -> list[date]:
+        return [arg for kind, arg in self.events if kind == "snapshot"]
+
+    def list_activities(self, start: date, end: date) -> list[Any]:
+        self.events.append(("list", (start, end)))
+        if self.list_error is not None:
+            raise self.list_error
+        return list(self.activities)
+
+    def download_original(self, activity_id: int) -> Any:
+        self.events.append(("original", activity_id))
+        if not self.allow_originals:
+            raise AssertionError("no activity is downloaded in this test")
+        value = self.originals.get(activity_id)
+        if value is None:
+            value = _one_entry_zip(activity_id)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def download_snapshot(self, day: date) -> Any:
+        from runcoach_cli import garmin
+
+        self.events.append(("snapshot", day))
+        value = self.snapshots.get(day)
+        if value is None:
+            raise garmin.NotFound(f"no snapshot on {day}")
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body.
+OPENAPI_WITH_SWITCH: dict[str, Any] = {
+    "paths": {
+        "/sessions": {
+            "post": {
+                "requestBody": {
+                    "content": {"multipart/form-data": {"schema": {"$ref": "#/components/schemas/Body"}}}
+                }
+            }
+        }
+    },
+    "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
+}
+
+
+def _multipart_part(body: bytes, field: str) -> tuple[bytes, bytes] | None:
+    """The headers and content of the multipart part named ``field``, or ``None``."""
+    marker = f'name="{field}"'.encode()
+    for part in body.split(b"\r\n--"):
+        head, _, content = part.partition(b"\r\n\r\n")
+        if marker in head:
+            return head, content.removesuffix(b"\r\n")
+    return None
+
+
+class FakeApi:
+    """The RunCoach API as ``runcoach sync`` sees it: an ``httpx.MockTransport`` handler.
+
+    ``GET /sessions`` answers ``pages`` as a cursor chain (page N's ``next_cursor`` is
+    ``cursor-<N+1>``; the default is one empty page). ``GET /openapi.json`` answers ``doc``; with
+    ``doc=None`` it fails the test. ``POST /sessions`` (refused when ``accept_uploads`` is false)
+    records the file part's bytes in ``uploads`` (and the part's headers and the switch's value in
+    ``heads`` and ``switches``), runs ``check(body)`` first when given, and answers
+    ``replies[content]`` when the bytes are listed there, else ``reply(n, content)`` (``n`` counts
+    the uploads, this one included), else 201 stored as ``s<n>`` with ``filter_applied``.
+    ``unreachable_on_upload=n`` makes the n-th upload a connect error, before it is recorded.
+    ``requests`` holds every request; ``calls`` the same as ``"<method> <path>"``.
+    """
+
+    def __init__(
+        self,
+        reply: Callable[[int, bytes], httpx.Response] | None = None,
+        *,
+        replies: dict[bytes, httpx.Response] | None = None,
+        doc: dict[str, Any] | None = OPENAPI_WITH_SWITCH,
+        pages: list[list[dict[str, Any]]] | None = None,
+        accept_uploads: bool = True,
+        unreachable_on_upload: int | None = None,
+        check: Callable[[bytes], None] | None = None,
+    ) -> None:
+        self.reply = reply
+        self.replies = replies or {}
+        self.doc = doc
+        self.pages = [[]] if pages is None else pages
+        self.accept_uploads = accept_uploads
+        self.unreachable_on_upload = unreachable_on_upload
+        self.check = check
+        self.requests: list[httpx.Request] = []
+        self.uploads: list[bytes] = []
+        self.heads: list[bytes] = []
+        self.switches: list[bytes | None] = []
+
+    @property
+    def calls(self) -> list[str]:
+        return [f"{request.method} {request.url.path}" for request in self.requests]
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.method == "GET" and request.url.path == "/sessions":
+            since = request.url.params.get("since")
+            index = 0 if since is None else int(since.removeprefix("cursor-"))
+            next_cursor = f"cursor-{index + 1}" if index + 1 < len(self.pages) else None
+            return httpx.Response(200, json={"items": self.pages[index], "next_cursor": next_cursor})
+        if request.method == "GET" and request.url.path == "/openapi.json" and self.doc is not None:
+            return httpx.Response(200, json=self.doc)
+        if request.method == "POST" and request.url.path == "/sessions" and self.accept_uploads:
+            if self.unreachable_on_upload == len(self.uploads) + 1:
+                raise httpx.ConnectError("connection refused", request=request)
+            body = request.read()
+            if self.check is not None:
+                self.check(body)
+            file_part = _multipart_part(body, "file")
+            if file_part is None:
+                raise AssertionError("no file part")
+            head, content = file_part
+            switch = _multipart_part(body, "runs_and_captures_only")
+            self.uploads.append(content)
+            self.heads.append(head)
+            self.switches.append(None if switch is None else switch[1])
+            n = len(self.uploads)
+            if content in self.replies:
+                return self.replies[content]
+            if self.reply is not None:
+                return self.reply(n, content)
+            return httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
+        raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+
+@pytest.fixture
+def fake_garmin() -> type[FakeGarmin]:
+    """The shared fake Garmin client class (see ``FakeGarmin``)."""
+    return FakeGarmin
+
+
+@pytest.fixture
+def fake_api() -> type[FakeApi]:
+    """The shared mock API class (see ``FakeApi``); install an instance with ``install_mock_client``."""
+    return FakeApi

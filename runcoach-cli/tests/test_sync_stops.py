@@ -88,45 +88,6 @@ RUNS = [
 ]
 
 
-class FakeGarmin:
-    """Serves ``activities``; ``originals`` / ``snapshots`` map to bytes or an exception to raise."""
-
-    def __init__(
-        self,
-        activities: list[dict[str, Any]] | None = None,
-        originals: dict[int, Any] | None = None,
-        snapshots: dict[date, Any] | None = None,
-        list_error: Exception | None = None,
-    ) -> None:
-        self.activities = RUNS if activities is None else activities
-        self.originals = originals or {}
-        self.snapshots = snapshots or {}
-        self.list_error = list_error
-        self.events: list[tuple[str, Any]] = []
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        self.events.append(("list", (start, end)))
-        if self.list_error is not None:
-            raise self.list_error
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        self.events.append(("original", activity_id))
-        value = self.originals.get(
-            activity_id, _zip([(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())])
-        )
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.events.append(("snapshot", day))
-        value = self.snapshots.get(day, garmin.NotFound(f"no snapshot on {day}"))
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-
 def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
     """``/openapi.json`` shaped as FastAPI serves it: a generated operationId and a ``$ref`` body."""
     fields = {"file": {"type": "string"}, "resting_capture": {"type": "boolean"}}
@@ -152,41 +113,24 @@ def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
     }
 
 
-def _file_part(body: bytes) -> bytes:
-    for part in body.split(b"\r\n--"):
-        head, _, content = part.partition(b"\r\n\r\n")
-        if b'name="file"' in head:
-            return content.removesuffix(b"\r\n")
-    raise AssertionError("no file part")
+@pytest.fixture
+def fake_garmin(fake_garmin):
+    """The shared fake Garmin client, serving ``RUNS`` unless the test lists other activities."""
+
+    def make(activities: list[dict[str, Any]] | None = None, **kwargs: Any):
+        return fake_garmin(RUNS if activities is None else activities, **kwargs)
+
+    return make
 
 
-class Api:
-    """Empty ``GET /sessions``, ``/openapi.json`` and ``POST /sessions`` answered by ``reply``."""
+@pytest.fixture
+def fake_api(fake_api):
+    """The shared mock API, serving ``openapi_doc()`` unless the test gives another document."""
 
-    def __init__(
-        self, reply=None, doc: dict[str, Any] | None = None, unreachable_on_upload: int | None = None
-    ):
-        self.reply = reply or (
-            lambda n, content: httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
-        )
-        self.doc = openapi_doc() if doc is None else doc
-        self.unreachable_on_upload = unreachable_on_upload
-        self.uploads: list[bytes] = []
-        self.requests: list[str] = []
+    def make(reply: Any = None, *, doc: dict[str, Any] | None = None, **kwargs: Any):
+        return fake_api(reply, doc=openapi_doc() if doc is None else doc, **kwargs)
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(f"{request.method} {request.url.path}")
-        if request.method == "GET" and request.url.path == "/sessions":
-            return httpx.Response(200, json={"items": [], "next_cursor": None})
-        if request.method == "GET" and request.url.path == "/openapi.json":
-            return httpx.Response(200, json=self.doc)
-        if request.method == "POST" and request.url.path == "/sessions":
-            if self.unreachable_on_upload == len(self.uploads) + 1:
-                raise httpx.ConnectError("connection refused", request=request)
-            content = _file_part(request.read())
-            self.uploads.append(content)
-            return self.reply(len(self.uploads), content)
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
+    return make
 
 
 def _fail_prompt(*args: Any, **kwargs: Any) -> str:
@@ -194,7 +138,7 @@ def _fail_prompt(*args: Any, **kwargs: Any) -> str:
 
 
 @pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
+def env(monkeypatch: pytest.MonkeyPatch, install_mock_client, fake_api):
     monkeypatch.setattr(sync, "ask_text", _fail_prompt)
     monkeypatch.setattr(sync, "ask_secret", _fail_prompt)
     monkeypatch.setattr(builtins, "input", _fail_prompt)
@@ -204,11 +148,11 @@ def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
     monkeypatch.setattr(sync, "today", lambda: TODAY)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", timezone(timedelta(hours=-7)))
 
-    def setup(fake: FakeGarmin | Exception, api: Api | None = None) -> Api:
-        api = api or Api()
+    def setup(fake: Any, api: Any = None) -> Any:
+        api = api or fake_api()
         install_mock_client(api)
 
-        def open_client() -> FakeGarmin:
+        def open_client() -> Any:
             if isinstance(fake, Exception):
                 raise fake
             return fake
@@ -240,10 +184,10 @@ def test_no_token_ends_with_login_needed_and_never_reads_stdin(env) -> None:
     assert type(result.exception) is SystemExit
 
 
-def test_the_stdin_guard_and_the_prompt_seams_would_catch_a_prompt(env, monkeypatch) -> None:
+def test_the_stdin_guard_and_the_prompt_seams_would_catch_a_prompt(env, monkeypatch, fake_garmin) -> None:
     """The guard is live: a sync that prompted through its seam, or read stdin, would fail."""
     monkeypatch.setattr(sync, "today", lambda: sync.ask_text("Garmin email"))
-    env(FakeGarmin())
+    env(fake_garmin())
     result = _sync()
     assert isinstance(result.exception, AssertionError)
     assert "sync prompted" in str(result.exception)
@@ -262,8 +206,8 @@ def test_the_stdin_guard_and_the_prompt_seams_would_catch_a_prompt(env, monkeypa
     assert "sync read stdin" in str(result.exception)
 
 
-def test_a_token_refused_mid_sync_stops_with_login_needed(env) -> None:
-    fake = FakeGarmin(originals={301: garmin.LoginNeeded("401 Unauthorized")})
+def test_a_token_refused_mid_sync_stops_with_login_needed(env, fake_garmin) -> None:
+    fake = fake_garmin(originals={301: garmin.LoginNeeded("401 Unauthorized")})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")
@@ -278,8 +222,8 @@ def test_a_token_refused_mid_sync_stops_with_login_needed(env) -> None:
     assert "sync prompted" not in result.output
 
 
-def test_a_token_refused_on_the_activity_list_stops_with_login_needed(env) -> None:
-    api = env(FakeGarmin(list_error=garmin.LoginNeeded("403 Forbidden")))
+def test_a_token_refused_on_the_activity_list_stops_with_login_needed(env, fake_garmin) -> None:
+    api = env(fake_garmin(list_error=garmin.LoginNeeded("403 Forbidden")))
 
     result = _sync("--since", "2026-10-10")
 
@@ -296,8 +240,8 @@ def test_a_token_refused_on_the_activity_list_stops_with_login_needed(env) -> No
         b"\xef\xbb\xbf\r\n  <!doctype html>",
     ],
 )
-def test_a_web_page_for_a_download_stops_and_names_sync_login(env, page: bytes) -> None:
-    fake = FakeGarmin(originals={201: page})
+def test_a_web_page_for_a_download_stops_and_names_sync_login(env, page: bytes, fake_garmin) -> None:
+    fake = fake_garmin(originals={201: page})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")
@@ -313,8 +257,8 @@ def test_a_web_page_for_a_download_stops_and_names_sync_login(env, page: bytes) 
     assert ("original", 301) not in fake.events
 
 
-def test_a_web_page_for_a_snapshot_stops_too(env) -> None:
-    fake = FakeGarmin(snapshots={START: b"<!DOCTYPE html>"})
+def test_a_web_page_for_a_snapshot_stops_too(env, fake_garmin) -> None:
+    fake = fake_garmin(snapshots={START: b"<!DOCTYPE html>"})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")
@@ -324,8 +268,8 @@ def test_a_web_page_for_a_snapshot_stops_too(env) -> None:
     assert api.uploads == []
 
 
-def test_rate_limit_stops_with_the_since_command(env) -> None:
-    fake = FakeGarmin(snapshots={date(2026, 10, 11): garmin.RateLimited("429 Too Many Requests")})
+def test_rate_limit_stops_with_the_since_command(env, fake_garmin) -> None:
+    fake = fake_garmin(snapshots={date(2026, 10, 11): garmin.RateLimited("429 Too Many Requests")})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")
@@ -339,8 +283,8 @@ def test_rate_limit_stops_with_the_since_command(env) -> None:
     assert fake.events[-1] == ("snapshot", date(2026, 10, 11))
 
 
-def test_rate_limit_on_the_activity_list_names_the_range_start(env) -> None:
-    api = env(FakeGarmin(list_error=garmin.RateLimited("429")))
+def test_rate_limit_on_the_activity_list_names_the_range_start(env, fake_garmin) -> None:
+    api = env(fake_garmin(list_error=garmin.RateLimited("429")))
 
     result = _sync("--since", "2026-10-10")
 
@@ -349,9 +293,9 @@ def test_rate_limit_on_the_activity_list_names_the_range_start(env) -> None:
     assert api.uploads == []
 
 
-def test_garmin_unreachable_names_garmin(env) -> None:
+def test_garmin_unreachable_names_garmin(env, fake_garmin) -> None:
     # Unreachable is a network error with no HTTP reply; a 502 would be a failed item instead.
-    fake = FakeGarmin(originals={201: garmin.GarminUnreachable("Connection error: connection refused")})
+    fake = fake_garmin(originals={201: garmin.GarminUnreachable("Connection error: connection refused")})
     api = env(fake)
 
     result = _sync("--since", "2026-10-10")
@@ -365,10 +309,10 @@ def test_garmin_unreachable_names_garmin(env) -> None:
     assert ("original", 301) not in fake.events
 
 
-def test_a_404_never_stops_the_sync(env) -> None:
+def test_a_404_never_stops_the_sync(env, fake_garmin) -> None:
     """NotFound is a GarminError beside GarminUnreachable, not under it: it is never a stop."""
     assert not issubclass(garmin.NotFound, garmin.GarminUnreachable)
-    fake = FakeGarmin(
+    fake = fake_garmin(
         originals={201: garmin.NotFound("404")},
         snapshots={START: garmin.NotFound("404"), TODAY: b""},
     )
@@ -381,9 +325,9 @@ def test_a_404_never_stops_the_sync(env) -> None:
     assert "No FIT file: 1 (activity 201 (run 201))" in result.output.splitlines()
 
 
-def test_api_unreachable_names_the_api(env) -> None:
-    fake = FakeGarmin()
-    api = env(fake, Api(unreachable_on_upload=2))
+def test_api_unreachable_names_the_api(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin()
+    api = env(fake, fake_api(unreachable_on_upload=2))
 
     result = _sync("--since", "2026-10-10")
 
@@ -398,10 +342,10 @@ def test_api_unreachable_names_the_api(env) -> None:
 
 
 def test_an_upload_the_api_does_not_answer_in_time_is_not_called_unreachable(
-    env, install_mock_client
+    env, install_mock_client, fake_garmin, fake_api
 ) -> None:
-    fake = FakeGarmin()
-    api = Api()
+    fake = fake_garmin()
+    api = fake_api()
 
     def slow(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and len(api.uploads) == 1:
@@ -424,8 +368,10 @@ def test_an_upload_the_api_does_not_answer_in_time_is_not_called_unreachable(
     assert ("original", 301) not in fake.events
 
 
-def test_api_unreachable_before_the_range_is_known_names_plain_sync(env, install_mock_client) -> None:
-    fake = FakeGarmin()
+def test_api_unreachable_before_the_range_is_known_names_plain_sync(
+    env, install_mock_client, fake_garmin
+) -> None:
+    fake = fake_garmin()
     env(fake)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -442,9 +388,9 @@ def test_api_unreachable_before_the_range_is_known_names_plain_sync(env, install
     assert fake.events == []
 
 
-def test_a_201_without_filter_applied_stops_before_a_second_upload(env) -> None:
-    fake = FakeGarmin()
-    api = env(fake, Api(reply=lambda n, content: httpx.Response(201, json={"session_id": f"s{n}"})))
+def test_a_201_without_filter_applied_stops_before_a_second_upload(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin()
+    api = env(fake, fake_api(reply=lambda n, content: httpx.Response(201, json={"session_id": f"s{n}"})))
 
     result = _sync("--since", "2026-10-10")
 
@@ -455,10 +401,10 @@ def test_a_201_without_filter_applied_stops_before_a_second_upload(env) -> None:
     assert ("original", 201) not in fake.events
 
 
-def test_a_200_without_filter_applied_stops_before_a_second_upload(env) -> None:
-    fake = FakeGarmin()
+def test_a_200_without_filter_applied_stops_before_a_second_upload(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin()
     reply = lambda n, content: httpx.Response(200, json={"skipped": True, "reason": "non_activity"})
-    api = env(fake, Api(reply=reply))
+    api = env(fake, fake_api(reply=reply))
 
     result = _sync("--since", "2026-10-10")
 
@@ -467,17 +413,17 @@ def test_a_200_without_filter_applied_stops_before_a_second_upload(env) -> None:
     assert api.uploads == [b"ACT-101"]
 
 
-def test_an_api_without_the_switch_stops_before_any_upload(env) -> None:
-    fake = FakeGarmin()
-    api = env(fake, Api(doc=openapi_doc(with_switch=False)))
+def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fake_api) -> None:
+    fake = fake_garmin()
+    api = env(fake, fake_api(doc=openapi_doc(with_switch=False)))
 
     result = _sync("--since", "2026-10-10")
 
     assert result.exit_code == 1, result.output
     assert _ends_with(result.output, OLD_API + " and restart the API"), result.output
     assert api.uploads == []
-    assert "POST /sessions" not in api.requests
-    assert "GET /openapi.json" in api.requests
+    assert "POST /sessions" not in api.calls
+    assert "GET /openapi.json" in api.calls
 
 
 @pytest.mark.parametrize(
@@ -501,8 +447,8 @@ def test_an_api_without_the_switch_stops_before_any_upload(env) -> None:
         },
     ],
 )
-def test_an_unreadable_openapi_document_stops_before_any_upload(env, doc) -> None:
-    api = env(FakeGarmin(), Api(doc=doc))
+def test_an_unreadable_openapi_document_stops_before_any_upload(env, doc, fake_garmin, fake_api) -> None:
+    api = env(fake_garmin(), fake_api(doc=doc))
 
     result = _sync("--since", "2026-10-10")
 
@@ -511,7 +457,7 @@ def test_an_unreadable_openapi_document_stops_before_any_upload(env, doc) -> Non
     assert api.uploads == []
 
 
-def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env) -> None:
+def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env, fake_garmin, fake_api) -> None:
     doc = {
         "paths": {
             "/sessions": {
@@ -528,18 +474,18 @@ def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env) -> None:
             }
         }
     }
-    api = env(FakeGarmin(), Api(doc=doc))
+    api = env(fake_garmin(), fake_api(doc=doc))
 
     result = _sync("--since", "2026-10-10")
 
     assert result.exit_code == 0, result.output
-    assert api.requests.count("GET /openapi.json") == 1
-    assert api.requests.index("GET /openapi.json") < api.requests.index("POST /sessions")
+    assert api.calls.count("GET /openapi.json") == 1
+    assert api.calls.index("GET /openapi.json") < api.calls.index("POST /sessions")
     assert len(api.uploads) == 3
 
 
-def test_an_unclassified_garmin_error_on_the_activity_list_stops(env) -> None:
-    api = env(FakeGarmin(list_error=garmin.GarminError("something odd")))
+def test_an_unclassified_garmin_error_on_the_activity_list_stops(env, fake_garmin) -> None:
+    api = env(fake_garmin(list_error=garmin.GarminError("something odd")))
 
     result = _sync("--since", "2026-10-10")
 

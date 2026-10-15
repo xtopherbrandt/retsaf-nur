@@ -17,7 +17,6 @@ from typing import Any
 
 import httpx
 import pytest
-from runcoach_cli import garmin
 from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
@@ -75,35 +74,6 @@ SNAPSHOTS = {
 }
 
 
-class FakeGarmin:
-    def __init__(
-        self,
-        activities: list[dict[str, Any]],
-        snapshots: dict[date, bytes],
-        originals: dict[int, bytes] | None = None,
-    ) -> None:
-        self.activities = activities
-        self.snapshots = snapshots
-        self.originals = originals
-        self.events: list[tuple[str, Any]] = []
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        self.events.append(("list", (start, end)))
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        self.events.append(("original", activity_id))
-        if self.originals is not None:
-            return self.originals[activity_id]
-        return _zip([(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())])
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.events.append(("snapshot", day))
-        if day not in self.snapshots:
-            raise garmin.NotFound(f"no snapshot on {day}")
-        return self.snapshots[day]
-
-
 def _part(body: bytes, field: str) -> tuple[bytes, bytes]:
     """The headers and content of the multipart part named ``field``."""
     marker = f'name="{field}"'.encode()
@@ -114,46 +84,16 @@ def _part(body: bytes, field: str) -> tuple[bytes, bytes]:
     raise AssertionError(f"no part {field}")
 
 
-# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body.
-OPENAPI = {
-    "paths": {
-        "/sessions": {
-            "post": {
-                "requestBody": {
-                    "content": {"multipart/form-data": {"schema": {"$ref": "#/components/schemas/Body"}}}
-                }
-            }
-        }
-    },
-    "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
-}
-
-
-class Api:
-    """Serves an empty ``GET /sessions`` and ``/openapi.json``; answers each upload 201, recording it."""
-
-    def __init__(self) -> None:
-        self.uploads: list[tuple[bytes, bytes, bytes]] = []
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/sessions":
-            return httpx.Response(200, json={"items": [], "next_cursor": None})
-        if request.method == "GET" and request.url.path == "/openapi.json":
-            return httpx.Response(200, json=OPENAPI)
-        if request.method == "POST" and request.url.path == "/sessions":
-            body = request.read()
-            head, content = _part(body, "file")
-            _, switch = _part(body, "runs_and_captures_only")
-            assert b'name="resting_capture"' not in body
-            self.uploads.append((content, switch, head))
-            return httpx.Response(201, json={"session_id": f"s{len(self.uploads)}", "filter_applied": True})
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
+def _check_upload(body: bytes) -> None:
+    """Every upload carries the switch and never the retired ``resting_capture`` field."""
+    _part(body, "runs_and_captures_only")
+    assert b'name="resting_capture"' not in body
 
 
 @pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
-    def setup(fake: FakeGarmin) -> Api:
-        api = Api()
+def env(monkeypatch: pytest.MonkeyPatch, install_mock_client, fake_api):
+    def setup(fake: Any) -> Any:
+        api = fake_api(check=_check_upload)
         install_mock_client(api)
         monkeypatch.setattr(sync, "_library_missing", lambda: False)
         monkeypatch.setattr(sync, "_adapter", lambda: SimpleNamespace(open_client=lambda: fake))
@@ -177,8 +117,8 @@ EXPECTED_UPLOADS = [
 ]
 
 
-def test_snapshot_zip_first_then_activities_by_start_then_id(env) -> None:
-    fake = FakeGarmin(ACTIVITIES, SNAPSHOTS)
+def test_snapshot_zip_first_then_activities_by_start_then_id(env, fake_garmin) -> None:
+    fake = fake_garmin(ACTIVITIES, snapshots=SNAPSHOTS)
     api = env(fake)
 
     result = runner.invoke(app, ["sync", "--since", "2026-10-10"])
@@ -196,11 +136,11 @@ def test_snapshot_zip_first_then_activities_by_start_then_id(env) -> None:
         ("snapshot", date(2026, 10, 12)),
         ("original", 301),
     ]
-    assert [content for content, _, _ in api.uploads] == EXPECTED_UPLOADS
+    assert api.uploads == EXPECTED_UPLOADS
 
 
-def test_only_the_running_family_and_other_are_downloaded(env) -> None:
-    fake = FakeGarmin(ACTIVITIES, SNAPSHOTS)
+def test_only_the_running_family_and_other_are_downloaded(env, fake_garmin) -> None:
+    fake = fake_garmin(ACTIVITIES, snapshots=SNAPSHOTS)
     env(fake)
 
     result = runner.invoke(app, ["sync", "--since", "2026-10-10"])
@@ -213,8 +153,8 @@ def test_only_the_running_family_and_other_are_downloaded(env) -> None:
     assert 99 not in downloaded  # before the range
 
 
-def test_a_manual_activity_is_recorded_as_no_fit_original_and_never_downloaded(env) -> None:
-    fake = FakeGarmin(ACTIVITIES, SNAPSHOTS)
+def test_a_manual_activity_is_recorded_as_no_fit_original_and_never_downloaded(env, fake_garmin) -> None:
+    fake = fake_garmin(ACTIVITIES, snapshots=SNAPSHOTS)
     env(fake)
 
     results = sync.fetch(fake, API_URL, START, TODAY)
@@ -231,7 +171,7 @@ def test_a_manual_activity_is_recorded_as_no_fit_original_and_never_downloaded(e
     assert [r.day for r in uploaded] == [START] * 5 + [date(2026, 10, 11)] * 3 + [TODAY]
 
 
-def test_an_item_result_keeps_no_reply_and_no_upload_body_alive(env, monkeypatch) -> None:
+def test_an_item_result_keeps_no_reply_and_no_upload_body_alive(env, monkeypatch, fake_garmin) -> None:
     """Each ``ItemResult`` holds the reply's status, never the ``httpx.Response`` (or the 1 MiB
     multipart request body it references), so a long sync does not keep every upload in memory."""
     import dataclasses
@@ -245,7 +185,7 @@ def test_an_item_result_keeps_no_reply_and_no_upload_body_alive(env, monkeypatch
         activity_id: _zip([(f"{activity_id}_{n}.fit", big + bytes([n])) for n in range(10)])
         for activity_id in (101, 102, 201, 202, 301)
     }
-    fake = FakeGarmin(ACTIVITIES, SNAPSHOTS, originals)
+    fake = fake_garmin(ACTIVITIES, snapshots=SNAPSHOTS, originals=originals)
     env(fake)
     replies: list[weakref.ref] = []
     real_upload = api_client.upload_fit_bytes
@@ -268,7 +208,7 @@ def test_an_item_result_keeps_no_reply_and_no_upload_body_alive(env, monkeypatch
     assert [ref for ref in replies if ref() is not None] == []
 
 
-def test_every_zip_entry_is_uploaded_with_the_switch(env) -> None:
+def test_every_zip_entry_is_uploaded_with_the_switch(env, fake_garmin) -> None:
     odd = _zip(
         [
             ("readme.txt", b"ENTRY-readme"),
@@ -277,28 +217,28 @@ def test_every_zip_entry_is_uploaded_with_the_switch(env) -> None:
             ("sub/dir/x.FIT", b"ENTRY-nested"),
         ]
     )
-    fake = FakeGarmin([], {START: odd})
+    fake = fake_garmin([], snapshots={START: odd})
     api = env(fake)
 
     result = runner.invoke(app, ["sync", "--since", "2026-10-10"])
 
     assert result.exit_code == 0, result.output
-    assert [content for content, _, _ in api.uploads] == [
+    assert api.uploads == [
         b"ENTRY-readme",
         b"ENTRY-escape",
         b"ENTRY-noext",
         b"ENTRY-nested",
     ]
-    assert all(switch == b"true" for _, switch, _ in api.uploads)
-    for _, _, head in api.uploads:
+    assert all(switch == b"true" for switch in api.switches)
+    for head in api.heads:
         assert b'filename="garmin-' in head
         for name in (b"readme", b"escape", b"noext", b"x.FIT"):
             assert name not in head
 
 
-def test_activities_outside_the_range_are_ignored(env) -> None:
+def test_activities_outside_the_range_are_ignored(env, fake_garmin) -> None:
     after = _activity(401, "2026-10-13 07:00:00", "running", 1, 17)
-    fake = FakeGarmin([after, ACTIVITIES[-1]], {})
+    fake = fake_garmin([after, ACTIVITIES[-1]], snapshots={})
     api = env(fake)
 
     result = runner.invoke(app, ["sync", "--since", "2026-10-10"])
@@ -308,11 +248,11 @@ def test_activities_outside_the_range_are_ignored(env) -> None:
     assert api.uploads == []
 
 
-def test_a_day_with_no_snapshot_uploads_only_its_activities(env) -> None:
-    fake = FakeGarmin([_activity(101, "2026-10-10 07:00:00", "running", 1, 17)], {START: b""})
+def test_a_day_with_no_snapshot_uploads_only_its_activities(env, fake_garmin) -> None:
+    fake = fake_garmin([_activity(101, "2026-10-10 07:00:00", "running", 1, 17)], snapshots={START: b""})
     api = env(fake)
 
     result = runner.invoke(app, ["sync", "--since", "2026-10-10"])
 
     assert result.exit_code == 0, result.output
-    assert [content for content, _, _ in api.uploads] == [b"ACT-101"]
+    assert api.uploads == [b"ACT-101"]

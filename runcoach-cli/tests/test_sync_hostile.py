@@ -78,71 +78,21 @@ def _activity(activity_id: int, local: str = "2026-10-10 07:00:00") -> dict[str,
     }
 
 
-class FakeGarmin:
-    def __init__(self, activities=None, originals=None, snapshots=None) -> None:
-        self.activities = activities or []
-        self.originals = originals or {}
-        self.snapshots = snapshots or {}
-        self.events: list[tuple[str, Any]] = []
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        self.events.append(("original", activity_id))
-        value = self.originals.get(
-            activity_id, _zip([(f"{activity_id}_ACTIVITY.fit", f"ACT-{activity_id}".encode())])
-        )
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.events.append(("snapshot", day))
-        value = self.snapshots.get(day, garmin.NotFound("404"))
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-
-def _file_part(body: bytes) -> bytes:
-    for part in body.split(b"\r\n--"):
-        head, _, content = part.partition(b"\r\n\r\n")
-        if b'name="file"' in head:
-            return content.removesuffix(b"\r\n")
-    raise AssertionError("no file part")
-
-
-class Api:
+def _hostile_reply(n: int, content: bytes) -> httpx.Response:
     """Answers an upload 400 when its bytes start with ``NOTFIT``, 503 when they start with ``BUSY``,
     500 for ``CRASH``, 413 for ``HUGE`` and a 200 skip with an unknown reason for ``ODDSKIP``, else
     201 stored."""
-
-    def __init__(self) -> None:
-        self.uploads: list[bytes] = []
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/sessions":
-            return httpx.Response(200, json={"items": [], "next_cursor": None})
-        if request.method == "GET" and request.url.path == "/openapi.json":
-            return httpx.Response(200, json=SWITCH_DOC)
-        if request.method == "POST" and request.url.path == "/sessions":
-            content = _file_part(request.read())
-            self.uploads.append(content)
-            if content.startswith(b"NOTFIT"):
-                return httpx.Response(400, json={"detail": "not a FIT file"})
-            if content.startswith(b"BUSY"):
-                return httpx.Response(503, json={"detail": "the store is busy"})
-            if content.startswith(b"HUGE"):
-                return httpx.Response(413, json={"detail": "too large"})
-            if content.startswith(b"CRASH"):
-                return httpx.Response(500, json={"detail": "Internal Server Error"})
-            if content.startswith(b"ODDSKIP"):
-                return httpx.Response(
-                    200, json={"filter_applied": True, "skipped": True, "reason": "mystery"}
-                )
-            return httpx.Response(201, json={"session_id": f"s{len(self.uploads)}", "filter_applied": True})
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
+    if content.startswith(b"NOTFIT"):
+        return httpx.Response(400, json={"detail": "not a FIT file"})
+    if content.startswith(b"BUSY"):
+        return httpx.Response(503, json={"detail": "the store is busy"})
+    if content.startswith(b"HUGE"):
+        return httpx.Response(413, json={"detail": "too large"})
+    if content.startswith(b"CRASH"):
+        return httpx.Response(500, json={"detail": "Internal Server Error"})
+    if content.startswith(b"ODDSKIP"):
+        return httpx.Response(200, json={"filter_applied": True, "skipped": True, "reason": "mystery"})
+    return httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
 
 
 def _listing(root: Path) -> dict[str, tuple[int, int]]:
@@ -166,15 +116,15 @@ def _assert_state_holds_only_dates() -> None:
 
 
 @pytest.fixture
-def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path):
+def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path, fake_api):
     """Run ``runcoach sync --since 2026-10-10`` against ``fake``; assert nothing written, nothing escaped."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
     monkeypatch.setattr(sync, "today", lambda: TODAY)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", timezone(timedelta(hours=-7)))
 
-    def go(fake: FakeGarmin | None, adapter: Any = None) -> tuple[Any, Api]:
-        api = Api()
+    def go(fake: Any, adapter: Any = None) -> tuple[Any, Any]:
+        api = fake_api(_hostile_reply, doc=SWITCH_DOC)
         install_mock_client(api)
         chosen = adapter if adapter is not None else SimpleNamespace(open_client=lambda: fake)
         monkeypatch.setattr(sync, "_adapter", lambda: chosen)
@@ -194,8 +144,8 @@ def _failed(output: str) -> list[str]:
     return [line for line in output.splitlines() if line.startswith("Failed")]
 
 
-def test_an_activity_download_that_is_not_a_zip_is_failed(run) -> None:
-    fake = FakeGarmin(
+def test_an_activity_download_that_is_not_a_zip_is_failed(run, fake_garmin) -> None:
+    fake = fake_garmin(
         [_activity(101), _activity(102, "2026-10-11 07:00:00")], originals={101: b"\x00\x01garbage"}
     )
     result, api = run(fake)
@@ -208,8 +158,8 @@ def test_an_activity_download_that_is_not_a_zip_is_failed(run) -> None:
     assert api.uploads == [b"ACT-102"]
 
 
-def test_a_snapshot_download_that_is_not_a_zip_is_failed(run) -> None:
-    fake = FakeGarmin([_activity(101)], snapshots={START: b"PK\x03\x04truncated"})
+def test_a_snapshot_download_that_is_not_a_zip_is_failed(run, fake_garmin) -> None:
+    fake = fake_garmin([_activity(101)], snapshots={START: b"PK\x03\x04truncated"})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -218,8 +168,8 @@ def test_a_snapshot_download_that_is_not_a_zip_is_failed(run) -> None:
     assert api.uploads == [b"ACT-101"]
 
 
-def test_an_empty_zip_is_failed_for_an_activity_and_zero_items_for_a_snapshot(run) -> None:
-    fake = FakeGarmin([_activity(101)], originals={101: _zip([])}, snapshots={START: _zip([])})
+def test_an_empty_zip_is_failed_for_an_activity_and_zero_items_for_a_snapshot(run, fake_garmin) -> None:
+    fake = fake_garmin([_activity(101)], originals={101: _zip([])}, snapshots={START: _zip([])})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -229,8 +179,8 @@ def test_an_empty_zip_is_failed_for_an_activity_and_zero_items_for_a_snapshot(ru
     assert api.uploads == []
 
 
-def test_a_non_fit_entry_is_uploaded_and_its_400_is_failed(run) -> None:
-    fake = FakeGarmin(
+def test_a_non_fit_entry_is_uploaded_and_its_400_is_failed(run, fake_garmin) -> None:
+    fake = fake_garmin(
         [_activity(101)], originals={101: _zip([("notes.txt", b"NOTFIT hello"), ("101.fit", b"ACT-101")])}
     )
     result, api = run(fake)
@@ -246,10 +196,10 @@ def test_a_non_fit_entry_is_uploaded_and_its_400_is_failed(run) -> None:
     assert "Stored: 1" in result.output
 
 
-def test_an_entry_over_the_cap_is_not_uploaded_and_is_failed(run, monkeypatch) -> None:
+def test_an_entry_over_the_cap_is_not_uploaded_and_is_failed(run, monkeypatch, fake_garmin) -> None:
     assert sync.FIT_ENTRY_CAP == 50 * 1024 * 1024
     monkeypatch.setattr(sync, "FIT_ENTRY_CAP", 64)
-    fake = FakeGarmin(
+    fake = fake_garmin(
         [_activity(101)], originals={101: _zip([("big.fit", b"B" * 65), ("cap.fit", b"C" * 64)])}
     )
     result, api = run(fake)
@@ -264,7 +214,7 @@ def test_an_entry_over_the_cap_is_not_uploaded_and_is_failed(run, monkeypatch) -
     ]
 
 
-def test_an_entry_over_the_cap_reads_at_most_cap_plus_one_bytes(run, monkeypatch) -> None:
+def test_an_entry_over_the_cap_reads_at_most_cap_plus_one_bytes(run, monkeypatch, fake_garmin) -> None:
     monkeypatch.setattr(sync, "FIT_ENTRY_CAP", 64)
     reads: list[int] = []
     real_open = zipfile.ZipFile.open
@@ -281,7 +231,7 @@ def test_an_entry_over_the_cap_reads_at_most_cap_plus_one_bytes(run, monkeypatch
         return handle
 
     monkeypatch.setattr(zipfile.ZipFile, "open", spying_open)
-    fake = FakeGarmin([_activity(101)], originals={101: _zip([("big.fit", b"B" * 10_000)])})
+    fake = fake_garmin([_activity(101)], originals={101: _zip([("big.fit", b"B" * 10_000)])})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -289,8 +239,8 @@ def test_an_entry_over_the_cap_reads_at_most_cap_plus_one_bytes(run, monkeypatch
     assert api.uploads == []
 
 
-def test_an_entry_named_dot_dot_slash_is_read_in_memory_and_never_written(run) -> None:
-    fake = FakeGarmin([_activity(101)], originals={101: _zip([("../x.fit", b"ACT-dotdot")])})
+def test_an_entry_named_dot_dot_slash_is_read_in_memory_and_never_written(run, fake_garmin) -> None:
+    fake = fake_garmin([_activity(101)], originals={101: _zip([("../x.fit", b"ACT-dotdot")])})
     result, api = run(fake)
 
     assert result.exit_code == 0, result.output
@@ -298,8 +248,8 @@ def test_an_entry_named_dot_dot_slash_is_read_in_memory_and_never_written(run) -
     assert not (Path.cwd().parent / "x.fit").exists()
 
 
-def test_an_entry_named_with_a_drive_is_read_in_memory_and_never_written(run) -> None:
-    fake = FakeGarmin(
+def test_an_entry_named_with_a_drive_is_read_in_memory_and_never_written(run, fake_garmin) -> None:
+    fake = fake_garmin(
         [_activity(101)], snapshots={START: _zip([("C:\\x.fit", b"SNAP-drive"), ("/abs/y.fit", b"SNAP-abs")])}
     )
     result, api = run(fake)
@@ -308,11 +258,11 @@ def test_an_entry_named_with_a_drive_is_read_in_memory_and_never_written(run) ->
     assert api.uploads == [b"SNAP-drive", b"SNAP-abs", b"ACT-101"]
 
 
-def test_a_corrupt_entry_is_failed_and_the_rest_go_on(run) -> None:
+def test_a_corrupt_entry_is_failed_and_the_rest_go_on(run, fake_garmin) -> None:
     good = _zip([("a.fit", b"ACT-a" * 20), ("b.fit", b"ACT-b")])
     # Corrupt a.fit's data bytes so its CRC check fails on read.
     corrupt = good.replace(b"ACT-aACT-a", b"XXXXXXXXXX", 1)
-    fake = FakeGarmin([_activity(101)], originals={101: corrupt})
+    fake = fake_garmin([_activity(101)], originals={101: corrupt})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -321,7 +271,7 @@ def test_a_corrupt_entry_is_failed_and_the_rest_go_on(run) -> None:
     assert len(failed) == 1 and failed[0].startswith("Failed: 2026-10-10, activity 101 (run 101): a.fit, ")
 
 
-def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch) -> None:
+def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch, fake_garmin) -> None:
     # CPython decompresses a whole bzip2 or LZMA entry before read(n) slices it, so the entry cap
     # cannot bound memory for them: a 471-byte bzip2 zip peaked at 870 MB. They are refused unread.
     buffer = io.BytesIO()
@@ -338,7 +288,7 @@ def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch
         return real(compress_type)
 
     monkeypatch.setattr(zipfile, "_get_decompressor", spy)
-    fake = FakeGarmin([_activity(101)], originals={101: buffer.getvalue()})
+    fake = fake_garmin([_activity(101)], originals={101: buffer.getvalue()})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -354,7 +304,7 @@ def test_a_bzip2_or_lzma_entry_is_failed_and_never_decompressed(run, monkeypatch
     ]
 
 
-def test_running_out_of_memory_reading_an_entry_is_failed(run, monkeypatch) -> None:
+def test_running_out_of_memory_reading_an_entry_is_failed(run, monkeypatch, fake_garmin) -> None:
     # The backstop: a MemoryError while an entry is read fails that entry and the sync goes on.
     download = _zip([("a.fit", b"ACT-a"), ("b.fit", b"ACT-b")])
     real_open = zipfile.ZipFile.open
@@ -365,7 +315,7 @@ def test_running_out_of_memory_reading_an_entry_is_failed(run, monkeypatch) -> N
         return real_open(self, name, *args, **kwargs)
 
     monkeypatch.setattr(zipfile.ZipFile, "open", open_entry)
-    fake = FakeGarmin([_activity(101)], originals={101: download})
+    fake = fake_garmin([_activity(101)], originals={101: download})
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -402,9 +352,9 @@ def test_running_out_of_memory_reading_an_entry_is_failed(run, monkeypatch) -> N
         ),
     ],
 )
-def test_a_summary_lacking_type_id_is_failed_naming_it(run, summary, named) -> None:
+def test_a_summary_lacking_type_id_is_failed_naming_it(run, summary, named, fake_garmin) -> None:
     """A summary without ``typeId`` is failed even when its other type fields miss the filter."""
-    fake = FakeGarmin([summary, _activity(101)])
+    fake = fake_garmin([summary, _activity(101)])
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -417,14 +367,14 @@ def test_a_summary_lacking_type_id_is_failed_naming_it(run, summary, named) -> N
 
 
 @pytest.mark.parametrize("activity_id", [None, "12", True, 1.5])
-def test_a_summary_lacking_activity_id_is_failed_naming_it(run, activity_id) -> None:
+def test_a_summary_lacking_activity_id_is_failed_naming_it(run, activity_id, fake_garmin) -> None:
     summary = _activity(0)
     summary["activityName"] = "nameless id"
     if activity_id is None:
         del summary["activityId"]
     else:
         summary["activityId"] = activity_id
-    fake = FakeGarmin([summary, _activity(101)])
+    fake = fake_garmin([summary, _activity(101)])
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -438,13 +388,13 @@ def test_a_summary_lacking_activity_id_is_failed_naming_it(run, activity_id) -> 
 
 
 @pytest.mark.parametrize("local", [None, "", "yesterday", 20261010])
-def test_a_summary_lacking_start_time_local_is_failed_naming_it(run, local) -> None:
+def test_a_summary_lacking_start_time_local_is_failed_naming_it(run, local, fake_garmin) -> None:
     summary = _activity(55)
     if local is None:
         del summary["startTimeLocal"]
     else:
         summary["startTimeLocal"] = local
-    fake = FakeGarmin([summary, _activity(101)])
+    fake = fake_garmin([summary, _activity(101)])
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -456,8 +406,8 @@ def test_a_summary_lacking_start_time_local_is_failed_naming_it(run, local) -> N
     assert api.uploads == [b"ACT-101"]
 
 
-def test_a_summary_that_is_not_an_object_is_failed(run) -> None:
-    fake = FakeGarmin(["not a dict", _activity(101)])
+def test_a_summary_that_is_not_an_object_is_failed(run, fake_garmin) -> None:
+    fake = fake_garmin(["not a dict", _activity(101)])
     result, api = run(fake)
 
     assert result.exit_code == 1, result.output
@@ -468,8 +418,8 @@ def test_a_summary_that_is_not_an_object_is_failed(run) -> None:
     assert api.uploads == [b"ACT-101"]
 
 
-def test_a_snapshot_day_answering_404_is_zero_items(run) -> None:
-    fake = FakeGarmin(
+def test_a_snapshot_day_answering_404_is_zero_items(run, fake_garmin) -> None:
+    fake = fake_garmin(
         [_activity(101)], snapshots={START: garmin.NotFound("404"), TODAY: garmin.NotFound("404")}
     )
     result, api = run(fake)
@@ -477,11 +427,11 @@ def test_a_snapshot_day_answering_404_is_zero_items(run) -> None:
     assert result.exit_code == 0, result.output
     assert api.uploads == [b"ACT-101"]
     assert _failed(result.output) == []
-    assert fake.events == [("snapshot", START), ("original", 101), ("snapshot", TODAY)]
+    assert fake.downloads == [("snapshot", START), ("original", 101), ("snapshot", TODAY)]
 
 
-def test_a_snapshot_day_answering_an_empty_body_is_zero_items(run) -> None:
-    fake = FakeGarmin([_activity(101)], snapshots={START: b"", TODAY: b""})
+def test_a_snapshot_day_answering_an_empty_body_is_zero_items(run, fake_garmin) -> None:
+    fake = fake_garmin([_activity(101)], snapshots={START: b"", TODAY: b""})
     result, api = run(fake)
 
     assert result.exit_code == 0, result.output
@@ -729,18 +679,20 @@ def _corrupt_entry() -> bytes:
 
 
 def _fake_original(value: Any):
-    return lambda library_garmin, monkeypatch: FakeGarmin([_activity(101)], originals={101: value})
+    return lambda library_garmin, monkeypatch, fake_garmin: fake_garmin(
+        [_activity(101)], originals={101: value}
+    )
 
 
 def _library_original(status: int):
-    return lambda library_garmin, monkeypatch: _library_client(
+    return lambda library_garmin, monkeypatch, fake_garmin: _library_client(
         library_garmin, [_activity(101)], originals={101: status}
     )[0]
 
 
-def _over_cap(library_garmin, monkeypatch):
+def _over_cap(library_garmin, monkeypatch, fake_garmin):
     monkeypatch.setattr(sync, "FIT_ENTRY_CAP", 64)
-    return FakeGarmin([_activity(101)], originals={101: _zip([("big.fit", b"B" * 65)])})
+    return fake_garmin([_activity(101)], originals={101: _zip([("big.fit", b"B" * 65)])})
 
 
 def _encrypted_entry() -> bytes:
@@ -753,26 +705,21 @@ def _encrypted_entry() -> bytes:
 
 
 def _unreadable(field: str):
-    def build(library_garmin, monkeypatch):
+    def build(library_garmin, monkeypatch, fake_garmin):
         summary = _activity(101)
         if field == "typeId":
             del summary["activityType"]["typeId"]
         else:
             del summary[field]
-        return FakeGarmin([summary])
+        return fake_garmin([summary])
 
     return build
 
 
-def _unparseable_start(library_garmin, monkeypatch):
+def _unparseable_start(library_garmin, monkeypatch, fake_garmin):
     summary = _activity(101)
     summary["startTimeLocal"] = "yesterday morning"
-    return FakeGarmin([summary])
-
-
-class _NotBytes(FakeGarmin):
-    def download_original(self, activity_id: int) -> Any:
-        return "a text body"
+    return fake_garmin([summary])
 
 
 PERMANENT_ROWS = {
@@ -786,7 +733,7 @@ PERMANENT_ROWS = {
     "summary-without-typeId": _unreadable("typeId"),
     "summary-without-activityId": _unreadable("activityId"),
     "summary-without-startTimeLocal": _unreadable("startTimeLocal"),
-    "summary-not-an-object": lambda library_garmin, monkeypatch: FakeGarmin(["not a dict"]),
+    "summary-not-an-object": lambda library_garmin, monkeypatch, fake_garmin: fake_garmin(["not a dict"]),
     "summary-unparseable-startTimeLocal": _unparseable_start,
 }
 
@@ -795,7 +742,9 @@ TEMPORARY_ROWS = {
     "garmin-503": _library_original(503),
     "garmin-408": _library_original(408),
     "garmin-error-without-status": _fake_original(garmin.GarminError("a reply that is not JSON")),
-    "download-not-bytes": lambda library_garmin, monkeypatch: _NotBytes([_activity(101)]),
+    "download-not-bytes": lambda library_garmin, monkeypatch, fake_garmin: fake_garmin(
+        [_activity(101)], originals={101: "a text body"}
+    ),
     "api-503-busy-store": _fake_original(_zip([("a.fit", b"BUSY x")])),
     "api-500": _fake_original(_zip([("a.fit", b"CRASH x")])),
     "api-200-unknown-skip-reason": _fake_original(_zip([("a.fit", b"ODDSKIP x")])),
@@ -807,8 +756,10 @@ TEMPORARY_ROWS = {
 
 
 @pytest.mark.parametrize("build", PERMANENT_ROWS.values(), ids=PERMANENT_ROWS.keys())
-def test_a_permanent_failure_is_reported_and_not_remembered(run, library_garmin, monkeypatch, build) -> None:
-    result, _ = run(build(library_garmin, monkeypatch))
+def test_a_permanent_failure_is_reported_and_not_remembered(
+    run, library_garmin, monkeypatch, build, fake_garmin
+) -> None:
+    result, _ = run(build(library_garmin, monkeypatch, fake_garmin))
 
     assert result.exit_code == 1, result.output
     (failed,) = _failed(result.output)
@@ -818,8 +769,10 @@ def test_a_permanent_failure_is_reported_and_not_remembered(run, library_garmin,
 
 
 @pytest.mark.parametrize("build", TEMPORARY_ROWS.values(), ids=TEMPORARY_ROWS.keys())
-def test_a_temporary_failure_is_remembered_until_fetched(run, library_garmin, monkeypatch, build) -> None:
-    result, _ = run(build(library_garmin, monkeypatch))
+def test_a_temporary_failure_is_remembered_until_fetched(
+    run, library_garmin, monkeypatch, build, fake_garmin
+) -> None:
+    result, _ = run(build(library_garmin, monkeypatch, fake_garmin))
 
     assert result.exit_code == 1, result.output
     (failed,) = _failed(result.output)

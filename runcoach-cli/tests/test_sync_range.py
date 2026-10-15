@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 import pytest
-from runcoach_cli import garmin
 from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
@@ -25,27 +24,6 @@ runner = CliRunner()
 
 TODAY = date(2026, 10, 13)
 ZONE = timezone(timedelta(hours=-7))
-
-
-class EmptyGarmin:
-    """Lists no activity and has no snapshot on any day; records what it was asked."""
-
-    def __init__(self) -> None:
-        self.listed: list[tuple[date, date]] = []
-        self.snapshot_days: list[date] = []
-        self.originals: list[int] = []
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        self.listed.append((start, end))
-        return []
-
-    def download_original(self, activity_id: int) -> bytes:
-        self.originals.append(activity_id)
-        raise AssertionError("nothing is listed, so nothing is downloaded")
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.snapshot_days.append(day)
-        raise garmin.NotFound(f"no snapshot on {day}")
 
 
 def _row(
@@ -63,26 +41,17 @@ def _row(
     }
 
 
-class Store:
-    """Serves ``GET /sessions`` from ``pages`` (cursor chain) and fails any upload."""
-
-    def __init__(self, pages: list[list[dict[str, Any]]]) -> None:
-        self.pages = pages
-        self.requests: list[httpx.Request] = []
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        if request.method == "GET" and request.url.path == "/sessions":
-            since = request.url.params.get("since")
-            index = 0 if since is None else int(since.removeprefix("cursor-"))
-            next_cursor = f"cursor-{index + 1}" if index + 1 < len(self.pages) else None
-            return httpx.Response(200, json={"items": self.pages[index], "next_cursor": next_cursor})
-        raise AssertionError(f"unexpected request {request.method} {request.url}")
+@pytest.fixture
+def sessions_store(fake_api):
+    """``sessions_store(pages)``: an API serving ``GET /sessions`` from ``pages`` (a cursor chain) that
+    fails any other request."""
+    return lambda pages: fake_api(pages=pages, doc=None, accept_uploads=False)
 
 
 @pytest.fixture
-def fake(monkeypatch: pytest.MonkeyPatch) -> EmptyGarmin:
-    client = EmptyGarmin()
+def fake(monkeypatch: pytest.MonkeyPatch, fake_garmin) -> Any:
+    """A Garmin client that lists no activity and has no snapshot on any day."""
+    client = fake_garmin(allow_originals=False)
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
     monkeypatch.setattr(sync, "_adapter", lambda: SimpleNamespace(open_client=lambda: client))
     monkeypatch.setattr(sync, "today", lambda: TODAY)
@@ -90,7 +59,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> EmptyGarmin:
     return client
 
 
-def _run(install_mock_client, store: Store, *args: str):
+def _run(install_mock_client, store: Any, *args: str):
     install_mock_client(store)
     return runner.invoke(app, ["sync", *args])
 
@@ -99,9 +68,9 @@ def _first_line(output: str) -> str:
     return output.splitlines()[0]
 
 
-def test_newest_run_2026_10_11_covers_10_10_to_10_13(install_mock_client, fake: EmptyGarmin) -> None:
+def test_newest_run_2026_10_11_covers_10_10_to_10_13(install_mock_client, fake: Any, sessions_store) -> None:
     # 07:38 local on 10-11 is 14:38 UTC. A newer cycling session is passed over.
-    store = Store(
+    store = sessions_store(
         [[_row("c1", "2026-10-12T16:00:00+00:00", sport="other"), _row("r1", "2026-10-11T14:38:00+00:00")]]
     )
 
@@ -114,9 +83,11 @@ def test_newest_run_2026_10_11_covers_10_10_to_10_13(install_mock_client, fake: 
     assert store.requests[0].url.params["limit"] == "50"
 
 
-def test_newest_run_date_is_taken_in_the_computer_zone(install_mock_client, fake: EmptyGarmin) -> None:
+def test_newest_run_date_is_taken_in_the_computer_zone(
+    install_mock_client, fake: Any, sessions_store
+) -> None:
     # 02:30 UTC on 10-12 is 19:30 on 10-11 in UTC-7, so newest is 10-11, not 10-12.
-    store = Store([[_row("r1", "2026-10-12T02:30:00+00:00")]])
+    store = sessions_store([[_row("r1", "2026-10-12T02:30:00+00:00")]])
 
     result = _run(install_mock_client, store)
 
@@ -124,8 +95,10 @@ def test_newest_run_date_is_taken_in_the_computer_zone(install_mock_client, fake
     assert _first_line(result.output) == "From 2026-10-10 to 2026-10-13"
 
 
-def test_newest_snapshot_today_covers_yesterday_and_today(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[_row("s1", "2026-10-13T15:00:00+00:00", sport="other", tag="health_snapshot")]])
+def test_newest_snapshot_today_covers_yesterday_and_today(
+    install_mock_client, fake: Any, sessions_store
+) -> None:
+    store = sessions_store([[_row("s1", "2026-10-13T15:00:00+00:00", sport="other", tag="health_snapshot")]])
 
     result = _run(install_mock_client, store)
 
@@ -135,8 +108,10 @@ def test_newest_snapshot_today_covers_yesterday_and_today(install_mock_client, f
     assert fake.listed == [(date(2026, 10, 12), TODAY)]
 
 
-def test_newest_strap_check_counts_as_a_capture(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[_row("h1", "2026-10-08T14:00:00+00:00", sport="other", tag="resting_hrv_check")]])
+def test_newest_strap_check_counts_as_a_capture(install_mock_client, fake: Any, sessions_store) -> None:
+    store = sessions_store(
+        [[_row("h1", "2026-10-08T14:00:00+00:00", sport="other", tag="resting_hrv_check")]]
+    )
 
     result = _run(install_mock_client, store)
 
@@ -144,8 +119,8 @@ def test_newest_strap_check_counts_as_a_capture(install_mock_client, fake: Empty
     assert _first_line(result.output) == "From 2026-10-07 to 2026-10-13"
 
 
-def test_empty_store_covers_30_days(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[]])
+def test_empty_store_covers_30_days(install_mock_client, fake: Any, sessions_store) -> None:
+    store = sessions_store([[]])
 
     result = _run(install_mock_client, store)
 
@@ -155,7 +130,9 @@ def test_empty_store_covers_30_days(install_mock_client, fake: EmptyGarmin) -> N
     assert len(fake.snapshot_days) == 30
 
 
-def test_only_cycling_pages_every_session_and_covers_30_days(install_mock_client, fake: EmptyGarmin) -> None:
+def test_only_cycling_pages_every_session_and_covers_30_days(
+    install_mock_client, fake: Any, sessions_store
+) -> None:
     pages = [
         [
             _row(f"c{page}-{i}", f"2026-10-{12 - page:02d}T{10 + i:02d}:00:00+00:00", sport="other")
@@ -163,7 +140,7 @@ def test_only_cycling_pages_every_session_and_covers_30_days(install_mock_client
         ]
         for page in range(3)
     ]
-    store = Store(pages)
+    store = sessions_store(pages)
 
     result = _run(install_mock_client, store)
 
@@ -174,8 +151,8 @@ def test_only_cycling_pages_every_session_and_covers_30_days(install_mock_client
     assert all(r.url.params["limit"] == "50" for r in gets)
 
 
-def test_future_dated_newest_is_capped_with_a_warning(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[_row("bad-clock-1", "2119-01-01T12:00:00+00:00", name="Morning Run")]])
+def test_future_dated_newest_is_capped_with_a_warning(install_mock_client, fake: Any, sessions_store) -> None:
+    store = sessions_store([[_row("bad-clock-1", "2119-01-01T12:00:00+00:00", name="Morning Run")]])
 
     result = _run(install_mock_client, store)
 
@@ -190,10 +167,10 @@ def test_future_dated_newest_is_capped_with_a_warning(install_mock_client, fake:
 
 
 def test_the_future_dated_warning_prints_the_name_with_controls_replaced(
-    install_mock_client, fake: EmptyGarmin
+    install_mock_client, fake: Any, sessions_store
 ) -> None:
     """The stored name and id are printed as ``runcoach sessions`` prints them: controls become ``?``."""
-    store = Store([[_row("bad\x07id", "2119-01-01T12:00:00+00:00", name="Run\x1b[2J\r\nFake line")]])
+    store = sessions_store([[_row("bad\x07id", "2119-01-01T12:00:00+00:00", name="Run\x1b[2J\r\nFake line")]])
 
     result = _run(install_mock_client, store)
 
@@ -203,8 +180,8 @@ def test_the_future_dated_warning_prints_the_name_with_controls_replaced(
     assert "\x1b" not in result.output and "\x07" not in result.output
 
 
-def test_since_replaces_the_start(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[_row("r1", "2026-10-11T14:38:00+00:00")]])
+def test_since_replaces_the_start(install_mock_client, fake: Any, sessions_store) -> None:
+    store = sessions_store([[_row("r1", "2026-10-11T14:38:00+00:00")]])
 
     result = _run(install_mock_client, store, "--since", "2026-09-01")
 
@@ -213,8 +190,8 @@ def test_since_replaces_the_start(install_mock_client, fake: EmptyGarmin) -> Non
     assert fake.listed == [(date(2026, 9, 1), TODAY)]
 
 
-def test_since_today_covers_today_only(install_mock_client, fake: EmptyGarmin) -> None:
-    store = Store([[]])
+def test_since_today_covers_today_only(install_mock_client, fake: Any, sessions_store) -> None:
+    store = sessions_store([[]])
 
     result = _run(install_mock_client, store, "--since", "2026-10-13")
 
@@ -224,8 +201,10 @@ def test_since_today_covers_today_only(install_mock_client, fake: EmptyGarmin) -
 
 
 @pytest.mark.parametrize("since", ["2026-10-14", "2027-01-01"])
-def test_since_after_today_is_a_usage_error(install_mock_client, fake: EmptyGarmin, since: str) -> None:
-    store = Store([[]])
+def test_since_after_today_is_a_usage_error(
+    install_mock_client, fake: Any, since: str, sessions_store
+) -> None:
+    store = sessions_store([[]])
 
     result = _run(install_mock_client, store, "--since", since)
 
@@ -238,8 +217,10 @@ def test_since_after_today_is_a_usage_error(install_mock_client, fake: EmptyGarm
 @pytest.mark.parametrize(
     "since", ["2026-13-01", "yesterday", "2026/10/01", "2026-W41-1", "20261010", "2026-10-1 ", "\uff12026-10-10"]
 )
-def test_since_not_a_date_is_a_usage_error(install_mock_client, fake: EmptyGarmin, since: str) -> None:
-    store = Store([[]])
+def test_since_not_a_date_is_a_usage_error(
+    install_mock_client, fake: Any, since: str, sessions_store
+) -> None:
+    store = sessions_store([[]])
 
     result = _run(install_mock_client, store, "--since", since)
 
@@ -248,7 +229,7 @@ def test_since_not_a_date_is_a_usage_error(install_mock_client, fake: EmptyGarmi
     assert store.requests == []
 
 
-def test_api_unreachable_while_finding_the_range_exits_1(install_mock_client, fake: EmptyGarmin) -> None:
+def test_api_unreachable_while_finding_the_range_exits_1(install_mock_client, fake: Any) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("refused", request=request)
 
@@ -260,7 +241,7 @@ def test_api_unreachable_while_finding_the_range_exits_1(install_mock_client, fa
     assert fake.listed == []
 
 
-def test_api_error_while_finding_the_range_exits_1(install_mock_client, fake: EmptyGarmin) -> None:
+def test_api_error_while_finding_the_range_exits_1(install_mock_client, fake: Any) -> None:
     install_mock_client(lambda request: httpx.Response(500, text="boom"))
 
     result = runner.invoke(app, ["sync"])
@@ -271,11 +252,11 @@ def test_api_error_while_finding_the_range_exits_1(install_mock_client, fake: Em
 
 
 def test_since_skips_the_walk_and_never_warns_about_a_future_dated_session(
-    install_mock_client, fake: EmptyGarmin
+    install_mock_client, fake: Any, sessions_store
 ) -> None:
     # The walk only finds the start that --since replaces: it is not made, so the newest stored
     # session (here dated 2119) can neither warn nor stop the sync.
-    store = Store([[_row("bad-clock-1", "2119-01-01T08:00:00+00:00", name="Run")]])
+    store = sessions_store([[_row("bad-clock-1", "2119-01-01T08:00:00+00:00", name="Run")]])
 
     result = _run(install_mock_client, store, "--since", "2026-10-12")
 
@@ -287,7 +268,7 @@ def test_since_skips_the_walk_and_never_warns_about_a_future_dated_session(
 
 
 def test_an_api_error_body_while_finding_the_range_is_printed_safely_and_cut(
-    install_mock_client, fake: EmptyGarmin
+    install_mock_client, fake: Any
 ) -> None:
     body = "boom\x1b[2J\r\nforged line" + "x" * 5000
     install_mock_client(lambda request: httpx.Response(500, text=body))
