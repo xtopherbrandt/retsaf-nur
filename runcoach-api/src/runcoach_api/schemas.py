@@ -1482,6 +1482,10 @@ _ZERO_NOTE = (
     "and is still matched by its start second; under the 1 % rule 0 agrees with a stored 0 and with nothing else. "
     "Null never agrees."
 )
+_ZERO_DURATION_NOTE = (
+    "Zero is accepted, not refused; under the 1 % rule 0 agrees with a stored 0 and with nothing else. "
+    "Null never agrees."
+)
 
 
 class RaceTagItem(BaseModel):
@@ -1505,7 +1509,7 @@ class RaceTagItem(BaseModel):
         ge=0, strict=True, allow_inf_nan=False, description=f"Connect's distance in metres, or null. {_ZERO_NOTE}"
     )
     duration_s: float | None = Field(
-        ge=0, strict=True, allow_inf_nan=False, description=f"Connect's duration in seconds, or null. {_ZERO_NOTE}"
+        ge=0, strict=True, allow_inf_nan=False, description=f"Connect's duration in seconds, or null. {_ZERO_DURATION_NOTE}"
     )
     race: bool = Field(
         default=None,
@@ -1783,23 +1787,42 @@ class DeterminantTrend(BaseModel):
     rate: None
 
 
+_ThresholdKind = Literal["race", "threshold_workout"]
+
+
 class ThresholdEffort(BaseModel):
-    """A tagged race the filter used, with the gain it entered with (1 for the first)."""
+    """A tagged race or threshold workout the filter used, with the gain it entered with (1 for the first)."""
 
     session_id: str
     start_time: datetime.datetime
-    duration_s: float = Field(description="`timer_time_s`, else the summary's `duration_s`.")
-    gap_pace_s_per_km: float = Field(description="F013's grade-adjusted pace of the race.")
-    gap_coverage: float | None = Field(description="F013's graded share of the distance; below 1 counts at flat pace.")
-    gps_degraded_fraction: float | None = Field(description="F013's degraded-GPS share of the distance; shown, never judged.")
+    kind: _ThresholdKind = Field(description="`race`, or `threshold_workout` (tagged Training in Connect).")
+    duration_s: float = Field(
+        description="A race's `timer_time_s`, else the summary's `duration_s`; a workout's active time, the "
+        "active laps' summed `timer_s`."
+    )
+    gap_pace_s_per_km: float = Field(
+        description="F013's grade-adjusted pace of the race, or of the workout's active laps' windows."
+    )
+    gap_coverage: float | None = Field(
+        description="F013's graded share of the distance (a workout's: over its active windows); below 1 counts "
+        "at flat pace."
+    )
+    gps_degraded_fraction: float | None = Field(
+        description="F013's degraded-GPS share of the distance (a workout's: over its active windows); shown, "
+        "never judged."
+    )
     gain: float
+    active_blocks: int | None = Field(
+        description="A workout's runs of consecutive active laps (3x10 min with jogs reads 3); null for a race."
+    )
 
 
 class ThresholdExclusion(BaseModel):
-    """A tagged running race at or before `as_of` that was not used, and why."""
+    """A tagged running race or threshold workout at or before `as_of` that was not used, and why."""
 
     session_id: str
     start_time: datetime.datetime
+    kind: _ThresholdKind = Field(description="`race` or `threshold_workout`.")
     reason: Literal[
         "outside_threshold_band",
         "distance_regressed",
@@ -1808,14 +1831,22 @@ class ThresholdExclusion(BaseModel):
         "summary_unreadable",
         "quality_flags_unreadable",
         "features_unavailable",
+        "laps_not_read",
+        "lap_times_unreadable",
+        "no_workout_steps",
+        "active_time_below_minimum",
+        "laps_unreadable",
     ] = Field(
-        description="The first of reference section 2's rows the race fails; or, when a stored value it needs "
-        "does not read, `summary_unreadable`, `quality_flags_unreadable` or `features_unavailable`."
+        description="The first of the F024 reference section 2 rows a race fails, or of the F026 reference "
+        "section 3 rows a workout fails (`laps_not_read`, `lap_times_unreadable`, `no_workout_steps`, "
+        "`active_time_below_minimum`, then the flags and `gap_pace_unavailable`); or, when a stored value it "
+        "needs does not read, `summary_unreadable` (races only), `quality_flags_unreadable`, "
+        "`features_unavailable` or `laps_unreadable` (workouts only)."
     )
 
 
 class ThresholdPaceParameters(BaseModel):
-    """The constants the estimate was computed with (F024 reference section 1)."""
+    """The constants the estimate was computed with (F024 reference section 1, F026 reference section 4)."""
 
     typical_error: float
     doubling_days: int
@@ -1823,22 +1854,31 @@ class ThresholdPaceParameters(BaseModel):
     high_max_error: float
     medium_max_error: float
     short_race_s: int
+    workout_min_active_s: int = Field(description="A threshold workout's least active time in seconds; no maximum.")
 
 
 class Determinant(BaseModel):
-    """One determinant of the state model; only `functional_threshold_pace` is served."""
+    """One determinant of the state model; only `functional_threshold_pace` is served, from tagged races
+    and Training-tagged threshold workouts' active laps. Its 80 % interval covers effort-to-effort noise,
+    not bias: an effort read wrongly (a workout tagged Race, read whole) moves the estimate and the
+    interval with it, so the interval need not contain the true pace."""
 
     name: Literal["functional_threshold_pace"]
     estimate: ThresholdPaceValue | None
     unavailable: Literal["no_qualifying_effort", "estimate_not_finite"] | None = Field(
-        description="`no_qualifying_effort` before the first qualifying race; `estimate_not_finite` when a "
-        "race's GAP pace is so far out of range that the estimate overflows. Null with an estimate."
+        description="`no_qualifying_effort` before the first qualifying race or workout; `estimate_not_finite` "
+        "when an effort's GAP pace is so far out of range that the estimate overflows. Null with an estimate."
     )
     trend: DeterminantTrend
     error: float | None = Field(description="sqrt(P) as a fraction of speed (0.025 is 2.5 %); null when unavailable.")
-    short_races_only: bool = Field(description="Every race used lasted under 1800 s: the pace likely reads fast.")
-    efforts: list[ThresholdEffort] = Field(description="The races used, in start-time order.")
-    excluded: list[ThresholdExclusion] = Field(description="Every tagged running race not used, in start-time order.")
+    short_races_only: bool = Field(
+        description="At least one race used and every race used lasted under 1800 s: the pace likely reads fast. "
+        "Workouts never set it; a history of workouts only reads false."
+    )
+    efforts: list[ThresholdEffort] = Field(description="The races and workouts used, in start-time order.")
+    excluded: list[ThresholdExclusion] = Field(
+        description="Every tagged running race and threshold workout not used, in start-time order."
+    )
     parameters: ThresholdPaceParameters
 
 

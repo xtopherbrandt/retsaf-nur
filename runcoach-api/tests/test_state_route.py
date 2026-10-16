@@ -37,6 +37,7 @@ PARAMETERS = {
     "high_max_error": 0.025,
     "medium_max_error": 0.05,
     "short_race_s": 1800,
+    "workout_min_active_s": 600,
 }
 
 
@@ -211,7 +212,12 @@ def test_only_a_marathon_tagged_is_unavailable_and_excluded(monkeypatch: pytest.
         determinant = _ftp(_ok(client))
     _assert_no_qualifying_effort(determinant)
     assert determinant["excluded"] == [
-        {"session_id": marathon, "start_time": determinant["excluded"][0]["start_time"], "reason": "outside_threshold_band"}
+        {
+            "session_id": marathon,
+            "start_time": determinant["excluded"][0]["start_time"],
+            "kind": "race",
+            "reason": "outside_threshold_band",
+        }
     ]
     assert _instant(determinant["excluded"][0]["start_time"]) == start
     assert reads == [], "a race outside the band must cost no records read (reference section 2 rows 1-2 first)"
@@ -365,6 +371,7 @@ def test_parameters_trend_readiness_gap_to_goal() -> None:
     assert effort["gap_coverage"] == pytest.approx(1.0)
     assert effort["gps_degraded_fraction"] == 0.0
     assert effort["gain"] == 1.0
+    assert (effort["kind"], effort["active_blocks"]) == ("race", None)
 
 
 def test_timezone_is_served(zone_config) -> None:

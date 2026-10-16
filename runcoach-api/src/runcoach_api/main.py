@@ -1566,7 +1566,7 @@ def set_race_tags(update: RaceTagsUpdate) -> RaceTagsResult:
 #
 # Appended below the earlier routes with its own imports, as the routes
 # above are, so the lines cited by number stay in place. The estimator lives
-# in metrics.threshold_pace; db.read_threshold_race_rows reads its rows.
+# in metrics.threshold_pace; db.read_threshold_effort_rows reads its rows.
 # ---------------------------------------------------------------------------
 import re
 
@@ -1615,14 +1615,16 @@ def parse_as_of(value: str | None, zone: ZoneInfo, now: datetime.datetime) -> da
 def _threshold_determinant(
     result: threshold_pace.ThresholdPace, unreadable: list[dict]
 ) -> Determinant:
-    """The ``functional_threshold_pace`` entry: the estimator's result, with the races the reader
-    could not read merged into ``excluded`` (those at or before ``as_of``, in start-time order).
+    """The ``functional_threshold_pace`` entry: the estimator's result, with the races and workouts
+    the reader could not read merged into ``excluded`` (those at or before ``as_of``, in start-time
+    order), each exclusion with its ``kind``.
 
     An estimate with a non-finite published number (a finite but absurd GAP pace overflows the
     interval) is served as ``estimate_not_finite`` with ``estimate`` and ``error`` null, never as a value JSON
     cannot carry; ``efforts`` (with GAP pace and gain) and ``parameters`` stay, so the race can be found."""
     excluded = [
-        {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason} for e in result.excluded
+        {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason, "kind": e.kind}
+        for e in result.excluded
     ]
     for row in unreadable:
         start = datetime.datetime.fromisoformat(row["start_time"])
@@ -1658,17 +1660,19 @@ def _threshold_determinant(
 
 @app.get("/state", response_model=StateModel, operation_id="getState", tags=["State & Metrics"])
 def get_state(as_of: str | None = Query(None)) -> StateModel:
-    """The determinant profile at ``as_of`` (F024): threshold pace from the tagged races, with its
-    80 % interval and confidence, on the contract's path (``operationId: getState``).
+    """The determinant profile at ``as_of`` (F024, F026): threshold pace from the tagged races and
+    the Training-tagged threshold workouts' active blocks, with its 80 % interval and confidence,
+    on the contract's path (``operationId: getState``).
 
     The zone is read from the config per request. ``parse_as_of`` reads ``as_of`` against the
     ``_utcnow`` seam; a value it refuses is a ``RequestValidationError`` on ``("query",
-    "as_of")``, as ``list_sessions`` raises its cursor check. ``db.read_threshold_race_rows``
-    reads the tagged races (records only for those in the duration band) and
+    "as_of")``, as ``list_sessions`` raises its cursor check. ``db.read_threshold_effort_rows``
+    reads the tagged races (records only for those in the duration band) and workouts (records
+    only for those past rows 1 to 3 of the F026 reference section 3) and
     ``metrics.threshold_pace.estimate`` replays them to the instant, recomputed on every
-    request. A race whose summary, quality flags or feature inputs do not read is excluded with
-    its reason (``summary_unreadable``, ``quality_flags_unreadable``, ``features_unavailable``)
-    rather than failing the read. A stored ``start_time`` is trusted, as the ingest writes it with
+    request. A race or workout whose summary, quality flags, feature inputs or laps do not read is
+    excluded with its reason (``summary_unreadable``, ``quality_flags_unreadable``,
+    ``features_unavailable``, ``laps_unreadable``) rather than failing the read. A stored ``start_time`` is trusted, as the ingest writes it with
     its offset; a naive or unparseable one, which only a write from outside the API could leave,
     fails the read. ``readiness`` and ``gap_to_goal`` are null. Nothing is written.
     """
@@ -1682,7 +1686,7 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
 
     conn = db.get_connection()
     try:
-        rows, unreadable = db.read_threshold_race_rows(conn)
+        rows, unreadable = db.read_threshold_effort_rows(conn)
     finally:
         conn.close()
 

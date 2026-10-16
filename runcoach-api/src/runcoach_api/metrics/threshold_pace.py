@@ -19,8 +19,8 @@ plain dict are interchangeable:
 **Which runs qualify** (F024 reference section 2), checked in this order; the first that fails is
 the reason:
 
-1. ``sport`` is ``running`` and ``activity_tag`` is ``race``; otherwise the row is in neither
-   ``efforts`` nor ``excluded``.
+1. ``sport`` is ``running`` and ``activity_tag`` is ``race`` (or ``threshold_workout``, read as
+   below); otherwise the row is in neither ``efforts`` nor ``excluded``.
 2. The duration ``d`` is ``timer_time_s``, or the summary ``duration_s`` when ``timer_time_s`` is
    ``None``; ``d`` must be a real number (a bool or a string is refused, not coerced), finite, and
    ``1200 <= d <= 3600``. Otherwise ``outside_threshold_band``.
@@ -43,9 +43,29 @@ sqrt(P)``, and the label: ``high`` while ``P <= R``, ``medium`` while ``P <= 4 R
 Labels compare P with R and 4 R directly, never ``sqrt(P)`` with 0.05; in doubles the reference's
 boundaries land on their stated side with no tolerance (one race and 42 days gives ``P == 4 R``).
 
-``short_races_only`` is true when every effort used lasted under ``SHORT_RACE_S`` (a 20-30 min race
-reads threshold fast); it is a display warning and changes no number. With no qualifying effort the
-result is unavailable, ``no_qualifying_effort``, and every number is ``None``.
+``short_races_only`` is true when at least one race is used and every race used lasted under
+``SHORT_RACE_S`` (a 20-30 min race reads threshold fast); workouts never set it (F026 reference
+section 4). It is a display warning and changes no number. With no qualifying effort the result is
+unavailable, ``no_qualifying_effort``, and every number is ``None``.
+
+**Threshold workouts** (F026 reference sections 3 and 4). The candidate filter admits
+``activity_tag`` ``threshold_workout`` beside ``race``; a workout enters the same filter with the
+same ``R``, at its session ``start_time``, with ``y`` from its active GAP pace. Its row carries
+what the reader decided from its laps and steps, by key:
+
+- ``laps_read_at`` (null when the laps were never read);
+- ``lap_reason``: ``active_laps``' reason (``lap_times_unreadable`` or ``no_workout_steps``) or null;
+- ``active_time_s`` (``A``) and ``active_blocks``, from ``active_laps``;
+- ``quality_flags``, and the active block's ``gap_avg_pace_s_per_km``, ``gap_coverage`` and
+  ``gps_degraded_fraction`` over the active windows (read only for a workout past row 3).
+
+Checked in this order, the first that fails being the reason: row 1 ``laps_read_at`` set, else
+``laps_not_read``; rows 1a and 2, ``lap_reason``; row 3, ``A`` finite (an overflowed sum of finite
+laps is refused) and ``A >= WORKOUT_MIN_ACTIVE_S``, else ``active_time_below_minimum``; then the
+race's flag and GAP rows (3 and 4 above) unchanged. ``workout_lap_reason`` decides rows 1 to 3, so
+the reader applies them before any record read with the estimator's own rule. Each ``Effort`` and
+``Exclusion`` carries its ``kind``; a workout's ``duration_s`` is ``A`` and its ``active_blocks``
+the count of runs of consecutive active laps (``None`` for a race).
 
 **The active block of a threshold workout** (F026 reference section 3), also pure: ``active_laps``
 and ``active_block`` read laps, workout steps and F013's per-segment stream (``session_features.
@@ -82,6 +102,8 @@ SHORT_RACE_S = 1800
 BAND_MIN_S = 1200
 BAND_MAX_S = 3600
 SECONDS_PER_DAY = 86400.0
+WORKOUT_MIN_ACTIVE_S = 600
+"""A threshold workout's least active time ``A`` in seconds; no maximum (F026 reference section 3 row 3)."""
 
 PARAMETERS: Mapping[str, float | int] = MappingProxyType(
     {
@@ -91,21 +113,32 @@ PARAMETERS: Mapping[str, float | int] = MappingProxyType(
         "high_max_error": HIGH_MAX_ERROR,
         "medium_max_error": MEDIUM_MAX_ERROR,
         "short_race_s": SHORT_RACE_S,
+        "workout_min_active_s": WORKOUT_MIN_ACTIVE_S,
     }
 )
-"""The reference section 1 keys and values, served as the response's ``parameters``."""
+"""The F024 reference section 1 keys and values and F026's ``workout_min_active_s``, served as the
+response's ``parameters``."""
 
 RUNNING = "running"
 RACE = "race"
+THRESHOLD_WORKOUT = "threshold_workout"
+KINDS = (RACE, THRESHOLD_WORKOUT)
+"""The ``activity_tag`` values the candidate filter admits, each an effort's ``kind``."""
 FLAG_ORDER = ("distance_regressed", "smart_recording")
 OUTSIDE_THRESHOLD_BAND = "outside_threshold_band"
 GAP_PACE_UNAVAILABLE = "gap_pace_unavailable"
 NO_QUALIFYING_EFFORT = "no_qualifying_effort"
+LAPS_NOT_READ = "laps_not_read"
+ACTIVE_TIME_BELOW_MINIMUM = "active_time_below_minimum"
 
 
 @dataclass(frozen=True)
 class Effort:
-    """A qualifying race used by the filter, with the gain ``K`` it entered with."""
+    """A qualifying race or threshold workout used by the filter, with the gain ``K`` it entered with.
+
+    For a workout, ``duration_s`` is its active time ``A``, the GAP pace and the two fractions are
+    over its active windows, and ``active_blocks`` counts runs of consecutive active laps; a race's
+    ``active_blocks`` is ``None``."""
 
     session_id: str
     start_time: datetime
@@ -114,15 +147,18 @@ class Effort:
     gap_coverage: Any
     gps_degraded_fraction: Any
     gain: float
+    kind: str
+    active_blocks: int | None
 
 
 @dataclass(frozen=True)
 class Exclusion:
-    """A tagged running race at or before ``as_of`` that did not qualify, and why."""
+    """A tagged running race or threshold workout at or before ``as_of`` that did not qualify, and why."""
 
     session_id: str
     start_time: datetime
     reason: str
+    kind: str
 
 
 @dataclass(frozen=True)
@@ -214,12 +250,41 @@ def _days(later: datetime, earlier: datetime) -> float:
     return (later - earlier).total_seconds() / SECONDS_PER_DAY
 
 
+def _short_races_only(efforts: Iterable[Effort]) -> bool:
+    """At least one race used and every race used under ``SHORT_RACE_S``; workouts are not read."""
+    races = [effort for effort in efforts if effort.kind == RACE]
+    return bool(races) and all(effort.duration_s < SHORT_RACE_S for effort in races)
+
+
+def active_time_of(row: Mapping[str, Any]) -> float | None:
+    """A workout's active time ``A`` through the finite screen: ``None`` when it is not a real,
+    finite number (an inf from finite laps whose sum overflowed included)."""
+    return _real(row.get("active_time_s"))
+
+
+def workout_lap_reason(row: Mapping[str, Any]) -> str | None:
+    """F026 reference section 3 rows 1, 1a, 2 and 3 for one workout row, in that order: the first
+    reason, or ``None`` when the workout passes all four. Reads only ``laps_read_at``,
+    ``lap_reason`` and ``active_time_s``, so the reader decides them before any record read."""
+    if row.get("laps_read_at") is None:
+        return LAPS_NOT_READ
+    lap_reason = row.get("lap_reason")
+    if lap_reason is not None:
+        if lap_reason not in (LAP_TIMES_UNREADABLE, NO_WORKOUT_STEPS):
+            raise ValueError(f"session {row.get('session_id')!r} has lap_reason {lap_reason!r}, not one of active_laps'")
+        return lap_reason
+    active = active_time_of(row)
+    if active is None or active < WORKOUT_MIN_ACTIVE_S:
+        return ACTIVE_TIME_BELOW_MINIMUM
+    return None
+
+
 def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPace:
     """Qualify ``rows`` and replay the filter to ``as_of`` (an aware instant)."""
     as_of = _aware(as_of, "as_of")
     candidates: list[tuple[datetime, str, Mapping[str, Any]]] = []
     for row in rows:
-        if row.get("sport") != RUNNING or row.get("activity_tag") != RACE:
+        if row.get("sport") != RUNNING or row.get("activity_tag") not in KINDS:
             continue
         start = _aware(row["start_time"], f"session {row.get('session_id')!r} start_time")
         if start > as_of:
@@ -230,18 +295,26 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
     used: list[tuple[datetime, str, Mapping[str, Any], float, float]] = []
     excluded: list[Exclusion] = []
     for start, session_id, row in candidates:
-        duration = duration_of(row)
-        if not in_band(duration):
-            excluded.append(Exclusion(session_id, start, OUTSIDE_THRESHOLD_BAND))
-            continue
+        kind = row["activity_tag"]
+        if kind == RACE:
+            duration = duration_of(row)
+            if not in_band(duration):
+                excluded.append(Exclusion(session_id, start, OUTSIDE_THRESHOLD_BAND, kind))
+                continue
+        else:
+            reason = workout_lap_reason(row)
+            if reason is not None:
+                excluded.append(Exclusion(session_id, start, reason, kind))
+                continue
+            duration = active_time_of(row)
         flags = _flags(row)
         flagged = next((flag for flag in FLAG_ORDER if flag in flags), None)
         if flagged is not None:
-            excluded.append(Exclusion(session_id, start, flagged))
+            excluded.append(Exclusion(session_id, start, flagged, kind))
             continue
         y = _log_speed(row.get("gap_avg_pace_s_per_km"))
         if y is None:
-            excluded.append(Exclusion(session_id, start, GAP_PACE_UNAVAILABLE))
+            excluded.append(Exclusion(session_id, start, GAP_PACE_UNAVAILABLE, kind))
             continue
         used.append((start, session_id, row, duration, y))
 
@@ -283,6 +356,8 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
                 gap_coverage=row.get("gap_coverage"),
                 gps_degraded_fraction=row.get("gps_degraded_fraction"),
                 gain=gain,
+                kind=row["activity_tag"],
+                active_blocks=None if row["activity_tag"] == RACE else row.get("active_blocks"),
             )
         )
     assert previous is not None
@@ -299,7 +374,7 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
         interval_high=_pace_at(x - spread),
         error=math.sqrt(variance),
         confidence=_label(variance),
-        short_races_only=all(effort.duration_s < SHORT_RACE_S for effort in efforts),
+        short_races_only=_short_races_only(efforts),
         unavailable=None,
     )
 

@@ -30,7 +30,7 @@ from runcoach_api import db as db_module
 from runcoach_api import main as main_module
 from runcoach_api.ingestion.mapping import derive_session_id
 from runcoach_api.main import app
-from runcoach_api.models import Context, Record, Session
+from runcoach_api.models import Context, Record, Session, SessionLap, SessionWorkoutStep
 
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 SUPPORT = Path(__file__).parent / "support"
@@ -202,6 +202,103 @@ def test_estimate_not_finite_response_validates_against_the_contract(
     assert determinant["parameters"]["doubling_days"] == 42
 
 
+def _store_workout(start: datetime, *, active_s: float = 1200.0, laps: str = "read") -> str:
+    """A Training-tagged workout: 300 s warm-up, one active lap of ``active_s`` at 255 s/km naming
+    active step 1, 300 s cool-down, 1 Hz flat records. ``laps`` is ``read``, ``none`` (never
+    read), ``no_end`` (the active lap's end null) or ``free`` (laps read, none active)."""
+    plan = [("warmup", 300.0, 360.0, 0), ("active", active_s, 255.0, 1), ("cooldown", 300.0, 390.0, 2)]
+    records, distance, t = [Record(t=0.0, distance=0.0, speed=1000.0 / 360.0, altitude=100.0)], 0.0, 0
+    lap_rows, lap_start = [], 0.0
+    for index, (intensity, seconds, pace, step) in enumerate(plan):
+        for _ in range(int(seconds)):
+            t += 1
+            distance += 1000.0 / pace
+            records.append(Record(t=float(t), distance=distance, speed=1000.0 / pace, altitude=100.0))
+        lap = SessionLap(
+            lap_index=index,
+            start_t=lap_start,
+            end_t=lap_start + seconds,
+            timer_s=seconds,
+            intensity="interval" if laps == "free" else intensity,
+            wkt_step_index=None if laps == "free" else step,
+        )
+        if laps == "no_end" and intensity == "active":
+            lap.end_t = None
+        lap_rows.append(lap)
+        lap_start += seconds
+    steps = [
+        SessionWorkoutStep(step_index=0, intensity="warmup", duration_type="time"),
+        SessionWorkoutStep(step_index=1, intensity="active", duration_type="time"),
+        SessionWorkoutStep(step_index=2, intensity="cooldown", duration_type="time"),
+    ]
+    start_time = start.isoformat()
+    total = sum(seconds for _i, seconds, _p, _s in plan)
+    session = Session(
+        session_id=derive_session_id("fr945", start_time),
+        sport="running",
+        source_vendor="garmin",
+        start_time=start_time,
+        source_device="fr945",
+        activity_tag="threshold_workout",
+        timer_time_s=total,
+        summary={"duration_s": total},
+        context=Context(),
+    )
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        db_module.persist(conn, session, records, [], {}, laps=None if laps == "none" else (lap_rows, steps))
+    finally:
+        conn.close()
+    return session.session_id
+
+
+def test_estimate_and_unavailable_validate_against_the_contract(contract: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F026: a race and a workout used, with every new exclusion reason beside them, validate; then
+    the workouts alone, none used, validate as ``no_qualifying_effort``."""
+    race = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), pace=270.0, duration_s=2400.0)
+    workout = _store_workout(datetime(2026, 9, 13, 7, 0, tzinfo=UTC))
+    not_read = _store_workout(datetime(2026, 9, 14, 7, 0, tzinfo=UTC), laps="none")
+    no_end = _store_workout(datetime(2026, 9, 15, 7, 0, tzinfo=UTC), laps="no_end")
+    free = _store_workout(datetime(2026, 9, 16, 7, 0, tzinfo=UTC), laps="free")
+    short = _store_workout(datetime(2026, 9, 17, 7, 0, tzinfo=UTC), active_s=599.0)
+    unreadable = _store_workout(datetime(2026, 9, 18, 7, 0, tzinfo=UTC))
+    real = db_module.read_workout_laps
+
+    def read_workout_laps(conn, session_id):
+        if session_id == unreadable:
+            raise RuntimeError("a lap row that does not read")
+        return real(conn, session_id)
+
+    monkeypatch.setattr(db_module, "read_workout_laps", read_workout_laps)
+    determinant = _assert_valid(contract, _body())
+    assert determinant["unavailable"] is None and determinant["estimate"] is not None
+    assert [(e["session_id"], e["kind"], e["active_blocks"]) for e in determinant["efforts"]] == [
+        (race, "race", None),
+        (workout, "threshold_workout", 1),
+    ]
+    assert determinant["parameters"]["workout_min_active_s"] == 600
+    expected = [
+        (not_read, "laps_not_read"),
+        (no_end, "lap_times_unreadable"),
+        (free, "no_workout_steps"),
+        (short, "active_time_below_minimum"),
+        (unreadable, "laps_unreadable"),
+    ]
+    assert [(e["session_id"], e["reason"], e["kind"]) for e in determinant["excluded"]] == [
+        (s, r, "threshold_workout") for s, r in expected
+    ]
+    reasons = set(_schema(contract, "ThresholdExclusion")["properties"]["reason"]["enum"])
+    assert {r for _s, r in expected} <= reasons
+
+    _corrupt(race, "activity_tag", None)
+    _corrupt(workout, "activity_tag", None)
+    determinant = _assert_valid(contract, _body())
+    assert determinant["estimate"] is None and determinant["unavailable"] == "no_qualifying_effort"
+    assert determinant["efforts"] == [] and determinant["short_races_only"] is False
+    assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == expected
+
+
 MUTATIONS = [
     ("drop efforts", lambda d: d.pop("efforts"), "required property 'efforts'"),
     ("drop parameters", lambda d: d.pop("parameters"), "required property 'parameters'"),
@@ -222,6 +319,9 @@ MUTATIONS = [
     ("null gain", lambda d: d["efforts"][0].update(gain=None), "$.efforts[0].gain"),
     ("string gap_coverage", lambda d: d["efforts"][0].update(gap_coverage="1"), "$.efforts[0].gap_coverage"),
     ("unknown reason", lambda d: d["excluded"][0].update(reason="too_hilly"), "$.excluded[0].reason"),
+    ("unknown effort kind", lambda d: d["efforts"][0].update(kind="workout"), "$.efforts[0].kind"),
+    ("string active_blocks", lambda d: d["efforts"][0].update(active_blocks="1"), "$.efforts[0].active_blocks"),
+    ("drop exclusion kind", lambda d: d["excluded"][0].pop("kind"), "required property 'kind'"),
     ("excluded not a list", lambda d: d.update(excluded={}), "$.excluded"),
     (
         "float doubling_days",

@@ -59,6 +59,28 @@ def _race(session_id: str, day: float, pace: object, duration: object = 2400, **
     return row
 
 
+def _workout(session_id: str, day: float, pace: object, active_s: object = 1800.0, **over: object) -> dict:
+    """A threshold workout's row as the reader hands it over (F026 reference section 3): its laps
+    read, rows 1a and 2 passed (``lap_reason`` null), ``active_time_s`` the active laps' summed
+    ``timer_s`` and the active GAP pace over the active windows."""
+    row = {
+        "session_id": session_id,
+        "start_time": (BASE + timedelta(days=day)).isoformat(),
+        "sport": "running",
+        "activity_tag": "threshold_workout",
+        "laps_read_at": "2026-10-16T00:00:00+00:00",
+        "lap_reason": None,
+        "active_time_s": active_s,
+        "active_blocks": 1,
+        "quality_flags": [],
+        "gap_avg_pace_s_per_km": pace,
+        "gap_coverage": 1.0,
+        "gps_degraded_fraction": 0.0,
+    }
+    row.update(over)
+    return row
+
+
 def _at(day: float) -> datetime:
     return BASE + timedelta(days=day)
 
@@ -311,6 +333,7 @@ def test_parameters_and_constants() -> None:
         "high_max_error": 0.025,
         "medium_max_error": 0.05,
         "short_race_s": 1800,
+        "workout_min_active_s": 600,
     }
     assert threshold_pace.R == 0.025**2
     assert threshold_pace.Q_PER_DAY == 3 * threshold_pace.R / 42
@@ -332,3 +355,76 @@ def test_naive_inputs_are_refused() -> None:
         estimate([], datetime(2026, 6, 1, 7, 0))  # noqa: DTZ001 -- the naive value is the input under test
     with pytest.raises(ValueError, match="naive"):
         estimate([_race("a", 0, 270.0, start_time="2026-06-01T07:00:00")], _at(1))
+
+
+# --- threshold workouts in the filter (F026 reference section 4, AC4) ------------------------
+
+
+def test_a_workout_alone_sets_x_to_y_and_p_to_r() -> None:
+    result = estimate([_workout("w", 0, 265.0, active_s=1200.0)], _at(0))
+    print("workout alone:", result)
+    assert result.unavailable is None
+    [effort] = result.efforts
+    assert (effort.session_id, effort.kind, effort.active_blocks) == ("w", "threshold_workout", 1)
+    assert effort.duration_s == 1200.0
+    assert effort.gain == 1.0
+    assert result.x == math.log(1000 / 265.0)
+    assert result.variance == threshold_pace.R
+    assert result.value == pytest.approx(265.0, abs=1e-9)
+    oracle = threshold_oracle.replay([(0.0, 265.0)], 0.0)
+    assert abs(result.value - oracle.pace_s_per_km) <= PACE_TOLERANCE
+    assert abs(result.interval_low - oracle.interval_fast) <= PACE_TOLERANCE
+    assert abs(result.interval_high - oracle.interval_slow) <= PACE_TOLERANCE
+    assert result.confidence == oracle.label == "high"
+    # A workout alone at 42 days reads as a race alone does: P = 4 R exactly, medium.
+    later = estimate([_workout("w", 0, 265.0)], _at(42))
+    assert later.variance == 4 * threshold_pace.R and later.confidence == "medium"
+
+
+def test_a_race_then_a_workout_replay_with_the_same_r() -> None:
+    """F024's section 3 filter with one R for both kinds: race A then a workout 42 days later is the
+    worked example's "right after B" and "B + 30 days" rows, against the oracle and the table."""
+    rows = [_race("a", 0, 270.0), _workout("w", 42, 260.0)]
+    for name, day in (("right after B", 42.0), ("B + 30 days", 72.0), ("B + 90 days", 132.0)):
+        (_efforts, _as_of), (pace, error_pct, fast, slow, label) = threshold_oracle.WORKED_EXAMPLE[name]
+        result = estimate(rows, _at(day))
+        oracle = threshold_oracle.replay([(0.0, 270.0), (42.0, 260.0)], day)
+        print(f"  {name}: {result.value} {result.error} {result.confidence}")
+        assert abs(result.value - oracle.pace_s_per_km) <= PACE_TOLERANCE
+        assert abs(result.value - pace) <= PACE_TOLERANCE + 0.005
+        assert abs(result.interval_low - fast) <= PACE_TOLERANCE + 0.005
+        assert abs(result.interval_high - slow) <= PACE_TOLERANCE + 0.005
+        assert abs(result.error * 100 - error_pct) <= ERROR_TOLERANCE + 0.0005
+        assert result.confidence == oracle.label == label
+        assert [(e.session_id, e.kind) for e in result.efforts] == [("a", "race"), ("w", "threshold_workout")]
+        assert result.efforts[1].gain == pytest.approx(0.8, abs=1e-12)
+        # The same values as two races: the workout's R is the race's.
+        assert estimate([_race("a", 0, 270.0), _race("b", 42, 260.0)], _at(day)).value == result.value
+    assert [e.active_blocks for e in estimate(rows, _at(42)).efforts] == [None, 1]
+
+
+def test_short_races_only_reads_races_only() -> None:
+    """Reference section 4: true when at least one race is used and every race used lasted under
+    1800 s; workouts never set it. Under the retired "every effort used" rule the first case reads
+    false and the workouts-only case true."""
+    one_short_race = [_race("r", 0, 250.0, duration=1500), _workout("w", 1, 260.0, active_s=2000.0)]
+    both_used = estimate(one_short_race, _at(2))
+    assert [(e.kind, e.duration_s) for e in both_used.efforts] == [("race", 1500), ("threshold_workout", 2000.0)]
+    assert both_used.short_races_only is True
+    many_workouts = [*one_short_race, _workout("v", 1.5, 262.0, active_s=700.0)]
+    assert estimate(many_workouts, _at(2)).short_races_only is True
+    workouts_only = [_workout("w", 0, 260.0, active_s=700.0), _workout("v", 1, 262.0, active_s=900.0)]
+    assert estimate(workouts_only, _at(2)).short_races_only is False
+    race_of_1800 = [_race("r", 0, 260.0, duration=1800), _workout("w", 1, 260.0, active_s=700.0)]
+    assert estimate(race_of_1800, _at(2)).short_races_only is False
+    # An excluded short race does not set it: only races used count.
+    excluded_race = [_race("r", 0, 250.0, duration=1500, quality_flags=["smart_recording"]), *workouts_only]
+    assert estimate(excluded_race, _at(2)).short_races_only is False
+
+
+def test_parameters_carry_workout_min_active_s() -> None:
+    assert threshold_pace.PARAMETERS["workout_min_active_s"] == 600
+    assert threshold_pace.WORKOUT_MIN_ACTIVE_S == 600
+    result = estimate([_workout("w", 0, 260.0)], _at(0))
+    assert result.parameters["workout_min_active_s"] == 600
+    assert dict(result.parameters) == dict(threshold_pace.PARAMETERS)
