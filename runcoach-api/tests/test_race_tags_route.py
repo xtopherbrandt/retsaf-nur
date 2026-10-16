@@ -19,7 +19,7 @@ write; ``test_store_unchanged_after_every_422`` asserts that none does.
 | ``distance_m`` / ``duration_s`` null | 200, a defined outcome | AC1 allows null; a null never agrees, so one candidate is a ``mismatch`` |
 | a repeated ``connect_activity_id`` | 422 | AC1: ids are distinct |
 | 0 items, 501 items, no ``items`` key | 422 | AC1: 1 to 500; 500 is a 200 |
-| ``race`` as ``"true"``, ``1``, null, missing | 422 | a strict bool |
+| ``race`` as ``"true"``, ``1``, null; ``race`` missing with no ``tag`` | 422 | a strict bool; exactly one of ``race`` and ``tag`` (F026; the ``tag`` rows are in ``test_race_tags_transitions.py``) |
 | an extra key on the body or an item; an id as a string, a float or ``true`` | 422 | ``extra="forbid"``, a strict int id |
 """
 
@@ -43,7 +43,9 @@ from runcoach_api.models import Session
 CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 SUPPORT = Path(__file__).parent / "support"
 PATH = "/race-tags"
-OUTCOMES = ("tagged", "cleared", "unchanged", "not_stored", "mismatch", "ambiguous", "other_tag")
+OUTCOMES = ("tagged", "cleared", "retagged", "unchanged", "not_stored", "mismatch", "ambiguous", "other_tag")
+TAGS = ("race", "threshold_workout")
+WRITES = ("tagged", "cleared", "retagged")
 
 START = "2024-03-02T16:43:13+00:00"
 START_Z = "2024-03-02T16:43:13Z"
@@ -137,8 +139,11 @@ def _schema_and_rows() -> tuple[list[tuple], dict[str, list[tuple]]]:
     return schema, rows
 
 
-def _counts(**nonzero: int) -> dict[str, int]:
-    return {outcome: nonzero.get(outcome, 0) for outcome in OUTCOMES}
+def _counts(by_tag: dict | None = None, **nonzero: int) -> dict:
+    """Every outcome's count, then ``by_tag`` with the given ``{tag: {outcome: n}}`` cells, zeros elsewhere."""
+    given = by_tag or {}
+    cells = {tag: {w: given.get(tag, {}).get(w, 0) for w in WRITES} for tag in TAGS}
+    return {**{outcome: nonzero.get(outcome, 0) for outcome in OUTCOMES}, "by_tag": cells}
 
 
 # --- the hostile bodies: each a hostile item beside a valid one that would tag the FR945 run -------
@@ -219,17 +224,18 @@ def test_one_valid_item_returns_200_tagged(persist_sessions) -> None:
         "items": [
             {"connect_activity_id": 1, "outcome": "tagged", "session_id": _sid("fr945"), "candidates": [_sid("fr945")]}
         ],
-        "counts": _counts(tagged=1),
+        "counts": _counts({"race": {"tagged": 1}}, tagged=1),
     }
     assert _tag(_sid("fr945")) == "race"
 
 
-def test_counts_carry_all_seven_outcomes(persist_sessions) -> None:
-    starts = [f"2024-11-01T09:00:{s:02d}+00:00" for s in range(7)]
+def test_counts_carry_all_eight_outcomes(persist_sessions) -> None:
+    starts = [f"2024-11-01T09:00:{s:02d}+00:00" for s in range(8)]
     persist_sessions(
         [
             _run("fr945", starts[0]),  # null, race true -> tagged
             _run("fr945", starts[1], tag="race"),  # race, race false -> cleared
+            _run("fr945", starts[7], tag="race"),  # race, tag threshold_workout -> retagged
             _run("fr945", starts[2]),  # null, race false -> unchanged
             # starts[3]: nothing stored -> not_stored
             _run("fr945", starts[4], *DEV_3476),  # one disagreeing candidate -> mismatch
@@ -241,6 +247,7 @@ def test_counts_carry_all_seven_outcomes(persist_sessions) -> None:
     items = [
         _item(10, starts[0].replace("+00:00", "Z")),
         _item(11, starts[1], race=False),
+        {k: v for k, v in _item(17, starts[7]).items() if k != "race"} | {"tag": "threshold_workout"},
         _item(12, starts[2], race=False),
         _item(13, starts[3]),
         _item(14, starts[4]),
@@ -251,11 +258,12 @@ def test_counts_carry_all_seven_outcomes(persist_sessions) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
     assert [i["outcome"] for i in body["items"]] == list(OUTCOMES)
-    assert body["counts"] == _counts(**{o: 1 for o in OUTCOMES})
-    assert list(body["counts"]) == list(OUTCOMES)
-    assert body["items"][5]["session_id"] is None
-    assert sorted(body["items"][5]["candidates"]) == sorted([_sid("fr945", starts[5]), _sid("3476", starts[5])])
-    assert body["items"][3] == {"connect_activity_id": 13, "outcome": "not_stored", "session_id": None, "candidates": []}
+    by_tag = {"race": {"tagged": 1, "cleared": 1}, "threshold_workout": {"retagged": 1}}
+    assert body["counts"] == _counts(by_tag, **{o: 1 for o in OUTCOMES})
+    assert list(body["counts"]) == [*OUTCOMES, "by_tag"]
+    assert body["items"][6]["session_id"] is None
+    assert sorted(body["items"][6]["candidates"]) == sorted([_sid("fr945", starts[5]), _sid("3476", starts[5])])
+    assert body["items"][4] == {"connect_activity_id": 13, "outcome": "not_stored", "session_id": None, "candidates": []}
 
 
 def test_items_return_in_request_order(persist_sessions) -> None:
@@ -268,7 +276,7 @@ def test_items_return_in_request_order(persist_sessions) -> None:
     body = response.json()
     assert [i["connect_activity_id"] for i in body["items"]] == ids
     assert [i["outcome"] for i in body["items"]] == ["tagged", "not_stored", "tagged", "not_stored"]
-    assert body["counts"] == _counts(tagged=2, not_stored=2)
+    assert body["counts"] == _counts({"race": {"tagged": 2}}, tagged=2, not_stored=2)
 
 
 def test_five_hundred_items_are_accepted(persist_sessions) -> None:
@@ -276,7 +284,7 @@ def test_five_hundred_items_are_accepted(persist_sessions) -> None:
     items = [VALID] + [_item(i, f"2025-01-01T00:{i // 60 % 60:02d}:{i % 60:02d}Z") for i in range(2, 501)]
     response = _put({"items": items})
     assert response.status_code == 200, response.text
-    assert response.json()["counts"] == _counts(tagged=1, not_stored=499)
+    assert response.json()["counts"] == _counts({"race": {"tagged": 1}}, tagged=1, not_stored=499)
 
 
 def test_zero_or_null_values_are_a_defined_outcome_not_a_422(persist_sessions) -> None:
@@ -403,7 +411,15 @@ def test_served_schemas_match_the_contract() -> None:
 
     seen, compared = contract_walk.walk(contract, built, ["RaceTagsUpdate", "RaceTagsResult"])
     print(f"  {len(compared)} properties over {sorted(seen)}")
-    assert seen == {"RaceTagsUpdate", "RaceTagItem", "RaceTagsResult", "RaceTagItemResult", "RaceTagCounts"}, seen
+    assert seen == {
+        "RaceTagsUpdate",
+        "RaceTagItem",
+        "RaceTagsResult",
+        "RaceTagItemResult",
+        "RaceTagCounts",
+        "RaceTagCountsByTag",
+        "RaceTagWrites",
+    }, seen
 
     ours, theirs = contract["components"]["schemas"], built["components"]["schemas"]
     for name in ("RaceTagsUpdate", "RaceTagItem"):
@@ -417,6 +433,13 @@ def test_served_schemas_match_the_contract() -> None:
     for field in ("distance_m", "duration_s"):
         (served_number,) = [b for b in built_item[field]["anyOf"] if b != {"type": "null"}]
         assert item[field]["minimum"] == served_number["minimum"] == 0, field
-    assert set(ours["RaceTagItem"]["required"]) == {"connect_activity_id", "start_time", "distance_m", "duration_s", "race"}
-    assert set(ours["RaceTagCounts"]["required"]) == set(OUTCOMES) == set(ours["RaceTagCounts"]["properties"])
+    # Exactly one of race and tag: neither is required, both are properties.
+    assert set(ours["RaceTagItem"]["required"]) == {"connect_activity_id", "start_time", "distance_m", "duration_s"}
+    assert {"race", "tag"} <= set(ours["RaceTagItem"]["properties"])
+    assert sorted(ours["RaceTagItem"]["properties"]["tag"]["enum"]) == sorted(TAGS)
+    assert ours["RaceTagItem"]["properties"]["tag"]["nullable"] is True
+    counted = {*OUTCOMES, "by_tag"}
+    assert set(ours["RaceTagCounts"]["required"]) == counted == set(ours["RaceTagCounts"]["properties"])
+    assert set(ours["RaceTagCountsByTag"]["required"]) == set(TAGS) == set(ours["RaceTagCountsByTag"]["properties"])
+    assert set(ours["RaceTagWrites"]["required"]) == set(WRITES) == set(ours["RaceTagWrites"]["properties"])
     assert sorted(ours["RaceTagItemResult"]["properties"]["outcome"]["enum"]) == sorted(OUTCOMES)

@@ -4370,8 +4370,8 @@ def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:
     assert published["selected_dataset"]["nullable"] is True
 
     # T152's breaking change took the contract to 0.2.0-draft; this one is
-    # additive and does not move it (AC12).
-    assert contract["info"]["version"] == "0.2.0-draft"
+    # additive and did not move it (AC12); F026's retagged outcome took it to 0.3.0-draft.
+    assert contract["info"]["version"] == "0.3.0-draft"
 
 
 def test_both_tier_descriptions_say_the_sensor_serial_is_stored_but_unread() -> None:

@@ -1877,17 +1877,24 @@ def _write_race_tag(conn: sqlite3.Connection, session_id: str, tag: str | None) 
 
 
 def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[dict]:
-    """Match Connect race items to stored runs and write the tags they decide (F023 AC2, AC3).
+    """``apply_race_tag_decisions``, each decision as its response dict (``connect_activity_id``,
+    ``outcome``, ``session_id``, ``candidates`` as a list of session ids), in request order."""
+    return [decision.as_dict() for decision in apply_race_tag_decisions(conn, items)]
+
+
+def apply_race_tag_decisions(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[_race_tags.Decision]:
+    """Match Connect items to stored runs and write the tags they decide (F023 AC2, AC3; F026
+    reference section 2), returning ``race_tags.decide``'s decisions in request order, so the
+    caller can count them with ``race_tags.counts``.
 
     ``items`` are ``race_tags`` items (``connect_activity_id``, ``start_time``, ``distance_m``,
-    ``duration_s``, ``race``), already validated by the caller. Returns one dict per item, in
-    request order: ``connect_activity_id``, ``outcome``, ``session_id``, ``candidates`` (a list of
-    session ids).
+    ``duration_s``, and ``tag`` or ``race``), already validated by the caller.
 
     Candidates are read with one ``SELECT`` over the items' start times (``Z`` normalised to
     ``+00:00``): sport ``running`` and an ``activity_tag`` that is null or not one of
     ``race_tags.RESTING_CAPTURE_TAGS`` (a bare ``NOT IN`` is null for an untagged row and would
-    drop it). Only ``sessions.activity_tag`` is written, and only for ``tagged`` and ``cleared``.
+    drop it). Only ``sessions.activity_tag`` is written, and only for ``tagged``, ``cleared`` and
+    ``retagged``.
     One ``BEGIN IMMEDIATE`` transaction holds the write lock from the read to the commit, so the
     decisions are made and written from one snapshot; any fault rolls every write back and
     propagates. The caller has run ``init_schema`` and holds no open transaction. An empty
@@ -1922,7 +1929,7 @@ def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[
         conn.rollback()
         raise
     conn.commit()
-    return [decision.as_dict() for decision in decisions]
+    return decisions
 
 
 # ---------------------------------------------------------------------------

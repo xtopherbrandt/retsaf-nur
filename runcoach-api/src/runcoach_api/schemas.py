@@ -1472,7 +1472,10 @@ from runcoach_api import race_tags as _race_tags
 RACE_TAG_START_PATTERN = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|\+00:00)$"
 RACE_TAG_MAX_ITEMS = 500
 
-_RaceTagOutcome = Literal["tagged", "cleared", "unchanged", "not_stored", "mismatch", "ambiguous", "other_tag"]
+_RaceTagOutcome = Literal[
+    "tagged", "cleared", "retagged", "unchanged", "not_stored", "mismatch", "ambiguous", "other_tag"
+]
+_ItemTag = Literal["race", "threshold_workout"]
 
 _ZERO_NOTE = (
     "Zero is accepted, not refused: a treadmill run without a foot pod reads 0 m in Connect and on the watch, "
@@ -1482,9 +1485,10 @@ _ZERO_NOTE = (
 
 
 class RaceTagItem(BaseModel):
-    """One Connect activity's race mark (F023 AC1). Strict: any other key, a non-integer id, a
-    non-boolean ``race``, a negative or non-finite number, or a start time in any other form is a
-    422. ``start_time`` is a string, never pydantic's ``datetime``, which accepts other zones,
+    """One Connect activity's tag (F023 AC1, F026 reference section 2). Strict: any other key, a
+    non-integer id, a non-boolean ``race``, a ``tag`` other than the two or null, both or neither
+    of ``race`` and ``tag``, a negative or non-finite number, or a start time in any other form is
+    a 422. ``start_time`` is a string, never pydantic's ``datetime``, which accepts other zones,
     fractions of a second and epoch numbers; the pattern fixes the form and
     ``datetime.fromisoformat`` refuses a date or time that does not exist."""
 
@@ -1503,7 +1507,17 @@ class RaceTagItem(BaseModel):
     duration_s: float | None = Field(
         ge=0, strict=True, allow_inf_nan=False, description=f"Connect's duration in seconds, or null. {_ZERO_NOTE}"
     )
-    race: bool = Field(strict=True, description="Whether Connect's event type is race.")
+    race: bool = Field(
+        default=None,
+        strict=True,
+        description="Whether Connect's event type is race: true means the tag race, false means no tag. "
+        "Exactly one of race and tag; an explicit null is a 422.",
+    )
+    tag: _ItemTag | None = Field(
+        default=None,
+        description="The tag to store: race, threshold_workout, or null to clear (F026). Exactly one of race "
+        "and tag.",
+    )
 
     @field_validator("start_time")
     @classmethod
@@ -1511,6 +1525,20 @@ class RaceTagItem(BaseModel):
         """The pattern admits ``2024-02-30T25:00:00Z``; ``fromisoformat`` refuses it."""
         datetime.datetime.fromisoformat(value)
         return value
+
+    @model_validator(mode="after")
+    def _exactly_one_of_race_and_tag(self) -> "RaceTagItem":
+        """Judged by the keys the item carries, never by ``is None``: ``"tag": null`` is a clear,
+        and ``"race": null`` never reaches here (a strict boolean)."""
+        present = {"race", "tag"} & self.model_fields_set
+        if len(present) != 1:
+            raise ValueError(f"exactly one of race and tag is required; the item has {len(present)}")
+        return self
+
+    def wanted(self) -> str | None:
+        """The tag this item asks for (``race_tags.wanted_tag`` over the key it carries)."""
+        key = "tag" if "tag" in self.model_fields_set else "race"
+        return _race_tags.wanted_tag({key: getattr(self, key)})
 
 
 class RaceTagsUpdate(BaseModel):
@@ -1539,7 +1567,7 @@ class RaceTagItemResult(BaseModel):
     connect_activity_id: int
     outcome: _RaceTagOutcome
     session_id: str | None = Field(
-        description="The session tagged, cleared, left unchanged or left with another tag, or the one mismatch "
+        description="The session tagged, cleared, retagged, left unchanged or left with another tag, or the one mismatch "
         "candidate; null for not_stored and ambiguous."
     )
     candidates: list[str] = Field(
@@ -1548,19 +1576,40 @@ class RaceTagItemResult(BaseModel):
     )
 
 
-class RaceTagCounts(BaseModel):
-    """How many items had each outcome; every key is present, zero included."""
+class RaceTagWrites(BaseModel):
+    """One tag's written outcomes: ``tagged`` and ``retagged`` count items that wanted the tag,
+    ``cleared`` items whose stored tag it was."""
 
     tagged: int
     cleared: int
+    retagged: int
+
+
+class RaceTagCountsByTag(BaseModel):
+    """``RaceTagCounts.by_tag``: the written outcomes per tag."""
+
+    race: RaceTagWrites
+    threshold_workout: RaceTagWrites
+
+
+class RaceTagCounts(BaseModel):
+    """How many items had each outcome; every key is present, zero included. ``by_tag`` breaks the
+    written outcomes down per tag."""
+
+    tagged: int
+    cleared: int
+    retagged: int
     unchanged: int
     not_stored: int
     mismatch: int
     ambiguous: int
     other_tag: int
+    by_tag: RaceTagCountsByTag
 
 
-assert tuple(RaceTagCounts.model_fields) == _race_tags.OUTCOMES
+assert tuple(f for f in RaceTagCounts.model_fields if f != "by_tag") == _race_tags.OUTCOMES
+assert tuple(RaceTagCountsByTag.model_fields) == _race_tags.ITEM_TAGS
+assert tuple(RaceTagWrites.model_fields) == _race_tags.WRITTEN_OUTCOMES
 
 
 class RaceTagsResult(BaseModel):

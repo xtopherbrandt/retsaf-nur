@@ -1521,6 +1521,7 @@ def recompute_session_load(session_id: str) -> SessionLoadRecompute:
 # above are, so the lines cited by number stay in place. The matching rule
 # lives in race_tags; db.apply_race_tags reads and writes in one transaction.
 # ---------------------------------------------------------------------------
+from runcoach_api import race_tags
 from runcoach_api.schemas import RaceTagCounts, RaceTagsResult, RaceTagsUpdate
 
 
@@ -1530,20 +1531,34 @@ def set_race_tags(update: RaceTagsUpdate) -> RaceTagsResult:
     order, and every outcome's count.
 
     ``RaceTagsUpdate`` screens the whole body before anything is read, so a 422 writes nothing.
-    ``db.apply_race_tags`` matches each item to the stored running sessions at its start second,
-    confirms by distance and duration within 1 %, and writes only ``activity_tag``, in one
-    transaction. Re-sending the same items is idempotent: what was tagged or cleared is then
-    ``unchanged``.
+    ``db.apply_race_tag_decisions`` matches each item to the stored running sessions at its start
+    second, confirms by distance and duration within 1 %, and writes only ``activity_tag``, in one
+    transaction, by the F026 reference section 2 table. Re-sending the same items is idempotent:
+    what was tagged, cleared or retagged is then ``unchanged``.
+
+    Each item is handed over with ``tag`` set to the tag it asks for (``RaceTagItem.wanted``),
+    never as ``model_dump()``: a sparse item's dump carries both keys, and a race-only item would
+    read as ``tag: None``, a clear.
     """
+    items = [
+        {
+            "connect_activity_id": item.connect_activity_id,
+            "start_time": item.start_time,
+            "distance_m": item.distance_m,
+            "duration_s": item.duration_s,
+            "tag": item.wanted(),
+        }
+        for item in update.items
+    ]
     conn = db.get_connection()
     try:
-        results = db.apply_race_tags(conn, [item.model_dump() for item in update.items])
+        decisions = db.apply_race_tag_decisions(conn, items)
     finally:
         conn.close()
-    counts = dict.fromkeys(RaceTagCounts.model_fields, 0)
-    for result in results:
-        counts[result["outcome"]] += 1
-    return RaceTagsResult(items=results, counts=RaceTagCounts(**counts))
+    return RaceTagsResult(
+        items=[decision.as_dict() for decision in decisions],
+        counts=RaceTagCounts(**race_tags.counts(decisions)),
+    )
 
 
 # ---------------------------------------------------------------------------
