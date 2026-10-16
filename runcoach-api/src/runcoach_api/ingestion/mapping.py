@@ -58,8 +58,9 @@ import fitdecode
 from runcoach_api import __version__
 from runcoach_api.ingestion import rr_reconstruction
 from runcoach_api.ingestion.exceptions import MissingCanonicalFieldError
+from runcoach_api.metrics.finite import finite
 from runcoach_api.metrics.session_list import session_name
-from runcoach_api.models import Context, Record, Session
+from runcoach_api.models import Context, Record, Session, SessionLap, SessionWorkoutStep
 
 SEMICIRCLE_TO_DEGREES = 180 / 2**31
 
@@ -565,6 +566,22 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     return record, dev_unresolved
 
 
+def _session_start(by_name: dict[str, list], record_msgs: list) -> datetime | None:
+    """The session start instant: the first ``session`` message's ``start_time``, else the earliest
+    record ``timestamp`` (still a native field, no fabrication), else None.
+
+    Record ``t`` (``to_canonical``) and lap ``start_t``/``end_t`` (``to_laps``) are both measured
+    from this one instant.
+    """
+    session_msg = _first_of(by_name, "session")
+    start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
+    if start_time is not None:
+        return start_time
+    timestamps = [m.get_value("timestamp", fallback=None) for m in record_msgs]
+    timestamps = [t for t in timestamps if t is not None]
+    return min(timestamps) if timestamps else None
+
+
 def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, list[Record]]:
     """Map decoded FIT data messages into a ``(Session, [Record, ...])`` pair.
 
@@ -637,27 +654,21 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
 
     record_msgs = by_name.get("record", [])
 
-    start_time = session_msg.get_value("start_time", fallback=None) if session_msg else None
+    start_time = _session_start(by_name, record_msgs)
     if start_time is None:
-        # Fall back to the earliest record timestamp -- still a native
-        # field, no fabrication.
-        timestamps = [m.get_value("timestamp", fallback=None) for m in record_msgs]
-        timestamps = [t for t in timestamps if t is not None]
-        if not timestamps:
-            # M3 (sprint-002 review) -- neither a session.start_time nor
-            # any record timestamp exists to derive start_time from.
-            # derive_session_id() hashes (source_device, start_time); a
-            # datetime.now() fallback here would silently reintroduce the
-            # wall-clock non-determinism T032 (commit 8f7e488) closed,
-            # since re-ingesting identical bytes a second later would
-            # mint a different session_id. Raised here -- before a
-            # Session is ever constructed -- mirroring the sport case above.
-            raise MissingCanonicalFieldError(
-                "start_time",
-                "no session.start_time and no record timestamps found -- "
-                "cannot determine start_time",
-            )
-        start_time = min(timestamps)
+        # M3 (sprint-002 review) -- neither a session.start_time nor
+        # any record timestamp exists to derive start_time from.
+        # derive_session_id() hashes (source_device, start_time); a
+        # datetime.now() fallback here would silently reintroduce the
+        # wall-clock non-determinism T032 (commit 8f7e488) closed,
+        # since re-ingesting identical bytes a second later would
+        # mint a different session_id. Raised here -- before a
+        # Session is ever constructed -- mirroring the sport case above.
+        raise MissingCanonicalFieldError(
+            "start_time",
+            "no session.start_time and no record timestamps found -- "
+            "cannot determine start_time",
+        )
 
     records: list[Record] = []
     unresolved_developer_fields: dict = {}
@@ -689,3 +700,115 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
     )
 
     return session, records
+
+
+# --- laps and workout steps (F025) -----------------------------------------------------------
+#
+# The per-field screen below is the seam F025 reference section 2 names: integer FIT fields cannot
+# carry a negative or non-finite duration, a bool or a string, so a non-conforming writer's values
+# are screened here and unit-tested through ``to_laps`` with stand-in messages. Values are
+# fitdecode's resolved values, stored as returned; nothing is converted or inferred.
+
+
+def _measure(value: object) -> float | None:
+    """A duration or distance: a finite, non-negative number, else None."""
+    number = finite(value)
+    return number if number is not None and number >= 0 else None
+
+
+def _number(value: object) -> int | float | None:
+    """A numeric field as fitdecode returned it, or None for a bool, a string or a non-finite number."""
+    return value if finite(value) is not None else None  # type: ignore[return-value]
+
+
+def _index(value: object) -> int | None:
+    """A ``message_index`` value: a non-negative int, else None."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _enum(value: object) -> str | None:
+    """An enum fitdecode named, or None (an int it returns is a value it cannot name)."""
+    return value if isinstance(value, str) else None
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _offset(instant: object, origin: datetime | None) -> float | None:
+    """``instant - origin`` in signed seconds, or None when either is not a datetime."""
+    if not isinstance(instant, datetime) or not isinstance(origin, datetime):
+        return None
+    return (instant - origin).total_seconds()
+
+
+def _in_first_session(lap_start: object, origin: datetime | None, session_msg) -> bool:
+    """Whether ``lap_start`` falls inside ``[origin, origin + total_elapsed_time]`` of the first session.
+
+    A lap with no readable ``start_time`` is outside. When the first session's
+    ``total_elapsed_time`` is unreadable the window has no end, and only the start bound applies.
+    """
+    offset = _offset(lap_start, origin)
+    if offset is None or offset < 0:
+        return False
+    elapsed = _measure(session_msg.get_value("total_elapsed_time", fallback=None)) if session_msg else None
+    return elapsed is None or offset <= elapsed
+
+
+def to_laps(
+    messages: list[fitdecode.FitDataMessage],
+) -> tuple[list[SessionLap], list[SessionWorkoutStep]]:
+    """Map a decoded file's ``lap`` and ``workout_step`` messages, in file order (F025 reference section 2).
+
+    ``start_t``/``end_t`` are measured from ``_session_start``, the instant ``to_canonical``
+    measures record ``t`` from. With two or more ``session`` messages only laps whose
+    ``start_time`` falls inside the first session are mapped (a lap with no ``start_time`` is
+    not); with one or none every lap is. ``lap_index`` counts mapped laps from 0. Every step
+    carries the first ``workout`` message's ``wkt_name``. An empty message list maps to
+    ``([], [])``.
+    """
+    by_name = _group_by_name(messages)
+    origin = _session_start(by_name, by_name.get("record", []))
+    sessions = by_name.get("session", [])
+    windowed = len(sessions) >= 2
+
+    laps: list[SessionLap] = []
+    for msg in by_name.get("lap", []):
+        val = _getter(msg)
+        start = val("start_time")
+        if windowed and not _in_first_session(start, origin, sessions[0]):
+            continue
+        laps.append(
+            SessionLap(
+                lap_index=len(laps),
+                start_t=_offset(start, origin),
+                end_t=_offset(val("timestamp"), origin),
+                timer_s=_measure(val("total_timer_time")),
+                elapsed_s=_measure(val("total_elapsed_time")),
+                distance_m=_measure(val("total_distance")),
+                intensity=_enum(val("intensity")),
+                wkt_step_index=_index(val("wkt_step_index")),
+                lap_trigger=_enum(val("lap_trigger")),
+            )
+        )
+
+    workout_msg = _first_of(by_name, "workout")
+    workout_name = _text(workout_msg.get_value("wkt_name", fallback=None)) if workout_msg else None
+    steps = [
+        SessionWorkoutStep(
+            step_index=_index(val("message_index")),
+            workout_name=workout_name,
+            step_name=_text(val("wkt_step_name")),
+            intensity=_enum(val("intensity")),
+            duration_type=_enum(val("duration_type")),
+            duration_value=_number(val("duration_value")),
+            target_type=_enum(val("target_type")),
+            target_value=_number(val("target_value")),
+            target_low=_number(val("custom_target_value_low")),
+            target_high=_number(val("custom_target_value_high")),
+        )
+        for val in (_getter(msg) for msg in by_name.get("workout_step", []))
+    ]
+    return laps, steps

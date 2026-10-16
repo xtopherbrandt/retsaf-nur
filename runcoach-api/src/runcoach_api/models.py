@@ -165,3 +165,51 @@ class Context:
     env_wind_ms: float | None = None
     env_wind_dir: str | None = None
     subjective: dict[str, Any] | None = None
+
+
+@dataclass
+class SessionLap:
+    """One FIT ``lap`` message of a session, as ``mapping.to_laps`` maps it (F025).
+
+    ``start_t`` and ``end_t`` are the lap ``start_time`` and ``timestamp`` minus the session start,
+    the instant record ``t`` is measured from; signed, and an end before its start is kept as
+    written. ``timer_s``, ``elapsed_s`` and ``distance_m`` are ``total_timer_time``,
+    ``total_elapsed_time`` and ``total_distance``: None when absent, invalid, negative or not a
+    finite number. ``intensity`` and ``lap_trigger`` are profile names, None for a value fitdecode
+    cannot name. ``lap_index`` counts mapped laps from 0. Not the planned-workout ``WorkoutStep``
+    of ``contracts/openapi.yaml``.
+    """
+
+    lap_index: int
+    start_t: float | None = None
+    end_t: float | None = None
+    timer_s: float | None = None
+    elapsed_s: float | None = None
+    distance_m: float | None = None
+    intensity: str | None = None
+    wkt_step_index: int | None = None
+    lap_trigger: str | None = None
+
+
+@dataclass
+class SessionWorkoutStep:
+    """One FIT ``workout_step`` message of a session, as ``mapping.to_laps`` maps it (F025).
+
+    Values are fitdecode's resolved values, not converted: ``duration_value`` and ``target_value``
+    mean what ``duration_type`` and ``target_type`` say (a time step's duration in seconds, a speed
+    target in m/s, a repeat step's ``duration_value`` the step it repeats from and its
+    ``target_value`` the repeat count). ``step_index`` is the step's ``message_index``;
+    ``workout_name`` is the first ``workout`` message's ``wkt_name``; ``target_low`` and
+    ``target_high`` are ``custom_target_value_low``/``_high``. An enum fitdecode cannot name is None.
+    """
+
+    step_index: int | None = None
+    workout_name: str | None = None
+    step_name: str | None = None
+    intensity: str | None = None
+    duration_type: str | None = None
+    duration_value: float | None = None
+    target_type: str | None = None
+    target_value: float | None = None
+    target_low: float | None = None
+    target_high: float | None = None
