@@ -78,7 +78,6 @@ _CANDIDATE_OUTCOMES = frozenset({_MATCHED, NOT_STORED, AMBIGUOUS})
 # What a permanent failure's line says instead of a recovery command.
 SAME_AGAIN = "it would fail the same way again"
 ZIP_ENTRIES = "zip_entries"
-FILE_REFUSED = "file_refused"
 
 
 class LapsStop(Exception):
