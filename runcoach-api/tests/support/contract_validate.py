@@ -2,14 +2,16 @@
 
 No JSON Schema validator is in the lock, so this reads the small subset ``contracts/openapi.yaml``
 uses for the ``GET /state`` determinant: ``type`` (object, array, string, number, integer,
-boolean), ``enum``, ``nullable``, ``required``, ``properties``, ``items``, ``$ref`` and a
+boolean), ``enum``, ``nullable``, ``required``, ``properties``, ``items``, ``$ref``, a
 one-member ``allOf`` (the file's way to make a ``$ref`` nullable, since a ``nullable`` beside a
-bare ``$ref`` is ignored). Prose keywords (``description``, ``example``, ``default``, ``title``,
-``format``) are not checked. Any other keyword raises ``ValueError`` rather than passing
+bare ``$ref`` is ignored), and, for ``GET /sessions/{id}``'s ``SessionDetail``,
+``exclusiveMinimum`` and ``additionalProperties`` (``false`` refuses an unlisted key, a schema
+validates each one). Prose keywords (``description``, ``example``, ``default``, ``title``,
+``format``) and ``x-`` extensions are not checked. Any other keyword raises ``ValueError`` rather than passing
 unread, so a schema this module cannot judge is never reported valid.
 
-A property the schema does not list is allowed: the contract's responses are additive (the
-engine may serve more). ``validate`` returns every violation as ``"<path>: <what>"``; an empty
+A property the schema does not list is allowed unless ``additionalProperties`` is ``false``: the
+contract's responses are additive (the engine may serve more). ``validate`` returns every violation as ``"<path>: <what>"``; an empty
 list is a valid body. Loaded by tests with ``importlib.util.spec_from_file_location``, as the
 other ``tests/support`` modules are.
 """
@@ -19,8 +21,24 @@ from __future__ import annotations
 from typing import Any
 
 REF_PREFIX = "#/components/schemas/"
-CHECKED = {"type", "enum", "nullable", "required", "properties", "items", "$ref", "allOf"}
+CHECKED = {
+    "type",
+    "enum",
+    "nullable",
+    "required",
+    "properties",
+    "items",
+    "$ref",
+    "allOf",
+    "additionalProperties",
+    "exclusiveMinimum",
+}
 PROSE = {"description", "example", "default", "title", "format"}
+
+
+def _prose(key: str) -> bool:
+    """A prose keyword, or an ``x-`` extension (``x-invariant`` is a sentence, not a constraint)."""
+    return key in PROSE or key.startswith("x-")
 
 
 def resolve(doc: dict, ref: str) -> dict:
@@ -48,7 +66,7 @@ def _type_ok(kind: str, value: Any) -> bool:
 
 def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
     """Every way ``value`` breaks ``schema`` (read in ``doc`` for its ``$ref``s), in walk order."""
-    unknown = set(schema) - CHECKED - PROSE
+    unknown = {key for key in schema if key not in CHECKED and not _prose(key)}
     if unknown:
         raise ValueError(f"{path}: unsupported keyword(s) {sorted(unknown)}")
     if "allOf" in schema:
@@ -62,7 +80,7 @@ def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
         merged = {k: v for k, v in schema.items() if k not in ("allOf", "nullable")}
         return validate(doc, {**members[0], **merged}, value, path)
     if "$ref" in schema:
-        rest = {k for k in schema if k != "$ref" and k not in PROSE}
+        rest = {k for k in schema if k != "$ref" and not _prose(k)}
         if rest:
             raise ValueError(f"{path}: keywords beside a bare $ref are ignored by OpenAPI: {sorted(rest)}")
         return validate(doc, resolve(doc, schema["$ref"]), value, path)
@@ -75,13 +93,22 @@ def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
         return [f"{path}: expected {kind}, got {type(value).__name__} {value!r}"]
     if "enum" in schema and value not in schema["enum"]:
         errors.append(f"{path}: {value!r} is not one of {schema['enum']}")
+    if "exclusiveMinimum" in schema and _type_ok("number", value) and not value > schema["exclusiveMinimum"]:
+        errors.append(f"{path}: {value!r} is not above {schema['exclusiveMinimum']}")
     if isinstance(value, dict):
         for name in schema.get("required", []):
             if name not in value:
                 errors.append(f"{path}: required property {name!r} is missing")
-        for name, sub in schema.get("properties", {}).items():
+        listed = schema.get("properties", {})
+        for name, sub in listed.items():
             if name in value:
                 errors.extend(validate(doc, sub, value[name], f"{path}.{name}"))
+        extra = schema.get("additionalProperties", True)
+        for name in (n for n in value if n not in listed):
+            if extra is False:
+                errors.append(f"{path}: property {name!r} is not allowed")
+            elif isinstance(extra, dict):
+                errors.extend(validate(doc, extra, value[name], f"{path}.{name}"))
     if isinstance(value, list) and "items" in schema:
         for index, item in enumerate(value):
             errors.extend(validate(doc, schema["items"], item, f"{path}[{index}]"))

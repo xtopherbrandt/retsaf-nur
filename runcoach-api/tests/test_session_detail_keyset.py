@@ -90,6 +90,27 @@ RECORD_KEYS_AT_C2839B6 = frozenset(
 # One entry of the ``rr_intervals`` list comprehension.
 RR_INTERVAL_KEYS_AT_C2839B6 = frozenset({"seq", "rr_ms", "rr_source", "rr_carrier", "is_artefact"})
 
+# One entry of the F025 ``laps`` and ``workout_steps`` lists: the columns F025 reference section 2
+# lists, without ``session_id`` (and without ``workout_steps.seq``, the file order the list
+# already has).
+LAP_KEYS_F025 = frozenset(
+    {"lap_index", "start_t", "end_t", "timer_s", "elapsed_s", "distance_m", "intensity", "wkt_step_index", "lap_trigger"}
+)
+STEP_KEYS_F025 = frozenset(
+    {
+        "step_index",
+        "workout_name",
+        "step_name",
+        "intensity",
+        "duration_type",
+        "duration_value",
+        "target_type",
+        "target_value",
+        "target_low",
+        "target_high",
+    }
+)
+
 LEAK_FIELD = "hr_sensor_serial"
 # The connected-strap serials the two fixtures carry in their device_info
 # (feature F007, census of 2026-10-03). Neither string appears anywhere in
@@ -120,9 +141,10 @@ def test_session_detail_keys_match_the_pre_f007_set(post_fit) -> None:
         body = _detail_response(client, post_fit, CANONICAL_FIXTURE).json()
 
     # F020 adds exactly one key on purpose: the archive import that stored
-    # the session (null here, a POST /sessions upload). Named explicitly so
-    # any other added key still fails.
-    assert set(body) == SESSION_KEYS_AT_C2839B6 | {"import_id"}
+    # the session (null here, a POST /sessions upload). F025 adds three:
+    # the file's laps, its workout steps and when they were read. Named
+    # explicitly so any other added key still fails.
+    assert set(body) == SESSION_KEYS_AT_C2839B6 | {"import_id", "laps", "workout_steps", "laps_read_at"}
     assert LEAK_FIELD not in body
 
     # A strap RR capture has both records and beats, so the nested levels
@@ -131,6 +153,19 @@ def test_session_detail_keys_match_the_pre_f007_set(post_fit) -> None:
     assert body["rr_intervals"], "fixture produced no RR beats; the nested pin would be vacuous"
     assert {frozenset(r) for r in body["records"]} == {RECORD_KEYS_AT_C2839B6}
     assert {frozenset(b) for b in body["rr_intervals"]} == {RR_INTERVAL_KEYS_AT_C2839B6}
+    # The capture carries one lap and no workout step (F025 reference section 1).
+    assert body["laps"], "fixture produced no lap; the nested pin would be vacuous"
+    assert {frozenset(lap) for lap in body["laps"]} == {LAP_KEYS_F025}
+    assert body["workout_steps"] == []
+
+
+def test_session_detail_step_entry_keys_are_the_f025_set(post_fit) -> None:
+    """A structured workout's step entries carry exactly F025 reference section 2's columns."""
+    with TestClient(app) as client:
+        body = _detail_response(client, post_fit, "sample_run.fit").json()
+    assert body["workout_steps"], "fixture produced no workout step; the nested pin would be vacuous"
+    assert {frozenset(step) for step in body["workout_steps"]} == {STEP_KEYS_F025}
+    assert {frozenset(lap) for lap in body["laps"]} == {LAP_KEYS_F025}
 
 
 def test_pinned_key_sets_are_the_literals_not_the_model() -> None:

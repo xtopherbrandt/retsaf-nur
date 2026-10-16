@@ -277,9 +277,41 @@ def test_session_detail_is_unchanged_by_the_name_column() -> None:
         detail = client.get(f"/sessions/{session_id}")
     assert detail.status_code == 200
     # F020 adds exactly one key on purpose: the archive import that stored
-    # the session (null here, a POST /sessions upload). Named explicitly so
-    # any other added key, the saved name included, still fails.
-    assert set(detail.json()) == DETAIL_KEYS | {"import_id"}
+    # the session (null here, a POST /sessions upload). F025 adds three: the
+    # laps, the workout steps and laps_read_at. Named explicitly so any other
+    # added key, the saved name included, still fails.
+    assert set(detail.json()) == DETAIL_KEYS | {"import_id", "laps", "workout_steps", "laps_read_at"}
+    assert {frozenset(lap) for lap in detail.json()["laps"]} == {
+        frozenset(
+            {
+                "lap_index",
+                "start_t",
+                "end_t",
+                "timer_s",
+                "elapsed_s",
+                "distance_m",
+                "intensity",
+                "wkt_step_index",
+                "lap_trigger",
+            }
+        )
+    }
+    assert {frozenset(step) for step in detail.json()["workout_steps"]} == {
+        frozenset(
+            {
+                "step_index",
+                "workout_name",
+                "step_name",
+                "intensity",
+                "duration_type",
+                "duration_value",
+                "target_type",
+                "target_value",
+                "target_low",
+                "target_high",
+            }
+        )
+    }
     assert "name" not in detail.json()
 
 

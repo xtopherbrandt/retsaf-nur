@@ -1679,3 +1679,75 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
         readiness=None,
         gap_to_goal=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# PUT /sessions/{session_id}/laps (F025)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place. The decode is
+# ingest's (pipeline.read_laps); db.attach_session_laps writes in one
+# BEGIN IMMEDIATE transaction.
+# ---------------------------------------------------------------------------
+from runcoach_api.ingestion import pipeline as ingest_pipeline
+from runcoach_api.schemas import SessionLapsAttached
+
+
+@app.put(
+    "/sessions/{session_id}/laps",
+    response_model=SessionLapsAttached,
+    operation_id="attachSessionLaps",
+    tags=["Sessions"],
+    responses={
+        400: {"description": "A file POST /sessions refuses with 400; the detail is the one it gives"},
+        404: {"description": "No stored session has that session_id; the file is not decoded"},
+        409: {"description": "The file is another session's; the detail names both ids and both start instants"},
+        413: {"description": "The file exceeds the upload limit or a decode ceiling, as POST /sessions answers"},
+    },
+)
+def attach_session_laps(
+    session_id: str,
+    file: UploadFile = File(...),  # noqa: B008 -- FastAPI's parameter idiom
+) -> SessionLapsAttached:
+    """Read a stored run's laps and workout steps from its original file (F025 reference section 4).
+
+    In order: an unknown ``session_id`` is a 404, before the file is read or decoded; a file over
+    ``MAX_UPLOAD_BYTES`` is the 413 ``POST /sessions`` gives; the file is decoded as ingest decodes
+    it (``pipeline.read_laps``), and a file ingest refuses gets ``POST /sessions``'s status and
+    detail through ``http_status_detail`` (400, 413); a file whose derived session id
+    (``mapping.derive_session_id`` of its device and start) is not ``session_id`` is a 409 naming
+    both ids and both start instants. Otherwise ``db.attach_session_laps`` replaces the session's
+    ``laps`` and ``workout_steps`` rows and sets ``laps_read_at``, writing no other table or
+    column, and the 200 carries the counts. Repeating the call gives the same rows.
+    """
+    conn = db.get_connection()
+    try:
+        stored_start = db.session_start_time(conn, session_id)
+    finally:
+        conn.close()
+    if stored_start is None:
+        raise HTTPException(404, f"session {session_id} not found")
+
+    raw = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"upload exceeds {MAX_UPLOAD_BYTES} byte limit")
+    try:
+        read = ingest_pipeline.read_laps(raw)
+    except (NotAFitFileError, FitParseFailure, TooManyRecordsError, MissingCanonicalFieldError) as exc:
+        status, detail = http_status_detail(exc)
+        raise HTTPException(status, detail) from exc
+    if read.session_id != session_id:
+        raise HTTPException(
+            409,
+            f"the file is session {read.session_id} (start {read.start_time}), not session {session_id} "
+            f"(start {stored_start}); nothing was written",
+        )
+
+    conn = db.get_connection()
+    try:
+        attached = db.attach_session_laps(conn, session_id, read.laps, read.steps)
+    finally:
+        conn.close()
+    if not attached:
+        raise HTTPException(404, f"session {session_id} not found")
+    return SessionLapsAttached(session_id=session_id, laps=len(read.laps), workout_steps=len(read.steps))

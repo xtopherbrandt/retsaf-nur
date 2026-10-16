@@ -688,6 +688,38 @@ def replace_session_laps(
     conn.execute("UPDATE sessions SET laps_read_at = ? WHERE session_id = ?", (read_at, session_id))
 
 
+def session_start_time(conn: sqlite3.Connection, session_id: str) -> str | None:
+    """The stored ``start_time`` of ``session_id``, or ``None`` when no session has that id. One SELECT."""
+    row = conn.execute("SELECT start_time FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    return None if row is None else row["start_time"]
+
+
+def attach_session_laps(
+    conn: sqlite3.Connection,
+    session_id: str,
+    laps: Sequence[SessionLap],
+    steps: Sequence[SessionWorkoutStep],
+) -> bool:
+    """Replace a stored session's laps and steps from its file and set ``laps_read_at`` (F025 reference section 4).
+
+    One ``BEGIN IMMEDIATE`` transaction, as ``apply_race_tags`` holds, takes the write lock, checks
+    the session still exists and writes through ``replace_session_laps`` with ``laps_read_now()``;
+    any fault rolls it back and propagates. Returns ``False``, writing nothing, when no session has
+    ``session_id``. The caller has run ``init_schema`` and holds no open transaction.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if session_start_time(conn, session_id) is None:
+            conn.rollback()
+            return False
+        replace_session_laps(conn, session_id, laps, steps, laps_read_now())
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return True
+
+
 def _child_tables() -> list[str]:
     """Every table other than ``sessions`` that carries a ``session_id``,
     read out of ``_SCHEMA_DDL`` rather than hand-listed.
@@ -764,6 +796,17 @@ def delete_session(conn: sqlite3.Connection, session_id: str) -> bool:
         return deleted
 
 
+#: The keys of one ``laps`` and one ``workout_steps`` entry of the detail (F025 reference section 2).
+_LAP_DETAIL_KEYS = (
+    "lap_index", "start_t", "end_t", "timer_s", "elapsed_s", "distance_m", "intensity", "wkt_step_index",
+    "lap_trigger",
+)
+_STEP_DETAIL_KEYS = (
+    "step_index", "workout_name", "step_name", "intensity", "duration_type", "duration_value", "target_type",
+    "target_value", "target_low", "target_high",
+)
+
+
 def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None:
     """Read one ingested session back in the canonical session/record/RR/context shape.
 
@@ -778,7 +821,7 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
                source_vendor, source_device, recording_interval, hr_source,
                rr_valid_fraction, quality_flags, summary, context,
                rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, rr_source,
-               import_id
+               import_id, laps_read_at
         FROM sessions WHERE session_id = ?
         """,
         (session_id,),
@@ -837,6 +880,22 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         for r in rr_cur.fetchall()
     ]
 
+    # F025: lap order and file order; seq numbers the steps in file order and is not served.
+    laps = [
+        {key: r[key] for key in _LAP_DETAIL_KEYS}
+        for r in conn.execute(
+            f"SELECT {', '.join(_LAP_DETAIL_KEYS)} FROM laps WHERE session_id = ? ORDER BY lap_index",
+            (session_id,),
+        )
+    ]
+    workout_steps = [
+        {key: r[key] for key in _STEP_DETAIL_KEYS}
+        for r in conn.execute(
+            f"SELECT {', '.join(_STEP_DETAIL_KEYS)} FROM workout_steps WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        )
+    ]
+
     return {
         "session_id": row["session_id"],
         "athlete_id": row["athlete_id"],
@@ -865,6 +924,11 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "import_id": row["import_id"],
         "records": records,
         "rr_intervals": rr_intervals,
+        # F025: null until the session's laps are read from a file, at
+        # ingest or by PUT /sessions/{id}/laps; empty lists until then.
+        "laps": laps,
+        "workout_steps": workout_steps,
+        "laps_read_at": row["laps_read_at"],
     }
 
 

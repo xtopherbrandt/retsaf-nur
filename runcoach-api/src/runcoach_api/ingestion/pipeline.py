@@ -14,6 +14,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from runcoach_api import db
@@ -26,7 +27,7 @@ from runcoach_api.ingestion import (
     quarantine,
     rr_reconstruction,
 )
-from runcoach_api.models import Session
+from runcoach_api.models import Session, SessionLap, SessionWorkoutStep
 
 
 @dataclass
@@ -155,3 +156,34 @@ def ingest_fit_bytes(
         conn.close()
 
     return IngestResult(session_id=session.session_id, quality_flags=session.quality_flags)
+
+
+class LapsRead(NamedTuple):
+    """What ``read_laps`` reads from one file, ``(session_id, start_time, laps, steps)``: the
+    session it describes and its laps and steps."""
+
+    session_id: str
+    start_time: str
+    laps: list[SessionLap]
+    steps: list[SessionWorkoutStep]
+
+
+def read_laps(raw: bytes) -> LapsRead:
+    """Decode one FIT file as ingest does and return its session's identity, laps and steps (F025).
+
+    The decode and mapping are ``ingest_fit_bytes``'s own (``fit_parser.decode``,
+    ``mapping.to_canonical``, ``mapping.to_laps``), so a file ingest refuses raises the same typed
+    exception here (``NotAFitFileError``, ``FitParseFailure``, ``TooManyRecordsError``,
+    ``MissingCanonicalFieldError``). ``session_id`` is ``mapping.derive_session_id`` of the file's
+    ``source_device`` and ``start_time``, the id an upload of the file stores; ``start_time`` is
+    the stored form. Nothing is classified and no store is opened.
+    """
+    messages = fit_parser.decode(raw)
+    session, _records = mapping.to_canonical(messages)
+    laps, steps = mapping.to_laps(messages)
+    return LapsRead(
+        session_id=mapping.derive_session_id(session.source_device, session.start_time),
+        start_time=session.start_time,
+        laps=laps,
+        steps=steps,
+    )

@@ -1209,6 +1209,55 @@ paths:
               schema: { $ref: "#/components/schemas/RaceTagsResult" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /sessions/{session_id}/laps:
+    put:
+      tags: [Sessions]
+      operationId: attachSessionLaps
+      summary: Read a stored run's laps and workout steps from its original FIT file
+      description: >
+        F025. Multipart, one FIT file, the same size limit as ingestSession.
+        In order: an unknown session_id is a 404, before the file is decoded;
+        the file is decoded as ingestSession decodes it, and a file
+        ingestSession refuses gets the status and detail ingestSession gives
+        it (400, 413); a file whose derived session id (its device and start)
+        is not session_id is a 409 naming both ids and both start instants.
+        Otherwise the session's laps and workout steps are replaced by the
+        file's and laps_read_at is set; no other table or session column is
+        written, and repeating the call gives the same rows. 200 with the
+        counts. As-built errors are FastAPI {detail}.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F025"
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: "The session's original .fit file, at most 50 MB." }
+      responses:
+        "200":
+          description: The session's laps and steps were replaced; the counts stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionLapsAttached" }
+        "400":
+          description: Not a FIT file, a parse failure or a required canonical field that could not be determined (ingestSession's detail)
+          content: { application/json: { schema: { type: object } } }
+        "404":
+          description: No stored session has that session_id; the file is not decoded
+          content: { application/json: { schema: { type: object } } }
+        "409":
+          description: The file is another session's; the detail names both ids and both start instants
+          content: { application/json: { schema: { type: object } } }
+        "413":
+          description: The file exceeds the upload limit or a decode ceiling (ingestSession's detail)
+          content: { application/json: { schema: { type: object } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
 components:
 
   securitySchemes:
@@ -1363,7 +1412,7 @@ components:
     SessionDetail:
       type: object
       description: Canonical session as GET /sessions/{id} returns it (quarantine sidecar excluded).
-      required: [session_id, start_time, sport, source_vendor, records, rr_intervals]
+      required: [session_id, start_time, sport, source_vendor, records, rr_intervals, laps, workout_steps, laps_read_at]
       properties:
         session_id: { type: string }
         athlete_id: { type: string, nullable: true }
@@ -1421,6 +1470,18 @@ components:
           type: array
           items: { $ref: "#/components/schemas/RRInterval" }
         import_id: { type: string, nullable: true, description: "The archive import that stored the session (F020); null for a one-file upload." }
+        laps:
+          type: array
+          items: { $ref: "#/components/schemas/SessionLap" }
+          description: "The file's laps in lap order (F025); empty until the laps are read."
+        workout_steps:
+          type: array
+          items: { $ref: "#/components/schemas/SessionWorkoutStep" }
+          description: "The file's workout steps in file order (F025); empty until the laps are read."
+        laps_read_at:
+          type: string
+          nullable: true
+          description: "When the laps were last read from a file (UTC, ISO-8601); null means never read, not no laps."
 
     Record:
       type: object
@@ -3151,6 +3212,53 @@ components:
           items: { $ref: "#/components/schemas/RaceTagItemResult" }
           description: "One per request item, in request order."
         counts: { $ref: "#/components/schemas/RaceTagCounts" }
+    SessionLapsAttached:
+      type: object
+      description: "attachSessionLaps' 200 body: the rows the file replaced the session's with."
+      required: [session_id, laps, workout_steps]
+      properties:
+        session_id: { type: string }
+        laps: { type: integer, description: "How many lap rows the session now has." }
+        workout_steps: { type: integer, description: "How many workout step rows the session now has." }
+    SessionLap:
+      type: object
+      description: >
+        One laps entry of SessionDetail (F025), in lap order. start_t and end_t
+        are signed seconds from the instant record t is measured from; an end
+        before its start is served as stored. A value the file did not carry,
+        or carried invalid, is null.
+      required: [lap_index, start_t, end_t, timer_s, elapsed_s, distance_m, intensity, wkt_step_index, lap_trigger]
+      properties:
+        lap_index: { type: integer, description: "Stored laps counted from 0 in file order." }
+        start_t: { type: number, nullable: true }
+        end_t: { type: number, nullable: true }
+        timer_s: { type: number, nullable: true, description: "total_timer_time: excludes pauses." }
+        elapsed_s: { type: number, nullable: true, description: "total_elapsed_time: includes pauses." }
+        distance_m: { type: number, nullable: true }
+        intensity: { type: string, nullable: true, description: "The FIT profile name (warmup, active, interval, recovery, rest, cooldown, ...)." }
+        wkt_step_index: { type: integer, nullable: true, description: "The workout step the lap belongs to." }
+        lap_trigger: { type: string, nullable: true }
+    SessionWorkoutStep:
+      type: object
+      description: >
+        One workout_steps entry of SessionDetail (F025), in file order. Not the
+        planned-workout WorkoutStep. Values are as the file writes them; their
+        meaning depends on duration_type and target_type (a time step's
+        duration in seconds, a speed target in m/s, a repeat step's
+        duration_value the step it repeats from and target_value the repeat
+        count, a heart-rate target in the FIT +100 encoding).
+      required: [step_index, workout_name, step_name, intensity, duration_type, duration_value, target_type, target_value, target_low, target_high]
+      properties:
+        step_index: { type: integer, nullable: true, description: "The step's message_index." }
+        workout_name: { type: string, nullable: true }
+        step_name: { type: string, nullable: true }
+        intensity: { type: string, nullable: true }
+        duration_type: { type: string, nullable: true }
+        duration_value: { type: number, nullable: true }
+        target_type: { type: string, nullable: true }
+        target_value: { type: number, nullable: true }
+        target_low: { type: number, nullable: true }
+        target_high: { type: number, nullable: true }
     ThresholdEffort:
       type: object
       description: "getState: a tagged race the threshold estimate used, with the gain it entered with (1 for the first)."
