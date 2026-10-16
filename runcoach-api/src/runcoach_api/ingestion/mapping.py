@@ -665,8 +665,8 @@ def to_canonical(messages: list[fitdecode.FitDataMessage]) -> tuple[Session, lis
         record, dev_unresolved = _build_record(record_msg, start_time)
         if record is not None:
             records.append(record)
-        for name, value in dev_unresolved.items():
-            unresolved_developer_fields.setdefault(name, value)
+        for field_name, value in dev_unresolved.items():
+            unresolved_developer_fields.setdefault(field_name, value)
 
     start_time_iso = start_time.isoformat()
     source_device = _build_source_device(by_name)

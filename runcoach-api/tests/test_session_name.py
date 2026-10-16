@@ -130,6 +130,35 @@ def test_a_blank_workout_name_falls_through_to_the_profile_name_at_upload() -> N
     assert stored == "Run"
 
 
+def test_a_file_with_unresolved_developer_fields_keeps_its_session_name() -> None:
+    """The developer-field walk does not overwrite the session name.
+
+    ``dev_fields_run.fit`` is the only corpus file with unresolved developer
+    fields (Stryd). Decoded with ``fitdecode`` (2026-10-16): no ``workout``
+    message, ``session.sport_profile_name`` is ``Run``, and its last developer
+    field description is ``Stryd Temperature``. ``Run`` is written here by hand
+    from that decode, not from ``session_name``. The unresolved fields must still
+    reach the session's provenance under their own names.
+    """
+    with TestClient(app) as client:
+        session_id = _upload(client, "dev_fields_run.fit")
+        listing = client.get("/sessions")
+    stored = _stored_name(session_id)
+    assert listing.status_code == 200, listing.text
+    [item] = [i for i in listing.json()["items"] if i["session_id"] == session_id]
+    print(f"dev_fields_run: sessions.name = {stored!r}, listed name = {item['name']!r}")
+    assert stored == "Run"
+    assert item["name"] == "Run"
+
+    conn = db.get_connection()
+    try:
+        row = conn.execute("SELECT context FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    finally:
+        conn.close()
+    unresolved = db._json_load(row["context"])["provenance"]["unresolved_developer_fields"]
+    assert "Stryd Temperature" in unresolved, sorted(unresolved)
+
+
 # --- the probe table for session_name -------------------------------------------------------------
 
 
