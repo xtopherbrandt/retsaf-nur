@@ -227,7 +227,7 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
     excluded: list[Exclusion] = []
     for start, session_id, row in candidates:
         duration = duration_of(row)
-        if duration is None or not in_band(duration):
+        if not in_band(duration):
             excluded.append(Exclusion(session_id, start, OUTSIDE_THRESHOLD_BAND))
             continue
         flags = _flags(row)

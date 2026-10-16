@@ -263,6 +263,13 @@ def set_field(data: bytes, global_num: int, field_num: int, value: int) -> bytes
         offset += field.size
     else:
         raise FitPatchError(f"message {global_num} carries no field {field_num}")
+    return _pack_uint(data, record, offset, field, global_num, field_num, value)
+
+
+def _pack_uint(
+    data: bytes, record: Record, offset: int, field: FieldDef, global_num: int, field_num: int, value: int
+) -> bytes:
+    """``data`` with the unsigned raw ``value`` written at ``offset`` as ``field`` of ``record``."""
     formats = {1: "B", 2: "H", 4: "I"}
     if field.size not in formats:
         raise FitPatchError(f"field {global_num}/{field_num} has size {field.size}, not 1, 2 or 4")
@@ -271,7 +278,7 @@ def set_field(data: bytes, global_num: int, field_num: int, value: int) -> bytes
             f"value {value} does not fit field {global_num}/{field_num} of {field.size} bytes"
         )
     buf = bytearray(data)
-    struct.pack_into((">" if definition.big_endian else "<") + formats[field.size], buf, offset, value)
+    struct.pack_into((">" if record.definition.big_endian else "<") + formats[field.size], buf, offset, value)
     return finalize(buf)
 
 
@@ -293,16 +300,7 @@ def set_field_at(data: bytes, global_num: int, index: int, field_num: int, value
     """
     record = _nth_data_record(walk(data), global_num, index)
     offset, field = _field_offset(record, field_num)
-    formats = {1: "B", 2: "H", 4: "I"}
-    if field.size not in formats:
-        raise FitPatchError(f"field {global_num}/{field_num} has size {field.size}, not 1, 2 or 4")
-    if not 0 <= value < 1 << (8 * field.size):
-        raise FitPatchError(
-            f"value {value} does not fit field {global_num}/{field_num} of {field.size} bytes"
-        )
-    buf = bytearray(data)
-    struct.pack_into((">" if record.definition.big_endian else "<") + formats[field.size], buf, offset, value)
-    return finalize(buf)
+    return _pack_uint(data, record, offset, field, global_num, field_num, value)
 
 
 def duplicate_message(data: bytes, global_num: int, index: int) -> bytes:
