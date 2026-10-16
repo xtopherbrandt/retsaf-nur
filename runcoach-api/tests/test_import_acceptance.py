@@ -63,6 +63,14 @@ assert _SPEC is not None and _SPEC.loader is not None
 import_archive = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(import_archive)
 
+# tests/support/against_app.py, for its _stored_laps reader.
+_AGAINST_APP_SPEC = importlib.util.spec_from_file_location(
+    "against_app", Path(__file__).parent / "support" / "against_app.py"
+)
+assert _AGAINST_APP_SPEC is not None and _AGAINST_APP_SPEC.loader is not None
+against_app = importlib.util.module_from_spec(_AGAINST_APP_SPEC)
+_AGAINST_APP_SPEC.loader.exec_module(against_app)
+
 IA = import_archive
 FIXTURES = Path(__file__).parent / "fixtures"
 CAPTURE_PROFILE = "HRV Snapshot"
@@ -202,6 +210,49 @@ def test_an_import_stores_what_one_file_uploads_store(
         load_a = _map_ids(loads_a[rows_a[key]["session_id"]].json(), id_map)
         load_b = loads_b[rows_b[key]["session_id"]].json()
         assert load_a == load_b, key
+
+
+# --- F025 AC1: an import stores the laps a one-file upload stores ---------------------------------
+
+# The laps_read_at clock, fixed through db.laps_read_now so the column is compared, not excluded.
+LAPS_READ_AT = "2026-10-12T08:00:00+00:00"
+
+
+def test_an_import_stores_the_same_laps_as_one_file_upload(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
+) -> None:
+    """``sample_run`` imported as a zip of the one file through ``POST /imports`` stores the same
+    ``laps`` and ``workout_steps`` rows, every column but ``session_id``, and the same
+    ``laps_read_at`` as the same file uploaded with ``POST /sessions`` into a separate store."""
+    monkeypatch.setattr(db, "laps_read_now", lambda: LAPS_READ_AT)
+    store_a, store_b = isolated_data_dir, tmp_path / "store_b"
+    raw = (FIXTURES / "sample_run.fit").read_bytes()
+    archive = tmp_path / "sample_run.zip"
+    with zipfile.ZipFile(archive, "w") as out:
+        out.writestr("sample_run.fit", raw)
+
+    _use_store(monkeypatch, store_a)
+    with TestClient(app) as client:
+        with archive.open("rb") as fh:
+            started = client.post("/imports", files={"file": (archive.name, fh, "application/zip")})
+        assert started.status_code == 202, started.text
+        import_id = started.json()["import_id"]
+        _drain()
+        done = client.get(f"/imports/{import_id}").json()
+    assert done["status"] == "completed", done["error"]
+    assert [row["outcome"] for row in done["files"]] == ["stored"], done["files"]
+    imported = against_app._stored_laps(store_a)
+
+    _use_store(monkeypatch, store_b)
+    with TestClient(app) as client:
+        response = post_fit_bytes(client, "sample_run.fit", raw, data={"resting_capture": "false"})
+        assert response.status_code == 201, response.text
+    uploaded = against_app._stored_laps(store_b)
+
+    print(f"imported: {len(imported['laps'])} laps, {len(imported['workout_steps'])} steps")
+    assert imported["laps"] and imported["workout_steps"], imported
+    assert imported["laps_read_at"] == LAPS_READ_AT
+    assert imported == uploaded
 
 
 # --- AC10: runcoach import against the app --------------------------------------------------------

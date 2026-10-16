@@ -26,31 +26,22 @@ carries no resting value of its own supplies it.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
-import io
 import sys
-import zipfile
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
-from runcoach_api.main import app
+from runcoach_api.config import AppConfig
 
 pytest.importorskip("runcoach_cli")
 
-from runcoach_cli import api_client, garmin
-from runcoach_cli import config as cli_config
-from runcoach_cli.commands import sync
-from runcoach_cli.main import app as cli_app
-from typer.testing import CliRunner
-
 FIXTURES = Path(__file__).parent / "fixtures"
 SUPPORT = Path(__file__).parent / "support"
-BASE_URL = "http://testserver"
 
 USER_PROFILE = 3  # FIT user_profile: resting_heart_rate is field 8
 RESTING_HEART_RATE = 8
@@ -63,12 +54,9 @@ SNAPSHOT_RESTING = 52
 # profile fitdecode ships does not name.
 NON_ACTIVITY_TYPES = (32, 44, 68, 49)
 
-TODAY = date(2026, 10, 12)
 DAY_1 = date(2026, 10, 10)
 DAY_2 = date(2026, 10, 11)
 DAY_3 = date(2026, 10, 12)
-
-runner = CliRunner()
 
 
 def _load_support(name: str):
@@ -81,61 +69,22 @@ def _load_support(name: str):
 
 fit_patch = _load_support("fit_patch")
 import_archive = _load_support("import_archive")
+against_app = _load_support("against_app")
+
+# The harness, from tests/support/against_app.py; cli_against_app is a fixture pytest finds here.
+HARNESS = ("cli_against_app", "_activity", "_zip", "_run", "_counts", "FakeGarmin", "_serve")
+cli_against_app = against_app.cli_against_app
+FakeGarmin = against_app.FakeGarmin
+_activity = against_app._activity
+_zip = against_app._zip
+_run = against_app._run
+_counts = against_app._counts
+_serve = against_app._serve
+TODAY = against_app.TODAY
 
 
 def _fixture(name: str) -> bytes:
     return (FIXTURES / f"{name}.fit").read_bytes()
-
-
-def _zip(entries: list[tuple[str, bytes]]) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        for name, data in entries:
-            archive.writestr(name, data)
-    return buffer.getvalue()
-
-
-def _activity(
-    activity_id: int, local: str, type_key: str, type_id: int, parent: int, manual: bool = False
-) -> dict[str, Any]:
-    """A listed summary. ``startTimeGMT`` repeats the local start, as no stored file starts then: the
-    race tags step reads every listed run as not stored, and none is a race."""
-    return {
-        "activityId": activity_id,
-        "activityName": f"activity {activity_id}",
-        "startTimeLocal": local,
-        "startTimeGMT": local,
-        "activityType": {"typeKey": type_key, "typeId": type_id, "parentTypeId": parent},
-        "eventType": {"typeKey": "uncategorized", "typeId": 9},
-        "manualActivity": manual,
-    }
-
-
-class FakeGarmin:
-    """Serves listed activities, their ORIGINAL zips and each day's snapshot zip; 404 otherwise."""
-
-    def __init__(
-        self, activities: list[dict[str, Any]], originals: dict[int, bytes], snapshots: dict[date, bytes]
-    ) -> None:
-        self.activities = activities
-        self.originals = originals
-        self.snapshots = snapshots
-        self.downloads: list[tuple[str, Any]] = []
-
-    def list_activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        return list(self.activities)
-
-    def download_original(self, activity_id: int) -> bytes:
-        self.downloads.append(("original", activity_id))
-        if activity_id not in self.originals:
-            raise garmin.NotFound(f"no original for {activity_id}")
-        return self.originals[activity_id]
-
-    def download_snapshot(self, day: date) -> bytes:
-        self.downloads.append(("snapshot", day))
-        if day not in self.snapshots:
-            raise garmin.NotFound(f"no snapshot on {day}")
-        return self.snapshots[day]
 
 
 def _ski_day() -> bytes:
@@ -167,33 +116,6 @@ def _three_days() -> FakeGarmin:
         for n, file_type in enumerate(NON_ACTIVITY_TYPES)
     ]
     return FakeGarmin(activities, originals, {DAY_1: _zip(snapshot)})
-
-
-@pytest.fixture
-def cli_against_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_data_dir: Path):
-    """A TestClient on the app, installed as the CLI's HTTP client, and a tmp ``cli.toml`` naming it."""
-    data_dir = Path(db._load_config_cached().data_dir).resolve()
-    assert data_dir.is_relative_to(tmp_path.resolve()), data_dir
-    config_path = tmp_path / "cli-home" / "cli.toml"
-    config_path.parent.mkdir()
-    config_path.write_text(f'api_url = "{BASE_URL}"\n', encoding="utf-8")
-    monkeypatch.setattr(cli_config, "CONFIG_PATH", config_path)
-    assert garmin.token_dir().resolve().is_relative_to(tmp_path.resolve())
-    monkeypatch.setattr(sync, "_library_missing", lambda: False)
-    monkeypatch.setattr(sync, "today", lambda: TODAY)
-    with TestClient(app, base_url=BASE_URL) as client:
-        monkeypatch.setattr(api_client, "client", client)
-        yield client
-
-
-def _serve(monkeypatch: pytest.MonkeyPatch, fake: FakeGarmin) -> None:
-    monkeypatch.setattr(sync, "_adapter", lambda: SimpleNamespace(open_client=lambda: fake))
-
-
-def _run(*args: str):
-    result = runner.invoke(cli_app, list(args))
-    print(f"$ runcoach {' '.join(args)} -> exit {result.exit_code}\n{result.output}")
-    return result
 
 
 def _stored(client: TestClient) -> list[dict[str, Any]]:
@@ -448,17 +370,6 @@ def _connect_run(
     }
 
 
-def _counts(**outcomes: int) -> str:
-    """The race tags counts line with the named outcomes set and every other count 0."""
-    words = {"tagged": 0, "cleared": 0, "unchanged": 0, "not_stored": 0, "mismatch": 0, "ambiguous": 0}
-    words.update(outcomes)
-    return (
-        f"Race tags: tagged {words['tagged']}, cleared {words['cleared']}, unchanged "
-        f"{words['unchanged']}, not stored {words['not_stored']}, mismatch {words['mismatch']}, "
-        f"ambiguous {words['ambiguous']}, other tag 0, skipped 0"
-    )
-
-
 def _upload(client: TestClient, name: str, data: bytes) -> str:
     response = client.post(
         "/sessions",
@@ -581,3 +492,60 @@ def test_a_run_uploaded_and_tagged_in_one_sync(
         ("2026-10-11T12:34:21+00:00", "race")
     ]
     assert ("original", 601) in fake.downloads
+
+
+# --- F025 AC1: a sync stores the laps a one-file upload stores ----------------------------------
+
+# The laps_read_at clock, fixed through db.laps_read_now so the column is compared, not excluded.
+LAPS_READ_AT = "2026-10-12T08:00:00+00:00"
+
+
+def test_a_sync_stores_the_same_laps_as_one_file_upload(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch, isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """``sample_run`` synced from a Connect listing at its real UTC start stores the same ``laps``
+    and ``workout_steps`` rows, every column but ``session_id``, and the same ``laps_read_at`` as
+    the same file uploaded with ``POST /sessions`` into a separate isolated store."""
+    monkeypatch.setattr(db, "laps_read_now", lambda: LAPS_READ_AT)
+    fake = FakeGarmin(
+        [_activity(701, SHARED_START_LOCAL, "running", 1, 17, gmt=SHARED_START_GMT)],
+        {701: _zip([("701_ACTIVITY.fit", _fixture("sample_run"))])},
+        {},
+    )
+    _serve(monkeypatch, fake)
+    result = _run("sync", "--since", "2026-09-01")
+    assert result.exit_code == 0, result.output
+    assert "Stored: 1" in result.output.splitlines()
+    assert ("original", 701) in fake.downloads
+    assert [row["start_time"] for row in _stored(cli_against_app)] == [SHARED_START_STORED]
+    synced = against_app._stored_laps(isolated_data_dir)
+
+    store_b = tmp_path / "store_b"
+    config = AppConfig(
+        host="127.0.0.1", port=8000, data_dir=store_b, resting_hrv_profile_names=[], athlete_timezone="UTC"
+    )
+    monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: config)
+    db._load_config_cached.cache_clear()
+    assert db._load_config_cached().data_dir == store_b
+    with TestClient(against_app.app) as direct:
+        _upload(direct, "sample_run.fit", _fixture("sample_run"))
+    uploaded = against_app._stored_laps(store_b)
+
+    print(f"synced: {len(synced['laps'])} laps, {len(synced['workout_steps'])} steps")
+    assert synced["laps"] and synced["workout_steps"], synced
+    assert synced["laps_read_at"] == LAPS_READ_AT
+    assert synced == uploaded
+
+
+def test_the_harness_lives_in_support() -> None:
+    """The harness is ``tests/support/against_app.py``'s, bound here, and this file defines none of it."""
+    assert Path(against_app.__file__).resolve() == (SUPPORT / "against_app.py").resolve()
+    for name in HARNESS:
+        assert globals()[name] is getattr(against_app, name), name
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    defined = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+    assert defined.isdisjoint(HARNESS), defined & set(HARNESS)
