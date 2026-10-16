@@ -111,19 +111,32 @@ def _transition(
     return Decision(activity_id, "unchanged", session_id, candidates)
 
 
-def decide(items: Sequence[Mapping], candidate_rows: Iterable[Mapping]) -> list[Decision]:
-    """One ``Decision`` per item, in request order (see the module docstring for the rule)."""
+def index_by_start_second(candidate_rows: Iterable[Mapping]) -> dict[str, list[Mapping]]:
+    """The candidate rows by their stored ``start_time``, each second's rows ordered by
+    ``session_id``. The start-second lookup F023's ``decide`` and F025's laps candidates share."""
     by_start: dict[str, list[Mapping]] = {}
     for row in candidate_rows:
         by_start.setdefault(row["start_time"], []).append(row)
     for rows in by_start.values():
         rows.sort(key=lambda r: r["session_id"])
+    return by_start
+
+
+def at_start_second(index: Mapping[str, list[Mapping]], start_time: str) -> list[Mapping]:
+    """The rows of ``index`` stored at ``start_time``'s second (``Z`` normalised to ``+00:00``);
+    an empty list when none is."""
+    return list(index.get(normalise_start_time(start_time), []))
+
+
+def decide(items: Sequence[Mapping], candidate_rows: Iterable[Mapping]) -> list[Decision]:
+    """One ``Decision`` per item, in request order (see the module docstring for the rule)."""
+    by_start = index_by_start_second(candidate_rows)
 
     # First pass: each item's candidates and its target, if it has one.
     staged: list[tuple[Mapping, tuple[str, ...], Mapping | None, Decision | None]] = []
     for item in items:
         activity_id = item["connect_activity_id"]
-        rows = by_start.get(normalise_start_time(item["start_time"]), [])
+        rows = at_start_second(by_start, item["start_time"])
         ids = tuple(r["session_id"] for r in rows)
         agreeing = [r for r in rows if agrees(item, r.get("summary"))]
         if not rows:
