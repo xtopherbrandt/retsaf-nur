@@ -40,6 +40,21 @@ Patched bytes stay in memory. Nothing here writes into ``tests/fixtures/``.
   and no other field value; the copy's ``(source_device, start_time)``
   differs from its source's. A shift out of the ``uint32`` range and a
   source with a bad CRC are refused.
+- **The Nth message.** ``set_field_at`` sets the intensity of the third
+  ``workout_step`` of ``sample_run`` and moves no other field of any message,
+  the other three steps included; index 0 gives ``set_field``'s bytes; a
+  big-endian definition is honoured; an index past the last message, or
+  below 0, is refused.
+- **Duplicate.** ``duplicate_message`` inserts a byte copy of the second
+  ``workout_step`` right after it: the copy decodes with both CRCs checked,
+  field for field equal to its source, and every other message keeps its
+  place and values. An index past the last message is refused.
+- **Repeat workout.** ``tests/support/repeat_workout.py`` builds five steps
+  from ``sample_run``'s four (warm-up, active 600 s, recovery 120 s with an
+  open target, repeat from step 1 three times, cool-down); raw ``fitdecode``
+  reads check each patched raw value, the resolved ``duration_step`` and
+  ``repeat_steps`` of the repeat step, ``num_valid_steps`` 5, and that every
+  lap is left as written.
 - **Smoke upload.** The ``dev_fields_run`` patched to ``sample_run``'s start
   time is accepted by ``POST /sessions``.
 
@@ -550,6 +565,129 @@ def test_a_shift_refuses_a_source_with_a_bad_crc() -> None:
     raw[-1] ^= 0xFF
     with pytest.raises(fit_patch.FitPatchError, match="CRC"):
         fit_patch.shift_timestamps(bytes(raw), DAY_S)
+
+
+# ---------------------------------------------------------------------------
+# the Nth message, a duplicate, the repeat workout
+# ---------------------------------------------------------------------------
+
+WORKOUT, WORKOUT_STEP, LAP = 26, 27, 19
+STEP_INTENSITY = 7
+
+
+
+def _repeat_workout_module():
+    """``tests/support/repeat_workout.py``, loaded by path as the other support modules are."""
+    spec = importlib.util.spec_from_file_location(
+        "repeat_workout", Path(__file__).parent / "support" / "repeat_workout.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _positions(values: list, global_num: int) -> list[int]:
+    """The list positions of the data messages of ``global_num``."""
+    return [i for i, (g, _) in enumerate(values) if g == global_num]
+
+
+def _changed(old: list, new: list) -> list[tuple[int, str, object, object]]:
+    """``(message position, field key, old raw, new raw)`` for every field whose raw value moved."""
+    assert len(old) == len(new)
+    out = []
+    for i, ((g_old, f_old), (g_new, f_new)) in enumerate(zip(old, new, strict=True)):
+        assert g_old == g_new
+        assert [k for k, _ in f_old] == [k for k, _ in f_new]
+        out += [(i, k, a, b) for (k, a), (_, b) in zip(f_old, f_new, strict=True) if a != b]
+    return out
+
+
+def test_set_field_at_patches_only_the_nth_workout_step() -> None:
+    raw = _raw("sample_run.fit")
+    patched = fit_patch.set_field_at(raw, WORKOUT_STEP, 2, STEP_INTENSITY, 4)
+    _assert_header_rewritten(patched)
+    _, before = _decode(raw)
+    _, after = _decode(patched)
+    old, new = _field_values(before), _field_values(after)
+    steps = _positions(old, WORKOUT_STEP)
+    changed = _changed(old, new)
+    print(f"workout_step positions {steps}; changed {changed}")
+    assert len(steps) == 4
+    assert changed == [(steps[2], str(STEP_INTENSITY), 0, 4)]
+    # Index 0 is the first message: the same bytes set_field writes.
+    assert fit_patch.set_field_at(raw, WORKOUT_STEP, 0, STEP_INTENSITY, 4) == fit_patch.set_field(
+        raw, WORKOUT_STEP, STEP_INTENSITY, 4
+    )
+    # A big-endian definition is written big-endian at the Nth message too.
+    swapped = fit_patch.with_big_endian_definitions(raw, WORKOUT_STEP)
+    _, big = _decode(fit_patch.set_field_at(swapped, WORKOUT_STEP, 3, 2, 600000))
+    durations = [m.get_raw_value(2) for m in big if m.global_mesg_num == WORKOUT_STEP]
+    print(f"big-endian step durations {durations}")
+    assert durations == [300000, 1200000, 900000, 600000]
+    for index in (4, -1):
+        with pytest.raises(fit_patch.FitPatchError, match=f"index {index}"):
+            fit_patch.set_field_at(raw, WORKOUT_STEP, index, STEP_INTENSITY, 4)
+
+
+def test_duplicate_message_inserts_a_decodable_copy() -> None:
+    raw = _raw("sample_run.fit")
+    copied = fit_patch.duplicate_message(raw, WORKOUT_STEP, 1)
+    _assert_header_rewritten(copied)
+    assert len(copied) > len(raw)
+    _, before = _decode(raw)
+    _, after = _decode(copied)
+    old, new = _field_values(before), _field_values(after)
+    at = _positions(old, WORKOUT_STEP)[1]
+    print(f"counts before {sorted(_counts(before).items())}, after {sorted(_counts(after).items())}")
+    assert _counts(after) - _counts(before) == collections.Counter({WORKOUT_STEP: 1})
+    assert _counts(before) - _counts(after) == collections.Counter()
+    assert new == old[: at + 1] + [old[at]] + old[at + 1 :]
+    # The copy is the source's bytes, record header included.
+    steps = [r for r in fit_patch.walk(copied) if not r.is_definition and r.definition.global_num == WORKOUT_STEP]
+    first, second = steps[1], steps[2]
+    assert second.offset == first.offset + first.length
+    assert copied[first.offset : first.offset + first.length] == copied[second.offset : second.offset + second.length]
+    with pytest.raises(fit_patch.FitPatchError, match="index 4"):
+        fit_patch.duplicate_message(raw, WORKOUT_STEP, 4)
+
+
+def test_repeat_workout_decodes_five_steps_with_a_repeat_from_step_1_three_times() -> None:
+    built = _repeat_workout_module().build_repeat_workout()
+    headers, messages = _decode(built)
+    assert headers[0].header_size == 14
+    steps = [m for m in messages if m.global_mesg_num == WORKOUT_STEP]
+    rows = [
+        tuple(m.get_raw_value(n) for n in (254, 7, 1, 2, 3, 4)) for m in steps
+    ]
+    print("message_index, intensity, duration_type, duration_value, target_type, target_value")
+    for row in rows:
+        print(row)
+    # Raw values, written by hand from the FIT profile: intensity 2 warmup, 0 active, 4 recovery,
+    # 3 cooldown; duration_type 0 time (ms), 6 repeat_until_steps_cmplt; target_type 2 open.
+    # Step 1 keeps its speed target (type 0); step 3 is the first copy of the cool-down, so its
+    # intensity and open target stay as the cool-down wrote them.
+    assert rows == [
+        (0, 2, 0, 300000, 2, 0),
+        (1, 0, 0, 600000, 0, 0),
+        (2, 4, 0, 120000, 2, 0),
+        (3, 3, 6, 1, 2, 3),
+        (4, 3, 0, 300000, 2, 0),
+    ]
+    # fitdecode resolves the repeat step's subfields from duration_type 6.
+    repeat = steps[3]
+    assert repeat.get_value("duration_type") == "repeat_until_steps_cmplt"
+    assert repeat.get_value("duration_step") == 1
+    assert repeat.get_value("repeat_steps") == 3
+    assert steps[2].get_value("intensity") == "recovery"
+    assert steps[2].get_value("target_type") == "open"
+    workout = next(m for m in messages if m.global_mesg_num == WORKOUT)
+    assert workout.get_raw_value(6) == 5
+    # The laps are left as written.
+    _, source = _decode(_raw("sample_run.fit"))
+    laps = [v for g, v in _field_values(messages) if g == LAP]
+    assert laps == [v for g, v in _field_values(source) if g == LAP]
+    assert len(laps) == 10
 
 
 # ---------------------------------------------------------------------------

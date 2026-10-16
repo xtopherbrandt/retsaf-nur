@@ -13,6 +13,12 @@ written into ``tests/fixtures/``.
 - ``set_field(data, global_num, field_num, value)`` overwrites one field of
   the **first** data message of ``global_num`` with an unsigned raw value of
   the field's size (1, 2 or 4 bytes), in the definition's byte order.
+- ``set_field_at(data, global_num, index, field_num, value)`` does the same
+  to the ``index``-th (0-based, file order) data message of ``global_num``,
+  so a file's third ``workout_step`` can be patched and the others left.
+- ``duplicate_message(data, global_num, index)`` inserts a byte copy of the
+  ``index``-th data message of ``global_num`` right after it; the copy keeps
+  its record header, whose local definition is still the current one there.
 - ``set_string_field(data, global_num, field_num, value)`` overwrites one
   ``string`` field of the **first** data message of ``global_num``: ``None``
   blanks it to NUL bytes (the FIT invalid value for a string, which
@@ -23,8 +29,8 @@ written into ``tests/fixtures/``.
   ``global_num``. Its definitions stay; a definition with no data is valid FIT.
 - ``finalize(buf)`` rewrites the header data size (bytes 4-7), the header
   CRC (bytes 12-13, 14-byte headers only) and the trailing file CRC, with
-  ``fitdecode.utils.compute_crc``. ``set_field`` and ``remove_messages`` call
-  it before returning.
+  ``fitdecode.utils.compute_crc``. Every function that returns patched bytes
+  calls it before returning.
 - ``with_big_endian_definitions(data, global_num)`` rewrites every definition
   of ``global_num`` as big-endian and byte-swaps its data, so the endianness
   branch of ``set_field`` can be exercised: no fixture writes big-endian.
@@ -60,7 +66,8 @@ Refused with ``FitPatchError``: a source whose file CRC does not match (so a
 corrupted file is never laundered into a CRC-valid one), a compressed-
 timestamp record header (no fixture has one), a header that is not 12 or 14
 bytes, a record that runs past the data, a data size that does not match the
-file length, a message number the file holds no data message for, a field
+file length, a message number the file holds no data message for, an index
+outside the data messages of that number (a negative one included), a field
 the first message's definition does not carry, a value that does not fit
 the field (for a string, its UTF-8 bytes plus the terminating NUL), a string
 field asked of a non-string field, a string value that is neither ``str``
@@ -265,6 +272,50 @@ def set_field(data: bytes, global_num: int, field_num: int, value: int) -> bytes
         )
     buf = bytearray(data)
     struct.pack_into((">" if definition.big_endian else "<") + formats[field.size], buf, offset, value)
+    return finalize(buf)
+
+
+def _nth_data_record(records: list[Record], global_num: int, index: int) -> Record:
+    """The ``index``-th (0-based, file order) data message of ``global_num``."""
+    found = _data_records(records, global_num)
+    if not 0 <= index < len(found):
+        raise FitPatchError(
+            f"index {index} is outside the {len(found)} data messages of global message number {global_num}"
+        )
+    return found[index]
+
+
+def set_field_at(data: bytes, global_num: int, index: int, field_num: int, value: int) -> bytes:
+    """Set ``field_num`` of the ``index``-th ``global_num`` data message to the unsigned raw ``value``.
+
+    ``index`` counts that message number's data messages from 0 in file order, so
+    ``set_field_at(data, g, 0, f, v)`` writes the bytes ``set_field(data, g, f, v)`` writes.
+    """
+    record = _nth_data_record(walk(data), global_num, index)
+    offset, field = _field_offset(record, field_num)
+    formats = {1: "B", 2: "H", 4: "I"}
+    if field.size not in formats:
+        raise FitPatchError(f"field {global_num}/{field_num} has size {field.size}, not 1, 2 or 4")
+    if not 0 <= value < 1 << (8 * field.size):
+        raise FitPatchError(
+            f"value {value} does not fit field {global_num}/{field_num} of {field.size} bytes"
+        )
+    buf = bytearray(data)
+    struct.pack_into((">" if record.definition.big_endian else "<") + formats[field.size], buf, offset, value)
+    return finalize(buf)
+
+
+def duplicate_message(data: bytes, global_num: int, index: int) -> bytes:
+    """Insert a byte copy of the ``index``-th ``global_num`` data message right after itself.
+
+    The copy carries the same record header, so it decodes with the local
+    definition its source decoded with, which is still the current one at the
+    insertion point (nothing lies between the two). The header and CRCs are
+    rewritten.
+    """
+    record = _nth_data_record(walk(data), global_num, index)
+    end = record.offset + record.length
+    buf = bytearray(data[:end]) + data[record.offset : end] + data[end:]
     return finalize(buf)
 
 
