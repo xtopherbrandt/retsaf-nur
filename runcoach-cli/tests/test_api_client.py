@@ -6,6 +6,7 @@ unreachable endpoint. This keeps the suite fast and deterministic while still
 proving get_health() converts the underlying httpx exceptions correctly.
 """
 
+import json
 import time
 
 import httpx
@@ -271,3 +272,97 @@ def test_list_sessions_does_not_swallow_non_2xx_response(install_mock_client) ->
     response = api_client.list_sessions("http://example.test", since="bad", limit=50)
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"] == ["query", "since"]
+
+
+# ---------------------------------------------------------------------------
+# F025 -- PUT /sessions/{id}/laps and POST /laps/candidates
+# ---------------------------------------------------------------------------
+
+
+def _timeouts(request: httpx.Request) -> set[float]:
+    return set(request.extensions["timeout"].values())
+
+
+def test_put_session_laps_sends_the_file_as_multipart_with_the_upload_timeout(install_mock_client) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        captured.append(request)
+        return httpx.Response(200, json={"session_id": "s1", "laps": 3, "workout_steps": 0})
+
+    install_mock_client(handler)
+
+    response = api_client.put_session_laps("http://example.test", "abc123", b"FITBYTES")
+
+    assert response.status_code == 200
+    (request,) = captured
+    assert request.method == "PUT"
+    assert request.url.path == "/sessions/abc123/laps"
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    body = request.content
+    assert b'name="file"' in body and b"FITBYTES" in body
+    assert b'filename="garmin-' in body
+    assert _timeouts(request) == {api_client.UPLOAD_TIMEOUT}
+
+
+def test_put_session_laps_escapes_the_session_id_into_one_path_segment(install_mock_client) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(404)
+
+    install_mock_client(handler)
+
+    api_client.put_session_laps("http://example.test", "a/../b?c", b"x")
+
+    assert captured[0].url.raw_path == b"/sessions/a%2F..%2Fb%3Fc/laps"
+
+
+def test_post_laps_candidates_sends_the_items_with_the_list_timeout(install_mock_client) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request.read()
+        captured.append(request)
+        return httpx.Response(200, json={"items": []})
+
+    install_mock_client(handler)
+    items = [{"connect_activity_id": 1, "start_time": "2026-10-10T14:00:00Z"}]
+
+    response = api_client.post_laps_candidates("http://example.test", items)
+
+    assert response.status_code == 200
+    (request,) = captured
+    assert (request.method, request.url.path) == ("POST", "/laps/candidates")
+    assert json.loads(request.content) == {"items": items}
+    assert _timeouts(request) == {api_client.LIST_TIMEOUT}
+
+
+@pytest.mark.parametrize("error", [httpx.ConnectError, httpx.ReadTimeout, httpx.ReadError])
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: api_client.put_session_laps("http://example.test", "s1", b"x"),
+        lambda: api_client.post_laps_candidates("http://example.test", []),
+    ],
+    ids=["put_session_laps", "post_laps_candidates"],
+)
+def test_the_laps_calls_wrap_transport_errors_as_api_unreachable(install_mock_client, error, call) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise error("boom", request=request)
+
+    install_mock_client(handler)
+
+    with pytest.raises(api_client.ApiUnreachableError) as exc_info:
+        call()
+    assert exc_info.value.base_url == "http://example.test"
+    assert isinstance(exc_info.value.__cause__, error)
+
+
+def test_the_laps_calls_return_a_non_2xx_reply_unchanged(install_mock_client) -> None:
+    install_mock_client(lambda request: httpx.Response(409, json={"detail": "other session"}))
+
+    assert api_client.put_session_laps("http://example.test", "s1", b"x").status_code == 409
+    assert api_client.post_laps_candidates("http://example.test", []).status_code == 409

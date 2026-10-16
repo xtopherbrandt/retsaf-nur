@@ -1346,9 +1346,10 @@ def sync(
         help="Start the range on this day instead of the day before the newest stored run or capture.",
     ),
 ) -> None:
-    if ctx.invoked_subcommand == "tags" and since is not None:
+    if ctx.invoked_subcommand in ("tags", "laps") and since is not None:
+        name = ctx.invoked_subcommand
         raise typer.BadParameter(
-            "the tags command takes its own date: run `runcoach sync tags --since YYYY-MM-DD`",
+            f"the {name} command takes its own date: run `runcoach sync {name} --since YYYY-MM-DD`",
             param_hint="'--since'",
         )
     if ctx.invoked_subcommand is not None:
@@ -1497,3 +1498,7 @@ def logout() -> None:
     except OSError as exc:
         raise _fail(f"could not delete the Garmin token at {token_file}: {exc}") from None
     _write_utf8(f"Deleted the Garmin token at {token_file}. This does not revoke it at Garmin.")
+
+
+# ``sync laps`` (F025) lives in its own module and registers itself on ``sync_app`` when imported.
+from runcoach_cli.commands import sync_laps  # noqa: F401

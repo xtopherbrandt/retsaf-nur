@@ -8,6 +8,7 @@ body - that boundary belongs to the caller (see status command / T010-T011).
 
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
@@ -277,5 +278,39 @@ def get_state(base_url: str, as_of: str | None) -> httpx.Response:
     params = {} if as_of is None else {"as_of": as_of}
     try:
         return client.get(f"{base_url}/state", params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def put_session_laps(base_url: str, session_id: str, data: bytes) -> httpx.Response:
+    """Send ``data`` (one FIT file) as the multipart part ``file`` of PUT
+    {base_url}/sessions/{session_id}/laps and return the raw response.
+
+    ``session_id`` is escaped into one path segment. The part's file name is generated per call, as
+    ``upload_fit_bytes`` names it. The API decodes the whole file, so the call gets the upload
+    timeout. Only network-layer failures (timeouts included) are translated into
+    ApiUnreachableError; status and body are the caller's job.
+    """
+    name = f"garmin-{uuid.uuid4().hex}.fit"
+    try:
+        return client.put(
+            f"{base_url}/sessions/{quote(session_id, safe='')}/laps",
+            files={"file": (name, data, "application/octet-stream")},
+            timeout=UPLOAD_TIMEOUT,
+        )
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def post_laps_candidates(base_url: str, items: list[dict]) -> httpx.Response:
+    """Send ``items`` as ``{"items": items}``, the JSON body of POST {base_url}/laps/candidates, and
+    return the raw response.
+
+    The API matches up to 500 items against the stored sessions in one read-only call, so the call
+    gets the list call's timeout. The items are sent as given; the API validates them. Only
+    network-layer failures (timeouts included) are translated into ApiUnreachableError.
+    """
+    try:
+        return client.post(f"{base_url}/laps/candidates", json={"items": items}, timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc

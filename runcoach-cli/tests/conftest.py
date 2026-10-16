@@ -398,6 +398,31 @@ OPENAPI_WITH_SWITCH: dict[str, Any] = {
     "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
 }
 
+# Where each operation a capability check looks for is served: operationId -> (path, method).
+_OPERATION_PATHS: dict[str, tuple[str, str]] = {
+    "setRaceTags": ("/race-tags", "put"),
+    "attachSessionLaps": ("/sessions/{session_id}/laps", "put"),
+    "matchLapCandidates": ("/laps/candidates", "post"),
+}
+
+
+def openapi_doc(*operation_ids: str) -> dict[str, Any]:
+    """``/openapi.json`` as FastAPI serves it, listing ``POST /sessions`` with the switch and each of
+    ``operation_ids`` at its path (``_OPERATION_PATHS``; an id not listed there is served as
+    ``POST /<id>``). ``openapi_doc()`` lists the switch alone."""
+    doc = json.loads(json.dumps(OPENAPI_WITH_SWITCH))
+    del doc["paths"]["/race-tags"]
+    for op_id in operation_ids:
+        path, method = _OPERATION_PATHS.get(op_id, (f"/{op_id}", "post"))
+        doc["paths"].setdefault(path, {})[method] = {"operationId": op_id}
+    return doc
+
+
+@pytest.fixture
+def openapi_with() -> Callable[..., dict[str, Any]]:
+    """The shared ``/openapi.json`` builder (see ``openapi_doc``)."""
+    return openapi_doc
+
 
 def _multipart_part(body: bytes, field: str) -> tuple[bytes, bytes] | None:
     """The headers and content of the multipart part named ``field``, or ``None``."""
@@ -427,6 +452,13 @@ class FakeApi:
     the batch), or, as ``"unreachable"``, makes it a connect error; with ``fail_tags_on=n`` only
     the n-th ``PUT`` fails so, and the others are answered as above. ``doc_status`` is the status
     ``GET /openapi.json`` answers ``doc`` with (default 200).
+    ``POST /laps/candidates`` records each batch's items in ``candidate_batches`` and answers every
+    item with ``lap_candidates[connect_activity_id]`` (default ``not_stored``): an outcome, an
+    ``(outcome, session_id, laps_read_at)`` tuple, or a callable taking the item and returning
+    either; ``candidates_reply(items)``, when given, answers instead. ``PUT /sessions/{id}/laps``
+    records ``(session_id, file bytes, part headers)`` in ``lap_puts`` and answers
+    ``laps_reply(session_id, content)`` when given, else 200 with three laps and no steps;
+    ``unreachable_on_laps=n`` makes the n-th such ``PUT`` a connect error, before it is recorded.
     ``requests`` holds every request; ``calls`` the same as ``"<method> <path>"``.
     """
 
@@ -444,7 +476,18 @@ class FakeApi:
         fail_tags: int | str | None = None,
         fail_tags_on: int | None = None,
         doc_status: int = 200,
+        lap_candidates: dict[int, Any] | None = None,
+        candidates_reply: Callable[[list[dict[str, Any]]], httpx.Response] | None = None,
+        laps_reply: Callable[[str, bytes], httpx.Response] | None = None,
+        unreachable_on_laps: int | None = None,
     ) -> None:
+        self.lap_candidates = lap_candidates or {}
+        self.candidates_reply = candidates_reply
+        self.laps_reply = laps_reply
+        self.unreachable_on_laps = unreachable_on_laps
+        self.candidate_batches: list[list[dict[str, Any]]] = []
+        self.lap_puts: list[tuple[str, bytes, bytes]] = []
+        self.laps_put_calls = 0
         self.reply = reply
         self.tag_outcomes = tag_outcomes or {}
         self.fail_tags = fail_tags
@@ -498,7 +541,52 @@ class FakeApi:
             return httpx.Response(201, json={"session_id": f"s{n}", "filter_applied": True})
         if request.method == "PUT" and request.url.path == "/race-tags":
             return self._race_tags(request)
+        if request.method == "POST" and request.url.path == "/laps/candidates":
+            return self._lap_candidates(request)
+        path = request.url.path
+        if request.method == "PUT" and path.startswith("/sessions/") and path.endswith("/laps"):
+            return self._attach_laps(request)
         raise AssertionError(f"unexpected request {request.method} {request.url}")
+
+    def _lap_candidates(self, request: httpx.Request) -> httpx.Response:
+        items = json.loads(request.read())["items"]
+        self.candidate_batches.append(items)
+        if self.candidates_reply is not None:
+            return self.candidates_reply(items)
+        answers = []
+        for item in items:
+            outcome = self.lap_candidates.get(item["connect_activity_id"], "not_stored")
+            if callable(outcome):
+                outcome = outcome(item)
+            name, session_id, laps_read_at = (outcome, None, None) if isinstance(outcome, str) else outcome
+            answers.append(
+                {
+                    "connect_activity_id": item["connect_activity_id"],
+                    "outcome": name,
+                    "session_id": session_id,
+                    "laps_read_at": laps_read_at,
+                }
+            )
+        return httpx.Response(200, json={"items": answers})
+
+    def _attach_laps(self, request: httpx.Request) -> httpx.Response:
+        self.laps_put_calls += 1
+        if self.unreachable_on_laps == self.laps_put_calls:
+            raise httpx.ConnectError("connection refused", request=request)
+        session_id = request.url.path.removeprefix("/sessions/").removesuffix("/laps")
+        file_part = _multipart_part(request.read(), "file")
+        if file_part is None:
+            raise AssertionError("no file part")
+        head, content = file_part
+        self.lap_puts.append((session_id, content, head))
+        if self.laps_reply is not None:
+            return self.laps_reply(session_id, content)
+        return httpx.Response(200, json={"session_id": session_id, "laps": 3, "workout_steps": 0})
+
+    @property
+    def candidates_sent(self) -> list[dict[str, Any]]:
+        """Every item sent to ``POST /laps/candidates``, in order."""
+        return [item for batch in self.candidate_batches for item in batch]
 
     @property
     def sent(self) -> list[dict[str, Any]]:
