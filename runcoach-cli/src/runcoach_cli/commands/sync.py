@@ -80,7 +80,7 @@ import re
 import sys
 import zipfile
 import zlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -182,6 +182,11 @@ SWITCH_FIELD = "runs_and_captures_only"
 # The most one zip entry may hold to be uploaded: ``POST /sessions``'s own cap; tests lower it.
 FIT_ENTRY_CAP = 50 * 1024 * 1024
 _CAP_TEXT = "50 MB"
+# The most entries one zip may hold, and the most its entries may hold in total (four entry caps,
+# fixed when the module loads): over either, no entry of it is read.
+ZIP_ENTRY_LIMIT = 64
+ZIP_BYTE_BUDGET = 4 * FIT_ENTRY_CAP
+_BUDGET_TEXT = "200 MB"
 # The only compression methods read: CPython decompresses a whole bzip2 or LZMA entry before
 # ``read(n)`` slices it, so ``FIT_ENTRY_CAP`` bounds memory only for stored and deflated entries.
 _SAFE_COMPRESSION = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
@@ -808,59 +813,111 @@ class _Uploader:
         )
 
 
-def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activity_id: int | None) -> None:
-    """Upload every entry of the zip ``data``, read in memory, in archive order.
+@dataclass(frozen=True)
+class ZipEntry:
+    """One zip entry read in memory: its ``ZipInfo`` and its bytes (at most ``FIT_ENTRY_CAP``)."""
 
-    A web page stops the sync. Bytes that are not a zip, an activity download holding no file, an
-    entry compressed other than stored or deflated (refused before it is opened, since only those
-    two are read in bounded memory), an encrypted entry (refused before it is opened), an entry that
-    cannot be read and an entry over ``FIT_ENTRY_CAP`` are ``failed``; an empty snapshot zip is zero
-    items. Entry names are never used as paths. The compression, encryption and cap failures are
-    permanent; the others are temporary, since a broken transfer can cause them (reference
-    section 2).
+    info: zipfile.ZipInfo
+    data: bytes
+
+
+@dataclass(frozen=True)
+class ZipFailure:
+    """A download or one of its entries that is not read: ``code`` names the rule, ``detail`` is the
+    line sync prints and ``retry`` is True for a temporary failure. ``info`` is the entry, or
+    ``None`` when the whole download fails."""
+
+    code: str
+    detail: str
+    retry: bool
+    info: zipfile.ZipInfo | None = None
+
+
+def read_zip_entries(data: bytes, *, activity: bool) -> Iterator[ZipEntry | ZipFailure]:
+    """Each entry of the zip ``data``, read in memory in archive order, or the failure that stops it.
+
+    The whole download fails, with nothing read, for a web page (``web_page``: the caller stops),
+    bytes that are not a zip (``not_a_zip``), more than ``ZIP_ENTRY_LIMIT`` entries
+    (``zip_too_many_entries``), entries declaring more than ``ZIP_BYTE_BUDGET`` bytes in total
+    (``zip_over_budget``; ``zipfile`` never returns more bytes for an
+    entry than it declares, so the declared total bounds what is read) and, for an activity, no
+    file (``zip_empty``); an empty snapshot zip yields nothing. One entry fails, and the rest go
+    on, when it is named as a folder but holds data (``zip_directory_with_data``), is compressed
+    other than stored or deflated (``zip_compression``: refused before it is opened, since only
+    those two are read in bounded memory), is encrypted (``zip_encrypted``), cannot be read
+    (``zip_entry_unreadable``) or is over ``FIT_ENTRY_CAP`` (``zip_entry_over_cap``, read with
+    ``read(cap + 1)``). An empty folder entry is skipped. Entry names are never used as paths.
+    The not-a-zip, empty and unreadable failures are temporary, since a broken transfer can cause
+    them; the others are permanent (reference section 2).
     """
     if _looks_like_page(data):
-        raise SyncStop(WEB_PAGE)
+        yield ZipFailure("web_page", WEB_PAGE, retry=True)
+        return
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except _ENTRY_READ_ERRORS as exc:
-        uploader.fail(day, label, activity_id, f"not a zip: {exc}", retry=True)
+        yield ZipFailure("not_a_zip", f"not a zip: {exc}", retry=True)
         return
     with archive:
-        entries = [info for info in archive.infolist() if not info.is_dir()]
-        if not entries and activity_id is not None:
-            uploader.fail(day, label, activity_id, "the download holds no file", retry=True)
+        infos = archive.infolist()
+        if len(infos) > ZIP_ENTRY_LIMIT:
+            yield ZipFailure(
+                "zip_too_many_entries",
+                f"the zip holds {len(infos)} entries, over the {ZIP_ENTRY_LIMIT} sync reads, and none was uploaded",
+                retry=False,
+            )
+            return
+        if sum(info.file_size for info in infos) > ZIP_BYTE_BUDGET:
+            yield ZipFailure(
+                "zip_over_budget",
+                f"the zip's entries hold over {_BUDGET_TEXT} in total, and none was uploaded",
+                retry=False,
+            )
+            return
+        entries = [info for info in infos if not (info.is_dir() and info.file_size == 0)]
+        if not entries and activity:
+            yield ZipFailure("zip_empty", "the download holds no file", retry=True)
             return
         for info in entries:
-            item = f"{label}: {info.filename}"
-            if info.compress_type not in _SAFE_COMPRESSION:
-                method = zipfile.compressor_names.get(info.compress_type, f"method {info.compress_type}")
-                uploader.fail(
-                    day,
-                    item,
-                    activity_id,
-                    f"the entry is compressed with {method}, which sync does not read "
-                    "(only stored or deflated entries)",
-                    retry=False,
-                )
-                continue
-            if info.flag_bits & _ZIP_ENCRYPTED:
-                uploader.fail(
-                    day, item, activity_id, "the entry is encrypted, which sync does not read", retry=False
-                )
-                continue
-            try:
-                with archive.open(info) as handle:
-                    entry = handle.read(FIT_ENTRY_CAP + 1)
-            except _ENTRY_READ_ERRORS as exc:
-                uploader.fail(day, item, activity_id, str(exc) or type(exc).__name__, retry=True)
-                continue
-            if len(entry) > FIT_ENTRY_CAP:
-                uploader.fail(
-                    day, item, activity_id, f"the entry is over {_CAP_TEXT} and was not uploaded", retry=False
-                )
-                continue
-            uploader.upload(day, item, label if activity_id is not None else item, activity_id, entry)
+            yield _read_entry(archive, info)
+
+
+def _read_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> ZipEntry | ZipFailure:
+    if info.is_dir():
+        detail = "the entry is named as a folder but holds data, which sync does not read"
+        return ZipFailure("zip_directory_with_data", detail, retry=False, info=info)
+    if info.compress_type not in _SAFE_COMPRESSION:
+        method = zipfile.compressor_names.get(info.compress_type, f"method {info.compress_type}")
+        detail = f"the entry is compressed with {method}, which sync does not read (only stored or deflated entries)"
+        return ZipFailure("zip_compression", detail, retry=False, info=info)
+    if info.flag_bits & _ZIP_ENCRYPTED:
+        return ZipFailure(
+            "zip_encrypted", "the entry is encrypted, which sync does not read", retry=False, info=info
+        )
+    try:
+        with archive.open(info) as handle:
+            entry = handle.read(FIT_ENTRY_CAP + 1)
+    except _ENTRY_READ_ERRORS as exc:
+        return ZipFailure("zip_entry_unreadable", str(exc) or type(exc).__name__, retry=True, info=info)
+    if len(entry) > FIT_ENTRY_CAP:
+        detail = f"the entry is over {_CAP_TEXT} and was not uploaded"
+        return ZipFailure("zip_entry_over_cap", detail, retry=False, info=info)
+    return ZipEntry(info, entry)
+
+
+def _upload_zip(uploader: _Uploader, day: date, label: str, data: bytes, activity_id: int | None) -> None:
+    """Upload every entry ``read_zip_entries`` reads from ``data``, in archive order; each failure
+    it yields is ``failed`` (the download's ``label``, or the entry's), and a web page stops the
+    sync."""
+    for read in read_zip_entries(data, activity=activity_id is not None):
+        if isinstance(read, ZipFailure):
+            if read.code == "web_page":
+                raise SyncStop(WEB_PAGE)
+            item = label if read.info is None else f"{label}: {read.info.filename}"
+            uploader.fail(day, item, activity_id, read.detail, retry=read.retry)
+            continue
+        item = f"{label}: {read.info.filename}"
+        uploader.upload(day, item, label if activity_id is not None else item, activity_id, read.data)
 
 
 def _garmin_refused(exc: garmin.GarminError) -> bool:
