@@ -923,3 +923,186 @@ def test_counts_line_carries_retagged_and_workouts_tagged(env) -> None:
     ]
     assert len(api.sent) == 7
     assert sync.TAG_OUTCOMES["retagged"] == "retagged"
+
+
+def test_a_number_beyond_float_range_is_sent_as_null(env) -> None:
+    """A positive int too large for a float (over 308 digits, as Connect's JSON could list it)
+    would be refused by the API (``float_type``) and stop the whole batch every sync; it is sent as
+    null, as a negative or non-finite number is."""
+    huge = 10**400
+    fake = TagsGarmin(
+        [
+            _summary(1, "2026-10-10 07:00:00", event="race", distance=huge),
+            _summary(2, "2026-10-10 08:00:00", event="training", duration=huge),
+            _summary(3, "2026-10-10 09:00:00", distance=-huge, duration=2**1023),
+        ]
+    )
+    api = env(fake)
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert [(item["distance_m"], item["duration_s"]) for item in api.sent] == [
+        (None, 1500.0),
+        (5000.0, None),
+        (None, 2**1023),
+    ]
+    assert sync._finite_number(huge) is None
+    assert sync._finite_number(2**1023) == 2**1023
+    assert _lines(result.output)[1] == _counts(unchanged=3)
+
+
+def test_the_recovery_day_is_the_earliest_local_day_in_the_batch(env, monkeypatch) -> None:
+    """Batches are ordered by UTC start, so after date-line travel a later item can carry an
+    earlier local day: the failed batch's first item started 10-05 local in UTC+10 and its second
+    10-04 local in UTC-7. The recovery ``--since`` is 10-04, so no unsent item falls before it."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(
+        [
+            _summary(3, "2026-10-04 20:00:00", event="race", gmt="2026-10-05 03:00:00"),
+            _summary(2, "2026-10-05 08:00:00", event="race", gmt="2026-10-04 22:00:00"),
+            _summary(4, "2026-10-06 07:00:00", event="race"),
+        ]
+    )
+    api = env(fake, TagsApi(fail_batch={1: 500}))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    assert [item["connect_activity_id"] for item in api.batches[0]] == [2, 3]
+    assert [item["start_time"] for item in api.batches[0]] == ["2026-10-04T22:00:00Z", "2026-10-05T03:00:00Z"]
+    lines = _lines(result.output)
+    assert lines[-1] == "Race tags stopped at 2026-10-04: run runcoach sync tags --since 2026-10-04"
+    assert len(api.batches) == 1
+
+
+def test_equal_starts_never_straddle_a_batch_boundary(env, monkeypatch) -> None:
+    """Two activities at one UTC start second are one batch's, so the API's same-session
+    ambiguity rule sees both: the batch is cut before the run of equal starts, not inside it."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(
+        [
+            _summary(10, "2026-10-01 07:00:00", event="race"),
+            _summary(21, "2026-10-02 07:00:00", event="race"),
+            _summary(20, "2026-10-02 07:00:00"),
+            _summary(30, "2026-10-03 07:00:00"),
+            _summary(41, "2026-10-04 07:00:00"),
+        ]
+    )
+    api = env(fake)
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    sent_ids = [[item["connect_activity_id"] for item in batch] for batch in api.batches]
+    assert sent_ids == [[10], [20, 21], [30, 41]]
+    assert _lines(result.output)[1] == _counts(unchanged=5)
+
+    # A run of equal starts longer than a batch cannot be kept whole: it fills whole batches.
+    fake = TagsGarmin([_summary(n, "2026-10-02 07:00:00") for n in (1, 2, 3)])
+    api = env(fake)
+    result = _tags()
+    assert result.exit_code == 0, result.output
+    assert [[item["connect_activity_id"] for item in batch] for batch in api.batches] == [[1, 2], [3]]
+
+
+def _answer(item: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    answer = {
+        "connect_activity_id": item["connect_activity_id"],
+        "outcome": "tagged",
+        "session_id": "s",
+        "candidates": [],
+    }
+    answer.update(changes)
+    return answer
+
+
+# Replies to a two-item batch that do not answer it item by item; the first item's answer is
+# always well formed, so a reply half applied would show in the counts.
+UNANSWERED: dict[str, Callable[[list[dict[str, Any]]], httpx.Response]] = {
+    "no items": lambda items: httpx.Response(200, json={"counts": {}}),
+    "not a list": lambda items: httpx.Response(200, json={"items": {"a": 1}}),
+    "too few": lambda items: httpx.Response(200, json={"items": [_answer(items[0])]}),
+    "another id": lambda items: httpx.Response(
+        200, json={"items": [_answer(items[0]), _answer(items[1], connect_activity_id=999)]}
+    ),
+    "unknown outcome": lambda items: httpx.Response(
+        200, json={"items": [_answer(items[0]), _answer(items[1], outcome="promoted")]}
+    ),
+    "not an object": lambda items: httpx.Response(200, json={"items": [_answer(items[0]), "tagged"]}),
+    "not json": lambda items: httpx.Response(200, content=b"<html>proxy</html>"),
+}
+
+
+@pytest.mark.parametrize("shape", list(UNANSWERED))
+def test_an_apply_answers_rejection_stops_the_tags_step(env, monkeypatch, shape: str) -> None:
+    """A 200 that does not answer the batch item by item stops: nothing of it is recorded, no
+    later batch is sent and the stop names the batch's day."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(
+        [
+            _summary(101, "2026-10-03 07:00:00", event="race"),
+            _summary(102, "2026-10-04 07:00:00", event="training"),
+            _summary(103, "2026-10-05 07:00:00", event="race"),
+        ]
+    )
+    api = env(fake, TagsApi(fail_batch={1: UNANSWERED[shape]}))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    lines = _lines(result.output)
+    assert lines[-1] == "Race tags stopped at 2026-10-03: run runcoach sync tags --since 2026-10-03"
+    assert any("the API's answer to race tags could not be understood" in line for line in lines), lines
+    assert _counts() in lines
+    assert len(api.batches) == 1
+    assert "Traceback" not in result.output
+
+
+def test_a_read_timeout_stop_reason_is_reported(env, monkeypatch) -> None:
+    """A batch the API does not answer in time is not a down API: the stop says it did not answer
+    within the timeout while matching, then names the batch's day; earlier batches stand."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(_five_days())
+    api = env(fake, TagsApi(outcomes={101: "tagged"}, fail_batch={2: "timeout"}))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    lines = _lines(result.output)
+    assert lines[-1] == "Race tags stopped at 2026-10-03: run runcoach sync tags --since 2026-10-03"
+    reason = (
+        f"the API at http://example.test did not answer within {api_client.LIST_TIMEOUT:g} s "
+        "while matching race tags"
+    )
+    assert any(line.endswith(reason) for line in lines), lines
+    assert "could not reach API" not in result.output
+    assert _counts(tagged=1, unchanged=1) in lines
+    assert len(api.batches) == 1
+
+
+def test_oldest_first_survives_descending_activity_ids(env, monkeypatch) -> None:
+    """Activity ids neither rise nor fall with the start (300, 500, 200, 400 for 10-01 to 10-04),
+    so an ascending id sort and a descending one both send another first pair than start order
+    does; start order sends 300 and 500 first and stops at the second batch's 10-03."""
+    monkeypatch.setattr(sync, "RACE_TAGS_BATCH", 2)
+    fake = TagsGarmin(
+        [
+            _summary(200, "2026-10-03 07:00:00", event="race"),
+            _summary(400, "2026-10-04 07:00:00", event="race"),
+            _summary(500, "2026-10-02 07:00:00", event="race"),
+            _summary(300, "2026-10-01 07:00:00", event="race"),
+        ]
+    )
+    api = env(fake, TagsApi(fail_batch={2: 500}))
+
+    result = _tags()
+
+    assert result.exit_code == 1, result.output
+    sent_ids = [[item["connect_activity_id"] for item in batch] for batch in api.batches]
+    assert sent_ids == [[300, 500], [200, 400]]
+    order = [activity_id for batch in sent_ids for activity_id in batch]
+    assert order not in (sorted(order), sorted(order, reverse=True))
+    lines = _lines(result.output)
+    assert lines[-1] == "Race tags stopped at 2026-10-03: run runcoach sync tags --since 2026-10-03"
+    assert _counts(unchanged=2) in lines

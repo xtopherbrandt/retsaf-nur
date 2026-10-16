@@ -1114,10 +1114,14 @@ class TagEntry:
 def _finite_number(value: Any) -> float | int | None:
     """``value`` when it is a finite number (not a bool) and not negative, else ``None`` (sent as
     null, which never agrees). The API refuses a negative distance or duration, and with it the
-    whole batch, every sync while that activity is in the window."""
+    whole batch, every sync while that activity is in the window. So it refuses an int too large
+    for a float (``float_type``): such an int is sent as null too."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    if isinstance(value, float) and not math.isfinite(value):
+    try:
+        if not math.isfinite(value):
+            return None
+    except OverflowError:
         return None
     return value if value >= 0 else None
 
@@ -1288,16 +1292,37 @@ def _apply_answers(batch: list[TagEntry], resp: httpx.Response) -> bool:
     return True
 
 
+def tag_batches(to_send: list[TagEntry]) -> list[list[TagEntry]]:
+    """``to_send`` (sorted by UTC start) cut into batches of at most ``RACE_TAGS_BATCH``, never
+    inside a run of equal ``start_utc``: the API applies its same-session ambiguity rule within one
+    request, so a batch that would end inside such a run ends before it. A run longer than a batch
+    cannot be kept whole and fills whole batches."""
+    batches: list[list[TagEntry]] = []
+    first = 0
+    while first < len(to_send):
+        cut = min(first + RACE_TAGS_BATCH, len(to_send))
+        if cut < len(to_send):
+            start = to_send[cut].start_utc
+            run_start = cut
+            while run_start > first and to_send[run_start - 1].start_utc == start:
+                run_start -= 1
+            if run_start > first:
+                cut = run_start
+        batches.append(to_send[first:cut])
+        first = cut
+    return batches
+
+
 def send_tags(api_url: str, to_send: list[TagEntry]) -> None:
-    """Send ``to_send`` in batches of ``RACE_TAGS_BATCH``, oldest first, recording each answer.
+    """Send ``to_send`` in batches (``tag_batches``), oldest first, recording each answer.
 
     No items, no request. An unreachable API or a reply that is not a 200 answering every item of
     a batch stops: the earlier batches stand, no later one is sent, and the ``TagsStop`` names the
-    first local day of the batch it stopped on.
+    earliest local day in the batch it stopped on (batches are ordered by UTC start, so after
+    date-line travel a later item can carry an earlier local day).
     """
-    for first in range(0, len(to_send), RACE_TAGS_BATCH):
-        batch = to_send[first : first + RACE_TAGS_BATCH]
-        day = batch[0].local.date()  # type: ignore[union-attr]
+    for batch in tag_batches(to_send):
+        day = min(entry.local.date() for entry in batch)  # type: ignore[union-attr]
         try:
             resp = api_client.put_race_tags(api_url, [entry.item for entry in batch])  # type: ignore[misc]
         except api_client.ApiUnreachableError as exc:
