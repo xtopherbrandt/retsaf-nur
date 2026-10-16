@@ -2,6 +2,77 @@
 
 ## Unreleased
 
+### Laps and workout steps from the FIT file
+
+F025: every upload stores the file's laps and workout steps with the session, in the same
+transaction, on every path (`POST /sessions`, `runcoach import`, `runcoach sync`): table `laps`, one
+row per `lap` message in file order (start and end as signed seconds from the session start, timer
+and elapsed time, distance, intensity, workout step index, lap trigger), and table `workout_steps`,
+one row per `workout_step` message in file order (message index, the workout's name, step name,
+intensity, duration type and value, target type, value and range), all as fitdecode resolves them and
+not converted (spec/02 section 2.3.2). A FIT invalid value, an enum fitdecode cannot name and a
+negative or non-finite duration or distance are stored as null. With two or more `session` messages
+only the laps that start inside the first session are stored. The new column `sessions.laps_read_at`
+is the UTC instant the session's laps were last read from a file; null means never read, not "no
+laps", since a file with no lap and no workout step sets it with zero rows. `GET /sessions/{session_id}`
+serves `laps`, `workout_steps` (file order) and `laps_read_at`. Deleting a session deletes its laps
+and steps.
+
+`PUT /sessions/{session_id}/laps` (operation `attachSessionLaps`) reads a stored session's laps and
+workout steps from its original file, multipart `file`, under `POST /sessions`'s size limit. An
+unknown session is a 404 before the file is read; a file `POST /sessions` refuses gets its 400 or 413
+and detail; a file whose session id (derived from its device and start) is another session's is a 409
+naming both ids and both start instants. Each writes nothing. Otherwise, in one `BEGIN IMMEDIATE`
+transaction, it replaces the session's `laps` and `workout_steps` rows and sets `laps_read_at`,
+writing no other table or column, and answers 200 `{session_id, laps, workout_steps}` with the row
+counts; repeating the call leaves the same rows.
+
+`POST /laps/candidates` (operation `matchLapCandidates`) is read-only: it takes 1 to 500 items, each
+`connect_activity_id` (once per request) and `start_time` (UTC to the whole second, ending `Z` or
+`+00:00`, as `PUT /race-tags` takes it; anything else is a 422), and answers each item, in request
+order, `matched` (exactly one stored running session starts on that second, resting captures
+excluded), `not_stored` or `ambiguous`, with the matched session's `session_id` and `laps_read_at`.
+Distance and duration are not compared: the attach endpoint's identity check proves the match.
+
+`runcoach sync laps --since YYYY-MM-DD [--until YYYY-MM-DD]` (`--until` defaults to today) attaches
+laps to stored runs from their Garmin Connect originals. It first checks that the API's
+`/openapi.json` lists both operations ("the API does not support sync laps: update it and restart the
+API" when not), then lists the range's activities as `runcoach sync` does, sends each running-family
+or `other` activity that is not manual to `POST /laps/candidates` in batches of 500, and for each
+matched run whose `laps_read_at` is null downloads the original and sends its one FIT entry to `PUT
+/sessions/{session_id}/laps`. A run already read is not downloaded; a download that does not hold
+exactly one FIT entry is failed (`zip_entries`). It prints `Laps: attached N, already read N, not
+stored N, ambiguous N, identity mismatch N, no FIT original N, failed N`, then one line per identity
+mismatch and per failed item, and exits 1 when any item failed or mismatched or the run stopped. A
+stop (a login needed, a Garmin rate limit or no reply, an error on the listing, a web page for a
+download, the API unreachable or answering the candidates other than as above) prints the report so
+far and its message, worded as `runcoach sync` words it, with `runcoach sync laps --since <day>` as
+the retry command where the message gives one. It
+never reads or writes `sync-state.json` and never writes a race tag. `runcoach sync --since X laps` is
+a usage error naming `sync laps --since`.
+
+Migration: existing runs stored before this release have no laps until `runcoach sync laps --since
+2016-01-01` reads them (once, with the API and the Garmin login in place); a new upload stores its
+laps itself.
+
+### Changed
+
+- F022/F023: a `GET /openapi.json` that answers other than 200 still stops `runcoach sync` before
+  its first upload and `runcoach sync tags` before it sends anything, but now names the status,
+  "the API answered N at /openapi.json", with the run's retry command (`runcoach sync --since
+  <day>`, or `runcoach sync tags --since <day>`), instead of the line saying the API does not
+  support the switch or race tags. That line is kept for a 200 document that lacks the operation.
+  `runcoach sync laps` checks the same way.
+- F022: a downloaded zip holding more than 64 entries (`zip_too_many_entries`) or whose entries
+  declare more than 200 MB in total (`zip_over_budget`) is a failed item, permanent, and none of its
+  entries is read or uploaded. An entry named as a folder (ending in "/") that holds data is now a
+  failed item (`zip_directory_with_data`, permanent) instead of being dropped; an empty folder entry
+  is still skipped. `runcoach sync` and `runcoach sync laps` read zips through the same reader.
+- A file whose records carry developer fields the adapter cannot resolve now keeps its session name
+  (the workout's name, else the profile's): the name was replaced by the last such field's name, so
+  `dev_fields_run.fit` stored "Stryd Temperature" instead of "Run". A session already stored keeps
+  the name it was stored with.
+
 ## 2026-10-15 — Sprint 018: Race tags and threshold pace
 
 ### Race tags from Garmin Connect
