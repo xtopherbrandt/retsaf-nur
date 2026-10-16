@@ -95,9 +95,9 @@ RUNS = [
 ]
 
 
-def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
-    """``/openapi.json`` shaped as FastAPI serves it: a generated operationId and a ``$ref`` body,
-    and ``PUT /race-tags`` as ``setRaceTags``."""
+def _sessions_doc(with_switch: bool = True) -> dict[str, Any]:
+    """``/openapi.json``'s ``/sessions`` shaped as FastAPI serves it: a generated operationId and a
+    ``$ref`` body; ``openapi_doc`` adds ``setRaceTags`` through the shared builder."""
     fields = {"file": {"type": "string"}, "resting_capture": {"type": "boolean"}}
     if with_switch:
         fields["runs_and_captures_only"] = {"type": "boolean", "default": False}
@@ -116,10 +116,20 @@ def openapi_doc(with_switch: bool = True) -> dict[str, Any]:
                     },
                 },
             },
-            "/race-tags": {"put": {"operationId": "setRaceTags"}},
         },
         "components": {"schemas": {"Body_create_session_sessions_post": {"properties": fields}}},
     }
+
+
+@pytest.fixture
+def openapi_doc(openapi_with):
+    """``openapi_doc(with_switch=True)``: ``_sessions_doc`` with ``PUT /race-tags`` as the shared
+    builder serves ``setRaceTags``."""
+
+    def make(with_switch: bool = True) -> dict[str, Any]:
+        return openapi_with("setRaceTags", base=_sessions_doc(with_switch))
+
+    return make
 
 
 @pytest.fixture
@@ -133,7 +143,7 @@ def fake_garmin(fake_garmin):
 
 
 @pytest.fixture
-def fake_api(fake_api):
+def fake_api(fake_api, openapi_doc):
     """The shared mock API, serving ``openapi_doc()`` unless the test gives another document."""
 
     def make(reply: Any = None, *, doc: dict[str, Any] | None = None, **kwargs: Any):
@@ -422,7 +432,7 @@ def test_a_200_without_filter_applied_stops_before_a_second_upload(env, fake_gar
     assert api.uploads == [b"ACT-101"]
 
 
-def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fake_api) -> None:
+def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fake_api, openapi_doc) -> None:
     fake = fake_garmin()
     api = env(fake, fake_api(doc=openapi_doc(with_switch=False)))
 
@@ -472,7 +482,7 @@ def test_a_document_without_the_switch_still_reads_too_old(env, status, doc, fak
 
 @pytest.mark.parametrize("status", [503, 500, 404])
 def test_a_503_openapi_document_names_the_status_before_any_upload(
-    env, status, fake_garmin, fake_api
+    env, status, fake_garmin, fake_api, openapi_doc
 ) -> None:
     """A non-200 ``/openapi.json`` is not read, even when its body lists the switch and
     ``setRaceTags``: the stop names the status and the command to retry, never the old-API line
@@ -491,8 +501,10 @@ def test_a_503_openapi_document_names_the_status_before_any_upload(
     assert api.calls.count("GET /openapi.json") == 1
 
 
-def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env, fake_garmin, fake_api) -> None:
-    doc = {
+def test_the_openapi_check_runs_once_and_accepts_an_inline_body(
+    env, fake_garmin, fake_api, openapi_with
+) -> None:
+    inline = {
         "paths": {
             "/sessions": {
                 "post": {
@@ -506,10 +518,9 @@ def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env, fake_garmin
                     },
                 }
             },
-            "/race-tags": {"put": {"operationId": "setRaceTags"}},
         }
     }
-    api = env(fake_garmin(), fake_api(doc=doc))
+    api = env(fake_garmin(), fake_api(doc=openapi_with("setRaceTags", base=inline)))
 
     result = _sync("--since", "2026-10-10")
 

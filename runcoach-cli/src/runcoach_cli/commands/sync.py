@@ -1041,18 +1041,29 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
     return lines
 
 
-# Race tags (F023): Connect's event type, sent to ``PUT /race-tags`` (``setRaceTags``), which
-# matches each item to a stored run on the server.
+# Race tags (F023) and workout tags (F026): Connect's event type, sent to ``PUT /race-tags``
+# (``setRaceTags``), which matches each item to a stored run on the server.
 RACE_TAGS_OPERATION = "setRaceTags"
 # The most items one ``PUT /race-tags`` takes; batches are sent oldest first.
 RACE_TAGS_BATCH = 500
 # ``sync tags`` without ``--since`` covers today and the 29 days before it.
 TAGS_DAYS = 30
+# Connect's event type ``typeKey`` -> the tag sent; any other ``typeKey`` sends null (no tag).
+# ``training`` was observed on live Connect summaries on 2026-10-16 (F026 reference section 1);
+# Garmin's documentation does not list it.
 RACE_EVENT = "race"
+TRAINING_EVENT = "training"
+RACE_TAG = "race"
+WORKOUT_TAG = "threshold_workout"
+EVENT_TAGS = {RACE_EVENT: RACE_TAG, TRAINING_EVENT: WORKOUT_TAG}
+# The ``RaceTagItem`` field the tag is sent in; an API whose served item schema lacks it is too old.
+TAG_FIELD = "tag"
 OLD_API_TAGS = "the API does not support race tags: update it and restart the API"
+OLD_API_WORKOUT_TAGS = "the API is too old for workout tags: update it and restart the API"
 # The outcomes ``PUT /race-tags`` answers with, in the order the counts line prints them.
 TAG_OUTCOMES = {
     "tagged": "tagged",
+    "retagged": "retagged",
     "cleared": "cleared",
     "unchanged": "unchanged",
     "not_stored": "not stored",
@@ -1060,8 +1071,12 @@ TAG_OUTCOMES = {
     "ambiguous": "ambiguous",
     "other_tag": "other tag",
 }
-# The outcomes of a ``race`` item that get a line of their own.
-_REPORTED_RACE = ("not_stored", "mismatch", "ambiguous")
+# The outcomes of an item with a tag set that get a line of their own, and each tag's word there.
+_REPORTED_TAGGED = ("not_stored", "mismatch", "ambiguous")
+_TAG_WORDS = {RACE_TAG: "Race", WORKOUT_TAG: "Workout"}
+# The outcomes after which a ``threshold_workout`` item's stored tag is ``threshold_workout``
+# where it was not (the counts line's ``workouts tagged``).
+_WORKOUT_WRITES = ("tagged", "retagged")
 # ``startTimeGMT`` as Connect lists it: a date and a time to the second, a fraction and a zone optional.
 _GMT_FORM = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})?"
@@ -1126,14 +1141,15 @@ def _read_gmt(value: Any) -> datetime:
     return when.astimezone(UTC)
 
 
-def _event_race(summary: dict[str, Any]) -> bool:
-    """True when the summary's ``eventType.typeKey`` is ``race``; raises ``TypeError`` when the
-    event type is missing, null or has no ``typeKey`` text (never read as not-race)."""
+def _event_tag(summary: dict[str, Any]) -> str | None:
+    """The tag the summary's ``eventType.typeKey`` asks for: ``race`` for ``race``,
+    ``threshold_workout`` for ``training``, ``None`` for any other text. Raises ``TypeError`` when
+    the event type is missing, null or has no ``typeKey`` text (never read as no tag)."""
     event = summary.get("eventType")
     key = event.get("typeKey") if isinstance(event, dict) else None
     if not isinstance(key, str):
         raise TypeError(f"eventType {event!r} is missing or has no typeKey")
-    return key == RACE_EVENT
+    return EVENT_TAGS.get(key)
 
 
 def tag_entries(listed: Any, start: date, end: date) -> tuple[list[TagEntry], list[TagEntry]]:
@@ -1167,7 +1183,7 @@ def tag_entries(listed: Any, start: date, end: date) -> tuple[list[TagEntry], li
             continue
         seen.add(activity_id)
         try:
-            race = _event_race(summary)
+            tag = _event_tag(summary)
             start_utc = _read_gmt(summary.get("startTimeGMT"))
         except (TypeError, ValueError) as exc:
             skipped.append(TagEntry(label=label, local=local, reason=str(exc)))
@@ -1177,7 +1193,7 @@ def tag_entries(listed: Any, start: date, end: date) -> tuple[list[TagEntry], li
             "start_time": start_utc.replace(tzinfo=None).isoformat(timespec="seconds") + "Z",
             "distance_m": _finite_number(summary.get("distance")),
             "duration_s": _finite_number(summary.get("duration")),
-            "race": race,
+            TAG_FIELD: tag,
         }
         to_send.append(TagEntry(label=label, local=local, item=item, start_utc=start_utc))
     to_send.sort(key=lambda entry: (entry.start_utc, entry.item["connect_activity_id"]))  # type: ignore[index]
@@ -1216,9 +1232,32 @@ def read_tags_openapi(api_url: str, start: date) -> Any:
 
 
 def check_race_tags(doc: Any) -> None:
-    """Raise ``TagsStop`` unless the served document lists ``setRaceTags`` (its presence only)."""
+    """Raise ``TagsStop`` unless the served document lists ``setRaceTags`` and its item schema
+    lists ``tag`` (``_lists_tag``): an API without the operation does not support race tags, and
+    one without the field would refuse every item sent, so it is too old for workout tags."""
     if _find_operation(doc, RACE_TAGS_OPERATION) is None:
         raise TagsStop(OLD_API_TAGS)
+    if not _lists_tag(doc):
+        raise TagsStop(OLD_API_WORKOUT_TAGS)
+
+
+def _lists_tag(doc: Any) -> bool:
+    """True when the served ``setRaceTags`` JSON body (``RaceTagsUpdate``) has ``items`` whose
+    schema (``RaceTagItem``) lists ``tag`` among its properties, each ``$ref`` followed."""
+    operation = _find_operation(doc, RACE_TAGS_OPERATION)
+    try:
+        body = operation["requestBody"]["content"]["application/json"]["schema"]  # type: ignore[index]
+    except (KeyError, TypeError):
+        return False
+
+    def properties(schema: Any) -> dict[str, Any]:
+        schema = _resolve(doc, schema)
+        found = schema.get("properties") if isinstance(schema, dict) else None
+        return found if isinstance(found, dict) else {}
+
+    items = _resolve(doc, properties(body).get("items"))
+    item = items.get("items") if isinstance(items, dict) else None
+    return TAG_FIELD in properties(item)
 
 
 def _apply_answers(batch: list[TagEntry], resp: httpx.Response) -> bool:
@@ -1280,15 +1319,21 @@ def send_tags(api_url: str, to_send: list[TagEntry]) -> None:
 
 
 def tags_report_lines(to_send: list[TagEntry], skipped: list[TagEntry]) -> list[str]:
-    """The counts line, then one line per ``race`` item not stored, mismatched or ambiguous and per
-    skipped activity, naming the Connect activity, its local start and any session ids. Items not
-    yet answered (after a stop) are not counted."""
+    """The counts line, then one line per item with a tag set (``race`` or ``threshold_workout``)
+    not stored, mismatched or ambiguous, worded ``Race`` or ``Workout``, and per skipped activity,
+    naming the Connect activity, its local start and any session ids. Items not yet answered
+    (after a stop) are not counted. The counts end with ``workouts tagged``: the items whose stored
+    tag became ``threshold_workout`` (tagged or retagged)."""
     printable = sessions._printable
     counts = dict.fromkeys(TAG_OUTCOMES, 0)
+    workouts = 0
     for entry in to_send:
         if entry.outcome is not None:
             counts[entry.outcome] += 1
-    words = [f"{TAG_OUTCOMES[key]} {n}" for key, n in counts.items()] + [f"skipped {len(skipped)}"]
+            if entry.outcome in _WORKOUT_WRITES and entry.item and entry.item[TAG_FIELD] == WORKOUT_TAG:
+                workouts += 1
+    words = [f"{TAG_OUTCOMES[key]} {n}" for key, n in counts.items()]
+    words += [f"skipped {len(skipped)}", f"workouts tagged {workouts}"]
     lines = [f"Race tags: {', '.join(words)}"]
 
     def where(entry: TagEntry) -> str:
@@ -1296,9 +1341,10 @@ def tags_report_lines(to_send: list[TagEntry], skipped: list[TagEntry]) -> list[
         return f"{printable(entry.label)}, {local}"
 
     for entry in to_send:
-        if entry.outcome not in _REPORTED_RACE or not entry.item or entry.item["race"] is not True:
+        tag_word = _TAG_WORDS.get(entry.item[TAG_FIELD]) if entry.item else None
+        if entry.outcome not in _REPORTED_TAGGED or tag_word is None:
             continue
-        line = f"Race {TAG_OUTCOMES[entry.outcome]}: {where(entry)}"  # type: ignore[index]
+        line = f"{tag_word} {TAG_OUTCOMES[entry.outcome]}: {where(entry)}"  # type: ignore[index]
         ids = (
             entry.candidates
             if entry.outcome == "ambiguous"
@@ -1431,10 +1477,11 @@ def tags(
         help="Read tags from this day instead of 29 days before today (2016-01-01 reads them all).",
     ),
 ) -> None:
-    """Read race tags from Garmin Connect for stored runs; lists activities, downloads nothing.
+    """Read race and workout tags from Garmin Connect for stored runs; lists activities, downloads nothing.
 
-    An activity whose event type is Race in Connect marks the stored run it matches as a race; any
-    other event type clears a race tag. The sync state is not read or written.
+    An activity whose event type is Race in Connect marks the stored run it matches as a race, and
+    one whose event type is Training as a threshold workout; any other event type clears the tag.
+    The sync state is not read or written.
     """
     _require_library()
     end = today()

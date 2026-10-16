@@ -128,12 +128,22 @@ def _run(*args: str):
 
 def _counts(**outcomes: int) -> str:
     """The race tags counts line with the named outcomes set and every other count 0."""
-    words = {"tagged": 0, "cleared": 0, "unchanged": 0, "not_stored": 0, "mismatch": 0, "ambiguous": 0}
+    words = {
+        "tagged": 0,
+        "retagged": 0,
+        "cleared": 0,
+        "unchanged": 0,
+        "not_stored": 0,
+        "mismatch": 0,
+        "ambiguous": 0,
+        "workouts_tagged": 0,
+    }
+    assert set(outcomes) <= set(words), outcomes
     words.update(outcomes)
     return (
-        f"Race tags: tagged {words['tagged']}, cleared {words['cleared']}, unchanged "
-        f"{words['unchanged']}, not stored {words['not_stored']}, mismatch {words['mismatch']}, "
-        f"ambiguous {words['ambiguous']}, other tag 0, skipped 0"
+        f"Race tags: tagged {words['tagged']}, retagged {words['retagged']}, cleared {words['cleared']}, "
+        f"unchanged {words['unchanged']}, not stored {words['not_stored']}, mismatch {words['mismatch']}, "
+        f"ambiguous {words['ambiguous']}, other tag 0, skipped 0, workouts tagged {words['workouts_tagged']}"
     )
 
 

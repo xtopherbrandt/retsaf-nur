@@ -17,7 +17,8 @@ day is ``sample_run`` with its session sport patched to alpine skiing (13) and i
 so it is a different file from the run rather than a duplicate of it. The four monitoring-type
 entries are one-message files built by ``support/import_archive.minimal_fit``. The race tag tests
 (F023) use ``sample_run`` and ``dev_fields_run``, two real runs (run proof yes) recorded on
-different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second.
+different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second; the workout
+tag test (F026) uses ``sample_run`` alone.
 
 Resting HR is the observable input of the order tests: F021 borrows max and threshold HR from
 running files only, but resting HR from any stored file, so a snapshot stored before a run that
@@ -159,8 +160,8 @@ def _first_sync(client: TestClient, monkeypatch: pytest.MonkeyPatch, declared_co
 def _tags_line(not_stored: int) -> str:
     """The race tags step's counts line: every listed non-manual activity sent, none matched."""
     return (
-        f"Race tags: tagged 0, cleared 0, unchanged 0, not stored {not_stored}, mismatch 0, "
-        "ambiguous 0, other tag 0, skipped 0"
+        f"Race tags: tagged 0, retagged 0, cleared 0, unchanged 0, not stored {not_stored}, mismatch 0, "
+        "ambiguous 0, other tag 0, skipped 0, workouts tagged 0"
     )
 
 
@@ -492,6 +493,53 @@ def test_a_run_uploaded_and_tagged_in_one_sync(
         ("2026-10-11T12:34:21+00:00", "race")
     ]
     assert ("original", 601) in fake.downloads
+
+
+TRAINING = {"typeKey": "training", "typeId": 2}
+
+
+def test_sync_tags_against_the_app_retags_race_to_threshold_workout(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F026 AC1 end to end: a stored run tagged ``race`` that Connect now lists as Training is
+    retagged ``threshold_workout`` by ``runcoach sync tags``; the served ``/openapi.json`` is the
+    oracle for the CLI's ``tag`` check (no fake document), and ``GET /sessions`` reads the new tag
+    back. Listed as Race again, it is retagged ``race``; as uncategorized, cleared."""
+    client = cli_against_app
+    sample_id = _upload(client, "sample_run.fit", _fixture("sample_run"))
+
+    def listing(event: dict[str, Any]) -> FakeGarmin:
+        return FakeGarmin(
+            [_connect_run(501, SHARED_START_LOCAL, SHARED_START_GMT, SAMPLE_RUN_CONNECT, event)], {}, {}
+        )
+
+    _serve(monkeypatch, listing(RACE))
+    assert _run(*BACKFILL).exit_code == 0
+    assert _tags(client) == {sample_id: "race"}
+
+    fake = listing(TRAINING)
+    _serve(monkeypatch, fake)
+    result = _run(*BACKFILL)
+    assert result.exit_code == 0, result.output
+    assert _counts(retagged=1, workouts_tagged=1) in result.output.splitlines()
+    unmatched = ("Workout ", "Race not stored", "Race mismatch", "Race ambiguous")
+    assert not any(line.startswith(unmatched) for line in result.output.splitlines())
+    assert _tags(client) == {sample_id: "threshold_workout"}
+    assert fake.downloads == []
+
+    again = _run(*BACKFILL)
+    assert again.exit_code == 0, again.output
+    assert _counts(unchanged=1) in again.output.splitlines()
+
+    _serve(monkeypatch, listing(RACE))
+    back = _run(*BACKFILL)
+    assert _counts(retagged=1) in back.output.splitlines(), back.output
+    assert _tags(client) == {sample_id: "race"}
+
+    _serve(monkeypatch, listing(NOT_RACE))
+    cleared = _run(*BACKFILL)
+    assert _counts(cleared=1) in cleared.output.splitlines(), cleared.output
+    assert _tags(client) == {sample_id: None}
 
 
 # --- F025 AC1: a sync stores the laps a one-file upload stores ----------------------------------

@@ -103,9 +103,23 @@ def _flat(output: str) -> str:
 
 def _counts(**overrides: int) -> str:
     counts = dict.fromkeys(
-        ("tagged", "cleared", "unchanged", "not stored", "mismatch", "ambiguous", "other tag", "skipped"), 0
+        (
+            "tagged",
+            "retagged",
+            "cleared",
+            "unchanged",
+            "not stored",
+            "mismatch",
+            "ambiguous",
+            "other tag",
+            "skipped",
+            "workouts tagged",
+        ),
+        0,
     )
-    counts.update({key.replace("_", " "): value for key, value in overrides.items()})
+    words = {key.replace("_", " "): value for key, value in overrides.items()}
+    assert set(words) <= set(counts), words
+    counts.update(words)
     return "Race tags: " + ", ".join(f"{key} {value}" for key, value in counts.items())
 
 
@@ -126,7 +140,7 @@ def test_race_29_days_back_is_tagged(env, fake_garmin, fake_api) -> None:
             "start_time": "2026-09-13T14:00:00Z",
             "distance_m": 5000.0,
             "duration_s": 1500.0,
-            "race": True,
+            "tag": "race",
         }
     ]
     assert ("original", 913) not in fake.downloads
@@ -399,13 +413,13 @@ def test_api_not_running_at_the_tags_openapi_read_names_the_tags_start(
 
 
 def test_a_503_reads_tags_openapi_document_names_the_status(
-    env, fake_garmin, fake_api, fresh_sync_state: Path
+    env, fake_garmin, fake_api, fresh_sync_state: Path, openapi_with
 ) -> None:
     """Nothing to upload and a 503 ``/openapi.json``: not read, even though its body lists
     ``setRaceTags`` (as for the switch check); the stop names the status and the one ``sync tags``
     command, never the old-API line; nothing sent."""
     fake = fake_garmin([_activity(913, WINDOW_START, race=True)])
-    api = env(fake, _openapi_down(fake_api, 503, pages=RECENT_STORE, doc=_switch_and_tags_doc()))
+    api = env(fake, _openapi_down(fake_api, 503, pages=RECENT_STORE, doc=openapi_with("setRaceTags")))
 
     result = _sync()
 
@@ -421,12 +435,6 @@ def test_a_503_reads_tags_openapi_document_names_the_status(
     assert "Traceback" not in result.output
     assert isinstance(result.exception, SystemExit)
     assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}
-
-
-def _switch_and_tags_doc() -> dict[str, Any]:
-    doc = _switch_only_doc()
-    doc["paths"]["/race-tags"] = {"put": {"operationId": "setRaceTags"}}
-    return doc
 
 
 def test_old_api_without_set_race_tags_exits_1_after_upload_summary(env, fake_garmin, fake_api) -> None:
@@ -446,3 +454,32 @@ def test_old_api_without_set_race_tags_exits_1_after_upload_summary(env, fake_ga
     assert "Race tags" not in result.output
     assert lines[-1] == f"Error: {OLD_API_TAGS}"
     assert lines.index("Stored: 1") < len(lines) - 1
+
+
+OLD_API_WORKOUT_TAGS = "the API is too old for workout tags: update it and restart the API"
+
+
+@pytest.mark.parametrize("upload", [True, False])
+def test_sync_against_an_api_without_tag_is_too_old_for_workout_tags(
+    env, fake_garmin, fake_api, openapi_with, upload: bool
+) -> None:
+    """An API listing ``setRaceTags`` without ``tag`` on its item schema (before F026): with an
+    upload the switch check's read is checked, with none the tags step reads it; either way the
+    stop says it is too old for workout tags after the upload summary, and nothing is sent."""
+    activities = (
+        [_activity(1011, date(2026, 10, 11), race=True)] if upload else [_activity(913, WINDOW_START)]
+    )
+    doc = openapi_with("setRaceTags", workout_tags=False)
+    api = env(fake_garmin(activities), fake_api(pages=RECENT_STORE, doc=doc))
+
+    result = _sync()
+
+    assert result.exit_code == 1, result.output
+    assert api.uploads == ([b"ACT-1011"] if upload else [])
+    assert api.tag_batches == []
+    assert "PUT /race-tags" not in api.calls
+    assert api.calls.count("GET /openapi.json") == 1
+    lines = result.output.splitlines()
+    assert f"Stored: {int(upload)}" in lines
+    assert lines[-1] == f"Error: {OLD_API_WORKOUT_TAGS}"
+    assert OLD_API_TAGS not in result.output

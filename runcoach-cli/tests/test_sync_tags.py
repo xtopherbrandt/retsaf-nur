@@ -1,4 +1,6 @@
-"""``runcoach sync tags``: list Connect activities and send their race tags, downloading nothing (F023).
+"""``runcoach sync tags``: list Connect activities and send their tags, downloading nothing.
+
+Race tags (F023) and, from Connect's event type Training, workout tags (F026).
 
 Every test drives the command through ``CliRunner`` with this module's own fake Garmin client
 (``TagsGarmin``: it serves a listing, and its download methods fail the test if called) and a mock
@@ -18,7 +20,7 @@ from typing import Any
 
 import httpx
 import pytest
-from runcoach_cli import garmin
+from runcoach_cli import api_client, garmin
 from runcoach_cli.commands import sessions, sync
 from runcoach_cli.main import app
 from typer.testing import CliRunner
@@ -88,17 +90,13 @@ class TagsGarmin:
         raise AssertionError(f"sync tags downloaded the snapshot of {day}")
 
 
-def openapi_doc(with_race_tags: bool = True) -> dict[str, Any]:
-    paths: dict[str, Any] = {"/sessions": {"get": {"operationId": "list_sessions_sessions_get"}}}
-    if with_race_tags:
-        paths["/race-tags"] = {"put": {"operationId": "setRaceTags"}}
-    return {"paths": paths}
-
-
 class TagsApi:
     """``/openapi.json`` and ``PUT /race-tags``; ``outcomes`` maps an activity id to its outcome
     (default ``unchanged``), or to ``(outcome, session_id, candidates)``. ``fail_batch`` maps a
-    1-based batch number to a status to answer with, or to ``"unreachable"``."""
+    1-based batch number to a status to answer with, to ``"unreachable"`` (a connect error), to
+    ``"timeout"`` (a read timeout) or to a callable taking the batch's items and returning the
+    reply. ``doc`` is the served ``/openapi.json``; ``None`` is the shared builder's document
+    listing ``setRaceTags`` with ``tag``, filled in by ``env``."""
 
     def __init__(
         self,
@@ -107,7 +105,7 @@ class TagsApi:
         fail_batch: dict[int, Any] | None = None,
     ) -> None:
         self.outcomes = outcomes or {}
-        self.doc = openapi_doc() if doc is None else doc
+        self.doc = doc
         self.fail_batch = fail_batch or {}
         self.batches: list[list[dict[str, Any]]] = []
         self.requests: list[str] = []
@@ -121,8 +119,12 @@ class TagsApi:
             failure = self.fail_batch.get(number)
             if failure == "unreachable":
                 raise httpx.ConnectError("connection refused", request=request)
+            if failure == "timeout":
+                raise httpx.ReadTimeout("timed out", request=request)
             items = json.loads(request.read())["items"]
             self.batches.append(items)
+            if callable(failure):
+                return failure(items)
             if failure is not None:
                 return httpx.Response(failure, json={"detail": "the store is busy"})
             replies = []
@@ -161,7 +163,7 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, install_mock_client, prewritten_config):
+def env(monkeypatch: pytest.MonkeyPatch, install_mock_client, prewritten_config, openapi_with):
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
     monkeypatch.setattr(sync, "today", lambda: TODAY)
     monkeypatch.setattr(sessions, "LOCAL_ZONE", ZONE)
@@ -169,6 +171,8 @@ def env(monkeypatch: pytest.MonkeyPatch, install_mock_client, prewritten_config)
 
     def setup(fake: TagsGarmin | Exception, api: TagsApi | None = None) -> TagsApi:
         api = api or TagsApi()
+        if api.doc is None:
+            api.doc = openapi_with("setRaceTags")
         install_mock_client(api)
 
         def open_client() -> TagsGarmin:
@@ -191,11 +195,25 @@ def _lines(output: str) -> list[str]:
     return output.rstrip().splitlines()
 
 
+COUNT_WORDS = (
+    "tagged",
+    "retagged",
+    "cleared",
+    "unchanged",
+    "not stored",
+    "mismatch",
+    "ambiguous",
+    "other tag",
+    "skipped",
+    "workouts tagged",
+)
+
+
 def _counts(**overrides: int) -> str:
-    counts = dict.fromkeys(
-        ("tagged", "cleared", "unchanged", "not stored", "mismatch", "ambiguous", "other tag", "skipped"), 0
-    )
-    counts.update({key.replace("_", " "): value for key, value in overrides.items()})
+    counts = dict.fromkeys(COUNT_WORDS, 0)
+    words = {key.replace("_", " "): value for key, value in overrides.items()}
+    assert set(words) <= set(counts), words
+    counts.update(words)
     return "Race tags: " + ", ".join(f"{key} {value}" for key, value in counts.items())
 
 
@@ -222,14 +240,14 @@ def test_sync_tags_tags_a_listed_race_and_prints_the_summary(env) -> None:
                 "start_time": "2026-10-10T14:00:00Z",
                 "distance_m": 10000.5,
                 "duration_s": 2400,
-                "race": True,
+                "tag": "race",
             },
             {
                 "connect_activity_id": 201,
                 "start_time": "2026-10-11T14:00:00Z",
                 "distance_m": 5000.0,
                 "duration_s": 1500.0,
-                "race": False,
+                "tag": None,
             },
         ]
     ]
@@ -574,9 +592,9 @@ def test_a_503_tags_openapi_document_names_the_status_and_sends_nothing(env) -> 
     assert not env.state_file.exists()
 
 
-def test_api_without_set_race_tags_sends_nothing(env) -> None:
+def test_api_without_set_race_tags_sends_nothing(env, openapi_with) -> None:
     fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="race")])
-    api = env(fake, TagsApi(doc=openapi_doc(with_race_tags=False)))
+    api = env(fake, TagsApi(doc=openapi_with()))
 
     result = _tags()
 
@@ -697,3 +715,211 @@ def test_no_or_refused_token_prints_the_login_message(env) -> None:
         assert _lines(result.output)[-1] == f"Error: {LOGIN_LINE}"
         assert "Race tags not read" not in result.output
         assert api.batches == []
+
+
+# --- F026: Training activities are sent as threshold_workout -----------------------------------
+
+OLD_API_WORKOUTS_LINE = "the API is too old for workout tags: update it and restart the API"
+
+
+def test_a_training_activity_sends_tag_threshold_workout(env) -> None:
+    """Connect's event type Training marks a threshold workout: its item carries ``tag``
+    ``threshold_workout`` and no ``race`` key; the counts line names it as a workout tagged."""
+    fake = TagsGarmin(
+        [_summary(101, "2026-10-10 07:00:00", event="training", distance=8325.9, duration=2816.7)]
+    )
+    api = env(fake, TagsApi(outcomes={101: ("tagged", "s1", ["s1"])}))
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert api.batches == [
+        [
+            {
+                "connect_activity_id": 101,
+                "start_time": "2026-10-10T14:00:00Z",
+                "distance_m": 8325.9,
+                "duration_s": 2816.7,
+                "tag": "threshold_workout",
+            }
+        ]
+    ]
+    assert _lines(result.output) == [
+        "From 2026-09-13 to 2026-10-12",
+        _counts(tagged=1, workouts_tagged=1),
+    ]
+
+
+def test_race_stays_race_and_other_types_send_null(env) -> None:
+    """``race`` sends ``race``; every other event type Connect lists (uncategorized, recreation,
+    transport, another case of ``training``) sends ``tag`` null, which clears a stored tag. A
+    missing ``typeKey`` is still skipped, never read as no tag."""
+    events = {
+        1: "race",
+        2: "uncategorized",
+        3: "recreation",
+        4: "transportation",
+        5: "Training",
+        6: "",
+    }
+    fake = TagsGarmin(
+        [_summary(n, f"2026-10-0{n} 07:00:00", event=event) for n, event in events.items()]
+        + [_summary(7, "2026-10-07 07:00:00", event={"typeId": 9})]
+    )
+    api = env(fake)
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert [(item["connect_activity_id"], item["tag"]) for item in api.sent] == [
+        (1, "race"),
+        (2, None),
+        (3, None),
+        (4, None),
+        (5, None),
+        (6, None),
+    ]
+    assert all("race" not in item for item in api.sent)
+    assert _lines(result.output)[1] == _counts(unchanged=6, skipped=1)
+    assert any(line.startswith("Skipped: activity 7 (run 7), ") for line in _lines(result.output))
+
+
+def test_the_training_type_key_is_pinned_with_its_observation() -> None:
+    """The ``typeKey`` ``training`` was observed on live Connect activity summaries on 2026-10-16
+    (F026 reference section 1): the 2026-09-30 "West Vancouver - Goal Pace Run" (id 24557261242)
+    and the three other Training activities 2016-2026 list ``eventType.typeKey`` ``training``.
+    Garmin's documentation does not list it, so this pin is the observation's only record in code:
+    a change here must come from a new observation, not from a guess."""
+    assert sync.TRAINING_EVENT == "training"
+    assert sync.RACE_EVENT == "race"
+    assert sync._event_tag({"eventType": {"typeKey": "training", "typeId": 2}}) == "threshold_workout"
+    assert sync._event_tag({"eventType": {"typeKey": "race", "typeId": 1}}) == "race"
+    assert sync._event_tag({"eventType": {"typeKey": "uncategorized", "typeId": 9}}) is None
+    for event in (None, {}, {"typeKey": None}, {"typeKey": 2}):
+        with pytest.raises(TypeError, match="eventType"):
+            sync._event_tag({"eventType": event})
+    with pytest.raises(TypeError, match="eventType"):
+        sync._event_tag({})
+
+
+def _no_tag_docs(openapi_with: Callable[..., dict[str, Any]]) -> list[dict[str, Any]]:
+    """``/openapi.json`` documents that list ``setRaceTags`` but no ``tag`` on its item schema:
+    the API before F026, an operation with no request body, and a body whose refs do not resolve."""
+    before = openapi_with("setRaceTags", workout_tags=False)
+    no_body = openapi_with()
+    no_body["paths"]["/race-tags"] = {"put": {"operationId": "setRaceTags"}}
+    broken = openapi_with("setRaceTags")
+    del broken["components"]["schemas"]["RaceTagItem"]
+    inline_no_items = openapi_with("setRaceTags")
+    inline_no_items["components"]["schemas"]["RaceTagsUpdate"] = {"properties": {"items": {"type": "array"}}}
+    return [before, no_body, broken, inline_no_items]
+
+
+def test_an_api_without_tag_prints_too_old_for_workout_tags_and_sends_nothing(env, openapi_with) -> None:
+    """An API that lists ``setRaceTags`` but not ``tag`` on ``RaceTagItem`` would refuse every item
+    the CLI sends: the stop says it is too old for workout tags, and nothing is listed or sent."""
+    for doc in _no_tag_docs(openapi_with):
+        fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="training")])
+        api = env(fake, TagsApi(doc=doc))
+
+        result = _tags()
+
+        assert result.exit_code == 1, result.output
+        assert _lines(result.output)[-1] == f"Error: {OLD_API_WORKOUTS_LINE}", result.output
+        assert OLD_API_LINE not in result.output
+        assert "PUT /race-tags" not in api.requests
+        assert api.requests.count("GET /openapi.json") == 1
+        assert fake.listed == []
+
+    # The served schema as the app lists it, an inline body included, passes the check.
+    inline = openapi_with("setRaceTags")
+    schemas = inline["components"]["schemas"]
+    inline["paths"]["/race-tags"]["put"]["requestBody"]["content"]["application/json"]["schema"] = {
+        "properties": {"items": {"items": dict(schemas["RaceTagItem"])}}
+    }
+    assert sync._lists_tag(inline)
+    assert sync._lists_tag(openapi_with("setRaceTags"))
+    assert not sync._lists_tag(openapi_with())
+    assert not sync._lists_tag(None)
+
+
+def test_unmatched_workout_items_are_reported_like_race_items(env) -> None:
+    """A ``threshold_workout`` item not stored, mismatched or ambiguous gets its own line, as a
+    ``race`` item does, worded ``Workout``; an item clearing a tag gets none."""
+    fake = TagsGarmin(
+        [
+            _summary(101, "2026-10-01 07:00:00", event="training"),
+            _summary(201, "2026-10-02 07:00:00", event="training"),
+            _summary(301, "2026-10-03 07:00:00", event="training"),
+            _summary(401, "2026-10-04 07:00:00", event="race"),
+            _summary(501, "2026-10-05 07:00:00"),
+            _summary(601, "2026-10-06 07:00:00", event="training"),
+        ]
+    )
+    api = env(
+        fake,
+        TagsApi(
+            outcomes={
+                101: ("ambiguous", None, ["sA", "sB"]),
+                201: ("mismatch", "sC", ["sC"]),
+                301: "not_stored",
+                401: "not_stored",
+                501: "not_stored",
+                601: ("other_tag", "sE", ["sE"]),
+            }
+        ),
+    )
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert _lines(result.output) == [
+        "From 2026-09-13 to 2026-10-12",
+        _counts(not_stored=3, mismatch=1, ambiguous=1, other_tag=1),
+        "Workout ambiguous: activity 101 (run 101), 2026-10-01 07:00:00, sessions sA, sB",
+        "Workout mismatch: activity 201 (run 201), 2026-10-02 07:00:00, session sC",
+        "Workout not stored: activity 301 (run 301), 2026-10-03 07:00:00",
+        "Race not stored: activity 401 (run 401), 2026-10-04 07:00:00",
+    ]
+    assert len(api.sent) == 6
+
+
+def test_counts_line_carries_retagged_and_workouts_tagged(env) -> None:
+    """``retagged`` is an outcome the API answers (race to workout and back), so it is accepted
+    and counted; ``workouts tagged`` counts the items whose stored tag became ``threshold_workout``:
+    tagged plus retagged with ``tag`` ``threshold_workout``, never a race retagged."""
+    fake = TagsGarmin(
+        [
+            _summary(101, "2026-10-01 07:00:00", event="training"),
+            _summary(102, "2026-10-02 07:00:00", event="training"),
+            _summary(103, "2026-10-03 07:00:00", event="training"),
+            _summary(201, "2026-10-04 07:00:00", event="race"),
+            _summary(202, "2026-10-05 07:00:00", event="race"),
+            _summary(301, "2026-10-06 07:00:00"),
+            _summary(104, "2026-10-07 07:00:00", event="training"),
+        ]
+    )
+    api = env(
+        fake,
+        TagsApi(
+            outcomes={
+                101: "tagged",
+                102: "retagged",
+                103: "retagged",
+                201: "retagged",
+                202: "tagged",
+                301: "cleared",
+                104: "unchanged",
+            }
+        ),
+    )
+
+    result = _tags()
+
+    assert result.exit_code == 0, result.output
+    assert _lines(result.output) == [
+        "From 2026-09-13 to 2026-10-12",
+        _counts(tagged=2, retagged=3, cleared=1, unchanged=1, workouts_tagged=3),
+    ]
+    assert len(api.sent) == 7
+    assert sync.TAG_OUTCOMES["retagged"] == "retagged"

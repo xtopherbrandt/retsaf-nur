@@ -93,8 +93,8 @@ def _sync(*args: str):
 def _tags_line(unchanged: int = 0) -> str:
     """The race tags step's counts line, which follows the summary of a run that did not stop."""
     return (
-        f"Race tags: tagged 0, cleared 0, unchanged {unchanged}, not stored 0, mismatch 0, "
-        "ambiguous 0, other tag 0, skipped 0"
+        f"Race tags: tagged 0, retagged 0, cleared 0, unchanged {unchanged}, not stored 0, mismatch 0, "
+        "ambiguous 0, other tag 0, skipped 0, workouts tagged 0"
     )
 
 

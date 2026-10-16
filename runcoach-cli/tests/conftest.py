@@ -382,9 +382,9 @@ class FakeGarmin:
         return value
 
 
-# ``/openapi.json`` as FastAPI serves it: ``POST /sessions`` lists the switch in its form body, and
-# ``PUT /race-tags`` is listed as ``setRaceTags``.
-OPENAPI_WITH_SWITCH: dict[str, Any] = {
+# ``/openapi.json`` as FastAPI serves it, with only ``POST /sessions`` listing the switch in its form
+# body; ``openapi_doc`` adds the operations a test names.
+_SWITCH_ONLY: dict[str, Any] = {
     "paths": {
         "/sessions": {
             "post": {
@@ -393,7 +393,6 @@ OPENAPI_WITH_SWITCH: dict[str, Any] = {
                 }
             }
         },
-        "/race-tags": {"put": {"operationId": "setRaceTags"}},
     },
     "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
 }
@@ -405,17 +404,53 @@ _OPERATION_PATHS: dict[str, tuple[str, str]] = {
     "matchLapCandidates": ("/laps/candidates", "post"),
 }
 
+# ``RaceTagItem``'s properties as the served app lists them: ``race`` alone before F026, ``race``
+# and ``tag`` since (the CLI sends ``tag`` only when the served item schema lists it).
+_RACE_TAG_ITEM_FIELDS = ("connect_activity_id", "start_time", "distance_m", "duration_s", "race")
 
-def openapi_doc(*operation_ids: str) -> dict[str, Any]:
+
+def _set_race_tags(doc: dict[str, Any], workout_tags: bool) -> dict[str, Any]:
+    """``setRaceTags`` as FastAPI serves it: a ``$ref`` JSON body ``RaceTagsUpdate`` whose ``items``
+    are ``$ref`` ``RaceTagItem``, added to ``doc``'s components; the item lists ``tag`` when
+    ``workout_tags``."""
+    item: dict[str, Any] = {name: {} for name in _RACE_TAG_ITEM_FIELDS}
+    if workout_tags:
+        item["race"] = {"type": "boolean"}
+        item["tag"] = {"anyOf": [{"type": "string", "enum": ["race", "threshold_workout"]}, {"type": "null"}]}
+    schemas = doc.setdefault("components", {}).setdefault("schemas", {})
+    schemas["RaceTagsUpdate"] = {
+        "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/RaceTagItem"}}},
+        "type": "object",
+    }
+    schemas["RaceTagItem"] = {"properties": item, "type": "object"}
+    return {
+        "operationId": "setRaceTags",
+        "requestBody": {
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RaceTagsUpdate"}}},
+            "required": True,
+        },
+    }
+
+
+def openapi_doc(
+    *operation_ids: str, base: dict[str, Any] | None = None, workout_tags: bool = True
+) -> dict[str, Any]:
     """``/openapi.json`` as FastAPI serves it, listing ``POST /sessions`` with the switch and each of
     ``operation_ids`` at its path (``_OPERATION_PATHS``; an id not listed there is served as
-    ``POST /<id>``). ``openapi_doc()`` lists the switch alone."""
-    doc = json.loads(json.dumps(OPENAPI_WITH_SWITCH))
-    del doc["paths"]["/race-tags"]
+    ``POST /<id>``). ``openapi_doc()`` lists the switch alone. ``base``, when given, is a copy's
+    starting document instead of the switch's. ``setRaceTags`` carries its request body, whose
+    item schema lists ``tag`` unless ``workout_tags`` is false (an API from before F026)."""
+    doc = json.loads(json.dumps(_SWITCH_ONLY if base is None else base))
+    doc.setdefault("paths", {})
     for op_id in operation_ids:
         path, method = _OPERATION_PATHS.get(op_id, (f"/{op_id}", "post"))
-        doc["paths"].setdefault(path, {})[method] = {"operationId": op_id}
+        operation = _set_race_tags(doc, workout_tags) if op_id == "setRaceTags" else {"operationId": op_id}
+        doc["paths"].setdefault(path, {})[method] = operation
     return doc
+
+
+# The document ``FakeApi`` serves by default: the switch and ``setRaceTags`` with ``tag``.
+OPENAPI_WITH_SWITCH: dict[str, Any] = openapi_doc("setRaceTags")
 
 
 @pytest.fixture

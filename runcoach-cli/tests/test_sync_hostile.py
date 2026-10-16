@@ -43,7 +43,8 @@ runner = CliRunner()
 TODAY = date(2026, 10, 11)
 START = date(2026, 10, 10)
 
-SWITCH_DOC = {
+# ``POST /sessions`` with the switch in an inline form body; the shared builder adds ``setRaceTags``.
+SWITCH_ONLY_INLINE = {
     "paths": {
         "/sessions": {
             "post": {
@@ -54,7 +55,6 @@ SWITCH_DOC = {
                 }
             }
         },
-        "/race-tags": {"put": {"operationId": "setRaceTags"}},
     }
 }
 
@@ -124,7 +124,7 @@ def _assert_state_holds_only_dates() -> None:
 
 
 @pytest.fixture
-def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path, fake_api):
+def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path, fake_api, openapi_with):
     """Run ``runcoach sync --since 2026-10-10`` against ``fake``; assert nothing written, nothing escaped."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
@@ -132,7 +132,7 @@ def run(monkeypatch: pytest.MonkeyPatch, install_mock_client, tmp_path: Path, fa
     monkeypatch.setattr(sessions, "LOCAL_ZONE", timezone(timedelta(hours=-7)))
 
     def go(fake: Any, adapter: Any = None) -> tuple[Any, Any]:
-        api = fake_api(_hostile_reply, doc=SWITCH_DOC)
+        api = fake_api(_hostile_reply, doc=openapi_with("setRaceTags", base=SWITCH_ONLY_INLINE))
         install_mock_client(api)
         chosen = adapter if adapter is not None else SimpleNamespace(open_client=lambda: fake)
         monkeypatch.setattr(sync, "_adapter", lambda: chosen)
