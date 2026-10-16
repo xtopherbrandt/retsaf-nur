@@ -77,6 +77,15 @@ def hr_excluded(record: ScreenedRecord) -> bool:
     return record.heart_rate is None or CADENCE_LOCK_TAG in record.sample_quality
 
 
+def gps_degraded(record: ScreenedRecord) -> bool:
+    """True when the record carries the ``gps_degraded`` tag in ``sample_quality``.
+
+    The one home of the rule; ``gps_degraded_fraction`` and the session transform's
+    per-segment stream both read it.
+    """
+    return GPS_DEGRADED_TAG in record.sample_quality
+
+
 def _counted_starts(tb: TimeBase) -> Iterator[tuple[Segment, ScreenedRecord]]:
     """Each counted segment (sampled or a moving gap) with its start record: the one walk every mean takes.
 
@@ -195,6 +204,6 @@ def gps_degraded_fraction(tb: TimeBase) -> float | None:
     degraded = sum(
         seg.contributed_m
         for seg, start in _counted_starts(tb)
-        if GPS_DEGRADED_TAG in start.sample_quality
+        if gps_degraded(start)
     )
     return distance_fraction(degraded, tb.D)

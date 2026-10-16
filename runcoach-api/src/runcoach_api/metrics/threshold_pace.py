@@ -46,6 +46,10 @@ boundaries land on their stated side with no tolerance (one race and 42 days giv
 ``short_races_only`` is true when every effort used lasted under ``SHORT_RACE_S`` (a 20-30 min race
 reads threshold fast); it is a display warning and changes no number. With no qualifying effort the
 result is unavailable, ``no_qualifying_effort``, and every number is ``None``.
+
+**The active block of a threshold workout** (F026 reference section 3), also pure: ``active_laps``
+and ``active_block`` read laps, workout steps and F013's per-segment stream (``session_features.
+segment_rows``) as mappings, by key, and are documented where they are defined.
 """
 
 from __future__ import annotations
@@ -296,5 +300,172 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
         error=math.sqrt(variance),
         confidence=_label(variance),
         short_races_only=all(effort.duration_s < SHORT_RACE_S for effort in efforts),
+        unavailable=None,
+    )
+
+
+# -- The active block of a threshold workout (F026 reference section 3) -----------------------------
+
+ACTIVE = "active"
+REPEAT_PREFIX = "repeat_until"
+"""A step whose ``duration_type`` starts so is a repeat step: it loops over other steps and its
+``intensity`` means nothing (a Garmin repeat step keeps whatever intensity was written on it)."""
+LAP_TIMES_UNREADABLE = "lap_times_unreadable"
+NO_WORKOUT_STEPS = "no_workout_steps"
+
+
+@dataclass(frozen=True)
+class ActiveLaps:
+    """Rows 1a and 2 decided from laps and steps alone; every number is empty when ``unavailable`` is set.
+
+    ``active_time_s`` is ``A``, the active laps' summed ``timer_s``; it may overflow to inf from finite
+    laps, and row 3 (``A`` finite and at least the minimum) is the caller's.
+    """
+
+    laps: tuple[Mapping[str, Any], ...]
+    active_time_s: float | None
+    windows: tuple[tuple[float, float], ...]
+    active_blocks: int
+    unavailable: str | None
+
+
+@dataclass(frozen=True)
+class ActiveBlock:
+    """``active_laps`` plus the active GAP pace and the window fractions over the segment stream."""
+
+    active_time_s: float | None
+    gap_pace_s_per_km: float | None
+    active_blocks: int
+    windows: tuple[tuple[float, float], ...]
+    gap_coverage: float | None
+    gps_degraded_fraction: float | None
+    unavailable: str | None
+
+
+def _step_index(value: Any) -> int | None:
+    """An int index, or ``None``: a bool is not an index (``True`` would otherwise name step 1)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _active_step_indices(steps: Iterable[Mapping[str, Any]]) -> frozenset[int]:
+    """The step indices that name an active step unambiguously.
+
+    An index qualifies when every step carrying it has intensity ``active`` and none is a repeat step;
+    an index shared by an active and a non-active step names no active step.
+    """
+    active: set[int] = set()
+    refused: set[int] = set()
+    for step in steps:
+        index = _step_index(step.get("step_index"))
+        if index is None:
+            continue
+        duration_type = step.get("duration_type")
+        is_repeat = isinstance(duration_type, str) and duration_type.startswith(REPEAT_PREFIX)
+        if step.get("intensity") == ACTIVE and not is_repeat:
+            active.add(index)
+        else:
+            refused.add(index)
+    return frozenset(active - refused)
+
+
+def _lap_times(lap: Mapping[str, Any]) -> tuple[float, float, float] | None:
+    """``(start_t, end_t, timer_s)`` when all three are finite, ``end_t > start_t`` and ``timer_s >= 0``."""
+    start, end, timer = (_real(lap.get(key)) for key in ("start_t", "end_t", "timer_s"))
+    if start is None or end is None or timer is None or end <= start or timer < 0:
+        return None
+    return start, end, timer
+
+
+def active_laps(laps: Iterable[Mapping[str, Any]], steps: Iterable[Mapping[str, Any]]) -> ActiveLaps:
+    """The active laps of a workout, its active time ``A``, windows and block count (rows 1a and 2).
+
+    ``laps`` arrive in ``lap_index`` order, as ``mapping.to_laps`` maps them and the store returns
+    them. A lap is *otherwise active* when its intensity is exactly ``active`` and its
+    ``wkt_step_index`` (an int, not a bool) names an active step of ``steps``; it is *active* when its
+    ``start_t``, ``end_t`` and ``timer_s`` are also finite numbers (``metrics.finite``), ``end_t >
+    start_t`` and ``timer_s >= 0``. A null step index (the lap after a workout ends) is never active.
+
+    Row 1a first: any otherwise-active lap that is not active gives ``lap_times_unreadable``, never a
+    smaller block. Then row 2: no active lap gives ``no_workout_steps``. The windows are each active
+    lap's ``[start_t, end_t)``; ``active_blocks`` counts runs of consecutive active laps in ``laps``.
+    """
+    active_steps = _active_step_indices(steps)
+    chosen: list[Mapping[str, Any]] = []
+    windows: list[tuple[float, float]] = []
+    total = 0.0
+    blocks = 0
+    previous_active = False
+    for lap in laps:
+        index = _step_index(lap.get("wkt_step_index"))
+        if lap.get("intensity") != ACTIVE or index is None or index not in active_steps:
+            previous_active = False
+            continue
+        times = _lap_times(lap)
+        if times is None:
+            return ActiveLaps((), None, (), 0, LAP_TIMES_UNREADABLE)
+        start, end, timer = times
+        chosen.append(lap)
+        windows.append((start, end))
+        total += timer
+        if not previous_active:
+            blocks += 1
+        previous_active = True
+    if not chosen:
+        return ActiveLaps((), None, (), 0, NO_WORKOUT_STEPS)
+    return ActiveLaps(tuple(chosen), total, tuple(windows), blocks, None)
+
+
+def active_block(
+    laps: Iterable[Mapping[str, Any]],
+    steps: Iterable[Mapping[str, Any]],
+    segment_rows: Iterable[Mapping[str, Any]],
+) -> ActiveBlock:
+    """``active_laps`` and the active GAP pace over F013's counted segments in the active windows.
+
+    ``segment_rows`` is ``session_features.segment_rows``' stream (counted segments only), on the
+    same time origin as the laps. A segment is in the block when its ``t_start`` lies in a window
+    ``[start_t, end_t)``, and then counts there in full: a moving dropout that starts inside an active
+    lap contributes all its ``dt`` and metres even when it ends after the lap, and one that starts
+    outside every window contributes nothing. Over those segments, with ``D`` their contributed
+    metres:
+
+    - the pace is ``1000 * sum(dt) / sum(contributed_m * g)``, F013's whole-session formula
+      restricted to the windows; ``None`` when that denominator is 0 or the result is not finite;
+    - ``gap_coverage`` is the graded share of ``D`` and ``gps_degraded_fraction`` the share whose
+      start record carries ``gps_degraded``; both ``None`` when ``D`` is 0.
+
+    When ``active_laps`` sets a reason, it is carried and every number is ``None``.
+    """
+    decided = active_laps(laps, steps)
+    if decided.unavailable is not None:
+        return ActiveBlock(None, None, 0, (), None, None, decided.unavailable)
+    windows = decided.windows
+    seconds = 0.0
+    distance = 0.0
+    gap_distance = 0.0
+    graded_m = 0.0
+    degraded_m = 0.0
+    for row in segment_rows:
+        t_start = row["t_start"]
+        if not any(start <= t_start < end for start, end in windows):
+            continue
+        metres = row["contributed_m"]
+        seconds += row["dt"]
+        distance += metres
+        gap_distance += metres * row["g"]
+        if row["graded"]:
+            graded_m += metres
+        if row["gps_degraded"]:
+            degraded_m += metres
+    pace = 1000.0 * seconds / gap_distance if gap_distance > 0.0 else None
+    if pace is not None and not math.isfinite(pace):
+        pace = None
+    return ActiveBlock(
+        active_time_s=decided.active_time_s,
+        gap_pace_s_per_km=pace,
+        active_blocks=decided.active_blocks,
+        windows=windows,
+        gap_coverage=graded_m / distance if distance > 0.0 else None,
+        gps_degraded_fraction=degraded_m / distance if distance > 0.0 else None,
         unavailable=None,
     )

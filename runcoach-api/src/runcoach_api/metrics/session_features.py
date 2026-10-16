@@ -46,7 +46,8 @@ record whose NGP sample this segment's g adjusts, so ``block_id`` is
 the start record's, as the descriptor means read them, through
 ``descriptors.hr_excluded`` so the rule exists once; ``moving_gap`` is the
 segment's, so a consumer that wants the sampled strides alone can drop the
-gaps.
+gaps; ``gps_degraded``, last, is the start record's tag through
+``descriptors.gps_degraded``, the rule ``gps_degraded_fraction`` reads.
 
 **Pure, by design.** No ``config``, ``db`` or ``fastapi`` import, no clock, no
 connection. ``session`` is a mapping with ``session_id``, ``sport``,
@@ -253,10 +254,11 @@ def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, obje
     """The in-process per-segment stream: one dict per counted segment (reference section 8).
 
     Fields: ``t_start, dt, s_start, contributed_m, v_actual, speed, i, graded,
-    clamped, g, block_id, heart_rate, hr_excluded, moving_gap``. ``speed`` and
-    ``block_id`` belong to the record the segment ends at (where NGP applies
-    this g); ``heart_rate`` and ``hr_excluded`` to the record it starts at;
-    ``moving_gap`` is True on a counted gap over 5 s. Empty when a
+    clamped, g, block_id, heart_rate, hr_excluded, moving_gap, gps_degraded``.
+    ``speed`` and ``block_id`` belong to the record the segment ends at (where
+    NGP applies this g); ``heart_rate``, ``hr_excluded`` and ``gps_degraded``
+    (the ``gps_degraded`` tag, by ``descriptors.gps_degraded``) to the record it
+    starts at; ``moving_gap`` is True on a counted gap over 5 s. Empty when a
     session-wide override applies.
     """
     tb, reason = _screened_time_base(session, rows)
@@ -286,6 +288,7 @@ def segment_rows(session: Mapping[str, object], rows: Iterable[Mapping[str, obje
                 "heart_rate": start.heart_rate,
                 "hr_excluded": descriptors.hr_excluded(start),
                 "moving_gap": seg.moving_gap,
+                "gps_degraded": descriptors.gps_degraded(start),
             }
         )
     return out
