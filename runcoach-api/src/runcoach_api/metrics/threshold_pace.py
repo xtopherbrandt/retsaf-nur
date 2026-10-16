@@ -271,7 +271,9 @@ def workout_lap_reason(row: Mapping[str, Any]) -> str | None:
     lap_reason = row.get("lap_reason")
     if lap_reason is not None:
         if lap_reason not in (LAP_TIMES_UNREADABLE, NO_WORKOUT_STEPS):
-            raise ValueError(f"session {row.get('session_id')!r} has lap_reason {lap_reason!r}, not one of active_laps'")
+            raise ValueError(
+                f"session {row.get('session_id')!r} has lap_reason {lap_reason!r}, not one of active_laps'"
+            )
         return lap_reason
     active = active_time_of(row)
     if active is None or active < WORKOUT_MIN_ACTIVE_S:
