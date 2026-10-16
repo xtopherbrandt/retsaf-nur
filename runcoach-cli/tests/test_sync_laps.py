@@ -726,7 +726,13 @@ def test_the_parent_since_guard_covers_laps(env, fake_garmin) -> None:
 
 
 def test_until_bounds_the_listing_and_defaults_to_today(env, fake_garmin) -> None:
-    fake = fake_garmin([_summary(101, "2026-10-04 07:00:00"), _summary(102, "2026-10-06 07:00:00")])
+    fake = fake_garmin(
+        [
+            _summary(101, "2026-10-04 07:00:00"),
+            _summary(103, "2026-10-05 07:00:00"),  # on the --until day itself
+            _summary(102, "2026-10-06 07:00:00"),
+        ]
+    )
     api = env(fake)
 
     result = _laps("--since", SINCE, "--until", "2026-10-05")
@@ -734,7 +740,23 @@ def test_until_bounds_the_listing_and_defaults_to_today(env, fake_garmin) -> Non
     assert result.exit_code == 0, result.output
     assert _lines(result.output)[0] == "From 2026-10-01 to 2026-10-05"
     assert fake.listed == [(date(2026, 10, 1), date(2026, 10, 5))]
-    assert [item["connect_activity_id"] for item in api.candidates_sent] == [101]
+    assert [item["connect_activity_id"] for item in api.candidates_sent] == [101, 103]
+
+
+def test_an_activity_on_the_since_day_is_sent(env, fake_garmin) -> None:
+    fake = fake_garmin(
+        [
+            _summary(106, "2026-09-30 07:00:00"),  # the day before --since
+            _summary(107, "2026-10-01 07:00:00"),  # on the --since day itself
+        ],
+        allow_originals=False,
+    )
+    api = env(fake)
+
+    result = _laps("--since", SINCE)
+
+    assert result.exit_code == 0, result.output
+    assert [item["connect_activity_id"] for item in api.candidates_sent] == [107]
 
 
 @pytest.mark.parametrize(

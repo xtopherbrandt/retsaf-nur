@@ -85,3 +85,22 @@ def test_session_message_with_no_start_time_but_record_timestamps_present_does_n
     session, _records = mapping.to_canonical(messages)
 
     assert session.start_time == ts.isoformat()
+
+
+def test_the_record_fallback_takes_the_earliest_timestamp_not_the_first_or_last() -> None:
+    """Records out of order: the earliest sits in the middle, so neither the first record, the
+    last record nor the latest timestamp gives it."""
+    from datetime import datetime, timezone
+
+    earliest = datetime(2026, 1, 1, 7, 0, 0, tzinfo=timezone.utc)
+    messages = [
+        _FakeMsg("session", {"sport": "running"}),
+        _FakeMsg("record", {"timestamp": datetime(2026, 1, 1, 7, 0, 5, tzinfo=timezone.utc)}),
+        _FakeMsg("record", {"timestamp": earliest}),
+        _FakeMsg("record", {"timestamp": datetime(2026, 1, 1, 7, 0, 9, tzinfo=timezone.utc)}),
+        _FakeMsg("record", {"timestamp": datetime(2026, 1, 1, 7, 0, 3, tzinfo=timezone.utc)}),
+    ]
+
+    session, _records = mapping.to_canonical(messages)
+
+    assert session.start_time == earliest.isoformat()
