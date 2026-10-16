@@ -1258,6 +1258,38 @@ paths:
           content: { application/json: { schema: { type: object } } }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /laps/candidates:
+    post:
+      tags: [Sessions]
+      operationId: matchLapCandidates
+      summary: Match listed Garmin Connect runs to stored runs by start second (read-only)
+      description: >
+        F025. {items: [...]}, 1 to 500 items with distinct connect_activity_id,
+        each {connect_activity_id, start_time}: start_time is Connect's
+        startTimeGMT as setRaceTags takes it. Each item is matched to the
+        stored running sessions at its start second (resting captures
+        excluded): matched (exactly one, with its session_id and
+        laps_read_at), not_stored (none) or ambiguous (two or more). Distance
+        and duration are never compared: attachSessionLaps' identity check on
+        the file proves the match. 200 with one answer per item, in request
+        order. 422 for any other key, a non-integer or repeated id, 0 or more
+        than 500 items, or another start_time form. Nothing is written. As-built
+        errors are FastAPI {detail}.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F025"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LapCandidatesRequest" }
+      responses:
+        "200":
+          description: One answer per item, in request order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LapCandidatesResult" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
 components:
 
   securitySchemes:
@@ -3259,6 +3291,47 @@ components:
         target_value: { type: number, nullable: true }
         target_low: { type: number, nullable: true }
         target_high: { type: number, nullable: true }
+    LapCandidatesRequest:
+      type: object
+      description: "matchLapCandidates' body: 1 to 500 items with distinct connect_activity_id. Any other key is a 422."
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/LapCandidateItem" }
+          description: "Each connect_activity_id once; a repeated id is a 422."
+    LapCandidateItem:
+      type: object
+      description: "One listed Connect run to match by its start second. Strict: any other key, a non-integer id or another start_time form is a 422."
+      required: [connect_activity_id, start_time]
+      additionalProperties: false
+      properties:
+        connect_activity_id: { type: integer, description: "The Connect activityId." }
+        start_time:
+          type: string
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|\+00:00)$'
+          description: "Connect's startTimeGMT in UTC, whole seconds, ending Z or +00:00; a date or time that does not exist is a 422."
+    LapCandidateItemResult:
+      type: object
+      description: "One item's answer, in request order."
+      required: [connect_activity_id, outcome, session_id, laps_read_at]
+      properties:
+        connect_activity_id: { type: integer }
+        outcome: { type: string, enum: [matched, not_stored, ambiguous], description: "matched: exactly one stored running session at the item's start second (resting captures excluded); not_stored: none; ambiguous: two or more. Distance and duration are never compared." }
+        session_id: { type: string, nullable: true, description: "The matched session; null for not_stored and ambiguous." }
+        laps_read_at: { type: string, nullable: true, description: "When the matched session's laps were last read from its file; null when never read, and for not_stored and ambiguous." }
+    LapCandidatesResult:
+      type: object
+      description: "matchLapCandidates' 200 body."
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LapCandidateItemResult" }
+          description: "One per request item, in request order."
     ThresholdEffort:
       type: object
       description: "getState: a tagged race the threshold estimate used, with the gain it entered with (1 for the first)."

@@ -2041,3 +2041,37 @@ def read_threshold_race_rows(conn: sqlite3.Connection) -> tuple[list[dict], list
 
 def _place(row: Mapping) -> dict:
     return {"session_id": row["session_id"], "start_time": row["start_time"]}
+
+
+# ---------------------------------------------------------------------------
+# F025: the candidate rows POST /laps/candidates reads
+#
+# Appended at the end so the lines cited above stay in place. The decision
+# lives in ``lap_candidates``, with ``race_tags``' start-second lookup.
+# ---------------------------------------------------------------------------
+
+
+def read_lap_candidate_rows(conn: sqlite3.Connection, start_times: Sequence[str]) -> list[dict]:
+    """The stored running sessions at any of ``start_times`` (F025 reference section 5 step 2).
+
+    One ``SELECT`` reads ``session_id``, ``start_time`` and ``laps_read_at`` for sport ``running``
+    with an ``activity_tag`` that is null or not one of ``race_tags.RESTING_CAPTURE_TAGS`` (the rows
+    ``apply_race_tags`` reads; a bare ``NOT IN`` is null for an untagged row and would drop it),
+    at the given start times with ``Z`` normalised to ``+00:00``. Read-only: a deferred
+    transaction, rolled back. An empty ``start_times`` reads nothing.
+    """
+    starts = sorted({_race_tags.normalise_start_time(start) for start in start_times})
+    if not starts:
+        return []
+    capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
+    sql = (
+        "SELECT session_id, start_time, laps_read_at FROM sessions"
+        " WHERE sport = 'running'"
+        f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
+        f" AND start_time IN ({', '.join('?' * len(starts))})"
+    )
+    conn.execute("BEGIN")
+    try:
+        return [dict(row) for row in conn.execute(sql, (*capture_tags, *starts))]
+    finally:
+        conn.rollback()

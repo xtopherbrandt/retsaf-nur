@@ -1623,6 +1623,85 @@ class SessionWorkoutStep(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# POST /laps/candidates (F025)
+#
+# Inserted before the F024 block so the anchors at the file's tail stay in
+# place. The item's start time and the 1 to 500 items with distinct ids are
+# ``setRaceTags``' rules, read from the same constants.
+# ---------------------------------------------------------------------------
+from runcoach_api import lap_candidates as _lap_candidates
+
+_LapCandidateOutcome = Literal["matched", "not_stored", "ambiguous"]
+
+
+class LapCandidateItem(BaseModel):
+    """One listed Connect run to match by its start second. Strict: any other key, a non-integer
+    id or a start time in any other form is a 422; ``start_time`` is checked as ``RaceTagItem``'s
+    is (the pattern, then ``datetime.fromisoformat``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connect_activity_id: int = Field(strict=True, description="The Connect activityId.")
+    start_time: str = Field(
+        strict=True,
+        pattern=RACE_TAG_START_PATTERN,
+        description="Connect's startTimeGMT as YYYY-MM-DDTHH:MM:SS in UTC, whole seconds, ending Z or +00:00; "
+        "any other zone, a fraction of a second or another form is a 422.",
+    )
+
+    @field_validator("start_time")
+    @classmethod
+    def _an_existing_instant(cls, value: str) -> str:
+        """The pattern admits ``2024-02-30T25:00:00Z``; ``fromisoformat`` refuses it."""
+        datetime.datetime.fromisoformat(value)
+        return value
+
+
+class LapCandidatesRequest(BaseModel):
+    """The body of ``POST /laps/candidates``: 1 to 500 items with distinct ``connect_activity_id``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[LapCandidateItem] = Field(
+        min_length=1,
+        max_length=RACE_TAG_MAX_ITEMS,
+        description="1 to 500 items, each connect_activity_id once; a repeated id is a 422.",
+    )
+
+    @model_validator(mode="after")
+    def _distinct_ids(self) -> "LapCandidatesRequest":
+        uses = Counter(item.connect_activity_id for item in self.items)
+        repeated = sorted(activity_id for activity_id, n in uses.items() if n > 1)
+        if repeated:
+            raise ValueError(f"connect_activity_id repeated: {', '.join(str(r) for r in repeated)}")
+        return self
+
+
+class LapCandidateItemResult(BaseModel):
+    """One item's answer, in request order."""
+
+    connect_activity_id: int
+    outcome: _LapCandidateOutcome = Field(
+        description="matched: exactly one stored running session at the item's start second (resting captures "
+        "excluded); not_stored: none; ambiguous: two or more. Distance and duration are never compared."
+    )
+    session_id: str | None = Field(description="The matched session; null for not_stored and ambiguous.")
+    laps_read_at: str | None = Field(
+        description="When the matched session's laps were last read from its file; null when never read, and for "
+        "not_stored and ambiguous."
+    )
+
+
+assert tuple(_LapCandidateOutcome.__args__) == _lap_candidates.OUTCOMES
+
+
+class LapCandidatesResult(BaseModel):
+    """``POST /laps/candidates``' 200 body."""
+
+    items: list[LapCandidateItemResult] = Field(description="One per request item, in request order.")
+
+
+# ---------------------------------------------------------------------------
 # GET /state (F024): threshold pace from tagged races
 #
 # Appended at the end so the lines cited above stay in place.

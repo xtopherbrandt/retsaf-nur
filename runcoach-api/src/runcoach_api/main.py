@@ -1751,3 +1751,39 @@ def attach_session_laps(
     if not attached:
         raise HTTPException(404, f"session {session_id} not found")
     return SessionLapsAttached(session_id=session_id, laps=len(read.laps), workout_steps=len(read.steps))
+
+
+# ---------------------------------------------------------------------------
+# POST /laps/candidates (F025)
+#
+# Appended below the earlier routes with its own imports, as the routes
+# above are, so the lines cited by number stay in place. The decision lives
+# in lap_candidates, with race_tags' start-second lookup; the rows are read
+# by db.read_lap_candidate_rows in a transaction it rolls back.
+# ---------------------------------------------------------------------------
+from runcoach_api import lap_candidates
+from runcoach_api.schemas import LapCandidatesRequest, LapCandidatesResult
+
+
+@app.post(
+    "/laps/candidates",
+    response_model=LapCandidatesResult,
+    operation_id="matchLapCandidates",
+    tags=["Sessions"],
+)
+def match_lap_candidates(request: LapCandidatesRequest) -> LapCandidatesResult:
+    """Match listed Connect runs to stored runs by start second (F025 reference section 5 step 2).
+
+    ``LapCandidatesRequest`` screens the whole body first (a 422 reads nothing). Each item is
+    answered ``matched`` (exactly one stored running session at its start second, resting captures
+    excluded, with that session's ``laps_read_at``), ``not_stored`` or ``ambiguous``, in request
+    order. Distance and duration are never compared: the attach endpoint's identity check on the
+    file proves the match. Read-only: nothing is written.
+    """
+    items = [item.model_dump() for item in request.items]
+    conn = db.get_connection()
+    try:
+        rows = db.read_lap_candidate_rows(conn, [item["start_time"] for item in items])
+    finally:
+        conn.close()
+    return LapCandidatesResult(items=lap_candidates.decide(items, rows))
