@@ -29,7 +29,8 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   Garmin answers with an HTTP error status other than 401, 403, 404 and 429 is ``failed`` and the
   sync goes on. A stop (reference section 6: a login needed, a web page for a download, a rate
   limit, Garmin unreachable (no HTTP reply at all) or the API unreachable, any error on the
-  activity list, an API without the switch) prints the summary so far and its message, uploads
+  activity list, an API without the switch, a ``/openapi.json`` answering other than 200, which
+  names the status rather than calling the API old) prints the summary so far and its message, uploads
   nothing more and exits 1. Downloads are read in memory only, each entry capped at
   ``FIT_ENTRY_CAP`` and only stored or deflated (reference section 7). ``sync`` never reads stdin.
   After uploads that end without a stop (failed items do not prevent it) and after the sync state
@@ -50,7 +51,8 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   ``From`` line, the counts line and one line per race not stored, mismatched or ambiguous and per
   skipped activity (``tags_report_lines``). It downloads nothing and never reads or writes the sync
   state. A login needed prints the login message; another Garmin error, its reason and the one
-  ``runcoach sync tags --since`` command; an API without ``setRaceTags`` sends nothing; a batch the
+  ``runcoach sync tags --since`` command; an API without ``setRaceTags`` sends nothing, as does a
+  ``/openapi.json`` answering other than 200, whose status is named with that command; a batch the
   API fails or cannot be reached for stops later batches and names the batch's first local day.
   Each exits 1; not stored, mismatch, ambiguous and skipped items do not change the exit code.
 - ``sync login`` asks for the email, the password (not echoed) and, only when Garmin asks for one,
@@ -715,6 +717,27 @@ def _lists_switch(doc: Any) -> bool:
     return isinstance(properties, dict) and SWITCH_FIELD in properties
 
 
+@dataclass(frozen=True)
+class OpenApiUnread:
+    """``GET /openapi.json`` answered ``status``, not 200: the document was not read, so it says
+    nothing about what the API supports."""
+
+    status: int
+
+    def message(self) -> str:
+        return f"the API answered {self.status} at /openapi.json"
+
+
+def read_openapi(api_url: str) -> Any:
+    """The served ``/openapi.json`` (``None`` for a 200 whose body is not JSON), or ``OpenApiUnread``
+    for any other status. Every capability check reads it here; ``api_client.ApiUnreachableError``
+    is the caller's to word."""
+    resp = api_client.get_openapi(api_url)
+    if resp.status_code != 200:
+        return OpenApiUnread(resp.status_code)
+    return _body(resp)
+
+
 @dataclass
 class ServedDoc:
     """The API's ``/openapi.json`` as one run read it, so it is read at most once per run: ``read``
@@ -735,10 +758,11 @@ class _Uploader:
 
     def _check_switch(self, day: date) -> None:
         try:
-            resp = api_client.get_openapi(self.api_url)
+            doc = read_openapi(self.api_url)
         except api_client.ApiUnreachableError:
             raise SyncStop(_api_unreachable(self.api_url, day)) from None
-        doc = _body(resp) if resp.status_code == 200 else None
+        if isinstance(doc, OpenApiUnread):
+            raise SyncStop(f"{doc.message()}: run `runcoach sync --since {day.isoformat()}`")
         if not _lists_switch(doc):
             raise SyncStop(f"{OLD_API} and restart the API")
         self.served.doc, self.served.read = doc, True
@@ -1120,14 +1144,16 @@ def tags_garmin_stop(exc: garmin.GarminError, start: date) -> TagsStop:
 
 
 def read_tags_openapi(api_url: str, start: date) -> Any:
-    """The served ``/openapi.json``, checked to list ``setRaceTags``, or raise ``TagsStop``."""
+    """The served ``/openapi.json``, checked to list ``setRaceTags``, or raise ``TagsStop``: a
+    non-200 answer names its status and the one ``sync tags`` command."""
     try:
-        resp = api_client.get_openapi(api_url)
+        doc = read_openapi(api_url)
     except api_client.ApiUnreachableError:
         raise TagsStop(
             f"could not reach API at {api_url}: start it with `runcoach-api`\n{_tags_not_read(start)}"
         ) from None
-    doc = _body(resp) if resp.status_code == 200 else None
+    if isinstance(doc, OpenApiUnread):
+        raise TagsStop(f"{doc.message()}\n{_tags_not_read(start)}")
     check_race_tags(doc)
     return doc
 

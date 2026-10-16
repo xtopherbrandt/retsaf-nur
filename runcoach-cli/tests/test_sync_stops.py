@@ -457,13 +457,10 @@ def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fak
                 }
             },
         ),
-        # A non-200 answer is not read, even when its body lists the switch and setRaceTags.
-        (503, openapi_doc()),
     ],
 )
-def test_an_unreadable_openapi_document_stops_before_any_upload(
-    env, status, doc, fake_garmin, fake_api
-) -> None:
+def test_a_document_without_the_switch_still_reads_too_old(env, status, doc, fake_garmin, fake_api) -> None:
+    """A 200 document that does not list the switch (or cannot be read as one) is an old API."""
     api = env(fake_garmin(), fake_api(doc=doc, doc_status=status))
 
     result = _sync("--since", "2026-10-10")
@@ -471,6 +468,27 @@ def test_an_unreadable_openapi_document_stops_before_any_upload(
     assert result.exit_code == 1, result.output
     assert _ends_with(result.output, OLD_API + " and restart the API"), result.output
     assert api.uploads == []
+
+
+@pytest.mark.parametrize("status", [503, 500, 404])
+def test_a_503_openapi_document_names_the_status_before_any_upload(
+    env, status, fake_garmin, fake_api
+) -> None:
+    """A non-200 ``/openapi.json`` is not read, even when its body lists the switch and
+    ``setRaceTags``: the stop names the status and the command to retry, never the old-API line
+    (which retired F023 AC6's wording for a non-200)."""
+    api = env(fake_garmin(), fake_api(doc=openapi_doc(), doc_status=status))
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    expected = f"Error: the API answered {status} at /openapi.json: run `runcoach sync --since 2026-10-10`"
+    assert last == expected, last
+    assert OLD_API not in result.output
+    assert api.uploads == []
+    assert "POST /sessions" not in api.calls
+    assert api.calls.count("GET /openapi.json") == 1
 
 
 def test_the_openapi_check_runs_once_and_accepts_an_inline_body(env, fake_garmin, fake_api) -> None:

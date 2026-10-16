@@ -398,9 +398,12 @@ def test_api_not_running_at_the_tags_openapi_read_names_the_tags_start(
     assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}
 
 
-def test_a_503_tags_openapi_document_is_not_read(env, fake_garmin, fake_api, fresh_sync_state: Path) -> None:
+def test_a_503_reads_tags_openapi_document_names_the_status(
+    env, fake_garmin, fake_api, fresh_sync_state: Path
+) -> None:
     """Nothing to upload and a 503 ``/openapi.json``: not read, even though its body lists
-    ``setRaceTags`` (as for the switch check), so the old-API line; nothing sent."""
+    ``setRaceTags`` (as for the switch check); the stop names the status and the one ``sync tags``
+    command, never the old-API line; nothing sent."""
     fake = fake_garmin([_activity(913, WINDOW_START, race=True)])
     api = env(fake, _openapi_down(fake_api, 503, pages=RECENT_STORE, doc=_switch_and_tags_doc()))
 
@@ -410,7 +413,11 @@ def test_a_503_tags_openapi_document_is_not_read(env, fake_garmin, fake_api, fre
     assert "POST /sessions" not in api.calls
     assert api.calls.count("GET /openapi.json") == 1
     assert "PUT /race-tags" not in api.calls
-    assert result.output.splitlines()[-1] == f"Error: {OLD_API_TAGS}"
+    lines = result.output.splitlines()
+    assert lines[-1] == f"Race tags not read: run runcoach sync tags --since {WINDOW_START}", lines
+    assert "Error: the API answered 503 at /openapi.json" in lines, lines
+    assert OLD_API_TAGS not in result.output
+    assert _flat(result.output).count("runcoach sync tags --since") == 1
     assert "Traceback" not in result.output
     assert isinstance(result.exception, SystemExit)
     assert _state(fresh_sync_state) == {"last_completed": TODAY.isoformat(), "oldest_failed": None}

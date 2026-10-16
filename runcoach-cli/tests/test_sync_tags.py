@@ -551,16 +551,22 @@ def test_api_not_running_at_the_openapi_read_names_the_tags_start(env, since: st
     assert not env.state_file.exists()
 
 
-def test_a_503_openapi_document_is_not_read_and_sends_nothing(env) -> None:
+def test_a_503_tags_openapi_document_names_the_status_and_sends_nothing(env) -> None:
     """A non-200 ``/openapi.json`` is not read, even when its body lists ``setRaceTags``, as for
-    the upload switch check: the API is taken not to list it (F023 AC6)."""
+    the upload switch check: the stop names the status and the one ``sync tags`` command, never
+    the old-API line (which retired F023 AC6's wording for a non-200)."""
     fake = TagsGarmin([_summary(101, "2026-10-10 07:00:00", event="race")])
     api = env(fake, _OpenApiDown(status=503))
 
     result = _tags()
 
     assert result.exit_code == 1, result.output
-    assert _lines(result.output)[-1].endswith(OLD_API_LINE), result.output
+    lines = _lines(result.output)
+    assert lines[-1] == f"Race tags not read: run runcoach sync tags --since {DEFAULT_SINCE}", lines
+    assert "Error: the API answered 503 at /openapi.json" in lines, lines
+    assert OLD_API_LINE not in result.output
+    assert result.output.count("runcoach sync tags --since") == 1
+    assert fake.listed == []
     assert "Traceback" not in result.output
     assert isinstance(result.exception, SystemExit)
     assert "PUT /race-tags" not in api.requests
