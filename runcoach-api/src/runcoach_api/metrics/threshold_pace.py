@@ -54,8 +54,11 @@ import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from statistics import NormalDist
 from types import MappingProxyType
 from typing import Any
+
+from runcoach_api.metrics import finite as _finite_screen
 
 TYPICAL_ERROR = 0.025
 """sqrt(R): one race's typical error in log speed (2.5 % of speed; user ruling 2026-10-14)."""
@@ -65,7 +68,10 @@ DOUBLING_DAYS = 42
 Q_PER_DAY = 3 * R / DOUBLING_DAYS
 COVERAGE = 0.80
 Z = 1.2815515655446004
-"""The 0.9 quantile of the standard normal: the half-width of the 80 % interval in units of sqrt(P)."""
+"""The 0.9 quantile of the standard normal: the half-width of the 80 % interval in units of sqrt(P).
+Kept as the literal spec/04 section 4.3.4 states (``inv_cdf(0.9)`` differs in the last digit); the
+assert below refuses to load the module if it ever drifts from ``COVERAGE``."""
+assert abs(Z - NormalDist().inv_cdf(0.5 + COVERAGE / 2)) < 1e-12, (Z, COVERAGE)
 HIGH_MAX_ERROR = TYPICAL_ERROR
 MEDIUM_MAX_ERROR = 2 * TYPICAL_ERROR
 SHORT_RACE_S = 1800
@@ -144,20 +150,20 @@ def _aware(value: Any, what: str) -> datetime:
 
 
 def _real(value: Any) -> float | None:
-    """``value`` as a finite float, or ``None`` for a bool, a string, ``None``, a non-finite number
-    or an int beyond float range (``json.loads`` keeps one as an int)."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    try:
-        number = float(value)
-    except OverflowError:
-        return None
-    return number if math.isfinite(number) else None
+    """``metrics.finite.finite``: a real, finite number as a float, else ``None``."""
+    return _finite_screen.finite(value)
 
 
-def _duration(row: Mapping[str, Any]) -> float | None:
+def duration_of(row: Mapping[str, Any]) -> float | None:
+    """The duration ``d`` of reference section 2 row 2: ``timer_time_s``, or the summary's
+    ``duration_s`` when ``timer_time_s`` is ``None``, through the finite screen."""
     timer = row.get("timer_time_s")
     return _real(row.get("duration_s") if timer is None else timer)
+
+
+def in_band(duration: float | None) -> bool:
+    """Whether ``duration`` lies in the threshold band, ``BAND_MIN_S <= d <= BAND_MAX_S``."""
+    return duration is not None and BAND_MIN_S <= duration <= BAND_MAX_S
 
 
 def _flags(row: Mapping[str, Any]) -> frozenset[str]:
@@ -220,8 +226,8 @@ def estimate(rows: Iterable[Mapping[str, Any]], as_of: datetime) -> ThresholdPac
     used: list[tuple[datetime, str, Mapping[str, Any], float, float]] = []
     excluded: list[Exclusion] = []
     for start, session_id, row in candidates:
-        duration = _duration(row)
-        if duration is None or not BAND_MIN_S <= duration <= BAND_MAX_S:
+        duration = duration_of(row)
+        if duration is None or not in_band(duration):
             excluded.append(Exclusion(session_id, start, OUTSIDE_THRESHOLD_BAND))
             continue
         flags = _flags(row)

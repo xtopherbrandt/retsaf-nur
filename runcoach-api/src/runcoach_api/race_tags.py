@@ -30,10 +30,10 @@ The rule, as the feature states it:
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from runcoach_api.metrics import finite as _finite_screen
 from runcoach_api.metrics.session_load import DECLARED_CAPTURE_TAGS
 
 RACE_TAG = "race"
@@ -76,15 +76,8 @@ def normalise_start_time(value: str) -> str:
 
 
 def _finite(value: object) -> float | None:
-    """``value`` as a float when it is a real, finite number (a bool is not one), else ``None``.
-    An int beyond float range (``json.loads`` keeps one as an int) is not one either."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    try:
-        number = float(value)
-    except OverflowError:
-        return None
-    return number if math.isfinite(number) else None
+    """``metrics.finite.finite``: a real, finite number as a float, else ``None``."""
+    return _finite_screen.finite(value)
 
 
 def _within(stored: float, item: float) -> bool:

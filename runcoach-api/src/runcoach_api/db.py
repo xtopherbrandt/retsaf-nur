@@ -1852,8 +1852,8 @@ def read_threshold_race_rows(conn: sqlite3.Connection) -> tuple[list[dict], list
                     unreadable.append({**_place(row), "reason": SUMMARY_UNREADABLE})
                     continue
                 row["duration_s"] = (summary or {}).get("duration_s")
-            duration = _threshold_pace._duration(row)
-            if duration is None or not _threshold_pace.BAND_MIN_S <= duration <= _threshold_pace.BAND_MAX_S:
+            duration = _threshold_pace.duration_of(row)
+            if not _threshold_pace.in_band(duration):
                 rows.append(row)  # the estimator excludes it, outside_threshold_band
                 continue
             flags = _decoded(r["quality_flags"])

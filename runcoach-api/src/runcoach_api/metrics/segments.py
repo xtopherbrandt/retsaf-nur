@@ -4,11 +4,11 @@ Every F013 figure (the gradient window, NGP, the descriptors) is built on the
 three things defined here, in this order:
 
 1. **The finite screen** (``screen``), applied once at the module boundary. A
-   value that is ``None``, ``nan``, ``inf`` or ``-inf``, or whose key the row
-   does not carry, is *absent* (``None``) for every later rule; ``heart_rate
-   <= 0`` is absent too. The screen is written here rather than borrowed from
-   ``hrv_classification._numeric``, whose ratified HRV semantics belong to its
-   own call sites. The one record ``screen`` *removes* rather than screens is a
+   value that is ``None``, ``nan``, ``inf``, ``-inf`` or an int beyond float
+   range, or whose key the row does not carry, is *absent* (``None``) for every
+   later rule; ``heart_rate <= 0`` is absent too. The screen is
+   ``metrics.finite.finite`` rather than ``hrv_classification._numeric``, whose
+   ratified HRV semantics belong to its own call sites. The one record ``screen`` *removes* rather than screens is a
    row whose ``t`` is missing or non-finite: a record with no place on the time
    axis cannot start or end a segment. Upload cannot deliver a non-finite value
    (SQLite stores ``nan`` as NULL; FIT altitude and HR are integer-encoded), so
@@ -47,10 +47,11 @@ equal ``t`` keep their input order; nothing here sorts.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple, Self
+
+from runcoach_api.metrics import finite as _finite_screen
 
 # spec/02 section 2.4.1's resampling gap bound (``quality_gates._MAX_INTERPOLATION_GAP_S``),
 # restated rather than imported: a segment longer than this is a break, not a stride.
@@ -132,11 +133,9 @@ def _get(row: Mapping[str, object], key: str) -> object:
 
 
 def _finite(raw: object) -> float | None:
-    """The finite screen for one numeric field: a finite int or float, else absent."""
-    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        return None
-    value = float(raw)
-    return value if math.isfinite(value) else None
+    """The finite screen for one numeric field: ``metrics.finite.finite`` (an int beyond float
+    range reads as absent, like any other non-finite value)."""
+    return _finite_screen.finite(raw)
 
 
 def _heart_rate(raw: object) -> float | None:
