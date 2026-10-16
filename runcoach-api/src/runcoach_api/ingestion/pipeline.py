@@ -73,6 +73,9 @@ def ingest_fit_bytes(
     """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
+    # F025: the file's laps and workout steps, measured from the instant
+    # record t is; db.persist stores them in the session's transaction.
+    laps = mapping.to_laps(messages)
     # F016: the profile settings the file carried ride on the session row,
     # so db.persist writes them in the same transaction as the session.
     for field_name, value in profile_values.extract(messages).items():
@@ -147,7 +150,7 @@ def ingest_fit_bytes(
         # violation is translated into DuplicateSessionError (see
         # code-review Fix 2) -- no local except clause here duplicating
         # that translation (see code-review Fix 6).
-        db.persist(conn, session, records, rr_intervals, quarantine_values, **persist_kwargs)
+        db.persist(conn, session, records, rr_intervals, quarantine_values, laps=laps, **persist_kwargs)
     finally:
         conn.close()
 

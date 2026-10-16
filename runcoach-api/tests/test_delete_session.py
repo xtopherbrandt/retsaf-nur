@@ -220,7 +220,7 @@ def test_child_table_enumeration_is_derived_from_the_schema_ddl() -> None:
         for table, columns in db._expected_schema().items()
         if table != "sessions" and "session_id" in columns
     }
-    assert expected == {"records", "rr_intervals", "quarantine_sidecar", "session_loads"}
+    assert expected == {"records", "rr_intervals", "quarantine_sidecar", "session_loads", "laps", "workout_steps"}
     assert set(db._child_tables()) == expected
 
 
@@ -458,6 +458,8 @@ def test_concurrent_deletes_of_the_same_session_yield_exactly_one_204() -> None:
         "rr_intervals": 0,
         "quarantine_sidecar": 0,
         "session_loads": 0,
+        "laps": 0,
+        "workout_steps": 0,
     }
 
 

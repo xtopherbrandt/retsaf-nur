@@ -54,7 +54,7 @@ def test_rr_reconstruction_runs_before_quality_gates_apply(monkeypatch) -> None:
     def fake_extract(messages):
         return {}
 
-    def fake_persist(conn, session, records, rr_intervals, quarantine_values):
+    def fake_persist(conn, session, records, rr_intervals, quarantine_values, *, laps=None):
         return None
 
     monkeypatch.setattr(pipeline.fit_parser, "decode", fake_decode)

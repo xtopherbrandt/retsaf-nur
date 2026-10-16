@@ -1104,6 +1104,9 @@ _F019_COLUMNS = {"name": "TEXT"}
 # F020's one session column: the archive import that stored the session.
 _F020_COLUMNS = {"import_id": "TEXT"}
 
+# F025's one session column: the instant the session's laps were last read from a file.
+_F025_COLUMNS = {"laps_read_at": "TEXT"}
+
 
 def _pre_f016_database_with_one_row(conn) -> None:
     conn.executescript(_PRE_F016_SESSIONS_DDL)
@@ -1129,6 +1132,7 @@ def test_the_pre_f016_ddl_is_the_current_ddl_minus_the_f016_columns():
         **_F017_COLUMNS,
         **_F019_COLUMNS,
         **_F020_COLUMNS,
+        **_F025_COLUMNS,
     }
     assert set(before) <= set(after)
 

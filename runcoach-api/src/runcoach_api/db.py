@@ -43,7 +43,7 @@ from zoneinfo import ZoneInfo
 from runcoach_api import config as config_module
 from runcoach_api import profile as profile_module
 from runcoach_api.ingestion.exceptions import DuplicateSessionError
-from runcoach_api.models import Record, RRInterval, Session
+from runcoach_api.models import Record, RRInterval, Session, SessionLap, SessionWorkoutStep
 
 DB_FILENAME = "runcoach.db"
 
@@ -175,6 +175,12 @@ _SCHEMA_DDL = """
       -- NULL for a POST /sessions upload. Added 2026-10-11; _reconcile_columns
       -- lands it and nothing backfills it. Served by GET /sessions/{id}.
       import_id TEXT,
+      -- F025: the UTC instant the session's laps and workout steps were last
+      -- read from a file (replace_session_laps, through the laps_read_now
+      -- seam). NULL means never read, not "no laps": a file with no lap and
+      -- no step message sets it with zero rows. Added 2026-10-16;
+      -- _reconcile_columns lands it and nothing backfills it.
+      laps_read_at TEXT,
       UNIQUE (source_device, start_time)
     );
     CREATE TABLE IF NOT EXISTS records (
@@ -260,6 +266,30 @@ _SCHEMA_DDL = """
       effective_from TEXT NOT NULL, set_at TEXT NOT NULL,
       UNIQUE (field, effective_from)
     );
+    CREATE TABLE IF NOT EXISTS laps (
+      -- F025: one row per FIT lap message of the session, as
+      -- mapping.to_laps maps it (F025 reference section 2). lap_index counts
+      -- stored laps from 0 in file order; start_t and end_t are signed
+      -- seconds from the instant record t is measured from. Written only by
+      -- replace_session_laps; the session_id column makes _child_tables list
+      -- it, so delete_session sweeps it.
+      session_id TEXT NOT NULL REFERENCES sessions(session_id),
+      lap_index INTEGER NOT NULL, start_t REAL, end_t REAL, timer_s REAL,
+      elapsed_s REAL, distance_m REAL, intensity TEXT, wkt_step_index INTEGER,
+      lap_trigger TEXT
+    );
+    CREATE TABLE IF NOT EXISTS workout_steps (
+      -- F025: one row per FIT workout_step message, fitdecode's resolved
+      -- values stored as written (their meaning depends on duration_type and
+      -- target_type; consumers decode by type). seq is the file order;
+      -- step_index is the step's message_index, NULL when invalid.
+      session_id TEXT NOT NULL REFERENCES sessions(session_id),
+      seq INTEGER NOT NULL, step_index INTEGER, workout_name TEXT,
+      step_name TEXT, intensity TEXT, duration_type TEXT, duration_value REAL,
+      target_type TEXT, target_value REAL, target_low REAL, target_high REAL
+    );
+    CREATE INDEX IF NOT EXISTS laps_session_id ON laps (session_id, lap_index);
+    CREATE INDEX IF NOT EXISTS workout_steps_session_id ON workout_steps (session_id, seq);
     -- F019: the list reads one session's (t, distance) in t order for every
     -- row of a page; without this each read scanned the whole records table.
     CREATE INDEX IF NOT EXISTS records_session_id_t ON records (session_id, t);
@@ -529,6 +559,7 @@ def persist(
     *,
     after_write: Callable[[sqlite3.Connection], None] | None = None,
     zone: ZoneInfo | None = None,
+    laps: tuple[list[SessionLap], list[SessionWorkoutStep]] | None = None,
 ) -> None:
     """Write one ingested session's rows in a single transaction.
 
@@ -562,6 +593,14 @@ def persist(
     everything above. ``zone``, when given, is handed to
     ``_save_session_load`` as a keyword; when not, that call is made exactly
     as without it.
+
+    ``laps``, when given, is the ``(laps, steps)`` pair ``mapping.to_laps``
+    returned for the file (F025): ``replace_session_laps`` stores them and
+    sets ``laps_read_at`` from ``laps_read_now()`` in the same transaction,
+    before ``after_write``, so every upload path (``POST /sessions``, an F020
+    archive import, an F022 sync) stores laps the same way. Two empty lists
+    still set ``laps_read_at``. When not given, no lap row is written and
+    ``laps_read_at`` stays NULL.
     """
     load_kwargs = {} if zone is None else {"zone": zone}
     try:
@@ -572,6 +611,9 @@ def persist(
             _insert_quarantine_sidecar(conn, session.session_id, quarantine_values)
             resolved = _sync_anchor_versions(conn)
             _save_session_load(conn, session.session_id, resolved=resolved, **load_kwargs)
+            if laps is not None:
+                session_laps, session_steps = laps
+                replace_session_laps(conn, session.session_id, session_laps, session_steps, laps_read_now())
             if after_write is not None:
                 after_write(conn)
     except sqlite3.IntegrityError as exc:
@@ -589,6 +631,61 @@ def persist(
             # IntegrityError propagate instead.
             raise
         raise DuplicateSessionError(row[0]) from exc
+
+
+def laps_read_now() -> str:
+    """The ``laps_read_at`` clock (F025 reference section 2): now in UTC, ``isoformat()``.
+
+    The one clock read for the column, used by ingest (``persist``) and the attach endpoint, so a
+    test fixes the stored instant by replacing this function on the module.
+    """
+    return datetime.now(UTC).isoformat()
+
+
+def replace_session_laps(
+    conn: sqlite3.Connection,
+    session_id: str,
+    laps: Sequence[SessionLap],
+    steps: Sequence[SessionWorkoutStep],
+    read_at: str,
+) -> None:
+    """Replace one session's ``laps`` and ``workout_steps`` rows and set its ``laps_read_at``.
+
+    Deletes both tables' rows for ``session_id``, inserts ``laps`` and ``steps`` in the order given
+    (``workout_steps.seq`` numbers the steps from 0), then sets ``sessions.laps_read_at`` to
+    ``read_at``. Writes no other table and no other session column. Opens no transaction of its
+    own: the caller's (``persist``'s ``with conn:``) holds the write, so a fault rolls it back with
+    the rest. Repeating a call with the same arguments leaves the same rows.
+    """
+    conn.execute("DELETE FROM laps WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM workout_steps WHERE session_id = ?", (session_id,))
+    conn.executemany(
+        """
+        INSERT INTO laps (
+            session_id, lap_index, start_t, end_t, timer_s, elapsed_s,
+            distance_m, intensity, wkt_step_index, lap_trigger
+        ) VALUES (
+            :session_id, :lap_index, :start_t, :end_t, :timer_s, :elapsed_s,
+            :distance_m, :intensity, :wkt_step_index, :lap_trigger
+        )
+        """,
+        [{"session_id": session_id, **dataclasses.asdict(lap)} for lap in laps],
+    )
+    conn.executemany(
+        """
+        INSERT INTO workout_steps (
+            session_id, seq, step_index, workout_name, step_name, intensity,
+            duration_type, duration_value, target_type, target_value,
+            target_low, target_high
+        ) VALUES (
+            :session_id, :seq, :step_index, :workout_name, :step_name, :intensity,
+            :duration_type, :duration_value, :target_type, :target_value,
+            :target_low, :target_high
+        )
+        """,
+        [{"session_id": session_id, "seq": seq, **dataclasses.asdict(step)} for seq, step in enumerate(steps)],
+    )
+    conn.execute("UPDATE sessions SET laps_read_at = ? WHERE session_id = ?", (read_at, session_id))
 
 
 def _child_tables() -> list[str]:
