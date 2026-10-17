@@ -240,6 +240,8 @@ def test_sample_run_windows_exclude_the_trailing_lap():
     block = TP.active_block(laps, steps, stream)
     print("sample_run:", block)
     assert block.unavailable is None
+    # Lap 9 runs [2703, 2842): no window of the block may reach into it.
+    assert not any(start < 2842 and 2703 < end for start, end in block.windows), block.windows
     # Written by hand from the decoded laps: lap 7 runs [2135, 2400).
     assert block.windows[-1] == (2135.0, 2400.0)
     assert len(block.windows) == 7
@@ -247,7 +249,6 @@ def test_sample_run_windows_exclude_the_trailing_lap():
     assert block.active_time_s == pytest.approx(2100.0, abs=1e-9)
     hand_windows = [(300, 678), (679, 1034), (1035, 1335), (1336, 1500), (1501, 1823), (1824, 2134), (2135, 2400)]
     inside = [row for row in stream if any(a <= row["t_start"] < b for a, b in hand_windows)]
-    assert not any(2703 <= row["t_start"] < 2842 for row in inside)
     T = sum(row["dt"] for row in inside)
     gap_m = sum(row["contributed_m"] * row["g"] for row in inside)
     assert block.gap_pace_s_per_km == pytest.approx(1000.0 * T / gap_m, rel=1e-12)
