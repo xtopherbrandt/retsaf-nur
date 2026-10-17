@@ -858,13 +858,13 @@ paths:
       operationId: getState
       summary: Physiological state model + gap-to-goal, each with confidence
       x-readiness: implemented
-      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15)"
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026"
       x-story: [view-state]
       description: >
-        Computed on read from the tagged races; nothing is stored or written. Only
-        `functional_threshold_pace` is served (F024): one determinant, with its 80 % interval,
-        its confidence and the races it was computed from. `readiness` and `gap_to_goal` are
-        null; the other determinants are absent.
+        Computed on read from the tagged races and threshold workouts; nothing is stored or
+        written. Only `functional_threshold_pace` is served (F024, F026): one determinant, with
+        its 80 % interval, its confidence and the races and threshold workouts it was computed
+        from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
       parameters:
         - name: as_of
           in: query
