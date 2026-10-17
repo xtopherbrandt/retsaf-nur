@@ -19,6 +19,7 @@ The ids and start instants a 409 must name are the ones ``POST /sessions`` store
 |---|---|
 | unknown session id, any bytes (non-FIT included) | 404, before the file is decoded |
 | non-FIT bytes, a truncated file, a file with no session or sport message | ``POST /sessions``'s 400 |
+| a file over a decode ceiling (``fit_parser.MAX_RECORD_MESSAGES``) | ``POST /sessions``'s 413 |
 | a file over ``MAX_UPLOAD_BYTES`` | ``POST /sessions``'s 413 |
 | another run's file | 409 naming both ids and both start instants |
 | the same file with another ``garmin_product`` (another device, same start) | 409, as above |
@@ -39,6 +40,7 @@ from fastapi.testclient import TestClient
 from pydantic.json_schema import models_json_schema
 from runcoach_api import db
 from runcoach_api import main as main_module
+from runcoach_api.ingestion import fit_parser
 from runcoach_api.main import app
 from runcoach_api.schemas import SessionLap, SessionLapsAttached, SessionWorkoutStep
 
@@ -337,6 +339,15 @@ def test_a_truncated_or_non_fit_file_gets_the_post_status(monkeypatch):
             assert put.status_code == post.status_code, (form, post.text, put.text)
             assert put.json()["detail"] == post.json()["detail"], form
             assert _snapshot() == before, form
+        # A decode ceiling is POST /sessions's too: a file over it is a 413 on both.
+        with monkeypatch.context() as m:
+            m.setattr(fit_parser, "MAX_RECORD_MESSAGES", 10)
+            post = client.post("/sessions", files={"file": ("upload.fit", raw)})
+            put = _put(client, stored["session_id"], raw)
+        seen["decode_ceiling"] = (post.status_code, put.status_code)
+        assert put.status_code == post.status_code, (post.text, put.text)
+        assert put.json()["detail"] == post.json()["detail"]
+        assert _snapshot() == before
         # The size limit is POST /sessions's, read at request time.
         monkeypatch.setattr(main_module, "MAX_UPLOAD_BYTES", len(raw) - 1)
         post = client.post("/sessions", files={"file": ("upload.fit", raw)})
@@ -349,6 +360,7 @@ def test_a_truncated_or_non_fit_file_gets_the_post_status(monkeypatch):
         "non_fit": (400, 400),
         "truncated": (400, 400),
         "no_session_or_sport": (400, 400),
+        "decode_ceiling": (413, 413),
         "oversize": (413, 413),
     }
 
