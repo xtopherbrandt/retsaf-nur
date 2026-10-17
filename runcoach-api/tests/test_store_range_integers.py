@@ -21,19 +21,23 @@ uploads the file through ``POST /sessions``:
 
 The bound itself is pinned on the serial: 2**63 - 1 is stored as written and 2**63 is null.
 ``garmin_activity_class`` is an enum, which ``widen_to_uint64`` refuses, so it is pinned at the
-``profile_values.extract`` seam with a stand-in message.
+``profile_values.extract`` seam with a stand-in message. The same stand-in pins, at the
+``mapping._build_record`` seam, that cadence is screened after it is doubled and that the record
+fields ``widen_to_uint64`` cannot reach (``temperature`` and the scaled fields) are screened.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
-from runcoach_api.ingestion import profile_values
+from runcoach_api.ingestion import mapping, profile_values
 from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -144,24 +148,35 @@ def test_a_profile_integer_beyond_the_store_range_is_stored_null(
     assert records == base_records > 0
 
 
-RMSSD_QUERY = "SELECT rmssd_precomputed, resting_rmssd_ms, hrv_source_tier FROM sessions WHERE session_id = ?"
+RMSSD_QUERY = (
+    "SELECT rmssd_precomputed, resting_rmssd_ms, hrv_source_tier, quality_flags FROM sessions WHERE session_id = ?"
+)
+READING_UNAVAILABLE = "hrv_reading_unavailable"
 
 
 def test_a_device_rmssd_beyond_the_store_range_is_stored_null() -> None:
-    """A Health Snapshot's ``session.rmssd_hrv`` out of range reads as no usable device value."""
+    """A Health Snapshot's ``session.rmssd_hrv`` out of range reads as no usable device value: the
+    snapshot yields no reading, so no tier is set and ``hrv_reading_unavailable`` is raised."""
     raw = _bytes("strap_health_snapshot_hrv")
     patched = _widened(raw, SESSION, RMSSD_HRV, (0,), BEYOND)
     with TestClient(app) as client:
         rows, records = _upload_and_read(client, patched, RMSSD_QUERY)
         base_rows, base_records = _upload_and_read(client, raw, RMSSD_QUERY)
 
+    base_flags = json.loads(base_rows[0].pop("quality_flags") or "[]")
+    flags = json.loads(rows[0].pop("quality_flags") or "[]")
     assert base_rows[0]["rmssd_precomputed"] is not None
-    assert rows[0]["rmssd_precomputed"] is None
+    assert base_rows[0]["hrv_source_tier"] == "health_snapshot"
+    assert READING_UNAVAILABLE not in base_flags
+    assert rows == [{"rmssd_precomputed": None, "resting_rmssd_ms": None, "hrv_source_tier": None}]
+    assert READING_UNAVAILABLE in flags
     assert records == base_records > 0
 
 
 class _Msg:
-    """A stand-in decoded message: ``name`` and raw values by field name."""
+    """A stand-in decoded message: ``name``, raw values by field name and no developer fields."""
+
+    fields: tuple = ()
 
     def __init__(self, name: str, **raw: object) -> None:
         self.name = name
@@ -175,3 +190,41 @@ class _Msg:
 def test_an_activity_class_beyond_the_store_range_is_absent(raw: int, stored: int | None) -> None:
     values = profile_values.extract([_Msg("user_profile", activity_class=raw)])
     assert values["garmin_activity_class"] == stored
+
+
+START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _record(**raw: object):
+    record, _ = mapping._build_record(_Msg("record", timestamp=START, **raw), START)
+    return record
+
+
+@pytest.mark.parametrize(("raw", "stored"), [(2**62 - 1, 2**63 - 2), (2**62, None), (90, 180)])
+def test_cadence_is_screened_after_it_is_doubled(raw: int, stored: int | None) -> None:
+    """A raw cadence in range can double past it, so the screen runs on the doubled value. With no
+    ``fractional_cadence`` the doubled value stays an int (the fixtures decode it as 0.0, a float,
+    which the store holds as REAL, so only this seam reaches the int case)."""
+    assert _record(cadence=raw).cadence == stored
+
+
+@pytest.mark.parametrize(
+    ("field", "attr"),
+    [
+        ("temperature", "temperature"),
+        ("distance", "distance"),
+        ("speed", "speed"),
+        ("enhanced_speed", "speed"),
+        ("altitude", "altitude"),
+        ("enhanced_altitude", "altitude"),
+        ("vertical_oscillation", "vertical_oscillation"),
+        ("stance_time", "ground_contact_time"),
+        ("stance_time_percent", "gct_balance"),
+        ("step_length", "step_length"),
+    ],
+)
+def test_a_record_field_widen_to_uint64_cannot_reach_is_screened(field: str, attr: str) -> None:
+    """``temperature`` is sint8 and the others are scaled (decoded as floats), so no upload-path
+    case reaches their screen; a stand-in record message does."""
+    assert getattr(_record(**{field: 2**63 - 1}), attr) == 2**63 - 1
+    assert getattr(_record(**{field: 2**63}), attr) is None
