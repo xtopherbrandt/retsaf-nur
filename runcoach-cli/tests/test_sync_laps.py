@@ -687,17 +687,40 @@ def test_candidates_are_sent_in_batches_oldest_first(
     assert _lines(result.output)[1:] == [_counts(not_stored=5)]
 
 
+def _connect_error() -> httpx.Response:
+    raise httpx.ConnectError("connection refused")
+
+
+def _read_timeout() -> httpx.Response:
+    raise httpx.ReadTimeout("timed out")
+
+
+# Each stop inside the candidates step, as the second batch answers it, and the words it prints.
+LATER_BATCH_STOPS = {
+    "503": (lambda: httpx.Response(503, json={"detail": "the store is busy"}), "API returned 503: the store is busy"),
+    "unreachable": (_connect_error, "could not reach API at http://example.test"),
+    "timeout": (_read_timeout, "did not answer within"),
+    "wrong-item-count": (
+        lambda: httpx.Response(200, json={"items": []}),
+        "the API's answer to the laps candidates could not be understood",
+    ),
+}
+
+
+@pytest.mark.parametrize("stop", sorted(LATER_BATCH_STOPS))
 def test_a_stop_on_a_later_candidates_batch_names_the_first_day_sent(
-    env, fake_garmin, monkeypatch: pytest.MonkeyPatch
+    env, fake_garmin, monkeypatch: pytest.MonkeyPatch, stop: str
 ) -> None:
     """Every batch is sent before any download, so a stop on the second batch has downloaded
-    nothing from the first: the retry must start at the first run sent, not at its own batch."""
+    nothing from the first: whichever way that batch stops, the retry starts at the first run
+    sent, not at its own batch."""
     monkeypatch.setattr(sync_laps, "CANDIDATES_BATCH", 2)
     fake = fake_garmin([_summary(100 + d, f"2026-10-0{d} 07:00:00") for d in (2, 3, 4, 5, 6)])
+    answer, words = LATER_BATCH_STOPS[stop]
 
     def reply(items: list[dict[str, Any]]) -> httpx.Response:
         if items[0]["connect_activity_id"] != 102:
-            return httpx.Response(503, json={"detail": "the store is busy"})
+            return answer()
         answers = [
             {
                 "connect_activity_id": item["connect_activity_id"],
@@ -715,7 +738,8 @@ def test_a_stop_on_a_later_candidates_batch_names_the_first_day_sent(
 
     assert result.exit_code == 1, result.output
     assert len(api.candidate_batches) == 2
-    assert "API returned 503: the store is busy: run `runcoach sync laps --since 2026-10-02`" in result.output
+    assert words in result.output
+    assert "run `runcoach sync laps --since 2026-10-02`" in result.output
     assert "--since 2026-10-04" not in result.output
     assert api.lap_puts == []
     assert fake.downloads == []
