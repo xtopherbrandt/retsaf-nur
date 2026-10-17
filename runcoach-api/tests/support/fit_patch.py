@@ -16,6 +16,11 @@ written into ``tests/fixtures/``.
 - ``set_field_at(data, global_num, index, field_num, value)`` does the same
   to the ``index``-th (0-based, file order) data message of ``global_num``,
   so a file's third ``workout_step`` can be patched and the others left.
+- ``widen_to_uint64(data, global_num, field_num)`` redeclares one unsigned
+  field of ``global_num`` as an 8-byte ``uint64`` in every definition that
+  carries it, zero-extending its value in every data message, so
+  ``set_field_at`` can then write 2**63 or more into it, as a non-conforming
+  writer can.
 - ``duplicate_message(data, global_num, index)`` inserts a byte copy of the
   ``index``-th data message of ``global_num`` right after it; the copy keeps
   its record header, whose local definition is still the current one there.
@@ -270,9 +275,9 @@ def _pack_uint(
     data: bytes, record: Record, offset: int, field: FieldDef, global_num: int, field_num: int, value: int
 ) -> bytes:
     """``data`` with the unsigned raw ``value`` written at ``offset`` as ``field`` of ``record``."""
-    formats = {1: "B", 2: "H", 4: "I"}
+    formats = {1: "B", 2: "H", 4: "I", 8: "Q"}
     if field.size not in formats:
-        raise FitPatchError(f"field {global_num}/{field_num} has size {field.size}, not 1, 2 or 4")
+        raise FitPatchError(f"field {global_num}/{field_num} has size {field.size}, not 1, 2, 4 or 8")
     if not 0 <= value < 1 << (8 * field.size):
         raise FitPatchError(
             f"value {value} does not fit field {global_num}/{field_num} of {field.size} bytes"
@@ -568,3 +573,60 @@ def shift_timestamps(data: bytes, seconds: int) -> bytes:
                     struct.pack_into(fmt, buf, offset, moved)
             offset += field.size
     return finalize(buf)
+
+
+UINT64_BASE_TYPE = 0x8F
+
+
+def widen_to_uint64(data: bytes, global_num: int, field_num: int) -> bytes:
+    """Redeclare ``field_num`` of ``global_num`` as an 8-byte ``uint64``, keeping every value.
+
+    Every definition of ``global_num`` that carries the field is rewritten with
+    that field 8 bytes long and of base type ``uint64``, and every data message
+    it decodes has the field's raw value zero-extended (the old type's invalid
+    value becomes the ``uint64`` invalid value, so an invalid field stays
+    invalid). A non-conforming writer can declare a field this way; the FIT
+    profile's own type for it is ignored by the decoder's base-type read.
+    ``set_field_at`` then writes a value of 2**63 or more into the widened field.
+    Refused: a file with no definition of ``global_num`` carrying the field, a
+    field that is not an unsigned 1-, 2- or 4-byte integer, and a definition
+    with developer fields.
+    """
+    formats = {1: "B", 2: "H", 4: "I"}
+    out = bytearray(data[: data[0]])
+    widened = False
+    for r in walk(data):
+        d = r.definition
+        raw = data[r.offset : r.offset + r.length]
+        target = next((f for f in d.fields if f.num == field_num), None) if d.global_num == global_num else None
+        if target is None:
+            out += raw
+            continue
+        if target.size not in formats or BASE_TYPES.get(target.base_type) is None or target.base_type in (
+            0x01,
+            0x83,
+            0x85,
+        ):
+            raise FitPatchError(
+                f"field {global_num}/{field_num} is base type {target.base_type:#x} of {target.size} bytes"
+            )
+        if d.dev_fields:
+            raise FitPatchError(f"definition of {global_num} at offset {r.offset} has developer fields")
+        order = ">" if d.big_endian else "<"
+        if r.is_definition:
+            widened = True
+            head = bytearray(raw[:6])
+            for f in d.fields:
+                head += bytes((f.num, 8, UINT64_BASE_TYPE)) if f.num == field_num else bytes((f.num, f.size, f.base_type))
+            out += head
+            continue
+        offset, field = _field_offset(r, field_num)
+        value = struct.unpack_from(order + formats[field.size], data, offset)[0]
+        if value == _INVALID_INT.get(field.base_type):
+            value = _INVALID_INT[UINT64_BASE_TYPE]
+        start = offset - r.offset
+        out += raw[:start] + struct.pack(order + "Q", value) + raw[start + field.size :]
+    if not widened:
+        raise FitPatchError(f"no definition of {global_num} carries field {field_num}")
+    out += b"\x00\x00"
+    return finalize(out)

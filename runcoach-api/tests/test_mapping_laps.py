@@ -249,6 +249,49 @@ def test_seam_nulls_a_non_number_in_a_step_value(field, bad):
     assert getattr(steps[0], attr) is None
 
 
+SQLITE_MIN, SQLITE_MAX = -(2**63), 2**63 - 1
+
+
+@pytest.mark.parametrize("bad", [SQLITE_MAX + 1, 2**64 - 1, SQLITE_MIN - 1])
+@pytest.mark.parametrize(
+    ("field", "attr"),
+    [
+        ("message_index", "step_index"),
+        ("duration_value", "duration_value"),
+        ("target_value", "target_value"),
+        ("custom_target_value_low", "target_low"),
+        ("custom_target_value_high", "target_high"),
+    ],
+)
+def test_seam_nulls_a_step_integer_beyond_the_store_range(field, attr, bad):
+    """A field a writer declared ``uint64`` can carry 2**63 or more, which SQLite cannot store."""
+    values = {"message_index": 0, "duration_value": 300, "target_value": 3, field: bad}
+    _, steps = mapping.to_laps([_Msg("workout_step", **values)])
+    assert getattr(steps[0], attr) is None
+    # The other values are untouched.
+    kept = {"step_index": 0, "duration_value": 300, "target_value": 3}
+    assert all(getattr(steps[0], other) == value for other, value in kept.items() if other != attr)
+
+
+@pytest.mark.parametrize("bad", [SQLITE_MAX + 1, 2**64 - 1])
+def test_seam_nulls_a_lap_step_index_beyond_the_store_range(bad):
+    lap = _seam_lap(wkt_step_index=bad)
+    assert lap.wkt_step_index is None
+    assert lap.timer_s == 300.0
+
+
+def test_seam_keeps_integers_at_the_store_range_bounds():
+    assert _seam_lap(wkt_step_index=SQLITE_MAX).wkt_step_index == SQLITE_MAX
+    _, steps = mapping.to_laps(
+        [_Msg("workout_step", message_index=SQLITE_MAX, target_value=SQLITE_MIN, duration_value=SQLITE_MAX)]
+    )
+    assert (steps[0].step_index, steps[0].target_value, steps[0].duration_value) == (
+        SQLITE_MAX,
+        SQLITE_MIN,
+        SQLITE_MAX,
+    )
+
+
 @pytest.mark.parametrize("bad", [True, "0", 1.5, -1])
 def test_seam_nulls_a_step_index_that_is_not_a_message_index(bad):
     _, steps = mapping.to_laps([_Msg("workout_step", message_index=bad)])

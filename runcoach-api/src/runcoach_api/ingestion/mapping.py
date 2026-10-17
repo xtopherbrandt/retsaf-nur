@@ -716,14 +716,22 @@ def _measure(value: object) -> float | None:
     return number if number is not None and number >= 0 else None
 
 
+# The range of a SQLite INTEGER: a field a writer declared ``uint64`` can carry a value beyond it,
+# which the store cannot bind, so such a value is an invalid field and is stored as null.
+_STORE_INT_MIN, _STORE_INT_MAX = -(2**63), 2**63 - 1
+
+
 def _number(value: object) -> int | float | None:
-    """A numeric field as fitdecode returned it, or None for a bool, a string or a non-finite number."""
+    """A numeric field as fitdecode returned it, or None for a bool, a string, a non-finite number
+    or an int outside the store's integer range."""
+    if isinstance(value, int) and not _STORE_INT_MIN <= value <= _STORE_INT_MAX:
+        return None
     return value if finite(value) is not None else None  # type: ignore[return-value]
 
 
 def _index(value: object) -> int | None:
-    """A ``message_index`` value: a non-negative int, else None."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    """A ``message_index`` value: a non-negative int within the store's integer range, else None."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= _STORE_INT_MAX:
         return None
     return value
 

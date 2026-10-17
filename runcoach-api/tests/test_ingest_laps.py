@@ -331,6 +331,44 @@ def test_patched_lap_fields_store_as_section_2_says(form):
         raise AssertionError(form)
 
 
+LAP_WKT_STEP_INDEX, STEP_MESSAGE_INDEX, STEP_TARGET_VALUE = 71, 254, 4
+
+
+def test_an_integer_beyond_the_store_range_is_stored_null_and_the_session_kept():
+    """A writer that declares a lap or step field ``uint64`` can put 2**63 in it, which SQLite cannot
+    store: the field is stored null and the upload still stores the session, its laps and steps."""
+    raw = _bytes("sample_run")
+    for global_num, index, field in (
+        (LAP, 2, LAP_WKT_STEP_INDEX),
+        (WORKOUT_STEP, 1, STEP_MESSAGE_INDEX),
+        (WORKOUT_STEP, 2, STEP_TARGET_VALUE),
+    ):
+        raw = fit_patch.set_field_at(fit_patch.widen_to_uint64(raw, global_num, field), global_num, index, field, 2**63)
+    oracle = lap_oracle.read_laps_and_steps(raw)
+    assert oracle.laps[2].wkt_step_index == 2**63  # the decoder hands the value on as written
+    with TestClient(app) as client:
+        stored = _upload_and_read(client, raw)
+        base = _upload_and_read(client, _bytes("sample_run"))
+
+    assert stored["records"] == base["records"] > 0
+    assert len(stored["laps"]) == len(base["laps"]) == 10
+    assert stored["laps"][2]["wkt_step_index"] is None
+    assert stored["steps"][1]["step_index"] is None
+    assert stored["steps"][2]["target_value"] is None
+    unchanged = {(2, "wkt_step_index")}
+    assert all(
+        lap[key] == base["laps"][i][key] for i, lap in enumerate(stored["laps"]) for key in lap if (i, key) not in unchanged
+    )
+    changed = {(1, "step_index"), (2, "target_value")}
+    assert all(
+        step[key] == base["steps"][i][key]
+        for i, step in enumerate(stored["steps"])
+        for key in step
+        if (i, key) not in changed
+    )
+    assert stored["laps_read_at"] == FIXED_READ_AT
+
+
 # Every form on both files, except the repeat workout, which is built from sample_run.fit's four steps.
 COUNT_CASES = [
     (form, name)

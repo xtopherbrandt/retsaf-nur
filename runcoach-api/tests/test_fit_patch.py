@@ -311,6 +311,32 @@ def test_set_a_value_too_wide_for_the_field_raises() -> None:
         fit_patch.set_field(_raw("sample_run.fit"), ZONES_TARGET, 1, 256)
 
 
+LAP, LAP_WKT_STEP_INDEX = 19, 71
+
+
+def test_widening_to_uint64_keeps_every_value_and_takes_one_beyond_int64() -> None:
+    """Widened, every message decodes to the same raw values (an invalid one stays invalid); a value
+    of 2**63 then fits the widened field and decodes as written."""
+    raw = _raw("sample_run.fit")
+    _, before = _decode(raw)
+
+    widened = fit_patch.widen_to_uint64(raw, LAP, LAP_WKT_STEP_INDEX)
+
+    _assert_header_rewritten(widened)
+    _, after = _decode(widened)
+    assert _field_values(after) == _field_values(before)
+    patched = fit_patch.set_field_at(widened, LAP, 2, LAP_WKT_STEP_INDEX, 2**63)
+    laps = [m for m in _decode(patched)[1] if m.global_mesg_num == LAP]
+    assert laps[2].get_raw_value("wkt_step_index") == 2**63
+    assert [m.get_raw_value("wkt_step_index") for i, m in enumerate(laps) if i != 2] == [
+        m.get_raw_value("wkt_step_index") for i, m in enumerate(m for m in before if m.global_mesg_num == LAP) if i != 2
+    ]
+    with pytest.raises(fit_patch.FitPatchError, match="does not fit"):
+        fit_patch.set_field_at(raw, LAP, 2, LAP_WKT_STEP_INDEX, 2**63)
+    with pytest.raises(fit_patch.FitPatchError, match="carries field 250"):
+        fit_patch.widen_to_uint64(raw, LAP, 250)
+
+
 # ---------------------------------------------------------------------------
 # strings
 # ---------------------------------------------------------------------------
