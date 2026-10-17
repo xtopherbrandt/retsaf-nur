@@ -1058,7 +1058,8 @@ REVIEW_PROSE_SHA256 = (
     "96de422a6cb7", "66f200076653", "62ca2d783b2d", "7090b17ee6ec", "f936337bcc24", "1e0b83be9b41",
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
-    "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "49a68bb02a41",
+    "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
+    "a3b05c44be78",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1088,6 +1089,8 @@ FROZEN_ROUNDS = {
     "17": "b42d87f9dcd2",
     "18": "6a0fb2c5487d",
     "19": "4cb5f213b40d",
+    "20": "11ab99f7096b",
+    "21": "bf9bb7e2ebee",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1114,6 +1117,8 @@ _FROZEN_ROUNDS_PIN = {
     "17": "b42d87f9dcd2",
     "18": "6a0fb2c5487d",
     "19": "4cb5f213b40d",
+    "20": "11ab99f7096b",
+    "21": "bf9bb7e2ebee",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1290,7 +1295,7 @@ REVIEW_LINE_SHA256 = {
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "f7230e210a24",
+    "DOC-18": "79adc56cad25",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1492,9 +1497,9 @@ REVIEW_LINE_SHA256 = {
     "REG-30": "68540b955d5e",
     "REG-30/Scope": "75b457fa786c",
     "REG-30/Not": "a2f98f571260",
-    "REG-31": "967b3c3bcc7e",
-    "REG-31/Scope": "137536e43471",
-    "REG-31/Not": "a5a17ed6abf5",
+    "REG-31": "3877dc92e5c9",
+    "REG-31/Scope": "3e7876d7e329",
+    "REG-31/Not": "3aa5b4803f83",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
