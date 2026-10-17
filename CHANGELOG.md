@@ -129,8 +129,10 @@ Known issue: a Training tag alone does not make a workout threshold work. A work
 its recoveries as active steps (an interval session such as 8x800 m with open 400 m jogs) is read with
 its jogs, slower than the pace of its reps. On the athlete's store one such session, the 2026-10-07
 Speed Repeats, was read as 16 laps at 4:52/km in one block and moved the estimate from 4:28/km to
-4:41/km. Until this is fixed, tag only continuous threshold sessions Training. Telling a threshold
-workout from other training is IDEA-170.
+4:41/km (runs since 2026-09-01). Until this is fixed, read each workout's line in `runcoach state`: a
+workout of several reps shown `in 1 block` was read with its jogs, so remove its Training tag in
+Connect. A workout whose watch writes its recoveries as rest or recovery steps reads one block per
+rep and is read as intended. Telling a threshold workout from other training is IDEA-170.
 
 ### Migration required
 
