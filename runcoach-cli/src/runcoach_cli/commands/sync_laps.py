@@ -24,14 +24,17 @@ The command is registered on ``sync.sync_app`` and reads every seam through ``sy
    download or of that entry is ``failed`` with the reader's code and detail. The entry is sent to
    ``PUT /sessions/{session_id}/laps``, whose reply is classified here, never by F022's
    ``_classify`` (which reads a 409 as already stored): 200 attached, 409 identity mismatch, 400 and
-   413 ``file_refused`` (a permanent failure), anything else a temporary failure.
+   413 failed as the API refusing the file (a permanent failure), anything else a temporary failure.
 
 The report is the ``From`` line, the counts line (``OUTCOMES`` in order) and one line per identity
 mismatch or failed item, in the order handled. A stop (a login needed, a Garmin rate limit or no
 reply, any error on the listing, a web page for a download, the API unreachable or answering the
-candidates other than as above) prints the report so far and its message with the one
-``runcoach sync laps --since`` command, and exits 1; so does a run with any failed or mismatched
-item. The command never reads or writes the sync state and never writes a race tag.
+candidates other than as above) prints its message and exits 1; so does a run with any failed or
+mismatched item. A stop once the listing is planned prints the report so far before the message; a
+stop before it (the API check, opening the Garmin client, reading the listing) prints no counts. The
+message names its recovery: ``runcoach sync login`` for a login needed and for a web page, an update
+of the API for one without the laps operations, and the one ``runcoach sync laps --since`` command
+for the other stops. The command never reads or writes the sync state and never writes a race tag.
 """
 
 from __future__ import annotations
