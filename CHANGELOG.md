@@ -53,7 +53,9 @@ a usage error naming `sync laps --since`.
 
 Migration: existing runs stored before this release have no laps until `runcoach sync laps --since
 2016-01-01` reads them (once, with the API and the Garmin login in place); a new upload stores its
-laps itself.
+laps itself. A stored run whose id is not the device-and-start id cannot have laps attached: the
+attach answers 409, and `runcoach sync laps` reports it as an identity mismatch and exits 1 for any
+range covering it. One such run is known, on 2026-09-01 (IDEA-171).
 
 ### Threshold pace from threshold workouts tagged Training
 
