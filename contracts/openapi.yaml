@@ -1262,7 +1262,7 @@ paths:
         "413":
           description: The file exceeds the upload limit or a decode ceiling (ingestSession's detail)
           content: { application/json: { schema: { type: object } } }
-        "422": { $ref: "#/components/responses/ValidationError" }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
 
   /laps/candidates:
     post:
@@ -1294,7 +1294,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LapCandidatesResult" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
 
 components:
 
@@ -1354,9 +1354,9 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     RequestValidationError:
       description: >
-        Request failed validation, as served: FastAPI's {detail}, one entry per
-        refused input, naming where it is (loc), why (msg) and the error type.
-        Nothing is written. getState and setRaceTags reference it.
+        Request failed validation, as served: FastAPI's {detail}, one entry per refused input,
+        naming where it is (loc), why (msg) and the error type. Nothing is written. getState,
+        setRaceTags, matchLapCandidates and attachSessionLaps reference it.
       content:
         application/json:
           schema:

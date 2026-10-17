@@ -564,3 +564,25 @@ def test_served_attach_schema_matches_the_contract():
     text = CONTRACT.read_text(encoding="utf-8")
     for name in ("WorkoutStep", "SessionLap", "SessionWorkoutStep", "SessionLapsAttached"):
         assert len(re.findall(rf"^    {name}:\s*$", text, flags=re.MULTILINE)) == 1, name
+
+
+def _assert_422_documents_the_served_body(op: dict, contract: dict, response) -> None:
+    """The operation's 422 is getState's: the component describing FastAPI's {detail: [...]}, which
+    is what the route serves."""
+    ref = op["responses"]["422"]["$ref"]
+    assert op["responses"]["422"] == contract["paths"]["/state"]["get"]["responses"]["422"], ref
+    schema = contract["components"]["responses"][ref.rsplit("/", 1)[1]]["content"]["application/json"]["schema"]
+    assert schema["required"] == ["detail"] and schema["properties"]["detail"]["type"] == "array", schema
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert set(body) == {"detail"}, body
+    assert isinstance(body["detail"], list) and body["detail"], body
+    for entry in body["detail"]:
+        assert {"loc", "msg", "type"} <= set(entry), entry
+
+
+def test_the_422_the_contract_documents_is_the_body_served() -> None:
+    contract = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    with TestClient(app) as client:
+        response = client.put("/sessions/any-session/laps", data={"not_file": "x"})
+    _assert_422_documents_the_served_body(contract["paths"][PATH]["put"], contract, response)
