@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-16 through 2026-10-17 — Sprint 019: Laps, workout steps and threshold pace from workouts
+
 ### Laps and workout steps from the FIT file
 
 F025: every upload stores the file's laps and workout steps with the session, in the same
