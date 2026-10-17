@@ -331,6 +331,55 @@ def test_patched_lap_fields_store_as_section_2_says(form):
         raise AssertionError(form)
 
 
+STORE_TABLES = (
+    "sessions",
+    "records",
+    "rr_intervals",
+    "quarantine_sidecar",
+    "session_loads",
+    "laps",
+    "workout_steps",
+)
+
+
+def _table_counts() -> dict[str, int]:
+    conn = db.get_connection()
+    try:
+        return {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in STORE_TABLES}
+    finally:
+        conn.close()
+
+
+def test_a_lap_write_fault_rolls_the_whole_upload_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The laps are written in the session's own transaction: a fault after the lap rows are
+    inserted leaves no session, record, RR, sidecar, load, lap or step row, and POST answers 500."""
+    real_replace = db.replace_session_laps
+    fired: list[str] = []
+
+    def boom(conn, session_id, laps, steps, read_at):
+        real_replace(conn, session_id, laps, steps, read_at)
+        fired.append(session_id)
+        raise RuntimeError("simulated fault storing the laps")
+
+    raw = _bytes("strap_run_hrv")
+    with monkeypatch.context() as m:
+        m.setattr(db, "replace_session_laps", boom)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/sessions", files={"file": ("strap_run_hrv.fit", raw)})
+    assert response.status_code == 500, response.text
+    assert len(fired) == 1, fired
+    counts = _table_counts()
+    print(f"after the fault: {response.status_code}, rows {counts}")
+    assert counts == dict.fromkeys(STORE_TABLES, 0)
+
+    # Control: the same upload, unpatched, writes rows to every table the fault left empty.
+    with TestClient(app) as client:
+        assert _upload(client, raw) == fired[0]
+    stored = _table_counts()
+    print(f"control: rows {stored}")
+    assert all(stored[table] > 0 for table in ("sessions", "records", "rr_intervals", "session_loads", "laps"))
+
+
 LAP_WKT_STEP_INDEX, STEP_MESSAGE_INDEX, STEP_TARGET_VALUE = 71, 254, 4
 
 
