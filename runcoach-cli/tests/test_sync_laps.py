@@ -697,7 +697,10 @@ def _read_timeout() -> httpx.Response:
 
 # Each stop inside the candidates step, as the second batch answers it, and the words it prints.
 LATER_BATCH_STOPS = {
-    "503": (lambda: httpx.Response(503, json={"detail": "the store is busy"}), "API returned 503: the store is busy"),
+    "503": (
+        lambda: httpx.Response(503, json={"detail": "the store is busy"}),
+        "API returned 503: the store is busy",
+    ),
     "unreachable": (_connect_error, "could not reach API at http://example.test"),
     "timeout": (_read_timeout, "did not answer within"),
     "wrong-item-count": (
