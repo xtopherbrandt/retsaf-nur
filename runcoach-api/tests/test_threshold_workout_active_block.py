@@ -19,6 +19,7 @@ step index naming an active step (row 1a).
 | 3 | ``end_t`` None, NaN, inf, True, "600", 10**400 | ``lap_times_unreadable`` |
 | 4 | ``timer_s`` None, NaN, inf, False, "600", 10**400 | ``lap_times_unreadable`` |
 | 5 | ``timer_s`` negative (-1) | ``lap_times_unreadable`` (a lap time below zero does not read; built-in choice, not a reference row) |
+| 5b | ``timer_s`` zero, ``end_t`` after ``start_t`` | active, adding 0 s to ``A`` (only below zero does not read); ``test_a_zero_timer_lap_reads_and_adds_nothing`` |
 | 6 | ``end_t == start_t`` | ``lap_times_unreadable`` |
 | 7 | ``end_t < start_t`` | ``lap_times_unreadable`` |
 | 8 | ``wkt_step_index`` None (with its times null too) | not active: ``no_workout_steps`` (row 1a never reads it) |
@@ -394,6 +395,17 @@ def test_contract_table(row, perturb, expected):
     else:
         assert result.unavailable == expected
         assert result.laps == () and result.windows == () and result.active_time_s is None
+
+
+def test_a_zero_timer_lap_reads_and_adds_nothing():
+    """A lap with ``timer_s`` 0 and its end after its start is active: its window stays, ``A`` is 0."""
+    laps, steps = _base()
+    laps[1]["timer_s"] = 0.0
+    result = TP.active_laps(laps, steps)
+    assert result.unavailable is None
+    assert result.active_time_s == 0.0
+    assert result.windows == ((300.0, 900.0),)
+    assert result.active_blocks == 1
 
 
 def test_active_block_carries_the_lap_reason_and_no_numbers():
