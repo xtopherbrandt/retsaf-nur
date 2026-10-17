@@ -18,6 +18,10 @@ laps", since a file with no lap and no workout step sets it with zero rows. `GET
 serves `laps`, `workout_steps` (file order) and `laps_read_at`. Deleting a session deletes its laps
 and steps.
 
+Any integer a file carries beyond the store's signed 64-bit range (a field the writer declared
+64-bit) is now stored as null, in a lap, a workout step, a record, the strap serial, the profile and
+zone values and the device rMSSD; such a file got a 500 before and is now stored with 201.
+
 `PUT /sessions/{session_id}/laps` (operation `attachSessionLaps`) reads a stored session's laps and
 workout steps from its original file, multipart `file`, under `POST /sessions`'s size limit. An
 unknown session is a 404 before the file is read; a file `POST /sessions` refuses gets its 400 or 413
@@ -45,9 +49,10 @@ exactly one FIT entry is failed (`zip_entries`). It prints `Laps: attached N, al
 stored N, ambiguous N, identity mismatch N, no FIT original N, failed N`, then one line per identity
 mismatch and per failed item, and exits 1 when any item failed or mismatched or the run stopped. A
 stop (a login needed, a Garmin rate limit or no reply, an error on the listing, a web page for a
-download, the API unreachable or answering the candidates other than as above) prints the report so
-far and its message, worded as `runcoach sync` words it, with `runcoach sync laps --since <day>` as
-the retry command where the message gives one. It
+download, the API unreachable or answering the candidates other than as above) prints its message,
+worded as `runcoach sync` words it, with `runcoach sync laps --since <day>` as the retry command
+where the message gives one, after the report so far when the stop comes once the runs are planned
+(a stop at the API check, on opening Garmin or on the listing prints no counts). It
 never reads or writes `sync-state.json` and never writes a race tag. `runcoach sync --since X laps` is
 a usage error naming `sync laps --since`.
 
