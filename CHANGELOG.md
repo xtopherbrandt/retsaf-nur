@@ -63,10 +63,10 @@ F026 fixes the threshold workout read as a race. This entry supersedes the sprin
 paragraph (a race entered at its whole activity's GAP pace and timer duration, so the 2026-09-30
 activity, a threshold workout tagged Race, entered at 5:02/km and the estimate read 5:01/km); that
 paragraph is kept as released. Races are unchanged and still read whole. A threshold workout is now
-tagged Training in Garmin Connect and read over the laps under the workout steps the watch marks
-active, so its warm-up, its cool-down and any recovery the watch marks rest or recovery are left out,
-while a recovery written as an active step (an open jog step, as some interval workouts write them) is
-counted.
+tagged Training in Garmin Connect and read over the laps the watch marks active under workout steps it
+marks active, so its warm-up, its cool-down and any recovery the watch marks rest or recovery are left
+out, while a recovery written as an active step (an open jog step, as some interval workouts write
+them) is counted.
 
 To apply it to workouts already stored: retag each threshold workout's event type as Training in
 Connect, then run `runcoach sync tags --since <day>` (a stored `race` becomes `threshold_workout`,
