@@ -93,7 +93,7 @@ The estimator of sections 4.3.1 and 4.3.2 is applied to threshold pace with the 
 
 | Name (`parameters` key) | Value | Basis |
 |---|---|---|
-| `typical_error` (√R) | 0.025 (2.5 % of speed) | The 20–60 min band spans about 6.4 % of pace at the population `b = 1.06`; a uniform spread over it has SD 6.4 % / √12 = 1.8 %, and race-to-race variation brings it to about 2.5 %. One R for every qualifying race (section 4.3.1). Rejected: 1.5 %, 3.5 %, and converting each race to a 60-minute equivalent first (IDEA-162). |
+| `typical_error` (√R) | 0.025 (2.5 % of speed) | The 20–60 min band spans about 6.4 % of pace at the population `b = 1.06`; a uniform spread over it has SD 6.4 % / √12 = 1.8 %, and race-to-race variation brings it to about 2.5 %. One R for every qualifying race and threshold workout (section 4.3.1). Rejected: 1.5 %, 3.5 %, and converting each race to a 60-minute equivalent first (IDEA-162). |
 | `doubling_days` | 42 | An unobserved determinant "loses roughly half its confidence over a training block" (section 4.3.1), read as the error doubling (P × 4) over a block of 3–6 weeks taken at its upper end. Q = 3R / 42 per day. Rejected: 12 and 26 weeks. |
 | `coverage` | 0.80 (z = 1.2815515655446004) | Forecast convention. Rejected: 68 % and 95 %. |
 | `high_max_error` | 0.025: `high` while P ≤ R | no wider than one fresh race |
