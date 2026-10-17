@@ -307,6 +307,37 @@ def test_seam_keeps_a_negative_start_t():
     assert _seam_lap(timestamp="12:00").end_t is None
 
 
+def test_with_no_session_start_laps_are_measured_from_the_earliest_record():
+    """No session ``start_time``: lap times are measured from the earliest record ``timestamp``,
+    the instant record ``t`` is measured from, so a lap starts at the ``t`` of the record at its
+    instant. The records are out of order, so the earliest is not the first."""
+    records = [
+        _Msg("record", timestamp=START + timedelta(seconds=s)) for s in (7, 2, 4)
+    ] + [_Msg("record", timestamp=None)]
+    lap = _Msg("lap", start_time=START + timedelta(seconds=7), timestamp=START + timedelta(seconds=19))
+    for session in ([_Msg("session")], [_Msg("session", start_time=None)], []):
+        laps, _ = mapping.to_laps([*session, *records, lap])
+        assert (laps[0].start_t, laps[0].end_t) == (5.0, 17.0), session
+
+    # Through the real decode: sample_run.fit with its session start_time invalid.
+    data = fit_patch.set_field(_bytes("sample_run"), SESSION, SESSION_START_TIME, 0xFFFFFFFF)
+    messages = fit_parser.decode(data)
+    session_msg = next(m for m in messages if m.name == "session")
+    assert session_msg.get_value("start_time", fallback=None) is None
+    _, canonical = mapping.to_canonical(messages)
+    t_at = {
+        m.get_value("timestamp"): r.t
+        for m, r in zip((m for m in messages if m.name == "record"), canonical, strict=True)
+    }
+    laps, _ = mapping.to_laps(messages)
+    lap_starts = [m.get_value("start_time") for m in messages if m.name == "lap"]
+    matched = [(lap.start_t, t_at[start]) for lap, start in zip(laps, lap_starts, strict=True) if start in t_at]
+    print("lap start_t vs record t:", matched)
+    assert len(matched) >= 2
+    assert all(start_t == t for start_t, t in matched)
+    assert any(t > 0 for _, t in matched)
+
+
 def test_an_unnamed_enum_maps_to_null():
     lap = _seam_lap(intensity=99, lap_trigger=200)
     assert lap.intensity is None
