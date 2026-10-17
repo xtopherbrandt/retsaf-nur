@@ -441,6 +441,42 @@ def test_window_fractions_cover_the_active_windows_only():
     assert block.gap_coverage == pytest.approx(0.75, rel=1e-12)
 
 
+def test_window_fractions_are_shares_of_metres_not_of_graded_metres_time_or_count():
+    """Graded, mixed-speed segments, some degraded, inside and outside the one active window
+    ``[300, 900)``. By hand, over the three inside segments (800 m):
+
+    - degraded metres 250 + 150 = 400, so ``gps_degraded_fraction`` = 400 / 800 = 0.5
+      (grade-weighted it would be (275 + 195) / 830 = 0.566, by time 150 / 250 = 0.6, by count 2 / 3);
+    - graded metres 250 + 400 = 650, so ``gap_coverage`` = 650 / 800 = 0.8125;
+    - pace = 1000 * 250 s / (275 + 360 + 195) m = 301.2 s/km.
+    """
+
+    def seg(t_start, dt, metres, g, *, degraded, graded=True):
+        return {
+            "t_start": t_start,
+            "dt": dt,
+            "contributed_m": metres,
+            "i": 0.0,
+            "graded": graded,
+            "g": g,
+            "moving_gap": False,
+            "gps_degraded": degraded,
+        }
+
+    rows = [
+        seg(0.0, 10.0, 30.0, 1.2, degraded=True),  # the warm-up, outside
+        seg(300.0, 100.0, 250.0, 1.10, degraded=True),
+        seg(400.0, 100.0, 400.0, 0.90, degraded=False),
+        seg(500.0, 50.0, 150.0, 1.30, degraded=True, graded=False),
+        seg(900.0, 200.0, 500.0, 1.0, degraded=True, graded=False),  # at the window's end: outside
+    ]
+    block = TP.active_block(*_base(), rows)
+    print("fractions:", block.gps_degraded_fraction, block.gap_coverage, block.gap_pace_s_per_km)
+    assert block.gps_degraded_fraction == pytest.approx(400.0 / 800.0, rel=1e-12)
+    assert block.gap_coverage == pytest.approx(650.0 / 800.0, rel=1e-12)
+    assert block.gap_pace_s_per_km == pytest.approx(1000.0 * 250.0 / 830.0, rel=1e-12)
+
+
 def test_no_segment_in_the_windows_reads_no_pace():
     block = TP.active_block(*_base(), [])
     assert block.unavailable is None and block.active_time_s == 600.0
