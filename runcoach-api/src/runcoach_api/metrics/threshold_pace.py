@@ -1,4 +1,5 @@
-"""Functional threshold pace from tagged races (F024, spec/04 section 4.3): the qualifier and the filter.
+"""Functional threshold pace from tagged races and threshold workouts (F024, F026, spec/04 section
+4.3): the qualifier and the filter.
 
 **Pure, by design**, on the pattern of ``metrics/load_chart.py`` and ``metrics/hrv_trend.py``:
 ``estimate`` takes plain candidate rows and an aware ``as_of`` instant and returns a frozen

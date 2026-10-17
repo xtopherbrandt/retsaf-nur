@@ -1933,7 +1933,7 @@ def apply_race_tag_decisions(conn: sqlite3.Connection, items: Sequence[Mapping])
 
 
 # ---------------------------------------------------------------------------
-# F024: the tagged races GET /state reads
+# F024, F026: the tagged races and threshold workouts GET /state reads
 #
 # Appended at the end so the lines cited above stay in place. The rule lives in
 # ``metrics.threshold_pace``; this reads its candidate rows.

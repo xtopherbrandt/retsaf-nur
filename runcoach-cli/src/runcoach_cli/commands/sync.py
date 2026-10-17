@@ -51,8 +51,9 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   never sent; with nothing to send no ``PUT`` is made. It prints the ``From`` line, the counts line
   and one line per race or workout not stored, mismatched or ambiguous and per skipped activity
   (``tags_report_lines``). It downloads nothing and never reads or writes the sync state. A login
-  needed prints the login message; another Garmin error, its reason and the one ``sync tags --since``
-  command; an API without ``setRaceTags`` or ``tag`` sends nothing, as does an ``/openapi.json``
+  needed prints the login message; another Garmin error, its reason and the one
+  ``runcoach sync tags --since`` command; an API without ``setRaceTags`` or ``tag`` sends nothing,
+  as does an ``/openapi.json``
   answering other than 200 (its status named with that command); a batch the API fails or cannot be
   reached for stops later batches and names the earliest local day in it.
   Each exits 1; not stored, mismatch, ambiguous and skipped items do not change the exit code.

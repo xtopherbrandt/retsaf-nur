@@ -176,8 +176,7 @@ class SessionLap:
     written. ``timer_s``, ``elapsed_s`` and ``distance_m`` are ``total_timer_time``,
     ``total_elapsed_time`` and ``total_distance``: None when absent, invalid, negative or not a
     finite number. ``intensity`` and ``lap_trigger`` are profile names, None for a value fitdecode
-    cannot name. ``lap_index`` counts mapped laps from 0. Not the planned-workout ``WorkoutStep``
-    of ``contracts/openapi.yaml``.
+    cannot name. ``lap_index`` counts mapped laps from 0.
     """
 
     lap_index: int
@@ -201,6 +200,7 @@ class SessionWorkoutStep:
     ``target_value`` the repeat count). ``step_index`` is the step's ``message_index``;
     ``workout_name`` is the first ``workout`` message's ``wkt_name``; ``target_low`` and
     ``target_high`` are ``custom_target_value_low``/``_high``. An enum fitdecode cannot name is None.
+    Not the planned-workout ``WorkoutStep`` of ``contracts/openapi.yaml``.
     """
 
     step_index: int | None = None

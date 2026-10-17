@@ -1755,7 +1755,7 @@ class LapCandidatesResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# GET /state (F024): threshold pace from tagged races
+# GET /state (F024, F026): threshold pace from tagged races and threshold workouts
 #
 # Appended at the end so the lines cited above stay in place.
 # ---------------------------------------------------------------------------

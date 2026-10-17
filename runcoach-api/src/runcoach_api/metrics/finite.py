@@ -1,8 +1,9 @@
 """The finite-number screen: one reading of "is this a real, finite number".
 
 Pure: imports neither the store nor the configuration nor the web layer. The session time base
-(``metrics.segments``), the race-tag matching rule (``race_tags``) and the threshold-pace qualifier
-(``metrics.threshold_pace``) read numbers through ``finite``; ``hrv_classification._numeric`` keeps
+(``metrics.segments``), the race-tag matching rule (``race_tags``), the threshold-pace qualifier
+(``metrics.threshold_pace``) and the lap and workout-step screen (``ingestion.mapping``) read
+numbers through ``finite``; ``hrv_classification._numeric`` keeps
 its own ratified HRV semantics (``segments``' docstring says why).
 """
 
