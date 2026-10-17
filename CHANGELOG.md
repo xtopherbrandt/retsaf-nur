@@ -118,6 +118,13 @@ the `runcoach sync tags` and `runcoach sync laps` commands to run. Its help text
 shows its weight and that the 80 % interval covers race-to-race scatter, not a biased input: a race or
 workout read wrongly moves the estimate and the interval together.
 
+Known issue: a Training tag alone does not make a workout threshold work. A workout whose watch writes
+its recoveries as active steps (an interval session such as 8x800 m with open 400 m jogs) is read with
+its jogs, slower than the pace of its reps. On the athlete's store one such session, the 2026-10-07
+Speed Repeats, was read as 16 laps at 4:52/km in one block and moved the estimate from 4:28/km to
+4:41/km. Until this is fixed, tag only continuous threshold sessions Training. Telling a threshold
+workout from other training is IDEA-170.
+
 ### Migration required
 
 `contracts/openapi.yaml` `info.version` is now `0.3.0-draft` (was `0.2.0-draft`): the responses gain
