@@ -225,11 +225,14 @@ def _apply_candidates(batch: list[LapItem], resp: httpx.Response) -> bool:
 
 def match(api_url: str, items: list[LapItem]) -> None:
     """Send every item with a ``start_time`` and no outcome to ``POST /laps/candidates``, in
-    batches of ``CANDIDATES_BATCH`` oldest first, recording each answer. No items, no request."""
+    batches of ``CANDIDATES_BATCH`` oldest first, recording each answer. No items, no request.
+
+    Every batch is sent before any download, so a stop on any batch names the first item sent at
+    all: the runs matched by earlier batches have not been downloaded yet."""
     to_send = [item for item in items if item.outcome is None and item.start_time is not None]
+    day = (to_send[0].day if to_send else None) or date.min
     for first in range(0, len(to_send), CANDIDATES_BATCH):
         batch = to_send[first : first + CANDIDATES_BATCH]
-        day = batch[0].day or date.min
         body = [{"connect_activity_id": item.activity_id, "start_time": item.start_time} for item in batch]
         try:
             resp = api_client.post_laps_candidates(api_url, body)

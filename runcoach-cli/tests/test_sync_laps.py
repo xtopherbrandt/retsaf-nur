@@ -687,6 +687,40 @@ def test_candidates_are_sent_in_batches_oldest_first(
     assert _lines(result.output)[1:] == [_counts(not_stored=5)]
 
 
+def test_a_stop_on_a_later_candidates_batch_names_the_first_day_sent(
+    env, fake_garmin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every batch is sent before any download, so a stop on the second batch has downloaded
+    nothing from the first: the retry must start at the first run sent, not at its own batch."""
+    monkeypatch.setattr(sync_laps, "CANDIDATES_BATCH", 2)
+    fake = fake_garmin([_summary(100 + d, f"2026-10-0{d} 07:00:00") for d in (2, 3, 4, 5, 6)])
+
+    def reply(items: list[dict[str, Any]]) -> httpx.Response:
+        if items[0]["connect_activity_id"] != 102:
+            return httpx.Response(503, json={"detail": "the store is busy"})
+        answers = [
+            {
+                "connect_activity_id": item["connect_activity_id"],
+                "outcome": "matched",
+                "session_id": f"s-{item['connect_activity_id']}",
+                "laps_read_at": None,
+            }
+            for item in items
+        ]
+        return httpx.Response(200, json={"items": answers})
+
+    api = env(fake, candidates_reply=reply)
+
+    result = _laps("--since", SINCE)
+
+    assert result.exit_code == 1, result.output
+    assert len(api.candidate_batches) == 2
+    assert "API returned 503: the store is busy: run `runcoach sync laps --since 2026-10-02`" in result.output
+    assert "--since 2026-10-04" not in result.output
+    assert api.lap_puts == []
+    assert fake.downloads == []
+
+
 def test_an_api_unreachable_on_attach_stops(env, fake_garmin) -> None:
     fake = fake_garmin([_summary(101)])
     env(fake, lap_candidates={101: _matched("s-101")}, unreachable_on_laps=1)
