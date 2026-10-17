@@ -1813,7 +1813,7 @@ class ThresholdEffort(BaseModel):
     )
     gain: float
     active_blocks: int | None = Field(
-        description="A workout's runs of consecutive active laps (3x10 min with jogs reads 3); null for a race."
+        description="A workout's runs of consecutive active laps (3x10 min with jogs reads 3 when the jogs are recovery steps); null for a race."
     )
 
 
