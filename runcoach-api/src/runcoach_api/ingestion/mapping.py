@@ -289,7 +289,8 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     (``fitdecode/types.py`` line 379). But fitdecode decodes with the base
     type the *file* declares, so a non-conforming writer can deliver a plain
     0, a negative, a tuple (array-sized field; sqlite3 cannot bind it), a str
-    or bytes: only a positive integer counts; anything else a non-conforming
+    or bytes, or an integer beyond the store's range (``storable``): only a
+    positive integer the store can bind counts; anything else a non-conforming
     writer sends is discarded before counting, never counted as a conflict.
 
     Lives beside ``_build_source_device``, not inside it: ``source_device``
@@ -304,7 +305,10 @@ def _resolve_hr_sensor_serial(by_name: dict[str, list[fitdecode.FitDataMessage]]
     serials = {
         value
         for value in candidates
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        if isinstance(value, int)
+        and not isinstance(value, bool)
+        and value > 0
+        and storable(value) is not None
     }
     if len(serials) != 1:
         return None
@@ -524,7 +528,7 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     if raw_cadence is not None:
         cadence = (raw_cadence + (fractional_cadence or 0)) * 2
 
-    power = msg.get_value("power", fallback=None)
+    power = storable(msg.get_value("power", fallback=None))
     power_model = "garmin_native" if power is not None else None
 
     # Developer-field running dynamics (T022): native wins when both are
@@ -544,22 +548,24 @@ def _build_record(msg, start_dt: datetime) -> tuple[Record | None, dict]:
     if gps_accuracy is not None:
         gps_degraded = gps_accuracy > _GPS_DEGRADED_ACCURACY_THRESHOLD_M
 
+    # Each field a file can deliver as an int goes through ``storable`` (``power`` above, so
+    # ``power_model`` follows it): an int beyond the store's range is null. lat, lon and t are floats.
     record = Record(
         t=(ts - start_dt).total_seconds(),
         lat=lat,
         lon=lon,
-        distance=msg.get_value("distance", fallback=None),
-        speed=speed,
-        heart_rate=msg.get_value("heart_rate", fallback=None),
-        cadence=cadence,
-        altitude=altitude,
+        distance=storable(msg.get_value("distance", fallback=None)),
+        speed=storable(speed),
+        heart_rate=storable(msg.get_value("heart_rate", fallback=None)),
+        cadence=storable(cadence),
+        altitude=storable(altitude),
         power=power,
         power_model=power_model,
-        vertical_oscillation=vertical_oscillation,
-        ground_contact_time=ground_contact_time,
-        gct_balance=msg.get_value("stance_time_percent", fallback=None),
-        step_length=msg.get_value("step_length", fallback=None),
-        temperature=msg.get_value("temperature", fallback=None),
+        vertical_oscillation=storable(vertical_oscillation),
+        ground_contact_time=storable(ground_contact_time),
+        gct_balance=storable(msg.get_value("stance_time_percent", fallback=None)),
+        step_length=storable(msg.get_value("step_length", fallback=None)),
+        temperature=storable(msg.get_value("temperature", fallback=None)),
         gps_degraded=gps_degraded,
         sample_quality=[],
     )
@@ -721,19 +727,29 @@ def _measure(value: object) -> float | None:
 _STORE_INT_MIN, _STORE_INT_MAX = -(2**63), 2**63 - 1
 
 
+def storable(value: object) -> object:
+    """``value`` as it is, or None when it is an int outside the store's integer range.
+
+    The one range screen for every file integer the store binds: the lap and step numbers here,
+    each record field (``_build_record``), the strap serial (``_resolve_hr_sensor_serial``), the
+    profile values (``profile_values._raw_int``) and the device rMSSD (``hrv_classification``)."""
+    if isinstance(value, int) and not _STORE_INT_MIN <= value <= _STORE_INT_MAX:
+        return None
+    return value
+
+
 def _number(value: object) -> int | float | None:
     """A numeric field as fitdecode returned it, or None for a bool, a string, a non-finite number
     or an int outside the store's integer range."""
-    if isinstance(value, int) and not _STORE_INT_MIN <= value <= _STORE_INT_MAX:
-        return None
+    value = storable(value)
     return value if finite(value) is not None else None  # type: ignore[return-value]
 
 
 def _index(value: object) -> int | None:
     """A ``message_index`` value: a non-negative int within the store's integer range, else None."""
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= _STORE_INT_MAX:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
-    return value
+    return storable(value)  # type: ignore[return-value]
 
 
 def _enum(value: object) -> str | None:

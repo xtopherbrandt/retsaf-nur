@@ -157,6 +157,7 @@ from typing import Any, NamedTuple
 import fitdecode
 
 from runcoach_api.ingestion import rmssd, rr_reconstruction
+from runcoach_api.ingestion.mapping import storable
 from runcoach_api.models import Context, RRInterval, Session
 
 # The empirically observed Garmin Health Snapshot ``sport`` value.
@@ -1929,7 +1930,8 @@ def _classify_tier_2(messages: list[fitdecode.FitDataMessage], session: Session)
     meaning"* -- and the convention states its own scope as
     ``_resting_profile_duration`` only.
     """
-    rmssd_hrv = _numeric(_session_rmssd_hrv(messages))
+    # An int beyond the store's range (``mapping.storable``) is no usable device value either.
+    rmssd_hrv = _numeric(storable(_session_rmssd_hrv(messages)))
     raw_sport_value = _provenance(session).get("raw_sport_value")
     is_snapshot = raw_sport_value == _SNAPSHOT_RAW_SPORT_VALUE
 

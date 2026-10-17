@@ -48,6 +48,8 @@ import math
 
 import fitdecode
 
+from runcoach_api.ingestion.mapping import storable
+
 # The seven ``models.Session`` fields this module fills, in storage order.
 FIELDS: tuple[str, ...] = (
     "sex",
@@ -71,13 +73,14 @@ def _first(messages: list[fitdecode.FitDataMessage], name: str):
 
 def _raw_int(message, field_name: str) -> int | None:
     """The field's raw integer, or ``None`` when the message, the field or a
-    valid integer is missing (a FIT invalid value has a ``None`` raw value)."""
+    valid integer is missing (a FIT invalid value has a ``None`` raw value),
+    or when the integer is beyond the store's range (``mapping.storable``)."""
     if message is None:
         return None
     raw = message.get_value(field_name, fallback=None, raw_value=True)
     if isinstance(raw, bool) or not isinstance(raw, int):
         return None
-    return raw
+    return storable(raw)  # type: ignore[return-value]
 
 
 def _positive(value):
