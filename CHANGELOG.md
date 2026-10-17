@@ -55,6 +55,78 @@ Migration: existing runs stored before this release have no laps until `runcoach
 2016-01-01` reads them (once, with the API and the Garmin login in place); a new upload stores its
 laps itself.
 
+### Threshold pace from threshold workouts tagged Training
+
+F026 fixes the threshold workout read as a race. This entry supersedes the sprint-018 known-issue
+paragraph (a race entered at its whole activity's GAP pace and timer duration, so the 2026-09-30
+activity, a threshold workout tagged Race, entered at 5:02/km and the estimate read 5:01/km); that
+paragraph is kept as released. Races are unchanged and still read whole. A threshold workout is now
+tagged Training in Garmin Connect and read over its active workout steps only, so its warm-up,
+recoveries and cool-down no longer enter the estimate.
+
+To apply it to workouts already stored: retag each threshold workout's event type as Training in
+Connect, then run `runcoach sync tags --since <day>` (a stored `race` becomes `threshold_workout`,
+counted `retagged`) and `runcoach sync laps --since <day>` (a workout is read from its laps, and one
+whose laps were never read is excluded as `laps_not_read`).
+
+Tags: `runcoach sync tags` and the tags step of `runcoach sync` send Connect's event type `typeKey`
+`training` (exact case; observed on live summaries 2026-10-16, not in Garmin's documentation) as the
+tag `threshold_workout`, `race` as `race`, and any other as null, in the item's new `tag` field. Before
+sending they check that the served `/openapi.json` lists `tag` on the item schema; an API without it
+is sent nothing ("the API is too old for workout tags: update it and restart the API"), exit 1. The
+counts line is now `Race tags: tagged N, retagged N, cleared N, unchanged N, not stored N, mismatch N,
+ambiguous N, other tag N, skipped N, workouts tagged N`, `workouts tagged` counting the items whose
+stored tag became `threshold_workout` (tagged or retagged), and a workout not stored, mismatched or
+ambiguous gets its own line (`Workout not stored: ...`, `Workout mismatch: ...`, `Workout ambiguous:
+...`) as a race does. `PUT /race-tags` items take exactly one of `tag` (`race`, `threshold_workout`
+or null to clear) and the older `race` (true for `race`, false for null); both, or neither, is a 422,
+as is an explicit `race` null. On the matched run the stored and the wanted tag decide: null to a
+tag is `tagged`, a tag to null `cleared`, `race` to `threshold_workout` or back the new outcome
+`retagged`, an equal tag `unchanged`, any other stored tag `other_tag`; `tagged`, `cleared` and
+`retagged` are written. The counts gain `retagged` and `by_tag` (per tag, its `tagged`, `cleared` and
+`retagged`; `cleared` keyed by the stored tag). Resting-capture tags are never touched.
+
+`GET /state`: a running session tagged `threshold_workout` qualifies when, in this order, its laps
+were read (else `laps_not_read`), no active lap (intensity `active`, its workout step index naming an
+`active` step) has a null start, end or timer time or ends at or before its start (else
+`lap_times_unreadable`), it has an active lap (else `no_workout_steps`), the active laps' timer times
+total at least 600 s, with no maximum (else `active_time_below_minimum`), it carries neither
+`distance_regressed` nor `smart_recording`, and its active GAP pace, F013's counted segments that start
+inside an active lap's `[start_t, end_t)` window, is finite and above zero. A read of its stored laps or
+steps that fails excludes it as `laps_unreadable` (logged), and `quality_flags_unreadable` and `features_unavailable`
+apply as for a race. A workout enters the same filter as a race, with the same 2.5 % typical error,
+at its session start. Each effort and exclusion carries `kind` (`race` or `threshold_workout`); a
+workout's `duration_s` is its active time, its `gap_coverage` and `gps_degraded_fraction` are over
+its active windows, and it carries `active_blocks`, the runs of consecutive active laps (null for a
+race). `parameters` gains `workout_min_active_s` (600). `short_races_only` now reads races only: it is
+true when at least one race is used and every race used lasted under 1800 s, and a history of
+workouts alone reads false (sprint-018's flag read "every effort used").
+
+`runcoach state` heads `Threshold pace 4:22/km (80 %: 4:15-4:30), high, from 2 races and 1 workout,
+the last on 2026-09-30`, leaving out a zero part (`from 1 workout`, `from 2 races`), prints one line
+per workout used (`Workout used 2026-09-30: 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98,
+degraded GPS 0.0 %, weight 98 %`) and per workout excluded (`Workout excluded <date>: <reason in
+words>`, for example "its laps have not been read: run runcoach sync laps --since <date>"), and ends
+each race and workout line used with `, weight N %`, its share of today's estimate, computed from the
+served gains. A race or workout recorded with the `smart_recording` flag is excluded as "recorded in
+smart or irregular recording mode": the stored flag covers both recording modes. With no qualifying
+effort it prints `Threshold pace unavailable: no tagged race of 20 to 60 minutes and no threshold
+workout with 10 minutes of active laps.`, then how to mark a race as Race or a workout as Training and
+the `runcoach sync tags` and `runcoach sync laps` commands to run. Its help text says each effort used
+shows its weight and that the 80 % interval covers race-to-race scatter, not a biased input: a race or
+workout read wrongly moves the estimate and the interval together.
+
+### Migration required
+
+`contracts/openapi.yaml` `info.version` is now `0.3.0-draft` (was `0.2.0-draft`): the responses gain
+enum values an older client does not know (the outcome `retagged`, the exclusion reasons above,
+`kind` `threshold_workout`). Update the CLI with the API. Against the new API an older CLI's `runcoach
+sync tags` stops on the first batch that answers `retagged` (the answer cannot be understood), and,
+because it sends `race` true or false for every listed run, it silently clears a stored
+`threshold_workout` tag: a run Connect marks Training is sent `race` false, the outcome is `cleared`,
+and nothing stops. An older `runcoach state` prints a workout used as `Race used` and the new
+exclusion reasons as served.
+
 ### Changed
 
 - F022/F023: a `GET /openapi.json` that answers other than 200 still stops `runcoach sync` before

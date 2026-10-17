@@ -767,7 +767,7 @@ PINNED_SHA256 = {
     "REG-28/Pinned": "6f6a2e0e1e2d",
     "REG-29/Pinned": "6f6a2e0e1e2d",
     "REG-30/Pinned": "6f6a2e0e1e2d",
-    "REG-31/Pinned": "dcd9dd3c915e",
+    "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -1042,6 +1042,7 @@ HISTORY_SHA256 = {
     "H-40": "ff2a30c98d83",
     "H-41": "0843f60b2521",
     "H-42": "4630568aa9aa",
+    "H-43": "e4fa49a899eb",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -4860,7 +4861,7 @@ def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
     print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
           f"{errors[:10]}")
     assert errors == []
-    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 43)]
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 44)]
     assert listed == derived and listed
     assert not set(listed) & set(rule_ids(research))
 
