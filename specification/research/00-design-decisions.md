@@ -559,7 +559,7 @@ Not: storage cost, which the rolling window of rule REG-29 tunes.
 Pinned: none
 
 **REG-31.** Threshold pace MUST be estimated by the spec/04 section 4.3 filter, with the spec-introduced constants of spec/04 section 4.3.4, from qualifying 20-60 min races and from the active steps of tagged threshold workouts that total at least 600 s.
-Scope: every functional threshold pace served, from running sessions tagged `race` lasting 1200 to 3600 s or tagged `threshold_workout` and read over active laps of at least 600 s in all, each without `distance_regressed` or `smart_recording` and with a finite positive GAP pace; the constants are engineering defaults, one R for both, and before the first such effort the pace is unavailable.
+Scope: every functional threshold pace served, from running sessions tagged `race` lasting 1200 to 3600 s or tagged `threshold_workout` and read over active laps totalling 600 s or more, each without `distance_regressed` or `smart_recording`, with a finite positive GAP pace; the constants are engineering defaults, a workout has a race's typical error, and before any such effort it is unavailable.
 Not: a population threshold pace before the first qualifying effort, which IND-03 asks for and IDEA-161 holds open; the CS fit and its blend by confidence, whose constants IDEA-157 holds open; an effort excluded for degraded GPS, a per-record fraction and never a session flag; and a work block inferred from pace, which only the athlete's Training tag and the watch's active steps mark.
 Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_gain_is_0_8
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
