@@ -337,6 +337,18 @@ def test_widening_to_uint64_keeps_every_value_and_takes_one_beyond_int64() -> No
         fit_patch.widen_to_uint64(raw, LAP, 250)
 
 
+@pytest.mark.parametrize(
+    ("field_num", "base_type"),
+    [(149, "0x88"), (0, "0x0"), (3, "0x85"), (102, "0x2")],
+    ids=["float32", "enum", "sint32", "uint8_array"],
+)
+def test_widening_to_uint64_refuses_a_field_that_is_not_one_unsigned_integer(field_num: int, base_type: str) -> None:
+    """Only a single uint8/16/32 (or its z form) widens: a float, an enum, a signed integer and a
+    4-byte array of uint8 are each refused rather than reinterpreted as an unsigned value."""
+    with pytest.raises(fit_patch.FitPatchError, match=f"base type {base_type} "):
+        fit_patch.widen_to_uint64(_raw("sample_run.fit"), LAP, field_num)
+
+
 # ---------------------------------------------------------------------------
 # strings
 # ---------------------------------------------------------------------------

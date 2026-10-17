@@ -576,6 +576,8 @@ def shift_timestamps(data: bytes, seconds: int) -> bytes:
 
 
 UINT64_BASE_TYPE = 0x8F
+# uint8, uint16, uint32 and their z forms, one element each: what widen_to_uint64 zero-extends.
+_WIDENABLE = (0x02, 0x84, 0x86, 0x0A, 0x8B, 0x8C)
 
 
 def widen_to_uint64(data: bytes, global_num: int, field_num: int) -> bytes:
@@ -589,8 +591,9 @@ def widen_to_uint64(data: bytes, global_num: int, field_num: int) -> bytes:
     profile's own type for it is ignored by the decoder's base-type read.
     ``set_field_at`` then writes a value of 2**63 or more into the widened field.
     Refused: a file with no definition of ``global_num`` carrying the field, a
-    field that is not an unsigned 1-, 2- or 4-byte integer, and a definition
-    with developer fields.
+    field that is not one unsigned 1-, 2- or 4-byte integer (a float, an enum,
+    a byte, a string, a signed integer and an array are each refused), and a
+    definition with developer fields.
     """
     formats = {1: "B", 2: "H", 4: "I"}
     out = bytearray(data[: data[0]])
@@ -602,11 +605,7 @@ def widen_to_uint64(data: bytes, global_num: int, field_num: int) -> bytes:
         if target is None:
             out += raw
             continue
-        if target.size not in formats or BASE_TYPES.get(target.base_type) is None or target.base_type in (
-            0x01,
-            0x83,
-            0x85,
-        ):
+        if target.base_type not in _WIDENABLE or target.size != BASE_TYPES[target.base_type].size:
             raise FitPatchError(
                 f"field {global_num}/{field_num} is base type {target.base_type:#x} of {target.size} bytes"
             )
