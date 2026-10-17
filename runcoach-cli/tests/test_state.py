@@ -299,11 +299,9 @@ def test_weights_sum_to_one() -> None:
     assert state_command.weights([]) == []
 
 
-def test_smart_recording_and_irregular_read_differently(install_mock_client) -> None:
-    """The ingest sets the one ``smart_recording`` flag for both a ``smart`` and an ``irregular``
-    interval verdict (``quality_gates._resample_and_flag_smart_recording`` flags every verdict but
-    ``1hz``), and ``GET /state`` serves the flag, not the verdict. So the CLI cannot tell them
-    apart, and its words name both modes rather than calling an irregular recording smart."""
+def test_smart_recording_is_worded_the_same_for_races_and_workouts(install_mock_client) -> None:
+    """A race and a workout excluded as ``smart_recording`` print the same words, which name both
+    recording modes the one flag covers."""
     body = copy.deepcopy(ESTIMATE_BODY)
     body["determinants"][0]["excluded"] = [
         {"session_id": "r", "start_time": "2026-07-01T07:00:00Z", "kind": "race", "reason": "smart_recording"},
