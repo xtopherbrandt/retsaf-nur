@@ -64,6 +64,7 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         port=8000,
         data_dir=data_dir,
         resting_hrv_profile_names=[],
+        threshold_workout_names=[],
         athlete_timezone="UTC",
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: fake_config)
@@ -76,7 +77,8 @@ def declared_config(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch):
     """``declared_config("HRV Snapshot")`` -- the athlete's Tier-1 declaration.
 
     Rebuilds the ``AppConfig`` ``isolated_data_dir`` installed, this time with
-    ``resting_hrv_profile_names`` populated, and clears
+    ``resting_hrv_profile_names`` (and, by keyword,
+    ``threshold_workout_names``) populated, and clears
     ``db._load_config_cached`` so ``pipeline.ingest_fit_bytes`` reads the new
     list rather than the ``lru_cache(maxsize=1)``'d empty one. Both halves are
     required: that cache is exactly why editing ``api.toml`` needs a server
@@ -89,14 +91,19 @@ def declared_config(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch):
     Called with no arguments it declares the **empty list** explicitly -- the
     "athlete who uses only Health Snapshot" posture, which differs from never
     calling the fixture only in that it re-clears the cache.
+
+    ``threshold_workout_names=`` (keyword only, ``[]`` by default) declares the
+    workout names that admit a threshold workout beside the tag (F027); the
+    same list is stripped and refused-if-empty by ``AppConfig`` as on load.
     """
 
-    def _declare(*profile_names: str) -> AppConfig:
+    def _declare(*profile_names: str, threshold_workout_names: tuple[str, ...] | list[str] = ()) -> AppConfig:
         declared = AppConfig(
             host="127.0.0.1",
             port=8000,
             data_dir=isolated_data_dir,
             resting_hrv_profile_names=list(profile_names),
+            threshold_workout_names=list(threshold_workout_names),
             athlete_timezone="UTC",
         )
         monkeypatch.setattr(

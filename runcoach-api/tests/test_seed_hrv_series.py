@@ -157,6 +157,7 @@ def _write_api_toml(home: Path, data_dir: Path) -> None:
                 "port = 8000",
                 f'data_dir = "{data_dir.as_posix()}"',
                 f'resting_hrv_profile_names = ["{PROFILE}"]',
+                "threshold_workout_names = []",
                 'athlete_timezone = "Pacific/Auckland"',
                 "",
             ]

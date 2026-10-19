@@ -570,7 +570,12 @@ def test_a_sync_stores_the_same_laps_as_one_file_upload(
 
     store_b = tmp_path / "store_b"
     config = AppConfig(
-        host="127.0.0.1", port=8000, data_dir=store_b, resting_hrv_profile_names=[], athlete_timezone="UTC"
+        host="127.0.0.1",
+        port=8000,
+        data_dir=store_b,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone="UTC",
     )
     monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: config)
     db._load_config_cached.cache_clear()

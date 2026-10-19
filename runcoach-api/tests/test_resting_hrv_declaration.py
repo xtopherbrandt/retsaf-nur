@@ -552,7 +552,7 @@ def test_a_blank_config_entry_is_rejected_before_it_can_match_anything(
                 host="127.0.0.1",
                 port=8000,
                 data_dir=isolated_data_dir,
-                resting_hrv_profile_names=[blank],
+                resting_hrv_profile_names=[blank], threshold_workout_names=[],
                 athlete_timezone="UTC",
             )
 

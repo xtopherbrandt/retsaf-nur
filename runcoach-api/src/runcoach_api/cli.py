@@ -2,6 +2,7 @@ import argparse
 import errno
 import socket
 import sys
+import textwrap
 
 import uvicorn
 from pydantic import ValidationError
@@ -18,7 +19,7 @@ _RESTART_AND_INIT_FOOTER = """\
   For a fresh install, `runcoach-api init` writes every field it asks for:
 
       runcoach-api init --host HOST --port PORT --data-dir DIR \\
-          --resting-hrv-profile NAME --athlete-timezone ZONE"""
+          --resting-hrv-profile NAME --threshold-workout NAME --athlete-timezone ZONE"""
 
 # F004's 2026-09-06 amendment made `resting_hrv_profile_names` a required field
 # with no default, which is a *breaking* config change: every `api.toml` written
@@ -87,8 +88,40 @@ Error: config field 'athlete_timezone' is missing, and it has no default.
 
 """ + _RESTART_AND_INIT_FOOTER
 
+# F027 made `threshold_workout_names` the third required field with no
+# default -- the same breaking shape as the two blocks above. It lists the
+# workout names that admit a session as a threshold workout beside the
+# athlete's `threshold_workout` tag, and `[]` is the declaration that the tag
+# alone admits one: what every api.toml meant before the field existed, so
+# the upgrade for an athlete who names nothing is that one line.
+_MISSING_THRESHOLD_WORKOUT_NAMES_HELP = """\
+Error: config field 'threshold_workout_names' is missing, and it has no default.
+
+  It was added on 2026-10-19 and is required, so an api.toml written before then
+  must be edited before the server will start. It lists the workout names --
+  matched after stripping, ignoring case -- that admit a run as a threshold
+  workout beside the activity tag.
+
+  Add one line to your api.toml. If your threshold workouts carry names in
+  Garmin Connect, list them:
+
+      threshold_workout_names = ["Threshold", "Progression Run"]
+
+  If the activity tag alone should admit a threshold workout, say so with the
+  empty list -- that is a declaration, not a default:
+
+      threshold_workout_names = []
+
+  Or set the environment variable instead. Its value is parsed as JSON, so the
+  brackets and quotes are required and a bare name will not parse:
+
+      RUNCOACH_THRESHOLD_WORKOUT_NAMES='["Threshold", "Progression Run"]'
+      RUNCOACH_THRESHOLD_WORKOUT_NAMES='[]'
+
+""" + _RESTART_AND_INIT_FOOTER
+
 # The dispatch table: `(type, loc)` -> remediation text. Keyed on the error
-# *type* as well as the field because `'missing'` is the only shape either block
+# *type* as well as the field because `'missing'` is the only shape any block
 # is correct advice for. A blank profile entry (`'value_error'`), a bare string
 # instead of a list (`'list_type'`), an unresolvable zone (`'value_error'`) and
 # an unparseable value all name one of these fields while meaning something
@@ -96,6 +129,7 @@ Error: config field 'athlete_timezone' is missing, and it has no default.
 # pydantic or from `AppConfig`'s validators -- the terse form below renders it.
 _REMEDIATION_BY_ERROR: dict[tuple[str, tuple[str, ...]], str] = {
     ("missing", ("resting_hrv_profile_names",)): _MISSING_PROFILE_NAMES_HELP,
+    ("missing", ("threshold_workout_names",)): _MISSING_THRESHOLD_WORKOUT_NAMES_HELP,
     ("missing", ("athlete_timezone",)): _MISSING_ATHLETE_TIMEZONE_HELP,
 }
 
@@ -111,13 +145,14 @@ def _render_validation_error(e: ValidationError) -> str:
     `test_cli_startup` has pinned since T014:
 
     * If the reported error has remediation text, render the remediation for
-      **every** error that has it, in `errors()` order. With two required
-      fields that each carry an upgrade path (T088 added `athlete_timezone`
-      beside `resting_hrv_profile_names`) there is no field-declaration order
-      that is right for every broken `api.toml`: a file missing both must be
-      told about both, and which field pydantic lists first must not decide
-      which fix the athlete sees. Iterating the table removes that dependence
-      instead of choosing a winner (T081).
+      **every** error that has it, in `errors()` order. With several required
+      fields that each carry an upgrade path (`resting_hrv_profile_names`,
+      `threshold_workout_names` and `athlete_timezone`) there is no
+      field-declaration order that is right for every broken `api.toml`: a
+      file missing more than one must be told about each, and which field
+      pydantic lists first must not decide which fix the athlete sees.
+      Iterating the table removes that dependence instead of choosing a
+      winner (T081).
 
     * Otherwise render the reported error alone, in the terse form. The mode
       is gated on `errors()[0]` rather than on "does any error have help"
@@ -130,7 +165,7 @@ def _render_validation_error(e: ValidationError) -> str:
       in, even though it no longer decides which remediation is shown.
 
     Errors after the reported one that carry no remediation (an unknown key,
-    say, beside two missing fields) are deferred to the next start, exactly as
+    say, beside the missing fields) are deferred to the next start, exactly as
     the single-block form always deferred them; the terse form is for what
     pydantic says about the field it reports, never a dump of every internal.
     """
@@ -176,13 +211,28 @@ def serve() -> None:
     uvicorn.run(app, host=config.host, port=config.port)
 
 
+class _FlagPreservingHelpFormatter(argparse.HelpFormatter):
+    """``argparse.HelpFormatter`` that never breaks a word at a hyphen.
+
+    The stock formatter wraps help text with ``textwrap.wrap``'s default
+    ``break_on_hyphens=True``, so a flag such as ``--athlete-timezone`` that
+    straddles the terminal width is printed as ``--athlete-`` / ``timezone``
+    and stops being a token the reader can copy or search for. The ``init``
+    help line names every flag that command accepts, so this matters there.
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        text = self._whitespace_matcher.sub(" ", text).strip()
+        return textwrap.wrap(text, width, break_on_hyphens=False, break_long_words=False)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Top-level parser for the ``runcoach-api`` console entry point.
 
     ``serve`` is additive: a bare ``runcoach-api`` still means ``serve``, so
     existing scripts and habits keep working. The ``init`` subparser
     deliberately declares no flags of its own -- ``init_cmd.main`` owns
-    ``--host/--port/--data-dir/--resting-hrv-profile/--athlete-timezone/--force``,
+    ``--host/--port/--data-dir/--resting-hrv-profile/--threshold-workout/--athlete-timezone/--force``,
     and restating them here would let the two parsers drift apart. The help
     *string* still names them, because it is the only place
     ``runcoach-api --help`` can advertise what ``init`` accepts.
@@ -190,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="runcoach-api",
         description="RunCoach backend API. With no subcommand, starts the server.",
+        formatter_class=_FlagPreservingHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", metavar="{init,serve}")
     subparsers.add_parser(
@@ -197,10 +248,14 @@ def build_parser() -> argparse.ArgumentParser:
         # Comma-separated rather than slash-joined: argparse wraps this line
         # with textwrap, which breaks a long unbreakable token mid-word --
         # slash-joining produced a literal `--resting-\nhrv-profile` in
-        # `runcoach-api --help`. Spaces give it legal break points.
+        # `runcoach-api --help`. Spaces give it legal break points, and the
+        # formatter above keeps textwrap from breaking a flag at its own
+        # hyphen, which it otherwise does wherever the line happens to end
+        # (`--athlete-\ntimezone` at 80 columns once the list grew to six).
         help=(
             "write the API config file "
-            "(--host, --port, --data-dir, --resting-hrv-profile, --athlete-timezone, --force)"
+            "(--host, --port, --data-dir, --resting-hrv-profile, --threshold-workout, "
+            "--athlete-timezone, --force)"
         ),
         add_help=False,
     )

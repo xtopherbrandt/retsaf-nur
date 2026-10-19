@@ -46,7 +46,7 @@ def _ingest_into_fresh_db(
         host="127.0.0.1",
         port=8000,
         data_dir=data_dir,
-        resting_hrv_profile_names=[],
+        resting_hrv_profile_names=[], threshold_workout_names=[],
         athlete_timezone="UTC",
     )
     monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: fake_config)

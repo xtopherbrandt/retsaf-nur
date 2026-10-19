@@ -1,7 +1,7 @@
 """Application configuration loading for the Run Coaching API.
 
-Reads ``host``, ``port``, ``data_dir``, ``resting_hrv_profile_names`` and
-``athlete_timezone`` from a local TOML config
+Reads ``host``, ``port``, ``data_dir``, ``resting_hrv_profile_names``,
+``threshold_workout_names`` and ``athlete_timezone`` from a local TOML config
 file (``~/.runcoach/api.toml`` by default), with ``RUNCOACH_``-prefixed
 environment variables taking priority over the file's values.
 
@@ -124,17 +124,17 @@ class AppConfig(BaseSettings):
     host: str
     port: int = Field(ge=1, le=65535)
     data_dir: Path
-    # The two remediation-bearing fields are declared AFTER `port`,
+    # The three remediation-bearing fields are declared AFTER `port`,
     # deliberately. Pydantic v2 orders `ValidationError.errors()` by
     # field-definition order, and `cli._render_validation_error` picks its
     # mode from `errors()[0]`: a reported error *with* remediation text
     # renders the remediation for every error that has it (so the order of
-    # the two fields below no longer matters -- T081), but a reported error
+    # the fields below no longer matters -- T081), but a reported error
     # *without* it is rendered alone, in the terse form, so a port complaint
     # never carries upgrade instructions. `test_cli_startup` builds a real
     # error from an out-of-range `port` and asserts "port" reaches stderr;
-    # moving either field above `port` would silently turn that terse message
-    # into a remediation block (`test_config.py::
+    # moving any of the three above `port` would silently turn that terse
+    # message into a remediation block (`test_config.py::
     # test_port_precedes_the_remediation_bearing_fields` pins the order).
     #
     # The athlete's Tier-1 resting-HRV declaration: a FIT file routes Tier 1
@@ -148,6 +148,20 @@ class AppConfig(BaseSettings):
     # the guise of a value, which is precisely what the amendment exists to
     # prevent, and what `AppConfig`'s no-defaults rule already forbids.
     resting_hrv_profile_names: list[str]
+
+    # The athlete's threshold-workout declaration by name (F027): a running
+    # session whose workout steps carry a `workout_name` equal to an entry
+    # here is admitted as a threshold workout beside the `threshold_workout`
+    # tag. Both sides are compared as `str.strip().casefold()` by the reader,
+    # so each entry is stripped here at load -- padding in the file carries
+    # no meaning -- and an entry that is empty after stripping is refused:
+    # it would otherwise match every step with an empty name.
+    #
+    # NO DEFAULT -- not even `[]`, for the reason the field above has none.
+    # An athlete who admits workouts by tag alone writes
+    # `threshold_workout_names = []` explicitly; `runcoach-api init` writes
+    # exactly that when given no `--threshold-workout` flag.
+    threshold_workout_names: list[str]
 
     # The IANA zone the resting-HRV trend (F005) buckets local days in: the
     # 7-day window, the 21-day coverage gap and same-morning grouping are all
@@ -199,6 +213,30 @@ class AppConfig(BaseSettings):
                     "no profile means a resting capture."
                 )
         return names
+
+    @field_validator("threshold_workout_names")
+    @classmethod
+    def _strip_workout_names(cls, names: list[str]) -> list[str]:
+        """Strip each entry; refuse one that is empty after stripping.
+
+        The reader matches `str.strip().casefold()` on both sides, so the
+        stored list is the stripped one and a padded entry in the file is the
+        same declaration as the bare name. An entry that strips to nothing
+        would match every step whose name is empty, so it is refused as a
+        value error naming the field. `resting_hrv_profile_names` above is
+        matched exactly and is deliberately not stripped; the two validators
+        differ because the two matches do.
+        """
+        stripped = [name.strip() for name in names]
+        for index, name in enumerate(stripped):
+            if not name:
+                raise ValueError(
+                    f"entry {index} is empty after stripping; a threshold workout "
+                    "name must be the workout's name as Garmin Connect shows it "
+                    '(e.g. "Threshold"). Write an empty list to admit threshold '
+                    "workouts by their tag alone."
+                )
+        return stripped
 
     @classmethod
     def settings_customise_sources(

@@ -44,7 +44,13 @@ def _validation_error(**overrides) -> ValidationError:
     one way its config is broken. A config that loads is a failed premise,
     not a passing test, hence the ``AssertionError``.
     """
-    fields = {"host": "localhost", "port": 8000, "data_dir": Path("/tmp"), **overrides}
+    fields = {
+        "host": "localhost",
+        "port": 8000,
+        "data_dir": Path("/tmp"),
+        "threshold_workout_names": [],
+        **overrides,
+    }
     try:
         AppConfig(**fields)
     except ValidationError as exc:
@@ -233,6 +239,7 @@ def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
 #   unknown key in api.toml  -> [0] type='extra_forbidden' loc=('nope',)
 #   pre-F005 file (no zone)  -> [0] type='missing'         loc=('resting_hrv_profile_names',)
 #                               [1] type='missing'         loc=('athlete_timezone',)
+#   pre-F027 file (no names) -> [0] type='missing'         loc=('threshold_workout_names',)
 #
 # The last row was added with T088 (F005), which made `athlete_timezone` required
 # and declared it *after* `resting_hrv_profile_names`; since T081 a file missing
@@ -240,7 +247,10 @@ def test_cli_other_oserror_from_uvicorn_run_propagates(monkeypatch, capsys):
 # T081 block at the end of this module pins that). Every construction in this
 # module supplies `athlete_timezone="UTC"` so each helper is incomplete in
 # exactly the one way its docstring names, and the rows above stay the shapes
-# the tests actually see.
+# the tests actually see. F027's `threshold_workout_names` (the third required
+# field, declared between the two above) is supplied by `_validation_error`'s
+# base dict for the same reason; its own remediation is pinned at the end of
+# this module.
 #
 # The second row is why the remediation *mode* is gated on `errors()[0]` rather
 # than on "any error mentions the field": `_make_validation_error` above raises
@@ -331,15 +341,18 @@ def test_serve_missing_field_message_comes_from_a_real_pre_amendment_toml(
     note beside it for why importing it here would reach `conftest`'s stub.
     """
     monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_THRESHOLD_WORKOUT_NAMES", raising=False)
     monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
     api_toml = tmp_path / "api.toml"
-    # `athlete_timezone` is written: this file is missing *only* the field
-    # whose remediation is under test, so the message is driven by that gap
-    # and not by the field-declaration order (T081 removes that dependence).
+    # `athlete_timezone` and `threshold_workout_names` are written: this file
+    # is missing *only* the field whose remediation is under test, so the
+    # message is driven by that gap and not by the field-declaration order
+    # (T081 removes that dependence).
     api_toml.write_text(
         'host = "127.0.0.1"\n'
         "port = 8000\n"
         f'data_dir = "{(tmp_path / "data").as_posix()}"\n'
+        "threshold_workout_names = []\n"
         'athlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
@@ -395,7 +408,7 @@ def test_serve_blank_profile_name_renders_the_validators_own_message(
             host="localhost",
             port=8000,
             data_dir=Path("/tmp"),
-            resting_hrv_profile_names=["  "],
+            resting_hrv_profile_names=["  "], threshold_workout_names=[],
             athlete_timezone="UTC",
         )
     except ValidationError as exc:
@@ -428,7 +441,7 @@ def test_serve_wrong_type_for_profile_names_renders_generically(monkeypatch, cap
             host="localhost",
             port=8000,
             data_dir=Path("/tmp"),
-            resting_hrv_profile_names="HRV Snapshot",
+            resting_hrv_profile_names="HRV Snapshot", threshold_workout_names=[],
             athlete_timezone="UTC",
         )
     except ValidationError as exc:
@@ -555,13 +568,15 @@ def test_remediation_dispatch_missing_timezone_alone_shows_the_one_line_fix(
     exported zone cannot make the file load and delete the premise.
     """
     monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_THRESHOLD_WORKOUT_NAMES", raising=False)
     monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
     api_toml = tmp_path / "api.toml"
     api_toml.write_text(
         'host = "127.0.0.1"\n'
         "port = 8000\n"
         f'data_dir = "{(tmp_path / "data").as_posix()}"\n'
-        "resting_hrv_profile_names = []\n",
+        "resting_hrv_profile_names = []\n"
+        "threshold_workout_names = []\n",
         encoding="utf-8",
     )
 
@@ -641,3 +656,68 @@ def test_remediation_dispatch_profile_names_help_names_the_flag_init_now_require
     err = capsys.readouterr().err
     assert "runcoach-api init" in err
     assert "--athlete-timezone" in err
+
+
+# ---------------------------------------------------------------------------
+# F027 -- the third required field, `threshold_workout_names`.
+#
+# The same breaking shape as the two above: an `api.toml` written before the
+# field existed fails startup, and pydantic's "Field required" names nothing
+# to write. The block is dispatched through the same table, so a file missing
+# this field alone gets this block alone, and the `[]` form is a declaration
+# (admission by tag only) rather than a default.
+# ---------------------------------------------------------------------------
+
+_THRESHOLD_WORKOUT_REMEDIATION_MARKERS = (
+    'threshold_workout_names = ["Threshold", "Progression Run"]',
+    "threshold_workout_names = []",
+    "RUNCOACH_THRESHOLD_WORKOUT_NAMES",
+)
+
+
+def test_missing_threshold_workout_names_names_the_field_and_an_example(
+    monkeypatch, capsys, tmp_path
+):
+    """F027 AC2: an `api.toml` without `threshold_workout_names` exits non-zero
+    with a message naming the field and showing an example list.
+
+    Driven through the real `load_config` on a real file that lacks *only*
+    this field, with every env override cleared so an exported value cannot
+    make the file load and delete the premise.
+    """
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_THRESHOLD_WORKOUT_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
+    api_toml = tmp_path / "api.toml"
+    api_toml.write_text(
+        'host = "127.0.0.1"\n'
+        "port = 8000\n"
+        f'data_dir = "{(tmp_path / "data").as_posix()}"\n'
+        "resting_hrv_profile_names = []\n"
+        'athlete_timezone = "UTC"\n',
+        encoding="utf-8",
+    )
+
+    _serve_expecting_exit(monkeypatch, lambda: real_load_config(api_toml))
+
+    captured = capsys.readouterr()
+    err = captured.err
+    assert "threshold_workout_names" in err
+    # An example list the athlete can paste, the tag-only declaration, and the
+    # env form -- with the JSON warning the profile-names block carries.
+    for marker in _THRESHOLD_WORKOUT_REMEDIATION_MARKERS:
+        assert marker in err, marker
+    assert "JSON" in err
+    assert "no default" in err.lower()
+    assert "restart" in err.lower()
+    # The footer's `init` line names the new repeatable flag beside the others.
+    assert "runcoach-api init" in err
+    assert "--threshold-workout NAME" in err
+    assert "--athlete-timezone" in err
+    # The other two fields are present, so their blocks must not appear.
+    for marker in _REMEDIATION_MARKERS + _TIMEZONE_REMEDIATION_MARKERS:
+        assert marker not in err, marker
+    assert "Field required" not in err
+    assert "Traceback" not in err
+    assert "Traceback" not in captured.out
+    assert "--threshold-workout" in cli.build_parser().format_help()

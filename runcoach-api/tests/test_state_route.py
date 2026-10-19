@@ -55,7 +55,7 @@ def zone_config(isolated_data_dir, monkeypatch: pytest.MonkeyPatch):
             host="127.0.0.1",
             port=8000,
             data_dir=isolated_data_dir,
-            resting_hrv_profile_names=[],
+            resting_hrv_profile_names=[], threshold_workout_names=[],
             athlete_timezone=name,
         )
         monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)

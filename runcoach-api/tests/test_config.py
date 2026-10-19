@@ -48,7 +48,7 @@ def test_load_config_invalid_port_raises_validation_error(tmp_path):
     bad_port_path = tmp_path / "api.toml"
     bad_port_path.write_text(
         'host = "127.0.0.1"\nport = "abc"\ndata_dir = "/tmp/data"\n'
-        'resting_hrv_profile_names = []\nathlete_timezone = "UTC"\n',
+        'resting_hrv_profile_names = []\nthreshold_workout_names = []\nathlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
 
@@ -64,7 +64,8 @@ def test_load_config_valid_returns_app_config(tmp_path):
     data_dir = tmp_path / "data"
     good_path.write_text(
         f'host = "127.0.0.1"\nport = 8000\ndata_dir = "{data_dir.as_posix()}"\n'
-        'resting_hrv_profile_names = ["HRV Snapshot"]\nathlete_timezone = "UTC"\n',
+        'resting_hrv_profile_names = ["HRV Snapshot"]\nthreshold_workout_names = []\n'
+        'athlete_timezone = "UTC"\n',
         encoding="utf-8",
     )
 
@@ -90,20 +91,33 @@ def test_load_config_valid_returns_app_config(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _toml(tmp_path, body: str, *, athlete_timezone: str | None = "UTC"):
+def _toml(
+    tmp_path,
+    body: str,
+    *,
+    athlete_timezone: str | None = "UTC",
+    threshold_workout_names: str | None = "[]",
+):
     """Write an ``api.toml`` that is complete except for what ``body`` adds.
 
     ``athlete_timezone`` is written by default (a fixed zone, never the
     developer's) so the profile-names tests below stay about profile names.
     A test that is *about* the zone passes its own value, or ``None`` to
     leave the key out and exercise the missing-field path.
+    ``threshold_workout_names`` is written the same way, as the TOML literal
+    for the list (``"[]"`` by default); ``None`` leaves the key out.
     """
     path = tmp_path / "api.toml"
     data_dir = tmp_path / "data"
     zone_line = "" if athlete_timezone is None else f'athlete_timezone = "{athlete_timezone}"\n'
+    workouts_line = (
+        ""
+        if threshold_workout_names is None
+        else f"threshold_workout_names = {threshold_workout_names}\n"
+    )
     path.write_text(
         f'host = "127.0.0.1"\nport = 8000\n'
-        f'data_dir = "{data_dir.as_posix()}"\n{zone_line}{body}',
+        f'data_dir = "{data_dir.as_posix()}"\n{zone_line}{workouts_line}{body}',
         encoding="utf-8",
     )
     return path
@@ -120,7 +134,13 @@ def test_app_config_requires_resting_hrv_profile_names(monkeypatch):
     """
     monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
     with pytest.raises(pydantic.ValidationError) as exc_info:
-        AppConfig(host="127.0.0.1", port=8000, data_dir=Path("/tmp/data"), athlete_timezone="UTC")
+        AppConfig(
+            host="127.0.0.1",
+            port=8000,
+            data_dir=Path("/tmp/data"),
+            threshold_workout_names=[],
+            athlete_timezone="UTC",
+        )
 
     errors = exc_info.value.errors()
     assert len(errors) == 1, errors
@@ -241,10 +261,14 @@ def test_port_precedes_the_remediation_bearing_fields():
     record of the declaration, not a behaviour the CLI depends on.
     """
     order = list(AppConfig.model_fields)
-    remediation_bearing = ("resting_hrv_profile_names", "athlete_timezone")
+    remediation_bearing = ("resting_hrv_profile_names", "threshold_workout_names", "athlete_timezone")
 
     for name in remediation_bearing:
         assert order.index("port") < order.index(name), order
+    # Declared in this order: the workout names sit between the profile names
+    # and the zone, so a file missing all three is told about them in the
+    # order the fields were added.
+    assert [name for name in order if name in remediation_bearing] == list(remediation_bearing)
     assert order[-1] == "athlete_timezone", order
 
 
@@ -277,6 +301,7 @@ def test_athlete_timezone_is_required_and_has_no_default(monkeypatch):
             port=8000,
             data_dir=Path("/tmp/data"),
             resting_hrv_profile_names=[],
+            threshold_workout_names=[],
         )
 
     errors = exc_info.value.errors()
@@ -390,3 +415,109 @@ def test_no_ambient_timezone_leaks_into_missing_field_tests(tmp_path, monkeypatc
         error["loc"] == ("athlete_timezone",) and error["type"] == "missing"
         for error in exc_info.value.errors()
     ), exc_info.value.errors()
+
+
+# ---------------------------------------------------------------------------
+# threshold_workout_names -- required, no default (F027)
+#
+# The workout names that admit a session as a threshold workout beside the
+# athlete's tag. Required with no default, like ``resting_hrv_profile_names``:
+# ``[]`` is the explicit "admission by tag only" declaration, and a file
+# without the key fails to load rather than assuming one. Unlike the profile
+# names, each entry is stripped at load -- the reader compares
+# ``str.strip().casefold()`` on both sides, so padding carries no meaning --
+# and an entry that is empty after stripping is refused.
+#
+# Every test that asserts the field is *missing* clears
+# ``RUNCOACH_THRESHOLD_WORKOUT_NAMES`` first, for the reason the zone tests
+# above give: env overrides the file.
+# ---------------------------------------------------------------------------
+
+_THRESHOLD_WORKOUT_NAMES_ENV = "RUNCOACH_THRESHOLD_WORKOUT_NAMES"
+
+
+def test_threshold_workout_names_is_required(tmp_path, monkeypatch):
+    """An ``api.toml`` without the key raises a ``ValidationError`` naming it.
+
+    The file is complete in every other field, so the error is asserted to be
+    the only one and a second ``missing`` cannot hide behind an ``any()``; the
+    field is also pinned to have no default of any kind, ``[]`` included.
+    """
+    monkeypatch.delenv(_THRESHOLD_WORKOUT_NAMES_ENV, raising=False)
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", threshold_workout_names=None)
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    errors = exc_info.value.errors()
+    assert len(errors) == 1, errors
+    assert errors[0]["loc"] == ("threshold_workout_names",), errors
+    assert errors[0]["type"] == "missing", errors
+    assert AppConfig.model_fields["threshold_workout_names"].is_required()
+
+
+def test_threshold_workout_names_are_stripped(tmp_path, monkeypatch):
+    """Each entry is stripped at load; the empty list and a plain list load as written."""
+    monkeypatch.delenv(_THRESHOLD_WORKOUT_NAMES_ENV, raising=False)
+    path = _toml(
+        tmp_path,
+        "resting_hrv_profile_names = []\n",
+        threshold_workout_names='[" Threshold ", "Progression Run", "\\tTempo"]',
+    )
+
+    config = load_config(path=path)
+
+    assert config.threshold_workout_names == ["Threshold", "Progression Run", "Tempo"]
+
+    empty = load_config(path=_toml(tmp_path, "resting_hrv_profile_names = []\n"))
+    assert empty.threshold_workout_names == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param('""', id="empty"),
+        pytest.param('"   "', id="spaces"),
+        pytest.param(r'"\t"', id="tab"),
+        pytest.param(r'" "', id="non-breaking-space"),
+    ],
+)
+def test_an_empty_threshold_workout_name_is_refused(tmp_path, monkeypatch, entry):
+    """An entry empty after stripping is a ``value_error`` on the field, even
+    beside a valid entry -- it would otherwise match every unnamed step.
+
+    Refused *as a bad value*, so the test cannot be satisfied by
+    ``extra="forbid"`` with the field deleted.
+    """
+    monkeypatch.delenv(_THRESHOLD_WORKOUT_NAMES_ENV, raising=False)
+    path = _toml(
+        tmp_path,
+        "resting_hrv_profile_names = []\n",
+        threshold_workout_names=f'["Threshold", {entry}]',
+    )
+
+    with pytest.raises(pydantic.ValidationError) as exc_info:
+        load_config(path=path)
+
+    errors = exc_info.value.errors()
+    assert any(
+        error["loc"][:1] == ("threshold_workout_names",) and error["type"] == "value_error"
+        for error in errors
+    ), errors
+    assert "threshold_workout_names" in str(exc_info.value)
+
+
+def test_threshold_workout_names_env_form_is_json(tmp_path, monkeypatch):
+    """``RUNCOACH_THRESHOLD_WORKOUT_NAMES`` is parsed as JSON and wins over the
+    file, so a file without the key loads when the variable holds a list; the
+    stripping applies to the env form too."""
+    monkeypatch.setenv(_THRESHOLD_WORKOUT_NAMES_ENV, '["Threshold", " Tempo "]')
+    path = _toml(tmp_path, "resting_hrv_profile_names = []\n", threshold_workout_names=None)
+
+    config = load_config(path=path)
+
+    assert config.threshold_workout_names == ["Threshold", "Tempo"]
+
+    # And over a file that has the key: env outranks the file, like every field.
+    overridden = load_config(path=_toml(tmp_path, "resting_hrv_profile_names = []\n"))
+    assert overridden.threshold_workout_names == ["Threshold", "Tempo"]

@@ -73,6 +73,25 @@ def main(argv: list[str]) -> None:
             "declare that no profile does (Health Snapshot still routes)."
         ),
     )
+    # Repeatable like `--resting-hrv-profile`, with the same load-bearing
+    # `default=[]`: zero occurrences write `threshold_workout_names = []`, the
+    # explicit "admission by tag only" declaration, rather than leaving out a
+    # key `AppConfig` requires. Entry content is not validated here either:
+    # `AppConfig` strips each name on load and refuses one that is empty after
+    # stripping, in the one place `init` and `serve` share.
+    parser.add_argument(
+        "--threshold-workout",
+        action="append",
+        default=[],
+        dest="threshold_workout",
+        metavar="NAME",
+        help=(
+            "workout name that admits a run as a threshold workout beside the "
+            "activity tag, matched after stripping and ignoring case against "
+            "the session's workout steps. Repeat for each name; omit entirely "
+            "to admit threshold workouts by their tag alone."
+        ),
+    )
     # Required, no default -- `AppConfig` has none (F001's ratified rule), and
     # `init` mirrors that by asking for every field it writes. A default "UTC"
     # here would be the silently-absorbed default one layer earlier: it would
@@ -108,6 +127,7 @@ def main(argv: list[str]) -> None:
                 "port": args.port,
                 "data_dir": args.data_dir,
                 "resting_hrv_profile_names": args.resting_hrv_profile,
+                "threshold_workout_names": args.threshold_workout,
                 "athlete_timezone": args.athlete_timezone,
             }
         ),

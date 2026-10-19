@@ -79,7 +79,12 @@ def _upload(client: TestClient, filename: str) -> str:
 def _zone(monkeypatch: pytest.MonkeyPatch, data_dir: Path, name: str) -> None:
     """Install an ``AppConfig`` whose ``athlete_timezone`` is ``name``, on the isolated store."""
     zoned = AppConfig(
-        host="127.0.0.1", port=8000, data_dir=data_dir, resting_hrv_profile_names=[], athlete_timezone=name
+        host="127.0.0.1",
+        port=8000,
+        data_dir=data_dir,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone=name,
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: zoned)
     db_module._load_config_cached.cache_clear()

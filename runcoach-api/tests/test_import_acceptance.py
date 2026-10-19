@@ -102,7 +102,7 @@ def _use_store(monkeypatch: pytest.MonkeyPatch, data_dir: Path) -> None:
         host="127.0.0.1",
         port=8000,
         data_dir=data_dir,
-        resting_hrv_profile_names=[CAPTURE_PROFILE],
+        resting_hrv_profile_names=[CAPTURE_PROFILE], threshold_workout_names=[],
         athlete_timezone="UTC",
     )
     monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: config)

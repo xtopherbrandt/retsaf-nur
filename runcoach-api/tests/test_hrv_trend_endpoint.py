@@ -84,7 +84,7 @@ def configure(isolated_data_dir, monkeypatch):
             host="127.0.0.1",
             port=8000,
             data_dir=isolated_data_dir,
-            resting_hrv_profile_names=[PROFILE],
+            resting_hrv_profile_names=[PROFILE], threshold_workout_names=[],
             athlete_timezone=zone,
         )
         monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)

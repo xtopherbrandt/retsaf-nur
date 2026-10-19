@@ -30,6 +30,7 @@ def test_api_init_writes_config_and_refuses_overwrite_without_force(isolated_con
         "port": 8123,
         "data_dir": "/tmp/x",
         "resting_hrv_profile_names": [],
+        "threshold_workout_names": [],
         "athlete_timezone": "UTC",
     }
 
@@ -46,6 +47,7 @@ def test_api_init_writes_config_and_refuses_overwrite_without_force(isolated_con
         "port": 8123,
         "data_dir": "/tmp/x",
         "resting_hrv_profile_names": [],
+        "threshold_workout_names": [],
         "athlete_timezone": "UTC",
     }
 
@@ -76,6 +78,7 @@ def test_api_init_overwrites_with_force(isolated_config_path):
         "port": 9999,
         "data_dir": "/tmp/y",
         "resting_hrv_profile_names": [],
+        "threshold_workout_names": [],
         "athlete_timezone": "UTC",
     }
 
@@ -120,6 +123,7 @@ def test_api_init_with_no_profile_flag_writes_an_empty_list(isolated_config_path
         "port": 8123,
         "data_dir": "/tmp/x",
         "resting_hrv_profile_names": [],
+        "threshold_workout_names": [],
         "athlete_timezone": "UTC",
     }
 
@@ -421,3 +425,70 @@ def test_init_without_the_flag_exits_2_and_names_it(isolated_config_path, capsys
     assert exc_info.value.code == 2
     assert "--athlete-timezone" in capsys.readouterr().err
     assert not isolated_config_path.exists()
+
+
+# ── F027: the threshold workout names reach the written config ──────────────
+#
+# `threshold_workout_names` is a required `AppConfig` field with no default,
+# like `resting_hrv_profile_names`, so an `init` that does not write it
+# produces a config `serve` refuses. Zero `--threshold-workout` flags write
+# `[]` -- admission by the athlete's tag only, which is a declaration -- and
+# the flag repeats, each occurrence appending one name in the order given.
+
+
+def test_init_writes_an_empty_threshold_workout_list(isolated_config_path, tmp_path, monkeypatch):
+    """No flag writes `threshold_workout_names = []`, and what `init` writes, `serve` loads."""
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_THRESHOLD_WORKOUT_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
+    init_cmd.main(
+        [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8123",
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--athlete-timezone",
+            "UTC",
+        ]
+    )
+
+    written = tomllib.loads(isolated_config_path.read_text())
+    assert written["threshold_workout_names"] == []
+    assert "threshold_workout_names = []" in isolated_config_path.read_text()
+
+    config = load_config(isolated_config_path)
+
+    assert config.threshold_workout_names == []
+
+
+def test_init_threshold_workout_is_repeatable(isolated_config_path, tmp_path, monkeypatch):
+    """Two flags write two entries in the order given, and the file loads with them."""
+    monkeypatch.delenv("RUNCOACH_RESTING_HRV_PROFILE_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_THRESHOLD_WORKOUT_NAMES", raising=False)
+    monkeypatch.delenv("RUNCOACH_ATHLETE_TIMEZONE", raising=False)
+    init_cmd.main(
+        [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8123",
+            "--data-dir",
+            str(tmp_path / "data"),
+            "--athlete-timezone",
+            "UTC",
+            "--threshold-workout",
+            "Progression Run",
+            "--threshold-workout",
+            "Threshold",
+        ]
+    )
+
+    written = tomllib.loads(isolated_config_path.read_text())
+    assert written["threshold_workout_names"] == ["Progression Run", "Threshold"]
+    assert written["resting_hrv_profile_names"] == []
+
+    config = load_config(isolated_config_path)
+
+    assert config.threshold_workout_names == ["Progression Run", "Threshold"]

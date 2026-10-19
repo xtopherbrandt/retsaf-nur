@@ -367,7 +367,7 @@ def test_the_3_2_1_switch_away_row_reads_the_same_through_the_endpoint(
         host="127.0.0.1",
         port=8000,
         data_dir=isolated_data_dir,
-        resting_hrv_profile_names=[PROFILE],
+        resting_hrv_profile_names=[PROFILE], threshold_workout_names=[],
         athlete_timezone="Pacific/Auckland",
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
@@ -461,7 +461,7 @@ def test_a_withheld_verdict_names_no_dissenter_and_a_conferred_one_still_does(
         host="127.0.0.1",
         port=8000,
         data_dir=isolated_data_dir,
-        resting_hrv_profile_names=[PROFILE],
+        resting_hrv_profile_names=[PROFILE], threshold_workout_names=[],
         athlete_timezone="Pacific/Auckland",
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
@@ -596,7 +596,7 @@ def test_week_not_representative_is_served_with_nothing_selected_and_names_no_di
         host="127.0.0.1",
         port=8000,
         data_dir=isolated_data_dir,
-        resting_hrv_profile_names=[PROFILE],
+        resting_hrv_profile_names=[PROFILE], threshold_workout_names=[],
         athlete_timezone="Pacific/Auckland",
     )
     monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
