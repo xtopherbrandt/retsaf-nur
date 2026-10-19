@@ -767,7 +767,7 @@ PINNED_SHA256 = {
     "REG-28/Pinned": "6f6a2e0e1e2d",
     "REG-29/Pinned": "6f6a2e0e1e2d",
     "REG-30/Pinned": "6f6a2e0e1e2d",
-    "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487",
+    "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487.6c48a4794dba",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -1043,6 +1043,7 @@ HISTORY_SHA256 = {
     "H-41": "0843f60b2521",
     "H-42": "4630568aa9aa",
     "H-43": "e4fa49a899eb",
+    "H-44": "445782a59d91",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1059,7 +1060,7 @@ REVIEW_PROSE_SHA256 = (
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
-    "a3b05c44be78",
+    "f525c1426b61", "e1042d5f25d3", "89249fbd4df1",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1091,6 +1092,8 @@ FROZEN_ROUNDS = {
     "19": "4cb5f213b40d",
     "20": "11ab99f7096b",
     "21": "bf9bb7e2ebee",
+    "22": "f525c1426b61",
+    "23": "e1042d5f25d3",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1119,6 +1122,8 @@ _FROZEN_ROUNDS_PIN = {
     "19": "4cb5f213b40d",
     "20": "11ab99f7096b",
     "21": "bf9bb7e2ebee",
+    "22": "f525c1426b61",
+    "23": "e1042d5f25d3",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1295,7 +1300,7 @@ REVIEW_LINE_SHA256 = {
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "79adc56cad25",
+    "DOC-18": "81823846810c",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1497,9 +1502,9 @@ REVIEW_LINE_SHA256 = {
     "REG-30": "68540b955d5e",
     "REG-30/Scope": "75b457fa786c",
     "REG-30/Not": "a2f98f571260",
-    "REG-31": "3877dc92e5c9",
-    "REG-31/Scope": "3e7876d7e329",
-    "REG-31/Not": "3aa5b4803f83",
+    "REG-31": "b4d843004d31",
+    "REG-31/Scope": "6c5a2eebde08",
+    "REG-31/Not": "4b64ee2e1b81",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
