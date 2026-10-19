@@ -322,3 +322,16 @@ def test_the_serial_rule_still_reads_antplus_only() -> None:
 
     assert mapping._resolve_hr_sensor_serial(by_name) is None
     assert mapping._infer_hr_source([_creator(), _ble_heart_rate(), *_records(150)]) == "chest_strap"
+
+
+def test_an_out_of_range_heart_rate_is_not_a_present_source() -> None:
+    """A heart rate beyond the store's integer range (a field a writer declared ``uint64``) is an
+    invalid field (``mapping.storable``), so it is no HR, and the connected strap alone does not
+    read ``chest_strap``; the last in-range value still does."""
+    out_of_range = [_creator(), _antplus("heart_rate"), *_records(2**63)]
+    in_range = [_creator(), _antplus("heart_rate"), *_records(2**63 - 1)]
+    print(f"hr_source 2**63: {_gate_value(out_of_range)}; 2**63 - 1: {_gate_value(in_range)}")
+
+    assert mapping._infer_hr_source(out_of_range) is None
+    assert _gate_value(out_of_range) == "wrist_ppg"
+    assert _gate_value(in_range) == "chest_strap"

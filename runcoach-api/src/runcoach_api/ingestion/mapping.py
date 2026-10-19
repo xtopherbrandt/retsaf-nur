@@ -407,7 +407,7 @@ def _infer_hr_source(messages: list[fitdecode.FitDataMessage]) -> str | None:
     if rr_reconstruction.reconstruct(messages):
         return "chest_strap"
     hr_present = any(
-        msg.name == "record" and _is_positive_number(msg.get_value("heart_rate", fallback=None))
+        msg.name == "record" and _is_positive_number(storable(msg.get_value("heart_rate", fallback=None)))
         for msg in messages
     )
     if not hr_present:
