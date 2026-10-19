@@ -18,6 +18,7 @@ The ids and start instants a 409 must name are the ones ``POST /sessions`` store
 | input | status |
 |---|---|
 | unknown session id, any bytes (non-FIT included) | 404, before the file is decoded |
+| the session deleted between the lookup and the write | 404 from the write's own check |
 | non-FIT bytes, a truncated file, a file with no session or sport message | ``POST /sessions``'s 400 |
 | a file over a decode ceiling (``fit_parser.MAX_RECORD_MESSAGES``) | ``POST /sessions``'s 413 |
 | a file over ``MAX_UPLOAD_BYTES`` | ``POST /sessions``'s 413 |
@@ -388,6 +389,47 @@ def test_an_unknown_id_is_404_before_decoding(monkeypatch):
         # The spy is live: a known id does decode.
         assert _put(client, stored["session_id"], _bytes("sample_run")).status_code == 200
     assert len(decoded) == 1
+
+
+def test_attach_session_laps_for_an_unknown_session_writes_nothing():
+    """``db.attach_session_laps`` answers False for an id no session has, leaves every table as it
+    was and holds no transaction open afterwards."""
+    with TestClient(app) as client:
+        _pre_feature(client)
+        before = _snapshot()
+        conn = _connect()
+        try:
+            attached = db.attach_session_laps(conn, "no-such", [], [])
+            assert conn.in_transaction is False
+        finally:
+            conn.close()
+    assert attached is False
+    assert _snapshot() == before
+
+
+def test_a_session_deleted_between_lookup_and_write_reads_404(monkeypatch):
+    """The session goes between the route's lookup and the write: ``db.session_start_time`` answers
+    the file's start once (the lookup), then None (the write's own check), and the route reads 404
+    with nothing written."""
+    raw = _bytes("sample_run")
+    answers: list[str | None] = []
+    looked_up: list[str] = []
+
+    def once_then_gone(conn, session_id):
+        looked_up.append(session_id)
+        return answers.pop(0) if answers else None
+
+    with TestClient(app) as client:
+        stored = _pre_feature(client)
+        answers.append(stored["start_time"])
+        before = _snapshot()
+        monkeypatch.setattr(db, "session_start_time", once_then_gone)
+        response = _put(client, stored["session_id"], raw, "sample_run.fit")
+
+    assert looked_up == [stored["session_id"], stored["session_id"]]
+    assert response.status_code == 404, response.text
+    assert stored["session_id"] in response.json()["detail"]
+    assert _snapshot() == before
 
 
 def test_attach_writes_nothing_else(monkeypatch):

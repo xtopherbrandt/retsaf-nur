@@ -423,6 +423,23 @@ def test_multi_session_window_bounds_are_inclusive(offset_s, kept):
     assert len(laps) == (1 if kept else 0)
 
 
+def test_a_later_session_after_one_without_elapsed_time_keeps_no_window_end():
+    """A first session with no readable ``total_elapsed_time`` gives the window no end: only the
+    start bound applies (``_in_first_session``), so a lap starting after the second session begins
+    is kept, and a lap before the first session's start is still dropped."""
+    second = START + timedelta(seconds=2000)
+    after_second = START + timedelta(seconds=5000)
+    before_start = START - timedelta(seconds=1)
+    messages = [
+        _Msg("session", start_time=START, total_elapsed_time=None),
+        _Msg("session", start_time=second, total_elapsed_time=500.0),
+        _Msg("lap", start_time=after_second, timestamp=after_second),
+        _Msg("lap", start_time=before_start, timestamp=before_start),
+    ]
+    laps, _ = mapping.to_laps(messages)
+    assert [(lap.lap_index, lap.start_t) for lap in laps] == [(0, 5000.0)]
+
+
 # --- AC6: recording modes --------------------------------------------------------------------
 
 

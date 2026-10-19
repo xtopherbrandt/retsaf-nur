@@ -18,6 +18,7 @@ Adversarial table (what was fed, what came out):
 | a candidates reply missing an item | stop, nothing downloaded, exit 1 |
 | a candidates reply with an unknown outcome | stop, nothing downloaded, exit 1 |
 | a ``matched`` answer with no session id | stop |
+| a ``matched`` answer with a numeric ``laps_read_at`` | stop, not counted as already read |
 | Garmin 429 on the second download | stop naming that day, the first item counted, exit 1 |
 | a download answering 404 | ``no FIT original`` |
 | a 400 or 413 to the attach | failed, permanent (``file_refused``) |
@@ -654,6 +655,23 @@ def test_a_candidates_reply_that_does_not_answer_every_item_stops(env, fake_garm
     assert result.exit_code == 1, result.output
     assert "the API's answer to the laps candidates could not be understood" in result.output
     assert "run `runcoach sync laps --since 2026-10-10`" in result.output
+    assert api.lap_puts == []
+
+
+def test_a_non_string_laps_read_at_is_reported_not_trusted(env, fake_garmin) -> None:
+    """A ``matched`` answer whose ``laps_read_at`` is a number is a reply the command cannot
+    understand, reported as the table above reports its rows: never counted as already read."""
+    fake = fake_garmin([_summary(101)], allow_originals=False)
+    api = env(fake, lap_candidates={101: _matched("s-101", 123)})
+
+    result = _laps("--since", SINCE)
+
+    assert result.exit_code == 1, result.output
+    assert "the API's answer to the laps candidates could not be understood" in result.output
+    assert '"laps_read_at":123' in result.output
+    assert "run `runcoach sync laps --since 2026-10-10`" in result.output
+    assert "already read 1" not in result.output
+    assert fake.downloads == []
     assert api.lap_puts == []
 
 
