@@ -1,4 +1,4 @@
-"""The two learnings rules on fixture evidence exist and keep their shape (F014 AC7).
+"""The learnings rules on fixture and release evidence exist and keep their shape (F014 AC7).
 
 ``.claude/rules/learnings/`` is loaded into every agent session through its ``paths:`` frontmatter. A
 rule file without that frontmatter is never loaded, and one without its ``Origin:`` line loses the IDEA
@@ -10,7 +10,10 @@ that records why it exists. Each file is also pinned to the phrases that carry i
 - ``name-the-recording-mode-population.md`` (IDEA-127) names the three recording-mode populations a
   feature reading per-record time, distance, speed or altitude must place in its Negative Class
   (1 Hz with pauses, moving dropouts over 5 s, smart recording), and asks for a probe or a dated
-  deferral with an owner for each.
+  deferral with an owner for each;
+- ``changelog-claims-are-tried-on-real-activities.md`` (IDEA-174) asks the release demo to list every
+  CHANGELOG sentence that tells the athlete to act or says what a rule includes or excludes, and to
+  name the athlete's actual activities each one would change, in a ``## CHANGELOG claims`` section.
 """
 
 from __future__ import annotations
@@ -46,6 +49,14 @@ RULES = (
             "smart recording: variable gaps",
             "not observed on runs in the corpus (see the provenance table)",
             "a dated deferral with an owner",
+        ),
+    ),
+    (
+        "changelog-claims-are-tried-on-real-activities.md",
+        "IDEA-174",
+        (
+            "CHANGELOG claims",
+            "the athlete's actual activities",
         ),
     ),
 )
