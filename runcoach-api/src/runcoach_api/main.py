@@ -1623,17 +1623,7 @@ def _threshold_determinant(
     An estimate with a non-finite published number (a finite but absurd GAP pace overflows the
     interval) is served as ``estimate_not_finite`` with ``estimate`` and ``error`` null, never as a value JSON
     cannot carry; ``efforts`` (with GAP pace and gain) and ``parameters`` stay, so the race can be found."""
-    excluded = [
-        {
-            "session_id": e.session_id,
-            "start_time": e.start_time,
-            "reason": e.reason,
-            "kind": e.kind,
-            "admitted_by": None if e.admitted_by is None else list(e.admitted_by),
-            "workout_name": e.workout_name,
-        }
-        for e in result.excluded
-    ]
+    excluded = [dataclasses.asdict(e) for e in result.excluded]
     for row in unreadable:
         start = datetime.datetime.fromisoformat(row["start_time"])
         if start <= result.as_of:
