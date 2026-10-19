@@ -3389,12 +3389,12 @@ components:
         session_id: { type: string }
         start_time: { type: string, format: date-time }
         kind: { type: string, enum: [race, threshold_workout], description: "`race`, or `threshold_workout` (tagged Training in Connect, or a step's workout name listed in `threshold_workout_names`)." }
-        duration_s: { type: number, description: "A race's `timer_time_s`, else the summary's `duration_s`; a workout's active time, the active laps' summed `timer_s`." }
-        gap_pace_s_per_km: { type: number, description: "F013's grade-adjusted pace of the race, or of the workout's active laps' windows." }
-        gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance (a workout's: over its active windows); below 1 counts at flat pace." }
-        gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance (a workout's: over its active windows); shown, never judged." }
+        duration_s: { type: number, description: "A race's `timer_time_s`, else the summary's `duration_s`; a workout's counted time `A`, the counted reps' summed `timer_s`." }
+        gap_pace_s_per_km: { type: number, description: "F013's grade-adjusted pace of the race, or of the workout's counted reps' windows." }
+        gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance (a workout's: over its counted reps' windows); below 1 counts at flat pace." }
+        gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance (a workout's: over its counted reps' windows); shown, never judged." }
         gain: { type: number }
-        active_blocks: { type: integer, nullable: true, description: "A workout's runs of consecutive active laps (3x10 min with jogs reads 3 when the jogs are recovery steps); null for a race." }
+        active_blocks: { type: integer, nullable: true, description: "A workout's runs of consecutive counted laps, remainder laps included (3x10 min with jogs reads 3 when the jogs are recovery steps; Goal Pace Run steps 1 then 2 read 1); null for a race." }
         admitted_by: { type: array, nullable: true, items: { type: string, enum: [tag, name] }, description: "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's workout name is listed in `threshold_workout_names`); a tagged workout whose laps are unread reads `[\"tag\"]`, its name unseen. Null for a race." }
         workout_name: { type: string, nullable: true, description: "A workout's stored workout name as written on its first step row that has one; null when none has, and for a race." }
     ThresholdExclusion:

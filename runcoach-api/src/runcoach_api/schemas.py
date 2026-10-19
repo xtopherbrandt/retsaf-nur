@@ -1778,23 +1778,23 @@ class ThresholdEffort(BaseModel):
     start_time: datetime.datetime
     kind: _ThresholdKind = Field(description=_KIND_DESCRIPTION)
     duration_s: float = Field(
-        description="A race's `timer_time_s`, else the summary's `duration_s`; a workout's active time, the "
-        "active laps' summed `timer_s`."
+        description="A race's `timer_time_s`, else the summary's `duration_s`; a workout's counted time `A`, the "
+        "counted reps' summed `timer_s`."
     )
     gap_pace_s_per_km: float = Field(
-        description="F013's grade-adjusted pace of the race, or of the workout's active laps' windows."
+        description="F013's grade-adjusted pace of the race, or of the workout's counted reps' windows."
     )
     gap_coverage: float | None = Field(
-        description="F013's graded share of the distance (a workout's: over its active windows); below 1 counts "
+        description="F013's graded share of the distance (a workout's: over its counted reps' windows); below 1 counts "
         "at flat pace."
     )
     gps_degraded_fraction: float | None = Field(
-        description="F013's degraded-GPS share of the distance (a workout's: over its active windows); shown, "
+        description="F013's degraded-GPS share of the distance (a workout's: over its counted reps' windows); shown, "
         "never judged."
     )
     gain: float
     active_blocks: int | None = Field(
-        description="A workout's runs of consecutive active laps (3x10 min with jogs reads 3 when the jogs are recovery steps); null for a race."
+        description="A workout's runs of consecutive counted laps, remainder laps included (3x10 min with jogs reads 3 when the jogs are recovery steps; Goal Pace Run steps 1 then 2 read 1); null for a race."
     )
     admitted_by: list[Literal["tag", "name"]] | None = Field(description=_ADMITTED_BY_DESCRIPTION)
     workout_name: str | None = Field(description=_WORKOUT_NAME_DESCRIPTION)

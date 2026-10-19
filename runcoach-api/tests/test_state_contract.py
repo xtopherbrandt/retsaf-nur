@@ -348,6 +348,26 @@ def test_the_contract_lists_admission_fields_reason_and_bounds(contract: dict) -
     assert contract["info"]["version"] == "0.4.0-draft"
 
 
+_STALE_EFFORT_PHRASES = ("active laps", "active time", "active windows", "consecutive active laps")
+
+
+def test_the_effort_descriptions_name_the_counted_reps(contract: dict) -> None:
+    """The five ``ThresholdEffort`` fields a workout fills from its counted reps (F027 reference
+    section 4 orders 9 to 11) say so, in the contract and the served schema alike, and none claims
+    the active laps: a Progression Run serves ``duration_s`` 900 s while its active laps sum to
+    4500 s."""
+    served = app.openapi()["components"]["schemas"]["ThresholdEffort"]["properties"]
+    ours = _schema(contract, "ThresholdEffort")["properties"]
+    for field in ("duration_s", "gap_pace_s_per_km", "gap_coverage", "gps_degraded_fraction", "active_blocks"):
+        theirs = _flat(served[field]["description"])
+        print(f"  ThresholdEffort.{field}: {theirs}")
+        assert theirs == _flat(ours[field]["description"]), field
+        assert "counted" in theirs, field
+        for phrase in _STALE_EFFORT_PHRASES:
+            assert phrase not in theirs, (field, phrase)
+    assert "remainder laps included" in _flat(served["active_blocks"]["description"])
+
+
 def test_a_tag_and_a_name_admitted_workout_validate_against_the_contract(contract: dict, declared_config) -> None:
     """A Training-tagged workout, an untagged run admitted by its listed workout name, and one
     admitted by both: each used, each validating with its ``admitted_by`` and ``workout_name``."""
