@@ -89,21 +89,27 @@ def _laps(step_indices: list[int | None]) -> list[dict]:
     return laps
 
 
+def _target(intensity: str) -> dict:
+    """A work step's speed target, as ``sample_run.fit`` writes it; non-work steps carry none."""
+    return {"target_type": "speed"} if intensity == "active" else {}
+
+
 def _simple_steps() -> list[dict]:
     return [
-        {"step_index": index, "intensity": intensity, "duration_type": "time"}
+        {"step_index": index, "intensity": intensity, "duration_type": "time", **_target(intensity)}
         for index, (intensity, _s, _p) in enumerate(FLAT_WORKOUT)
     ]
 
 
 def _repeat_steps() -> list[dict]:
     """The repeat step table of ``tests/support/repeat_workout.py``: the repeat step keeps the
-    cool-down's intensity, as that builder writes it."""
+    cool-down's intensity, as that builder writes it. The repeat step carries a target too, so a
+    lap naming it is turned away for being a repeat, not for a missing target."""
     return [
         {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-        {"step_index": 1, "intensity": "active", "duration_type": "time"},
+        {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
         {"step_index": 2, "intensity": "recovery", "duration_type": "time"},
-        {"step_index": 3, "intensity": "cooldown", "duration_type": "repeat_until_steps_cmplt"},
+        {"step_index": 3, "intensity": "cooldown", "duration_type": "repeat_until_steps_cmplt", "target_type": "speed"},
         {"step_index": 4, "intensity": "cooldown", "duration_type": "time"},
     ]
 
@@ -267,7 +273,7 @@ def _base() -> tuple[list[dict], list[dict]]:
     ]
     steps = [
         {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-        {"step_index": 1, "intensity": "active", "duration_type": "time"},
+        {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
     ]
     return laps, steps
 
@@ -349,8 +355,8 @@ CONTRACT = [
         _set_steps(
             [
                 {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-                {"step_index": 1, "intensity": "active", "duration_type": "time"},
-                {"step_index": 1, "intensity": "active", "duration_type": "time"},
+                {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
+                {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
             ]
         ),
         ACTIVE_OK,
@@ -360,7 +366,7 @@ CONTRACT = [
         _set_steps(
             [
                 {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-                {"step_index": 1, "intensity": "active", "duration_type": "time"},
+                {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
                 {"step_index": 1, "intensity": "recovery", "duration_type": "time"},
             ]
         ),
@@ -371,7 +377,7 @@ CONTRACT = [
         _set_steps(
             [
                 {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-                {"step_index": 1, "intensity": "active", "duration_type": "repeat_until_steps_cmplt"},
+                {"step_index": 1, "intensity": "active", "duration_type": "repeat_until_steps_cmplt", "target_type": "speed"},
             ]
         ),
         NONE_ACTIVE,
@@ -420,7 +426,7 @@ def test_active_block_carries_the_lap_reason_and_no_numbers():
 def test_blocks_count_runs_of_consecutive_active_laps():
     """3 x 10 min with jogs reads 3; one continuous step split by auto-laps reads 1 (reference section 5)."""
     steps = [
-        {"step_index": 0, "intensity": "active", "duration_type": "time"},
+        {"step_index": 0, "intensity": "active", "duration_type": "time", "target_type": "speed"},
         {"step_index": 1, "intensity": "recovery", "duration_type": "time"},
     ]
 

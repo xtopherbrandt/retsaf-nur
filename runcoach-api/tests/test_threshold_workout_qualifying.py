@@ -74,7 +74,7 @@ WORKOUT = "threshold_workout"
 
 STEPS = (
     {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
-    {"step_index": 1, "intensity": "active", "duration_type": "time"},
+    {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
     {"step_index": 2, "intensity": "recovery", "duration_type": "time"},
     {"step_index": 3, "intensity": "cooldown", "duration_type": "time"},
 )
@@ -316,7 +316,7 @@ def test_a_null_time_on_a_lap_that_is_not_active_reads_nothing() -> None:
 
 _REPEAT_STEPS = (
     *STEPS[:3],
-    {"step_index": 3, "intensity": "active", "duration_type": "repeat_until_steps_cmplt"},
+    {"step_index": 3, "intensity": "active", "duration_type": "repeat_until_steps_cmplt", "target_type": "speed"},
 )
 
 

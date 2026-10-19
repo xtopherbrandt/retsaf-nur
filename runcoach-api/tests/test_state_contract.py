@@ -228,7 +228,7 @@ def _store_workout(start: datetime, *, active_s: float = 1200.0, laps: str = "re
         lap_start += seconds
     steps = [
         SessionWorkoutStep(step_index=0, intensity="warmup", duration_type="time"),
-        SessionWorkoutStep(step_index=1, intensity="active", duration_type="time"),
+        SessionWorkoutStep(step_index=1, intensity="active", duration_type="time", target_type="speed"),
         SessionWorkoutStep(step_index=2, intensity="cooldown", duration_type="time"),
     ]
     start_time = start.isoformat()

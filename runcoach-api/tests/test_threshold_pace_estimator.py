@@ -56,6 +56,8 @@ def _race(session_id: str, day: float, pace: object, duration: object = 2400, **
         "gps_degraded_fraction": 0.0,
     }
     row.update(over)
+    # The row's kind follows its tag, so an untagged row stays an ignored one (its kind is None).
+    row.setdefault("kind", row["activity_tag"])
     return row
 
 
@@ -78,6 +80,7 @@ def _workout(session_id: str, day: float, pace: object, active_s: object = 1800.
         "gps_degraded_fraction": 0.0,
     }
     row.update(over)
+    row.setdefault("kind", row["activity_tag"])
     return row
 
 
