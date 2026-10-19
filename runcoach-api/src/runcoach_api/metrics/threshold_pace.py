@@ -666,6 +666,14 @@ class _Sums:
         if row["gps_degraded"]:
             self.degraded_m += metres
 
+    def merge(self, other: _Sums) -> None:
+        """Add another rep's sums to these (the counted windows together)."""
+        self.seconds += other.seconds
+        self.distance += other.distance
+        self.gap_distance += other.gap_distance
+        self.graded_m += other.graded_m
+        self.degraded_m += other.degraded_m
+
     def pace(self) -> float | None:
         """``1000 * sum(dt) / sum(contributed_m * g)``, F013's whole-session formula restricted to
         the windows; ``None`` when the denominator is 0 or the result is not finite and > 0."""
@@ -715,6 +723,11 @@ def _block_count(reps: Sequence[Rep]) -> int:
     return blocks
 
 
+def _unavailable_block(reason: str) -> ActiveBlock:
+    """``active_block``'s result under ``reason``: every number ``None``, no windows, no blocks."""
+    return ActiveBlock(None, None, 0, (), None, None, reason)
+
+
 def active_block(
     laps: Iterable[Mapping[str, Any]],
     steps: Iterable[Mapping[str, Any]],
@@ -747,28 +760,24 @@ def active_block(
     """
     decided = active_laps(laps, steps)
     if decided.unavailable is not None:
-        return ActiveBlock(None, None, 0, (), None, None, decided.unavailable)
+        return _unavailable_block(decided.unavailable)
     sustained = decided.sustained_reps
     sums = _rep_sums(sustained, segment_rows)
     paced = [(rep, total, total.pace()) for rep, total in zip(sustained, sums, strict=True)]
     paced = [(rep, total, pace) for rep, total, pace in paced if pace is not None]
     if not paced:
-        return ActiveBlock(None, None, 0, (), None, None, GAP_PACE_UNAVAILABLE)
+        return _unavailable_block(GAP_PACE_UNAVAILABLE)
     fastest = min(pace for _rep, _total, pace in paced)
     counted = [(rep, total) for rep, total, pace in paced if pace <= WORKOUT_REP_BAND * fastest]
     active_time = sum(rep.length_s for rep, _total in counted)
     if not math.isfinite(active_time) or active_time < WORKOUT_MIN_ACTIVE_S:
-        return ActiveBlock(None, None, 0, (), None, None, ACTIVE_TIME_BELOW_MINIMUM)
+        return _unavailable_block(ACTIVE_TIME_BELOW_MINIMUM)
     whole = _Sums()
     for _rep, total in counted:
-        whole.seconds += total.seconds
-        whole.distance += total.distance
-        whole.gap_distance += total.gap_distance
-        whole.graded_m += total.graded_m
-        whole.degraded_m += total.degraded_m
+        whole.merge(total)
     pace = whole.pace()
     if pace is None:
-        return ActiveBlock(None, None, 0, (), None, None, GAP_PACE_UNAVAILABLE)
+        return _unavailable_block(GAP_PACE_UNAVAILABLE)
     return ActiveBlock(
         active_time_s=active_time,
         gap_pace_s_per_km=pace,
