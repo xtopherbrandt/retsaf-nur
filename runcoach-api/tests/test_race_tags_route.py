@@ -26,6 +26,7 @@ write; ``test_store_unchanged_after_every_422`` asserts that none does.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import sqlite3
 import sys
@@ -443,3 +444,38 @@ def test_served_schemas_match_the_contract() -> None:
     assert set(ours["RaceTagCountsByTag"]["required"]) == set(TAGS) == set(ours["RaceTagCountsByTag"]["properties"])
     assert set(ours["RaceTagWrites"]["required"]) == set(WRITES) == set(ours["RaceTagWrites"]["properties"])
     assert sorted(ours["RaceTagItemResult"]["properties"]["outcome"]["enum"]) == sorted(OUTCOMES)
+
+
+# --- the running-session prefilter the race-tag apply and the lap-candidate read share -----------------
+
+
+def test_race_tags_and_lap_candidates_share_one_running_prefilter(persist_sessions) -> None:
+    """Both readers of "the stored running sessions at these start seconds" apply one rule, written
+    once (``db._running_sessions_at``): a cycling session at a matching start second is refused by
+    the race-tag apply (``not_stored``, nothing written) and by the lap-candidate read (no row),
+    while a running session at the same second is admitted by both."""
+    ride = Session(
+        session_id=_sid("edge530"),
+        sport="cycling",
+        source_vendor="garmin",
+        start_time=START,
+        source_device="edge530",
+        summary={"distance_m": FR945[0], "duration_s": FR945[1]},
+    )
+    persist_sessions([ride])
+    with _connection() as conn:
+        refused = db_module.apply_race_tag_decisions(conn, [_item(1)])
+        assert [(d.outcome, d.session_id, d.candidates) for d in refused] == [("not_stored", None, ())]
+        assert db_module.read_lap_candidate_rows(conn, [START_Z]) == []
+    assert _tag(ride.session_id) is None
+
+    persist_sessions([_run("fr945")])
+    with _connection() as conn:
+        admitted = db_module.apply_race_tag_decisions(conn, [_item(2)])
+        assert [(d.outcome, d.session_id) for d in admitted] == [("tagged", _sid("fr945"))]
+        rows = db_module.read_lap_candidate_rows(conn, [START_Z])
+        assert [row["session_id"] for row in rows] == [_sid("fr945")]
+    assert _tag(_sid("fr945")) == "race" and _tag(ride.session_id) is None
+
+    # One copy of the rule in the store module, not one per reader.
+    assert inspect.getsource(db_module).count("sport = 'running'") == 1

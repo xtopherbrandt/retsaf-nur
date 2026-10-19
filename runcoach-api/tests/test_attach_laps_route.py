@@ -38,12 +38,10 @@ from pathlib import Path
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from pydantic.json_schema import models_json_schema
 from runcoach_api import db
 from runcoach_api import main as main_module
 from runcoach_api.ingestion import fit_parser
 from runcoach_api.main import app
-from runcoach_api.schemas import SessionLap, SessionLapsAttached, SessionWorkoutStep
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SUPPORT = Path(__file__).parent / "support"
@@ -589,16 +587,8 @@ def test_served_attach_schema_matches_the_contract():
     print(f"  {len(compared)} properties over {sorted(seen)}")
     assert seen == {"SessionLapsAttached"}
 
-    # The detail's entry components against the pydantic models of the same names.
-    _, defs = models_json_schema(
-        [(SessionLap, "serialization"), (SessionWorkoutStep, "serialization"), (SessionLapsAttached, "serialization")],
-        ref_template="#/components/schemas/{model}",
-    )
-    models = {"components": {"schemas": defs["$defs"]}}
-    seen, compared = contract_walk.walk(contract, models, ["SessionLap", "SessionWorkoutStep"])
-    print(f"  {len(compared)} properties over {sorted(seen)}")
-    assert seen == {"SessionLap", "SessionWorkoutStep"}
-    assert len(compared) == len(LAP_KEYS) + len(STEP_KEYS)
+    # The detail's entry components have no pydantic model: the served body is validated against
+    # them in test_detail_body_validates_against_the_contract.
     for name in ("SessionLap", "SessionWorkoutStep", "SessionLapsAttached"):
         component = contract["components"]["schemas"][name]
         assert all(ord(ch) < 128 for ch in yaml.safe_dump(component)), name

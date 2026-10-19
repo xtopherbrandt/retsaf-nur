@@ -1624,11 +1624,13 @@ class RaceTagsResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# PUT /sessions/{session_id}/laps and the detail's lap entries (F025)
+# PUT /sessions/{session_id}/laps (F025)
 #
 # Inserted before the F024 block so the anchors at the file's tail stay in
-# place. Named exactly as the contract's components; never ``WorkoutStep``,
-# which the contract uses for a planned workout's step.
+# place. Named exactly as the contract's component. The detail's lap and
+# workout step entries have no model here: ``GET /sessions/{id}`` serves a
+# dict, validated against the contract's ``SessionLap`` and
+# ``SessionWorkoutStep`` components by the tests.
 # ---------------------------------------------------------------------------
 
 
@@ -1638,41 +1640,6 @@ class SessionLapsAttached(BaseModel):
     session_id: str
     laps: int = Field(description="How many lap rows the session now has.")
     workout_steps: int = Field(description="How many workout step rows the session now has.")
-
-
-class SessionLap(BaseModel):
-    """One ``laps`` entry of ``GET /sessions/{session_id}`` (F025 reference section 2), in lap order.
-
-    ``start_t`` and ``end_t`` are signed seconds from the instant record ``t`` is measured from; an
-    end before its start is served as stored. A value the file did not carry, or carried invalid,
-    is null."""
-
-    lap_index: int
-    start_t: float | None
-    end_t: float | None
-    timer_s: float | None
-    elapsed_s: float | None
-    distance_m: float | None
-    intensity: str | None
-    wkt_step_index: int | None
-    lap_trigger: str | None
-
-
-class SessionWorkoutStep(BaseModel):
-    """One ``workout_steps`` entry of ``GET /sessions/{session_id}`` (F025 reference section 2), in
-    file order. Values are as the file writes them; their meaning depends on ``duration_type`` and
-    ``target_type``."""
-
-    step_index: int | None
-    workout_name: str | None
-    step_name: str | None
-    intensity: str | None
-    duration_type: str | None
-    duration_value: float | None
-    target_type: str | None
-    target_value: float | None
-    target_low: float | None
-    target_high: float | None
 
 
 # ---------------------------------------------------------------------------

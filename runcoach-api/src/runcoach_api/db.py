@@ -1921,6 +1921,24 @@ def _write_race_tag(conn: sqlite3.Connection, session_id: str, tag: str | None) 
     conn.execute("UPDATE sessions SET activity_tag = ? WHERE session_id = ?", (tag, session_id))
 
 
+def _running_sessions_at(columns: str, starts: Sequence[str]) -> tuple[str, tuple]:
+    """The ``SELECT`` and its parameters for the stored running sessions at any of ``starts``: the
+    one prefilter ``apply_race_tag_decisions`` and ``read_lap_candidate_rows`` both read through.
+
+    Sport ``running`` with an ``activity_tag`` that is null or not one of
+    ``race_tags.RESTING_CAPTURE_TAGS`` (a bare ``NOT IN`` is null for an untagged row and would
+    drop it), at the given start times, already normalised (``Z`` to ``+00:00``) and non-empty.
+    ``columns`` is the literal column list to select."""
+    capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
+    sql = (
+        f"SELECT {columns} FROM sessions"
+        " WHERE sport = 'running'"
+        f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
+        f" AND start_time IN ({', '.join('?' * len(starts))})"
+    )
+    return sql, (*capture_tags, *starts)
+
+
 def apply_race_tags(conn: sqlite3.Connection, items: Sequence[Mapping]) -> list[dict]:
     """``apply_race_tag_decisions``, each decision as its response dict (``connect_activity_id``,
     ``outcome``, ``session_id``, ``candidates`` as a list of session ids), in request order."""
@@ -1936,10 +1954,9 @@ def apply_race_tag_decisions(conn: sqlite3.Connection, items: Sequence[Mapping])
     ``duration_s``, and ``tag`` or ``race``), already validated by the caller.
 
     Candidates are read with one ``SELECT`` over the items' start times (``Z`` normalised to
-    ``+00:00``): sport ``running`` and an ``activity_tag`` that is null or not one of
-    ``race_tags.RESTING_CAPTURE_TAGS`` (a bare ``NOT IN`` is null for an untagged row and would
-    drop it). Only ``sessions.activity_tag`` is written, and only for ``tagged``, ``cleared`` and
-    ``retagged``.
+    ``+00:00``), through ``_running_sessions_at``: sport ``running`` and an ``activity_tag`` that
+    is null or not one of ``race_tags.RESTING_CAPTURE_TAGS``. Only ``sessions.activity_tag`` is
+    written, and only for ``tagged``, ``cleared`` and ``retagged``.
     One ``BEGIN IMMEDIATE`` transaction holds the write lock from the read to the commit, so the
     decisions are made and written from one snapshot; any fault rolls every write back and
     propagates. The caller has run ``init_schema`` and holds no open transaction. An empty
@@ -1948,13 +1965,7 @@ def apply_race_tag_decisions(conn: sqlite3.Connection, items: Sequence[Mapping])
     if not items:
         return []
     starts = sorted({_race_tags.normalise_start_time(item["start_time"]) for item in items})
-    capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
-    sql = (
-        "SELECT session_id, start_time, activity_tag, summary FROM sessions"
-        " WHERE sport = 'running'"
-        f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
-        f" AND start_time IN ({', '.join('?' * len(starts))})"
-    )
+    sql, params = _running_sessions_at("session_id, start_time, activity_tag, summary", starts)
     conn.execute("BEGIN IMMEDIATE")
     try:
         rows = [
@@ -1964,7 +1975,7 @@ def apply_race_tag_decisions(conn: sqlite3.Connection, items: Sequence[Mapping])
                 "activity_tag": row["activity_tag"],
                 "summary": _json_load(row["summary"]),
             }
-            for row in conn.execute(sql, (*capture_tags, *starts))
+            for row in conn.execute(sql, params)
         ]
         decisions = _race_tags.decide(items, rows)
         for decision in decisions:
@@ -2302,24 +2313,17 @@ def _unreadable(row: Mapping, reason: str) -> dict:
 def read_lap_candidate_rows(conn: sqlite3.Connection, start_times: Sequence[str]) -> list[dict]:
     """The stored running sessions at any of ``start_times`` (F025 reference section 5 step 2).
 
-    One ``SELECT`` reads ``session_id``, ``start_time`` and ``laps_read_at`` for sport ``running``
-    with an ``activity_tag`` that is null or not one of ``race_tags.RESTING_CAPTURE_TAGS`` (the rows
-    ``apply_race_tags`` reads; a bare ``NOT IN`` is null for an untagged row and would drop it),
-    at the given start times with ``Z`` normalised to ``+00:00``. Read-only: a deferred
+    One ``SELECT`` through ``_running_sessions_at`` (the prefilter ``apply_race_tag_decisions``
+    reads with) returns ``session_id``, ``start_time`` and ``laps_read_at`` for the running
+    sessions at the given start times with ``Z`` normalised to ``+00:00``. Read-only: a deferred
     transaction, rolled back. An empty ``start_times`` reads nothing.
     """
     starts = sorted({_race_tags.normalise_start_time(start) for start in start_times})
     if not starts:
         return []
-    capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
-    sql = (
-        "SELECT session_id, start_time, laps_read_at FROM sessions"
-        " WHERE sport = 'running'"
-        f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
-        f" AND start_time IN ({', '.join('?' * len(starts))})"
-    )
+    sql, params = _running_sessions_at("session_id, start_time, laps_read_at", starts)
     conn.execute("BEGIN")
     try:
-        return [dict(row) for row in conn.execute(sql, (*capture_tags, *starts))]
+        return [dict(row) for row in conn.execute(sql, params)]
     finally:
         conn.rollback()
