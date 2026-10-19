@@ -596,7 +596,7 @@ def test_records_are_read_only_for_workouts_past_orders_1_to_5(monkeypatch: pyte
 
 
 def test_laps_are_read_in_lap_index_order() -> None:
-    """Blocks count runs of consecutive active laps in ``lap_index`` order: laps inserted out of
+    """Blocks count runs of consecutive counted laps in ``lap_index`` order: laps inserted out of
     order (rowid order active, recovery, active, warm-up, active, cool-down) still read 2 blocks."""
     plan = [
         ("warmup", 300.0, WARMUP_PACE, 0),
@@ -725,7 +725,7 @@ def test_a_served_workout_carries_active_duration_blocks_and_window_fractions() 
 
     # On the file both kinds of fraction read 1.0 and 0.0, so outside the windows the store is
     # changed: the warm-up loses its altitude (ungraded) and the cool-down is tagged degraded GPS.
-    # The session's fractions move; the workout's, over its active windows, do not.
+    # The session's fractions move; the workout's, over its counted reps' windows, do not.
     assert _sql("UPDATE records SET altitude = NULL WHERE session_id = ? AND t < 300", workout) > 0
     assert _sql(
         "UPDATE records SET sample_quality = '[\"gps_degraded\"]' WHERE session_id = ? AND t >= 2400", workout
