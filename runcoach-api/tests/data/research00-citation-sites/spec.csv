@@ -267,29 +267,29 @@ repo,specification/spec/04-physiological-state-model.md,78,Part 3,DOC-06
 repo,specification/spec/04-physiological-state-model.md,84,Part 2,ARCH-08
 repo,specification/spec/04-physiological-state-model.md,84,Part 2,ARCH-11
 repo,specification/spec/04-physiological-state-model.md,88,§1.4,PRIN-06
-repo,specification/spec/04-physiological-state-model.md,112,research/00 §3.2,COLD-07
-repo,specification/spec/04-physiological-state-model.md,128,§3.2,COLD-01
-repo,specification/spec/04-physiological-state-model.md,128,§3.2,COLD-11
-repo,specification/spec/04-physiological-state-model.md,128,§1.5,PRIN-09
-repo,specification/spec/04-physiological-state-model.md,128,§3.2,COLD-10
-repo,specification/spec/04-physiological-state-model.md,130,,COLD-08
-repo,specification/spec/04-physiological-state-model.md,130,,COLD-02
-repo,specification/spec/04-physiological-state-model.md,130,,COLD-03
-repo,specification/spec/04-physiological-state-model.md,150,§3.2,COLD-11
-repo,specification/spec/04-physiological-state-model.md,152,§3.2,COLD-01
-repo,specification/spec/04-physiological-state-model.md,152,PRIN-07,FTO-01
-repo,specification/spec/04-physiological-state-model.md,152,Part 4,FTO-02
-repo,specification/spec/04-physiological-state-model.md,156,§3.2,COLD-01
-repo,specification/spec/04-physiological-state-model.md,166,§3.1,IND-01
-repo,specification/spec/04-physiological-state-model.md,170,§3.1,IND-01
-repo,specification/spec/04-physiological-state-model.md,174,§3.1,IND-06
-repo,specification/spec/04-physiological-state-model.md,182,Part 2,ARCH-11
-repo,specification/spec/04-physiological-state-model.md,186,PRIN-13,ARCH-11
-repo,specification/spec/04-physiological-state-model.md,201,§3.2,COLD-01
-repo,specification/spec/04-physiological-state-model.md,201,Part 3,DOC-08
-repo,specification/spec/04-physiological-state-model.md,152,,FTO-03
-repo,specification/spec/04-physiological-state-model.md,174,,REG-20
-repo,specification/spec/04-physiological-state-model.md,201,,DOC-07
+repo,specification/spec/04-physiological-state-model.md,114,research/00 §3.2,COLD-07
+repo,specification/spec/04-physiological-state-model.md,130,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,130,§3.2,COLD-11
+repo,specification/spec/04-physiological-state-model.md,130,§1.5,PRIN-09
+repo,specification/spec/04-physiological-state-model.md,130,§3.2,COLD-10
+repo,specification/spec/04-physiological-state-model.md,132,,COLD-08
+repo,specification/spec/04-physiological-state-model.md,132,,COLD-02
+repo,specification/spec/04-physiological-state-model.md,132,,COLD-03
+repo,specification/spec/04-physiological-state-model.md,152,§3.2,COLD-11
+repo,specification/spec/04-physiological-state-model.md,154,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,154,PRIN-07,FTO-01
+repo,specification/spec/04-physiological-state-model.md,154,Part 4,FTO-02
+repo,specification/spec/04-physiological-state-model.md,158,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,168,§3.1,IND-01
+repo,specification/spec/04-physiological-state-model.md,172,§3.1,IND-01
+repo,specification/spec/04-physiological-state-model.md,176,§3.1,IND-06
+repo,specification/spec/04-physiological-state-model.md,184,Part 2,ARCH-11
+repo,specification/spec/04-physiological-state-model.md,188,PRIN-13,ARCH-11
+repo,specification/spec/04-physiological-state-model.md,203,§3.2,COLD-01
+repo,specification/spec/04-physiological-state-model.md,203,Part 3,DOC-08
+repo,specification/spec/04-physiological-state-model.md,154,,FTO-03
+repo,specification/spec/04-physiological-state-model.md,176,,REG-20
+repo,specification/spec/04-physiological-state-model.md,203,,DOC-07
 repo,specification/spec/04-physiological-state-model.md,64,,PRIN-28
 repo,specification/spec/05-training-plan-generation.md,3,§1.1,PRIN-01
 repo,specification/spec/05-training-plan-generation.md,3,Part 2,ARCH-04
@@ -473,4 +473,4 @@ repo,specification/spec/06-adaptation-logic.md,74,,PRIN-24
 repo,specification/spec/06-adaptation-logic.md,74,,FIG-07
 repo,specification/spec/06-adaptation-logic.md,165,,DOC-04
 repo,specification/spec/06-adaptation-logic.md,253,,AUT-07
-repo,specification/spec/04-physiological-state-model.md,160,,IND-03
+repo,specification/spec/04-physiological-state-model.md,162,,IND-03
