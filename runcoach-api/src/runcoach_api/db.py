@@ -2066,31 +2066,38 @@ def _workout_block(
         return None
 
 
-def read_threshold_effort_rows(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
-    """The tagged running races and threshold workouts ``metrics.threshold_pace.estimate`` reads
-    (F024 reference section 2, F027 reference sections 3 and 4). Every row carries ``kind``
-    (``race`` or ``threshold_workout``), the reader's decision; the estimator filters on it and
-    never on ``activity_tag``.
+def read_threshold_effort_rows(
+    conn: sqlite3.Connection, workout_names: Sequence[str]
+) -> tuple[list[dict], list[dict]]:
+    """The running races and threshold workouts ``metrics.threshold_pace.estimate`` reads (F024
+    reference section 2; F027 reference sections 2 to 4). Every row carries ``kind`` (``race`` or
+    ``threshold_workout``), the reader's decision, beside ``admitted_by`` and ``workout_name``;
+    the estimator filters and labels on ``kind`` and never on ``activity_tag``.
 
-    **Races.** One ``SELECT`` reads ``session_id, start_time, sport, activity_tag, timer_time_s,
-    summary, quality_flags`` for sport ``running`` tagged ``race`` (row 1), ordered by
-    ``start_time`` then ``session_id``. Row 2 is applied next, before any record is read: the
-    duration is ``timer_time_s``, else the summary's ``duration_s``, judged by the estimator's own
-    rule (a bool, a string or a non-finite value is refused), so a half or a marathon costs no
-    record read. Only a race in the band goes through ``read_session_feature_inputs`` and
-    ``session_features.compute_session_features``; its row carries F013's ``flags`` (the
-    session's and F013's together) as ``quality_flags``, and ``gap_avg_pace_s_per_km``,
-    ``gap_coverage`` and ``gps_degraded_fraction``. A stored ``distance_regressed`` is never
-    trusted in place of the records: F013 computes it from them.
+    **Admission (F027 reference section 2).** A running session is a workout when its
+    ``activity_tag`` is ``threshold_workout``, or when its tag is null, ``race`` or
+    ``threshold_workout``, its laps are read, its laps and steps read without raising and one of
+    its step rows' ``workout_name`` equals an entry of ``workout_names`` (the config's
+    ``threshold_workout_names``), both sides compared by ``threshold_pace.workout_name_admits``
+    as Python ``str.strip().casefold()``: never SQL ``TRIM``/``LOWER``, never ``sessions.name``.
+    The workouts are read first, so the race read skips a race-tagged session admitted by name
+    and it is served exactly once, as a workout. A race-tagged session whose laps are unread or
+    whose step read raises cannot be name-checked and stays a race; a session tagged
+    ``health_snapshot``, ``resting_hrv_check`` or anything else is never admitted by name. A
+    workout row carries ``admitted_by``, the list of ``tag`` and ``name`` (in that order) that
+    admitted it (a tagged one whose laps are unread or do not read carries ``["tag"]``, its name
+    unseen), and ``workout_name``, the stored value as written on its first step row by ``seq``
+    that has one, else ``None``; a race row carries both as ``None``.
 
-    **Threshold workouts.** A second ``SELECT`` reads ``session_id, start_time, sport,
-    activity_tag, laps_read_at, quality_flags`` for sport ``running`` tagged ``threshold_workout``
-    in the same order. Orders 1 to 5 of F027 reference section 4 decide before any record read,
-    by the estimator's ``workout_lap_reason``: a null ``laps_read_at`` reads no lap (order 1,
-    ``laps_not_read``); otherwise ``read_workout_laps`` reads the laps (``ORDER BY lap_index``)
-    and steps (order 2: a read that raises is ``laps_unreadable``) and
+    **Threshold workouts.** One ``SELECT`` reads ``session_id, start_time, sport, activity_tag,
+    laps_read_at, quality_flags`` for the candidates (sport ``running`` tagged null, ``race`` or
+    ``threshold_workout``), ordered by ``start_time`` then ``session_id``. Orders 1 to 5 of F027
+    reference section 4 decide before any record read, by the estimator's
+    ``workout_lap_reason``: a null ``laps_read_at`` reads no lap (order 1, ``laps_not_read``, a
+    tagged workout only); otherwise ``read_workout_laps`` reads the laps (``ORDER BY lap_index``)
+    and steps (order 2: a read that raises is ``laps_unreadable`` for a tagged workout) and
     ``threshold_pace.active_laps`` gives ``lap_reason`` (orders 3 to 5: ``lap_times_unreadable``,
-    ``no_workout_steps``, ``no_sustained_work``). Every workout past order 5, a short one
+    ``no_workout_steps``, ``no_sustained_work``). Every admitted workout past order 5, a short one
     included, reads its records once (``_workout_block``; order 6's ``quality_flags_unreadable``
     and ``features_unavailable`` are decided here), for F013's flags (order 7, the estimator's)
     and ``threshold_pace.active_block``'s result, which its row carries as ``block_reason``
@@ -2099,42 +2106,66 @@ def read_threshold_effort_rows(conn: sqlite3.Connection) -> tuple[list[dict], li
     the counted windows as for a race. ``summary_unreadable`` does not arise for a workout: its
     duration comes from its laps.
 
+    **Races.** A second ``SELECT`` reads ``session_id, start_time, sport, activity_tag,
+    timer_time_s, summary, quality_flags`` for sport ``running`` tagged ``race`` (F024 reference
+    section 2 row 1) in the same order, leaving out the sessions admitted by name. Row 2 is
+    applied next, before any record is read: the duration is ``timer_time_s``, else the summary's
+    ``duration_s``, judged by the estimator's own rule (a bool, a string or a non-finite value is
+    refused), so a half or a marathon costs no record read. Only a race in the band goes through
+    ``read_session_feature_inputs`` and ``session_features.compute_session_features``; its row
+    carries F013's ``flags`` (the session's and F013's together) as ``quality_flags``, and
+    ``gap_avg_pace_s_per_km``, ``gap_coverage`` and ``gps_degraded_fraction``. A stored
+    ``distance_regressed`` is never trusted in place of the records: F013 computes it from them.
+
     Returns ``(rows, unreadable)``. ``unreadable`` holds ``session_id``, ``start_time``,
-    ``reason`` and ``kind`` for each race or workout a stored value it needs does not read:
-    ``summary_unreadable`` (a race whose timer is null and whose summary is not a JSON object),
-    ``quality_flags_unreadable`` (not a JSON list), ``features_unavailable`` (its feature inputs or
-    records raise) or ``laps_unreadable`` (a workout whose lap or step read raises, logged). Those
-    are excluded with that reason, so none of them fails the read. A stored ``start_time`` is
-    trusted, as the ingest writes it with its offset: a naive or unparseable one, which only a
-    write from outside the API could leave, raises in the estimator. Read-only: the reads share
-    one deferred transaction, rolled back, so the rows are one snapshot.
+    ``reason``, ``kind``, ``admitted_by`` and ``workout_name`` for each race or workout a stored
+    value it needs does not read: ``summary_unreadable`` (a race whose timer is null and whose
+    summary is not a JSON object), ``quality_flags_unreadable`` (not a JSON list),
+    ``features_unavailable`` (its feature inputs or records raise) or ``laps_unreadable`` (a
+    tagged workout whose lap or step read raises, logged). Those are excluded with that reason,
+    so none of them fails the read. A stored ``start_time`` is trusted, as the ingest writes it
+    with its offset: a naive or unparseable one, which only a write from outside the API could
+    leave, raises in the estimator. Read-only: the reads share one deferred transaction, rolled
+    back, so the rows are one snapshot.
     """
     conn.execute("BEGIN")
     try:
         rows: list[dict] = []
         unreadable: list[dict] = []
-        _read_threshold_races(conn, rows, unreadable)
-        _read_threshold_workouts(conn, rows, unreadable)
+        named = _read_threshold_workouts(conn, workout_names, rows, unreadable)
+        _read_threshold_races(conn, rows, unreadable, named)
     finally:
         conn.rollback()
     return rows, unreadable
 
 
-def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreadable: list[dict]) -> None:
-    """The workout half of ``read_threshold_effort_rows``, appending to its two lists."""
+ADMITTED_BY_TAG = "tag"
+ADMITTED_BY_NAME = "name"
+
+
+def _read_threshold_workouts(
+    conn: sqlite3.Connection, workout_names: Sequence[str], rows: list[dict], unreadable: list[dict]
+) -> set[str]:
+    """The workout half of ``read_threshold_effort_rows``, appending to its two lists; returns the
+    session ids admitted by name, which the race half leaves out."""
     kind = _threshold_pace.THRESHOLD_WORKOUT
     stored = conn.execute(
         "SELECT session_id, start_time, sport, activity_tag, laps_read_at, quality_flags"
-        " FROM sessions WHERE sport = ? AND activity_tag = ? ORDER BY start_time, session_id",
-        (_threshold_pace.RUNNING, kind),
+        " FROM sessions WHERE sport = ? AND (activity_tag IS NULL OR activity_tag IN (?, ?))"
+        " ORDER BY start_time, session_id",
+        (_threshold_pace.RUNNING, _threshold_pace.RACE, kind),
     ).fetchall()
+    named: set[str] = set()
     for r in stored:
+        tagged = r["activity_tag"] == kind
         row = {
             "session_id": r["session_id"],
             "start_time": r["start_time"],
             "sport": r["sport"],
             "activity_tag": r["activity_tag"],
             "kind": kind,
+            "admitted_by": [ADMITTED_BY_TAG] if tagged else [],
+            "workout_name": None,
             "laps_read_at": r["laps_read_at"],
             "lap_reason": None,
             "block_reason": None,
@@ -2148,22 +2179,35 @@ def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreada
                 laps, steps = read_workout_laps(conn, row["session_id"])
                 decided = _threshold_pace.active_laps(laps, steps)
             except Exception:  # a lap or step row that does not read excludes, never a 500
+                if not tagged:
+                    logger.exception(
+                        "session %s: its laps did not read, so its workout name is unseen; not a threshold workout",
+                        row["session_id"],
+                    )
+                    continue
                 logger.exception(
                     "threshold workout %s: its laps did not read; excluded as %s", row["session_id"], LAPS_UNREADABLE
                 )
-                unreadable.append({**_place(row), "reason": LAPS_UNREADABLE, "kind": kind})
+                unreadable.append(_unreadable(row, LAPS_UNREADABLE))
                 continue
+            step_names = [step["workout_name"] for step in steps]
+            if _threshold_pace.workout_name_admits(workout_names, step_names):
+                row["admitted_by"].append(ADMITTED_BY_NAME)
+                named.add(row["session_id"])
+            row["workout_name"] = next((name for name in step_names if name is not None), None)
             row["lap_reason"] = decided.unavailable
+        if not row["admitted_by"]:
+            continue  # neither tagged nor named: a race stays a race, an untagged run is nothing
         if _threshold_pace.workout_lap_reason(row) is not None:
             rows.append(row)  # the estimator excludes it with that reason (orders 1 to 5)
             continue
         flags = _decoded(r["quality_flags"])
         if flags is not None and not isinstance(flags, list):
-            unreadable.append({**_place(row), "reason": QUALITY_FLAGS_UNREADABLE, "kind": kind})
+            unreadable.append(_unreadable(row, QUALITY_FLAGS_UNREADABLE))
             continue
         computed = _workout_block(conn, row["session_id"], laps, steps)
         if computed is None:
-            unreadable.append({**_place(row), "reason": FEATURES_UNAVAILABLE, "kind": kind})
+            unreadable.append(_unreadable(row, FEATURES_UNAVAILABLE))
             continue
         session_flags, block = computed
         rows.append(
@@ -2178,10 +2222,14 @@ def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreada
                 "gps_degraded_fraction": block.gps_degraded_fraction,
             }
         )
+    return named
 
 
-def _read_threshold_races(conn: sqlite3.Connection, rows: list[dict], unreadable: list[dict]) -> None:
-    """The race half of ``read_threshold_effort_rows``, appending to its two lists."""
+def _read_threshold_races(
+    conn: sqlite3.Connection, rows: list[dict], unreadable: list[dict], named: set[str]
+) -> None:
+    """The race half of ``read_threshold_effort_rows``, appending to its two lists; a race-tagged
+    session in ``named`` is already a workout and is left out."""
     kind = _threshold_pace.RACE
     stored = conn.execute(
         "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
@@ -2189,19 +2237,23 @@ def _read_threshold_races(conn: sqlite3.Connection, rows: list[dict], unreadable
         (_threshold_pace.RUNNING, kind),
     ).fetchall()
     for r in stored:
+        if r["session_id"] in named:
+            continue
         row = {
             "session_id": r["session_id"],
             "start_time": r["start_time"],
             "sport": r["sport"],
             "activity_tag": r["activity_tag"],
             "kind": kind,
+            "admitted_by": None,
+            "workout_name": None,
             "timer_time_s": r["timer_time_s"],
             "duration_s": None,
         }
         if row["timer_time_s"] is None:
             summary = _decoded(r["summary"])
             if summary is not None and not isinstance(summary, dict):
-                unreadable.append({**_place(row), "reason": SUMMARY_UNREADABLE, "kind": kind})
+                unreadable.append(_unreadable(row, SUMMARY_UNREADABLE))
                 continue
             row["duration_s"] = (summary or {}).get("duration_s")
         duration = _threshold_pace.duration_of(row)
@@ -2210,11 +2262,11 @@ def _read_threshold_races(conn: sqlite3.Connection, rows: list[dict], unreadable
             continue
         flags = _decoded(r["quality_flags"])
         if flags is not None and not isinstance(flags, list):
-            unreadable.append({**_place(row), "reason": QUALITY_FLAGS_UNREADABLE, "kind": kind})
+            unreadable.append(_unreadable(row, QUALITY_FLAGS_UNREADABLE))
             continue
         features = _race_features(conn, row["session_id"])
         if features is None:
-            unreadable.append({**_place(row), "reason": FEATURES_UNAVAILABLE, "kind": kind})
+            unreadable.append(_unreadable(row, FEATURES_UNAVAILABLE))
             continue
         rows.append(
             {
@@ -2227,8 +2279,16 @@ def _read_threshold_races(conn: sqlite3.Connection, rows: list[dict], unreadable
         )
 
 
-def _place(row: Mapping) -> dict:
-    return {"session_id": row["session_id"], "start_time": row["start_time"]}
+def _unreadable(row: Mapping, reason: str) -> dict:
+    """One ``unreadable`` entry: where the row is, why, its ``kind`` and its admission."""
+    return {
+        "session_id": row["session_id"],
+        "start_time": row["start_time"],
+        "reason": reason,
+        "kind": row["kind"],
+        "admitted_by": row["admitted_by"],
+        "workout_name": row["workout_name"],
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -218,6 +218,8 @@ def test_only_a_marathon_tagged_is_unavailable_and_excluded(monkeypatch: pytest.
             "session_id": marathon,
             "start_time": determinant["excluded"][0]["start_time"],
             "kind": "race",
+            "admitted_by": None,
+            "workout_name": None,
             "reason": "outside_threshold_band",
         }
     ]

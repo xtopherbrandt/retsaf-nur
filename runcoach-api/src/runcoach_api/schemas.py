@@ -1788,14 +1788,28 @@ class DeterminantTrend(BaseModel):
 
 
 _ThresholdKind = Literal["race", "threshold_workout"]
+_KIND_DESCRIPTION = (
+    "`race`, or `threshold_workout` (tagged Training in Connect, or a step's workout name listed in "
+    "`threshold_workout_names`)."
+)
+_ADMITTED_BY_DESCRIPTION = (
+    "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's "
+    "workout name is listed in `threshold_workout_names`); a tagged workout whose laps are unread reads "
+    "`[\"tag\"]`, its name unseen. Null for a race."
+)
+_WORKOUT_NAME_DESCRIPTION = (
+    "A workout's stored workout name as written on its first step row that has one; null when none has, "
+    "and for a race."
+)
 
 
 class ThresholdEffort(BaseModel):
-    """A tagged race or threshold workout the filter used, with the gain it entered with (1 for the first)."""
+    """A race or threshold workout (tagged Training or named in `threshold_workout_names`) the filter used,
+    with the gain it entered with (1 for the first)."""
 
     session_id: str
     start_time: datetime.datetime
-    kind: _ThresholdKind = Field(description="`race`, or `threshold_workout` (tagged Training in Connect).")
+    kind: _ThresholdKind = Field(description=_KIND_DESCRIPTION)
     duration_s: float = Field(
         description="A race's `timer_time_s`, else the summary's `duration_s`; a workout's active time, the "
         "active laps' summed `timer_s`."
@@ -1815,14 +1829,19 @@ class ThresholdEffort(BaseModel):
     active_blocks: int | None = Field(
         description="A workout's runs of consecutive active laps (3x10 min with jogs reads 3 when the jogs are recovery steps); null for a race."
     )
+    admitted_by: list[Literal["tag", "name"]] | None = Field(description=_ADMITTED_BY_DESCRIPTION)
+    workout_name: str | None = Field(description=_WORKOUT_NAME_DESCRIPTION)
 
 
 class ThresholdExclusion(BaseModel):
-    """A tagged running race or threshold workout at or before `as_of` that was not used, and why."""
+    """A running race or threshold workout (tagged Training or named in `threshold_workout_names`) at or
+    before `as_of` that was not used, and why."""
 
     session_id: str
     start_time: datetime.datetime
-    kind: _ThresholdKind = Field(description="`race` or `threshold_workout`.")
+    kind: _ThresholdKind = Field(description=_KIND_DESCRIPTION)
+    admitted_by: list[Literal["tag", "name"]] | None = Field(description=_ADMITTED_BY_DESCRIPTION)
+    workout_name: str | None = Field(description=_WORKOUT_NAME_DESCRIPTION)
     reason: Literal[
         "outside_threshold_band",
         "distance_regressed",
@@ -1867,7 +1886,8 @@ class ThresholdPaceParameters(BaseModel):
 
 class Determinant(BaseModel):
     """One determinant of the state model; only `functional_threshold_pace` is served, from tagged races
-    and Training-tagged threshold workouts' active laps. Its 80 % interval covers effort-to-effort noise,
+    and the counted work reps of threshold workouts (tagged Training or named in `threshold_workout_names`).
+    Its 80 % interval covers effort-to-effort noise,
     not bias: an effort read wrongly (a workout tagged Race, read whole) moves the estimate and the
     interval with it, so the interval need not contain the true pace."""
 
@@ -1885,7 +1905,8 @@ class Determinant(BaseModel):
     )
     efforts: list[ThresholdEffort] = Field(description="The races and workouts used, in start-time order.")
     excluded: list[ThresholdExclusion] = Field(
-        description="Every tagged running race and threshold workout not used, in start-time order."
+        description="Every tagged running race and every threshold workout (tagged or named) not used, in "
+        "start-time order."
     )
     parameters: ThresholdPaceParameters
 

@@ -1617,13 +1617,21 @@ def _threshold_determinant(
 ) -> Determinant:
     """The ``functional_threshold_pace`` entry: the estimator's result, with the races and workouts
     the reader could not read merged into ``excluded`` (those at or before ``as_of``, in start-time
-    order), each exclusion with its ``kind``.
+    order), each exclusion with its ``kind``, ``admitted_by`` and ``workout_name`` as the reader
+    decided them (``dataclasses.asdict`` carries the same fields on the efforts).
 
     An estimate with a non-finite published number (a finite but absurd GAP pace overflows the
     interval) is served as ``estimate_not_finite`` with ``estimate`` and ``error`` null, never as a value JSON
     cannot carry; ``efforts`` (with GAP pace and gain) and ``parameters`` stay, so the race can be found."""
     excluded = [
-        {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason, "kind": e.kind}
+        {
+            "session_id": e.session_id,
+            "start_time": e.start_time,
+            "reason": e.reason,
+            "kind": e.kind,
+            "admitted_by": None if e.admitted_by is None else list(e.admitted_by),
+            "workout_name": e.workout_name,
+        }
         for e in result.excluded
     ]
     for row in unreadable:
@@ -1660,23 +1668,28 @@ def _threshold_determinant(
 
 @app.get("/state", response_model=StateModel, operation_id="getState", tags=["State & Metrics"])
 def get_state(as_of: str | None = Query(None)) -> StateModel:
-    """The determinant profile at ``as_of`` (F024, F026): threshold pace from the tagged races and
-    the Training-tagged threshold workouts' active blocks, with its 80 % interval and confidence,
+    """The determinant profile at ``as_of`` (F024, F026, F027): threshold pace from the tagged
+    races and the threshold workouts' counted work reps, with its 80 % interval and confidence,
     on the contract's path (``operationId: getState``).
 
-    The zone is read from the config per request. ``parse_as_of`` reads ``as_of`` against the
-    ``_utcnow`` seam; a value it refuses is a ``RequestValidationError`` on ``("query",
-    "as_of")``, as ``list_sessions`` raises its cursor check. ``db.read_threshold_effort_rows``
-    reads the tagged races (records only for those in the duration band) and workouts (records
-    only for those past rows 1 to 3 of the F026 reference section 3) and
-    ``metrics.threshold_pace.estimate`` replays them to the instant, recomputed on every
-    request. A race or workout whose summary, quality flags, feature inputs or laps do not read is
-    excluded with its reason (``summary_unreadable``, ``quality_flags_unreadable``,
-    ``features_unavailable``, ``laps_unreadable``) rather than failing the read. A stored ``start_time`` is trusted, as the ingest writes it with
-    its offset; a naive or unparseable one, which only a write from outside the API could leave,
-    fails the read. ``readiness`` and ``gap_to_goal`` are null. Nothing is written.
+    The zone and the workout names are read from the config per request. ``parse_as_of`` reads
+    ``as_of`` against the ``_utcnow`` seam; a value it refuses is a ``RequestValidationError`` on
+    ``("query", "as_of")``, as ``list_sessions`` raises its cursor check.
+    ``db.read_threshold_effort_rows`` reads the tagged races (records only for those in the
+    duration band) and the workouts admitted by their ``threshold_workout`` tag or by a step's
+    workout name listed in the config's ``threshold_workout_names`` (F027 reference section 2;
+    records only for those past orders 1 to 5 of the F027 reference section 4), each row with
+    its ``kind``, ``admitted_by`` and ``workout_name``, and ``metrics.threshold_pace.estimate``
+    replays them to the instant, recomputed on every request. A race or workout whose summary,
+    quality flags, feature inputs or laps do not read is excluded with its reason
+    (``summary_unreadable``, ``quality_flags_unreadable``, ``features_unavailable``,
+    ``laps_unreadable``) rather than failing the read. A stored ``start_time`` is trusted, as the
+    ingest writes it with its offset; a naive or unparseable one, which only a write from outside
+    the API could leave, fails the read. ``readiness`` and ``gap_to_goal`` are null. Nothing is
+    written.
     """
-    zone = ZoneInfo(db._load_config_cached().athlete_timezone)
+    config = db._load_config_cached()
+    zone = ZoneInfo(config.athlete_timezone)
     try:
         instant = parse_as_of(as_of, zone, _utcnow())
     except ValueError as exc:
@@ -1686,7 +1699,7 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
 
     conn = db.get_connection()
     try:
-        rows, unreadable = db.read_threshold_effort_rows(conn)
+        rows, unreadable = db.read_threshold_effort_rows(conn, config.threshold_workout_names)
     finally:
         conn.close()
 
