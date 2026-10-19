@@ -3,15 +3,23 @@
 The first line is the estimate: ``Threshold pace 4:22/km (80 %: 4:15-4:30), high, from 2 races and 1
 workout, the last on 2026-09-30``, the interval fast end first and a zero count left out. Then one
 line per race used (date, duration, GAP pace, the gain it entered with, its degraded-GPS percentage
-and its weight) and one per threshold workout used (the same, with its active time and blocks in
-place of the duration), then one per tagged race or workout excluded (date and the reason in words).
-When every race used lasted under 30 minutes the API sets ``short_races_only`` and a warning line
-follows the estimate.
+and its weight) and one per threshold workout used (the same, with what admitted it after the date
+and its counted time and blocks in place of the duration), then one per race or workout excluded
+(date, a workout's admission, and the reason in words). When every race used lasted under 30
+minutes the API sets ``short_races_only`` and a warning line follows the estimate.
+
+A workout's admission is the served ``admitted_by`` in words: ``(tag)`` for one tagged Training in
+Connect, ``(name Progression Run)`` for one whose workout name is listed in the API's
+``threshold_workout_names``, ``(tag, name Goal Pace Run)`` for both, the name printed only beside
+the ``name`` admitter. The workout minimums print as ``m:ss`` from the served parameters: a work rep
+counts from ``workout_min_rep_s`` (4:50) and the counted reps must sum to ``workout_min_active_s``
+(9:50).
 
 An effort's weight is its share of today's estimate, computed here from the served gains: the
 estimate is ``sum_i w_i * x_i`` with ``w_i = K_i * prod_{j>i}(1 - K_j)``, which sums to 1 because
 the first gain is 1. Each effort's ``kind`` is read as ``race`` when absent, so an API from before
-threshold workouts still renders.
+threshold workouts still renders; an absent, null or empty ``admitted_by`` prints no parenthesis,
+so an API from before the admission fields renders too.
 
 With no qualifying race or workout the first line says how to tag one; ``<its date>`` in it is
 printed as is, for the athlete to fill in. When the API serves ``estimate_not_finite`` (an effort's
@@ -46,11 +54,23 @@ RACE = "race"
 WORKOUT = "threshold_workout"
 KIND_WORDS = {RACE: "Race", WORKOUT: "Workout"}
 
-# A threshold workout's least active time when the body carries no ``workout_min_active_s``.
+# A threshold workout's least counted time and least work-rep length when the body's ``parameters``
+# carry no ``workout_min_active_s`` or ``workout_min_rep_s``. An API from before the rep rule
+# served no rep minimum and summed every active lap against a 600 s minimum; one from before the
+# parameters block held that same minimum. Each is the figure such an API applied, so the words
+# describe the rule that excluded the workout, not today's.
 DEFAULT_WORKOUT_MIN_ACTIVE_S = 600
+DEFAULT_WORKOUT_MIN_REP_S = 290
+
+# What admitted a workout, as ``GET /state`` serves ``admitted_by``, in the words printed after
+# the date. ``name`` carries the served ``workout_name`` after it.
+ADMITTED_BY_TAG = "tag"
+ADMITTED_BY_NAME = "name"
+ADMITTERS = (ADMITTED_BY_TAG, ADMITTED_BY_NAME)
 
 # Each exclusion reason the API serves, in words. A reason not listed prints as served. ``{date}``
-# is the excluded effort's date and ``{minutes}`` the served least active time of a workout.
+# is the excluded effort's date, ``{minimum}`` the served least counted time of a workout and
+# ``{rep}`` the served least work-rep length, both as ``m:ss``.
 #
 # ``smart_recording`` names both modes: the ingest sets that one flag for a ``smart`` and an
 # ``irregular`` recording-interval verdict alike (every verdict but ``1hz``), and ``GET /state``
@@ -65,17 +85,18 @@ REASON_WORDS = {
     "features_unavailable": "its pace features could not be computed",
     "laps_not_read": "its laps have not been read: run runcoach sync laps --since {date}",
     "lap_times_unreadable": "its stored lap times could not be read",
-    "no_workout_steps": "no lap of an active workout step",
-    "active_time_below_minimum": "under {minutes} minutes of active laps",
+    "no_workout_steps": "no lap of a work step",
+    "no_sustained_work": "no work rep of {rep} or longer",
+    "active_time_below_minimum": "under {minimum} of work reps",
     "laps_unreadable": "its stored laps could not be read",
 }
 
 UNAVAILABLE_LINES = {
     "no_qualifying_effort": (
         "Threshold pace unavailable: no tagged race of 20 to 60 minutes and no threshold workout with "
-        "{minutes} minutes of active laps. Mark a race or time trial as Race in Garmin Connect, or a "
-        "threshold workout as Training, then run runcoach sync tags --since <its date> (and, for a workout, "
-        "runcoach sync laps --since <its date>)."
+        "{minimum} of work reps. Mark a race or time trial as Race in Garmin Connect, or a threshold workout "
+        "as Training or list its workout name in the API's threshold_workout_names, then run "
+        "runcoach sync tags --since <its date> (and, for a workout, runcoach sync laps --since <its date>)."
     ),
     "estimate_not_finite": (
         "Threshold pace unavailable: a race's or workout's grade-adjusted pace is out of range, so the "
@@ -95,9 +116,10 @@ def _number(value: Any, what: str) -> float:
     return float(value)
 
 
-def _mss(seconds_per_km: float) -> str:
-    """``m:ss`` from seconds per km rounded half up, without the unit."""
-    minutes, secs = divmod(_half_up_seconds(seconds_per_km), 60)
+def _mss(seconds: float) -> str:
+    """``m:ss`` from seconds rounded half up, without a unit: a pace in seconds per km or a length
+    of time."""
+    minutes, secs = divmod(_half_up_seconds(seconds), 60)
     return f"{minutes}:{secs:02d}"
 
 
@@ -133,6 +155,24 @@ def _kind(row: dict) -> str:
     if kind not in KIND_WORDS:
         raise ValueError(f"kind {kind!r} is not race or threshold_workout")
     return kind
+
+
+def _admission(row: dict) -> str:
+    """A workout's admission after the date, ``" (tag, name Goal Pace Run)"`` from the served
+    ``admitted_by`` and ``workout_name``; empty when ``admitted_by`` is absent, null or empty (an
+    API from before the admission fields, or a race). The name is printed beside the ``name``
+    admitter only, and only when it is a non-empty string."""
+    admitted_by = row.get("admitted_by")
+    if admitted_by is None or admitted_by == []:
+        return ""
+    if not isinstance(admitted_by, list) or any(a not in ADMITTERS for a in admitted_by):
+        raise ValueError(f"admitted_by {admitted_by!r} is not a list of tag and name")
+    name = row.get("workout_name")
+    words = [
+        f"{ADMITTED_BY_NAME} {name}" if a == ADMITTED_BY_NAME and isinstance(name, str) and name else a
+        for a in admitted_by
+    ]
+    return f" ({', '.join(words)})"
 
 
 def weights(gains: list[float]) -> list[float]:
@@ -188,24 +228,35 @@ def _effort_line(effort: dict, weight: float, zone: ZoneInfo) -> str:
     blocks = effort["active_blocks"]
     if isinstance(blocks, bool) or not isinstance(blocks, int):
         raise ValueError("active_blocks is not a whole number")
-    return f"Workout used {day}: {format_duration(duration)} active in {_count(blocks, 'block')}, {tail}"
+    return (
+        f"Workout used {day}{_admission(effort)}: {format_duration(duration)} active in "
+        f"{_count(blocks, 'block')}, {tail}"
+    )
 
 
-def _excluded_line(row: dict, minutes: str, zone: ZoneInfo) -> str:
+def _excluded_line(row: dict, minimums: dict[str, str], zone: ZoneInfo) -> str:
     reason = row["reason"]
     if not isinstance(reason, str):
         raise ValueError("reason is not a string")
     day = _date(row["start_time"], zone)
-    words = REASON_WORDS[reason].format(date=day, minutes=minutes) if reason in REASON_WORDS else reason
-    return f"{KIND_WORDS[_kind(row)]} excluded {day}: {words}"
+    kind = _kind(row)
+    words = REASON_WORDS[reason].format(date=day, **minimums) if reason in REASON_WORDS else reason
+    admission = _admission(row) if kind == WORKOUT else ""
+    return f"{KIND_WORDS[kind]} excluded {day}{admission}: {words}"
 
 
-def _min_active_minutes(parameters: Any) -> str:
-    """The served ``workout_min_active_s`` in minutes, 600 s when an older API does not serve it."""
-    seconds = DEFAULT_WORKOUT_MIN_ACTIVE_S
-    if isinstance(parameters, dict) and "workout_min_active_s" in parameters:
-        seconds = _number(parameters["workout_min_active_s"], "workout_min_active_s")
-    return f"{seconds / 60:g}"
+def _workout_minimums(parameters: Any) -> dict[str, str]:
+    """The served ``workout_min_active_s`` (``minimum``) and ``workout_min_rep_s`` (``rep``) as
+    ``m:ss``, each defaulted when an older API does not serve it."""
+    served = parameters if isinstance(parameters, dict) else {}
+    out = {}
+    for word, key, default in (
+        ("minimum", "workout_min_active_s", DEFAULT_WORKOUT_MIN_ACTIVE_S),
+        ("rep", "workout_min_rep_s", DEFAULT_WORKOUT_MIN_REP_S),
+    ):
+        seconds = _number(served[key], key) if key in served else default
+        out[word] = _mss(seconds)
+    return out
 
 
 def render(body: Any) -> list[str]:
@@ -223,7 +274,7 @@ def render(body: Any) -> list[str]:
     if not isinstance(efforts, list) or not isinstance(excluded, list):
         raise ValueError("efforts or excluded is not a list")
 
-    minutes = _min_active_minutes(det.get("parameters"))
+    minimums = _workout_minimums(det.get("parameters"))
     estimate = det["estimate"]
     if estimate is not None:
         lines = [_estimate_line(estimate, efforts, zone)]
@@ -234,12 +285,12 @@ def render(body: Any) -> list[str]:
         if not isinstance(reason, str):
             raise ValueError("no estimate and no unavailable reason")
         if reason in UNAVAILABLE_LINES:
-            lines = [UNAVAILABLE_LINES[reason].format(minutes=minutes)]
+            lines = [UNAVAILABLE_LINES[reason].format(**minimums)]
         else:
             lines = [f"Threshold pace unavailable: {reason}."]
     shares = weights([_number(effort["gain"], "gain") for effort in efforts])
     lines += [_effort_line(effort, share, zone) for effort, share in zip(efforts, shares, strict=True)]
-    lines += [_excluded_line(row, minutes, zone) for row in excluded]
+    lines += [_excluded_line(row, minimums, zone) for row in excluded]
     return lines
 
 
@@ -253,6 +304,12 @@ def state(
 ) -> None:
     """Show threshold pace estimated from your tagged races and threshold workouts, with those used and
     excluded.
+
+    A run is a threshold workout when it is tagged Training in Garmin Connect or its workout name is
+    listed in the API's threshold_workout_names; each workout line says which after its date. Only
+    its work reps count: a work step with a target, held for at least 4:50, within 10 % of the
+    workout's fastest such rep; they must sum to at least 9:50. Warm-ups, recoveries, cool-downs
+    and shorter reps never enter the estimate.
 
     Each one used shows its weight: its share of today's estimate. The 80 % interval covers
     race-to-race scatter, not a biased input: a race or workout read wrongly moves the estimate and

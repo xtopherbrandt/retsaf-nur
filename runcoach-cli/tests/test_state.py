@@ -1,9 +1,10 @@
-"""``runcoach state``: threshold pace from ``GET /state``, the races used and the races excluded.
+"""``runcoach state``: threshold pace from ``GET /state``, the races and workouts used and excluded.
 
 Every test runs the real command against ``install_mock_client``'s fake API, with bodies shaped as
 the API's ``StateModel`` serves them (``as_of`` and start times in UTC with a ``Z``). The lines
-compared are F024 reference section 6's, with F026 reference section 5's workouts and IDEA-167's
-weights.
+compared are F024 reference section 6's, with F026 reference section 5's workouts, IDEA-167's
+weights and F027 reference section 5's admission after the date (``(tag)``, ``(name Progression
+Run)``, ``(tag, name Goal Pace Run)``) and its ``no_sustained_work`` reason in words.
 """
 
 from __future__ import annotations
@@ -29,7 +30,9 @@ PARAMETERS = {
     "high_max_error": 0.025,
     "medium_max_error": 0.05,
     "short_race_s": 1800,
-    "workout_min_active_s": 600,
+    "workout_min_active_s": 590,
+    "workout_min_rep_s": 290,
+    "workout_rep_band": 1.10,
 }
 
 
@@ -44,15 +47,42 @@ def _effort(session_id: str, start: str, duration_s: float, gap: float, gain: fl
         "gps_degraded_fraction": degraded,
         "gain": gain,
         "active_blocks": None,
+        "admitted_by": None,
+        "workout_name": None,
     }
 
 
-def _workout(session_id: str, start: str, active_s: float, gap: float, gain: float, blocks: int, degraded=0.0):
-    """A threshold workout as ``ThresholdEffort`` serves it: ``duration_s`` its active time."""
+def _workout(
+    session_id: str,
+    start: str,
+    active_s: float,
+    gap: float,
+    gain: float,
+    blocks: int,
+    degraded=0.0,
+    admitted_by: list[str] | None = None,
+    workout_name: str | None = None,
+):
+    """A threshold workout as ``ThresholdEffort`` serves it: ``duration_s`` its counted time,
+    ``admitted_by`` ``["tag"]`` unless given."""
     return {
         **_effort(session_id, start, active_s, gap, gain, degraded),
         "kind": "threshold_workout",
         "active_blocks": blocks,
+        "admitted_by": ["tag"] if admitted_by is None else admitted_by,
+        "workout_name": workout_name,
+    }
+
+
+def _excluded_workout(session_id: str, start: str, reason: str, admitted_by=("tag",), workout_name=None):
+    """A workout as ``ThresholdExclusion`` serves it."""
+    return {
+        "session_id": session_id,
+        "start_time": start,
+        "kind": "threshold_workout",
+        "reason": reason,
+        "admitted_by": list(admitted_by),
+        "workout_name": workout_name,
     }
 
 
@@ -201,12 +231,14 @@ def test_a_workout_line(install_mock_client) -> None:
     result = _run()
     assert result.exit_code == 0, result.output
     assert _lines(result)[2] == (
-        "Workout used 2026-09-30: 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98, degraded GPS 0.0 %, weight 98 %"
+        "Workout used 2026-09-30 (tag): 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98, degraded GPS 0.0 %, "
+        "weight 98 %"
     )
     det["efforts"][1].update(active_blocks=3, gps_degraded_fraction=None, duration_s=1800.0)
     _serve(install_mock_client, body)
     assert _lines(_run())[2] == (
-        "Workout used 2026-09-30: 0:30:00 active in 3 blocks, GAP 4:26/km, gain 0.98, degraded GPS -, weight 98 %"
+        "Workout used 2026-09-30 (tag): 0:30:00 active in 3 blocks, GAP 4:26/km, gain 0.98, degraded GPS -, "
+        "weight 98 %"
     )
     for blocks in (None, "3", True, 1.5):
         det["efforts"][1]["active_blocks"] = blocks
@@ -219,8 +251,9 @@ def test_a_workout_line(install_mock_client) -> None:
 WORKOUT_REASON_WORDS = {
     "laps_not_read": "its laps have not been read: run runcoach sync laps --since 2026-07-01",
     "lap_times_unreadable": "its stored lap times could not be read",
-    "no_workout_steps": "no lap of an active workout step",
-    "active_time_below_minimum": "under 10 minutes of active laps",
+    "no_workout_steps": "no lap of a work step",
+    "no_sustained_work": "no work rep of 4:50 or longer",
+    "active_time_below_minimum": "under 9:50 of work reps",
     "laps_unreadable": "its stored laps could not be read",
     "smart_recording": "recorded in smart or irregular recording mode",
     "gap_pace_unavailable": "no grade-adjusted pace",
@@ -232,8 +265,7 @@ def test_workout_exclusion_reasons_in_words(install_mock_client) -> None:
     race excluded beside them keeps its ``Race excluded`` prefix."""
     body = copy.deepcopy(ESTIMATE_BODY)
     excluded = [
-        {"session_id": f"w-{i}", "start_time": "2026-07-01T07:00:00Z", "kind": "threshold_workout", "reason": reason}
-        for i, reason in enumerate(WORKOUT_REASON_WORDS)
+        _excluded_workout(f"w-{i}", "2026-07-01T07:00:00Z", reason) for i, reason in enumerate(WORKOUT_REASON_WORDS)
     ]
     excluded.append(
         {"session_id": "r", "start_time": "2026-07-02T07:00:00Z", "kind": "race", "reason": "outside_threshold_band"}
@@ -243,25 +275,188 @@ def test_workout_exclusion_reasons_in_words(install_mock_client) -> None:
     result = _run()
     assert result.exit_code == 0, result.output
     assert _lines(result)[3:] == [
-        f"Workout excluded 2026-07-01: {words}" for words in WORKOUT_REASON_WORDS.values()
+        f"Workout excluded 2026-07-01 (tag): {words}" for words in WORKOUT_REASON_WORDS.values()
     ] + ["Race excluded 2026-07-02: not 20 to 60 minutes long"]
     assert not any(reason in result.stdout for reason in WORKOUT_REASON_WORDS)
 
     # The hint's date is the workout's own, in the response's timezone.
     body["timezone"] = "Pacific/Auckland"
-    body["determinants"][0]["excluded"] = [
-        {"session_id": "w", "start_time": "2026-07-01T23:30:00Z", "kind": "threshold_workout", "reason": "laps_not_read"}
-    ]
+    body["determinants"][0]["excluded"] = [_excluded_workout("w", "2026-07-01T23:30:00Z", "laps_not_read")]
     _serve(install_mock_client, body)
     assert _lines(_run())[-1] == (
-        "Workout excluded 2026-07-02: its laps have not been read: run runcoach sync laps --since 2026-07-02"
+        "Workout excluded 2026-07-02 (tag): its laps have not been read: run runcoach sync laps --since 2026-07-02"
     )
 
     # The minimum is the served parameter's.
     body["determinants"][0]["parameters"] = {**PARAMETERS, "workout_min_active_s": 900}
     body["determinants"][0]["excluded"][0]["reason"] = "active_time_below_minimum"
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == "Workout excluded 2026-07-02: under 15 minutes of active laps"
+    assert _lines(_run())[-1] == "Workout excluded 2026-07-02 (tag): under 15:00 of work reps"
+
+
+def test_a_used_workout_shows_its_admission_after_the_date(install_mock_client) -> None:
+    """F027 reference section 5's line: a name-admitted workout reads ``(name Progression Run)``
+    after the date, the name as the API serves it; a tag-admitted one reads ``(tag)``."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    det = body["determinants"][0]
+    det["efforts"] = [
+        _workout("w-tag", "2026-09-20T07:00:00Z", 1500.0, 270.0, 1.0, 1),
+        _workout("w-name", "2026-10-17T06:00:00Z", 900.0, 266.0, 0.98, 1, 0.0, ["name"], "Progression Run"),
+    ]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[1:] == [
+        (
+            "Workout used 2026-09-20 (tag): 0:25:00 active in 1 block, GAP 4:30/km, gain 1.00, degraded GPS 0.0 %, "
+            "weight 2 %"
+        ),
+        (
+            "Workout used 2026-10-17 (name Progression Run): 0:15:00 active in 1 block, GAP 4:26/km, gain 0.98, "
+            "degraded GPS 0.0 %, weight 98 %"
+        ),
+    ]
+
+    # A tag-admitted workout that carries a name prints the tag alone: the name did not admit it.
+    det["efforts"][0]["workout_name"] = "Tempo Run"
+    _serve(install_mock_client, body)
+    assert _lines(_run())[1].startswith("Workout used 2026-09-20 (tag): ")
+
+
+def test_an_excluded_workout_shows_its_admission_after_the_date(install_mock_client) -> None:
+    """The admission is shown on an excluded workout too (the athlete's ruling): the Speed Repeats
+    admitted by name and refused for want of a sustained rep. A race excluded beside it carries
+    ``admitted_by`` null and prints no parenthesis."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    body["determinants"][0]["excluded"] = [
+        _excluded_workout("w", "2026-10-07T06:00:00Z", "no_sustained_work", ["name"], "Speed Repeats"),
+        {
+            "session_id": "r",
+            "start_time": "2026-10-08T06:00:00Z",
+            "kind": "race",
+            "reason": "outside_threshold_band",
+            "admitted_by": None,
+            "workout_name": None,
+        },
+    ]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[3:] == [
+        "Workout excluded 2026-10-07 (name Speed Repeats): no work rep of 4:50 or longer",
+        "Race excluded 2026-10-08: not 20 to 60 minutes long",
+    ]
+
+
+def test_tag_and_name_admission_reads_tag_comma_name(install_mock_client) -> None:
+    """``["tag", "name"]`` reads ``(tag, name Goal Pace Run)``, in the served order; on an excluded
+    workout too. A tag-admitted workout whose stored name is the empty string reads ``(tag)``: the
+    name is printed only beside the ``name`` admitter. (``["name"]`` with an empty name cannot be
+    served: the API refuses an empty entry in ``threshold_workout_names`` and compares names
+    stripped, so an empty stored name admits nothing.) An admitter the CLI does not know is refused
+    rather than printed."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    det = body["determinants"][0]
+    det["efforts"] = [
+        _effort("s-a", "2026-09-20T07:00:00Z", 2500.0, 270.0, 1.0),
+        _workout("w-1", "2026-09-30T06:00:00Z", 1630.0, 266.0, 0.98, 1, 0.0, ["tag", "name"], "Goal Pace Run"),
+    ]
+    det["excluded"] = [
+        _excluded_workout("w-2", "2026-10-01T06:00:00Z", "active_time_below_minimum", ["tag", "name"], "Goal Pace Run"),
+        _excluded_workout("w-3", "2026-10-02T06:00:00Z", "no_workout_steps", ["tag"], ""),
+    ]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[2:] == [
+        (
+            "Workout used 2026-09-30 (tag, name Goal Pace Run): 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98, "
+            "degraded GPS 0.0 %, weight 98 %"
+        ),
+        "Workout excluded 2026-10-01 (tag, name Goal Pace Run): under 9:50 of work reps",
+        "Workout excluded 2026-10-02 (tag): no lap of a work step",
+    ]
+
+    for admitted_by in (["coach"], "tag", [1], [None]):
+        det["efforts"][1]["admitted_by"] = admitted_by
+        _serve(install_mock_client, body)
+        broken = _run()
+        assert broken.exit_code == 1, admitted_by
+        assert "the API's response could not be understood" in broken.stderr
+
+
+def test_no_sustained_work_reads_in_words(install_mock_client) -> None:
+    """``no_sustained_work`` names the served rep minimum as m:ss: 290 s reads 4:50 and 300 s reads
+    5:00; an older API without ``workout_min_rep_s`` reads 4:50 too."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    det = body["determinants"][0]
+    det["excluded"] = [_excluded_workout("w", "2026-10-07T06:00:00Z", "no_sustained_work")]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
+    assert "no_sustained_work" not in result.stdout
+
+    det["parameters"] = {**PARAMETERS, "workout_min_rep_s": 300}
+    _serve(install_mock_client, body)
+    assert _lines(_run())[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 5:00 or longer"
+
+    det["parameters"] = {k: v for k, v in PARAMETERS.items() if k != "workout_min_rep_s"}
+    _serve(install_mock_client, body)
+    assert _lines(_run())[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
+
+
+def test_the_workout_minimum_reads_9_50(install_mock_client) -> None:
+    """The served ``workout_min_active_s`` 590 reads ``9:50`` in the exclusion and in the unavailable
+    line, never a decimal number of minutes; 600 reads ``10:00``, 605 reads ``10:05``."""
+    body = _unavailable_body()
+    det = body["determinants"][0]
+    det["excluded"] = [_excluded_workout("w", "2026-10-07T06:00:00Z", "active_time_below_minimum")]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    lines = _lines(result)
+    assert "no threshold workout with 9:50 of work reps" in lines[0]
+    assert lines[1] == "Workout excluded 2026-10-07 (tag): under 9:50 of work reps"
+    assert "9.8" not in result.stdout and "minutes of" not in result.stdout
+
+    for seconds, clock in ((600, "10:00"), (605, "10:05")):
+        det["parameters"] = {**PARAMETERS, "workout_min_active_s": seconds}
+        _serve(install_mock_client, body)
+        lines = _lines(_run())
+        assert f"no threshold workout with {clock} of work reps" in lines[0], seconds
+        assert lines[1] == f"Workout excluded 2026-10-07 (tag): under {clock} of work reps"
+
+
+def test_an_older_api_without_admitted_by_prints_no_parenthesis(install_mock_client) -> None:
+    """A workout from an API before the admission fields (no ``admitted_by`` or ``workout_name``
+    key) prints the date with no parenthesis, as an absent ``kind`` reads as a race; so does a
+    served ``admitted_by`` null or ``[]``, which the API never writes on a workout."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    det = body["determinants"][0]
+    det["efforts"] = [
+        _effort("s-a", "2026-09-20T07:00:00Z", 2500.0, 270.0, 1.0),
+        _workout("w-1", "2026-09-30T06:00:00Z", 1630.0, 266.0, 0.98, 1),
+    ]
+    det["excluded"] = [_excluded_workout("w-2", "2026-10-01T06:00:00Z", "no_workout_steps")]
+    for row in (det["efforts"][1], det["excluded"][0]):
+        del row["admitted_by"], row["workout_name"]
+    det["parameters"] = {k: v for k, v in PARAMETERS.items() if k not in ("workout_min_rep_s", "workout_rep_band")}
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    assert _lines(result)[2:] == [
+        "Workout used 2026-09-30: 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98, degraded GPS 0.0 %, weight 98 %",
+        "Workout excluded 2026-10-01: no lap of a work step",
+    ]
+
+    for admitted_by in (None, []):
+        det["efforts"][1]["admitted_by"] = admitted_by
+        det["excluded"][0]["admitted_by"] = admitted_by
+        _serve(install_mock_client, body)
+        lines = _lines(_run())
+        assert lines[2].startswith("Workout used 2026-09-30: "), admitted_by
+        assert lines[3] == "Workout excluded 2026-10-01: no lap of a work step", admitted_by
 
 
 def test_each_effort_line_shows_its_weight(install_mock_client) -> None:
@@ -322,8 +517,10 @@ def test_an_older_api_body_without_kind_still_renders(install_mock_client) -> No
     body = copy.deepcopy(ESTIMATE_BODY)
     det = body["determinants"][0]
     for effort in det["efforts"]:
-        del effort["kind"], effort["active_blocks"]
-    det["parameters"] = {k: v for k, v in PARAMETERS.items() if k != "workout_min_active_s"}
+        del effort["kind"], effort["active_blocks"], effort["admitted_by"], effort["workout_name"]
+    det["parameters"] = {
+        k: v for k, v in PARAMETERS.items() if k not in ("workout_min_active_s", "workout_min_rep_s", "workout_rep_band")
+    }
     det["excluded"] = [{"session_id": "x", "start_time": "2026-07-01T07:00:00Z", "reason": "outside_threshold_band"}]
     _serve(install_mock_client, body)
     result = _run()
@@ -403,29 +600,28 @@ def test_short_races_warning_line(install_mock_client) -> None:
 
 
 UNAVAILABLE_LINE = (
-    "Threshold pace unavailable: no tagged race of 20 to 60 minutes and no threshold workout with 10 minutes "
-    "of active laps. Mark a race or time trial as Race in Garmin Connect, or a threshold workout as Training, "
-    "then run runcoach sync tags --since <its date> (and, for a workout, runcoach sync laps --since <its date>)."
+    "Threshold pace unavailable: no tagged race of 20 to 60 minutes and no threshold workout with 9:50 of work "
+    "reps. Mark a race or time trial as Race in Garmin Connect, or a threshold workout as Training or list its "
+    "workout name in the API's threshold_workout_names, then run runcoach sync tags --since <its date> (and, for "
+    "a workout, runcoach sync laps --since <its date>)."
 )
 
 
 def test_unavailable_message_names_training_workouts(install_mock_client) -> None:
-    """The unavailable message names workouts tagged Training in Connect beside races, the sync laps
-    step a workout needs, and the served minimum active time; a workout excluded follows it."""
+    """The unavailable message names workouts tagged Training in Connect and the workout name list
+    beside races, the sync laps step a workout needs, and the served minimum counted time; a
+    workout excluded follows it."""
     body = _unavailable_body()
-    body["determinants"][0]["excluded"] = [
-        {"session_id": "w", "start_time": "2026-09-30T06:00:00Z", "kind": "threshold_workout",
-         "reason": "no_workout_steps"}
-    ]
+    body["determinants"][0]["excluded"] = [_excluded_workout("w", "2026-09-30T06:00:00Z", "no_workout_steps")]
     _serve(install_mock_client, body)
     result = _run()
     assert result.exit_code == 0, result.output
-    assert _lines(result) == [UNAVAILABLE_LINE, "Workout excluded 2026-09-30: no lap of an active workout step"]
-    assert "Training" in UNAVAILABLE_LINE and "workout" in UNAVAILABLE_LINE
+    assert _lines(result) == [UNAVAILABLE_LINE, "Workout excluded 2026-09-30 (tag): no lap of a work step"]
+    assert "Training" in UNAVAILABLE_LINE and "threshold_workout_names" in UNAVAILABLE_LINE
 
     body["determinants"][0]["parameters"] = {**PARAMETERS, "workout_min_active_s": 900}
     _serve(install_mock_client, body)
-    assert _lines(_run())[0] == UNAVAILABLE_LINE.replace("with 10 minutes", "with 15 minutes")
+    assert _lines(_run())[0] == UNAVAILABLE_LINE.replace("with 9:50 of", "with 15:00 of")
 
 
 def test_unavailable_message_exits_0(install_mock_client) -> None:
@@ -558,6 +754,18 @@ def test_help_texts_tell_state_from_status() -> None:
     assert "threshold" not in flat_status
     flat_top = " ".join(top.stdout.split())
     assert "state" in flat_top and "status" in flat_top
+
+
+def test_state_help_states_the_admission_and_rep_rule() -> None:
+    """The help states the rule in words: the Training tag or a listed workout name admits a run;
+    its work reps of at least 4:50, within 10 % of the fastest, count, and they must sum to 9:50."""
+    flat = " ".join(runner.invoke(app, ["state", "--help"]).stdout.split())
+    assert "Training" in flat
+    assert "threshold_workout_names" in flat
+    assert "4:50" in flat
+    assert "10 %" in flat
+    assert "9:50" in flat
+    assert "active laps" not in flat and "active steps" not in flat
 
 
 def test_the_request_goes_to_get_state(install_mock_client) -> None:

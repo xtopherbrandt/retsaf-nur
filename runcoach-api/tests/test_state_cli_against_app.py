@@ -1,4 +1,5 @@
-"""``runcoach state`` against the served app, not a hand-written body (F026 AC5, the CLI half).
+"""``runcoach state`` against the served app, not a hand-written body (F026 AC5 and F027 AC6, the
+CLI halves).
 
 ``runcoach state`` runs through Typer's ``CliRunner`` on the harness in
 ``tests/support/against_app.py``: ``runcoach_cli.api_client.client`` is a ``TestClient(app)``, so
@@ -12,6 +13,7 @@ The file, by its row in ``fixtures/README.md``'s provenance table:
 | file | kind | notes | mode | devices | positions | run proof |
 |---|---|---|---|---|---|---|
 | sample_run | real run | | 1 Hz | FR945 LTE; HRM-Pro Plus | yes | yes |
+| hilly_run_8k_fr945 | real run | Smart selected, watch wrote 1 Hz; positions stripped | 1 Hz, 82 s pause | FR945 LTE; HRM-Pro Plus | no | yes |
 
 ``sample_run.fit`` is a structured workout: uploaded with ``POST /sessions`` its laps and workout
 steps are stored, laps 1-7 name work steps 1 and 2 (one block) and their ``timer_s`` sum to
@@ -19,6 +21,11 @@ steps are stored, laps 1-7 name work steps 1 and 2 (one block) and their ``timer
 ``threshold_workout`` through ``PUT /race-tags``, it is the only effort used. Both reps count
 because their GAP paces sit at a 1.0992 ratio, inside the 1.10 band by under a percent; this
 file pins the served shape, never the band.
+
+Both files' ``workout`` message names the workout ``Easy Run`` (read from the files with
+``fitdecode``), so declaring ``threshold_workout_names = ["Easy Run"]`` admits the tagged
+``sample_run`` by tag and name and the untagged ``hilly_run_8k_fr945`` by name alone, and
+``runcoach state`` shows each admission after the date.
 """
 
 from __future__ import annotations
@@ -128,15 +135,16 @@ def _stored(session_id: str) -> tuple[str, dict[str, Any]]:
     return row["start_time"], json.loads(row["summary"])
 
 
-def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no_network: list[Any]) -> None:
-    client = cli_against_app
-    uploaded = client.post(
-        "/sessions", files={"file": ("sample_run.fit", (FIXTURES / "sample_run.fit").read_bytes())}
-    )
+def _upload(client: TestClient, name: str) -> tuple[str, datetime, dict[str, Any]]:
+    """Upload a fixture; its session id, UTC start and stored summary."""
+    uploaded = client.post("/sessions", files={"file": (name, (FIXTURES / name).read_bytes())})
     assert uploaded.status_code == 201, uploaded.text
-    workout = uploaded.json()["session_id"]
-    start_time, summary = _stored(workout)
-    start = datetime.fromisoformat(start_time).astimezone(UTC)
+    session_id = uploaded.json()["session_id"]
+    start_time, summary = _stored(session_id)
+    return session_id, datetime.fromisoformat(start_time).astimezone(UTC), summary
+
+
+def _tag_workout(client: TestClient, session_id: str, start: datetime, summary: dict[str, Any]) -> None:
     tagged = client.put(
         "/race-tags",
         json={
@@ -152,21 +160,35 @@ def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no
         },
     )
     assert tagged.status_code == 200, tagged.text
-    assert [(i["outcome"], i["session_id"]) for i in tagged.json()["items"]] == [("tagged", workout)]
+    assert [(i["outcome"], i["session_id"]) for i in tagged.json()["items"]] == [("tagged", session_id)]
 
+
+def _ftp(client: TestClient) -> tuple[dict[str, Any], str]:
     body = client.get("/state").json()
     [det] = [d for d in body["determinants"] if d["name"] == "functional_threshold_pace"]
+    print(f"  served timezone {body['timezone']}; efforts {det['efforts']}; excluded {det['excluded']}")
+    return det, body["timezone"]
+
+
+def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no_network: list[Any]) -> None:
+    """With no workout name listed (what ``runcoach-api init`` writes), the tagged ``sample_run`` is
+    admitted by its tag alone and reads ``(tag)`` after the date."""
+    client = cli_against_app
+    workout, start, summary = _upload(client, "sample_run.fit")
+    _tag_workout(client, workout, start, summary)
+
+    det, zone = _ftp(client)
     [effort] = det["efforts"]
-    print(f"  served timezone {body['timezone']}; effort {effort}; excluded {det['excluded']}")
     assert (effort["session_id"], effort["kind"], effort["active_blocks"]) == (
         workout,
         "threshold_workout",
         1,
     )
+    assert (effort["admitted_by"], effort["workout_name"]) == (["tag"], "Easy Run")
     assert effort["duration_s"] == pytest.approx(ACTIVE_S, abs=1e-9)
     assert effort["gain"] == 1.0
     assert effort["gps_degraded_fraction"] == 0.0
-    day = start.astimezone(ZoneInfo(body["timezone"])).strftime("%Y-%m-%d")
+    day = start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
 
     result = _run("state")
     assert result.exit_code == 0, result.output
@@ -175,8 +197,56 @@ def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no
     assert lines[0].endswith(f", from 1 workout, the last on {day}")
     assert lines[1:] == [
         (
-            f"Workout used {day}: 0:35:00 active in 1 block, GAP {_mss(effort['gap_pace_s_per_km'])}/km, "
+            f"Workout used {day} (tag): 0:35:00 active in 1 block, GAP {_mss(effort['gap_pace_s_per_km'])}/km, "
             "gain 1.00, degraded GPS 0.0 %, weight 100 %"
         )
+    ]
+    assert _no_network == []
+
+
+def test_runcoach_state_against_the_app_shows_tag_and_name_workouts(
+    cli_against_app: TestClient, declared_config, _no_network: list[Any]
+) -> None:
+    """With ``Easy Run`` listed, the tagged ``sample_run`` reads ``(tag, name Easy Run)`` and the
+    untagged ``hilly_run_8k_fr945`` (2026-09-29) is admitted by name alone and reads ``(name Easy
+    Run)``: the route counts its one work rep of 2400 s, so both are used, the later one entering
+    with the served gain and taking its weight (the first keeps the rest)."""
+    client = cli_against_app
+    declared_config(threshold_workout_names=["Easy Run"])
+    workout, start, summary = _upload(client, "sample_run.fit")
+    _tag_workout(client, workout, start, summary)
+    named, named_start, _summary = _upload(client, "hilly_run_8k_fr945.fit")
+
+    det, zone = _ftp(client)
+    assert det["excluded"] == []
+    [tagged, by_name] = det["efforts"]
+    assert (tagged["session_id"], tagged["admitted_by"], tagged["workout_name"]) == (workout, ["tag", "name"], "Easy Run")
+    assert (by_name["session_id"], by_name["kind"], by_name["admitted_by"], by_name["workout_name"]) == (
+        named,
+        "threshold_workout",
+        ["name"],
+        "Easy Run",
+    )
+    assert (by_name["duration_s"], by_name["active_blocks"], by_name["gps_degraded_fraction"]) == (2400.0, 1, 0.0)
+    gain = by_name["gain"]
+    assert 0.0 < gain < 1.0
+    weight = int(Decimal(repr(gain * 100)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    day = start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
+    named_day = named_start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
+
+    result = _run("state")
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith(f"Threshold pace {_mss(det['estimate']['value'])}/km (80 %: ")
+    assert lines[0].endswith(f", from 2 workouts, the last on {named_day}")
+    assert lines[1:] == [
+        (
+            f"Workout used {day} (tag, name Easy Run): 0:35:00 active in 1 block, "
+            f"GAP {_mss(tagged['gap_pace_s_per_km'])}/km, gain 1.00, degraded GPS 0.0 %, weight {100 - weight} %"
+        ),
+        (
+            f"Workout used {named_day} (name Easy Run): 0:40:00 active in 1 block, "
+            f"GAP {_mss(by_name['gap_pace_s_per_km'])}/km, gain {gain:.2f}, degraded GPS 0.0 %, weight {weight} %"
+        ),
     ]
     assert _no_network == []
