@@ -1834,19 +1834,21 @@ class ThresholdExclusion(BaseModel):
         "laps_not_read",
         "lap_times_unreadable",
         "no_workout_steps",
+        "no_sustained_work",
         "active_time_below_minimum",
         "laps_unreadable",
     ] = Field(
-        description="The first of the F024 reference section 2 rows a race fails, or of the F026 reference "
-        "section 3 rows a workout fails (`laps_not_read`, `lap_times_unreadable`, `no_workout_steps`, "
-        "`active_time_below_minimum`, then the flags and `gap_pace_unavailable`); or, when a stored value it "
-        "needs does not read, `summary_unreadable` (races only), `quality_flags_unreadable`, "
-        "`features_unavailable` or `laps_unreadable` (workouts only)."
+        description="The first of the F024 reference section 2 rows a race fails, or of the F027 reference "
+        "section 4 orders a workout fails (`laps_not_read`, `laps_unreadable`, `lap_times_unreadable`, "
+        "`no_workout_steps`, `no_sustained_work`: no work rep of 290 s; the record reasons; the flags; "
+        "`gap_pace_unavailable`: no sustained rep with a GAP pace; `active_time_below_minimum`: the counted "
+        "reps sum to under 590 s); or, when a stored value it needs does not read, `summary_unreadable` "
+        "(races only), `quality_flags_unreadable`, `features_unavailable` or `laps_unreadable` (workouts only)."
     )
 
 
 class ThresholdPaceParameters(BaseModel):
-    """The constants the estimate was computed with (F024 reference section 1, F026 reference section 4)."""
+    """The constants the estimate was computed with (F024 reference section 1, F027 reference section 4)."""
 
     typical_error: float
     doubling_days: int
@@ -1854,7 +1856,13 @@ class ThresholdPaceParameters(BaseModel):
     high_max_error: float
     medium_max_error: float
     short_race_s: int
-    workout_min_active_s: int = Field(description="A threshold workout's least active time in seconds; no maximum.")
+    workout_min_active_s: int = Field(
+        description="A threshold workout's least counted time in seconds, summed over its counted work reps; no maximum."
+    )
+    workout_min_rep_s: int = Field(description="A work rep's least length in seconds to count as sustained work.")
+    workout_rep_band: float = Field(
+        description="A sustained rep counts when its GAP pace is at most this times the workout's fastest sustained rep's."
+    )
 
 
 class Determinant(BaseModel):

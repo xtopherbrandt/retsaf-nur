@@ -3405,7 +3405,7 @@ components:
         kind: { type: string, enum: [race, threshold_workout] }
         reason:
           type: string
-          enum: [outside_threshold_band, distance_regressed, smart_recording, gap_pace_unavailable, summary_unreadable, quality_flags_unreadable, features_unavailable, laps_not_read, lap_times_unreadable, no_workout_steps, active_time_below_minimum, laps_unreadable]
+          enum: [outside_threshold_band, distance_regressed, smart_recording, gap_pace_unavailable, summary_unreadable, quality_flags_unreadable, features_unavailable, laps_not_read, lap_times_unreadable, no_workout_steps, no_sustained_work, active_time_below_minimum, laps_unreadable]
           description: >
             The first of the F024 reference's section 2 rows a race fails, or of the F026
             reference's section 3 rows a workout fails (`laps_not_read`, `lap_times_unreadable`,
@@ -3416,7 +3416,7 @@ components:
     ThresholdPaceParameters:
       type: object
       description: "getState: the constants the threshold estimate was computed with, so it can be redone by hand."
-      required: [typical_error, doubling_days, coverage, high_max_error, medium_max_error, short_race_s, workout_min_active_s]
+      required: [typical_error, doubling_days, coverage, high_max_error, medium_max_error, short_race_s, workout_min_active_s, workout_min_rep_s, workout_rep_band]
       properties:
         typical_error: { type: number }
         doubling_days: { type: integer }
@@ -3424,4 +3424,6 @@ components:
         high_max_error: { type: number }
         medium_max_error: { type: number }
         short_race_s: { type: integer }
-        workout_min_active_s: { type: integer, description: "A threshold workout's least active time in seconds; no maximum." }
+        workout_min_active_s: { type: integer, description: "A threshold workout's least counted time in seconds, summed over its counted work reps; no maximum." }
+        workout_min_rep_s: { type: integer, description: "A work rep's least length in seconds to count as sustained work." }
+        workout_rep_band: { type: number, description: "A sustained rep counts when its GAP pace is at most this times the workout's fastest sustained rep's." }

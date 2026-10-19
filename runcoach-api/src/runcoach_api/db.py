@@ -2023,9 +2023,11 @@ def _race_features(conn: sqlite3.Connection, session_id: str) -> dict | None:
 def read_workout_laps(conn: sqlite3.Connection, session_id: str) -> tuple[list[dict], list[dict]]:
     """One session's stored laps ``ORDER BY lap_index`` and workout steps ``ORDER BY seq``, as the
     mappings ``threshold_pace.active_laps`` reads (``lap_index, start_t, end_t, timer_s,
-    intensity, wkt_step_index``; ``step_index, intensity, duration_type``). ``active_blocks``
-    counts runs of consecutive active laps in the order given, so the order is the lap index's,
-    never the insertion order."""
+    intensity, wkt_step_index``; ``step_index, intensity, duration_type, target_type,
+    workout_name``). Without ``target_type`` every stored step would read as no work step
+    (F027 reference section 3); ``workout_name`` is the name admission's input (section 2). Reps
+    and ``active_blocks`` follow the order given, so the order is the lap index's, never the
+    insertion order."""
     laps = [
         dict(r)
         for r in conn.execute(
@@ -2037,7 +2039,8 @@ def read_workout_laps(conn: sqlite3.Connection, session_id: str) -> tuple[list[d
     steps = [
         dict(r)
         for r in conn.execute(
-            "SELECT step_index, intensity, duration_type FROM workout_steps WHERE session_id = ? ORDER BY seq",
+            "SELECT step_index, intensity, duration_type, target_type, workout_name FROM workout_steps"
+            " WHERE session_id = ? ORDER BY seq",
             (session_id,),
         )
     ]
@@ -2047,10 +2050,10 @@ def read_workout_laps(conn: sqlite3.Connection, session_id: str) -> tuple[list[d
 def _workout_block(
     conn: sqlite3.Connection, session_id: str, laps: list[dict], steps: list[dict]
 ) -> tuple[list, _threshold_pace.ActiveBlock] | None:
-    """F013's flags and the active block of one workout past rows 1 to 3, from one record read:
+    """F013's flags and the block of one workout past orders 1 to 5, from one record read:
     ``read_session_feature_inputs`` once, for both ``compute_session_features`` (the flags) and
-    ``segment_rows`` (the stream ``active_block`` reads). ``None`` when they do not compute
-    (logged with the session id)."""
+    ``segment_rows`` (the stream ``active_block`` reads for orders 8 to 11). ``None`` when they
+    do not compute (logged with the session id)."""
     try:
         session, records = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
         features = session_features.compute_session_features(session, records)
@@ -2065,7 +2068,9 @@ def _workout_block(
 
 def read_threshold_effort_rows(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
     """The tagged running races and threshold workouts ``metrics.threshold_pace.estimate`` reads
-    (F024 reference section 2, F026 reference section 3).
+    (F024 reference section 2, F027 reference sections 3 and 4). Every row carries ``kind``
+    (``race`` or ``threshold_workout``), the reader's decision; the estimator filters on it and
+    never on ``activity_tag``.
 
     **Races.** One ``SELECT`` reads ``session_id, start_time, sport, activity_tag, timer_time_s,
     summary, quality_flags`` for sport ``running`` tagged ``race`` (row 1), ordered by
@@ -2080,13 +2085,19 @@ def read_threshold_effort_rows(conn: sqlite3.Connection) -> tuple[list[dict], li
 
     **Threshold workouts.** A second ``SELECT`` reads ``session_id, start_time, sport,
     activity_tag, laps_read_at, quality_flags`` for sport ``running`` tagged ``threshold_workout``
-    in the same order. Rows 1, 1a, 2 and 3 decide before any record read, by the estimator's
-    ``workout_lap_reason``: a null ``laps_read_at`` reads no lap; otherwise ``read_workout_laps``
-    reads the laps (``ORDER BY lap_index``) and steps and ``threshold_pace.active_laps`` gives
-    ``lap_reason``, ``active_time_s`` and ``active_blocks``. Only a workout past row 3 reads its
-    records, once (``_workout_block``), for F013's flags and the active block's GAP pace and window
-    fractions, which its row carries as for a race. ``summary_unreadable`` does not arise for a
-    workout: its duration comes from its laps.
+    in the same order. Orders 1 to 5 of F027 reference section 4 decide before any record read,
+    by the estimator's ``workout_lap_reason``: a null ``laps_read_at`` reads no lap (order 1,
+    ``laps_not_read``); otherwise ``read_workout_laps`` reads the laps (``ORDER BY lap_index``)
+    and steps (order 2: a read that raises is ``laps_unreadable``) and
+    ``threshold_pace.active_laps`` gives ``lap_reason`` (orders 3 to 5: ``lap_times_unreadable``,
+    ``no_workout_steps``, ``no_sustained_work``). Every workout past order 5, a short one
+    included, reads its records once (``_workout_block``; order 6's ``quality_flags_unreadable``
+    and ``features_unavailable`` are decided here), for F013's flags (order 7, the estimator's)
+    and ``threshold_pace.active_block``'s result, which its row carries as ``block_reason``
+    (orders 8 to 11: ``gap_pace_unavailable`` or ``active_time_below_minimum``, else null), the
+    counted ``active_time_s`` and ``active_blocks``, and the GAP pace and window fractions over
+    the counted windows as for a race. ``summary_unreadable`` does not arise for a workout: its
+    duration comes from its laps.
 
     Returns ``(rows, unreadable)``. ``unreadable`` holds ``session_id``, ``start_time``,
     ``reason`` and ``kind`` for each race or workout a stored value it needs does not read:
@@ -2123,8 +2134,10 @@ def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreada
             "start_time": r["start_time"],
             "sport": r["sport"],
             "activity_tag": r["activity_tag"],
+            "kind": kind,
             "laps_read_at": r["laps_read_at"],
             "lap_reason": None,
+            "block_reason": None,
             "active_time_s": None,
             "active_blocks": None,
         }
@@ -2140,13 +2153,9 @@ def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreada
                 )
                 unreadable.append({**_place(row), "reason": LAPS_UNREADABLE, "kind": kind})
                 continue
-            row.update(
-                lap_reason=decided.unavailable,
-                active_time_s=decided.active_time_s,
-                active_blocks=decided.active_blocks,
-            )
+            row["lap_reason"] = decided.unavailable
         if _threshold_pace.workout_lap_reason(row) is not None:
-            rows.append(row)  # the estimator excludes it with that reason
+            rows.append(row)  # the estimator excludes it with that reason (orders 1 to 5)
             continue
         flags = _decoded(r["quality_flags"])
         if flags is not None and not isinstance(flags, list):
@@ -2160,6 +2169,9 @@ def _read_threshold_workouts(conn: sqlite3.Connection, rows: list[dict], unreada
         rows.append(
             {
                 **row,
+                "block_reason": block.unavailable,
+                "active_time_s": block.active_time_s,
+                "active_blocks": block.active_blocks,
                 "quality_flags": session_flags,
                 "gap_avg_pace_s_per_km": block.gap_pace_s_per_km,
                 "gap_coverage": block.gap_coverage,
@@ -2182,6 +2194,7 @@ def _read_threshold_races(conn: sqlite3.Connection, rows: list[dict], unreadable
             "start_time": r["start_time"],
             "sport": r["sport"],
             "activity_tag": r["activity_tag"],
+            "kind": kind,
             "timer_time_s": r["timer_time_s"],
             "duration_s": None,
         }
