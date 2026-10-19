@@ -62,9 +62,10 @@ def _race(session_id: str, day: float, pace: object, duration: object = 2400, **
 
 
 def _workout(session_id: str, day: float, pace: object, active_s: object = 1800.0, **over: object) -> dict:
-    """A threshold workout's row as the reader hands it over (F026 reference section 3): its laps
-    read, rows 1a and 2 passed (``lap_reason`` null), ``active_time_s`` the active laps' summed
-    ``timer_s`` and the active GAP pace over the active windows."""
+    """A threshold workout's row as the reader hands it over (F027 reference section 4): its laps
+    read, orders 3 to 5 passed (``lap_reason`` null), the block decided (``block_reason`` null),
+    ``active_time_s`` the counted reps' summed ``timer_s`` and the GAP pace over the counted
+    windows."""
     row = {
         "session_id": session_id,
         "start_time": (BASE + timedelta(days=day)).isoformat(),
@@ -72,6 +73,7 @@ def _workout(session_id: str, day: float, pace: object, active_s: object = 1800.
         "activity_tag": "threshold_workout",
         "laps_read_at": "2026-10-16T00:00:00+00:00",
         "lap_reason": None,
+        "block_reason": None,
         "active_time_s": active_s,
         "active_blocks": 1,
         "quality_flags": [],
@@ -431,3 +433,64 @@ def test_parameters_carry_workout_min_active_s() -> None:
     result = estimate([_workout("w", 0, 260.0)], _at(0))
     assert result.parameters["workout_min_active_s"] == 600
     assert dict(result.parameters) == dict(threshold_pace.PARAMETERS)
+
+
+# --- F027: kind, and the order of reasons (reference section 4) ------------------------------
+
+
+def test_the_estimator_filters_on_kind_not_activity_tag() -> None:
+    """The reader decides each row's ``kind``; the estimator never reads ``activity_tag``. A row
+    tagged ``race`` whose kind is ``threshold_workout`` (a listed name beats a race tag) is a
+    workout; an untagged row of that kind is read; a race-tagged row with kind None is ignored;
+    a row tagged ``threshold_workout`` with kind ``race`` is a race."""
+    named = _workout("n", 0, 265.0, activity_tag="race", kind="threshold_workout")
+    untagged = _workout("u", 1, 265.0, activity_tag=None, kind="threshold_workout")
+    ignored = _race("i", 2, 200.0, kind=None)
+    as_race = _race("r", 3, 270.0, activity_tag="threshold_workout", kind="race")
+    result = estimate([named, untagged, ignored, as_race], _at(4))
+    print("by kind:", result.efforts, result.excluded)
+    assert [(e.session_id, e.kind, e.active_blocks) for e in result.efforts] == [
+        ("n", "threshold_workout", 1),
+        ("u", "threshold_workout", 1),
+        ("r", "race", None),
+    ]
+    assert result.excluded == ()
+    assert result.efforts[2].duration_s == 2400
+    assert all(e.admitted_by is None and e.workout_name is None for e in result.efforts)
+
+
+def test_reasons_land_in_the_reference_order() -> None:
+    """Orders 1 to 5 (``lap_reason``) decide before the flags (order 7), the flags before the
+    block (``block_reason``, orders 8 to 11): failing orders 5 and 7 reads ``no_sustained_work``,
+    failing 7 and 10 reads the flag, failing 1 and 5 reads ``laps_not_read``; a block reason alone
+    is served as it is; a row with no block reason still has its ``A`` screened (590 counts,
+    589.99 does not); an unknown ``lap_reason`` or ``block_reason`` raises."""
+    rows = [
+        _workout("a", 0, None, lap_reason="no_sustained_work", quality_flags=["smart_recording"]),
+        _workout("b", 1, 265.0, quality_flags=["smart_recording"], block_reason="active_time_below_minimum"),
+        _workout("c", 2, None, block_reason="active_time_below_minimum", active_s=None),
+        _workout("d", 3, None, laps_read_at=None, lap_reason="no_sustained_work"),
+        _workout("e", 4, None, block_reason="gap_pace_unavailable", active_s=None),
+        _workout("f", 5, 265.0, lap_reason="lap_times_unreadable"),
+        _workout("g", 6, 265.0, lap_reason="no_workout_steps"),
+        _workout("h", 7, 265.0, active_s=589.99),
+        _workout("i", 8, 265.0, active_s=590.0),
+    ]
+    result = estimate(rows, _at(9))
+    print("order:", result.excluded, result.efforts)
+    assert [(e.session_id, e.reason) for e in result.excluded] == [
+        ("a", "no_sustained_work"),
+        ("b", "smart_recording"),
+        ("c", "active_time_below_minimum"),
+        ("d", "laps_not_read"),
+        ("e", "gap_pace_unavailable"),
+        ("f", "lap_times_unreadable"),
+        ("g", "no_workout_steps"),
+        ("h", "active_time_below_minimum"),
+    ]
+    assert [(e.session_id, e.duration_s) for e in result.efforts] == [("i", 590.0)]
+    assert threshold_pace.workout_lap_reason(rows[0]) == "no_sustained_work"
+    with pytest.raises(ValueError, match="lap_reason"):
+        estimate([_workout("x", 0, 265.0, lap_reason="no_sustained")], _at(0))
+    with pytest.raises(ValueError, match="block_reason"):
+        estimate([_workout("x", 0, 265.0, block_reason="no_sustained_work")], _at(0))

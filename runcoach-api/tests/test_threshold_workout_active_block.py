@@ -1,42 +1,67 @@
-"""F026 AC3 and the lap rows of AC2: the active block of a threshold workout, as pure functions.
+"""F027 AC3, AC4 and AC5 (and F026 AC3's window rule): the sustained work reps of a threshold
+workout, as pure functions.
 
-``threshold_pace.active_laps(laps, steps)`` decides F026 reference section 3 rows 1a and 2 from the
-laps and steps alone; ``threshold_pace.active_block(laps, steps, segment_rows)`` adds the active GAP
-pace and the window fractions over F013's per-segment stream. No database: laps, steps and segment
-rows are plain dicts, except the ``sample_run.fit`` case, which goes through ``mapping.to_laps``,
+``threshold_pace.active_laps(laps, steps)`` decides F027 reference section 4 orders 3, 4 and 5
+from the laps and steps alone (the work laps and their reps, section 3);
+``threshold_pace.active_block(laps, steps, segment_rows)`` adds orders 8 to 11: each sustained
+rep's GAP pace over F013's per-segment stream, the band, the counted time ``A`` and the pace and
+window fractions over the counted windows. No database: laps, steps and segment rows are plain
+dicts, except the ``sample_run.fit`` case, which goes through ``mapping.to_laps``,
 ``mapping.to_canonical``, ``quality_gates.apply`` and ``session_features.segment_rows``.
 
 **Contract table** (rule contract-tables-need-an-independent-oracle): authored from the F026
-reference section 3 before the implementation existed, and driven by ``test_contract_table``. Each
-row perturbs the one active lap of a base workout (a warm-up lap, then one active lap of 600 s
-naming active step 1) and names the result. "otherwise active" means intensity ``active`` and a
-step index naming an active step (row 1a).
+reference section 3 before that implementation existed, re-pointed row by row to F027 reference
+sections 3 and 4 (the step-target and ``interval`` rules), and driven by ``test_contract_table``.
+Each row perturbs the one work lap of a base workout (a warm-up lap, then one ``active`` lap of
+600 s naming work step 1, a step with a speed target) and names the result. "otherwise work"
+means a lap whose intensity and step index make it a work lap, before its times are read.
 
-| # | perturbation of the active lap | result |
+| # | perturbation of the work lap | result |
 |---|---|---|
-| 1 | none | active, A 600, 1 block |
+| 1 | none | work, one rep of 600 s, window [300, 900) |
 | 2 | ``start_t`` None, NaN, inf, -inf, True, "0", 10**400 | ``lap_times_unreadable`` |
 | 3 | ``end_t`` None, NaN, inf, True, "600", 10**400 | ``lap_times_unreadable`` |
 | 4 | ``timer_s`` None, NaN, inf, False, "600", 10**400 | ``lap_times_unreadable`` |
-| 5 | ``timer_s`` negative (-1) | ``lap_times_unreadable`` (a lap time below zero does not read; built-in choice, not a reference row) |
-| 5b | ``timer_s`` zero, ``end_t`` after ``start_t`` | active, adding 0 s to ``A`` (only below zero does not read); ``test_a_zero_timer_lap_reads_and_adds_nothing`` |
-| 6 | ``end_t == start_t`` | ``lap_times_unreadable`` |
+| 5 | ``timer_s`` negative (-1) | ``lap_times_unreadable`` (a lap time below zero does not read) |
+| 5b | ``timer_s`` zero, ``end_t`` after ``start_t`` | reads as a work lap of 0 s, so no rep reaches 290 s: ``no_sustained_work``; ``test_a_zero_timer_lap_reads_and_adds_nothing`` |
+| 6 | ``end_t == start_t`` with ``timer_s`` 600 | ``lap_times_unreadable`` (not a remainder lap: its timer is 2 s or more) |
 | 7 | ``end_t < start_t`` | ``lap_times_unreadable`` |
-| 8 | ``wkt_step_index`` None (with its times null too) | not active: ``no_workout_steps`` (row 1a never reads it) |
-| 9 | ``wkt_step_index`` names the warm-up step | not active: ``no_workout_steps`` |
-| 10 | ``wkt_step_index`` names no step (99) | not active: ``no_workout_steps`` |
-| 11 | ``wkt_step_index`` True, "1" or 1.0 (not an int) | not active: ``no_workout_steps`` (True would otherwise name step 1) |
-| 12 | lap intensity ``interval``, None or ``Active`` | not active: ``no_workout_steps`` |
-| 13 | two steps share index 1, both active | active, A 600 |
-| 14 | two steps share index 1, one active and one recovery | not active: ``no_workout_steps`` (the index does not name an active step unambiguously) |
-| 15 | step 1 is a repeat step (``repeat_until_steps_cmplt``) carrying intensity ``active`` | not active: ``no_workout_steps`` (a repeat step's intensity means nothing) |
-| 16 | a second, readable active lap beside an unreadable one | ``lap_times_unreadable`` (one unreadable lap excludes, never shrinks the block) |
-| 17 | the warm-up lap (not active) has null times | active, A 600 (row 1a reads only otherwise-active laps) |
+| 8 | ``wkt_step_index`` None (with its times null too) | not work: ``no_workout_steps`` (order 3 never reads it) |
+| 9 | ``wkt_step_index`` names the warm-up step | not work: ``no_workout_steps`` |
+| 10 | ``wkt_step_index`` names no step (99) | not work: ``no_workout_steps`` |
+| 11 | ``wkt_step_index`` True, "1" or 1.0 (not an int) | not work: ``no_workout_steps`` (True would otherwise name step 1) |
+| 12 | lap intensity ``interval`` | work (Garmin Coach writes its work steps and laps ``interval``) |
+| 12 | lap intensity None or ``Active`` | not work: ``no_workout_steps`` |
+| 13 | two step rows share index 1, both work | not work: ``no_workout_steps`` (a shared index names no work step; the store refuses a duplicate step index, so two rows are a defect) |
+| 14 | two steps share index 1, one work and one recovery | not work: ``no_workout_steps`` |
+| 15 | step 1 is a repeat step (``repeat_until_steps_cmplt``) carrying intensity ``active`` and a target | not work: ``no_workout_steps`` (a repeat step is never work, whatever it carries) |
+| 16 | a second, readable work lap beside an unreadable one | ``lap_times_unreadable`` (one unreadable work lap excludes, never shrinks the rep) |
+| 17 | the warm-up lap (not work) has null times | work, one rep of 600 s (order 3 reads work laps only) |
+
+**Adversarial probe table** (rule adversarial-input-probes-are-a-task-deliverable) for the new
+predicates, each driven by the test named; the argument for each outcome is in that test's
+docstring.
+
+| input | where | routed |
+|---|---|---|
+| ``timer_s`` 0.0, 1.999 and -0.0 with ``end_t == start_t`` | ``test_a_remainder_lap_adds_to_its_rep_and_gives_no_window`` | a remainder lap: its time added, no window; -0.0 is not below zero |
+| ``timer_s`` 2.0 or -0.1 with equal stamps; ``end_t < start_t``; ``timer_s`` -0.1; NaN, bool, None or a string on any of the three | ``test_unreadable_work_lap_times_read_lap_times_unreadable`` | ``lap_times_unreadable`` |
+| the same faults on the cool-down lap | ``test_a_bad_cool_down_lap_changes_nothing`` | nothing changes |
+| rep lengths 289.99 and 290 beside a 400 s rep | ``test_the_rep_minimum_at_289_99_and_290`` | A 400 (``active_time_below_minimum``) and A 690 |
+| a lone 289.99 s rep | ``test_a_lone_short_rep_reads_no_sustained_work`` | ``no_sustained_work`` |
+| rep paces 275 and 275.1 s/km beside 250, flat | ``test_the_band_counts_275_and_drops_275_1`` | 275 counts, 275.1 is dropped (``<= 1.10 * 250``) |
+| counted reps summing to 589.99 and 590 | ``test_counted_reps_at_589_99_and_590`` | ``active_time_below_minimum`` and A 590 |
+| a rep with no segment; one whose metres overflow (pace 0) | ``test_a_rep_without_a_finite_pace_is_dropped_before_the_band`` | dropped at order 8; none left is ``gap_pace_unavailable`` |
+| two laps of ``timer_s`` 1e308 on one step (an inf sum) | ``test_threshold_workout_qualifying.test_an_active_time_that_overflows_to_inf_is_refused`` | one rep of inf, sustained; A inf is not finite: ``active_time_below_minimum`` |
+| step ``target_type`` None, ``open`` or missing | ``test_an_open_or_missing_target_is_never_work`` | not work |
+| every ``repeat_until_*`` duration type | ``test_every_repeat_type_is_never_work`` | not work |
 
 **The window boundary.** A segment belongs to the window its ``t_start`` lies in, ``[start_t,
-end_t)``, and counts there in full: a moving dropout over 5 s that starts inside an active lap
+end_t)``, and counts there in full: a moving dropout over 5 s that starts inside a work lap
 counts all its ``dt`` and metres there even when it ends after the lap; one that starts in a
-recovery lap and ends inside an active lap counts nowhere.
+recovery lap and ends inside a work lap counts nowhere. ``rep_paces`` walks the stream once
+against the sorted windows; ``test_rep_paces_match_a_brute_force_oracle`` checks it against a
+per-rep scan.
 """
 
 from __future__ import annotations
@@ -526,3 +551,560 @@ def test_segment_rows_carry_gps_degraded_last():
         assert list(row)[-1] == "gps_degraded"
         k = int(row["t_start"])
         assert row["gps_degraded"] is (10 <= k < 20), k
+
+
+# -- Sustained work reps (F027 reference sections 3 and 4) -----------------------------------------
+#
+# Expected values below are written by hand from the reference before the rule was changed: rep
+# lengths are sums of the laps' timer_s, A the counted reps' sum, and every pace is the flat-route
+# formula 1000 * T / D typed out, never imported.
+
+
+def _lap(index: int, start: float, seconds: float, intensity: str, step: int | None, **over) -> dict:
+    lap = {
+        "lap_index": index,
+        "start_t": start,
+        "end_t": start + seconds,
+        "timer_s": float(seconds),
+        "intensity": intensity,
+        "wkt_step_index": step,
+    }
+    lap.update(over)
+    return lap
+
+
+def _plan_laps(plan) -> list[dict]:
+    """``(intensity, seconds, step)`` per lap, laid end to end from t = 0."""
+    laps, t = [], 0.0
+    for index, (intensity, seconds, step) in enumerate(plan):
+        laps.append(_lap(index, t, seconds, intensity, step))
+        t += seconds
+    return laps
+
+
+def _step(index: int, intensity: str, duration_type: str = "time", **over) -> dict:
+    return {"step_index": index, "intensity": intensity, "duration_type": duration_type, **over}
+
+
+WORK = {"target_type": "speed"}
+HR = {"target_type": "heart_rate"}
+OPEN = {"target_type": "open"}
+
+
+def _segment(t_start: float, dt: float, metres: float, g: float = 1.0, *, graded: bool = True, degraded: bool = False) -> dict:
+    return {
+        "t_start": t_start,
+        "dt": dt,
+        "contributed_m": metres,
+        "i": 0.0,
+        "graded": graded,
+        "g": g,
+        "moving_gap": False,
+        "gps_degraded": degraded,
+    }
+
+
+def _stream(laps: list[dict], pace_by_lap: dict[int, float]) -> list[dict]:
+    """1 Hz flat counted segments over the laps named in ``pace_by_lap`` (by ``lap_index``), each
+    second at that lap's pace; laps not named give no segment."""
+    rows = []
+    for lap in laps:
+        pace = pace_by_lap.get(lap["lap_index"])
+        if pace is None:
+            continue
+        start, end = lap["start_t"], lap["end_t"]
+        if not all(isinstance(x, float) and math.isfinite(x) for x in (start, end)):
+            continue  # a lap whose times do not read gets no segment (a perturbed lap under test)
+        v = 1000.0 / pace
+        t = start
+        while t < end:
+            rows.append(_segment(t, 1.0, v))
+            t += 1.0
+    return rows
+
+
+def _reps(decided) -> list[tuple[int, float, tuple]]:
+    return [(rep.step_index, rep.length_s, rep.windows) for rep in decided.reps]
+
+
+def _three_steps() -> list[dict]:
+    return [_step(0, "warmup"), _step(1, "active", **WORK), _step(2, "recovery"), _step(3, "cooldown")]
+
+
+def test_interval_laps_and_steps_are_work():
+    """Garmin Coach writes its work as ``interval`` with a heart-rate target: lap and step
+    intensity ``interval`` are work, in every pairing with ``active``."""
+    for lap_intensity, step_intensity in (("interval", "interval"), ("interval", "active"), ("active", "interval")):
+        steps = [_step(0, "warmup"), _step(1, step_intensity, **HR), _step(2, "recovery")]
+        laps = _plan_laps([("warmup", 300, 0), (lap_intensity, 600, 1), ("recovery", 120, 2)])
+        decided = TP.active_laps(laps, steps)
+        print(lap_intensity, step_intensity, "->", decided)
+        assert decided.unavailable is None
+        assert _reps(decided) == [(1, 600.0, ((300.0, 900.0),))]
+        block = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+        assert block.unavailable is None
+        assert (block.active_time_s, block.active_blocks, block.windows) == (600.0, 1, ((300.0, 900.0),))
+        assert block.gap_pace_s_per_km == pytest.approx(270.0, rel=1e-9)
+
+
+@pytest.mark.parametrize("target", [{"target_type": None}, OPEN, {}], ids=["null", "open", "missing"])
+def test_an_open_or_missing_target_is_never_work(target: dict):
+    """A step with no target or an open one (the watch's recovery jogs) is never work: alone it
+    reads ``no_workout_steps``; beside a work step its laps are left out of every rep."""
+    steps = [_step(0, "warmup"), _step(1, "active", **target), _step(2, "recovery")]
+    laps = _plan_laps([("warmup", 300, 0), ("active", 600, 1), ("recovery", 120, 2)])
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable == TP.NO_WORKOUT_STEPS and decided.laps == () and decided.reps == ()
+    steps.append(_step(3, "active", **WORK))
+    laps.append(_lap(3, 1020.0, 600, "active", 3))
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable is None
+    assert _reps(decided) == [(3, 600.0, ((1020.0, 1620.0),))]
+
+
+@pytest.mark.parametrize(
+    "duration_type",
+    ["repeat_until_steps_cmplt", "repeat_until_time", "repeat_until_distance", "repeat_until_hr_less_than"],
+)
+def test_every_repeat_type_is_never_work(duration_type: str):
+    """A repeat step loops over other steps; whatever its intensity and target, it is never work."""
+    steps = [_step(0, "warmup"), _step(1, "active", duration_type, **WORK)]
+    laps = _plan_laps([("warmup", 300, 0), ("active", 600, 1)])
+    decided = TP.active_laps(laps, steps)
+    print(duration_type, "->", decided)
+    assert decided.unavailable == TP.NO_WORKOUT_STEPS and decided.reps == ()
+
+
+def test_a_shared_step_index_names_no_work_step():
+    """An index carried by two step rows names no work step: a work and a non-work row (the
+    reference's case), and two work rows (a duplicate the store refuses; here a defect, not two
+    steps). An unshared work step beside them still reads."""
+    laps = _plan_laps([("warmup", 300, 0), ("active", 600, 1), ("recovery", 120, 2), ("active", 600, 3)])
+    mixed = [_step(0, "warmup"), _step(1, "active", **WORK), _step(1, "recovery"), _step(2, "recovery")]
+    decided = TP.active_laps(laps, mixed)
+    assert decided.unavailable == TP.NO_WORKOUT_STEPS
+    twice = [_step(0, "warmup"), _step(1, "active", **WORK), _step(1, "active", **WORK), _step(2, "recovery")]
+    assert TP.active_laps(laps, twice).unavailable == TP.NO_WORKOUT_STEPS
+    with_unshared = [*twice, _step(3, "active", **WORK)]
+    decided = TP.active_laps(laps, with_unshared)
+    assert decided.unavailable is None
+    assert _reps(decided) == [(3, 600.0, ((1020.0, 1620.0),))]
+
+
+def test_reps_of_a_repeated_step_stay_separate():
+    """8 x (300 s work, 120 s recovery) on one repeated work step: 8 reps of 300 s, not one of 2400,
+    and 8 blocks when all count."""
+    plan = [("warmup", 300, 0)]
+    for _ in range(8):
+        plan += [("active", 300, 1), ("recovery", 120, 2)]
+    laps = _plan_laps(plan)
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable is None
+    assert [(rep.step_index, rep.length_s) for rep in decided.reps] == [(1, 300.0)] * 8
+    assert [len(rep.windows) for rep in decided.reps] == [1] * 8
+    block = TP.active_block(laps, steps, _stream(laps, {lap["lap_index"]: 270.0 for lap in laps if lap["intensity"] == "active"}))
+    assert block.unavailable is None
+    assert (block.active_time_s, block.active_blocks, len(block.windows)) == (2400.0, 8, 8)
+
+
+def test_a_step_repeated_back_to_back_merges_into_one_rep():
+    """The 2023-03-29 Run Workout: 2 x 480 s on one step with nothing between them reads one 960 s
+    rep (the laps carry nothing that separates the repetitions), two windows, one block."""
+    laps = _plan_laps([("warmup", 300, 0), ("active", 480, 1), ("active", 480, 1), ("cooldown", 300, 3)])
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable is None
+    assert _reps(decided) == [(1, 960.0, ((300.0, 780.0), (780.0, 1260.0)))]
+    block = TP.active_block(laps, steps, _stream(laps, {1: 270.0, 2: 270.0}))
+    assert (block.active_time_s, block.active_blocks) == (960.0, 1)
+    assert block.windows == ((300.0, 780.0), (780.0, 1260.0))
+
+
+@pytest.mark.parametrize(
+    ("timer", "length"),
+    [(0.0, 600.0), (1.999, 601.999), (-0.0, 600.0)],
+    ids=["timer-0", "timer-1.999", "timer-negative-zero"],
+)
+def test_a_remainder_lap_adds_to_its_rep_and_gives_no_window(timer: float, length: float):
+    """The 2026-10-16 Speed Repeats' shape: a work lap closed on the step's end with ``end_t ==
+    start_t`` and under 2 s of timer adds its time to the rep and gives no window; -0.0 is not
+    below zero. The rep's 600 s lap keeps ``A`` at the bound, so the block reads too."""
+    laps = [
+        _lap(0, 0.0, 300, "warmup", 0),
+        _lap(1, 300.0, 600, "active", 1),
+        _lap(2, 900.0, 0, "active", 1, timer_s=timer),
+        _lap(3, 900.0, 300, "cooldown", 3),
+    ]
+    assert laps[2]["start_t"] == laps[2]["end_t"] == 900.0
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    print(timer, "->", decided)
+    assert decided.unavailable is None
+    assert _reps(decided) == [(1, length, ((300.0, 900.0),))]
+    assert len(decided.laps) == 2
+    block = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+    assert block.unavailable is None
+    assert (block.active_time_s, block.active_blocks, block.windows) == (length, 1, ((300.0, 900.0),))
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param({"start_t": 600.0, "end_t": 600.0, "timer_s": 2.0}, id="equal-stamps-timer-2.0"),
+        pytest.param({"start_t": 600.0, "end_t": 600.0, "timer_s": -0.1}, id="equal-stamps-timer-negative"),
+        pytest.param({"end_t": 599.0}, id="end-before-start"),
+        pytest.param({"timer_s": -0.1}, id="timer-negative"),
+        pytest.param({"timer_s": math.nan}, id="timer-nan"),
+        pytest.param({"start_t": math.nan}, id="start-nan"),
+        pytest.param({"end_t": math.inf}, id="end-inf"),
+        pytest.param({"timer_s": True}, id="timer-bool"),
+        pytest.param({"start_t": False}, id="start-bool"),
+        pytest.param({"timer_s": None}, id="timer-null"),
+        pytest.param({"timer_s": "300"}, id="timer-string"),
+    ],
+)
+def test_unreadable_work_lap_times_read_lap_times_unreadable(bad: dict):
+    """On a work lap, ``timer_s`` 2.0 with equal stamps (not a remainder), ``end_t < start_t``,
+    ``timer_s`` -0.1, a NaN, a bool, a null or a string: ``lap_times_unreadable``, never a smaller
+    rep, even when another rep is sustained."""
+    laps = _plan_laps([("warmup", 300, 0), ("active", 300, 1), ("active", 300, 1), ("recovery", 120, 2), ("active", 600, 1)])
+    laps[2].update(bad)
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    print(bad, "->", decided)
+    assert decided.unavailable == TP.LAP_TIMES_UNREADABLE
+    assert decided.laps == () and decided.reps == ()
+    block = TP.active_block(laps, steps, _stream(laps, {1: 270.0, 2: 270.0, 4: 270.0}))
+    assert block.unavailable == TP.LAP_TIMES_UNREADABLE
+    assert block.active_time_s is None and block.gap_pace_s_per_km is None and block.windows == ()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param({"end_t": 0.0}, id="end-before-start"),
+        pytest.param({"timer_s": -1.0}, id="timer-negative"),
+        pytest.param({"start_t": math.nan, "end_t": math.nan, "timer_s": math.nan}, id="all-nan"),
+        pytest.param({"timer_s": True}, id="timer-bool"),
+        pytest.param({"start_t": None, "end_t": None, "timer_s": None}, id="all-null"),
+    ],
+)
+def test_a_bad_cool_down_lap_changes_nothing(bad: dict):
+    """Lap times are screened on work laps only: the same fault on the cool-down lap leaves the
+    reading as it is without it."""
+    laps = _plan_laps([("warmup", 300, 0), ("active", 600, 1), ("cooldown", 300, 3)])
+    steps = _three_steps()
+    clean = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+    laps[2].update(bad)
+    broken = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+    assert clean.unavailable is None
+    assert broken == clean
+    assert TP.active_laps(laps, steps) == TP.active_laps(_plan_laps([("warmup", 300, 0), ("active", 600, 1), ("cooldown", 300, 3)]), steps)
+
+
+def _exact_rep_stream(laps: list[dict], metres_by_lap: dict[int, float]) -> list[dict]:
+    """One counted segment per named lap, ``dt`` the lap's whole timer and the given metres, so a
+    rep's pace is ``1000 * timer / metres`` in one division (float-exact bounds)."""
+    return [
+        _segment(float(lap["start_t"]), float(lap["timer_s"]), metres_by_lap[lap["lap_index"]])
+        for lap in laps
+        if lap["lap_index"] in metres_by_lap
+    ]
+
+
+def test_the_rep_minimum_at_289_99_and_290():
+    """A 400 s rep plus a 289.99 s rep at one pace: only the 400 s rep is sustained, so A = 400 and
+    the block reads ``active_time_below_minimum``; with 290.0 s instead both are, A = 690."""
+    for second, expected_a, reason in ((289.99, 400.0, TP.ACTIVE_TIME_BELOW_MINIMUM), (290.0, 690.0, None)):
+        laps = _plan_laps([("warmup", 300, 0), ("active", 400, 1), ("recovery", 120, 2), ("active", second, 1)])
+        steps = _three_steps()
+        decided = TP.active_laps(laps, steps)
+        assert decided.unavailable is None
+        assert [rep.length_s for rep in decided.reps] == [400.0, second]
+        # Pace 250 s/km on both reps: 4 m per second of timer.
+        block = TP.active_block(laps, steps, _exact_rep_stream(laps, {1: 1600.0, 3: 4 * second}))
+        print(second, "->", block)
+        assert block.unavailable == reason
+        if reason is None:
+            assert block.active_time_s == expected_a
+            assert block.windows == ((300.0, 700.0), (820.0, 820.0 + second))
+            assert block.active_blocks == 2
+        else:
+            assert block.active_time_s is None and block.windows == ()
+
+
+def test_a_lone_short_rep_reads_no_sustained_work():
+    """One work rep of 289.99 s: ``no_sustained_work`` from the laps alone (order 5, before any
+    record is read) and carried by the block with every number empty; 290.0 s passes."""
+    laps = _plan_laps([("warmup", 300, 0), ("active", 289.99, 1), ("cooldown", 300, 3)])
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable == TP.NO_SUSTAINED_WORK
+    assert [rep.length_s for rep in decided.reps] == [289.99]
+    assert len(decided.laps) == 1
+    block = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+    assert block.unavailable == TP.NO_SUSTAINED_WORK
+    assert block.active_time_s is None and block.gap_pace_s_per_km is None and block.active_blocks == 0
+    laps = _plan_laps([("warmup", 300, 0), ("active", 290.0, 1), ("cooldown", 300, 3)])
+    assert TP.active_laps(laps, steps).unavailable is None
+
+
+def test_the_band_counts_275_and_drops_275_1():
+    """On a flat route beside a fastest rep of 250 s/km, a rep at 275 s/km counts and one at 275.1
+    is dropped: ``rep_pace <= WORKOUT_REP_BAND * fastest_pace``, 1.10 * 250. The slower rep comes
+    first, so the fastest need not lead. Paces are one division each (``_exact_rep_stream``)."""
+    for slow_s, slow_m, counted in ((1100.0, 4000.0, True), (1100.4, 4000.0, False)):
+        laps = _plan_laps([("warmup", 300, 0), ("active", slow_s, 1), ("recovery", 120, 2), ("active", 1000, 1)])
+        steps = _three_steps()
+        stream = _exact_rep_stream(laps, {1: slow_m, 3: 4000.0})
+        slow_pace = 1000.0 * slow_s / slow_m
+        assert slow_pace == (275.0 if counted else 275.1)
+        block = TP.active_block(laps, steps, stream)
+        print(slow_pace, "->", block)
+        assert block.unavailable is None
+        if counted:
+            assert block.active_time_s == 2100.0
+            assert block.windows == ((300.0, 1400.0), (1520.0, 2520.0))
+            assert block.active_blocks == 2
+            assert block.gap_pace_s_per_km == pytest.approx(1000.0 * 2100.0 / 8000.0, rel=1e-12)
+        else:
+            assert block.active_time_s == 1000.0
+            assert block.windows == ((laps[3]["start_t"], laps[3]["end_t"]),)
+            assert block.active_blocks == 1
+            assert block.gap_pace_s_per_km == 250.0
+
+
+def test_counted_reps_at_589_99_and_590():
+    """Two counted reps summing to 589.99 s read ``active_time_below_minimum``; 590.0 s counts
+    (the 10 s grace of order 10, as order 5's)."""
+    for second, reason in ((289.99, TP.ACTIVE_TIME_BELOW_MINIMUM), (290.0, None)):
+        laps = _plan_laps([("warmup", 300, 0), ("active", 300, 1), ("recovery", 120, 2), ("active", second, 1)])
+        steps = _three_steps()
+        block = TP.active_block(laps, steps, _exact_rep_stream(laps, {1: 1200.0, 3: 4 * second}))
+        print(second, "->", block)
+        assert block.unavailable == reason
+        if reason is None:
+            assert block.active_time_s == 590.0
+            assert block.active_blocks == 2
+        else:
+            assert block.active_time_s is None and block.windows == () and block.active_blocks == 0
+
+
+def test_a_rep_without_a_finite_pace_is_dropped_before_the_band():
+    """Three sustained reps: one with no segment (no pace), one at 300 s/km, one at 400 s/km. The
+    pace-less rep is dropped at order 8, the 300 s/km rep is the fastest, the 400 s/km rep falls
+    outside its band: A = 600. A rep whose metres overflow (pace 0) is dropped the same way. With
+    no rep left, ``gap_pace_unavailable``."""
+    laps = _plan_laps(
+        [("warmup", 300, 0), ("active", 600, 1), ("recovery", 120, 2), ("active", 600, 1), ("recovery", 120, 2), ("active", 600, 1)]
+    )
+    steps = _three_steps()
+    block = TP.active_block(laps, steps, _stream(laps, {3: 300.0, 5: 400.0}))
+    print("one pace-less:", block)
+    assert block.unavailable is None
+    assert block.windows == ((1020.0, 1620.0),)
+    assert (block.active_time_s, block.active_blocks) == (600.0, 1)
+    assert block.gap_pace_s_per_km == pytest.approx(300.0, rel=1e-9)
+    overflow = [*_stream(laps, {3: 300.0, 5: 400.0}), _segment(300.0, 600.0, 1e308, g=1e10)]
+    assert TP.active_block(laps, steps, overflow) == block
+    none_left = TP.active_block(laps, steps, [])
+    assert none_left.unavailable == TP.GAP_PACE_UNAVAILABLE
+    assert none_left.active_time_s is None and none_left.windows == () and none_left.active_blocks == 0
+
+
+def test_the_pure_orders_decide_in_sequence():
+    """Orders 3, 4 and 5 from the laps, 8 and 10 from the block: a workout failing several reads
+    the first. Order 3 and 5 together (an unreadable work lap beside a short rep): 3. Order 4 and
+    5 cannot both fail (no work lap, no rep): 4. Orders 8 and 10 (one sustained rep without a pace,
+    A short): 8; with its pace, 10."""
+    steps = _three_steps()
+    laps = _plan_laps([("warmup", 300, 0), ("active", 100, 1), ("recovery", 120, 2), ("active", 100, 1)])
+    laps[3]["timer_s"] = math.nan
+    assert TP.active_laps(laps, steps).unavailable == TP.LAP_TIMES_UNREADABLE
+    laps = _plan_laps([("warmup", 300, 0), ("recovery", 120, 2)])
+    assert TP.active_laps(laps, steps).unavailable == TP.NO_WORKOUT_STEPS
+    laps = _plan_laps([("warmup", 300, 0), ("active", 100, 1), ("recovery", 120, 2), ("active", 100, 1)])
+    assert TP.active_laps(laps, steps).unavailable == TP.NO_SUSTAINED_WORK
+    laps = _plan_laps([("warmup", 300, 0), ("active", 300, 1), ("cooldown", 300, 3)])
+    assert TP.active_block(laps, steps, []).unavailable == TP.GAP_PACE_UNAVAILABLE
+    assert TP.active_block(laps, steps, _stream(laps, {1: 270.0})).unavailable == TP.ACTIVE_TIME_BELOW_MINIMUM
+
+
+def test_parameters_carry_the_workout_bounds():
+    assert TP.WORKOUT_MIN_ACTIVE_S == 590
+    assert TP.WORKOUT_MIN_REP_S == 290
+    assert TP.WORKOUT_REP_BAND == 1.10
+    assert TP.NO_SUSTAINED_WORK == "no_sustained_work"
+    assert dict(TP.PARAMETERS) == {
+        "typical_error": 0.025,
+        "doubling_days": 42,
+        "coverage": 0.80,
+        "high_max_error": 0.025,
+        "medium_max_error": 0.05,
+        "short_race_s": 1800,
+        "workout_min_active_s": 590,
+        "workout_min_rep_s": 290,
+        "workout_rep_band": 1.10,
+    }
+
+
+def test_speed_repeats_read_no_sustained_work():
+    """AC5's Speed Repeats. 8 x 800 m (192-200 s) with open-target ``active`` jogs: the jogs are
+    not work and no rep reaches 290 s. 6 x 4 min whose reps are a 1 km auto-lap plus a remainder
+    (234.348 + 5.652 s; 239.125 + 0.875 s with equal stamps), then 5 x (30 s, 60 s open): reps of
+    240.0 s and 30 s, ``no_sustained_work``, not ``lap_times_unreadable``."""
+    steps = [_step(0, "warmup"), _step(1, "active", **WORK), _step(2, "active", **OPEN), _step(3, "cooldown")]
+    plan = [("warmup", 600, 0)]
+    for k in range(8):
+        plan += [("active", 192 + k, 1), ("active", 240, 2)]
+    plan.append(("cooldown", 600, 3))
+    laps = _plan_laps(plan)
+    decided = TP.active_laps(laps, steps)
+    print("8 x 800:", [rep.length_s for rep in decided.reps])
+    assert decided.unavailable == TP.NO_SUSTAINED_WORK
+    assert [rep.length_s for rep in decided.reps] == [192.0 + k for k in range(8)]
+
+    steps = [
+        _step(0, "warmup"),
+        _step(1, "active", **WORK),
+        _step(2, "active", **OPEN),
+        _step(3, "active", **WORK),
+        _step(4, "active", **OPEN),
+        _step(5, "cooldown"),
+    ]
+    laps, t, index = [], 0.0, 0
+
+    def add(seconds: float, intensity: str, step: int, *, remainder: bool = False) -> None:
+        nonlocal t, index
+        if remainder:
+            laps.append(_lap(index, t, 0.0, intensity, step, timer_s=seconds))
+        else:
+            laps.append(_lap(index, t, seconds, intensity, step))
+            t += seconds
+        index += 1
+
+    add(600.0, "warmup", 0)
+    for k in range(6):
+        if k % 2 == 0:
+            add(234.348, "active", 1)
+            add(5.652, "active", 1)
+        else:
+            add(239.125, "active", 1)
+            add(0.875, "active", 1, remainder=True)
+        add(180.0, "active", 2)
+    for _ in range(5):
+        add(30.0, "active", 3)
+        add(60.0, "active", 4)
+    add(300.0, "cooldown", 5)
+    decided = TP.active_laps(laps, steps)
+    print("6 x 4 min:", [rep.length_s for rep in decided.reps])
+    assert decided.unavailable == TP.NO_SUSTAINED_WORK
+    assert [rep.length_s for rep in decided.reps] == pytest.approx([240.0] * 6 + [30.0] * 5, abs=1e-9)
+    assert [len(rep.windows) for rep in decided.reps] == [2, 1, 2, 1, 2, 1] + [1] * 5
+    assert TP.active_block(laps, steps, []).unavailable == TP.NO_SUSTAINED_WORK
+
+
+def test_a_progression_run_counts_its_finish():
+    """AC5's Progression Run: 60 min at 323 s/km, 10 min at 270, 5 min at 261, three work steps on
+    a flat route. The finish counts (270 <= 1.10 * 261 = 287.1), the easy hour is dropped (323 >
+    287.1): 900 s in 1 block at 1000 * 900 / (600 * 1000 / 270 + 300 * 1000 / 261) s/km, by hand."""
+    steps = [_step(0, "active", **WORK), _step(1, "active", **WORK), _step(2, "active", **WORK)]
+    laps = _plan_laps([("active", 3600, 0), ("active", 600, 1), ("active", 300, 2)])
+    decided = TP.active_laps(laps, steps)
+    assert [(rep.step_index, rep.length_s) for rep in decided.reps] == [(0, 3600.0), (1, 600.0), (2, 300.0)]
+    block = TP.active_block(laps, steps, _stream(laps, {0: 323.0, 1: 270.0, 2: 261.0}))
+    print("progression:", block)
+    assert block.unavailable is None
+    assert block.active_time_s == 900.0
+    assert block.active_blocks == 1
+    assert block.windows == ((3600.0, 4200.0), (4200.0, 4500.0))
+    expected = 1000.0 * 900.0 / (600 * 1000.0 / 270.0 + 300 * 1000.0 / 261.0)
+    assert 266.9 < expected < 267.0
+    assert block.gap_pace_s_per_km == pytest.approx(expected, rel=1e-9)
+    assert block.gap_coverage == 1.0 and block.gps_degraded_fraction == 0.0
+
+
+def test_a_garmin_coach_threshold_counts_three_blocks():
+    """AC5's Garmin Coach Threshold: ``interval`` steps with a heart-rate target, 3 x 8 min with
+    2 min recoveries: 1440 s in 3 blocks."""
+    steps = [_step(0, "warmup"), _step(1, "interval", **HR), _step(2, "recovery", **OPEN), _step(3, "cooldown")]
+    plan = [("warmup", 600, 0)]
+    for _ in range(3):
+        plan += [("interval", 480, 1), ("recovery", 120, 2)]
+    plan.append(("cooldown", 600, 3))
+    laps = _plan_laps(plan)
+    work = {lap["lap_index"]: 255.0 for lap in laps if lap["intensity"] == "interval"}
+    block = TP.active_block(laps, steps, _stream(laps, work))
+    print("coach threshold:", block)
+    assert block.unavailable is None
+    assert (block.active_time_s, block.active_blocks) == (1440.0, 3)
+    assert block.windows == ((600.0, 1080.0), (1200.0, 1680.0), (1800.0, 2280.0))
+    assert block.gap_pace_s_per_km == pytest.approx(255.0, rel=1e-9)
+
+
+def test_rep_paces_match_a_brute_force_oracle():
+    """Per-rep GAP paces from the one bisect walk against a per-rep scan of every segment with
+    ``start <= t_start < end``: graded, mixed-pace segments in shuffled order, over a workout
+    whose reps are not laid out in time order (lap 0 is the latest), with a segment on each
+    window's start and one on each end (outside)."""
+    import random
+
+    steps = [_step(0, "active", **WORK), _step(1, "active", **WORK), _step(2, "recovery"), _step(3, "active", **WORK)]
+    laps = [
+        _lap(0, 2000.0, 400, "active", 0),
+        _lap(1, 0.0, 300, "active", 1),
+        _lap(2, 300.0, 100, "recovery", 2),
+        _lap(3, 400.0, 350, "active", 3),
+        _lap(4, 750.0, 350, "active", 3),
+        _lap(5, 1100.0, 300, "active", 1),
+    ]
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable is None
+    assert [(rep.step_index, rep.length_s, len(rep.windows)) for rep in decided.reps] == [
+        (0, 400.0, 1),
+        (1, 300.0, 1),
+        (3, 700.0, 2),
+        (1, 300.0, 1),
+    ]
+    rng = random.Random(7)
+    rows = []
+    for t in range(0, 2500, 5):
+        rows.append(_segment(float(t), 5.0, rng.uniform(10.0, 25.0), rng.uniform(0.9, 1.3)))
+    for rep in decided.reps:
+        for start, end in rep.windows:
+            rows.append(_segment(start, 5.0, 17.0, 1.05))
+            rows.append(_segment(end, 5.0, 17.0, 1.05))
+    rng.shuffle(rows)
+
+    def brute(rep) -> float | None:
+        inside = [row for row in rows if any(start <= row["t_start"] < end for start, end in rep.windows)]
+        seconds = sum(row["dt"] for row in inside)
+        gap_m = sum(row["contributed_m"] * row["g"] for row in inside)
+        return 1000.0 * seconds / gap_m if gap_m > 0 else None
+
+    expected = [brute(rep) for rep in decided.reps]
+    got = TP.rep_paces(decided.reps, rows)
+    print("rep paces:", got, "oracle:", expected)
+    assert len(got) == 4 and all(p is not None for p in expected)
+    for pace, oracle in zip(got, expected, strict=True):
+        assert pace == pytest.approx(oracle, rel=1e-12)
+    block = TP.active_block(laps, steps, rows)
+    fastest = min(expected)
+    counted = [rep for rep, pace in zip(decided.reps, expected, strict=True) if pace <= 1.10 * fastest]
+    assert block.active_time_s == sum(rep.length_s for rep in counted)
+    assert block.windows == tuple(window for rep in counted for window in rep.windows)
+
+
+def test_workout_names_match_stripped_and_casefolded():
+    """A configured name admits when any step row's ``workout_name`` equals it after
+    ``str.strip().casefold()`` on both sides; rows without a name are skipped."""
+    admits = TP.workout_name_admits
+    assert admits(["Progression Run"], [None, " progression run "]) is True
+    assert admits([" Goal Pace Run "], ["GOAL PACE RUN"]) is True
+    assert admits(["Straße"], ["STRASSE"]) is True  # casefold, not lower
+    assert admits(["Threshold"], ["Threshold Run"]) is False
+    assert admits(["Threshold"], [None, 3, True]) is False
+    assert admits([], ["Threshold"]) is False
+    assert admits(["Threshold"], []) is False
+    assert admits(["Tempo", "Threshold"], ["Easy Run", "threshold"]) is True
