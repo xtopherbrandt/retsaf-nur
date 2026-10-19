@@ -463,14 +463,15 @@ def test_deleting_a_session_deletes_its_laps_and_steps():
 
 
 def _without_f025(ddl: str) -> str:
-    """``_SCHEMA_DDL`` as it stood before laps: no ``laps_read_at`` column, no laps tables."""
+    """``_SCHEMA_DDL`` as it stood before laps: no ``laps_read_at`` column, no laps tables.
+    The tables' unique indexes are not in the DDL (``init_schema`` creates them), so
+    removing the two tables removes everything the DDL holds for them."""
     old = ddl.replace("laps_read_at TEXT,", "")
     assert old != ddl
     for table in ("laps", "workout_steps"):
         old, count = re.subn(rf"CREATE TABLE IF NOT EXISTS {table} \(.*?\n    \);", "", old, flags=re.S)
         assert count == 1, table
-        old, count = re.subn(rf"CREATE INDEX IF NOT EXISTS {table}_\w+ ON {table} \([^)]*\);", "", old)
-        assert count == 1, table
+        assert f" ON {table} (" not in old, table
     return old
 
 

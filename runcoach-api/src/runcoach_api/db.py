@@ -288,8 +288,8 @@ _SCHEMA_DDL = """
       step_name TEXT, intensity TEXT, duration_type TEXT, duration_value REAL,
       target_type TEXT, target_value REAL, target_low REAL, target_high REAL
     );
-    CREATE INDEX IF NOT EXISTS laps_session_id ON laps (session_id, lap_index);
-    CREATE INDEX IF NOT EXISTS workout_steps_session_id ON workout_steps (session_id, seq);
+    -- laps (session_id, lap_index) and workout_steps (session_id, seq) are
+    -- unique; init_schema creates those indexes (_UNIQUE_CHILD_INDEXES).
     -- F019: the list reads one session's (t, distance) in t order for every
     -- row of a page; without this each read scanned the whole records table.
     CREATE INDEX IF NOT EXISTS records_session_id_t ON records (session_id, t);
@@ -383,10 +383,54 @@ def _reconcile_columns(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl_type}")
 
 
+class DuplicateChildRowsError(RuntimeError):
+    """A store holds two ``laps`` rows with one ``(session_id, lap_index)`` or two
+    ``workout_steps`` rows with one ``(session_id, seq)``, so the unique index cannot be
+    created; the message names the table and the session ids. Raised out of
+    ``init_schema`` before anything is written, so startup stops (user ruling, 2026-10-18)."""
+
+
+# (table, column, the plain index a store created before F027 carries, the unique index).
+_UNIQUE_CHILD_INDEXES = (
+    ("laps", "lap_index", "laps_session_id", "laps_session_lap_unique"),
+    ("workout_steps", "seq", "workout_steps_session_id", "workout_steps_session_seq_unique"),
+)
+
+
+def _ensure_unique_child_indexes(conn: sqlite3.Connection) -> None:
+    """Make ``laps (session_id, lap_index)`` and ``workout_steps (session_id, seq)`` unique.
+
+    Both tables are checked for a duplicated pair first; one found raises
+    ``DuplicateChildRowsError`` naming the table and its session ids, before any statement
+    writes, so the caller's rollback leaves the store as it was. Then each table's plain index
+    from before this rule is dropped and the unique one created (both ``IF [NOT] EXISTS``, so a
+    store already upgraded costs two no-ops). Index statements rather than a table ``UNIQUE``,
+    because a constraint in the DDL never reaches an existing store. Commits nothing itself.
+    """
+    for table, column, _old, _new in _UNIQUE_CHILD_INDEXES:
+        duplicated = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT DISTINCT session_id FROM {table} GROUP BY session_id, {column}"
+                f" HAVING COUNT(*) > 1 ORDER BY session_id"
+            )
+        ]
+        if duplicated:
+            raise DuplicateChildRowsError(
+                f"startup refused: table {table} holds more than one row for the same"
+                f" (session_id, {column}) on session(s) {', '.join(duplicated)}; nothing was written"
+            )
+    for table, column, old_name, new_name in _UNIQUE_CHILD_INDEXES:
+        conn.execute(f"DROP INDEX IF EXISTS {old_name}")
+        conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {new_name} ON {table} (session_id, {column})")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the canonical-schema tables if they don't already exist,
     then additively reconcile any column added after a database was
-    first created (see ``_reconcile_columns``), and version the HR anchors
+    first created (see ``_reconcile_columns``), make the lap and workout step
+    rows unique per session (``_ensure_unique_child_indexes``; a store holding a
+    duplicate refuses to start, named), and version the HR anchors
     of a store whose sessions or entries predate the anchor version log
     (``_sync_anchor_versions``; a no-op on a store the write paths kept), seed
     the athlete-settings row when there is none (``_seed_athlete_settings``), and
@@ -402,6 +446,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute("BEGIN IMMEDIATE")
     try:
         _reconcile_columns(conn)
+        _ensure_unique_child_indexes(conn)
         resolved = _sync_anchor_versions(conn)
         _seed_athlete_settings(conn)
         _fill_session_loads(conn, resolved=resolved)

@@ -7,6 +7,8 @@ four canonical-schema tables idempotently.
 
 from __future__ import annotations
 
+import pytest
+
 from runcoach_api import db
 from runcoach_api.models import RRInterval
 
@@ -1380,3 +1382,221 @@ def test_init_schema_adds_the_name_column_to_a_store_created_without_it():
     for column, value in _PRE_F016_ROW.items():
         assert row[column] == value, column
     assert Session.__dataclass_fields__["name"].default is None
+
+
+# ---------------------------------------------------------------------------
+# F027 -- a lap or workout step row is stored once per session
+# ---------------------------------------------------------------------------
+
+# The plain indexes a store created before the unique ones carried, as the
+# DDL wrote them then; the upgrade tests build such a store from these.
+_PRE_UNIQUE_CHILD_INDEX_DDL = """
+    CREATE INDEX IF NOT EXISTS laps_session_id ON laps (session_id, lap_index);
+    CREATE INDEX IF NOT EXISTS workout_steps_session_id ON workout_steps (session_id, seq);
+"""
+
+
+def _store_with_the_old_child_indexes(conn, session_id: str) -> None:
+    """The tables as the current DDL writes them, the two old plain indexes
+    on ``laps`` and ``workout_steps``, and one session row. No ``init_schema``."""
+    conn.executescript(db._SCHEMA_DDL)
+    conn.executescript(_PRE_UNIQUE_CHILD_INDEX_DDL)
+    conn.execute(
+        """
+        INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+        VALUES (?, '2026-10-16T07:00:00Z', 'run', 'garmin', 'dev-1')
+        """,
+        (session_id,),
+    )
+    conn.commit()
+
+
+def _index_names(conn, table: str) -> dict[str, bool]:
+    """``{index name: unique}`` from ``PRAGMA index_list``."""
+    return {row["name"]: bool(row["unique"]) for row in conn.execute(f"PRAGMA index_list({table})")}
+
+
+def _insert_lap(conn, session_id: str, lap_index: int) -> None:
+    conn.execute(
+        "INSERT INTO laps (session_id, lap_index, start_t, end_t) VALUES (?, ?, 0.0, 60.0)",
+        (session_id, lap_index),
+    )
+
+
+def _insert_step(conn, session_id: str, seq: int) -> None:
+    conn.execute(
+        "INSERT INTO workout_steps (session_id, seq, step_index, intensity) VALUES (?, ?, ?, 'active')",
+        (session_id, seq, seq),
+    )
+
+
+def test_a_second_lap_row_with_the_same_index_is_refused():
+    """A direct INSERT of a ``(session_id, lap_index)`` the store already
+    holds raises ``sqlite3.IntegrityError``: the pair is unique, so no path
+    (``replace_session_laps`` or a hand write) can store a lap twice. A second
+    session may hold the same index."""
+    import sqlite3
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+            VALUES ('s1', '2026-10-16T07:00:00Z', 'run', 'garmin', 'dev-1'),
+                   ('s2', '2026-10-17T07:00:00Z', 'run', 'garmin', 'dev-1')
+            """
+        )
+        _insert_lap(conn, "s1", 0)
+        _insert_lap(conn, "s1", 1)
+        _insert_lap(conn, "s2", 0)
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_lap(conn, "s1", 0)
+        conn.rollback()
+        count = conn.execute("SELECT COUNT(*) FROM laps").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 3
+
+
+def test_a_second_step_row_with_the_same_seq_is_refused():
+    """A direct INSERT of a ``(session_id, seq)`` the store already holds
+    raises ``sqlite3.IntegrityError``. ``seq`` is the unique column, not
+    ``step_index``: a step index is legitimately shared by two steps (F027
+    reference section 3) and is stored null when the file's index is invalid,
+    so two rows with the same ``step_index`` under different ``seq`` are kept."""
+    import sqlite3
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+            VALUES ('s1', '2026-10-16T07:00:00Z', 'run', 'garmin', 'dev-1')
+            """
+        )
+        _insert_step(conn, "s1", 0)
+        conn.execute(
+            "INSERT INTO workout_steps (session_id, seq, step_index) VALUES ('s1', 1, 0), ('s1', 2, NULL), ('s1', 3, NULL)"
+        )
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            _insert_step(conn, "s1", 0)
+        conn.rollback()
+        count = conn.execute("SELECT COUNT(*) FROM workout_steps").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 4
+
+
+def test_an_old_store_gains_the_unique_lap_and_step_indexes(tmp_path):
+    """A store built with the plain ``laps_session_id`` and
+    ``workout_steps_session_id`` indexes gains ``laps_session_lap_unique`` and
+    ``workout_steps_session_seq_unique`` (both unique) at ``init_schema``, and
+    neither old name survives; a second ``init_schema`` leaves the same set, and
+    a fresh store never carries the old names."""
+    conn = db.get_connection()
+    try:
+        _store_with_the_old_child_indexes(conn, "old-1")
+        _insert_lap(conn, "old-1", 0)
+        _insert_step(conn, "old-1", 0)
+        conn.commit()
+        assert _index_names(conn, "laps") == {"laps_session_id": False}
+        assert _index_names(conn, "workout_steps") == {"workout_steps_session_id": False}
+
+        db.init_schema(conn)
+        after_first = (_index_names(conn, "laps"), _index_names(conn, "workout_steps"))
+        db.init_schema(conn)
+        after_second = (_index_names(conn, "laps"), _index_names(conn, "workout_steps"))
+        rows = (
+            conn.execute("SELECT COUNT(*) FROM laps").fetchone()[0],
+            conn.execute("SELECT COUNT(*) FROM workout_steps").fetchone()[0],
+        )
+    finally:
+        conn.close()
+
+    assert after_first == ({"laps_session_lap_unique": True}, {"workout_steps_session_seq_unique": True})
+    assert after_second == after_first
+    assert rows == (1, 1)
+
+    fresh = db.get_connection(tmp_path / "fresh-store")
+    try:
+        db.init_schema(fresh)
+        fresh_indexes = (_index_names(fresh, "laps"), _index_names(fresh, "workout_steps"))
+    finally:
+        fresh.close()
+    assert fresh_indexes == after_first
+
+
+def test_a_store_holding_duplicate_laps_refuses_to_start_naming_the_session():
+    """User ruling (2026-10-18): a store holding two ``laps`` rows with one
+    ``(session_id, lap_index)`` refuses to start. ``init_schema`` raises
+    ``DuplicateChildRowsError`` naming the table and the session ids that hold
+    a duplicate (each once, in order), and writes nothing: the rows stay, the old
+    plain index stays, no unique index is created, and a session whose laps are
+    clean is not named."""
+    conn = db.get_connection()
+    try:
+        _store_with_the_old_child_indexes(conn, "dup-a")
+        conn.execute(
+            """
+            INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+            VALUES ('clean-1', '2026-10-17T07:00:00Z', 'run', 'garmin', 'dev-1'),
+                   ('dup-b', '2026-10-18T07:00:00Z', 'run', 'garmin', 'dev-1')
+            """
+        )
+        for session_id, lap_index in [("dup-a", 0), ("dup-a", 0), ("dup-a", 0), ("clean-1", 0), ("clean-1", 1), ("dup-b", 2), ("dup-b", 2)]:
+            _insert_lap(conn, session_id, lap_index)
+        conn.commit()
+
+        with pytest.raises(db.DuplicateChildRowsError) as excinfo:
+            db.init_schema(conn)
+        message = str(excinfo.value)
+        assert conn.in_transaction is False
+        count = conn.execute("SELECT COUNT(*) FROM laps").fetchone()[0]
+        indexes = (_index_names(conn, "laps"), _index_names(conn, "workout_steps"))
+        loads = conn.execute(f"SELECT COUNT(*) FROM {db.SESSION_LOADS_TABLE}").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert "laps" in message
+    assert "dup-a" in message and "dup-b" in message
+    assert message.index("dup-a") < message.index("dup-b")
+    assert message.count("dup-a") == 1
+    assert "clean-1" not in message
+    assert "workout_steps" not in message
+    assert count == 7
+    assert indexes == ({"laps_session_id": False}, {"workout_steps_session_id": False})
+    assert loads == 0  # the startup fill did not run either: nothing was written
+
+
+def test_a_store_holding_duplicate_steps_refuses_to_start_naming_the_session():
+    """The same refusal for ``workout_steps`` on ``(session_id, seq)``, found
+    even when the laps are clean: the message names ``workout_steps`` and the
+    session, and the lap table's upgrade is rolled back with it, so a second
+    start meets the same store."""
+    conn = db.get_connection()
+    try:
+        _store_with_the_old_child_indexes(conn, "dup-s")
+        _insert_lap(conn, "dup-s", 0)
+        _insert_step(conn, "dup-s", 0)
+        _insert_step(conn, "dup-s", 0)
+        conn.commit()
+
+        with pytest.raises(db.DuplicateChildRowsError) as excinfo:
+            db.init_schema(conn)
+        message = str(excinfo.value)
+        count = conn.execute("SELECT COUNT(*) FROM workout_steps").fetchone()[0]
+        indexes = (_index_names(conn, "laps"), _index_names(conn, "workout_steps"))
+    finally:
+        conn.close()
+
+    assert "workout_steps" in message and "dup-s" in message
+    assert count == 2
+    assert indexes == ({"laps_session_id": False}, {"workout_steps_session_id": False})
