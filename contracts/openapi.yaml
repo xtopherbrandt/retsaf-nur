@@ -43,7 +43,7 @@ openapi: 3.1.0
 
 info:
   title: Run Coaching System — UI↔Engine API
-  version: 0.3.0-draft
+  version: 0.4.0-draft
   description: >
     Target contract for the athlete-facing web + mobile UI. Read/write surface
     over the deterministic coaching engine. The engine is the single source of
@@ -858,13 +858,13 @@ paths:
       operationId: getState
       summary: Physiological state model + gap-to-goal, each with confidence
       x-readiness: implemented
-      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026"
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026, F027"
       x-story: [view-state]
       description: >
-        Computed on read from the tagged races and threshold workouts; nothing is stored or
-        written. Only `functional_threshold_pace` is served (F024, F026): one determinant, with
-        its 80 % interval, its confidence and the races and threshold workouts it was computed
-        from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
+        Computed on read from the tagged races and the threshold workouts (tagged Training or named in
+        `threshold_workout_names`); nothing is stored or written. Only `functional_threshold_pace` is
+        served (F024, F026, F027): one determinant, with its 80 % interval, its confidence and the races
+        and workouts it was computed from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
       parameters:
         - name: as_of
           in: query
@@ -1951,13 +1951,13 @@ components:
       type: object
       description: >
         One determinant with its estimate and trend. Only `functional_threshold_pace` is served
-        (F024, F026: tagged races and Training-tagged threshold workouts' active laps); the other
-        names are planned. Beside the estimate, the served entry carries what reproduces it by
-        hand (research/00 PRIN-12): `error`, `short_races_only`, the races and workouts used
-        (`efforts`), those not used (`excluded`) and the constants (`parameters`). The 80 %
-        interval covers effort-to-effort noise, not bias: an effort read wrongly moves the
-        estimate and the interval together, so the interval need not contain the true pace.
-        Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
+        (F024, F026, F027: tagged races and the counted work reps of threshold workouts tagged
+        Training or named in `threshold_workout_names`); the other names are planned. Beside the
+        estimate, the served entry carries what reproduces it by hand (research/00 PRIN-12):
+        `error`, `short_races_only`, the races and workouts used (`efforts`), those not used
+        (`excluded`) and the constants (`parameters`). The 80 % interval covers effort-to-effort
+        noise, not bias: an effort read wrongly moves the estimate and the interval together, so the
+        interval need not contain the true pace. Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
       required: [name, estimate, unavailable, trend, error, short_races_only, efforts, excluded, parameters]
       properties:
         name:
@@ -3383,43 +3383,44 @@ components:
           description: "One per request item, in request order."
     ThresholdEffort:
       type: object
-      description: "getState: a tagged race or threshold workout the threshold estimate used, with the gain it entered with (1 for the first)."
+      description: "getState: a race or threshold workout (tagged Training or named in `threshold_workout_names`) the threshold estimate used, with the gain it entered with (1 for the first)."
       required: [session_id, start_time, kind, duration_s, gap_pace_s_per_km, gap_coverage, gps_degraded_fraction, gain, active_blocks, admitted_by, workout_name]
       properties:
         session_id: { type: string }
         start_time: { type: string, format: date-time }
-        kind: { type: string, enum: [race, threshold_workout], description: "`race`, or `threshold_workout` (tagged Training in Connect)." }
+        kind: { type: string, enum: [race, threshold_workout], description: "`race`, or `threshold_workout` (tagged Training in Connect, or a step's workout name listed in `threshold_workout_names`)." }
         duration_s: { type: number, description: "A race's `timer_time_s`, else the summary's `duration_s`; a workout's active time, the active laps' summed `timer_s`." }
         gap_pace_s_per_km: { type: number, description: "F013's grade-adjusted pace of the race, or of the workout's active laps' windows." }
         gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance (a workout's: over its active windows); below 1 counts at flat pace." }
         gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance (a workout's: over its active windows); shown, never judged." }
         gain: { type: number }
         active_blocks: { type: integer, nullable: true, description: "A workout's runs of consecutive active laps (3x10 min with jogs reads 3 when the jogs are recovery steps); null for a race." }
-        admitted_by: { type: array, nullable: true, items: { type: string, enum: [tag, name] }, description: "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's workout name is listed in `threshold_workout_names`); null for a race." }
+        admitted_by: { type: array, nullable: true, items: { type: string, enum: [tag, name] }, description: "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's workout name is listed in `threshold_workout_names`); a tagged workout whose laps are unread reads `[\"tag\"]`, its name unseen. Null for a race." }
         workout_name: { type: string, nullable: true, description: "A workout's stored workout name as written on its first step row that has one; null when none has, and for a race." }
     ThresholdExclusion:
       type: object
-      description: "getState: a tagged running race or threshold workout at or before `as_of` that the threshold estimate did not use, and why."
+      description: "getState: a running race or threshold workout (tagged Training or named in `threshold_workout_names`) at or before `as_of` that the threshold estimate did not use, and why."
       required: [session_id, start_time, kind, reason, admitted_by, workout_name]
       properties:
         session_id: { type: string }
         start_time: { type: string, format: date-time }
-        kind: { type: string, enum: [race, threshold_workout] }
-        admitted_by: { type: array, nullable: true, items: { type: string, enum: [tag, name] }, description: "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's workout name is listed in `threshold_workout_names`); null for a race." }
+        kind: { type: string, enum: [race, threshold_workout], description: "`race`, or `threshold_workout` (tagged Training in Connect, or a step's workout name listed in `threshold_workout_names`)." }
+        admitted_by: { type: array, nullable: true, items: { type: string, enum: [tag, name] }, description: "What admitted a workout, in this order: `tag` (tagged Training in Connect) and `name` (a step row's workout name is listed in `threshold_workout_names`); a tagged workout whose laps are unread reads `[\"tag\"]`, its name unseen. Null for a race." }
         workout_name: { type: string, nullable: true, description: "A workout's stored workout name as written on its first step row that has one; null when none has, and for a race." }
         reason:
           type: string
           enum: [outside_threshold_band, distance_regressed, smart_recording, gap_pace_unavailable, summary_unreadable, quality_flags_unreadable, features_unavailable, laps_not_read, lap_times_unreadable, no_workout_steps, no_sustained_work, active_time_below_minimum, laps_unreadable]
           description: >
-            The first of the F024 reference's section 2 rows a race fails, or of the F026
-            reference's section 3 rows a workout fails (`laps_not_read`, `lap_times_unreadable`,
-            `no_workout_steps`, `active_time_below_minimum`, then the flags and
-            `gap_pace_unavailable`); or, when a stored value the reader needs does not read,
-            `summary_unreadable` (races only), `quality_flags_unreadable`, `features_unavailable`
-            or `laps_unreadable` (workouts only).
+            The first of the F024 reference section 2 rows a race fails, or of the F027 reference
+            section 4 orders a workout fails (`laps_not_read`, `laps_unreadable`,
+            `lap_times_unreadable`, `no_workout_steps`, `no_sustained_work`: no work rep of 290 s;
+            the record reasons; the flags; `gap_pace_unavailable`: no sustained rep with a GAP pace;
+            `active_time_below_minimum`: the counted reps sum to under 590 s); or, when a stored
+            value it needs does not read, `summary_unreadable` (races only),
+            `quality_flags_unreadable`, `features_unavailable` or `laps_unreadable` (workouts only).
     ThresholdPaceParameters:
       type: object
-      description: "getState: the constants the threshold estimate was computed with, so it can be redone by hand."
+      description: "getState: the constants the threshold estimate was computed with (F024 reference section 1, F027 reference section 4), so it can be redone by hand."
       required: [typical_error, doubling_days, coverage, high_max_error, medium_max_error, short_race_s, workout_min_active_s, workout_min_rep_s, workout_rep_band]
       properties:
         typical_error: { type: number }

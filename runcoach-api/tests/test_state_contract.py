@@ -202,10 +202,19 @@ def test_estimate_not_finite_response_validates_against_the_contract(
     assert determinant["parameters"]["doubling_days"] == 42
 
 
-def _store_workout(start: datetime, *, active_s: float = 1200.0, laps: str = "read") -> str:
+def _store_workout(
+    start: datetime,
+    *,
+    active_s: float = 1200.0,
+    laps: str = "read",
+    tag: str | None = "threshold_workout",
+    workout_name: str | None = None,
+) -> str:
     """A Training-tagged workout: 300 s warm-up, one active lap of ``active_s`` at 255 s/km naming
     active step 1, 300 s cool-down, 1 Hz flat records. ``laps`` is ``read``, ``none`` (never
-    read), ``no_end`` (the active lap's end null) or ``free`` (laps read, none active)."""
+    read), ``no_end`` (the active lap's end null) or ``free`` (laps read, none active). ``tag`` is
+    the stored ``activity_tag`` (``None`` for an untagged run) and ``workout_name`` the name written
+    on every step row, as the FIT ``workout`` message's name is."""
     plan = [("warmup", 300.0, 360.0, 0), ("active", active_s, 255.0, 1), ("cooldown", 300.0, 390.0, 2)]
     records, distance, t = [Record(t=0.0, distance=0.0, speed=1000.0 / 360.0, altitude=100.0)], 0.0, 0
     lap_rows, lap_start = [], 0.0
@@ -227,9 +236,11 @@ def _store_workout(start: datetime, *, active_s: float = 1200.0, laps: str = "re
         lap_rows.append(lap)
         lap_start += seconds
     steps = [
-        SessionWorkoutStep(step_index=0, intensity="warmup", duration_type="time"),
-        SessionWorkoutStep(step_index=1, intensity="active", duration_type="time", target_type="speed"),
-        SessionWorkoutStep(step_index=2, intensity="cooldown", duration_type="time"),
+        SessionWorkoutStep(step_index=0, workout_name=workout_name, intensity="warmup", duration_type="time"),
+        SessionWorkoutStep(
+            step_index=1, workout_name=workout_name, intensity="active", duration_type="time", target_type="speed"
+        ),
+        SessionWorkoutStep(step_index=2, workout_name=workout_name, intensity="cooldown", duration_type="time"),
     ]
     start_time = start.isoformat()
     total = sum(seconds for _i, seconds, _p, _s in plan)
@@ -239,7 +250,7 @@ def _store_workout(start: datetime, *, active_s: float = 1200.0, laps: str = "re
         source_vendor="garmin",
         start_time=start_time,
         source_device="fr945",
-        activity_tag="threshold_workout",
+        activity_tag=tag,
         timer_time_s=total,
         summary={"duration_s": total},
         context=Context(),
@@ -297,6 +308,76 @@ def test_estimate_and_unavailable_validate_against_the_contract(contract: dict, 
     assert determinant["estimate"] is None and determinant["unavailable"] == "no_qualifying_effort"
     assert determinant["efforts"] == [] and determinant["short_races_only"] is False
     assert [(e["session_id"], e["reason"]) for e in determinant["excluded"]] == expected
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_the_contract_lists_admission_fields_reason_and_bounds(contract: dict) -> None:
+    """The guard the validation tests below need: ``contract_validate`` passes an unlisted property,
+    so the admission fields are pinned by name here, in ``properties`` and ``required`` alike, with
+    the new reason, the two bounds and the prose that must agree with the served field descriptions
+    (``kind``, ``admitted_by``, ``workout_name`` and ``reason``, which ``contract_walk`` skips)."""
+    served = app.openapi()["components"]["schemas"]
+    for name in ("ThresholdEffort", "ThresholdExclusion"):
+        schema = _schema(contract, name)
+        for field in ("admitted_by", "workout_name"):
+            assert field in schema["properties"], (name, field)
+            assert field in schema["required"], (name, field)
+        admitted_by = schema["properties"]["admitted_by"]
+        assert (admitted_by["type"], admitted_by["nullable"]) == ("array", True)
+        assert admitted_by["items"] == {"type": "string", "enum": ["tag", "name"]}
+        workout_name = schema["properties"]["workout_name"]
+        assert (workout_name["type"], workout_name["nullable"]) == ("string", True)
+        for field in ("kind", "admitted_by", "workout_name"):
+            ours = _flat(schema["properties"][field]["description"])
+            theirs = _flat(served[name]["properties"][field]["description"])
+            print(f"  {name}.{field}: {ours}")
+            assert ours == theirs, (name, field)
+        assert "`threshold_workout_names`" in schema["properties"]["kind"]["description"]
+    reason = _schema(contract, "ThresholdExclusion")["properties"]["reason"]
+    assert "no_sustained_work" in reason["enum"]
+    assert _flat(reason["description"]) == _flat(served["ThresholdExclusion"]["properties"]["reason"]["description"])
+    assert "`no_sustained_work`" in reason["description"]
+    parameters = _schema(contract, "ThresholdPaceParameters")
+    for field, kind in (("workout_min_rep_s", "integer"), ("workout_rep_band", "number")):
+        assert field in parameters["required"], field
+        assert parameters["properties"][field]["type"] == kind, field
+    print(f"  info.version {contract['info']['version']}")
+    assert contract["info"]["version"] == "0.4.0-draft"
+
+
+def test_a_tag_and_a_name_admitted_workout_validate_against_the_contract(contract: dict, declared_config) -> None:
+    """A Training-tagged workout, an untagged run admitted by its listed workout name, and one
+    admitted by both: each used, each validating with its ``admitted_by`` and ``workout_name``."""
+    declared_config(threshold_workout_names=["Progression Run"])
+    tagged = _store_workout(datetime(2026, 9, 13, 7, 0, tzinfo=UTC))
+    named = _store_workout(datetime(2026, 9, 20, 7, 0, tzinfo=UTC), tag=None, workout_name="Progression Run")
+    both = _store_workout(datetime(2026, 9, 27, 7, 0, tzinfo=UTC), workout_name="Progression Run")
+    determinant = _assert_valid(contract, _body())
+    assert determinant["unavailable"] is None and determinant["estimate"] is not None
+    assert [(e["session_id"], e["kind"], e["admitted_by"], e["workout_name"]) for e in determinant["efforts"]] == [
+        (tagged, "threshold_workout", ["tag"], None),
+        (named, "threshold_workout", ["name"], "Progression Run"),
+        (both, "threshold_workout", ["tag", "name"], "Progression Run"),
+    ]
+    assert determinant["excluded"] == []
+
+
+def test_a_no_sustained_work_exclusion_validates_against_the_contract(contract: dict) -> None:
+    """A tagged workout whose one work rep is 289 s is excluded as ``no_sustained_work`` beside a
+    race's estimate, and the exclusion validates with its admission fields."""
+    race = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), pace=270.0, duration_s=2400.0)
+    short_rep = _store_workout(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), active_s=289.0)
+    determinant = _assert_valid(contract, _body())
+    assert determinant["unavailable"] is None
+    assert [e["session_id"] for e in determinant["efforts"]] == [race]
+    assert [
+        (e["session_id"], e["reason"], e["kind"], e["admitted_by"], e["workout_name"]) for e in determinant["excluded"]
+    ] == [(short_rep, "no_sustained_work", "threshold_workout", ["tag"], None)]
+    assert determinant["parameters"]["workout_min_rep_s"] == 290
+    assert determinant["parameters"]["workout_rep_band"] == 1.1
 
 
 MUTATIONS = [
