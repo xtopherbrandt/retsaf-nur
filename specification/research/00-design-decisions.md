@@ -397,7 +397,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, and REG-31, ratified as H-42 and H-43 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, and REG-31, ratified as H-42, H-43 and H-44 record.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -558,11 +558,12 @@ Scope: every retention setting.
 Not: storage cost, which the rolling window of rule REG-29 tunes.
 Pinned: none
 
-**REG-31.** Threshold pace MUST be estimated by the spec/04 section 4.3 filter, with the spec-introduced constants of spec/04 section 4.3.4, from qualifying 20-60 min races and from the active steps of tagged threshold workouts that total at least 600 s.
-Scope: every functional threshold pace served, from running sessions tagged `race` lasting 1200 to 3600 s or tagged `threshold_workout` and read over active laps totalling 600 s or more, each without `distance_regressed` or `smart_recording`, with a finite positive GAP pace; the constants are engineering defaults, a workout has a race's typical error, and before any such effort it is unavailable.
-Not: a population threshold pace before the first qualifying effort, which IND-03 asks for and IDEA-161 holds open; the CS fit and its blend by confidence, whose constants IDEA-157 holds open; an effort excluded for degraded GPS, a per-record fraction and never a session flag; and a work block inferred from pace, which only the athlete's Training tag and the watch's active steps mark.
+**REG-31.** Threshold pace MUST be estimated by the spec/04 section 4.3 filter, with the spec-introduced constants of spec/04 section 4.3.4, from qualifying 20-60 min races and from the sustained work reps of threshold workouts admitted by the athlete's tag or a configured workout name: reps of at least 290 s each, within 10 % of the fastest, totalling at least 590 s.
+Scope: every functional threshold pace served, from running sessions tagged `race` lasting 1200 to 3600 s, or admitted as a threshold workout by the `threshold_workout` tag or a workout step's name listed in `threshold_workout_names` and read over their counted work reps, each rep 290 s or longer and no slower than 1.10 times the fastest, the counted reps totalling 590 s or more, every effort without `distance_regressed` or `smart_recording`, with a finite positive GAP pace; the constants are engineering defaults, a workout has a race's typical error, a listed name takes a race-tagged session out of the races, and before any such effort it is unavailable.
+Not: a population threshold pace before the first qualifying effort, which IND-03 asks for and IDEA-161 holds open; the CS fit and its blend by confidence, whose constants IDEA-157 holds open; an effort excluded for degraded GPS, a per-record fraction and never a session flag; and a workout or a work rep inferred from pace alone, which only the athlete's Training tag or a listed workout name admits and the watch's targeted work steps mark, the band dropping a slower rep only beside a faster one.
 Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_gain_is_0_8
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
+Pinned: runcoach-api/tests/test_threshold_workout_active_block.py::test_counted_reps_at_589_99_and_590
 
 **HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
 Scope: every per-tier dataset's SWC band, as `build_band` builds it.
