@@ -261,7 +261,7 @@ def test_estimate_and_unavailable_validate_against_the_contract(contract: dict, 
     not_read = _store_workout(datetime(2026, 9, 14, 7, 0, tzinfo=UTC), laps="none")
     no_end = _store_workout(datetime(2026, 9, 15, 7, 0, tzinfo=UTC), laps="no_end")
     free = _store_workout(datetime(2026, 9, 16, 7, 0, tzinfo=UTC), laps="free")
-    short = _store_workout(datetime(2026, 9, 17, 7, 0, tzinfo=UTC), active_s=599.0)
+    short = _store_workout(datetime(2026, 9, 17, 7, 0, tzinfo=UTC), active_s=589.0)
     unreadable = _store_workout(datetime(2026, 9, 18, 7, 0, tzinfo=UTC))
     real = db_module.read_workout_laps
 
@@ -277,7 +277,7 @@ def test_estimate_and_unavailable_validate_against_the_contract(contract: dict, 
         (race, "race", None),
         (workout, "threshold_workout", 1),
     ]
-    assert determinant["parameters"]["workout_min_active_s"] == 600
+    assert determinant["parameters"]["workout_min_active_s"] == 590
     expected = [
         (not_read, "laps_not_read"),
         (no_end, "lap_times_unreadable"),

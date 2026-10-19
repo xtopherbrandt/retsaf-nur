@@ -338,7 +338,9 @@ def test_parameters_and_constants() -> None:
         "high_max_error": 0.025,
         "medium_max_error": 0.05,
         "short_race_s": 1800,
-        "workout_min_active_s": 600,
+        "workout_min_active_s": 590,
+        "workout_min_rep_s": 290,
+        "workout_rep_band": 1.10,
     }
     assert threshold_pace.R == 0.025**2
     assert threshold_pace.Q_PER_DAY == 3 * threshold_pace.R / 42
@@ -428,10 +430,11 @@ def test_short_races_only_reads_races_only() -> None:
 
 
 def test_parameters_carry_workout_min_active_s() -> None:
-    assert threshold_pace.PARAMETERS["workout_min_active_s"] == 600
-    assert threshold_pace.WORKOUT_MIN_ACTIVE_S == 600
+    """590 since the sustained-rep rule (600 before it: the same 10 s grace as the rep minimum)."""
+    assert threshold_pace.PARAMETERS["workout_min_active_s"] == 590
+    assert threshold_pace.WORKOUT_MIN_ACTIVE_S == 590
     result = estimate([_workout("w", 0, 260.0)], _at(0))
-    assert result.parameters["workout_min_active_s"] == 600
+    assert result.parameters["workout_min_active_s"] == 590
     assert dict(result.parameters) == dict(threshold_pace.PARAMETERS)
 
 

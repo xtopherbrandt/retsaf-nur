@@ -1,41 +1,48 @@
-"""Which Training-tagged workouts qualify for threshold pace, end to end through ``GET /state`` (F026 AC2).
+"""Which Training-tagged workouts qualify for threshold pace, end to end through ``GET /state``
+(F026 AC2; F027 AC3 and AC4, reference section 4).
 
-Authored from the F026 reference section 3 (the table, its active-lap definition and the
-sprint-019 planning paragraph on order) before the reader and the estimator's workout branch were
-written (rule contract-tables-need-an-independent-oracle). Every row is driven through the real
-app: a session is stored with ``db.persist`` tagged ``threshold_workout`` and its laps and steps
-through ``persist``'s ``laps`` argument (which sets ``laps_read_at``), then read back from
-``GET /state``. Each excluded row asserts where the workout lands (``excluded`` with its reason and
-``kind``) and that it **changes nothing**: the determinant served beside a control race is the one
-served with the control alone. The clock is frozen through ``main._utcnow``; every request runs
-under the autouse isolated store.
+Authored from the F026 reference section 3 before the reader and the estimator's workout branch
+were written (rule contract-tables-need-an-independent-oracle), then re-pointed row by row to the
+F027 reference section 4 order (each old and new outcome listed in the commit that moved it).
+Every row is driven through the real app: a session is stored with ``db.persist`` tagged
+``threshold_workout`` and its laps and steps through ``persist``'s ``laps`` argument (which sets
+``laps_read_at``), then read back from ``GET /state``. Each excluded row asserts where the workout
+lands (``excluded`` with its reason and ``kind``) and that it **changes nothing**: the determinant
+served beside a control race is the one served with the control alone. The clock is frozen through
+``main._utcnow``; every request runs under the autouse isolated store.
 
-| # | stored workout | lands |
+| order | stored workout | lands |
 |---|---|---|
 | 1 | no laps read (``laps_read_at`` null) | ``laps_not_read`` |
-| 1a | an otherwise-active lap (intensity ``active``, step index naming an active step) with a null ``start_t``, ``end_t`` or ``timer_s``, or ``end_t <= start_t`` (the FR955: every lap end the session start) | ``lap_times_unreadable`` |
-| 2 | laps read and none active: a free run of ``interval`` auto-laps, no laps at all, an ``active`` lap with a null step index, an ``active`` lap naming a recovery step, an ``active`` lap naming a repeat step that carries ``active`` | ``no_workout_steps`` |
-| 3 | active time 599 s; finite lap times whose sum overflows to inf | ``active_time_below_minimum`` |
-| 3 | active time 600 s and 7200 s (no maximum) | used, ``duration_s`` the active time |
-| 4 | ``smart_recording``; records that regress (F013's ``distance_regressed``); both | that flag, ``distance_regressed`` first |
-| 5 | no distance in the active laps | ``gap_pace_unavailable`` (0 and non-finite paces through a patched ``active_block``) |
-| 0 | quality flags not a JSON list; context not JSON; the lap reader raises | ``quality_flags_unreadable``; ``features_unavailable``; ``laps_unreadable`` |
+| 2 | the lap reader raises | ``laps_unreadable`` |
+| 3 | a work lap (intensity ``active``, step index naming a work step) with a null ``start_t``, ``end_t`` or ``timer_s``, or ``end_t <= start_t`` with a timer of 2 s or more (the FR955: every lap end the session start) | ``lap_times_unreadable`` |
+| 4 | laps read and none work: a free run of ``interval`` auto-laps with no step index, no laps at all, an ``active`` lap with a null step index, an ``active`` lap naming a recovery step, an ``active`` lap naming a repeat step that carries ``active`` and a target | ``no_workout_steps`` |
+| 5 | no work rep of 290 s or more | ``no_sustained_work`` |
+| 6 | quality flags not a JSON list; context not JSON | ``quality_flags_unreadable``; ``features_unavailable`` |
+| 7 | ``smart_recording``; records that regress (F013's ``distance_regressed``); both | that flag, ``distance_regressed`` first |
+| 8 | no distance in the work laps | ``gap_pace_unavailable`` (0 and non-finite paces through a patched ``active_block``) |
+| 10 | counted time 589 s; finite lap times whose sum overflows to inf | ``active_time_below_minimum`` |
+| 10 | counted time 599 s, 600 s and 7200 s (no maximum) | used, ``duration_s`` the counted time |
 | - | tagged ``threshold_workout`` but not running | in neither list |
 
-Rows 1, 1a, 2 and 3 decide before any record is read (``read_session_feature_inputs`` is counted);
-row 0's flags and features reasons, then rows 4 and 5, follow.
+Orders 1 to 5 decide before any record is read (``read_session_feature_inputs`` is counted); the
+record read follows for every workout past them, short ones included, so a short workout with
+unreadable flags reads ``quality_flags_unreadable`` where F026 read ``active_time_below_minimum``
+before any record read.
 
 Synthetic workouts carry 1 Hz flat records, each second at the pace of the lap it lies in, so the
-active GAP pace over the active windows is the active laps' pace exactly while the session's whole
-GAP pace is slower. Real files, with their rows of the provenance table in ``fixtures/README.md``:
+GAP pace over the counted windows is the work laps' pace exactly while the session's whole GAP
+pace is slower. Real files, with their rows of the provenance table in ``fixtures/README.md``:
 
 | file | kind | notes | mode | devices | positions | run proof |
 |---|---|---|---|---|---|---|
 | sample_run | real run | | 1 Hz | FR945 LTE; HRM-Pro Plus | yes | yes |
 
-``sample_run.fit`` is a structured workout: laps 1-7 name active steps 1 and 2, lap 9 is the
-step-less ``session_end`` lap. ``repeat_workout.build_repeat_workout()`` patches its step table to
-five steps (step 2 recovery, step 3 a repeat step keeping the cool-down's intensity).
+``sample_run.fit`` is a structured workout: laps 1-7 name work steps 1 and 2 (reps of 1200 s and
+900 s whose GAP paces sit at a 1.0992 ratio, inside the 1.10 band by under a percent, so both
+count: 2100 s, 1 block; never a pin of the band), lap 9 is the step-less ``session_end`` lap.
+``repeat_workout.build_repeat_workout()`` patches its step table to five steps (step 2 recovery,
+step 3 a repeat step keeping the cool-down's intensity).
 """
 
 from __future__ import annotations
@@ -269,7 +276,7 @@ def test_laps_not_read() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Row 1a: lap_times_unreadable
+# Order 3: lap_times_unreadable
 # ---------------------------------------------------------------------------
 
 
@@ -302,7 +309,7 @@ def test_lap_times_unreadable(laps: list[dict]) -> None:
 
 
 def test_a_null_time_on_a_lap_that_is_not_active_reads_nothing() -> None:
-    """Row 1a reads only otherwise-active laps: a warm-up lap with null times does not exclude."""
+    """Order 3 reads work laps only: a warm-up lap with null times does not exclude."""
     laps = _with(_BASE_LAPS, 0, start_t=None, end_t=None, timer_s=None)
     with TestClient(app) as client:
         workout = _store(WORKOUT_START, laps=laps)
@@ -310,7 +317,7 @@ def test_a_null_time_on_a_lap_that_is_not_active_reads_nothing() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Row 2: no_workout_steps
+# Order 4: no_workout_steps
 # ---------------------------------------------------------------------------
 
 
@@ -367,19 +374,17 @@ def test_the_repeat_workout_counts_only_its_active_step() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Row 3: active time
+# Order 10: the counted time
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("active_s", [599.0, 600.0, 7200.0])
 def test_active_time_599_600_and_7200(active_s: float) -> None:
-    """599 s is below the minimum; 600 s qualifies (inclusive) and so does 7200 s (no maximum, user
-    ruling), with ``duration_s`` the active time, not the session's."""
-    if active_s < 600:
-        _assert_excluded_changes_nothing(
-            lambda: _store(WORKOUT_START, plan=_plan(active_s)), "active_time_below_minimum"
-        )
-        return
+    """599 s, 600 s and 7200 s all count (no maximum, user ruling), with ``duration_s`` the counted
+    time, not the session's. Before the sustained-rep rule 599 s was excluded as
+    ``active_time_below_minimum`` at a 600 s bound; the bound is 590 s now, pinned on the pure
+    function by ``test_threshold_workout_active_block.test_counted_reps_at_589_99_and_590``, and
+    589 s is the excluded case of ``test_an_excluded_workout_changes_nothing`` below."""
     workout = _store(WORKOUT_START, plan=_plan(active_s))
     with TestClient(app) as client:
         effort = _assert_qualifies(_ftp(client), workout, active_s=active_s, pace=ACTIVE_PACE)
@@ -388,8 +393,9 @@ def test_active_time_599_600_and_7200(active_s: float) -> None:
 
 
 def test_an_active_time_that_overflows_to_inf_is_refused() -> None:
-    """Every lap time finite, their sum inf: row 3 asks for ``A`` finite, so it is refused and never
-    used (an inf duration would serve a number JSON cannot carry)."""
+    """Every lap time finite, their sum inf: the two adjacent laps are one rep of inf length (so
+    sustained), and order 10 asks for ``A`` finite, so it is refused and never used (an inf
+    duration would serve a number JSON cannot carry)."""
     laps = [
         {**_BASE_LAPS[0]},
         {**_BASE_LAPS[1], "start_t": 300.0, "end_t": 900.0, "timer_s": 1e308},
@@ -397,12 +403,13 @@ def test_an_active_time_that_overflows_to_inf_is_refused() -> None:
         {**_BASE_LAPS[2], "lap_index": 3, "start_t": 1500.0, "end_t": 1800.0},
     ]
     decided = TP.active_laps(laps, STEPS)
-    assert decided.unavailable is None and decided.active_time_s == math.inf
+    assert decided.unavailable is None
+    assert [rep.length_s for rep in decided.reps] == [math.inf]
     _assert_excluded_changes_nothing(lambda: _store(WORKOUT_START, laps=laps), "active_time_below_minimum")
 
 
 # ---------------------------------------------------------------------------
-# Row 4: the flags, in F024's fixed order
+# Order 7: the flags, in F024's fixed order
 # ---------------------------------------------------------------------------
 
 
@@ -426,13 +433,13 @@ def test_workout_flags_exclude_in_fixed_order(store, reason: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Row 5: the active GAP pace
+# Orders 8 and 11: the GAP pace
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("pace", [None, 0.0, -0.0, -255.0, math.nan, math.inf, -math.inf, 5e-324])
 def test_workout_gap_null_zero_and_non_finite(pace, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Null end to end (no distance in the active laps); 0, negative, non-finite and a subnormal
+    """Null end to end (no distance in the work laps); 0, negative, non-finite and a subnormal
     whose speed overflows through a patched ``active_block``, which no counted segment can
     produce, on the real reader's path."""
     if pace is None:
@@ -449,7 +456,7 @@ def test_workout_gap_null_zero_and_non_finite(pace, monkeypatch: pytest.MonkeyPa
 
 
 # ---------------------------------------------------------------------------
-# Row 0: what does not read
+# Orders 2 and 6: what does not read
 # ---------------------------------------------------------------------------
 
 
@@ -463,17 +470,21 @@ def test_quality_flags_unreadable_for_a_workout(value: str) -> None:
     _assert_excluded_changes_nothing(store, "quality_flags_unreadable")
 
 
-def test_rows_1_to_3_decide_before_the_flags_are_read() -> None:
-    """Order: a workout failing row 1 or row 3 with unreadable flags reads its lap reason."""
+def test_orders_1_to_5_decide_before_the_flags_are_read() -> None:
+    """Order: a workout failing order 1 or order 5 with unreadable flags reads its lap reason; a
+    short one (599 s, past order 5) reads its records and so ``quality_flags_unreadable``, where
+    F026 read ``active_time_below_minimum`` before any record read."""
     no_laps = _store(WORKOUT_START, laps=None)
     short = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), plan=_plan(599.0))
-    for workout in (no_laps, short):
+    no_rep = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), plan=_plan(289.0))
+    for workout in (no_laps, short, no_rep):
         _sql("UPDATE sessions SET quality_flags = 'not json' WHERE session_id = ?", workout)
     with TestClient(app) as client:
         determinant = _ftp(client)
     assert _excluded(determinant) == [
         (no_laps, "laps_not_read", WORKOUT),
-        (short, "active_time_below_minimum", WORKOUT),
+        (short, "quality_flags_unreadable", WORKOUT),
+        (no_rep, "no_sustained_work", WORKOUT),
     ]
 
 
@@ -532,9 +543,10 @@ def test_an_excluded_workout_changes_nothing() -> None:
         _store(datetime(2026, 9, 1, 7, 0, tzinfo=UTC), laps=None)
         _store(datetime(2026, 9, 2, 7, 0, tzinfo=UTC), laps=_with(_BASE_LAPS, 1, end_t=None))
         _store(datetime(2026, 9, 3, 7, 0, tzinfo=UTC), laps=_with(_BASE_LAPS, 1, wkt_step_index=None))
-        _store(datetime(2026, 9, 4, 7, 0, tzinfo=UTC), plan=_plan(599.0))
+        _store(datetime(2026, 9, 4, 7, 0, tzinfo=UTC), plan=_plan(589.0))
         _store(datetime(2026, 9, 5, 7, 0, tzinfo=UTC), flags=["smart_recording"])
         _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), records=_records_for(_plan(), active_speed=0.0))
+        _store(datetime(2026, 9, 7, 7, 0, tzinfo=UTC), plan=_plan(289.0))
         after = _ftp(client)
     print(f"  excluded {_excluded(after)}")
     assert [reason for _s, reason, _k in _excluded(after)] == [
@@ -544,14 +556,16 @@ def test_an_excluded_workout_changes_nothing() -> None:
         "active_time_below_minimum",
         "smart_recording",
         "gap_pace_unavailable",
+        "no_sustained_work",
     ]
     assert _efforts(after) == [(control, "race")]
     assert _comparable(after) == _comparable(before)
 
 
-def test_records_are_read_only_for_workouts_past_rows_1_to_3(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Rows 1, 1a, 2 and 3 decide from the session row, laps and steps: such workouts cost no record
-    read; a workout past them reads its records once, for both the flags and the segment stream."""
+def test_records_are_read_only_for_workouts_past_orders_1_to_5(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Orders 1 to 5 decide from the session row, laps and steps: such workouts cost no record
+    read; a workout past them, the short one included (its counted time is order 10, after the
+    record read), reads its records once, for both the flags and the segment stream."""
     calls: list[str] = []
     lap_reads: list[str] = []
     real_inputs = db_module.read_session_feature_inputs
@@ -568,7 +582,7 @@ def test_records_are_read_only_for_workouts_past_rows_1_to_3(monkeypatch: pytest
     no_laps = _store(datetime(2026, 9, 1, 7, 0, tzinfo=UTC), laps=None)
     _store(datetime(2026, 9, 2, 7, 0, tzinfo=UTC), laps=_with(_BASE_LAPS, 1, end_t=None))
     _store(datetime(2026, 9, 3, 7, 0, tzinfo=UTC), laps=_with(_BASE_LAPS, 1, wkt_step_index=2))
-    _store(datetime(2026, 9, 4, 7, 0, tzinfo=UTC), plan=_plan(599.0))
+    short = _store(datetime(2026, 9, 4, 7, 0, tzinfo=UTC), plan=_plan(589.0))
     used = _store(datetime(2026, 9, 5, 7, 0, tzinfo=UTC))
     monkeypatch.setattr(db_module, "read_session_feature_inputs", counted_inputs)
     monkeypatch.setattr(db_module, "read_workout_laps", counted_laps)
@@ -576,7 +590,8 @@ def test_records_are_read_only_for_workouts_past_rows_1_to_3(monkeypatch: pytest
         determinant = _ftp(client)
     print(f"  feature reads {calls}; lap reads {lap_reads}")
     assert _efforts(determinant) == [(used, WORKOUT)]
-    assert calls == [used]
+    assert (short, "active_time_below_minimum", WORKOUT) in _excluded(determinant)
+    assert calls == [short, used]
     assert no_laps not in lap_reads and len(lap_reads) == 4
 
 
@@ -670,8 +685,10 @@ def _file_block():
 
 def test_a_served_workout_carries_active_duration_blocks_and_window_fractions() -> None:
     """``sample_run.fit`` uploaded, tagged ``threshold_workout`` through ``PUT /race-tags``: its effort's
-    ``duration_s`` is the active laps 1-7's ``timer_s`` summed (written by hand), one block, the
-    pace and the window fractions ``active_block`` gives on the same file, not the session's."""
+    ``duration_s`` is the work laps 1-7's ``timer_s`` summed (written by hand), one block, the
+    pace and the window fractions ``active_block`` gives on the same file, not the session's.
+    Fragile: the two reps' GAP paces sit at a 1.0992 ratio, inside the 1.10 band by under a
+    percent; this file is never used to pin the band."""
     with TestClient(app) as client:
         response = client.post("/sessions", files={"file": ("sample_run.fit", (FIXTURES / "sample_run.fit").read_bytes())})
         assert response.status_code == 201, response.text

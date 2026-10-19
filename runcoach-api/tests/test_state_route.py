@@ -37,7 +37,9 @@ PARAMETERS = {
     "high_max_error": 0.025,
     "medium_max_error": 0.05,
     "short_race_s": 1800,
-    "workout_min_active_s": 600,
+    "workout_min_active_s": 590,
+    "workout_min_rep_s": 290,
+    "workout_rep_band": 1.10,
 }
 
 

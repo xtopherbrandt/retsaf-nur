@@ -14,9 +14,11 @@ The file, by its row in ``fixtures/README.md``'s provenance table:
 | sample_run | real run | | 1 Hz | FR945 LTE; HRM-Pro Plus | yes | yes |
 
 ``sample_run.fit`` is a structured workout: uploaded with ``POST /sessions`` its laps and workout
-steps are stored, laps 1-7 name active steps 1 and 2 (one block) and their ``timer_s`` sum to
+steps are stored, laps 1-7 name work steps 1 and 2 (one block) and their ``timer_s`` sum to
 2100 s, written by hand from the file in ``test_threshold_workout_qualifying.py``. Tagged
-``threshold_workout`` through ``PUT /race-tags``, it is the only effort used.
+``threshold_workout`` through ``PUT /race-tags``, it is the only effort used. Both reps count
+because their GAP paces sit at a 1.0992 ratio, inside the 1.10 band by under a percent; this
+file pins the served shape, never the band.
 """
 
 from __future__ import annotations

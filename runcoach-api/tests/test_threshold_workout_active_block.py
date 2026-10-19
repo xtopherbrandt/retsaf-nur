@@ -264,7 +264,12 @@ def _sample_run() -> tuple[list[dict], list[dict], list[dict]]:
 
 def test_sample_run_windows_exclude_the_trailing_lap():
     """``sample_run.fit`` (run proof ``yes``, tests/fixtures/README.md) read as a workout: laps 1-7
-    name active steps 1 and 2; lap 9 is the step-less ``session_end`` lap."""
+    name work steps 1 and 2 (reps of 1200 s and 900 s); lap 9 is the step-less ``session_end`` lap.
+
+    Fragile, and not a pin of the band: step 1 reads about 331.38 s/km GAP and step 2 about
+    301.47, a ratio of 1.0992, inside the 1.10 band by under a percent, so both reps count and the
+    values stay 2100 s, 7 windows, 1 block. Never use this file's served values to pin the band;
+    ``test_the_band_counts_275_and_drops_275_1`` does that on exact synthetic reps."""
     laps, steps, stream = _sample_run()
     assert laps[9]["wkt_step_index"] is None
     # Make the trailing lap read active too: the null step index alone must keep it out.
@@ -288,7 +293,7 @@ def test_sample_run_windows_exclude_the_trailing_lap():
     assert block.gap_coverage == pytest.approx(graded / sum(row["contributed_m"] for row in inside), rel=1e-12)
 
 
-# -- Row 1a and row 2 (AC2's lap rows) ------------------------------------------------------------
+# -- Orders 3 and 4 (the lap rows of F026 AC2, re-pointed) ---------------------------------------
 
 
 def _base() -> tuple[list[dict], list[dict]]:
@@ -320,7 +325,7 @@ def test_an_active_lap_naming_a_non_active_step_is_not_active():
     result = TP.active_laps(laps, steps)
     print("non-active step:", result)
     assert result.unavailable == TP.NO_WORKOUT_STEPS
-    assert result.active_time_s is None and result.windows == () and result.active_blocks == 0
+    assert result.laps == () and result.reps == ()
 
 
 def test_a_lap_ending_before_it_starts_is_lap_times_unreadable():
@@ -329,7 +334,7 @@ def test_a_lap_ending_before_it_starts_is_lap_times_unreadable():
     result = TP.active_laps(laps, steps)
     print("end before start:", result)
     assert result.unavailable == TP.LAP_TIMES_UNREADABLE
-    assert result.laps == () and result.active_time_s is None
+    assert result.laps == () and result.reps == ()
 
 
 def _perturb(**changes):
@@ -357,7 +362,7 @@ def _null_warmup_times(laps: list[dict], steps: list[dict]) -> None:
     laps[0].update(start_t=None, end_t=None, timer_s=None)
 
 
-ACTIVE_OK = "active"
+ACTIVE_OK = "work"
 UNREADABLE = "lap_times_unreadable"  # the reference's reason strings, literally
 NONE_ACTIVE = "no_workout_steps"
 HUGE = 10**400
@@ -374,9 +379,10 @@ CONTRACT = [
     ("9 warm-up step", _perturb(wkt_step_index=0), NONE_ACTIVE),
     ("10 missing step", _perturb(wkt_step_index=99), NONE_ACTIVE),
     *[(f"11 step index {v!r}", _perturb(wkt_step_index=v), NONE_ACTIVE) for v in (True, "1", 1.0)],
-    *[(f"12 intensity {v!r}", _perturb(intensity=v), NONE_ACTIVE) for v in ("interval", None, "Active")],
+    ("12 intensity 'interval'", _perturb(intensity="interval"), ACTIVE_OK),
+    *[(f"12 intensity {v!r}", _perturb(intensity=v), NONE_ACTIVE) for v in (None, "Active")],
     (
-        "13 duplicate active",
+        "13 duplicate work rows",
         _set_steps(
             [
                 {"step_index": 0, "intensity": "warmup", "duration_type": "time"},
@@ -384,7 +390,7 @@ CONTRACT = [
                 {"step_index": 1, "intensity": "active", "duration_type": "time", "target_type": "speed"},
             ]
         ),
-        ACTIVE_OK,
+        NONE_ACTIVE,
     ),
     (
         "14 duplicate mixed",
@@ -417,26 +423,31 @@ def test_contract_table(row, perturb, expected):
     laps, steps = _base()
     perturb(laps, steps)
     result = TP.active_laps(laps, steps)
-    print(row, "->", result.unavailable, result.active_time_s)
+    print(row, "->", result.unavailable, result.reps)
     if expected == ACTIVE_OK:
         assert result.unavailable is None
-        assert result.active_time_s == 600.0
-        assert result.windows == ((300.0, 900.0),)
-        assert result.active_blocks == 1
+        assert [(rep.step_index, rep.length_s, rep.windows) for rep in result.reps] == [(1, 600.0, ((300.0, 900.0),))]
+        assert len(result.laps) == 1
     else:
         assert result.unavailable == expected
-        assert result.laps == () and result.windows == () and result.active_time_s is None
+        assert result.laps == () and result.reps == ()
 
 
 def test_a_zero_timer_lap_reads_and_adds_nothing():
-    """A lap with ``timer_s`` 0 and its end after its start is active: its window stays, ``A`` is 0."""
+    """A work lap with ``timer_s`` 0 and its end after its start reads (only below zero does not):
+    its rep is 0 s long and keeps its window, so alone it is ``no_sustained_work``; beside a 600 s
+    lap of the same step it adds nothing to that rep."""
     laps, steps = _base()
     laps[1]["timer_s"] = 0.0
     result = TP.active_laps(laps, steps)
+    assert result.unavailable == TP.NO_SUSTAINED_WORK
+    assert [(rep.length_s, rep.windows) for rep in result.reps] == [(0.0, ((300.0, 900.0),))]
+    laps.append(
+        {"lap_index": 2, "start_t": 900.0, "end_t": 1500.0, "timer_s": 600.0, "intensity": "active", "wkt_step_index": 1}
+    )
+    result = TP.active_laps(laps, steps)
     assert result.unavailable is None
-    assert result.active_time_s == 0.0
-    assert result.windows == ((300.0, 900.0),)
-    assert result.active_blocks == 1
+    assert [(rep.length_s, rep.windows) for rep in result.reps] == [(600.0, ((300.0, 900.0), (900.0, 1500.0)))]
 
 
 def test_active_block_carries_the_lap_reason_and_no_numbers():
@@ -449,7 +460,9 @@ def test_active_block_carries_the_lap_reason_and_no_numbers():
 
 
 def test_blocks_count_runs_of_consecutive_active_laps():
-    """3 x 10 min with jogs reads 3; one continuous step split by auto-laps reads 1 (reference section 5)."""
+    """3 x 5 min with jogs reads 3; one continuous step split by auto-laps reads 1 (reference
+    section 5). The laps are 300 s, so every rep is sustained and counts at one pace; the blocks
+    are ``active_block``'s, counted over the reps that count."""
     steps = [
         {"step_index": 0, "intensity": "active", "duration_type": "time", "target_type": "speed"},
         {"step_index": 1, "intensity": "recovery", "duration_type": "time"},
@@ -458,17 +471,17 @@ def test_blocks_count_runs_of_consecutive_active_laps():
     def lap(index: int, step: int, intensity: str) -> dict:
         return {
             "lap_index": index,
-            "start_t": index * 100.0,
-            "end_t": index * 100.0 + 100.0,
-            "timer_s": 100.0,
+            "start_t": index * 300.0,
+            "end_t": index * 300.0 + 300.0,
+            "timer_s": 300.0,
             "intensity": intensity,
             "wkt_step_index": step,
         }
 
     intervals = [lap(0, 0, "active"), lap(1, 1, "recovery"), lap(2, 0, "active"), lap(3, 1, "recovery"), lap(4, 0, "active")]
-    assert TP.active_laps(intervals, steps).active_blocks == 3
+    assert TP.active_block(intervals, steps, _stream(intervals, {0: 270.0, 2: 270.0, 4: 270.0})).active_blocks == 3
     split = [lap(0, 0, "active"), lap(1, 0, "active"), lap(2, 0, "active")]
-    assert TP.active_laps(split, steps).active_blocks == 1
+    assert TP.active_block(split, steps, _stream(split, {0: 270.0, 1: 270.0, 2: 270.0})).active_blocks == 1
 
 
 def test_window_fractions_cover_the_active_windows_only():
@@ -522,10 +535,12 @@ def test_window_fractions_are_shares_of_metres_not_of_graded_metres_time_or_coun
 
 
 def test_no_segment_in_the_windows_reads_no_pace():
+    """No segment in the one sustained rep's window: its pace is dropped at order 8 and none is
+    left, ``gap_pace_unavailable`` with every number empty."""
     block = TP.active_block(*_base(), [])
-    assert block.unavailable is None and block.active_time_s == 600.0
-    assert block.gap_pace_s_per_km is None
-    assert block.gap_coverage is None and block.gps_degraded_fraction is None
+    assert block.unavailable == TP.GAP_PACE_UNAVAILABLE
+    assert block.active_time_s is None and block.gap_pace_s_per_km is None
+    assert block.gap_coverage is None and block.gps_degraded_fraction is None and block.windows == ()
 
 
 # -- segment_rows' gps_degraded --------------------------------------------------------------------
