@@ -69,7 +69,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",
-        "the constants the threshold estimate was computed with, so it can be redone by hand.",
+        "the constants the threshold estimate was computed with (F024 reference section 1, F027 reference section 4), so it can be redone by hand.",
     ),
     (
         _REPO_ROOT / "runcoach-api" / "tests" / "test_hrv_trend_endpoint.py",

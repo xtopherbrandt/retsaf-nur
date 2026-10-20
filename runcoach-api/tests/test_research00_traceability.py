@@ -4871,7 +4871,7 @@ def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
     print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
           f"{errors[:10]}")
     assert errors == []
-    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 44)]
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 45)]
     assert listed == derived and listed
     assert not set(listed) & set(rule_ids(research))
 
