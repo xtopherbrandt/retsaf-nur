@@ -31,16 +31,17 @@ has the activities on screen; reading them against the sentence costs minutes.
 Sprint-019's CHANGELOG over-claimed twice, and both sentences were on the page while the demo ran.
 
 The entry said a threshold workout is read over its active steps, "so its warm-up, recoveries and
-cool-down no longer enter the estimate". The code counts every lap under a step the watch marks
-active, and the 2026-10-07 Speed Repeats' jogs were written as active steps, so that workout was
+cool-down no longer enter the estimate". The code then counted every lap under a step the watch
+marked active, and the 2026-10-07 Speed Repeats' jogs were written as active steps, so that workout was
 read with its jogs: 16 laps at 4:52/km in one block, moving the estimate from 4:28/km to 4:41/km.
 The sentence was corrected after the demo to say that a recovery written as an active step is
 counted.
 
 The known-issue paragraph then advised "tag only continuous threshold sessions Training". Tried on
-the athlete's own activities, that advice would have had them untag the 2016-01-20 interval run and
-the 2026-09-10 Goal Pace Run (15 + 5 min), both cruise-interval workouts whose recoveries the watch
-writes as rest steps and which the rule reads correctly. The advice was replaced with a way to tell
+the athlete's own activities, that advice would have had them untag the 2016-01-20 interval run, a
+cruise-interval workout whose recoveries the watch writes as rest steps, and the 2026-09-10 Goal
+Pace Run (15 + 5 min), whose two work steps run back to back with no recovery lap between and read
+as one block. The rule reads both correctly. The advice was replaced with a way to tell
 the two kinds apart in `runcoach state`.
 
 Neither sentence was false about the rule as written. Both were false about the athlete's runs, and
