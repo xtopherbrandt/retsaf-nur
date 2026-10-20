@@ -5,9 +5,10 @@
 ### Threshold pace from sustained work reps, by tag or workout name
 
 F027 fixes the sprint-019 known issue below (that paragraph is a record and stands). Its advice to
-remove the Training tag from a workout of several reps shown `in 1 block` is superseded: leave the
-tag on; recovery jogs written as open-target steps are no longer read, and `runcoach state` now says
-why a workout was left out.
+remove the Training tag from a workout of several reps shown `in 1 block` is superseded for reps
+under 4:50: leave the tag on such a workout; recovery jogs written as open-target steps are no longer
+read, and `runcoach state` now says why a workout was left out. Longer speed reps are counted (see
+the known issue at the end of this entry), so tag Training only sessions meant as threshold work.
 
 **Admission.** A running session is a threshold workout when its `activity_tag` is
 `threshold_workout` (Training in Garmin Connect, as before), or when its laps have been read and one
@@ -65,11 +66,19 @@ Garmin text, so a name cannot start a second line or send an escape sequence to 
 **Stored laps and steps.** `laps (session_id, lap_index)` and `workout_steps (session_id, seq)` are
 unique indexes. A store holding a duplicated lap or step row refuses to start, naming the table and
 the session ids, before anything is written; a duplicate can only come from a write outside the API,
-and the release gate runs the duplicate query on a copy of the store before the first start.
+and the release gate runs the duplicate query on a copy of the store before the first start. To
+recover, delete the duplicated rows the message names and start the API again.
 
 **Heart-rate source.** An out-of-range heart rate (an integer beyond the store's 64-bit range, from a
 field a writer declared 64-bit) is no longer a present heart rate when `hr_source` is inferred: a
 connected strap whose records hold only such values does not read `chest_strap`.
+
+**Known issue: reps faster than threshold count.** Neither a rep's length nor the band tells
+threshold from faster work. A Progression Run's finish step, targeted at 3:53-4:05/km, counts: on
+2026-09-05 and 2026-09-23 it is the only counted rep. A Training-tagged session of 6 x 1600 m (reps of
+374-406 s) would count every rep. The athlete ruled both faster than threshold (2026-10-20); IDEA-177
+owns the rule. Until then, do not tag mile repeats Training; taking `Progression Run` off the list
+also drops its Goal Pace middle step.
 
 ### Migration required
 
