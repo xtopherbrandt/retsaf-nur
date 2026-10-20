@@ -583,6 +583,69 @@ def test_an_unknown_reason_prints_as_served(install_mock_client) -> None:
     assert _lines(_run())[-1] == "Race excluded 2026-07-01: new_{date}_{x}"
 
 
+FORGED = "\x1b]0;x\x07\nThreshold pace 3:00/km"
+
+
+def _no_forgery(text: str) -> None:
+    """No escape, bell or carriage return reaches the terminal, and the forged text starts no line."""
+    assert "\x1b" not in text and "\x07" not in text and "\r" not in text
+    assert not any(line.startswith("Threshold pace 3:00/km") for line in text.splitlines())
+
+
+def test_a_served_workout_name_cannot_forge_a_line_or_reach_the_terminal(install_mock_client) -> None:
+    """The workout name is the athlete's Garmin text: a name holding an OSC title sequence and a
+    line break prints each control character as ``?``, on the workout's own line, as every other
+    command prints Garmin text."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    det = body["determinants"][0]
+    det["efforts"] = [_workout("w", "2026-09-30T06:00:00Z", 1630.0, 266.0, 1.0, 1, admitted_by=["name"], workout_name=FORGED)]
+    det["excluded"] = [_excluded_workout("x", "2026-10-01T06:00:00Z", "no_workout_steps", ["name"], FORGED)]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    _no_forgery(result.stdout)
+    assert _lines(result)[1:] == [
+        "Workout used 2026-09-30 (name ?]0;x??Threshold pace 3:00/km): 0:27:10 active in 1 block, GAP 4:26/km, "
+        "gain 1.00, degraded GPS 0.0 %, weight 100 %",
+        "Workout excluded 2026-10-01 (name ?]0;x??Threshold pace 3:00/km): no lap of a work step",
+    ]
+
+
+def test_served_text_printed_as_is_cannot_forge_a_line(install_mock_client) -> None:
+    """Each served string printed as served passes through the same filter: an unknown exclusion
+    reason, an unknown unavailable reason and a non-200 body (cut to 200 characters, as sync cuts
+    it). The read-error text is filtered too; today every served value reaches it through a repr
+    (a ``KeyError``'s text, ``{kind!r}``), so the forged time zone below reads safely with or
+    without that filter and the clause pins the outcome, not the filter."""
+    body = copy.deepcopy(ESTIMATE_BODY)
+    body["determinants"][0]["excluded"] = [{"session_id": "x", "start_time": "2026-07-01T07:00:00Z", "reason": FORGED}]
+    _serve(install_mock_client, body)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    _no_forgery(result.stdout)
+    assert _lines(result)[-1] == "Race excluded 2026-07-01: ?]0;x??Threshold pace 3:00/km"
+
+    unavailable = _unavailable_body(FORGED)
+    _serve(install_mock_client, unavailable)
+    result = _run()
+    assert result.exit_code == 0, result.output
+    _no_forgery(result.stdout)
+    assert _lines(result) == ["Threshold pace unavailable: ?]0;x??Threshold pace 3:00/km."]
+
+    install_mock_client(lambda request: httpx.Response(500, text=FORGED + "y" * 300))
+    result = _run()
+    assert result.exit_code == 1
+    _no_forgery(result.stderr)
+    assert "API returned 500: ?]0;x??Threshold pace 3:00/km" in result.stderr
+    assert "y" * 171 in result.stderr and "y" * 172 not in result.stderr  # 29 + 171 = 200
+
+    _serve(install_mock_client, {**copy.deepcopy(ESTIMATE_BODY), "timezone": FORGED})
+    result = _run()
+    assert result.exit_code == 1
+    _no_forgery(result.stderr)
+    assert "the API's response could not be understood" in result.stderr
+
+
 SHORT_LINE = (
     "All races used are under 30 minutes: threshold likely reads fast; a 10K race or time trial would correct it."
 )

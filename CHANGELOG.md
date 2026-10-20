@@ -53,10 +53,12 @@ which no route served, are removed from the API package; the contract components
 4:50 or longer", `active_time_below_minimum` now reads "under 9:50 of counted work reps" (the reps
 within 10 % of the fastest) and `no_workout_steps` "no lap of a work step". The unavailable message
 names the `threshold_workout_names` list beside the Training tag, and the API restart a changed list
-needs (the API reads its config once, at startup). The help text states the rule in one paragraph (a work step with a
-target, held for at least 4:50, within 10 % of the workout's fastest such rep, summing to at least
-9:50); those three figures are typed into the help and are not tied to the served parameters by a
-test.
+needs (the API reads its config once, at startup). The help text states the rule in one paragraph
+(a work step with a target, held for at least 4:50, within 10 % of the workout's fastest such rep,
+summing to at least 9:50); those three figures are typed into the help and are not tied to the
+served parameters by a test. The workout name, an unknown reason or unavailable value, and a non-200
+body (cut to 200 characters) print each control character as `?`, as every other command prints
+Garmin text, so a name cannot start a second line or send an escape sequence to the terminal.
 
 **Stored laps and steps.** `laps (session_id, lap_index)` and `workout_steps (session_id, seq)` are
 unique indexes. A store holding a duplicated lap or step row refuses to start, naming the table and

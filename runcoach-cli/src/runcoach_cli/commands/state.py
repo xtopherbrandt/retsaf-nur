@@ -30,6 +30,11 @@ Dates print in the response's ``timezone`` (the API's ``athlete_timezone``), not
 Paces and durations are rounded half up, as ``runcoach sessions`` rounds them. ``--as-of`` is sent
 as given; the API reads and refuses it. An unreachable API, a status other than 200 and a body that
 cannot be read each print an error and exit 1, as ``runcoach sessions`` does.
+
+Served text printed as served (a workout name, an unknown reason, an unknown unavailable value, a
+non-200 body cut to 200 characters, and the text of a body that cannot be read) passes through
+``sessions._printable``, so a control character prints as ``?`` and cannot start a second line or
+reach the terminal as an escape sequence.
 """
 
 from __future__ import annotations
@@ -46,9 +51,12 @@ import typer
 from runcoach_cli import config
 from runcoach_cli.api_client import ApiUnreachableError, get_state
 from runcoach_cli.commands.profile import _fail
-from runcoach_cli.commands.sessions import _half_up_seconds, _write_utf8, format_duration, format_pace
+from runcoach_cli.commands.sessions import _half_up_seconds, _printable, _write_utf8, format_duration, format_pace
 
 DETERMINANT = "functional_threshold_pace"
+
+# A non-200 body is printed cut to this many characters, as ``runcoach sync`` cuts one.
+ERROR_TEXT_CHARS = 200
 
 RACE = "race"
 WORKOUT = "threshold_workout"
@@ -170,7 +178,7 @@ def _admission(row: dict) -> str:
         raise ValueError(f"admitted_by {admitted_by!r} is not a list of tag and name")
     name = row.get("workout_name")
     words = [
-        f"{ADMITTED_BY_NAME} {name}" if a == ADMITTED_BY_NAME and isinstance(name, str) and name else a
+        f"{ADMITTED_BY_NAME} {_printable(name)}" if a == ADMITTED_BY_NAME and isinstance(name, str) and name else a
         for a in admitted_by
     ]
     return f" ({', '.join(words)})"
@@ -241,7 +249,7 @@ def _excluded_line(row: dict, minimums: dict[str, str], zone: ZoneInfo) -> str:
         raise ValueError("reason is not a string")
     day = _date(row["start_time"], zone)
     kind = _kind(row)
-    words = REASON_WORDS[reason].format(date=day, **minimums) if reason in REASON_WORDS else reason
+    words = REASON_WORDS[reason].format(date=day, **minimums) if reason in REASON_WORDS else _printable(reason)
     admission = _admission(row) if kind == WORKOUT else ""
     return f"{KIND_WORDS[kind]} excluded {day}{admission}: {words}"
 
@@ -288,7 +296,7 @@ def render(body: Any) -> list[str]:
         if reason in UNAVAILABLE_LINES:
             lines = [UNAVAILABLE_LINES[reason].format(**minimums)]
         else:
-            lines = [f"Threshold pace unavailable: {reason}."]
+            lines = [f"Threshold pace unavailable: {_printable(reason)}."]
     shares = weights([_number(effort["gain"], "gain") for effort in efforts])
     lines += [_effort_line(effort, share, zone) for effort, share in zip(efforts, shares, strict=True)]
     lines += [_excluded_line(row, minimums, zone) for row in excluded]
@@ -326,7 +334,7 @@ def state(
             f"could not reach API at {cfg.api_url}. Is it running? Start it with `runcoach-api`."
         ) from None
     if resp.status_code != 200:
-        raise _fail(f"API returned {resp.status_code}: {resp.text}")
+        raise _fail(f"API returned {resp.status_code}: {_printable(resp.text[:ERROR_TEXT_CHARS])}")
     try:
         lines = render(resp.json())
     except (
@@ -338,6 +346,6 @@ def state(
         OverflowError,
         OSError,
     ) as exc:
-        raise _fail(f"the API's response could not be understood: {exc}") from None
+        raise _fail(f"the API's response could not be understood: {_printable(str(exc))}") from None
     for line in lines:
         _write_utf8(line)
