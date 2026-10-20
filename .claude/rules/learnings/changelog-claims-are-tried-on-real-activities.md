@@ -38,11 +38,12 @@ The sentence was corrected after the demo to say that a recovery written as an a
 counted.
 
 The known-issue paragraph then advised "tag only continuous threshold sessions Training". Tried on
-the athlete's own activities, that advice would have had them untag the 2016-01-20 interval run, a
-cruise-interval workout whose recoveries the watch writes as rest steps, and the 2026-09-10 Goal
-Pace Run (15 + 5 min), whose two work steps run back to back with no recovery lap between and read
-as one block. The rule reads both correctly. The advice was replaced with a way to tell
-the two kinds apart in `runcoach state`.
+the athlete's own activities, that advice would have had them untag the 2016-01-19 interval run
+(2 mi, 1 mi and 0.5 mi reps with jogs between) and the 2026-09-10 Goal Pace Run (15 + 5 min), whose
+two work steps run back to back with no recovery lap between and read as one block. The Goal Pace
+Run reads correctly as tagged. The 2016 run is a manual-lap run with no workout steps, so it is
+excluded as `no_workout_steps` until manual-lap workouts get a rule (IDEA-173). The advice was
+replaced with a way to tell the two kinds apart in `runcoach state`.
 
 Neither sentence was false about the rule as written. Both were false about the athlete's runs, and
 only reading the runs could show it.
