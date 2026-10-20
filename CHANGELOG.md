@@ -2,6 +2,90 @@
 
 ## Unreleased
 
+### Threshold pace from sustained work reps, by tag or workout name
+
+F027 fixes the sprint-019 known issue below (that paragraph is a record and stands). Its advice to
+remove the Training tag from a workout of several reps shown `in 1 block` is superseded: leave the
+tag on; recovery jogs written as open-target steps are no longer read, and `runcoach state` now says
+why a workout was left out.
+
+**Admission.** A running session is a threshold workout when its `activity_tag` is
+`threshold_workout` (Training in Garmin Connect, as before), or when its laps have been read and one
+of its workout steps carries a workout name listed in the API's new config key
+`threshold_workout_names` (compared stripped and case-insensitively; the session's tag may be null,
+`race` or `threshold_workout`). A listed name beats a Race tag: such a session is read once, as a
+workout, and leaves the races. A race-tagged session whose laps were never read, or whose lap or step
+read fails, cannot be name-checked and stays a race. A session with any other tag is never admitted by
+name. An untagged or race-tagged session whose lap or step read raises is logged at ERROR with its
+session id and is silently not a workout (it appears in neither `efforts` nor `excluded`); a
+Training-tagged one is excluded as `laps_unreadable`, as before.
+
+**Which laps count.** Only work reps. A work lap is a lap of intensity `active` or `interval` under a
+workout step of the same intensity that is not a repeat step and whose target is neither null nor
+open; a rep is a run of adjacent work laps under one step, its length their summed timer time. A rep
+of at least 290 s (`workout_min_rep_s`: 5 minutes with 10 s of grace) is sustained, and a workout with
+no sustained rep is excluded as the new reason `no_sustained_work`. A sustained rep counts when its
+grade-adjusted pace is within 10 % of the fastest sustained rep's (`workout_rep_band` 1.10; the
+fastest always counts), and the counted reps must total at least 590 s (`workout_min_active_s`, was
+600; no maximum), else `active_time_below_minimum`. The counted time is now decided after the record
+read and the quality flags, so a short workout recorded in smart mode reads `smart_recording` where it
+read `active_time_below_minimum`. Warm-ups, cool-downs, recovery steps and reps under 4:50 never
+enter the estimate. A work lap with its end equal to its start and under 2 s of timer time (a
+remainder lap) adds its time to its rep; any other work lap whose times do not read excludes the
+workout as `lap_times_unreadable`, and a cool-down lap with bad times changes nothing. On the
+athlete's runs since September: each Progression Run reads its 10-minute fast finish (and the 5-minute
+step after it when the pace is within 10 %) and drops its 20 to 60 minute easy opening; each Goal Pace
+Run reads both work steps, as before; the Speed Repeats of 2026-10-07 and 2026-10-16 read
+`no_sustained_work`, their 800 m and 4-minute reps being under 4:50.
+
+**`GET /state`.** Each workout effort and exclusion carries `admitted_by` (`["tag"]`, `["name"]` or
+`["tag", "name"]`; null on a race) and `workout_name` (the stored name on its first step row that has
+one, else null); `excluded` gains `no_sustained_work`; a workout's `duration_s` is the counted reps'
+time and `active_blocks` the runs of consecutive counted laps; `parameters` gains `workout_min_rep_s`
+(290) and `workout_rep_band` (1.10) and serves `workout_min_active_s` 590. The effort and exclusion
+descriptions name the counted reps. `contracts/openapi.yaml` `info.version` is `0.4.0-draft` (new
+fields and a new enum value, all additive). The pydantic `SessionLap` and `SessionWorkoutStep` models,
+which no route served, are removed from the API package; the contract components of those names stay.
+
+**`runcoach state`.** Workout lines used and excluded carry the admission after the date: `(tag)`,
+`(name Progression Run)` or `(tag, name Goal Pace Run)`. `no_sustained_work` reads "no work rep of
+4:50 or longer", `active_time_below_minimum` now reads "under 9:50 of work reps" and
+`no_workout_steps` "no lap of a work step". The unavailable message names the `threshold_workout_names`
+list beside the Training tag. The help text states the rule in one paragraph (a work step with a
+target, held for at least 4:50, within 10 % of the workout's fastest such rep, summing to at least
+9:50); those three figures are typed into the help and are not tied to the served parameters by a
+test.
+
+**Stored laps and steps.** `laps (session_id, lap_index)` and `workout_steps (session_id, seq)` are
+unique indexes. A store holding a duplicated lap or step row refuses to start, naming the table and
+the session ids, before anything is written; a duplicate can only come from a write outside the API,
+and the release gate runs the duplicate query on a copy of the store before the first start.
+
+**Heart-rate source.** An out-of-range heart rate (an integer beyond the store's 64-bit range, from a
+field a writer declared 64-bit) is no longer a present heart rate when `hr_source` is inferred: a
+connected strap whose records hold only such values does not read `chest_strap`.
+
+### Migration required
+
+`api.toml` requires `threshold_workout_names`, with no default: an API started without it stops with
+a help entry naming the field and an example. For admission by tag only, as before, add the line
+
+    threshold_workout_names = []
+
+The athlete's list (2026-10-18):
+
+    threshold_workout_names = ["Goal Pace Run", "Threshold", "Tempo", "HR Tempo", "Steady State", "Goal Pace Long Run", "Progression Run"]
+
+The env form is `RUNCOACH_THRESHOLD_WORKOUT_NAMES='["Threshold"]'` (JSON). `runcoach-api init`
+writes `threshold_workout_names = []` and takes a repeatable `--threshold-workout NAME`. Rollback
+warning: the config forbids unknown keys (`extra="forbid"`), so an older API refuses an `api.toml`
+that holds the key; rolling back means removing the line.
+
+Then run `runcoach sync laps --since 2026-08-01` so the recent workouts carry their steps: a workout
+admitted by its name needs read laps, and one admitted by its tag is `laps_not_read` until then. An
+earlier `--since` also works, at one Connect download per run not yet read; reading laps from the
+export zip instead is IDEA-175.
+
 ## 2026-10-16 through 2026-10-17 — Sprint 019: Laps, workout steps and threshold pace from workouts
 
 ### Laps and workout steps from the FIT file
