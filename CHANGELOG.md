@@ -50,9 +50,10 @@ which no route served, are removed from the API package; the contract components
 
 **`runcoach state`.** Workout lines used and excluded carry the admission after the date: `(tag)`,
 `(name Progression Run)` or `(tag, name Goal Pace Run)`. `no_sustained_work` reads "no work rep of
-4:50 or longer", `active_time_below_minimum` now reads "under 9:50 of work reps" and
-`no_workout_steps` "no lap of a work step". The unavailable message names the `threshold_workout_names`
-list beside the Training tag. The help text states the rule in one paragraph (a work step with a
+4:50 or longer", `active_time_below_minimum` now reads "under 9:50 of counted work reps" (the reps
+within 10 % of the fastest) and `no_workout_steps` "no lap of a work step". The unavailable message
+names the `threshold_workout_names` list beside the Training tag, and the API restart a changed list
+needs (the API reads its config once, at startup). The help text states the rule in one paragraph (a work step with a
 target, held for at least 4:50, within 10 % of the workout's fastest such rep, summing to at least
 9:50); those three figures are typed into the help and are not tied to the served parameters by a
 test.

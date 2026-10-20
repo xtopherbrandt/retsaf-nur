@@ -87,16 +87,17 @@ REASON_WORDS = {
     "lap_times_unreadable": "its stored lap times could not be read",
     "no_workout_steps": "no lap of a work step",
     "no_sustained_work": "no work rep of {rep} or longer",
-    "active_time_below_minimum": "under {minimum} of work reps",
+    "active_time_below_minimum": "under {minimum} of counted work reps",
     "laps_unreadable": "its stored laps could not be read",
 }
 
 UNAVAILABLE_LINES = {
     "no_qualifying_effort": (
         "Threshold pace unavailable: no tagged race of 20 to 60 minutes and no threshold workout with "
-        "{minimum} of work reps. Mark a race or time trial as Race in Garmin Connect, or a threshold workout "
-        "as Training or list its workout name in the API's threshold_workout_names, then run "
-        "runcoach sync tags --since <its date> (and, for a workout, runcoach sync laps --since <its date>)."
+        "{minimum} of counted work reps. Mark a race or time trial as Race in Garmin Connect, or a threshold "
+        "workout as Training or list its workout name in the API's threshold_workout_names and restart the "
+        "API, then run runcoach sync tags --since <its date> (and, for a workout, runcoach sync laps --since "
+        "<its date>)."
     ),
     "estimate_not_finite": (
         "Threshold pace unavailable: a race's or workout's grade-adjusted pace is out of range, so the "
@@ -308,8 +309,8 @@ def state(
     A run is a threshold workout when it is tagged Training in Garmin Connect or its workout name is
     listed in the API's threshold_workout_names; each workout line says which after its date. Only
     its work reps count: a work step with a target, held for at least 4:50, within 10 % of the
-    workout's fastest such rep; they must sum to at least 9:50. Warm-ups, recoveries, cool-downs
-    and shorter reps never enter the estimate.
+    workout's fastest such rep; they must sum to at least 9:50. Warm-ups, recovery steps,
+    cool-downs and shorter reps never enter the estimate.
 
     Each one used shows its weight: its share of today's estimate. The 80 % interval covers
     race-to-race scatter, not a biased input: a race or workout read wrongly moves the estimate and
