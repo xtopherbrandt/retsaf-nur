@@ -1662,7 +1662,8 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     races and the threshold workouts' counted work reps, with its 80 % interval and confidence,
     on the contract's path (``operationId: getState``).
 
-    The zone and the workout names are read from the config per request. ``parse_as_of`` reads
+    The zone and the workout names are read per request from the config cached at startup, so a
+    changed list needs a restart. ``parse_as_of`` reads
     ``as_of`` against the ``_utcnow`` seam; a value it refuses is a ``RequestValidationError`` on
     ``("query", "as_of")``, as ``list_sessions`` raises its cursor check.
     ``db.read_threshold_effort_rows`` reads the tagged races (records only for those in the
