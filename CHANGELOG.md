@@ -16,9 +16,10 @@ of its workout steps carries a workout name listed in the API's new config key
 `race` or `threshold_workout`). A listed name beats a Race tag: such a session is read once, as a
 workout, and leaves the races. A race-tagged session whose laps were never read, or whose lap or step
 read fails, cannot be name-checked and stays a race. A session with any other tag is never admitted by
-name. An untagged or race-tagged session whose lap or step read raises is logged at ERROR with its
-session id and is silently not a workout (it appears in neither `efforts` nor `excluded`); a
-Training-tagged one is excluded as `laps_unreadable`, as before.
+name. An untagged session whose lap or step read raises is logged at ERROR with its session id and
+is silently not a workout (it appears in neither `efforts` nor `excluded`); a race-tagged one is
+logged the same way and stays a race; a Training-tagged one is excluded as `laps_unreadable`, as
+before.
 
 **Which laps count.** Only work reps. A work lap is a lap of intensity `active` or `interval` under a
 workout step of intensity `active` or `interval` that is not a repeat step and whose target is
