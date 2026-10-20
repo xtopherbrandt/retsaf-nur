@@ -35,8 +35,9 @@ remainder lap) adds its time to its rep; any other work lap whose times do not r
 workout as `lap_times_unreadable`, and a cool-down lap with bad times changes nothing. On the
 athlete's runs since September: each Progression Run reads its 10-minute fast finish (and the 5-minute
 step after it when the pace is within 10 %) and drops its 20 to 60 minute easy opening; each Goal Pace
-Run reads both work steps, as before; the Speed Repeats of 2026-10-07 and 2026-10-16 read
-`no_sustained_work`, their 800 m and 4-minute reps being under 4:50.
+Run reads both work steps, as before; the Training-tagged Speed Repeats of 2026-10-07 reads
+`no_sustained_work`, its 800 m reps being under 4:50; the Speed Repeats of 2026-10-16 carries no tag
+and its name is not listed, so it is not a workout at all and appears nowhere in `GET /state`.
 
 **`GET /state`.** Each workout effort and exclusion carries `admitted_by` (`["tag"]`, `["name"]` or
 `["tag", "name"]`; null on a race) and `workout_name` (the stored name on its first step row that has
@@ -82,7 +83,9 @@ warning: the config forbids unknown keys (`extra="forbid"`), so an older API ref
 that holds the key; rolling back means removing the line.
 
 Then run `runcoach sync laps --since 2026-08-01` so the recent workouts carry their steps: a workout
-admitted by its name needs read laps, and one admitted by its tag is `laps_not_read` until then. An
+admitted by its name needs read laps, and one admitted by its tag is `laps_not_read` until then. On
+the athlete's store (2026-10-19, a copy) that command attached 41 runs and ended with exit 1 naming
+the one 2026-09-01 session whose stored id is a random UUID (IDEA-171); the laps it attached stand. An
 earlier `--since` also works, at one Connect download per run not yet read; reading laps from the
 export zip instead is IDEA-175.
 
