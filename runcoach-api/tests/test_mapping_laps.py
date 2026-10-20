@@ -11,7 +11,9 @@ here; this pins the mapping only.
 the mapping's datetime arithmetic. Section 1's ``sample_run.fit`` table is also asserted literally.
 
 Fixtures cited as runs have run proof ``yes`` in ``tests/fixtures/README.md``: ``sample_run``,
-``hilly_run_8k_fr945``, ``strap_run_hrv`` and ``dev_fields_run`` (the FR955 file).
+``hilly_run_8k_fr945``, ``strap_run_hrv`` and ``dev_fields_run`` (an FR955 recording with Stryd
+developer fields; the athlete's Garmin export holds no FR955 activity, so it is not one of their runs
+and proves only what this one file writes).
 
 **The seam.** Integer FIT fields cannot carry a negative or non-finite duration, a bool or a string,
 so those forms are driven through ``to_laps`` with stand-in messages (``_Msg``) exposing the two
@@ -166,7 +168,11 @@ def test_end_t_is_the_lap_timestamp_minus_the_start():
     assert laps[1].end_t == 678 != laps[1].start_t + laps[1].elapsed_s
 
 
-def test_fr955_lap_ends_before_starts_are_kept_as_written():
+def test_dev_fields_run_lap_ends_before_starts_are_kept_as_written():
+    """``dev_fields_run.fit``, an FR955 recording with Stryd developer fields, writes every lap
+    ``timestamp`` as the session start, so 6 of its 7 laps end before they start and all end at 0.
+    The mapping stores them as written. This is what one file does, not what the FR955 does: the
+    athlete's export holds no FR955 activity to compare (IDEA-173 A5)."""
     laps, _ = _assert_matches_oracle(_bytes("dev_fields_run"))
     assert len(laps) == 7
     backwards = [lap for lap in laps if lap.end_t < lap.start_t]

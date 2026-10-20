@@ -291,7 +291,7 @@ _BASE_LAPS = _laps_for(_plan())
         pytest.param(_with(_BASE_LAPS, 1, timer_s=None), id="null-timer"),
         pytest.param(_with(_BASE_LAPS, 1, end_t=300.0), id="end-equals-start"),
         pytest.param(_with(_BASE_LAPS, 1, end_t=200.0), id="end-before-start"),
-        # The FR955: every lap end written as the session start.
+        # dev_fields_run.fit (an FR955 recording): every lap end written as the session start.
         pytest.param([{**lap, "end_t": 0.0} for lap in _BASE_LAPS], id="fr955-every-end-at-session-start"),
         # One readable active lap beside an unreadable one: excluded, never a smaller block.
         pytest.param(
