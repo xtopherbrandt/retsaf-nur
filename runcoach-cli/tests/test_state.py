@@ -784,12 +784,27 @@ def test_unreachable_api_exits_1(install_mock_client) -> None:
         lambda b: {**b, "timezone": "Not/AZone"},
         lambda b: {**b, "determinants": [{**b["determinants"][0], "efforts": [{"session_id": "s"}]}]},
         lambda b: {**b, "determinants": [{**b["determinants"][0], "estimate": {"value": "fast"}}]},
+        lambda b: {**b, "determinants": [{**b["determinants"][0], "efforts": ["x"]}]},
+        lambda b: {**b, "determinants": [{**b["determinants"][0], "efforts": [None]}]},
+        lambda b: {**b, "determinants": [{**b["determinants"][0], "excluded": ["x"]}]},
     ],
-    ids=["not-object", "no-determinant", "bad-zone", "effort-missing-fields", "bad-estimate"],
+    ids=[
+        "not-object",
+        "no-determinant",
+        "bad-zone",
+        "effort-missing-fields",
+        "bad-estimate",
+        "effort-a-string",
+        "effort-null",
+        "exclusion-a-string",
+    ],
 )
 def test_an_unparseable_body_exits_1(install_mock_client, mangle) -> None:
+    """Each malformed body exits 1 with the read error and no traceback: an entry of ``efforts`` or
+    ``excluded`` that is not an object is malformed, not an ``AttributeError``."""
     _serve(install_mock_client, mangle(copy.deepcopy(ESTIMATE_BODY)))
     result = _run()
+    assert result.exception is None or isinstance(result.exception, SystemExit), repr(result.exception)
     assert result.exit_code == 1
     assert "the API's response could not be understood" in result.stderr
 

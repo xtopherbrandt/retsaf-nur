@@ -282,6 +282,8 @@ def render(body: Any) -> list[str]:
     excluded = det["excluded"]
     if not isinstance(efforts, list) or not isinstance(excluded, list):
         raise ValueError("efforts or excluded is not a list")
+    if not all(isinstance(row, dict) for row in [*efforts, *excluded]):
+        raise ValueError("an entry of efforts or excluded is not an object")
 
     minimums = _workout_minimums(det.get("parameters"))
     estimate = det["estimate"]
