@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-19 through 2026-10-20 — Sprint 020: Threshold pace from sustained work reps, by tag or workout name
+
 ### Threshold pace from sustained work reps, by tag or workout name
 
 F027 fixes the sprint-019 known issue below (that paragraph is a record and stands). Its advice to
