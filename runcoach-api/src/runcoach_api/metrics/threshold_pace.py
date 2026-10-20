@@ -555,8 +555,8 @@ def _work_step_indices(steps: Iterable[Mapping[str, Any]]) -> frozenset[int]:
     """The step indices that name a work step: an index carried by exactly one step row, a work step.
 
     An index carried by two rows names no work step, whether the second is a non-work step
-    (section 3) or another work step (the store keeps one row per step index, so a second row is a
-    defect, not a step). A row without an int index names nothing.
+    (section 3) or another work step (two rows naming one step index are read as a defect, not as
+    two steps). A row without an int index names nothing.
     """
     seen: dict[int, bool | None] = {}
     for step in steps:

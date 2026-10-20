@@ -472,10 +472,10 @@ def test_quality_flags_unreadable_for_a_workout(value: str) -> None:
 
 def test_orders_1_to_5_decide_before_the_flags_are_read() -> None:
     """Order: a workout failing order 1 or order 5 with unreadable flags reads its lap reason; a
-    short one (599 s, past order 5) reads its records and so ``quality_flags_unreadable``, where
+    short one (589 s, past order 5) reads its records and so ``quality_flags_unreadable``, where
     F026 read ``active_time_below_minimum`` before any record read."""
     no_laps = _store(WORKOUT_START, laps=None)
-    short = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), plan=_plan(599.0))
+    short = _store(datetime(2026, 9, 6, 7, 0, tzinfo=UTC), plan=_plan(589.0))
     no_rep = _store(datetime(2026, 9, 13, 7, 0, tzinfo=UTC), plan=_plan(289.0))
     for workout in (no_laps, short, no_rep):
         _sql("UPDATE sessions SET quality_flags = 'not json' WHERE session_id = ?", workout)

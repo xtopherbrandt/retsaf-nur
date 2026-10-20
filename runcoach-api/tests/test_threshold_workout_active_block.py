@@ -32,7 +32,7 @@ means a lap whose intensity and step index make it a work lap, before its times 
 | 11 | ``wkt_step_index`` True, "1" or 1.0 (not an int) | not work: ``no_workout_steps`` (True would otherwise name step 1) |
 | 12 | lap intensity ``interval`` | work (Garmin Coach writes its work steps and laps ``interval``) |
 | 12 | lap intensity None or ``Active`` | not work: ``no_workout_steps`` |
-| 13 | two step rows share index 1, both work | not work: ``no_workout_steps`` (a shared index names no work step; the store refuses a duplicate step index, so two rows are a defect) |
+| 13 | two step rows share index 1, both work | not work: ``no_workout_steps`` (a shared index names no work step; two rows naming one index are read as a defect) |
 | 14 | two steps share index 1, one work and one recovery | not work: ``no_workout_steps`` |
 | 15 | step 1 is a repeat step (``repeat_until_steps_cmplt``) carrying intensity ``active`` and a target | not work: ``no_workout_steps`` (a repeat step is never work, whatever it carries) |
 | 16 | a second, readable work lap beside an unreadable one | ``lap_times_unreadable`` (one unreadable work lap excludes, never shrinks the rep) |
@@ -708,8 +708,8 @@ def test_every_repeat_type_is_never_work(duration_type: str):
 
 def test_a_shared_step_index_names_no_work_step():
     """An index carried by two step rows names no work step: a work and a non-work row (the
-    reference's case), and two work rows (a duplicate the store refuses; here a defect, not two
-    steps). An unshared work step beside them still reads."""
+    reference's case), and two work rows (read as a defect, not two steps). An
+    unshared work step beside them still reads."""
     laps = _plan_laps([("warmup", 300, 0), ("active", 600, 1), ("recovery", 120, 2), ("active", 600, 3)])
     mixed = [_step(0, "warmup"), _step(1, "active", **WORK), _step(1, "recovery"), _step(2, "recovery")]
     decided = TP.active_laps(laps, mixed)
