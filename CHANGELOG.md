@@ -21,8 +21,8 @@ session id and is silently not a workout (it appears in neither `efforts` nor `e
 Training-tagged one is excluded as `laps_unreadable`, as before.
 
 **Which laps count.** Only work reps. A work lap is a lap of intensity `active` or `interval` under a
-workout step of the same intensity that is not a repeat step and whose target is neither null nor
-open; a rep is a run of adjacent work laps under one step, its length their summed timer time. A rep
+workout step of intensity `active` or `interval` that is not a repeat step and whose target is
+neither null nor open; a rep is a run of adjacent work laps under one step, its length their summed timer time. A rep
 of at least 290 s (`workout_min_rep_s`: 5 minutes with 10 s of grace) is sustained, and a workout with
 no sustained rep is excluded as the new reason `no_sustained_work`. A sustained rep counts when its
 grade-adjusted pace is within 10 % of the fastest sustained rep's (`workout_rep_band` 1.10; the

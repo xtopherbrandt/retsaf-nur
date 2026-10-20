@@ -662,6 +662,22 @@ def test_interval_laps_and_steps_are_work():
         assert block.gap_pace_s_per_km == pytest.approx(270.0, rel=1e-9)
 
 
+@pytest.mark.parametrize(("lap_intensity", "step_intensity"), [("active", "interval"), ("interval", "active")])
+def test_a_lap_and_its_step_need_not_share_an_intensity(lap_intensity: str, step_intensity: str):
+    """The rule the CHANGELOG and spec/04 state: a work lap is a lap of intensity ``active`` or
+    ``interval`` under a workout step of intensity ``active`` or ``interval`` (not a repeat step,
+    target neither null nor open). The lap and the step are checked apart, so an ``active`` lap
+    under an ``interval`` step with a speed target counts, and the reverse; a rule reading "a step
+    of the same intensity" would drop both."""
+    steps = [_step(0, "warmup"), _step(1, step_intensity, **WORK), _step(2, "recovery")]
+    laps = _plan_laps([("warmup", 300, 0), (lap_intensity, 600, 1), ("recovery", 120, 2)])
+    block = TP.active_block(laps, steps, _stream(laps, {1: 270.0}))
+    print(lap_intensity, "under", step_intensity, "->", block)
+    assert block.unavailable is None
+    assert (block.active_time_s, block.active_blocks, block.windows) == (600.0, 1, ((300.0, 900.0),))
+    assert block.gap_pace_s_per_km == pytest.approx(270.0, rel=1e-9)
+
+
 @pytest.mark.parametrize("target", [{"target_type": None}, OPEN, {}], ids=["null", "open", "missing"])
 def test_an_open_or_missing_target_is_never_work(target: dict):
     """A step with no target or an open one (the watch's recovery jogs) is never work: alone it
