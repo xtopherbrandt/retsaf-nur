@@ -52,7 +52,7 @@ docstring.
 | rep paces 275 and 275.1 s/km beside 250, flat | ``test_the_band_counts_275_and_drops_275_1`` | 275 counts, 275.1 is dropped (``<= 1.10 * 250``) |
 | counted reps summing to 589.99 and 590 | ``test_counted_reps_at_589_99_and_590`` | ``active_time_below_minimum`` and A 590 |
 | a rep with no segment; one whose metres overflow (pace 0) | ``test_a_rep_without_a_finite_pace_is_dropped_before_the_band`` | dropped at order 8; none left is ``gap_pace_unavailable`` |
-| two laps of ``timer_s`` 1e308 on one step (an inf sum) | ``test_threshold_workout_qualifying.test_an_active_time_that_overflows_to_inf_is_refused`` | one rep of inf, sustained; A inf is not finite: ``active_time_below_minimum`` |
+| two laps of ``timer_s`` 1e308 on one step (an inf sum) | ``test_a_counted_time_that_overflows_to_inf_reads_below_minimum`` (the pure seam) and ``test_threshold_workout_qualifying.test_an_active_time_that_overflows_to_inf_is_refused`` (the route) | one rep of inf, sustained; A inf is not finite: ``active_time_below_minimum`` |
 | step ``target_type`` None, ``open`` or missing | ``test_an_open_or_missing_target_is_never_work`` | not work |
 | every ``repeat_until_*`` duration type | ``test_every_repeat_type_is_never_work`` | not work |
 
@@ -920,6 +920,27 @@ def test_counted_reps_at_589_99_and_590():
             assert block.active_blocks == 2
         else:
             assert block.active_time_s is None and block.windows == () and block.active_blocks == 0
+
+
+def test_a_counted_time_that_overflows_to_inf_reads_below_minimum():
+    """Two adjacent work laps on one targeted step, each of ``timer_s`` 1e308 and each with a
+    segment in its window: the rep's length sums to inf, which is sustained (inf >= 290) and has
+    a finite pace, so the band counts it and ``A`` is inf. A counted time that is not finite is
+    refused at order 10 as ``active_time_below_minimum``, never served as inf. The route's later
+    screen hides this guard, so the pure seam pins it."""
+    laps = [
+        _lap(0, 0.0, 300, "warmup", 0),
+        _lap(1, 300.0, 600, "active", 1, timer_s=1e308),
+        _lap(2, 900.0, 600, "active", 1, timer_s=1e308),
+    ]
+    steps = _three_steps()
+    decided = TP.active_laps(laps, steps)
+    assert decided.unavailable is None
+    assert [rep.length_s for rep in decided.reps] == [math.inf]
+    block = TP.active_block(laps, steps, [_segment(300.0, 1.0, 3.7), _segment(900.0, 1.0, 3.7)])
+    print("overflow:", block)
+    assert block.unavailable == TP.ACTIVE_TIME_BELOW_MINIMUM
+    assert block.active_time_s is None
 
 
 def test_a_rep_without_a_finite_pace_is_dropped_before_the_band():
