@@ -288,6 +288,18 @@ _SCHEMA_DDL = """
       step_name TEXT, intensity TEXT, duration_type TEXT, duration_value REAL,
       target_type TEXT, target_value REAL, target_low REAL, target_high REAL
     );
+    CREATE TABLE IF NOT EXISTS overnight_hrv_values (
+      -- One row per 5-minute rMSSD value of an overnight HRV night (the
+      -- watch's HRV_STATUS file), under the night's session row. t is the
+      -- value's timestamp as ISO-8601 text; rmssd_ms is NULL where the file
+      -- holds its invalid sentinel. The pair is the key, so a file holding
+      -- two values at one timestamp cannot be stored. Declares no cascade,
+      -- as the other children: the session_id column makes _child_tables
+      -- list it, so delete_session sweeps it.
+      session_id TEXT NOT NULL REFERENCES sessions(session_id),
+      t TEXT NOT NULL, rmssd_ms REAL,
+      PRIMARY KEY (session_id, t)
+    );
     -- laps (session_id, lap_index) and workout_steps (session_id, seq) are
     -- unique; init_schema creates those indexes (_UNIQUE_CHILD_INDEXES).
     -- F019: the list reads one session's (t, distance) in t order for every

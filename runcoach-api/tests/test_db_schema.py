@@ -7,6 +7,8 @@ four canonical-schema tables idempotently.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from runcoach_api import db
@@ -1600,3 +1602,90 @@ def test_a_store_holding_duplicate_steps_refuses_to_start_naming_the_session():
     assert "workout_steps" in message and "dup-s" in message
     assert count == 2
     assert indexes == ({"laps_session_id": False}, {"workout_steps_session_id": False})
+
+
+# ---------------------------------------------------------------------------
+# F028 -- the overnight HRV values table
+# ---------------------------------------------------------------------------
+
+
+_OVERNIGHT_VALUES_TABLE = "overnight_hrv_values"
+
+
+def _ddl_without_the_overnight_values_table() -> str:
+    """``_SCHEMA_DDL`` with the ``overnight_hrv_values`` statement cut out: the
+    store as every release before the table wrote it."""
+    ddl, removed = re.subn(
+        r"CREATE TABLE IF NOT EXISTS overnight_hrv_values \(.*?\);\n",
+        "",
+        db._SCHEMA_DDL,
+        flags=re.DOTALL,
+    )
+    assert removed <= 1
+    return ddl
+
+
+def _table_names(conn) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def test_an_old_store_gains_the_overnight_values_table():
+    """A store built without the table gains it at ``init_schema``: one row per
+    5-minute value of a night, ``session_id`` and ``t`` both required, ``rmssd_ms``
+    nullable, keyed by the pair. The table carries ``session_id``, so
+    ``_child_tables`` lists it without being told."""
+    conn = db.get_connection()
+    try:
+        conn.executescript(_ddl_without_the_overnight_values_table())
+        assert _OVERNIGHT_VALUES_TABLE not in _table_names(conn)
+
+        db.init_schema(conn)
+
+        info = {
+            row["name"]: row for row in conn.execute(f"PRAGMA table_info({_OVERNIGHT_VALUES_TABLE})")
+        }
+    finally:
+        conn.close()
+
+    assert {name: (row["type"], row["notnull"], row["pk"]) for name, row in info.items()} == {
+        "session_id": ("TEXT", 1, 1),
+        "t": ("TEXT", 1, 2),
+        "rmssd_ms": ("REAL", 0, 0),
+    }
+    assert _OVERNIGHT_VALUES_TABLE in db._child_tables()
+
+
+def test_overnight_values_are_keyed_by_session_and_time():
+    """A second row for one ``(session_id, t)`` raises ``sqlite3.IntegrityError``;
+    the same ``t`` under another session is an ordinary row, and a null
+    ``rmssd_ms`` (the file's invalid sentinel) is accepted."""
+    import sqlite3
+
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        for session_id, start_time in (("night-1", "2026-10-10T07:00:00Z"), ("night-2", "2026-10-11T07:00:00Z")):
+            conn.execute(
+                """
+                INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+                VALUES (?, ?, 'other', 'garmin', 'dev-1')
+                """,
+                (session_id, start_time),
+            )
+        insert = f"INSERT INTO {_OVERNIGHT_VALUES_TABLE} (session_id, t, rmssd_ms) VALUES (?, ?, ?)"
+        conn.execute(insert, ("night-1", "2026-10-09T23:05:00Z", 61.0))
+        conn.execute(insert, ("night-1", "2026-10-09T23:10:00Z", None))
+        conn.execute(insert, ("night-2", "2026-10-09T23:05:00Z", 58.0))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(insert, ("night-1", "2026-10-09T23:05:00Z", 62.0))
+        rows = conn.execute(
+            f"SELECT session_id, t, rmssd_ms FROM {_OVERNIGHT_VALUES_TABLE} ORDER BY session_id, t"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert [tuple(r) for r in rows] == [
+        ("night-1", "2026-10-09T23:05:00Z", 61.0),
+        ("night-1", "2026-10-09T23:10:00Z", None),
+        ("night-2", "2026-10-09T23:05:00Z", 58.0),
+    ]

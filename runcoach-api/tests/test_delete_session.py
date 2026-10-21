@@ -220,7 +220,15 @@ def test_child_table_enumeration_is_derived_from_the_schema_ddl() -> None:
         for table, columns in db._expected_schema().items()
         if table != "sessions" and "session_id" in columns
     }
-    assert expected == {"records", "rr_intervals", "quarantine_sidecar", "session_loads", "laps", "workout_steps"}
+    assert expected == {
+        "records",
+        "rr_intervals",
+        "quarantine_sidecar",
+        "session_loads",
+        "laps",
+        "workout_steps",
+        "overnight_hrv_values",
+    }
     assert set(db._child_tables()) == expected
 
 
@@ -460,6 +468,7 @@ def test_concurrent_deletes_of_the_same_session_yield_exactly_one_204() -> None:
         "session_loads": 0,
         "laps": 0,
         "workout_steps": 0,
+        "overnight_hrv_values": 0,
     }
 
 
@@ -495,3 +504,33 @@ def test_delete_on_an_id_that_was_never_ingested_leaves_the_store_untouched() ->
         assert db.delete_session(conn, "s-never-existed") is False
     finally:
         conn.close()
+
+
+def test_delete_removes_overnight_values() -> None:
+    """A night's 5-minute values live in ``overnight_hrv_values``, a child
+    table ``_child_tables`` derives from the DDL, so ``delete_session`` sweeps
+    them with the session row and nothing else."""
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device)
+            VALUES ('s-night', '2026-10-10T07:00:00Z', 'other', 'garmin', 'night-device')
+            """
+        )
+        conn.executemany(
+            "INSERT INTO overnight_hrv_values (session_id, t, rmssd_ms) VALUES (?, ?, ?)",
+            [("s-night", "2026-10-09T23:05:00Z", 61.0), ("s-night", "2026-10-09T23:10:00Z", None)],
+        )
+        conn.commit()
+        assert conn.execute("SELECT COUNT(*) FROM overnight_hrv_values").fetchone()[0] == 2
+
+        assert db.delete_session(conn, "s-night") is True
+
+        values = conn.execute("SELECT COUNT(*) FROM overnight_hrv_values").fetchone()[0]
+        sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert (values, sessions) == (0, 0)
