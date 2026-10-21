@@ -13,7 +13,11 @@ that records why it exists. Each file is also pinned to the phrases that carry i
   deferral with an owner for each;
 - ``changelog-claims-are-tried-on-real-activities.md`` (IDEA-174) asks the release demo to list every
   CHANGELOG sentence that tells the athlete to act or says what a rule includes or excludes, and to
-  name the athlete's actual activities each one would change, in a ``## CHANGELOG claims`` section.
+  name the athlete's actual activities each one would change, in a ``## CHANGELOG claims`` section;
+- ``re-measure-data-premises-at-planning.md`` (IDEA-179) asks sprint planning to list every spec
+  sentence that states a bound or count on the athlete's data, re-measure it against the full census
+  or a store copy, and record the query, its printed result and held or false, citing the 240 s rep
+  premise as its case.
 """
 
 from __future__ import annotations
@@ -58,6 +62,11 @@ RULES = (
             "CHANGELOG claims",
             "the athlete's actual activities",
         ),
+    ),
+    (
+        "re-measure-data-premises-at-planning.md",
+        "IDEA-179",
+        ("re-measure", "the full census", "held or false", "240 s"),
     ),
 )
 
