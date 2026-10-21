@@ -457,6 +457,12 @@ def test_validator_rejects_a_mutated_body(contract: dict) -> None:
 
 
 def test_contract_lists_as_of_and_is_implemented(contract: dict) -> None:
+    """The strict half: ``contract_walk.walk`` over the threshold components, and the StateModel
+    and Determinant property and required-set equalities, require equal properties, required
+    sets and enums. ``tests/support/contract_validate.py`` is the lenient half: a served
+    property the contract does not list passes there. A served change to these components
+    fails this test until openapi.yaml carries the same fields, so the contract moves in the
+    same change set."""
     op = contract["paths"]["/state"]["get"]
     served = app.openapi()
     built_op = served["paths"]["/state"]["get"]
