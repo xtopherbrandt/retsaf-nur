@@ -9,7 +9,7 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from runcoach_api import __version__, db
-from runcoach_api.imports.archive import screen_file_id
+from runcoach_api.imports.archive import HRV_STATUS_FILE_TYPE, screen_file_id
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
@@ -211,6 +211,12 @@ def create_session(
                 response.status_code = 200
                 return IngestSkipped(
                     skipped=True, reason="non_activity", file_type=screen.file_type, filter_applied=True
+                )
+            if screen.outcome == "hrv_status":
+                # An HRV_STATUS file is counted as non-activity here, as before, under its type number.
+                response.status_code = 200
+                return IngestSkipped(
+                    skipped=True, reason="non_activity", file_type=str(HRV_STATUS_FILE_TYPE), filter_applied=True
                 )
 
             def keep(session) -> bool:

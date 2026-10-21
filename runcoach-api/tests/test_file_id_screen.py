@@ -37,7 +37,7 @@ def test_public_screen_names_activity_non_activity_and_fails_typeless_and_non_fi
     assert screen_file_id(IA.minimal_fit(4, time_created=None)) == FileIdScreen("activity", time_created=None)
 
     assert screen_file_id(IA.minimal_fit(32)) == FileIdScreen("non_activity", file_type="monitoring_b")
-    for number in (44, 68, 49):
+    for number in (44, 49):
         assert screen_file_id(IA.minimal_fit(number)) == FileIdScreen("non_activity", file_type=str(number))
 
     assert screen_file_id(IA.minimal_fit(0xFF)) == FileIdScreen("failed", detail="file_id carries no type")
@@ -49,6 +49,24 @@ def test_public_screen_names_activity_non_activity_and_fails_typeless_and_non_fi
 
     empty = screen_file_id(b"")
     assert empty == FileIdScreen("failed", detail="file_id could not be read: LookupError: no file_id message")
+
+
+def test_type_68_is_hrv_status_with_its_time_created() -> None:
+    """A file_id of type 68 (HRV_STATUS) is the screen's own outcome, carrying its raw time_created."""
+    night = screen_file_id(IA.minimal_fit(68, time_created=IA.MINIMAL_TIME_CREATED))
+    assert night == FileIdScreen("hrv_status", time_created=IA.MINIMAL_TIME_CREATED)
+    assert night.file_type is None and night.detail is None
+    assert screen_file_id(IA.minimal_fit(68, time_created=None)) == FileIdScreen("hrv_status", time_created=None)
+
+
+def test_the_screen_has_three_outcomes_over_activity_hrv_status_and_monitoring() -> None:
+    """A real run, a type-68 file and a monitoring_b file are the three outcomes, one each."""
+    run = IA._fixture("sample_run")
+    night = IA.minimal_fit(68, time_created=IA.MINIMAL_TIME_CREATED)
+    monitoring = IA.minimal_fit(32)
+    outcomes = [screen_file_id(data).outcome for data in (run, night, monitoring)]
+    assert outcomes == ["activity", "hrv_status", "non_activity"]
+    assert len(set(outcomes)) == 3
 
 
 def test_archive_reader_screens_through_the_public_function(tmp_path: Path, monkeypatch) -> None:

@@ -135,18 +135,24 @@ def _extension(name: str) -> str:
     return ext[1:].lower() if ext else "(none)"
 
 
+HRV_STATUS_FILE_TYPE = 68
+"""``file_id.type`` of the watch's HRV_STATUS file, a number the FIT profile fitdecode ships does not name."""
+
+
 @dataclass(frozen=True)
 class FileIdScreen:
     """What a FIT file's ``file_id`` says it is, before any decoding past ``file_id``.
 
     ``outcome`` is ``"activity"`` (``time_created`` is the raw value, None when
-    absent or the invalid sentinel), ``"non_activity"`` (``file_type`` is the
-    label the archive import counts: the decoder's type name, or the number as a
-    string for a Garmin-private type) or ``"failed"`` (``detail`` says why; the
-    file may still be an activity).
+    absent or the invalid sentinel), ``"hrv_status"`` (``file_id.type``
+    ``HRV_STATUS_FILE_TYPE``, the watch's overnight HRV file; ``time_created``
+    as for an activity), ``"non_activity"`` (``file_type`` is the label the
+    archive import counts: the decoder's type name, or the number as a string
+    for a Garmin-private type) or ``"failed"`` (``detail`` says why; the file
+    may still be an activity).
     """
 
-    outcome: Literal["activity", "non_activity", "failed"]
+    outcome: Literal["activity", "hrv_status", "non_activity", "failed"]
     time_created: int | None = None
     file_type: str | None = None
     detail: str | None = None
@@ -168,8 +174,9 @@ def screen_file_id(data: bytes) -> FileIdScreen:
     """Screen one FIT file's bytes by its ``file_id`` alone, with CRC checking off; never raises.
 
     The rule the archive import applies to every FIT candidate: a ``file_id``
-    that cannot be read, or carries no usable ``type``, fails; a ``type`` other
-    than ``activity`` is a non-activity; otherwise an activity.
+    that cannot be read, or carries no usable ``type``, fails; type
+    ``HRV_STATUS_FILE_TYPE`` is an ``hrv_status``; any other ``type`` than
+    ``activity`` is a non-activity; otherwise an activity.
     """
     try:
         file_type, time_created = _read_file_id(data)
@@ -177,6 +184,8 @@ def screen_file_id(data: bytes) -> FileIdScreen:
         return FileIdScreen("failed", detail=f"file_id could not be read: {type(exc).__name__}: {exc}")
     if file_type is None:
         return FileIdScreen("failed", detail="file_id carries no type")
+    if file_type == HRV_STATUS_FILE_TYPE:
+        return FileIdScreen("hrv_status", time_created=time_created)
     if file_type != "activity":
         return FileIdScreen("non_activity", file_type=str(file_type))
     return FileIdScreen("activity", time_created=time_created)
@@ -242,6 +251,10 @@ class _Scanner:
             return
         if screened.outcome == "non_activity":
             self.non_activity[screened.file_type or ""] += 1
+            return
+        if screened.outcome == "hrv_status":
+            # An HRV_STATUS file is counted as non-activity here, as before, under its type number.
+            self.non_activity[str(HRV_STATUS_FILE_TYPE)] += 1
             return
         path = self._next_name(".fit")
         with open(path, "wb") as out:
