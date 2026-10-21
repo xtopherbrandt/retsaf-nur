@@ -2339,3 +2339,136 @@ def read_lap_candidate_rows(conn: sqlite3.Connection, start_times: Sequence[str]
         return [dict(row) for row in conn.execute(sql, params)]
     finally:
         conn.rollback()
+
+
+# ---------------------------------------------------------------------------
+# F028: an overnight HRV night (the watch's HRV_STATUS file)
+#
+# Appended at the end so the lines cited above stay in place. A night is
+# ``ingestion.overnight.map_night``'s ``Night``: the ``sessions`` row, its
+# 5-minute series (``overnight_hrv_values``) and its quarantined sidecar.
+# ---------------------------------------------------------------------------
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from runcoach_api.ingestion.overnight import Night
+
+#: The ``activity_tag`` of a stored night; the replacement rule looks only among these rows.
+OVERNIGHT_TAG = "overnight_hrv"
+
+
+@dataclasses.dataclass(frozen=True)
+class NightWrite:
+    """What ``persist_night`` wrote: the stored night's id and, when a re-summary
+    of a stored night was written over it, the id of the night it replaced."""
+
+    session_id: str
+    replaced_session_id: str | None = None
+
+
+def _insert_overnight_values(
+    conn: sqlite3.Connection, session_id: str, values: Sequence[tuple[str, float | None]]
+) -> None:
+    """One ``overnight_hrv_values`` row per ``(t, rmssd_ms)``; the chaos seam for the
+    night's series, as ``persist``'s insert helpers are for an activity's rows."""
+    conn.executemany(
+        "INSERT INTO overnight_hrv_values (session_id, t, rmssd_ms) VALUES (?, ?, ?)",
+        [(session_id, t, rmssd_ms) for t, rmssd_ms in values],
+    )
+
+
+def _stored_night_at(conn: sqlite3.Connection, source_device: str | None, series_start: str) -> sqlite3.Row | None:
+    """The stored night of ``source_device`` whose series starts at ``series_start``:
+    the latest such ``(session_id, start_time)`` row, or ``None``."""
+    return conn.execute(
+        """
+        SELECT session_id, start_time FROM sessions
+        WHERE source_device = ? AND activity_tag = ?
+          AND json_extract(summary, '$.series_start') = ?
+        ORDER BY start_time DESC LIMIT 1
+        """,
+        (source_device, OVERNIGHT_TAG, series_start),
+    ).fetchone()
+
+
+def persist_night(
+    conn: sqlite3.Connection,
+    night: Night,
+    *,
+    after_write: Callable[[sqlite3.Connection, NightWrite], None] | None = None,
+) -> NightWrite:
+    """Write one night's rows in a single transaction, replacing a re-summarised one (F028 reference section 4).
+
+    A sibling of ``persist``, not a widening of it: a night has no records, no
+    RR intervals and no laps, and its own rule for a second file of the same
+    night. One ``BEGIN IMMEDIATE`` transaction, as ``attach_session_laps``
+    holds, takes the write lock before the first read, so the checks below and
+    the insert cannot interleave with another upload of the same night (the
+    check-then-insert race ``persist``'s docstring describes). In order:
+
+    1. **The same night again.** A stored ``session_id`` equal to the night's is
+       ``DuplicateSessionError`` naming it, checked before the re-summary rule,
+       or a re-upload of one file would replace itself.
+    2. **A re-summary.** A stored night of the same ``source_device``, tagged
+       ``overnight_hrv``, whose ``summary.series_start`` equals the night's
+       (never matched when the night has no series) is the same night
+       summarised twice. The file with the later summary timestamp
+       (``start_time``) wins, whatever its value count (the user's ruling,
+       2026-10-21): a stored night with the earlier timestamp is deleted with
+       its child rows (``_delete_child_rows`` over ``_child_tables``) and the
+       new one written, its id returned as ``replaced_session_id``; a stored
+       night with the later timestamp stands, and the write is
+       ``DuplicateSessionError`` naming it.
+    3. **The insert.** ``_insert_session``, the series
+       (``_insert_overnight_values``), the sidecar
+       (``_insert_quarantine_sidecar``), the anchor sync and the saved load
+       (``_sync_anchor_versions``, ``_save_session_load``: a night is
+       ``sport_not_running``, which is harmless), then ``after_write(conn,
+       write)`` inside the same transaction, so an archive import's report row
+       can say ``stored`` or ``replaced`` and a fault in it rolls the night
+       back with everything above.
+
+    Any exception rolls the whole transaction back and propagates: a failed
+    series insert leaves no session row, no sidecar and no deleted
+    predecessor. A ``UNIQUE (source_device, start_time)`` violation on the
+    insert is translated to ``DuplicateSessionError`` naming the row in the
+    slot, as ``persist`` does. The caller has run ``init_schema`` and holds no
+    open transaction.
+    """
+    session = night.session
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if session_exists(conn, session.session_id):
+            raise DuplicateSessionError(session.session_id)
+        replaced: str | None = None
+        series_start = (session.summary or {}).get("series_start")
+        if series_start is not None:
+            stored = _stored_night_at(conn, session.source_device, series_start)
+            if stored is not None:
+                if datetime.fromisoformat(stored["start_time"]) > datetime.fromisoformat(session.start_time):
+                    raise DuplicateSessionError(stored["session_id"])
+                _delete_child_rows(conn, stored["session_id"])
+                conn.execute("DELETE FROM sessions WHERE session_id = ?", (stored["session_id"],))
+                replaced = stored["session_id"]
+        try:
+            _insert_session(conn, session)
+        except sqlite3.IntegrityError:
+            row = conn.execute(
+                "SELECT session_id FROM sessions WHERE source_device = ? AND start_time = ?",
+                (session.source_device, session.start_time),
+            ).fetchone()
+            if row is None:
+                raise
+            raise DuplicateSessionError(row[0]) from None
+        _insert_overnight_values(conn, session.session_id, night.values)
+        _insert_quarantine_sidecar(conn, session.session_id, night.sidecar)
+        resolved = _sync_anchor_versions(conn)
+        _save_session_load(conn, session.session_id, resolved=resolved)
+        write = NightWrite(session_id=session.session_id, replaced_session_id=replaced)
+        if after_write is not None:
+            after_write(conn, write)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return write
