@@ -21,6 +21,20 @@ written into ``tests/fixtures/``.
   carries it, zero-extending its value in every data message, so
   ``set_field_at`` can then write 2**63 or more into it, as a non-conforming
   writer can.
+- ``retype_field(data, global_num, field_num, base_type, value)`` redeclares
+  one field of ``global_num`` as another base type in every definition that
+  carries it and writes ``value`` packed in that type into every data
+  message, so a ``uint16`` average can be declared ``sint16`` and set
+  negative, or ``float32`` and set to an infinity or a NaN.
+- ``truncate_inside(data, global_num, index)`` cuts the bytes off halfway
+  through the ``index``-th data message of ``global_num``, header and CRC
+  left as they were: a file meant to fail to decode.
+- ``duplicate_timestamp(data, global_num, index)`` copies the timestamp of
+  the ``index - 1``-th data message of ``global_num`` into the ``index``-th,
+  so two messages with their own values share one timestamp.
+- ``blank_field_at(data, global_num, index, field_num)`` and
+  ``blank_field_all(data, global_num, field_num)`` write the FIT invalid
+  value into one field of one, or of every, data message of ``global_num``.
 - ``duplicate_message(data, global_num, index)`` inserts a byte copy of the
   ``index``-th data message of ``global_num`` right after it; the copy keeps
   its record header, whose local definition is still the current one there.
@@ -629,3 +643,135 @@ def widen_to_uint64(data: bytes, global_num: int, field_num: int) -> bytes:
         raise FitPatchError(f"no definition of {global_num} carries field {field_num}")
     out += b"\x00\x00"
     return finalize(out)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic faults the export lacks: a retyped, truncated, duplicated or
+# blanked field of any message, for the files whose faults no real fixture
+# carries.
+# ---------------------------------------------------------------------------
+
+_FLOAT_FORMATS = ("f", "d")
+
+
+def retype_field(data: bytes, global_num: int, field_num: int, base_type: int, value: int | float) -> bytes:
+    """Redeclare ``field_num`` of ``global_num`` as ``base_type`` and set it to ``value`` everywhere.
+
+    Every definition of ``global_num`` that carries the field is rewritten with
+    the field one element of ``base_type`` long (its size from
+    ``fitdecode.types.BASE_TYPES``), and the field of every data message those
+    definitions decode is replaced by ``value`` packed in that type, so a
+    ``uint16`` average can be declared ``sint16`` and set negative, or declared
+    ``float32`` and set to an infinity or a NaN, as a non-conforming writer
+    can; ``fitdecode`` reads the base type the definition declares and still
+    applies the profile's scale. An ``int`` value is packed into an integer
+    type and a ``float`` into a float type; the other pairing is refused, as
+    are a string base type, an unknown base type, a value that does not fit
+    the integer type, a definition with developer fields and a file with no
+    definition of ``global_num`` carrying the field.
+    """
+    base = BASE_TYPES.get(base_type)
+    if base is None:
+        raise FitPatchError(f"unknown base type {base_type:#x}")
+    if base.fmt == "s":
+        raise FitPatchError("a field cannot be retyped to a string")
+    if base.fmt in _FLOAT_FORMATS:
+        if not isinstance(value, float):
+            raise FitPatchError(f"value {value!r} is not a float for base type {base.name}")
+    else:
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise FitPatchError(f"value {value!r} is not an int for base type {base.name}")
+        signed = base.fmt.islower()
+        bits = 8 * base.size
+        low, high = (-(1 << (bits - 1)), 1 << (bits - 1)) if signed else (0, 1 << bits)
+        if not low <= value < high:
+            raise FitPatchError(f"value {value} does not fit {base.name}")
+    out = bytearray(data[: data[0]])
+    retyped = False
+    for r in walk(data):
+        d = r.definition
+        raw = data[r.offset : r.offset + r.length]
+        target = next((f for f in d.fields if f.num == field_num), None) if d.global_num == global_num else None
+        if target is None:
+            out += raw
+            continue
+        if d.dev_fields:
+            raise FitPatchError(f"definition of {global_num} at offset {r.offset} has developer fields")
+        order = ">" if d.big_endian else "<"
+        if r.is_definition:
+            retyped = True
+            head = bytearray(raw[:6])
+            for f in d.fields:
+                head += (
+                    bytes((f.num, base.size, base_type))
+                    if f.num == field_num
+                    else bytes((f.num, f.size, f.base_type))
+                )
+            out += head
+            continue
+        offset, field = _field_offset(r, field_num)
+        start = offset - r.offset
+        out += raw[:start] + struct.pack(order + base.fmt, value) + raw[start + field.size :]
+    if not retyped:
+        raise FitPatchError(f"no definition of {global_num} carries field {field_num}")
+    out += b"\x00\x00"
+    return finalize(out)
+
+
+def truncate_inside(data: bytes, global_num: int, index: int) -> bytes:
+    """The file cut off halfway through the ``index``-th ``global_num`` data message.
+
+    The bytes end inside that message: the header still announces the full
+    data size and no file CRC follows, as a download that stopped early
+    leaves a file. Nothing is rewritten, so the result is meant to fail to
+    decode, not to be patched further (``walk`` refuses it).
+    """
+    record = _nth_data_record(walk(data), global_num, index)
+    return data[: record.offset + 1 + record.definition.data_size // 2]
+
+
+def duplicate_timestamp(data: bytes, global_num: int, index: int) -> bytes:
+    """Give the ``index``-th ``global_num`` data message the timestamp of the one before it.
+
+    Field 253 of message ``index - 1`` is copied byte for byte into message
+    ``index``; every other field of both keeps its bytes, so the file holds two
+    messages at one timestamp with their own values. Refused: ``index`` 0 (no
+    message precedes it), and either message lacking a timestamp field.
+    """
+    if index < 1:
+        raise FitPatchError(f"index {index} has no message before it to take a timestamp from")
+    records = walk(data)
+    source = _nth_data_record(records, global_num, index - 1)
+    target = _nth_data_record(records, global_num, index)
+    source_offset, source_field = _field_offset(source, TIMESTAMP_FIELD)
+    target_offset, target_field = _field_offset(target, TIMESTAMP_FIELD)
+    if source_field.size != target_field.size:
+        raise FitPatchError(
+            f"timestamps of {source_field.size} and {target_field.size} bytes cannot be copied across"
+        )
+    buf = bytearray(data)
+    buf[target_offset : target_offset + target_field.size] = data[source_offset : source_offset + source_field.size]
+    return finalize(buf)
+
+
+def blank_field_at(data: bytes, global_num: int, index: int, field_num: int) -> bytes:
+    """Set ``field_num`` of the ``index``-th ``global_num`` data message to its FIT invalid value.
+
+    The invalid value is the base type's own (``0xFFFFFFFF`` for a ``uint32``
+    timestamp, NaN for a float), which ``fitdecode`` decodes to ``None``.
+    """
+    record = _nth_data_record(walk(data), global_num, index)
+    return _blank(data, [record], field_num)
+
+
+def blank_field_all(data: bytes, global_num: int, field_num: int) -> bytes:
+    """Set ``field_num`` of every ``global_num`` data message to its FIT invalid value."""
+    return _blank(data, _data_records(walk(data), global_num), field_num)
+
+
+def _blank(data: bytes, records: list[Record], field_num: int) -> bytes:
+    buf = bytearray(data)
+    for record in records:
+        offset, field = _field_offset(record, field_num)
+        buf[offset : offset + field.size] = _invalid_bytes(field, record.definition.big_endian)
+    return finalize(buf)

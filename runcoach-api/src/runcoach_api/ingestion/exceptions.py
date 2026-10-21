@@ -96,6 +96,20 @@ class TooManyRecordsError(Exception):
         self.unit = unit
 
 
+class OvernightSeriesError(Exception):
+    """Raised when an HRV_STATUS file's structure refuses the whole night.
+
+    ``ingestion.overnight.map_night`` raises it for two ``hrv_value``
+    messages at one timestamp (the series' primary key is the timestamp,
+    so two values there cannot both be stored and neither is the right
+    one to keep) and for a second ``hrv_status_summary`` message (a night
+    has one summary; two leave the file's average undefined). A fault the
+    decoder itself refuses, a series truncated mid-message or a
+    ``date_time`` out of range, is ``FitParseFailure`` as on every route.
+    Nothing is written for a file that raises this.
+    """
+
+
 LOCKED_DETAIL = "database is locked"
 
 
@@ -117,6 +131,8 @@ def http_status_detail(exc: BaseException) -> tuple[int | None, str]:
         return 413, f"upload exceeds the limit of {exc.limit} {exc.unit} (reached {exc.count})"
     if isinstance(exc, MissingCanonicalFieldError):
         return 400, f"{exc.field} could not be determined: {exc}"
+    if isinstance(exc, OvernightSeriesError):
+        return 400, f"overnight HRV file refused: {exc}"
     if isinstance(exc, DuplicateSessionError):
         return 409, f"already ingested as session {exc.existing_session_id}"
     if isinstance(exc, sqlite3.OperationalError) and str(exc) == LOCKED_DETAIL:

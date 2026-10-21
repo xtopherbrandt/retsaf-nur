@@ -24,6 +24,17 @@ Currently registered:
   ``tests/fixtures/T024_chest_strap_HRV.fit``, deleted per T034 item 7
   -- it carried zero ``hrv`` messages despite its name and was
   referenced by no test.)
+- ``hrv_status_summary.status`` / ``weekly_average`` /
+  ``baseline_low_upper`` / ``baseline_balanced_lower`` /
+  ``baseline_balanced_upper`` -- Garmin's HRV Status classification
+  (``balanced`` / ``unbalanced`` / ``low``; the quarantine item spec/02
+  section 2.2.3 names) and the weekly average and baseline bounds
+  it is judged against, confirmed non-null (``balanced``, 40.0, 34.0,
+  36.0, 46.0) in ``tests/fixtures/nights/night_recent.fit``. The night's
+  own ``last_night_average`` on the same message is the rMSSD number
+  underneath the label and is the one field ``ingestion.overnight`` reads
+  as the value; ``timestamp`` and ``last_night_5_min_high`` are its
+  non-input reads.
 
 Additional vendor-derived fields can be added to
 ``_VENDOR_DERIVED_FIELDS`` below once their semantics are confirmed
@@ -69,6 +80,13 @@ _VENDOR_DERIVED_FIELDS: dict[str, tuple[str, ...]] = {
         "total_training_effect",
         "total_anaerobic_training_effect",
         "avg_stress",
+    ),
+    "hrv_status_summary": (
+        "status",
+        "weekly_average",
+        "baseline_low_upper",
+        "baseline_balanced_lower",
+        "baseline_balanced_upper",
     ),
 }
 
