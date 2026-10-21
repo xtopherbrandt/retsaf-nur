@@ -193,7 +193,10 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
             header signature at byte offset 8.
         FitParseFailure: the bytes carry a valid FIT header but
             ``fitdecode`` fails to parse the body (bad CRC, malformed
-            definition/data records, etc.).
+            definition/data records, etc.), or a ``date_time`` field
+            holds a value ``datetime.fromtimestamp`` cannot represent
+            (``OverflowError`` beyond ``time_t``, ``OSError`` from the
+            platform's range, ``ValueError`` from ``datetime`` itself).
         TooManyRecordsError: the stream passes one of the three
             ceilings -- more than ``MAX_RECORD_MESSAGES`` ``record``
             messages, more than ``MAX_DATA_MESSAGES`` data messages of
@@ -259,5 +262,10 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         fitdecode.FitParseError,
     ) as exc:
         raise FitParseFailure(str(exc)) from exc
+    except (OverflowError, OSError, ValueError) as exc:
+        # fitdecode converts every date_time field through datetime.fromtimestamp
+        # while reading; a raw value beyond what the platform represents escapes
+        # as one of these rather than a fitdecode error.
+        raise FitParseFailure(f"a date_time field is out of range: {exc}") from exc
 
     return messages
