@@ -1,11 +1,14 @@
 """F014 AC1: the fixture provenance table, checked against the decoded files.
 
 ``tests/fixtures/README.md`` holds one row per ``*.fit`` file in the fixture
-directory: what the file really is (``kind``), its qualifiers (``notes``), its
-recording ``mode``, the ``devices`` that wrote it, whether it carries
-``positions``, and whether it may be cited as ``run proof``. The rows were
-confirmed by the user on 2026-10-04 and live in the F014 reference
-(``spec/references/F014-fixture-provenance.md`` section 1, Shipyard data dir).
+directory and in its ``nights/`` subdirectory: what the file really is
+(``kind``), its qualifiers (``notes``), its recording ``mode``, the ``devices``
+that wrote it, whether it carries ``positions``, and whether it may be cited as
+``run proof``. The activity rows were confirmed by the user on 2026-10-04 and
+live in the F014 reference (``spec/references/F014-fixture-provenance.md``
+section 1, Shipyard data dir); the ``nights/`` rows are the overnight
+HRV_STATUS files of the F028 reference, wellness files with no ``record``
+message, whose mode cell reads ``no records``.
 
 This module is the guard that keeps the table honest:
 
@@ -67,7 +70,13 @@ FIXTURES = Path(__file__).parent / "fixtures"
 README = FIXTURES / "README.md"
 
 COLUMNS = ("file", "kind", "notes", "mode", "devices", "positions", "run proof")
-KINDS = frozenset({"real run", "real walk", "HRV capture", "health snapshot"})
+#: The subdirectory of the overnight HRV_STATUS files. The activity census modules glob
+#: ``FIXTURES.glob("*.fit")``, which does not descend, so the nights stay out of their corpus.
+NIGHTS = "nights"
+REAL_NIGHT = "real night (wellness FIT)"
+#: The mode cell of a file with no ``record`` message at all (a wellness file).
+NO_RECORDS = "no records"
+KINDS = frozenset({"real run", "real walk", "HRV capture", "health snapshot", REAL_NIGHT})
 RUN_PROOF = frozenset({"yes", "walk only", "no"})
 POSITIONS = frozenset({"yes", "no"})
 LAP_BOUNDING_BOX_FIELDS = frozenset({27, 28, 29, 30})
@@ -101,6 +110,13 @@ REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
     "strap_health_snapshot": ("health snapshot", "1 Hz", "no"),
     "strap_health_snapshot_hrv": ("health snapshot", "1 Hz", "no"),
     "sample_health_snapshot": ("health snapshot", "1 Hz", "no"),
+    # The overnight HRV_STATUS files under nights/: wellness files with no record message.
+    "nights/night_recent": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_short": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_midnight_no_average": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_lone_morning_no_average": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_resummary_earlier": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_resummary_later": (REAL_NIGHT, NO_RECORDS, "no"),
 }
 
 #: The fixtures that may carry position values: the seven files committed with them before the
@@ -173,7 +189,10 @@ def _rows_by_file(text: str | None = None) -> dict[str, Row]:
 
 
 def _on_disk() -> list[str]:
-    return sorted(p.stem for p in FIXTURES.glob("*.fit"))
+    """Every fixture's path under ``FIXTURES`` without ``.fit``: the root files and ``nights/``."""
+    root = [p.stem for p in FIXTURES.glob("*.fit")]
+    nights = [f"{NIGHTS}/{p.stem}" for p in (FIXTURES / NIGHTS).glob("*.fit")]
+    return sorted(root + nights)
 
 
 def names_without_a_lowercase_fit_suffix(names: Iterable[str]) -> list[str]:
@@ -186,10 +205,17 @@ def names_without_a_lowercase_fit_suffix(names: Iterable[str]) -> list[str]:
 
 
 def misnamed_fixtures() -> list[str]:
-    """Every entry of ``FIXTURES`` that is not ``README.md`` or a file ending in lowercase ``.fit``."""
-    entries = list(FIXTURES.iterdir())
+    """Every entry of ``FIXTURES`` or ``FIXTURES/nights`` that is not ``README.md``, the ``nights``
+    directory itself, or a file ending in lowercase ``.fit``. A ``nights/`` entry is named with
+    its directory."""
+    entries = [p for p in FIXTURES.iterdir() if p.name != NIGHTS]
+    nights_dir = FIXTURES / NIGHTS
+    nights = list(nights_dir.iterdir()) if nights_dir.is_dir() else []
     not_files = {p.name for p in entries if not p.is_file()}
-    return sorted(set(names_without_a_lowercase_fit_suffix(p.name for p in entries)) | not_files)
+    not_files |= {f"{NIGHTS}/{p.name}" for p in nights if not p.is_file()}
+    misnamed = set(names_without_a_lowercase_fit_suffix(p.name for p in entries))
+    misnamed |= {f"{NIGHTS}/{n}" for n in names_without_a_lowercase_fit_suffix(p.name for p in nights)}
+    return sorted(misnamed | not_files)
 
 
 @dataclass(frozen=True)
@@ -264,8 +290,12 @@ def decode(stem: str) -> Decoded:
                 if source == "antplus" and manufacturer is not None:
                     sensors.add((manufacturer, frame.get_value("product", fallback=None)))
     assert creator is not None, f"{stem}.fit: no file_id message"
-    assert len(timestamps) >= 2, f"{stem}.fit: fewer than two timed records"
-    interval, pauses, dropouts = _mode_from(timestamps, timer_events)
+    if not timestamps:
+        # A wellness file (an overnight HRV_STATUS file) has no record message: nothing to step.
+        interval, pauses, dropouts = NO_RECORDS, (), ()
+    else:
+        assert len(timestamps) >= 2, f"{stem}.fit: fewer than two timed records"
+        interval, pauses, dropouts = _mode_from(timestamps, timer_events)
     return Decoded(tuple(sorted(position_fields)), creator, frozenset(sensors), interval, pauses, dropouts)
 
 
@@ -435,6 +465,32 @@ def test_the_readme_says_new_fixtures_are_stripped() -> None:
 def test_the_reference_rows_name_every_fixture() -> None:
     """``REFERENCE_ROWS`` covers the directory, so no fixture escapes the literal check."""
     assert sorted(REFERENCE_ROWS) == _on_disk()
+
+
+def test_each_night_fixture_has_a_real_night_provenance_row() -> None:
+    """Every file under ``nights/`` has a row that calls it a real night and never run proof.
+
+    The files are the watch's overnight HRV_STATUS files from the athlete's account export: no
+    records, no session, so the mode cell reads ``no records`` and the row can be cited for what
+    a night is, never as a run.
+    """
+    rows = _rows_by_file()
+    nights = sorted(f"{NIGHTS}/{p.stem}" for p in (FIXTURES / NIGHTS).glob("*.fit"))
+    print(f"[slice compared] nights on disk {nights}; rows {sorted(stem for stem in rows if stem.startswith(NIGHTS + '/'))}")
+    assert len(nights) == 6, nights
+    problems = []
+    for stem in nights:
+        if stem not in rows:
+            problems.append(f"{stem}.fit has no provenance row in {README.name}")
+            continue
+        row = rows[stem]
+        if row.kind != REAL_NIGHT:
+            problems.append(f"{stem}: kind says {row.kind!r}, not {REAL_NIGHT!r}")
+        if row.run_proof != "no":
+            problems.append(f"{stem}: run proof says {row.run_proof!r}, not 'no'")
+        if row.mode != NO_RECORDS:
+            problems.append(f"{stem}: mode says {row.mode!r}, not {NO_RECORDS!r}")
+    assert not problems, problems
 
 
 def test_the_historical_wrist_ppg_name_carries_the_users_ruling() -> None:

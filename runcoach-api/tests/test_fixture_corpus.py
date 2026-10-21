@@ -232,6 +232,78 @@ _CORPUS: dict[str, DecodedFacts] = {
 }
 
 
+NIGHTS = FIXTURES / "nights"
+
+# The overnight HRV_STATUS files under nights/: message counts by fitdecode name, transcribed
+# from a fitdecode run over the committed bytes on 2026-10-21, not from the feature file. The
+# decode names one message the profile does not (``unknown_22``), so it is pinned as decoded.
+# ``hrv_value`` is the 5-minute series; a file with no night has none.
+_NIGHTS: dict[str, tuple[int, dict[str, int]]] = {
+    # 2026-10-10, average 43.0.
+    "night_recent.fit": (948, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "hrv_value": 57, "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+    # 2024-05-31, average 57.0, 3.2 h.
+    "night_short.fit": (822, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "hrv_value": 39, "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+    # 2023-03-07 00:03 local: a summary with no average and no series.
+    "night_midnight_no_average.fit": (525, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+    # 2023-04-07 05:16 local: a summary with no average and no series.
+    "night_lone_morning_no_average.fit": (533, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+    # 2024-01-01 06:52 local: the earlier summary of one night.
+    "night_resummary_earlier.fit": (1_291, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "hrv_value": 106, "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+    # 2024-01-01 07:30 local: the later summary of the same night, two values fewer.
+    "night_resummary_later.fit": (1_277, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "hrv_value": 104, "timestamp_correlation": 2, "unknown_22": 1,
+    }),
+}
+
+
+def _message_counts(path: Path) -> dict[str, int]:
+    """Data message counts by fitdecode name: ``fitdecode`` and the bytes, nothing else."""
+    counts: dict[str, int] = {}
+    with fitdecode.FitReader(str(path)) as reader:
+        for frame in reader:
+            if isinstance(frame, fitdecode.FitDataMessage):
+                counts[frame.name] = counts.get(frame.name, 0) + 1
+    return counts
+
+
+def test_the_night_pins_name_every_night_fixture() -> None:
+    """``_NIGHTS`` and ``nights/`` name the same files, so a night added without a pin fails."""
+    on_disk = sorted(p.name for p in NIGHTS.glob("*.fit"))
+    print(f"[slice compared] nights on disk {on_disk}; pinned {sorted(_NIGHTS)}")
+    assert on_disk == sorted(_NIGHTS)
+
+
+@pytest.mark.parametrize("filename", sorted(_NIGHTS))
+def test_night_fixtures_decode_to_their_pinned_message_counts(filename: str) -> None:
+    """Each committed night still decodes to the message counts pinned above."""
+    path = NIGHTS / filename
+    size_bytes, expected = _NIGHTS[filename]
+    assert path.is_file(), f"{filename} is missing from tests/fixtures/nights/"
+    assert path.stat().st_size == size_bytes, (
+        f"{filename} is no longer the exported file: expected {size_bytes} bytes, "
+        f"found {path.stat().st_size}."
+    )
+    counts = _message_counts(path)
+    print(f"[slice compared] {filename}: decoded {dict(sorted(counts.items()))} pinned {expected}")
+    assert counts == expected, f"{filename}: message counts changed"
+
+
 @dataclass
 class _Decoded:
     hrv_message_count: int = 0

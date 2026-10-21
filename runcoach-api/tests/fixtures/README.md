@@ -18,12 +18,21 @@ A new fixture is stripped of position values with `tests/support/strip_fit_posit
 is committed, unless the user rules otherwise; the test enforces it, failing any file with
 positions that is not on its allow-list of the seven files committed with them.
 
+`nights/` holds the watch's overnight HRV_STATUS files (`file_id.type` 68) from the athlete's
+account export, byte copies under names that claim nothing about the athlete. They are wellness
+files: one `hrv_status_summary`, one `hrv_value` per 5-minute value, no `record` and no `session`,
+so the activity census modules, which glob this directory without descending, never see them. The
+stripper was run over each and found no position value. Dates in the notes are local (Vancouver).
+
 ## Columns
 
-- **file**: the fixture's name without `.fit`.
-- **kind**: one of `real run`, `real walk`, `HRV capture`, `health snapshot`.
+- **file**: the fixture's path under this directory without `.fit` (`nights/night_recent` for a
+  file in `nights/`).
+- **kind**: one of `real run`, `real walk`, `HRV capture`, `health snapshot`,
+  `real night (wellness FIT)`.
 - **notes**: qualifiers, including where a name misleads.
-- **mode**: the recording interval as the watch wrote it, and any pause.
+- **mode**: the recording interval as the watch wrote it, and any pause; `no records` for a file
+  with no `record` message (a wellness file).
 - **devices**: the creator (from `file_id`), then after the semicolon each ANT+ sensor in
   `device_info` whose manufacturer is known, or `none`. The watch's internal entries (products
   3709, 3799, gnss, the sensor hub) are left out.
@@ -53,3 +62,9 @@ positions that is not on its allow-list of the seven files committed with them.
 | strap_health_snapshot | health snapshot | | 1 Hz | FR945 LTE; HRM-Pro Plus | no | no |
 | strap_health_snapshot_hrv | health snapshot | | 1 Hz | FR945 LTE; HRM-Pro Plus, Garmin product 21 | no | no |
 | sample_health_snapshot | health snapshot | | 1 Hz | FR945 LTE; none | no | no |
+| nights/night_recent | real night (wellness FIT) | 2026-10-10, average 43.0, 57 values | no records | FR945 LTE; none | no | no |
+| nights/night_short | real night (wellness FIT) | 2024-05-31, average 57.0, 39 values (3.2 h); a short night | no records | FR945 LTE; none | no | no |
+| nights/night_midnight_no_average | real night (wellness FIT) | 2023-03-07 00:03, no average, no values; a midnight file | no records | FR945 LTE; none | no | no |
+| nights/night_lone_morning_no_average | real night (wellness FIT) | 2023-04-07 05:16, no average, no values; a lone morning | no records | FR945 LTE; none | no | no |
+| nights/night_resummary_earlier | real night (wellness FIT) | 2024-01-01 06:52, average 39.0, 106 values; the earlier summary of the re-summary pair | no records | FR945 LTE; none | no | no |
+| nights/night_resummary_later | real night (wellness FIT) | 2024-01-01 07:30, average 39.0, 104 values, same series start 06:03:39Z; the later summary of the re-summary pair | no records | FR945 LTE; none | no | no |

@@ -54,6 +54,9 @@ from runcoach_api.main import app
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HILLY_FIXTURES = ("hilly_run_8k_fr945.fit", "hilly_long_run_17k_fr945.fit")
+#: The overnight HRV_STATUS files, relative to ``FIXTURES``: wellness files that declare no
+#: position field at all, checked by the field-agnostic scan like the stripped runs.
+NIGHT_FIXTURES = tuple(sorted(f"nights/{p.name}" for p in (FIXTURES / "nights").glob("*.fit")))
 BOX_SOURCE = "sample_run.fit"
 SEMICIRCLES_PER_DEGREE = 2**31 / 180
 #: FIT base types 4 bytes wide, by their low five bits: sint32, uint32, float32, uint32z.
@@ -199,7 +202,22 @@ def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
     return scanned, hits
 
 
-@pytest.mark.parametrize("fixture_name", HILLY_FIXTURES)
+@pytest.mark.parametrize("fixture_name", NIGHT_FIXTURES)
+def test_a_night_fixture_declares_no_position_field(fixture_name: str) -> None:
+    """A night has no record, lap, session or split message, so no position field is even declared."""
+    assert len(NIGHT_FIXTURES) == 6, NIGHT_FIXTURES
+    declared: list[str] = []
+    with fitdecode.FitReader(FIXTURES / fixture_name, check_crc=fitdecode.CrcCheck.RAISE) as reader:
+        for frame in reader:
+            if not isinstance(frame, fitdecode.FitDataMessage):
+                continue
+            wanted = POSITION_FIELDS.get(frame.global_mesg_num, frozenset())
+            declared.extend(f"{frame.name}/{field.def_num}" for field in frame.fields if field.def_num in wanted)
+    print(f"[slice compared] {fixture_name}: {len(declared)} declared position field(s)")
+    assert not declared, f"{fixture_name}: position fields declared: {declared[:5]}"
+
+
+@pytest.mark.parametrize("fixture_name", HILLY_FIXTURES + NIGHT_FIXTURES)
 def test_no_lat_long_shaped_pair_lies_in_the_athletes_area(fixture_name: str) -> None:
     scanned, hits = _pairs_in_box((FIXTURES / fixture_name).read_bytes(), _area_box())
     # Identities and counts only: never a value, never the box.
