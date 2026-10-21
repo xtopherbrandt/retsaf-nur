@@ -167,9 +167,17 @@ def map_night(fit_bytes: bytes) -> Night | NoNight:
     return Night(session=row, values=values, sidecar=quarantine.extract(messages))
 
 
+def _finite(value: object) -> float | None:
+    """``float(value)`` for a real finite number; ``None`` for ``None``, a bool, inf or NaN."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    return None
+
+
 def _finite_positive(value: object) -> bool:
     """True for a real number above 0: not ``None``, 0, -0.0, negative, inf or NaN."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
+    number = _finite(value)
+    return number is not None and number > 0
 
 
 def _series(messages: Iterable[fitdecode.FitDataMessage]) -> list[tuple[str, float | None]]:
@@ -194,9 +202,8 @@ def _series(messages: Iterable[fitdecode.FitDataMessage]) -> list[tuple[str, flo
 
 
 def _series_value(value: object) -> float | None:
-    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-        return float(value)
-    return None
+    """The stored reading: the value as a float, or ``None`` for the invalid sentinel or a non-finite value."""
+    return _finite(value)
 
 
 def _span_seconds(stamps: list[str]) -> float:
