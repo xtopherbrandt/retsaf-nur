@@ -22,6 +22,10 @@ What is pinned:
   later file;
 - a second sleep on the same day (another ``series_start``) is its own row,
   and a night from another device is never a replacement;
+- the replacement lookup reads only ``overnight_hrv`` rows, compares the
+  summary timestamps as moments (another UTC offset does not reorder
+  them), and a foreign row in the night's ``(source_device, start_time)``
+  slot is ``DuplicateSessionError`` naming that row;
 - ``delete_session`` removes the values and the sidecar through
   ``_child_tables``, and the values table's ``REFERENCES`` clause refuses a
   value under a session the store does not hold.
@@ -317,6 +321,112 @@ def test_a_second_sleep_the_same_day_is_its_own_row() -> None:
         (second_sleep.session.session_id, "2026-10-10T20:33:29+00:00"),
     ]
     assert values == 2 * RECENT_VALUES
+
+
+def test_a_running_session_at_the_same_series_start_is_not_replaced() -> None:
+    """The replacement lookup reads only ``overnight_hrv`` rows: a run of the
+    same device whose ``summary.series_start`` equals the night's is neither
+    replaced nor a duplicate, and both rows stand."""
+    night = _night("night_recent")
+    run_start = "2026-10-10T06:00:00+00:00"
+    run = dataclasses.replace(
+        night.session,
+        session_id=derive_session_id(night.session.source_device, run_start),
+        start_time=run_start,
+        sport="running",
+        activity_tag="training",
+        name="Morning Run",
+        summary={"series_start": night.session.summary["series_start"]},
+    )
+    conn = _conn()
+    try:
+        db._insert_session(conn, run)
+        conn.commit()
+
+        write = db.persist_night(conn, night)
+
+        rows = conn.execute("SELECT session_id, activity_tag FROM sessions ORDER BY start_time").fetchall()
+        values = _count(conn, VALUES_TABLE)
+    finally:
+        conn.close()
+
+    assert write == db.NightWrite(session_id=night.session.session_id, replaced_session_id=None)
+    assert [(r["session_id"], r["activity_tag"]) for r in rows] == [
+        (run.session_id, "training"),
+        (night.session.session_id, "overnight_hrv"),
+    ]
+    assert values == RECENT_VALUES
+
+
+@pytest.mark.parametrize("order", ["travelled-then-later", "later-then-travelled"])
+def test_a_later_summary_in_another_offset_still_wins(order: str) -> None:
+    """The summary timestamps are compared as moments, not as text. A summary
+    written in another UTC offset sorts after the later file as a string and
+    before it in time; the later file still stands in either upload order."""
+    earlier, later = _night("night_resummary_earlier"), _night("night_resummary_later")
+    travel_start = "2024-01-01T16:00:00+01:00"
+    assert travel_start > LATER_START
+    assert datetime.fromisoformat(travel_start) < datetime.fromisoformat(LATER_START)
+    travelled = dataclasses.replace(
+        earlier,
+        session=dataclasses.replace(
+            earlier.session,
+            start_time=travel_start,
+            session_id=derive_session_id(earlier.session.source_device, travel_start),
+        ),
+    )
+    conn = _conn()
+    try:
+        if order == "travelled-then-later":
+            first = db.persist_night(conn, travelled)
+            second = db.persist_night(conn, later)
+            assert second == db.NightWrite(session_id=later.session.session_id, replaced_session_id=first.session_id)
+        else:
+            first = db.persist_night(conn, later)
+            with pytest.raises(DuplicateSessionError) as info:
+                db.persist_night(conn, travelled)
+            assert info.value.existing_session_id == first.session_id == later.session.session_id
+        assert conn.in_transaction is False
+        stored = _nights_stored(conn)
+        values = _count(conn, VALUES_TABLE)
+    finally:
+        conn.close()
+
+    assert stored == [(later.session.session_id, LATER_START)]
+    assert values == LATER_VALUES
+
+
+def test_a_foreign_row_in_the_nights_slot_is_a_duplicate_naming_it() -> None:
+    """A row under another id and another tag at the night's exact
+    ``(source_device, start_time)`` is not found by the re-summary lookup; the
+    ``UNIQUE (source_device, start_time)`` refusal on the insert is translated
+    to ``DuplicateSessionError`` naming that row, as ``persist`` does, and the
+    transaction is closed."""
+    night = _night("night_recent")
+    foreign = dataclasses.replace(
+        night.session,
+        session_id="foreign-row-in-the-slot",
+        sport="running",
+        activity_tag="training",
+        name="Morning Run",
+        summary={},
+    )
+    assert foreign.session_id != derive_session_id(night.session.source_device, night.session.start_time)
+    conn = _conn()
+    try:
+        db._insert_session(conn, foreign)
+        conn.commit()
+        with pytest.raises(DuplicateSessionError) as info:
+            db.persist_night(conn, night)
+        assert conn.in_transaction is False
+        sessions = _count(conn, "sessions")
+        values = _count(conn, VALUES_TABLE)
+    finally:
+        conn.close()
+
+    assert info.value.existing_session_id == foreign.session_id
+    assert str(info.value) == foreign.session_id
+    assert (sessions, values) == (1, 0)
 
 
 # ---------------------------------------------------------------------------
