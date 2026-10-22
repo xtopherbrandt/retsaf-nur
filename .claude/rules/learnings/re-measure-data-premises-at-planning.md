@@ -39,11 +39,14 @@ sprint-020, and the re-measure as the fix.
 
 **Seven of fifty-two.** F028's planning re-measured every premise in the feature and its reference
 against the full export (all 1,409 overnight files re-decoded) and a store copy. Seven of 52 were
-false. Six were figures that the spec simply had wrong: a maximum of 133 where it said 130, a median
-of 85 values where it said 82, a short night on 2024-05-31 where it named Oct 10, a 21-minute import
-where it said 55. One reversed a ruling: the spec said "the later re-summary holds the fuller series"
-and built a fuller-wins rule on it. On 2024-01-01 the later file was the thinner, a strict subset
-(106 values at 06:52, then 104 at 07:30). Shown that pair, the athlete chose later-wins, and the
+judged false. Six were figures the spec had wrong, among them a maximum of 133 where it said 130, a
+median of 85 values where it said 82, and a short night on 2024-05-31 where it named Oct 10. One of
+the six "corrections" was itself wrong: planning replaced a 55-minute import estimate with the 21
+minutes of the store's earlier import of the same export, which held no nights, and the import with
+the nights took 62 minutes (1:01:52 at the release demo). A premise re-measured on a population that
+lacks the feature's data is not re-measured. The seventh reversed a ruling: the spec said "the later
+re-summary holds the fuller series" and built a fuller-wins rule on it. On 2024-01-01 the later file
+was the thinner, a strict subset (106 values at 06:52, then 104 at 07:30). Shown that pair, the athlete chose later-wins, and the
 feature's acceptance criteria changed before a task was written.
 
 The same re-measure also surfaced seven populations the spec had not named at all (106 nights
