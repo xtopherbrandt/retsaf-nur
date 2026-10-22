@@ -293,3 +293,47 @@ def test_an_old_jobs_counts_serve_without_the_new_keys(isolated_data_dir: Path) 
     assert one.json()["counts"] == expected
     (item,) = listed.json()["items"]
     assert item["counts"] == expected
+
+
+def test_a_failed_report_row_rolls_the_night_back(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recent night's report-row write raises inside ``after_write``; the night rolls back.
+
+    Held constant: the archive (the five rows of the module docstring, the recent night last),
+    every other file's write, and the store. Only the recent night's ``_write_stored_row`` call
+    raises, so the earlier nights and the run before it are stored as usual.
+    """
+    real = job._write_stored_row
+
+    def refuse_recent(conn: sqlite3.Connection, row: job.FileRow, import_id: str, counts: dict) -> None:
+        if row.session_id == RECENT_ID:
+            raise RuntimeError("report row refused")
+        real(conn, row, import_id, counts)
+
+    monkeypatch.setattr(job, "_write_stored_row", refuse_recent)
+    report = _import(isolated_data_dir, _archive(tmp_path))
+    rows = _rows(report)
+    print("[slice compared] rows:", rows, "counts:", report["counts"])
+    run_id = _run_id(report)
+    (recent,) = [r for r in report["files"] if r["entry"] == _inner(RECENT)]
+    assert (recent["outcome"], recent["status"], recent["session_id"]) == ("failed", None, None)
+    assert recent["detail"] == "RuntimeError: report row refused"
+    counts = report["counts"]
+    assert (counts["stored"], counts["replaced"], counts["no_night"], counts["failed"]) == (2, 1, 1, 1)
+    assert report["progress"]["activities_processed"] == 5
+    # The night is gone with its series and sidecar; the files before it stand.
+    sessions = _sessions(isolated_data_dir)
+    print("[slice compared] sessions:", sessions)
+    assert set(sessions) == {LATER_ID, run_id}
+    assert sessions[run_id][0] == report["import_id"]
+    conn = sqlite3.connect(isolated_data_dir / db.DB_FILENAME)
+    try:
+        children = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", (RECENT_ID,)).fetchone()[0]
+            for table in ("overnight_hrv_values", "quarantine_sidecar")
+        }
+    finally:
+        conn.close()
+    print("[slice compared] recent night child rows:", children)
+    assert children == {"overnight_hrv_values": 0, "quarantine_sidecar": 0}
