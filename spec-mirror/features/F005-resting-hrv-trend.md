@@ -1416,7 +1416,7 @@ required adversarial-probe table — is specified in
   `declared_config` does. The route resolves the `ZoneInfo` and passes it down; the metrics module
   stays pure (`pipeline.py:62-68`).
 - `health_api_overnight` is in the tier enum but never written by the classifier; tier ordering
-  must still rank it (MEDIUM — no fixture exercises it).
+  must still rank it (MEDIUM — no fixture exercises it). (Dated 2026-10-21, F028: `overnight.map_night` now writes it from the watch's HRV_STATUS files, and `test_overnight_trend.py` exercises it.)
 - Contract: `check_drift.py` is untracked in the working tree at the time of writing, and the
   workflow file sits under `contracts/` rather than `.github/workflows/`. Both must be committed
   before a worktree-isolated builder can run the drift check.

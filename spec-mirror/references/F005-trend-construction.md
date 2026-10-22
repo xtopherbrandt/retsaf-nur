@@ -324,7 +324,7 @@ read, drive the real path with each, and defend every result in writing:
 | Field | Degenerate forms to probe |
 |---|---|
 | `resting_rmssd_ms` | null, 0, negative, non-finite, 1 ms (ln ≈ 0), very large |
-| `hrv_source_tier` | null, an unknown enum value, `health_api_overnight` (in the enum, never written) |
+| `hrv_source_tier` | null, an unknown enum value, `health_api_overnight` (in the enum; never written until F028, which writes it from HRV_STATUS files since 2026-10-21) |
 | `start_time` | a DST transition day, 29 February, a future timestamp from clock skew, a value predating all others |
 | series shape | 0, 1, 2 readings in baseline; 0, 1, 2, 3 in window; all readings identical; a gap of exactly 21 and exactly 22 days |
 | `athlete_timezone` | an invalid zone, a zone with a half-hour offset, a change mid-history |

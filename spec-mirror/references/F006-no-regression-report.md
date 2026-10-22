@@ -155,7 +155,7 @@ populations.
 | zone | `Pacific/Auckland` |
 | tier dispersion | **equal on every tier**: `T130-overlap-sweep-harness.py`'s `era()` draws every era of both tiers from the same value generator (38/44 alternation or a constant), so the two bands are statistically identical and AC23's "no §1.7 rate moved at `2wk`" is true **by construction**, not measured ([[IDEA-089]]) |
 | seed | none; every generator is a deterministic function of its named parameters, so two runs produce identical rows |
-| N | 2 (`chest_strap_raw` + `health_snapshot`). The 3-dataset shape is untested by construction (reference §10) and this sweep does not reach it |
+| N | 2 (`chest_strap_raw` + `health_snapshot`). The 3-dataset shape is untested by construction (reference §10) and this sweep does not reach it. (Dated 2026-10-21, F028: `overnight.map_night` now writes `health_api_overnight` from the watch's HRV_STATUS files, so a real store holds 3 datasets; `test_overnight_trend.py` pins the 3-dataset shape.) |
 | judging seam | `build_series → selected_view → judge` on F006; `build_series → judge` on F005, whose `build_series` already returns the one resolved-tier series |
 
 ### Sweep (a) — the return rectangle, `t162-gate`'s `rect`
