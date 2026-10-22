@@ -520,6 +520,25 @@ def test_a_200_without_filter_applied_stops_before_a_second_upload(env, fake_gar
     assert api.uploads == [b"ACT-101"]
 
 
+def test_a_no_night_200_without_filter_applied_stops(env, fake_garmin, fake_api) -> None:
+    """A ``no_night`` 200 that lacks ``filter_applied`` is an API that ignored the switch: the sync
+    stops on the old-API line, never counting the reply as ``No night``. The served document lists
+    ``no_night``, so the contract check does not stop the sync first."""
+    fake = fake_garmin(snapshots={START: _zip([("1_HRV_STATUS.fit", b"NIGHT-NONE")])})
+    no_night = httpx.Response(200, json={"skipped": True, "reason": "no_night", "file_type": "hrv_status"})
+    api = env(fake, fake_api(replies={b"NIGHT-NONE": no_night}))
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    assert _ends_with(result.output, OLD_API), result.output
+    assert "(no_night)" not in result.output, result.output
+    assert api.uploads[-1] == b"NIGHT-NONE", api.uploads
+    assert b"ACT-201" not in api.uploads
+    assert b"ACT-301" not in api.uploads
+    assert "No night: 1" not in result.output, result.output
+
+
 def test_an_api_without_the_switch_stops_before_any_upload(env, fake_garmin, fake_api, openapi_doc) -> None:
     fake = fake_garmin()
     api = env(fake, fake_api(doc=openapi_doc(with_switch=False)))
