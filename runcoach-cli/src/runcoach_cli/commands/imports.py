@@ -8,9 +8,12 @@ the outcome. The API screens the contents as it does for any archive.
 
 The command prints the import id, then polls ``GET /imports/{id}`` every ``POLL_SECONDS``. It prints
 a line when the status changes and a line each time ``activities_processed`` passes a multiple of
-100, and at the end the report: stored runs and stored resting captures (told apart by the stored
-rows' ``activity_tag``), already stored, skipped by sport, failed (then one line per failed row:
-entry, status, detail), the non-activity total, not-FIT by extension, unreadable inner archives.
+100, and at the end the report: stored runs, stored resting captures and stored nights (told apart
+by the stored rows' ``activity_tag``; the nights only when there are any), replaced night summaries
+and files with no night (each only when non-zero), already stored, skipped by sport, failed (then
+one line per failed row: entry, status, detail), the non-activity total, not-FIT by extension,
+unreadable inner archives. An API that stores nights counts them in its progress total, so the
+progress lines then say "activities and nights"; an older API's lines read "activities".
 
 Exit codes: 0 when the import ends ``completed`` (failed rows included); 1 when it ends ``failed`` or
 ``interrupted``, when a file under a directory cannot be read, when the upload is refused (non-2xx),
@@ -49,6 +52,10 @@ PROGRESS_STEP = 100
 TERMINAL = {"completed", "failed", "interrupted"}
 # The activity tags the HRV classifier gives a resting capture (F020 reference section 3).
 RESTING_TAGS = {"resting_hrv_check", "health_snapshot"}
+# The activity tag of a night stored from an HRV_STATUS wellness file.
+NIGHT_TAG = "overnight_hrv"
+# The count keys an API that stores nights always serves (0 when none); an older API serves neither.
+NIGHT_COUNT_KEYS = ("replaced", "no_night")
 NULL = "-"
 
 sleep = time.sleep
@@ -100,17 +107,35 @@ def _int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _counts_nights(body: dict[str, Any]) -> bool:
+    """Whether the API stores nights, so its progress counts nights among the activities."""
+    counts = body.get("counts")
+    return isinstance(counts, dict) and any(key in counts for key in NIGHT_COUNT_KEYS)
+
+
+def _total_noun(body: dict[str, Any]) -> str:
+    return "activities and nights" if _counts_nights(body) else "activities"
+
+
 def _status_line(body: dict[str, Any]) -> str:
     status = body["status"]
     total = _int((body.get("progress") or {}).get("activities_total"))
     if status == "running" and total is not None:
-        return f"Status: {status} ({total} activities)"
+        return f"Status: {status} ({total} {_total_noun(body)})"
     return f"Status: {status}"
 
 
 def _processed(body: dict[str, Any]) -> tuple[int | None, int | None]:
     progress = body.get("progress") or {}
     return _int(progress.get("activities_processed")), _int(progress.get("activities_total"))
+
+
+def _processed_line(body: dict[str, Any], processed: int, total: int | None) -> str:
+    """``Processed X of N``, naming nights when the API counts them in N; an older API's N is bare."""
+    if total is None:
+        return f"Processed {processed}"
+    noun = f" {_total_noun(body)}" if _counts_nights(body) else ""
+    return f"Processed {processed} of {total}{noun}"
 
 
 def _by_key(counts: dict[str, Any], key: str) -> tuple[int, str]:
@@ -148,10 +173,14 @@ def _report_lines(body: dict[str, Any]) -> list[str]:
     if files is None:
         stored_line = f"Stored: {stored}"
     else:
-        captures = sum(
-            1 for row in rows if row.get("outcome") == "stored" and row.get("activity_tag") in RESTING_TAGS
-        )
-        stored_line = f"Stored: {stored - captures} runs, {captures} resting captures"
+        stored_tags = [row.get("activity_tag") for row in rows if row.get("outcome") == "stored"]
+        captures = sum(1 for tag in stored_tags if tag in RESTING_TAGS)
+        nights = sum(1 for tag in stored_tags if tag == NIGHT_TAG)
+        stored_line = f"Stored: {stored - captures - nights} runs, {captures} resting captures"
+        if nights:
+            stored_line += f", {nights} nights"
+    replaced = _count(counts, "replaced")
+    no_night = _count(counts, "no_night")
     skipped, skipped_detail = _by_key(counts, "skipped_sport")
     non_activity, _ = _by_key(counts, "non_activity")
     not_fit, not_fit_detail = _by_key(counts, "not_fit")
@@ -159,8 +188,17 @@ def _report_lines(body: dict[str, Any]) -> list[str]:
     if not isinstance(unreadable, list):
         raise TypeError("counts.unreadable_archives")
 
-    lines = [
-        stored_line,
+    lines = [stored_line]
+    if replaced:
+        # When both summaries of a night are in one archive the earlier one counts as stored, so the
+        # line says a replaced night is not another night.
+        lines.append(
+            f"Replaced: {replaced} (night summaries replaced by a later summary of the same night, "
+            "not extra nights)"
+        )
+    if no_night:
+        lines.append(f"No night: {no_night}")
+    lines += [
         f"Already stored: {_count(counts, 'already_stored')}",
         f"Skipped by sport: {skipped}{skipped_detail}",
         f"Failed: {_count(counts, 'failed')}",
@@ -291,8 +329,7 @@ def import_archive(
             processed, total = _processed(body)
             if processed is not None and processed // PROGRESS_STEP > last_step:
                 last_step = processed // PROGRESS_STEP
-                of_total = f" of {total}" if total is not None else ""
-                _write_utf8(f"Processed {processed}{of_total}")
+                _write_utf8(_processed_line(body, processed, total))
             if body["status"] in TERMINAL:
                 break
             sleep(POLL_SECONDS)
@@ -354,8 +391,7 @@ def import_status(
     _write_utf8(_status_line(body))
     processed, total = _processed(body)
     if body["status"] == "running" and processed is not None:
-        of_total = f" of {total}" if total is not None else ""
-        _write_utf8(f"Processed {processed}{of_total}")
+        _write_utf8(_processed_line(body, processed, total))
     if body["status"] in TERMINAL:
         _end(body)
     else:

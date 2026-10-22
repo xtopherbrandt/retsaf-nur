@@ -601,3 +601,127 @@ def test_the_upload_has_its_own_long_timeout(tmp_path: Path, install_mock_client
     assert upload.extensions["timeout"]["read"] == 600
     poll = next(r for r in api.requests if r.method == "GET")
     assert poll.extensions["timeout"]["read"] == api_client.LIST_TIMEOUT
+
+
+NIGHT_TAG = "overnight_hrv"
+
+# The API's report on an archive of two nights, a re-summary of one of them, a midnight file and a
+# run: the earlier summary is ``stored`` and then ``replaced`` by the later one, so two night
+# sessions remain although two night rows are ``stored`` and one is ``replaced``.
+NIGHT_FILES = [
+    _row(1, "n/midnight.fit", "no_night", sport="other", activity_tag=NIGHT_TAG, quality_flags=None),
+    _row(2, "n/earlier.fit", "stored", session_id="n1", sport="other", activity_tag=NIGHT_TAG),
+    _row(3, "n/later.fit", "replaced", session_id="n2", sport="other", activity_tag=NIGHT_TAG),
+    _row(4, "n/run.fit", "stored", session_id="r1", sport="running"),
+    _row(5, "n/recent.fit", "stored", session_id="n3", sport="other", activity_tag=NIGHT_TAG),
+    _row(6, "n/snap.fit", "stored", session_id="h1", sport="other", activity_tag="health_snapshot"),
+]
+
+NIGHT_COUNTS = _counts(stored=4, replaced=1, no_night=1, non_activity={"monitoring_b": 1})
+
+REPLACED_LINE = (
+    "Replaced: 1 (night summaries replaced by a later summary of the same night, not extra nights)"
+)
+
+
+def _night_report(**extra: Any) -> dict:
+    return _import(
+        "completed",
+        processed=5,
+        total=5,
+        counts=NIGHT_COUNTS,
+        files=NIGHT_FILES,
+        finished_at="2026-10-11T08:05:00+00:00",
+        **extra,
+    )
+
+
+def test_the_report_counts_nights_apart_from_runs(install_mock_client) -> None:
+    install_mock_client(_Api([_night_report()]))
+
+    result = _invoke("import-status", IMPORT_ID)
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    stored = [line for line in lines if line.startswith("Stored:")]
+    print("[slice compared] stored lines:", stored)
+    assert stored == ["Stored: 1 runs, 1 resting captures, 2 nights"]
+    # With no night stored the line reads as before: no ", 0 nights".
+    no_nights = dict(_night_report(), files=[r for r in NIGHT_FILES if r["activity_tag"] != NIGHT_TAG])
+    no_nights["counts"] = _counts(stored=2)
+    assert imports._report_lines(no_nights)[0] == "Stored: 1 runs, 1 resting captures"
+
+
+def test_the_report_prints_replaced_and_no_night_lines(install_mock_client) -> None:
+    install_mock_client(_Api([_night_report()]))
+
+    result = _invoke("import-status", IMPORT_ID)
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    head = lines[lines.index("Status: completed") + 1 :][:4]
+    print("[slice compared] report head:", head)
+    assert head == [
+        "Stored: 1 runs, 1 resting captures, 2 nights",
+        REPLACED_LINE,
+        "No night: 1",
+        "Already stored: 0",
+    ]
+    # The replaced row is not listed on its own, and a zero count prints no line.
+    assert not any(line.lstrip().startswith("n/") for line in lines)
+    zero = dict(_night_report(), counts=_counts(stored=4, replaced=0, no_night=0))
+    zero_lines = imports._report_lines(zero)
+    assert not any(line.startswith(("Replaced:", "No night:")) for line in zero_lines), zero_lines
+    # Without files[] (a listing row) nothing tells nights from runs, so Stored is the bare count.
+    bare = imports._report_lines({k: v for k, v in _night_report().items() if k != "files"})
+    print("[slice compared] bare head:", bare[:3])
+    assert bare[:3] == ["Stored: 4", REPLACED_LINE, "No night: 1"]
+
+
+def test_an_old_api_report_without_the_new_counts_prints_as_today(install_mock_client) -> None:
+    # An older API's counts carry neither ``replaced`` nor ``no_night``, and its progress counts
+    # activities only, so the lines keep their earlier wording.
+    assert "replaced" not in FINISHED_COUNTS and "no_night" not in FINISHED_COUNTS
+    install_mock_client(_Api([_finished()]))
+
+    result = _invoke("import-status", IMPORT_ID)
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    print("[slice compared] old-API lines:", lines)
+    assert lines[1:7] == [
+        "Status: completed",
+        "Stored: 2 runs, 2 resting captures",
+        "Already stored: 1",
+        "Skipped by sport: 1 (cycling 1)",
+        "Failed: 2",
+        "  a/bad.fit  400  not a FIT file: truncated",
+    ]
+    assert not any(line.startswith(("Replaced:", "No night:")) or "nights" in line for line in lines)
+    running = _import("running", processed=5, total=10)
+    assert imports._status_line(running) == "Status: running (10 activities)"
+
+
+def test_the_progress_lines_count_nights_when_the_api_reports_them(
+    tmp_path: Path, install_mock_client
+) -> None:
+    def running(processed: int) -> dict:
+        return _import("running", processed=processed, total=250, counts=_counts(replaced=0, no_night=0))
+
+    install_mock_client(_Api([running(0), running(120), _night_report()]))
+
+    result = _invoke("import", str(_zip_file(tmp_path)))
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    progress = [line for line in lines if line.startswith(("Status: running", "Processed"))]
+    print("[slice compared] progress lines:", progress)
+    assert progress == [
+        "Status: running (250 activities and nights)",
+        "Processed 120 of 250 activities and nights",
+    ]
+
+    install_mock_client(_Api([running(5)]))
+    status = _invoke("import-status", IMPORT_ID)
+    assert "Status: running (250 activities and nights)" in status.output
+    assert "Processed 5 of 250 activities and nights" in status.output
