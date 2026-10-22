@@ -373,3 +373,37 @@ def test_a_faulty_series_is_400_and_writes_nothing(label: str, route: str) -> No
     assert response.status_code == 400, response.text
     assert response.json() == {"detail": detail}
     assert _counts() == {"sessions": 0, "overnight_hrv_values": 0, "quarantine_sidecar": 0, "records": 0}
+
+
+@pytest.mark.parametrize("route", sorted(ROUTES))
+def test_a_value_with_no_timestamp_is_dropped_and_the_night_stored(route: str) -> None:
+    """``night_recent`` with its 11th value's timestamp blanked (synthetic: the export has no such
+    value). The summary is untouched, so the night keeps its id; 56 of its 57 values are stored."""
+    raw = fit_patch.blank_field_at(_night("night_recent"), HRV_VALUE, 10, TIMESTAMP)
+    with TestClient(app) as client:
+        response = _post(client, raw, ROUTES[route])
+    assert response.status_code == 201, response.text
+    assert response.json()["session_id"] == RECENT_ID
+    assert _values(RECENT_ID) == RECENT_VALUES - 1
+    assert _counts() == {
+        "sessions": 1,
+        "overnight_hrv_values": RECENT_VALUES - 1,
+        "quarantine_sidecar": SIDECAR_FIELDS,
+        "records": 0,
+    }
+
+
+def test_deleting_a_night_removes_its_values_and_sidecar() -> None:
+    with TestClient(app) as client:
+        stored = _post(client, _night("night_recent"))
+        assert stored.status_code == 201, stored.text
+        before = _counts()
+        deleted = client.delete(f"/sessions/{RECENT_ID}")
+    assert before == {
+        "sessions": 1,
+        "overnight_hrv_values": RECENT_VALUES,
+        "quarantine_sidecar": SIDECAR_FIELDS,
+        "records": 0,
+    }
+    assert deleted.status_code == 204, deleted.text
+    assert _counts() == {"sessions": 0, "overnight_hrv_values": 0, "quarantine_sidecar": 0, "records": 0}
