@@ -14,8 +14,10 @@ imported from there.
 **The night's device label.** A night's ``source_device`` is the watch's
 string as ``_build_source_device`` spells it for the watch's activities,
 followed by ``NIGHT_DEVICE_SUFFIX`` (`` hrv_status``), and that string
-feeds ``derive_session_id``. The watch writes the night's summary at the
-moment the athlete starts a morning recording, often in the same second; with
+feeds ``derive_session_id``. The watch writes the night's summary near the
+wake time, and on a morning with a recording often in the same second it
+starts or one second before (17 of 27 wrist Health Snapshots, 2026-08-28 to
+2026-10-20; on the rest the summary came earlier); with
 the bare string the night and that recording would share both the id and the
 ``UNIQUE (source_device, start_time)`` slot, and whichever arrived second
 would be refused as a duplicate. With the label the two never collide, so
