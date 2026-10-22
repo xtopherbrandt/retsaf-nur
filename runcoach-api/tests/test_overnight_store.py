@@ -563,6 +563,41 @@ def test_a_resummary_at_the_same_moment_replaces_the_stored_night() -> None:
     assert values == LATER_VALUES
 
 
+def test_nights_with_no_series_are_stored_and_never_replace_each_other() -> None:
+    """``night_recent`` with every ``hrv_value`` removed (synthetic): ``series_start`` is None, so the
+    re-summary lookup never runs. The same file an hour later is its own row, not a replacement."""
+    summary_only = overnight.map_night(fit_patch.remove_messages((NIGHTS / "night_recent.fit").read_bytes(), 371))
+    assert isinstance(summary_only, overnight.Night)
+    assert summary_only.session.summary["series_start"] is None
+    later_start = (datetime.fromisoformat(summary_only.session.start_time) + timedelta(hours=1)).isoformat()
+    an_hour_later = dataclasses.replace(
+        summary_only,
+        session=dataclasses.replace(
+            summary_only.session,
+            start_time=later_start,
+            session_id=derive_session_id(summary_only.session.source_device, later_start),
+        ),
+    )
+    conn = _conn()
+    try:
+        first = db.persist_night(conn, summary_only)
+        second = db.persist_night(conn, an_hour_later)
+        stored = _nights_stored(conn)
+        counts = _store_counts(conn)
+    finally:
+        conn.close()
+
+    assert first == db.NightWrite(session_id=summary_only.session.session_id, replaced_session_id=None)
+    assert second == db.NightWrite(session_id=an_hour_later.session.session_id, replaced_session_id=None)
+    assert stored == [(first.session_id, RECENT_START), (second.session_id, later_start)]
+    assert counts == {
+        "sessions": 2,
+        VALUES_TABLE: 0,
+        "quarantine_sidecar": 2 * RECENT_SIDECAR_FIELDS,
+        "session_loads": 2,
+    }
+
+
 def test_a_foreign_row_in_the_nights_slot_is_a_duplicate_naming_it() -> None:
     """A row under another id and another tag at the night's exact
     ``(source_device, start_time)``, the device string with the ``hrv_status``
