@@ -345,7 +345,7 @@ def test_the_contract_lists_admission_fields_reason_and_bounds(contract: dict) -
         assert field in parameters["required"], field
         assert parameters["properties"][field]["type"] == kind, field
     print(f"  info.version {contract['info']['version']}")
-    assert contract["info"]["version"] == "0.4.0-draft"
+    assert contract["info"]["version"] == "0.5.0-draft"
 
 
 _STALE_EFFORT_PHRASES = ("active laps", "active time", "active windows", "consecutive active laps")

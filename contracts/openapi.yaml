@@ -43,7 +43,7 @@ openapi: 3.1.0
 
 info:
   title: Run Coaching System — UI↔Engine API
-  version: 0.4.0-draft
+  version: 0.5.0-draft
   description: >
     Target contract for the athlete-facing web + mobile UI. Read/write surface
     over the deterministic coaching engine. The engine is the single source of

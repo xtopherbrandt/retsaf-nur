@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Migration required
+
+`contracts/openapi.yaml` `info.version` is now `0.5.0-draft` (was `0.4.0-draft`): `POST /sessions`
+stores the watch's overnight HRV_STATUS files, its 200 skip reply gains the reason `no_night` (a file
+with no night), `filter_applied` on that reply is now true or false where it was always true, and a
+200 can now come back without `runs_and_captures_only`. Update the CLI with the API. Against the new
+API an older CLI's `runcoach sync` reports an HRV_STATUS file with no night as `Failed` ("API returned
+200 with an unknown skip reason 'no_night'") and goes on with the sync, but exits 1, and because it
+counts the failure as temporary, every later `runcoach sync` without `--since` reaches back to that
+day ("Starting at ...: a failed item on that day") and fails on the same file again.
+
 ## 2026-10-19 through 2026-10-20 — Sprint 020: Threshold pace from sustained work reps, by tag or workout name
 
 ### Threshold pace from sustained work reps, by tag or workout name
