@@ -31,6 +31,18 @@ statement that reads or writes them lives here.
   only, with ``ingestion.exceptions.http_status_detail``'s status and detail
   ("database is locked" for a store held past the timeout). Those rows, and
   their progress, are written in their own short transaction.
+- **Nights (F028 reference section 6).** An HRV_STATUS file (an
+  ``archive.Activity`` of ``kind`` ``"night"``) goes through
+  ``overnight.map_night`` and ``db.persist_night`` instead of the pipeline,
+  counted in the total and the progress like an activity. Its row is
+  ``stored`` or ``replaced`` (a re-summary that replaced a stored night),
+  written by ``persist_night``'s ``after_write`` inside the night's
+  transaction; ``no_night`` for a file with no night; ``already_stored`` and
+  ``failed`` as above. A night's row names ``sport`` ``other`` and
+  ``activity_tag`` ``overnight_hrv``, as a ``no_night`` row does.
+- **Counts.** ``replaced`` and ``no_night`` count those rows; a job stored
+  before they existed holds counts without them, which ``ImportCounts``
+  serves as 0.
 - **Ending.** Anything not handled per file marks the job ``failed`` with
   ``error``. The temp dir is removed before the terminal status is written,
   in every outcome. If even that write fails, the job stays active until the
@@ -61,7 +73,7 @@ from zoneinfo import ZoneInfo
 
 from runcoach_api import db
 from runcoach_api.imports import archive
-from runcoach_api.ingestion import pipeline
+from runcoach_api.ingestion import overnight, pipeline
 from runcoach_api.ingestion.exceptions import DuplicateSessionError, http_status_detail
 from runcoach_api.models import Session
 
@@ -69,6 +81,9 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = ("queued", "scanning", "running")
 KEEP_TAGS = frozenset({"resting_hrv_check", "health_snapshot"})
+# A night's report row names it as the stored night does (``overnight.map_night``).
+NIGHT_SPORT = "other"
+NIGHT_TAG = "overnight_hrv"
 # Seconds a store connection waits on another connection's lock before
 # "database is locked" (sqlite3's own default); tests lower it.
 STORE_TIMEOUT_S = 5.0
@@ -104,7 +119,9 @@ def _now() -> str:
 def _empty_counts() -> dict:
     return {
         "stored": 0,
+        "replaced": 0,
         "already_stored": 0,
+        "no_night": 0,
         "failed": 0,
         "skipped_sport": {},
         "non_activity": {},
@@ -361,6 +378,9 @@ class _Job:
         activity.path.unlink(missing_ok=True)
         stamp = activity.time_created_utc
         time_created = None if stamp is None else stamp.isoformat()
+        if activity.kind == "night":
+            self.ingest_night(seq, activity.label, time_created, raw)
+            return
         seen: dict[str, Session] = {}
         pending: dict[str, dict] = {}
 
@@ -418,6 +438,54 @@ class _Job:
                 activity_tag=session.activity_tag,
             )
             self.finish_file(row, sport=label)
+            return
+        self.counts = pending["counts"]
+
+    def ingest_night(self, seq: int, label: str, time_created: str | None, raw: bytes) -> None:
+        """An HRV_STATUS file: ``overnight.map_night``, then ``db.persist_night`` (F028 reference section 6).
+
+        A stored or replaced night's row is written by ``after_write`` inside
+        the night's transaction, as a stored activity's is; a file with no
+        night is ``no_night``, a duplicate ``already_stored`` and any other
+        exception ``failed``, each in its own short transaction.
+        """
+        pending: dict[str, dict] = {}
+
+        def after_write(conn: sqlite3.Connection, write: db.NightWrite) -> None:
+            outcome = "stored" if write.replaced_session_id is None else "replaced"
+            row = FileRow(
+                seq,
+                label,
+                time_created,
+                outcome,
+                session_id=write.session_id,
+                sport=NIGHT_SPORT,
+                activity_tag=NIGHT_TAG,
+                quality_flags=list(night.session.quality_flags),
+            )
+            counts = _bumped(self.counts, outcome)
+            _write_stored_row(conn, row, self.import_id, counts)
+            pending["counts"] = counts
+
+        try:
+            night = overnight.map_night(raw)
+            if isinstance(night, overnight.NoNight):
+                row = FileRow(
+                    seq, label, time_created, "no_night", sport=NIGHT_SPORT, activity_tag=NIGHT_TAG
+                )
+                self.finish_file(row)
+                return
+            # As ingest_fit_bytes opens its connection: the captured data dir and the store timeout.
+            with closing(db.get_connection(self.data_dir, timeout=STORE_TIMEOUT_S)) as conn:
+                db.init_schema(conn)
+                db.persist_night(conn, night, after_write=after_write)
+        except DuplicateSessionError as exc:
+            row = FileRow(seq, label, time_created, "already_stored", session_id=exc.existing_session_id)
+            self.finish_file(row)
+            return
+        except Exception as exc:  # noqa: BLE001 -- any per-file error fails that row only
+            status, detail = http_status_detail(exc)
+            self.finish_file(FileRow(seq, label, time_created, "failed", status=status, detail=detail))
             return
         self.counts = pending["counts"]
 

@@ -3161,6 +3161,8 @@ components:
         stored: { type: integer }
         already_stored: { type: integer }
         failed: { type: integer }
+        no_night: { type: integer, default: 0, description: "HRV_STATUS files holding no night; 0 for a job stored before the key existed." }
+        replaced: { type: integer, default: 0, description: "Nights that replaced a stored re-summary of themselves; 0 for a job stored before the key existed." }
         skipped_sport: { type: object, additionalProperties: { type: integer }, description: "By the sport the FIT file names (a number as its string)." }
         non_activity: { type: object, additionalProperties: { type: integer }, description: "By FIT file type name (a number for a Garmin-private type)." }
         not_fit: { type: object, additionalProperties: { type: integer }, description: "By lower-cased extension without the dot; (none) without one." }
@@ -3169,13 +3171,13 @@ components:
           items: { $ref: "#/components/schemas/ImportUnreadableArchive" }
     ImportFile:
       type: object
-      description: "One processed activity (or unreadable FIT candidate), in processing order."
+      description: "One processed activity or HRV_STATUS file (or unreadable FIT candidate), in processing order."
       required: [seq, entry, time_created, outcome, session_id, sport, activity_tag, quality_flags, status, detail]
       properties:
         seq: { type: integer, description: "Processing order from 1: oldest time_created first." }
         entry: { type: string, description: "The entry's path, or <outer path>!<inner path> inside an inner zip." }
         time_created: { type: string, nullable: true, description: "file_id.time_created, ISO 8601 in UTC." }
-        outcome: { type: string, enum: [stored, already_stored, skipped_sport, failed] }
+        outcome: { type: string, enum: [stored, replaced, already_stored, no_night, skipped_sport, failed] }
         session_id: { type: string, nullable: true, description: "Kept after that session is deleted." }
         sport: { type: string, nullable: true, description: "Canonical sport when stored; the FIT file's sport when skipped_sport." }
         activity_tag: { type: string, nullable: true, description: "resting_hrv_check and health_snapshot mark resting captures." }

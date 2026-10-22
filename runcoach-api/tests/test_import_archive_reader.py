@@ -270,10 +270,21 @@ def test_a_fit_with_no_file_id_message_is_failed(tmp_path: Path, work_dir: Path)
 
 
 def test_a_garmin_private_type_is_counted_by_its_number(tmp_path: Path, work_dir: Path) -> None:
-    path = _write_zip(tmp_path / "a.zip", [("hrv_status.fit", IA.minimal_fit(44)), ("x.fit", IA.minimal_fit(44))])
+    path = _write_zip(tmp_path / "a.zip", [("private_44.fit", IA.minimal_fit(44)), ("x.fit", IA.minimal_fit(44))])
     scan = archive.scan(path, work_dir)
     assert scan.non_activity == {"44": 2}
     assert scan.activities == [] and scan.failed == []
+
+
+def test_a_type_68_file_is_a_night_ordered_with_the_activities(tmp_path: Path, work_dir: Path) -> None:
+    """An HRV_STATUS file is spilled and sorted by time_created with the activities, not counted as non-activity."""
+    night = IA.minimal_fit(68, time_created=_fit_seconds(2020))
+    path = _write_zip(tmp_path / "a.zip", [("b.fit", _activity(2021)), ("a.fit", night), ("c.fit", _activity(2019))])
+    scan = archive.scan(path, work_dir)
+    print([(a.label, a.kind) for a in scan.activities], scan.non_activity)
+    assert [(a.label, a.kind) for a in scan.activities] == [("c.fit", "activity"), ("a.fit", "night"), ("b.fit", "activity")]
+    assert scan.non_activity == {} and scan.fit_files_scanned == 3
+    assert scan.activities[1].path.read_bytes() == night
 
 
 def test_an_inner_zip_past_its_cap_is_unreadable_and_stops_writing(

@@ -23,7 +23,9 @@ activities in processing order with their bytes copied to ``work_dir``.
   ``FIT_ENTRY_CAP + 1`` bytes; over the cap it is a ``Failed`` candidate with
   the status and message ``POST /sessions`` gives a file over its cap. Its
   ``file_id`` is read with CRC checking disabled, and decoding stops there. A
-  ``file_id.type`` other than ``activity`` is counted under ``non_activity``
+  ``file_id.type`` of ``HRV_STATUS_FILE_TYPE`` is a night: an ``Activity``
+  of ``kind`` ``"night"``, spilled, ordered and counted with the activities.
+  Any other ``file_id.type`` than ``activity`` is counted under ``non_activity``
   by the decoder's type name, or by the number as a string for a Garmin-private
   type. A ``file_id`` that cannot be read, or has no usable ``type``, makes a
   ``Failed`` candidate (it may be an activity) with ``status`` None. That
@@ -84,12 +86,13 @@ _ENTRY_READ_ERRORS = (
 
 @dataclass(frozen=True)
 class Activity:
-    """An activity FIT file, its bytes at ``path`` under ``work_dir``."""
+    """An activity FIT file, or an HRV_STATUS file (``kind`` ``"night"``), its bytes at ``path`` under ``work_dir``."""
 
     label: str
     time_created: int | None  # FIT seconds since FIT_EPOCH, as file_id carries it
     path: Path
     position: int
+    kind: Literal["activity", "night"] = "activity"
 
     @property
     def time_created_utc(self) -> datetime | None:
@@ -252,14 +255,12 @@ class _Scanner:
         if screened.outcome == "non_activity":
             self.non_activity[screened.file_type or ""] += 1
             return
-        if screened.outcome == "hrv_status":
-            # An HRV_STATUS file is counted as non-activity here, as before, under its type number.
-            self.non_activity[str(HRV_STATUS_FILE_TYPE)] += 1
-            return
+        # An HRV_STATUS file is spilled and ordered with the activities, as a night.
+        kind: Literal["activity", "night"] = "night" if screened.outcome == "hrv_status" else "activity"
         path = self._next_name(".fit")
         with open(path, "wb") as out:
             out.write(data)
-        self.scan.activities.append(Activity(label, screened.time_created, path, position))
+        self.scan.activities.append(Activity(label, screened.time_created, path, position, kind))
 
     def _inner_zip(self, zf: zipfile.ZipFile, info: zipfile.ZipInfo, label: str) -> None:
         if info.flag_bits & _ENCRYPTED:

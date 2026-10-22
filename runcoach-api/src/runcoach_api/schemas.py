@@ -1379,7 +1379,7 @@ class HrHistoryEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 ImportStatus = Literal["queued", "scanning", "running", "completed", "failed", "interrupted"]
-ImportOutcome = Literal["stored", "already_stored", "skipped_sport", "failed"]
+ImportOutcome = Literal["stored", "replaced", "already_stored", "no_night", "skipped_sport", "failed"]
 
 
 class ImportProgress(BaseModel):
@@ -1403,6 +1403,8 @@ class ImportCounts(BaseModel):
     stored: int
     already_stored: int
     failed: int
+    no_night: int = Field(default=0, description="HRV_STATUS files holding no night; 0 for a job stored before the key existed.")
+    replaced: int = Field(default=0, description="Nights that replaced a stored re-summary of themselves; 0 for a job stored before the key existed.")
     skipped_sport: dict[str, int] = Field(description="Skipped activities by the sport the FIT file names (a number as its string).")
     non_activity: dict[str, int] = Field(description="FIT files that are not activities, by file type name (a number for a Garmin-private type).")
     not_fit: dict[str, int] = Field(description="Entries that are not FIT files, by lower-cased extension without the dot; `(none)` without one.")
@@ -1410,7 +1412,7 @@ class ImportCounts(BaseModel):
 
 
 class ImportFile(BaseModel):
-    """One processed activity (or unreadable FIT candidate), in processing order."""
+    """One processed activity or HRV_STATUS file (or unreadable FIT candidate), in processing order."""
 
     seq: int = Field(description="Processing order, from 1: oldest time_created first.")
     entry: str = Field(description="The entry's label: its path, or `<outer path>!<inner path>` inside an inner zip.")
