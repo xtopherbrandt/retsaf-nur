@@ -21,8 +21,8 @@ it. The `summary` holds `duration_s`, `series_start`, `last_night_5_min_high`, `
 last (0 with no series), not the sleep time. The 5-minute values are stored in the new table
 `overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
 go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
-without `runs_and_captures_only`, takes this path (it was a 400 before); with `resting_capture`
-it is a 422.
+without `runs_and_captures_only`, takes this path (before this release, a plain upload was a 400
+and an upload with the switch a 200 `non_activity` skip); with `resting_capture` it is a 422.
 
 **No night.** A file whose summary has no `last_night_average`, or one that is 0, negative or not
 finite, or that has no summary at all, stores nothing: `POST /sessions` answers 200 `IngestSkipped`
@@ -124,9 +124,10 @@ and leaves replaced and no-night files out of its report, and the updated `runco
 served contract before its first upload and stops against an API that lacks `no_night`, with nothing
 uploaded. So update the API and the CLI together.
 
-Deleting a night needs the updated API. An API older than this release, opened on a store that holds
-nights, cannot delete one: its `_child_tables()` does not know the `overnight_hrv_values` table, so
-the delete fails on the foreign key; update the API before deleting a night.
+Deleting a night that holds 5-minute values needs the updated API. An API older than this release
+cannot delete such a night: its `_child_tables()` does not know the `overnight_hrv_values` table
+that holds the values, so the delete fails on the foreign key. A night with no 5-minute values
+has no rows there, and an older API deletes it. So update the API before deleting a night.
 
 ## 2026-10-19 through 2026-10-20 — Sprint 020: Threshold pace from sustained work reps, by tag or workout name
 
