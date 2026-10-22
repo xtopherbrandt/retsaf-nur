@@ -152,6 +152,28 @@ def test_a_date_time_past_year_9999_says_date_time_on_linux(monkeypatch) -> None
     assert "year 36832 is out of range" in response.text
 
 
+@pytest.mark.parametrize("year", ["36832", "-32873", "0", "10000"])
+def test_every_year_range_message_says_date_time(monkeypatch, year) -> None:
+    """CPython on Linux names a year either side of 1..9999, a negative one included."""
+
+    class _Refuses(datetime.datetime):
+        @classmethod
+        def fromtimestamp(cls, t, tz=None):  # type: ignore[override]
+            if t > 253402300799:
+                raise ValueError(f"year {year} is out of range")
+            return datetime.datetime.fromtimestamp(t, tz)
+
+    monkeypatch.setattr(
+        fitdecode_processors,
+        "datetime",
+        types.SimpleNamespace(
+            datetime=_Refuses, timezone=datetime.timezone, time=datetime.time
+        ),
+    )
+    with pytest.raises(FitParseFailure, match="a date_time field is out of range"):
+        decode(_session_start_widened_to(2**40))
+
+
 # ---------------------------------------------------------------------------
 # HTTP boundary: POST /sessions with a corrupt upload -> clean 400
 # ---------------------------------------------------------------------------
