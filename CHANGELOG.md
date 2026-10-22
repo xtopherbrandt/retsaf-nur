@@ -19,9 +19,10 @@ starting at the summary's timestamp (near the wake time, not the sleep start). I
 it. The `summary` holds `duration_s`, `series_start`, `last_night_5_min_high`, `hrv_values` and
 `hrv_values_valid`; `duration_s` is the span of the 5-minute series, from its first value to its
 last (0 with no series), not the sleep time. Its source reads as the watch followed by
-`hrv_status` (`fr945_lte fw17.4 hrv_status`), because the watch often writes a night's summary in
-the second a morning recording starts, and the label keeps the two from sharing one id, so both are
-stored. The 5-minute values are stored in the new table
+`hrv_status` (`fr945_lte fw17.4 hrv_status`), because on a morning with a Health Snapshot the watch
+writes the night's summary in the same second the recording starts, or one second before it (8 of
+the 27 wrist Health Snapshots from 2026-08-28 to 2026-10-20 started in the night's second), and the
+label keeps the two from sharing one id, so both are stored. The 5-minute values are stored in the new table
 `overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
 go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
 without `runs_and_captures_only`, takes this path (before this release, a plain upload was a 400
@@ -85,16 +86,24 @@ on the account export already imported once (its runs and captures read `Already
 `runcoach sync --since 2026-10-09` for the days after the export was made. Measured on the account
 export (exported 2026-10-10) at sprint planning, the import should report 1,361 nights stored, 2
 replaced, 46 no night and 43,797 non-activity files, the report lines reading `, 1361 nights` at the
-end of `Stored:`, `Replaced: 2`, `No night: 46` and `Non-activity files: 43797`; the store's own row
-for the earlier import of this export took about 21 minutes. The release demo re-measures these on a
-copy of the store.
+end of `Stored:`, `Replaced: 2`, `No night: 46` and `Non-activity files: 43797`. The release demo
+re-measured these on a copy of the store and the counts held. The import took 1:02 (1:01:52 by the
+CLI; 1:02:04 on the demo's first run), against 0:21 for the earlier import of the same export, which
+held no nights. The pace drops from the first HRV_STATUS file on: about 25-50 s per 100 activity
+files before it, against 86-179 s per 100 in the spans holding nights. The cause is not yet
+measured.
 
 **Measured comparison (the premise of IDEA-180).** Measured on the account export, 2026-10-20, and
-re-measured at sprint planning: the overnight nights (1,358 from 2023-01-17 to 2026-10-10) have an
-ln rMSSD sd of 0.18 (0.12 over the 71 nights since 2026-08-01) and a median night-to-night change in
-ln of 0.11, against 0.42 (0.30 from 2026-10-01) and 0.32 for the 26 wrist Health Snapshots and 0.53
-and 0.35 for the 13 strap snapshots. On days holding both, the night against the wrist snapshot reads
-r = -0.06 (19 days) and against the strap snapshot r = 0.60 (8 days). IDEA-180 holds these figures
+re-measured at sprint planning and by the release demo, each figure with its method: the overnight
+nights cover 1,358 local days from 2023-01-17 to 2026-10-10 (1,361 rows). Taking the earliest night
+on each local day, their ln rMSSD sd is 0.18 (0.12 over the 71 days since 2026-08-01), and their
+median night-to-night change in ln is 0.11 under every pairing the demo tried. The snapshot spreads
+are over all readings: an ln sd of 0.42 (0.30 from 2026-10-01) for the 26 wrist Health Snapshots and
+0.53 for the 13 strap snapshots. Their night-to-night change, 0.32 for the wrist and 0.35 for the
+strap, pairs each reading with the next one only when the next falls on the consecutive calendar
+day. On days holding both, pairing the earliest reading on each side of the same local day, the
+night against the wrist snapshot reads r = -0.06 (19 days) and against the strap snapshot r = 0.60
+(8 days). IDEA-180 holds these figures
 for a re-rank of the tiers; this release does not change the rank.
 
 **Correction to the sprint-017 entry: the daily Task Scheduler line.** That entry stands as
