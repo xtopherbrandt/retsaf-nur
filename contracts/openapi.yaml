@@ -574,7 +574,7 @@ paths:
                     keep is a 200 IngestSkipped and nothing is stored; a kept file's
                     201 carries `filter_applied: true`. Sent with `resting_capture`
                     true → 422 (the declaration bypasses the rule). Optional; without
-                    it the call and every reply are unchanged.
+                    it every activity's reply is as before the field existed.
                     An HRV_STATUS file (file_id type 68) is an overnight night with or
                     without it; with `resting_capture` true it is a 422.
       responses:
@@ -3144,7 +3144,7 @@ components:
       required: [fit_files_scanned, activities_total, activities_processed]
       properties:
         fit_files_scanned: { type: integer, description: "FIT candidates screened so far (written every 100 while scanning)." }
-        activities_total: { type: integer, description: "Rows the job will process: activities plus unreadable FIT candidates." }
+        activities_total: { type: integer, description: "Rows the job will process: activities and HRV_STATUS files, plus unreadable FIT candidates." }
         activities_processed: { type: integer, description: "Rows written so far; equal to activities_total when the job completes." }
     ImportUnreadableArchive:
       type: object

@@ -33,7 +33,8 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   Garmin answers with an HTTP error status other than 401, 403, 404 and 429 is ``failed`` and the
   sync goes on. A stop (reference section 6: a login needed, a web page for a download, a rate
   limit, Garmin unreachable (no HTTP reply at all) or the API unreachable, any error on the
-  activity list, an API without the switch, a ``/openapi.json`` answering other than 200, which
+  activity list, an API without the switch or without ``no_night`` among the skip reasons, a
+  ``/openapi.json`` answering other than 200, which
   names the status rather than calling the API old) prints the summary so far and its message, uploads
   nothing more and exits 1. Downloads are read in memory only, each entry capped at
   ``FIT_ENTRY_CAP`` and only stored or deflated (reference section 7). ``sync`` never reads stdin.

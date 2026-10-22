@@ -182,8 +182,8 @@ def create_session(
     screen fails is a 400 with the screen's detail; otherwise the replies are the
     usual ones, and the 201 carries ``filter_applied: true``. The switch with
     ``resting_capture`` is a 422: a declaration that bypasses the rule and a
-    request to apply it contradict each other. Without the switch the call and
-    every reply are as before the field existed (no ``filter_applied`` key).
+    request to apply it contradict each other. Without the switch an activity's
+    reply is as before it existed (no ``filter_applied`` key); an HRV_STATUS file's is not.
 
     Every upload is screened (one ``file_id`` read). An HRV_STATUS file (F028)
     takes the night path, with or without the switch: ``overnight.map_night``,

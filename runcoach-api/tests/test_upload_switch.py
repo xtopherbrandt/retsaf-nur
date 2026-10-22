@@ -4,8 +4,9 @@ With the switch the upload is screened as the archive import screens a file:
 the ``file_id`` first (``imports.archive.screen_file_id``), then the classified
 session through ``imports.job.keep_session``. A file the rule does not keep is a
 200 ``IngestSkipped`` and nothing is stored; a kept file is the usual 201, 409 or
-400, with ``filter_applied: true`` on the 201. Without the switch every reply is
-as it was before the field existed.
+400, with ``filter_applied: true`` on the 201. Without the switch every
+activity's reply is as it was before the field existed (an HRV_STATUS file takes
+the night path either way, F028).
 
 Fixtures, by their provenance rows in ``tests/fixtures/README.md``:
 ``sample_run`` (a real run, run proof yes); ``sample_health_snapshot`` (a Health

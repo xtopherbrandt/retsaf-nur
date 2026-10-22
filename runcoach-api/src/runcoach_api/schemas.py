@@ -1386,7 +1386,9 @@ class ImportProgress(BaseModel):
     """How far the job has got: candidates screened while ``scanning``, activities done while ``running``."""
 
     fit_files_scanned: int = Field(description="FIT candidates screened so far (written every 100 while scanning).")
-    activities_total: int = Field(description="Rows the job will process: activities plus unreadable FIT candidates.")
+    activities_total: int = Field(
+        description="Rows the job will process: activities and HRV_STATUS files, plus unreadable FIT candidates."
+    )
     activities_processed: int = Field(description="Rows written so far; equal to activities_total when the job completes.")
 
 
