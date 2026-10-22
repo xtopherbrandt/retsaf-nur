@@ -17,11 +17,14 @@ shared-filename collision this avoids).
 
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import struct
 import sys
+import types
 from pathlib import Path
 
+import fitdecode.processors as fitdecode_processors
 import pytest
 from fastapi.testclient import TestClient
 
@@ -116,6 +119,37 @@ def test_a_decoder_value_error_is_not_reported_as_a_date_time_fault() -> None:
     assert isinstance(caught.value.__cause__, ValueError)
     assert "date_time" not in message
     assert "size" in message
+
+
+class _LinuxDatetime(datetime.datetime):
+    """``datetime`` whose ``fromtimestamp`` refuses a year past 9999 as Linux does.
+
+    On Linux ``datetime.fromtimestamp(631065600 + 2**40, utc)`` raises
+    ``ValueError('year 36832 is out of range')``; Windows raises ``OSError`` for
+    the same value. Patching the conversion fitdecode uses makes the Linux path
+    run on every platform.
+    """
+
+    @classmethod
+    def fromtimestamp(cls, t, tz=None):  # type: ignore[override]
+        if t > 253402300799:
+            raise ValueError("year 36832 is out of range")
+        return datetime.datetime.fromtimestamp(t, tz)
+
+
+def test_a_date_time_past_year_9999_says_date_time_on_linux(monkeypatch) -> None:
+    monkeypatch.setattr(
+        fitdecode_processors,
+        "datetime",
+        types.SimpleNamespace(
+            datetime=_LinuxDatetime, timezone=datetime.timezone, time=datetime.time
+        ),
+    )
+    raw = _session_start_widened_to(2**40)
+    with TestClient(app) as client:
+        response = client.post("/sessions", files={"file": ("widened.fit", raw)})
+    _assert_unparseable_400(response)
+    assert "year 36832 is out of range" in response.text
 
 
 # ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ here, not incidental:
 from __future__ import annotations
 
 import io
+import re
 
 import fitdecode
 
@@ -39,6 +40,9 @@ from runcoach_api.ingestion.exceptions import (
 
 _FIT_MAGIC = b".FIT"
 _MAGIC_OFFSET = 8
+
+# datetime's refusal of a year outside 1..9999, e.g. 'year 36832 is out of range'.
+_YEAR_OUT_OF_RANGE = re.compile(r"year -?\d+ is out of range")
 
 # Ceiling on ``record`` messages accepted from a single FIT file.
 #
@@ -196,11 +200,11 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
             definition/data records, etc.), or a ``date_time`` field
             holds a value ``datetime.fromtimestamp`` cannot represent
             (``OverflowError`` beyond ``time_t``, ``OSError`` from the
-            platform's range: the message names the ``date_time``
-            field), or the decoder raises a plain ``ValueError`` (a
-            field definition of size 0, or ``datetime``'s own year
-            range: the message says only that a field value was
-            refused).
+            platform's range, or ``datetime``'s own year range, a
+            ``ValueError`` on Linux: the message names the
+            ``date_time`` field), or the decoder raises any other plain
+            ``ValueError`` (a field definition of size 0: the message
+            says only that a field value was refused).
         TooManyRecordsError: the stream passes one of the three
             ceilings -- more than ``MAX_RECORD_MESSAGES`` ``record``
             messages, more than ``MAX_DATA_MESSAGES`` data messages of
@@ -272,9 +276,13 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         # as one of these rather than a fitdecode error.
         raise FitParseFailure(f"a date_time field is out of range: {exc}") from exc
     except ValueError as exc:
-        # A plain ValueError has more than one source: fitdecode's own reads (a
-        # field definition of size 0 raises ValueError('size')) and datetime's
-        # year range. Nothing tells them apart, so the wording names neither.
+        # A plain ValueError has more than one source. datetime's own year range
+        # ('year 36832 is out of range', which Linux raises where Windows raises
+        # OSError) is a date_time fault and is worded as one. fitdecode's own
+        # reads (a field definition of size 0 raises ValueError('size')) name no
+        # field, so the wording for the rest names none either.
+        if _YEAR_OUT_OF_RANGE.fullmatch(str(exc)):
+            raise FitParseFailure(f"a date_time field is out of range: {exc}") from exc
         raise FitParseFailure(f"the decoder refused a field value: {exc}") from exc
 
     return messages
