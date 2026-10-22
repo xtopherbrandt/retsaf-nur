@@ -1419,9 +1419,9 @@ class ImportFile(BaseModel):
     time_created: str | None = Field(description="file_id.time_created, ISO 8601 in UTC; null when absent or unreadable.")
     outcome: ImportOutcome
     session_id: str | None = Field(description="The stored or already stored session; kept after that session is deleted.")
-    sport: str | None = Field(description="Canonical sport when stored; the FIT file's sport when skipped_sport.")
-    activity_tag: str | None = Field(description="The stored session's activity_tag (resting_hrv_check and health_snapshot mark resting captures).")
-    quality_flags: list[str] | None = Field(description="The stored session's quality flags; null for other outcomes.")
+    sport: str | None = Field(description="Canonical sport when stored; `other` on a night's row (stored, replaced or no_night); the FIT file's sport when skipped_sport.")
+    activity_tag: str | None = Field(description="The stored session's activity_tag (resting_hrv_check and health_snapshot mark resting captures; overnight_hrv a night's stored, replaced or no_night row).")
+    quality_flags: list[str] | None = Field(description="The stored or replacing session's quality flags ([] for a night); null for other outcomes.")
     status: int | None = Field(description="On failed: for a file the pipeline refused, the status POST /sessions answers for it (413 for a FIT entry over its 50 MB cap); null for a candidate that could not be screened, and otherwise.")
     detail: str | None = Field(description="On failed: for a file the pipeline refused, the message POST /sessions answers; for a candidate that could not be screened, the scan's reason (the entry is encrypted or could not be read, file_id carries no type, file_id could not be read); otherwise \"database is locked\", or the exception's type and message.")
 

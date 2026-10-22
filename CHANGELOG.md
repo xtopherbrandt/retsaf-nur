@@ -2,6 +2,108 @@
 
 ## Unreleased
 
+### Overnight HRV from the watch's HRV_STATUS files
+
+F028: the watch writes one HRV_STATUS file (FIT `file_id.type` 68) for each night, and the API now
+stores the night it holds as the trend's overnight tier (`hrv_source_tier` `health_api_overnight`).
+The file needs no Developer Program: it arrives by the two routes that already reached the API, the
+per-day zip `runcoach sync` downloads for Health Snapshots and the account export's uploaded-files
+archives that `runcoach import` reads. Both counted it as a non-activity file of type `68` before.
+The tier's rank is unchanged (strap, then Health Snapshot, then overnight), so a Health Snapshot
+dataset that selection can use still outranks the nights.
+
+**The stored night.** One `sessions` row per night: sport `other`, `activity_tag` `overnight_hrv`,
+name "Overnight HRV", `hr_source` `wrist_ppg`, `rr_source` `overnight_ppg`, `quality_flags` empty,
+starting at the summary's timestamp (near the wake time, not the sleep start). Its rMSSD
+(`rmssd_precomputed` and `resting_rmssd_ms`) is the file's `last_night_average` as Garmin computed
+it. The `summary` holds `duration_s`, `series_start`, `last_night_5_min_high`, `hrv_values` and
+`hrv_values_valid`; `duration_s` is the span of the 5-minute series, from its first value to its
+last (0 with no series), not the sleep time. The 5-minute values are stored in the new table
+`overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
+go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
+without `runs_and_captures_only`, takes this path (it was a 400 before); with `resting_capture`
+it is a 422.
+
+**No night.** A file whose summary has no `last_night_average`, or one that is 0, negative or not
+finite, or that has no summary at all, stores nothing: `POST /sessions` answers 200 `IngestSkipped`
+with `reason` `no_night` and `file_type` `hrv_status`, and the import's row is `no_night`. Such a
+file is counted, is not a failure, and later default syncs do not start from that day. Measured on
+the account export: 46 of its 1,409 HRV_STATUS files hold no night, 41 of them written just after
+midnight before the same day's morning file.
+
+**The later summary wins.** When the watch summarises one night twice (the same device and the same
+first value timestamp, `summary.series_start`), the file with the later summary timestamp replaces
+the stored night, its values and its sidecar rows in one transaction, whatever its value count. The
+new night's id is derived from its own timestamp, and the 201 carries `replaced_session_id`, the id
+it replaced. An earlier summary of a stored night is a 409 naming the stored night, as the same file
+uploaded again is. Measured on the account export: 2 nights are summarised twice, 2023-04-08 and
+2024-01-01; on 2024-01-01 the later file holds 104 values against the earlier one's 106, and it is
+the one kept.
+
+**Listing.** `GET /sessions` leaves nights out unless the new query parameter `include_nights` is
+true (default false); `runcoach sessions --nights` lists them, each named "Overnight HRV".
+
+**`runcoach ingest`.** A file that stores nothing prints `Skipped: no_night` (exit 0); a night that
+replaced one prints `Ingested as session <new> (quality flags: none); replaces <old>`.
+
+**`runcoach import` and `runcoach import-status`.** The report reads:
+
+    Stored: N runs, M resting captures, K nights
+    Replaced: N (night summaries replaced by a later summary of the same night, not extra nights)
+    No night: N
+    Already stored: N
+
+`, K nights` is left out when K is 0, `Replaced:` and `No night:` print only when non-zero, and an
+API that serves no file rows gives a first line of `Stored: N`. Nights count in the job's total and
+its progress, so against this API the progress lines read `Status: running (N activities and
+nights)` and `Processed X of N activities and nights`; against an older API they stay `Status:
+running (N activities)` and `Processed X of N`.
+
+**`runcoach sync`.** A night in a day's zip is counted on the `Stored:` line (a replacement too) and
+a repeated one on `Already stored:`. The summary gains the line `No night: N` between `Not an
+activity: N` and `No FIT file: N`, printed on every run, 0 included. The range walk asks for nights
+(`include_nights=true`), so a store whose newest row is a night starts the range the day before that
+night. Before the first upload the sync reads the served contract, and an API whose `IngestSkipped`
+reasons lack `no_night` stops it, with nothing uploaded:
+
+    Error: the API does not store overnight HRV (no_night): update it and restart the API
+
+A 201 or 200 reply without `filter_applied` (an API restarted on an older build during the sync)
+still stops the sync, and the stop now names an item already stored without the rule:
+
+    Error: the API does not support runs_and_captures_only: update it; <item> was already stored as session <id> without the rule
+    Error: the API does not support runs_and_captures_only: update it; <item> was already stored without the rule
+    Error: the API does not support runs_and_captures_only: update it
+
+The second form is a 201 that names no session, the third a 200.
+
+**Loading the nights already on disk.** With the updated API and CLI running, run `runcoach import`
+on the account export already imported once (its runs and captures read `Already stored`), then
+`runcoach sync --since 2026-10-09` for the days after the export was made. Measured on the account
+export (exported 2026-10-10) at sprint planning, the import should report 1,361 nights stored, 2
+replaced, 46 no night and 43,797 non-activity files, the report lines reading `, 1361 nights` at the
+end of `Stored:`, `Replaced: 2`, `No night: 46` and `Non-activity files: 43797`; the store's own row
+for the earlier import of this export took about 21 minutes. The release demo re-measures these on a
+copy of the store.
+
+**Measured comparison (the premise of IDEA-180).** Measured on the account export, 2026-10-20, and
+re-measured at sprint planning: the overnight nights (1,358 from 2023-01-17 to 2026-10-10) have an
+ln rMSSD sd of 0.18 (0.12 over the 71 nights since 2026-08-01) and a median night-to-night change in
+ln of 0.11, against 0.42 (0.30 from 2026-10-01) and 0.32 for the 26 wrist Health Snapshots and 0.53
+and 0.35 for the 13 strap snapshots. On days holding both, the night against the wrist snapshot reads
+r = -0.06 (19 days) and against the strap snapshot r = 0.60 (8 days). IDEA-180 holds these figures
+for a re-rank of the tiers; this release does not change the rank.
+
+**Correction to the sprint-017 entry: the daily Task Scheduler line.** That entry stands as
+released. Its command leaves the log path unquoted, which breaks for a profile path holding a space;
+the quoted form is
+
+    schtasks /Create /SC DAILY /ST 07:00 /TN "runcoach sync" /TR "cmd /c runcoach sync >> \"%USERPROFILE%\.runcoach\sync.log\" 2>&1"
+
+(add `/F` to replace a task of that name). A task created this way runs only while the user is
+logged on; a day missed while logged off is fetched by the next run, whose range reaches back to the
+last completed sync.
+
 ### Migration required
 
 `contracts/openapi.yaml` `info.version` is now `0.5.0-draft` (was `0.4.0-draft`): `POST /sessions`
@@ -12,6 +114,19 @@ API an older CLI's `runcoach sync` reports an HRV_STATUS file with no night as `
 200 with an unknown skip reason 'no_night'") and goes on with the sync, but exits 1, and because it
 counts the failure as temporary, every later `runcoach sync` without `--since` reaches back to that
 day ("Starting at ...: a failed item on that day") and fails on the same file again.
+
+The other changes are additive. `GET /imports/{import_id}`
+(and the `POST /imports` reply) gains the file-row outcomes `replaced` and `no_night`; every
+import's `counts`, on `GET /imports` too, gains the keys `no_night` and `replaced` (default 0, so a
+job stored before them still serves); `GET /sessions` gains `include_nights`; and a `POST /sessions`
+201 can carry `replaced_session_id`. An older CLI's `runcoach import` counts stored nights as runs
+and leaves replaced and no-night files out of its report, and the updated `runcoach sync` reads the
+served contract before its first upload and stops against an API that lacks `no_night`, with nothing
+uploaded. So update the API and the CLI together.
+
+Deleting a night needs the updated API. An API older than this release, opened on a store that holds
+nights, cannot delete one: its `_child_tables()` does not know the `overnight_hrv_values` table, so
+the delete fails on the foreign key; update the API before deleting a night.
 
 ## 2026-10-19 through 2026-10-20 — Sprint 020: Threshold pace from sustained work reps, by tag or workout name
 

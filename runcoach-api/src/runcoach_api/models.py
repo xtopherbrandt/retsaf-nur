@@ -43,12 +43,12 @@ class Session:
     rmssd_precomputed: float | None = None
     # The **resolved** resting rMSSD in milliseconds -- the field E003
     # reads, whichever tier produced the reading: the device value on
-    # Tier 2, the system-computed value on Tier 1. ``rmssd_precomputed``
+    # Tier 2 and on a night, the system-computed value on Tier 1. ``rmssd_precomputed``
     # above keeps its narrower device-only meaning as the audit record,
     # so the two are never interchangeable: a successful Tier-1 reading
     # populates this and leaves that one None.
     #
-    # Always > 0 when set (F004's non-positive gate) and None when no
+    # Always > 0 when set (F004's gate; for a night, ``overnight._finite_positive``) and None when no
     # reading was derived, so a consumer need not know the tier to know
     # what a value means. Added by the 2026-09-06 amendment with **no
     # writer** (T055); T065 populates it on two tiers, the overnight mapper

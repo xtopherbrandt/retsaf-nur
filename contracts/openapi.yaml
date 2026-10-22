@@ -1509,7 +1509,7 @@ components:
           type: number
           nullable: true
           description: Surviving-beat fraction; null when no RR stream (distinct from 0.0).
-        rmssd_precomputed: { type: number, nullable: true, description: "Device-ONLY audit record of resting rMSSD (ms) — the device value on Tier 2, null on Tier 1. Not the engine's read; see resting_rmssd_ms." }
+        rmssd_precomputed: { type: number, nullable: true, description: "Device-ONLY audit record of resting rMSSD (ms) — the device value on Tier 2 and on a night (its HRV_STATUS file's last_night_average), null on Tier 1. Not the engine's read; see resting_rmssd_ms." }
         resting_rmssd_ms:
           type: number
           nullable: true
@@ -1523,8 +1523,8 @@ components:
             rows; no backfill). So a non-null tier does NOT imply a non-null
             reading across the window.
           description: >
-            RESOLVED resting rMSSD (ms) the engine (E003) reads on either tier —
-            device value on Tier 2, system-computed from beats on Tier 1 (added
+            RESOLVED resting rMSSD (ms) the engine (E003) reads on every tier —
+            device value on Tier 2 and on a night, system-computed from beats on Tier 1 (added
             2026-09-06). Nullable, and when present strictly positive
             (exclusiveMinimum 0). Per x-invariant, a non-null hrv_source_tier does
             NOT guarantee a non-null value across the amendment window, so
@@ -3179,9 +3179,9 @@ components:
         time_created: { type: string, nullable: true, description: "file_id.time_created, ISO 8601 in UTC." }
         outcome: { type: string, enum: [stored, replaced, already_stored, no_night, skipped_sport, failed] }
         session_id: { type: string, nullable: true, description: "Kept after that session is deleted." }
-        sport: { type: string, nullable: true, description: "Canonical sport when stored; the FIT file's sport when skipped_sport." }
-        activity_tag: { type: string, nullable: true, description: "resting_hrv_check and health_snapshot mark resting captures." }
-        quality_flags: { type: array, nullable: true, items: { type: string } }
+        sport: { type: string, nullable: true, description: "Canonical sport when stored; `other` on a night's row (stored, replaced or no_night); the FIT file's sport when skipped_sport." }
+        activity_tag: { type: string, nullable: true, description: "resting_hrv_check and health_snapshot mark resting captures; overnight_hrv a night's stored, replaced or no_night row." }
+        quality_flags: { type: array, nullable: true, items: { type: string }, description: "The stored or replacing session's quality flags ([] for a night); null for other outcomes." }
         status: { type: integer, nullable: true, description: "On failed: for a file the pipeline refused, the status POST /sessions answers for it (413 for a FIT entry over its 50 MB cap); null for a candidate that could not be screened, and otherwise." }
         detail: { type: string, nullable: true, description: "On failed: for a file the pipeline refused, the message POST /sessions answers; for a candidate that could not be screened, the scan's reason (the entry is encrypted or could not be read, file_id carries no type, file_id could not be read); otherwise \"database is locked\", or the exception's type and message." }
     Import:
