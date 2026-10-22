@@ -331,7 +331,7 @@ feature it re-derives.
 
 - **N is 3 in the enum and 2 in every real corpus.** `health_api_overnight` "is in the enum but is
   never written by the classifier" (`hrv_trend.py:218`). Every AC is exercised at N = 2; the
-  3-dataset shape is **untested by construction** and must not be assumed covered. (Dated 2026-10-21, F028: `overnight.map_night` now writes `health_api_overnight` from the watch's HRV_STATUS files, so a store holding nights has all three tiers. The 3-dataset shape is pinned from built rows by `test_hrv_tier_change_per_dataset.py` and `test_hrv_disagreed_with.py`; `test_overnight_trend.py` serves the overnight dataset beside the snapshot dataset.)
+  3-dataset shape is **untested by construction** and must not be assumed covered. (Dated 2026-10-21, F028: `overnight.map_night` now writes `health_api_overnight` from the watch's HRV_STATUS files, so a store holding nights beside strap and snapshot readings has all three tiers. The 3-dataset shape is pinned from built rows by `test_hrv_tier_change_per_dataset.py` and `test_hrv_disagreed_with.py`; `test_overnight_trend.py` serves the overnight dataset beside the snapshot dataset.)
 - **`RECENCY_TOLERANCE_DAYS` is inherited, not re-justified.** Its `[18, 44]` bracket was measured over
   F005's 394 tests against the **fused** band; the upper end was "the July trial is re-admitted",
   which under F006 harms nothing because a stale trial is not judgeable. **Do not cite `[18, 44]` as
@@ -431,7 +431,7 @@ Full detail in `spec/references/F006-dataset-model.md` — **read §9 and §10 b
 
 - **Dataset key is `hrv_source_tier`** — stored `source_device` is the *watch*; identity is F007.
   `health_api_overnight` is never written by the classifier, so N is 3 in the enum and **2 in every
-  real corpus**, and the 3-dataset shape is untested by construction. (Dated 2026-10-21, F028: `overnight.map_night` now writes `health_api_overnight` from the watch's HRV_STATUS files, so a store holding nights has all three tiers. The 3-dataset shape is pinned from built rows by `test_hrv_tier_change_per_dataset.py` and `test_hrv_disagreed_with.py`; `test_overnight_trend.py` serves the overnight dataset beside the snapshot dataset.)
+  real corpus**, and the 3-dataset shape is untested by construction. (Dated 2026-10-21, F028: `overnight.map_night` now writes `health_api_overnight` from the watch's HRV_STATUS files, so a store holding nights beside strap and snapshot readings has all three tiers. The 3-dataset shape is pinned from built rows by `test_hrv_tier_change_per_dataset.py` and `test_hrv_disagreed_with.py`; `test_overnight_trend.py` serves the overnight dataset beside the snapshot dataset.)
 - **`RECENCY_TOLERANCE_DAYS` (28) is inherited, not re-justified** — the `[18, 44]` bracket was measured
   against the *fused* band and is **not** cited as transferring; the constant rests on HRV-16's two
   reasons alone until a re-measurement against per-tier datasets is recorded (`research/00` GATE-03,
