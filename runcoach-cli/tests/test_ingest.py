@@ -130,3 +130,68 @@ def test_the_flag_is_off_unless_asked_for(install_mock_client, fit_file) -> None
 
     assert result.exit_code == 0
     assert b"false" in captured[0]
+
+
+# ---------------------------------------------------------------------------
+# A 200 skip and a 201 replacement: the two replies beside the plain 201
+# ---------------------------------------------------------------------------
+
+
+def _replying(install_mock_client, status: int, body: dict) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=body)
+
+    install_mock_client(handler)
+
+
+def test_a_skipped_upload_prints_the_reason_and_exits_zero(install_mock_client, fit_file) -> None:
+    # An HRV_STATUS file that holds no night stores nothing; the API says so with a 200.
+    _replying(
+        install_mock_client,
+        200,
+        {"skipped": True, "reason": "no_night", "file_type": "hrv_status", "filter_applied": False},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "Skipped: no_night" in result.output
+    assert "Ingested" not in result.output
+
+
+def test_a_skip_reason_the_cli_does_not_name_still_prints(install_mock_client, fit_file) -> None:
+    # The reason is printed as the API sends it, so a reason added later prints too.
+    _replying(
+        install_mock_client,
+        200,
+        {"skipped": True, "reason": "something_new", "filter_applied": True},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "Skipped: something_new" in result.output
+
+
+def test_a_replaced_night_names_the_replaced_session(install_mock_client, fit_file) -> None:
+    _replying(
+        install_mock_client,
+        201,
+        {"session_id": "later-night", "quality_flags": [], "replaced_session_id": "earlier-night"},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "later-night" in result.output
+    assert "replaces earlier-night" in result.output
+
+
+def test_a_new_session_names_no_replacement(install_mock_client, fit_file) -> None:
+    _replying(install_mock_client, 201, {"session_id": "abc-123", "quality_flags": [], "filter_applied": True})
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "abc-123" in result.output
+    assert "replaces" not in result.output

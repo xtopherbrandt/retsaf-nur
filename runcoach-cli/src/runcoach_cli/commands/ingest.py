@@ -1,7 +1,9 @@
 """``runcoach ingest`` -- upload a FIT file to the API and render the result.
 
 Loads config (T008's guard), calls the API client's upload_fit (T018), and
-prints the returned session_id / quality_flags as human-readable text. This
+prints the returned session_id / quality_flags as human-readable text (with the
+replaced session's id when the API names one), or ``Skipped: <reason>`` when the
+API's 200 says the file stored nothing. This
 command does no FIT-parsing or format validation itself -- that boundary
 belongs to the API (POST /sessions).
 """
@@ -45,5 +47,15 @@ def ingest(
         raise typer.Exit(code=1)
 
     body = resp.json()
+    if body.get("skipped"):
+        # A file that stored nothing. Every reason prints the same way, so a reason the
+        # CLI does not know by name prints as the API sent it.
+        typer.echo(f"Skipped: {body.get('reason', 'unknown')}")
+        return
+
     flags = ", ".join(body.get("quality_flags", [])) or "none"
-    typer.echo(f"Ingested as session {body['session_id']} (quality flags: {flags})")
+    line = f"Ingested as session {body['session_id']} (quality flags: {flags})"
+    replaced = body.get("replaced_session_id")
+    if replaced:
+        line += f"; replaces {replaced}"
+    typer.echo(line)
