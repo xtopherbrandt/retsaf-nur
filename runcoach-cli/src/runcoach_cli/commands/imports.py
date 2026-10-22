@@ -307,7 +307,8 @@ def import_archive(
 ) -> None:
     """Import every activity in a Garmin export zip (or a zip or directory of FIT files).
 
-    Runs and resting captures are stored; other sports are skipped and listed.
+    Runs, resting captures and overnight HRV nights (from HRV_STATUS files) are stored; other
+    sports are skipped and listed, and an HRV_STATUS file with no night is counted, not stored.
     Resting-HRV captures become HRV readings only when their activity profile is named in
     resting_hrv_profile_names in the API's config: set it before importing, then restart the
     API, which reads its config once per process.

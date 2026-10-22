@@ -109,7 +109,8 @@ _LIBRARY = "garminconnect"
 _MIN_PYTHON = (3, 12)
 
 HELP = (
-    "Fetch new runs and Health Snapshots from Garmin Connect and upload them to the API.\n\n"
+    "Fetch new runs, Health Snapshots and overnight HRV nights from Garmin Connect and upload them "
+    "to the API.\n\n"
     "This uses the unofficial garminconnect library, not an API Garmin offers: it may break when "
     "Garmin changes its login, and its use is at the account holder's own risk under Garmin's "
     "terms.\n\n"
@@ -1468,7 +1469,7 @@ def sync(
         None,
         "--since",
         metavar="YYYY-MM-DD",
-        help="Start the range on this day instead of the day before the newest stored run or capture.",
+        help="Start the range on this day instead of the day before the newest stored run, capture or night.",
     ),
 ) -> None:
     if ctx.invoked_subcommand in ("tags", "laps") and since is not None:
