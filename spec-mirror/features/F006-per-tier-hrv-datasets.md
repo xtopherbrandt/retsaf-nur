@@ -13,7 +13,7 @@ rice_confidence: 0.8
 rice_effort: 5.0
 rice_score: 0.48
 feasibility: 0.8
-dependencies: ["F004", "F005"]
+dependencies: ["F004", "F005", "F028"]
 references: ["spec/references/F006-dataset-model.md", "spec/references/T125-fix-form-measurements.md", "spec/references/T130-overlap-sweep-harness.py"]
 children: []
 tasks: ["T124", "T149", "T150", "T151", "T152", "T153", "T154", "T155", "T156", "T157", "T158", "T159", "T160", "T161", "T162", "T163", "T164", "T165", "T166", "T167", "T168"]
