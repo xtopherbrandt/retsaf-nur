@@ -54,8 +54,8 @@ def ingest(
         typer.echo(f"Skipped: {_printable(str(body.get('reason', 'unknown')))}")
         return
 
-    flags = ", ".join(body.get("quality_flags", [])) or "none"
-    line = f"Ingested as session {body['session_id']} (quality flags: {flags})"
+    flags = _printable(", ".join(body.get("quality_flags", []))) or "none"
+    line = f"Ingested as session {_printable(str(body['session_id']))} (quality flags: {flags})"
     replaced = body.get("replaced_session_id")
     if replaced:
         line += f"; replaces {_printable(str(replaced))}"

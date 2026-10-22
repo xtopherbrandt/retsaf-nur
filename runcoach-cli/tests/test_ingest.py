@@ -231,3 +231,31 @@ def test_a_replaced_session_id_cannot_write_an_escape_or_a_second_line(install_m
     assert "\x07" not in result.output
     assert result.output.count("\n") == 1, repr(result.output)
     assert "replaces earlier?]0;x??Forged: line" in result.output
+
+
+def test_a_session_id_cannot_write_an_escape_or_a_second_line(install_mock_client, fit_file) -> None:
+    _replying(install_mock_client, 201, {"session_id": "night" + HOSTILE, "quality_flags": []})
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+    assert result.output.count("\n") == 1, repr(result.output)
+    assert result.output.startswith("Ingested as session night?]0;x??Forged: line (quality flags: none)")
+
+
+def test_a_quality_flag_cannot_write_an_escape_or_a_second_line(install_mock_client, fit_file) -> None:
+    _replying(
+        install_mock_client,
+        201,
+        {"session_id": "abc-123", "quality_flags": ["low_hr_coverage", "flag" + HOSTILE]},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+    assert result.output.count("\n") == 1, repr(result.output)
+    assert "(quality flags: low_hr_coverage, flag?]0;x??Forged: line)" in result.output
