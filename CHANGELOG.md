@@ -22,7 +22,7 @@ last (0 with no series), not the sleep time. Its source reads as the watch follo
 `hrv_status` (`fr945_lte fw17.4 hrv_status`), because on a morning with a Health Snapshot the watch
 often writes the night's summary in the same second the recording starts, or one second before it
 (of the 27 wrist Health Snapshots from 2026-08-28 to 2026-10-20, 8 started in the night's second
-and 9 one second after it; on the other mornings the summary came earlier, on 2026-10-12 by 98
+and 9 one second after it; on the other snapshots the summary came earlier, on 2026-10-12 by 98
 minutes), and the label keeps the two from sharing one id, so both are stored. The 5-minute values are stored in the new table
 `overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
 go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
@@ -119,8 +119,9 @@ From a Command Prompt (cmd.exe):
 
 Each passes `/TR` as one argument with the log path quoted (checked by echoing the arguments in place
 of `schtasks`). Do not give the cmd.exe line to PowerShell: PowerShell does not read `\"` as an
-escape and splits `/TR` in two. Windows PowerShell 5.1 drops the inner quotes of the PowerShell line,
-so from 5.1 use the Command Prompt line. In the PowerShell line `%USERPROFILE%` stays as written and
+escape and splits `/TR` in two. Windows PowerShell 5.1, and PowerShell 7.0 to 7.2, drop the inner
+quotes of the PowerShell line. From those, open a Command Prompt (`cmd`) and run the Command Prompt
+line there. In the PowerShell line `%USERPROFILE%` stays as written and
 the task's `cmd /c` expands it when it runs; cmd.exe expands it when the task is created. Add `/F` to
 replace a task of that name. A task created this way runs only while the user is
 logged on; a day missed while logged off is fetched by the next run, whose range reaches back to the
