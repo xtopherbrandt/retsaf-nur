@@ -19,6 +19,10 @@ cursor is opaque: whatever ``next_cursor`` says is what ``since`` carries back. 
 ``items``, a row missing a field, or a ``next_cursor`` equal to the one just followed, is reported as
 an unparseable body (the same line ``runcoach profile`` prints), and the CLI exits 1.
 
+The API leaves the overnight HRV nights out of the list unless asked. ``--nights`` sends
+``include_nights=true`` on every page, and a night then prints as any row does, named
+"Overnight HRV"; without the flag no night prints.
+
 The local zone is ``LOCAL_ZONE`` when set, else the computer's, applied per instant by
 ``astimezone()`` so each start time prints in the offset in force on its own date (not today's).
 ``LOCAL_ZONE`` is a test seam, a module attribute rather than a read of ``TZ`` because ``TZ`` does
@@ -138,10 +142,14 @@ def _unparseable(detail: str) -> typer.Exit:
     return _fail(f"the API's response could not be understood: {detail}")
 
 
-def _fetch_page(api_url: str, since: str | None, limit: int) -> dict[str, Any]:
+def _fetch_page(
+    api_url: str, since: str | None, limit: int, nights: bool = False
+) -> dict[str, Any]:
     """One ``GET /sessions`` page as a dict with ``items`` a list, or report to stderr and exit 1."""
     try:
-        resp: httpx.Response = list_sessions(api_url, since=since, limit=limit)
+        resp: httpx.Response = list_sessions(
+            api_url, since=since, limit=limit, include_nights=nights
+        )
     except ApiUnreachableError:
         raise _fail(
             f"could not reach API at {api_url}. Is it running? Start it with `runcoach-api`."
@@ -167,6 +175,9 @@ def sessions(
     all_sessions: bool = typer.Option(
         False, "--all", help="Print every stored session, page by page; wins over --limit."
     ),
+    nights: bool = typer.Option(
+        False, "--nights", help="Also list the overnight HRV nights, named \"Overnight HRV\"."
+    ),
 ) -> None:
     """List the stored sessions, newest first, one line each."""
     cfg = config.load_config()
@@ -176,7 +187,7 @@ def sessions(
     printed = 0
     while True:
         remaining = PAGE_SIZE if wanted is None else min(wanted - printed, PAGE_SIZE)
-        body = _fetch_page(cfg.api_url, since, remaining)
+        body = _fetch_page(cfg.api_url, since, remaining, nights)
         items = body["items"]
         if wanted is not None:
             items = items[: wanted - printed]

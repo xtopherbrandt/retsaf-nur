@@ -274,6 +274,34 @@ def test_list_sessions_does_not_swallow_non_2xx_response(install_mock_client) ->
     assert response.json()["detail"][0]["loc"] == ["query", "since"]
 
 
+def test_list_sessions_sends_include_nights_only_when_asked(install_mock_client) -> None:
+    # A call that does not ask for nights sends exactly the parameters it always has, in the same
+    # order (the sync's range walk relies on that); include_nights=true is added only when asked,
+    # and an explicit False is the same as leaving it out.
+    captured: list[httpx.Request] = []
+
+    def page_handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"items": [], "next_cursor": None})
+
+    install_mock_client(page_handler)
+
+    api_client.list_sessions("http://example.test", since=None, limit=200)
+    api_client.list_sessions("http://example.test", since="abc=", limit=50)
+    api_client.list_sessions("http://example.test", since="abc=", limit=50, include_nights=False)
+    api_client.list_sessions("http://example.test", since=None, limit=200, include_nights=True)
+    api_client.list_sessions("http://example.test", since="abc=", limit=50, include_nights=True)
+
+    queries = [request.url.query for request in captured]
+    assert queries == [
+        b"limit=200",
+        b"limit=50&since=abc%3D",
+        b"limit=50&since=abc%3D",
+        b"limit=200&include_nights=true",
+        b"limit=50&since=abc%3D&include_nights=true",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # F025 -- PUT /sessions/{id}/laps and POST /laps/candidates
 # ---------------------------------------------------------------------------

@@ -106,16 +106,22 @@ def patch_me(base_url: str, changes: dict) -> httpx.Response:
 LIST_TIMEOUT = 30.0
 
 
-def list_sessions(base_url: str, since: str | None, limit: int) -> httpx.Response:
+def list_sessions(
+    base_url: str, since: str | None, limit: int, include_nights: bool = False
+) -> httpx.Response:
     """Call GET {base_url}/sessions?limit=...&since=... and return the raw response.
 
     ``since`` is the previous page's ``next_cursor``, passed through untouched; ``None`` omits
-    the parameter. Only network-layer failures are translated into ApiUnreachableError; status
-    and body are the caller's job.
+    the parameter. ``include_nights=True`` adds ``include_nights=true`` so the page lists the
+    overnight HRV nights too; when false the parameter is not sent at all, so the request is the
+    same as one made without the argument. Only network-layer failures are translated into
+    ApiUnreachableError; status and body are the caller's job.
     """
     params: dict[str, str | int] = {"limit": limit}
     if since is not None:
         params["since"] = since
+    if include_nights:
+        params["include_nights"] = "true"
     try:
         return client.get(f"{base_url}/sessions", params=params, timeout=LIST_TIMEOUT)
     except httpx.TransportError as exc:

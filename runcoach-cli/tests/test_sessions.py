@@ -573,3 +573,65 @@ def test_sessions_requests_pass_the_cursor_through_untouched(install_mock_client
 
     assert result.exit_code == 0, result.output
     assert server.requests[1].url.params["since"] == cursor
+
+
+# ---------------------------------------------------------------------------
+# overnight HRV nights (--nights)
+# ---------------------------------------------------------------------------
+
+
+def _night(n: int) -> dict:
+    return _session(
+        n,
+        start_time="2026-09-20T04:00:00+00:00",
+        sport="other",
+        activity_tag="overnight_hrv",
+        name="Overnight HRV",
+        distance_m=None,
+        duration_s=25200.0,
+        avg_pace_s_per_km=None,
+    )
+
+
+class _NightsServer(_PagedServer):
+    """Serve ``rows`` as the API does: an ``overnight_hrv`` row only when ``include_nights=true``."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        super().__init__(rows)
+        self.all_rows = rows
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        nights = request.url.params.get("include_nights") == "true"
+        self.rows = [r for r in self.all_rows if nights or r["activity_tag"] != "overnight_hrv"]
+        return super().__call__(request)
+
+
+def test_sessions_without_nights_prints_no_night(install_mock_client) -> None:
+    server = _NightsServer([_session(1), _night(2), _session(3)])
+    install_mock_client(server)
+
+    result = runner.invoke(app, ["sessions"])
+
+    assert result.exit_code == 0, result.output
+    lines = _lines(result)
+    assert [line.split("  ")[-1] for line in lines] == ["sid-0001", "sid-0003"]
+    assert not any("Overnight HRV" in line for line in lines)
+    assert [r.url.query for r in server.requests] == [b"limit=50"]
+
+
+def test_sessions_nights_prints_overnight_hrv(install_mock_client) -> None:
+    # 201 day rows and one night: --all --nights asks for the nights on every page it follows.
+    rows = [_session(n) for n in range(100)] + [_night(100)] + [_session(n) for n in range(101, 202)]
+    server = _NightsServer(rows)
+    install_mock_client(server)
+
+    result = runner.invoke(app, ["sessions", "--all", "--nights"])
+
+    assert result.exit_code == 0, result.output
+    lines = _lines(result)
+    assert len(lines) == 202
+    # A night prints as any row does: its name and local date, the sport, dashes for the nulls.
+    assert lines[100] == "Overnight HRV 2026-09-19 21:00  other  -  7:00:00  -  sid-0100"
+    assert [line for line in lines if "Overnight HRV" in line] == [lines[100]]
+    assert len(server.requests) == 2
+    assert all(r.url.params["include_nights"] == "true" for r in server.requests)
