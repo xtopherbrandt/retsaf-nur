@@ -2433,7 +2433,10 @@ def persist_night(
        its child rows (``_delete_child_rows`` over ``_child_tables``) and the
        new one written, its id returned as ``replaced_session_id``; a stored
        night with the later timestamp stands, and the write is
-       ``DuplicateSessionError`` naming it.
+       ``DuplicateSessionError`` naming it. A tie (the same moment) is not
+       later, so the new night replaces the stored one; a tie cannot arrive
+       from a file, since the mapper spells every timestamp in UTC and the
+       same moment is then the same id, answered by check 1.
     3. **The insert.** ``_insert_session``, the series
        (``_insert_overnight_values``), the sidecar
        (``_insert_quarantine_sidecar``), the anchor sync and the saved load

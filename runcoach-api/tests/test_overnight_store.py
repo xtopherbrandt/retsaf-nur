@@ -531,6 +531,38 @@ def test_a_later_summary_in_another_offset_still_wins(order: str) -> None:
     assert values == LATER_VALUES
 
 
+def test_a_resummary_at_the_same_moment_replaces_the_stored_night() -> None:
+    """A tie: the stored night and the new one carry the same summary moment, spelled in
+    another offset, so their ids differ and the same-night check does not answer. The stored
+    night is not later, so the new one replaces it. A file cannot produce this (the mapper
+    spells every timestamp in UTC, so the same moment is the same id); only a hand-built
+    ``Night`` reaches it, and this pins what ``persist_night`` does then."""
+    earlier, later = _night("night_resummary_earlier"), _night("night_resummary_later")
+    tie_start = "2024-01-01T15:52:53+01:00"
+    assert datetime.fromisoformat(tie_start) == datetime.fromisoformat(EARLIER_START)
+    tied = dataclasses.replace(
+        later,
+        session=dataclasses.replace(
+            later.session,
+            start_time=tie_start,
+            session_id=derive_session_id(later.session.source_device, tie_start),
+        ),
+    )
+    assert tied.session.session_id != earlier.session.session_id
+    conn = _conn()
+    try:
+        first = db.persist_night(conn, earlier)
+        second = db.persist_night(conn, tied)
+        stored = _nights_stored(conn)
+        values = _count(conn, VALUES_TABLE)
+    finally:
+        conn.close()
+
+    assert second == db.NightWrite(session_id=tied.session.session_id, replaced_session_id=first.session_id)
+    assert stored == [(tied.session.session_id, tie_start)]
+    assert values == LATER_VALUES
+
+
 def test_a_foreign_row_in_the_nights_slot_is_a_duplicate_naming_it() -> None:
     """A row under another id and another tag at the night's exact
     ``(source_device, start_time)``, the device string with the ``hrv_status``
