@@ -160,7 +160,8 @@ def test_a_skipped_upload_prints_the_reason_and_exits_zero(install_mock_client, 
 
 
 def test_a_skip_reason_the_cli_does_not_name_still_prints(install_mock_client, fit_file) -> None:
-    # The reason is printed as the API sends it, so a reason added later prints too.
+    # A reason the CLI does not name still prints (control characters become ?), so a reason
+    # added later prints too.
     _replying(
         install_mock_client,
         200,
@@ -195,3 +196,38 @@ def test_a_new_session_names_no_replacement(install_mock_client, fit_file) -> No
     assert result.exit_code == 0, result.output
     assert "abc-123" in result.output
     assert "replaces" not in result.output
+
+
+HOSTILE = "\x1b]0;x\x07\nForged: line"
+
+
+def test_a_skip_reason_cannot_write_an_escape_or_a_second_line(install_mock_client, fit_file) -> None:
+    _replying(
+        install_mock_client,
+        200,
+        {"skipped": True, "reason": "no_night" + HOSTILE, "filter_applied": False},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+    assert result.output.count("\n") == 1, repr(result.output)
+    assert result.output.startswith("Skipped: no_night?]0;x??Forged: line")
+
+
+def test_a_replaced_session_id_cannot_write_an_escape_or_a_second_line(install_mock_client, fit_file) -> None:
+    _replying(
+        install_mock_client,
+        201,
+        {"session_id": "later-night", "quality_flags": [], "replaced_session_id": "earlier" + HOSTILE},
+    )
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+    assert result.output.count("\n") == 1, repr(result.output)
+    assert "replaces earlier?]0;x??Forged: line" in result.output

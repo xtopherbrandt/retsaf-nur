@@ -14,6 +14,7 @@ import typer
 
 from runcoach_cli import config
 from runcoach_cli.api_client import ApiUnreachableError, upload_fit
+from runcoach_cli.commands.sessions import _printable
 
 
 def ingest(
@@ -49,13 +50,13 @@ def ingest(
     body = resp.json()
     if body.get("skipped"):
         # A file that stored nothing. Every reason prints the same way, so a reason the
-        # CLI does not know by name prints as the API sent it.
-        typer.echo(f"Skipped: {body.get('reason', 'unknown')}")
+        # CLI does not know by name still prints, with control characters as ?.
+        typer.echo(f"Skipped: {_printable(str(body.get('reason', 'unknown')))}")
         return
 
     flags = ", ".join(body.get("quality_flags", [])) or "none"
     line = f"Ingested as session {body['session_id']} (quality flags: {flags})"
     replaced = body.get("replaced_session_id")
     if replaced:
-        line += f"; replaces {replaced}"
+        line += f"; replaces {_printable(str(replaced))}"
     typer.echo(line)
