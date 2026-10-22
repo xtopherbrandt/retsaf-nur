@@ -114,12 +114,12 @@ _SCHEMA_DDL = """
       -- and no backfill fills it (the startup fill, _fill_session_loads,
       -- writes only timer_time_s and session_loads), so pre-amendment
       -- rows stay NULL.
-      -- The invariant is scoped to what this feature writes AFTER that
-      -- amendment (T077): for such a row, a non-null hrv_source_tier
-      -- implies a non-null, strictly positive resting_rmssd_ms, because
-      -- both tiers write the two fields at one success point past the
-      -- non-positive gate. It is NOT a claim about the table: an
-      -- upgraded database satisfies
+      -- The invariant is scoped to what is written AFTER that amendment
+      -- (T077): a non-null hrv_source_tier implies a non-null, strictly
+      -- positive resting_rmssd_ms, because the strap and snapshot tiers
+      -- write both at the classifier's success point and the overnight
+      -- tier at persist_night, each past a non-positive gate. It is NOT
+      -- a claim about the table: an upgraded database satisfies
       --   hrv_source_tier IS NOT NULL AND resting_rmssd_ms IS NULL
       -- for every pre-amendment reading row of *either* tier -- there is
       -- no backfill on either, so a pre-amendment Tier-2 reading is

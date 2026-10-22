@@ -51,8 +51,8 @@ class Session:
     # Always > 0 when set (F004's non-positive gate) and None when no
     # reading was derived, so a consumer need not know the tier to know
     # what a value means. Added by the 2026-09-06 amendment with **no
-    # writer** (T055); T065 populates it on both tiers. Pre-amendment
-    # rows keep it None -- there is deliberately no backfill.
+    # writer** (T055); T065 populates it on two tiers, the overnight mapper
+    # on the third. Pre-amendment rows keep it None -- deliberately no backfill.
     resting_rmssd_ms: float | None = None
     # Which tier the reading came from: "chest_strap_raw" /
     # "health_snapshot" / "health_api_overnight". None on every

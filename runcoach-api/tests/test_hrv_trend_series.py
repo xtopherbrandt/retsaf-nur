@@ -619,8 +619,8 @@ def test_among_candidates_read_last_on_the_same_day_the_tie_falls_to_count_then_
 
 
 def test_health_api_overnight_ranks_between_the_strap_and_the_snapshot() -> None:
-    """``health_api_overnight`` is in the enum but never written by the
-    classifier; the ordering still ranks it. The order follows the authority
+    """``health_api_overnight`` is never written by the classifier, but is
+    written by the overnight mapper; the ordering ranks it. The order follows the authority
     (``research/00`` HRV-01 and register row: chest-strap raw RR, then Health
     Snapshot, then Health API overnight), which is also §2.4.5's own numbered
     list."""

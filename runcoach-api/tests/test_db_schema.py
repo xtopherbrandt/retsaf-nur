@@ -594,8 +594,8 @@ def test_the_published_window_predicate_selects_the_window_and_nothing_else(
     ``hrv_classification.classify`` pair and persisted through the real
     ``db.persist``, so it is the actual writers under test rather than a model
     of them. See ``_POST_AMENDMENT_NON_READINGS`` for the enumeration and where
-    it came from. **None is selected**, and the reason is structural: both tiers
-    write ``hrv_source_tier`` and ``resting_rmssd_ms`` at the same single
+    it came from. **None is selected**, and the reason is structural: each tier
+    writes ``hrv_source_tier`` and ``resting_rmssd_ms`` together at its one
     success point, past every gate, so a post-amendment row cannot hold one
     without the other.
 

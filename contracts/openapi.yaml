@@ -1516,8 +1516,8 @@ components:
           exclusiveMinimum: 0
           x-invariant: >
             Scoped, not table-wide. Post-amendment rows (written 2026-09-06+):
-            hrv_source_tier != null  ⇒  resting_rmssd_ms != null AND > 0 (both
-            tiers write tier and reading together past the non-positive gate).
+            hrv_source_tier != null  ⇒  resting_rmssd_ms != null AND > 0 (every
+            tier writes tier and reading together past a non-positive gate).
             Pre-amendment Tier-1 rows may have hrv_source_tier != null WITH
             resting_rmssd_ms == null (the amendment resolved the rule, not the
             rows; no backfill). So a non-null tier does NOT imply a non-null

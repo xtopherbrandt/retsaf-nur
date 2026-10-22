@@ -220,8 +220,8 @@ def test_the_predicate_reads_the_band_and_mean_judge_computes_not_a_second_deriv
 
 
 def test_disagreed_with_is_in_fidelity_order_and_never_names_the_selected_dataset() -> None:
-    """Three datasets (N = 3 is reachable only by hand-built rows: ``health_api_overnight``
-    is never written by the classifier, reference §10). The two dissenters are named in
+    """Three datasets, from built rows (an upload reaches N = 3 too: ``health_api_overnight``
+    is written by the overnight mapper, never the classifier, reference §10). The two dissenters are named in
     ``TIER_FIDELITY`` order, and the selected one is never in its own list."""
     selection = select(dataset(STRAP, 14, WITHIN) + dataset(OVERNIGHT, 5, BELOW) + dataset(SNAPSHOT, 14, BELOW))
 

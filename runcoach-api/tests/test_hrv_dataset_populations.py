@@ -36,9 +36,9 @@ carrier and the old snapshot era; 79 ms on the strap era and 25 ms on its week f
 on either dataset is *not* varied here -- [[T161]] owns that cross-product.
 
 **N = 2, stated for the DB-backed test.** ``hrv_classification.py`` writes only
-``chest_strap_raw`` and ``health_snapshot``; ``health_api_overnight`` is reachable only by
-hand-built row dicts, so the one test that persists through the real classifier and reads
-back through ``GET /metrics/hrv`` is, and can only be, a two-tier test.
+``chest_strap_raw`` and ``health_snapshot``; ``health_api_overnight`` comes from the
+overnight mapper, and this module uploads no HRV_STATUS file, so the one test that persists
+through the real classifier and reads back through ``GET /metrics/hrv`` holds N at two.
 
 Kept out of the five HRV suites (test_hrv_trend_band.py/_endpoint.py/_points.py/_reset.py/
 _series.py) so ``SCOPED_SUITE_COLLECTED`` does not move: ``SCOPED_HRV_SUITES`` is an explicit

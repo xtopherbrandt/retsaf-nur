@@ -3990,8 +3990,8 @@ def test_each_dataset_carries_its_own_reported_reset_and_only_the_selected_ones_
     tiers: clause (c) refuses a boundary whose other tier is dense after it,
     and a judgeable dataset holds at least ``min_window_readings`` judged-week
     days by definition, so at N = 2 the two cannot both hold. The classifier
-    never writes ``health_api_overnight`` (reference §10: N is 3 in the enum
-    and 2 in every real corpus), so no endpoint seeding can reach it. It is
+    never writes ``health_api_overnight`` (reference §10); an uploaded HRV_STATUS
+    file does, but this suite's ``Seeder`` writes no night. It is
     pinned at module scope instead, by
     ``test_hrv_tier_change_per_dataset.py::test_the_view_presents_the_selected_datasets_own_report_and_carries_the_others``.
     """
