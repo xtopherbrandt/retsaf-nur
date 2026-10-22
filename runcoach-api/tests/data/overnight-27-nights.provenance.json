@@ -1,0 +1,225 @@
+{
+  "what": "Provenance of overnight-27-nights.csv: 27 consecutive real overnight HRV nights, one per America/Vancouver day from 2026-09-14 to 2026-10-10, read by test_overnight_trend.py. Each row is one HRV_STATUS file (file_id.type 68) of the athlete's Garmin export, decoded fresh with the repository's own mapper; no value comes from a summary file.",
+  "rows": {
+    "path": "runcoach-api/tests/data/overnight-27-nights.csv",
+    "row_count": 27,
+    "sha256": "905a49cd90533fe6691ef964fb8fb07c20f7a4e1473906c58ca6cea39dce7b36",
+    "columns": {
+      "summary_timestamp_utc": "hrv_status_summary.timestamp, isoformat UTC (the night row's start_time)",
+      "series_start_utc": "the earliest hrv_value timestamp (summary.series_start)",
+      "last_night_average_ms": "hrv_status_summary.last_night_average (the night's resting_rmssd_ms)",
+      "hrv_values": "the count of hrv_value messages map_night kept (summary.hrv_values); the series itself is not in the file"
+    },
+    "measured_on": "2026-10-21",
+    "facts": "27 nights, each Vancouver day holding exactly one; for a 2026-10-10 read, 20 fall in the baseline window [2026-08-05, 2026-10-03] and 7 in the judged week."
+  },
+  "source": {
+    "export": "the athlete's Garmin Connect data export, UploadedFiles part 8 (wellness FIT files)",
+    "copied_to": "<data dir>/captures/sprint-021-planning/hrv68-27-nights/ (one file per day, copied at sprint-021 planning; read-only)",
+    "device": "fr945_lte fw17.4",
+    "file_names": "not recorded: the export's names carry the account's email; each file is named here by its numeric file id",
+    "files": [
+      {
+        "file_id": "482142740173",
+        "bytes": 1144,
+        "sha256": "04aef54eea4955f03272b04271c99b3f4f4b04f3d35ae1ff6aed91030367f6cc"
+      },
+      {
+        "file_id": "482529059707",
+        "bytes": 1116,
+        "sha256": "cc8aea55711d79a2a75d3157be277e36f4c68afdaf379ab79ff8d51d2d7f7fa6"
+      },
+      {
+        "file_id": "482917416460",
+        "bytes": 1130,
+        "sha256": "38bf88e3684ace931651fd98384fcda2276496869dcf5d165dac929bfb1a423a"
+      },
+      {
+        "file_id": "483296325880",
+        "bytes": 1130,
+        "sha256": "a7a48e1d7e8743d4a807996a764494ae4e14490e1cf5090ef5c2b1492ee781d8"
+      },
+      {
+        "file_id": "483675179125",
+        "bytes": 1130,
+        "sha256": "69d2b4420ca845edb1d591f5b98e80218e0be82fb26f7123b7d286d572dc331b"
+      },
+      {
+        "file_id": "484080659979",
+        "bytes": 1186,
+        "sha256": "027c1a1fdde30a0a320d2c12ca3bde25071b421ce6baf57ec08da99ef11285cf"
+      },
+      {
+        "file_id": "484487535179",
+        "bytes": 1277,
+        "sha256": "fd4bc0ae3b7d258c420632349235af5ca5ffe75941da7a6ed61a1cd2d3ab118b"
+      },
+      {
+        "file_id": "484822935249",
+        "bytes": 1158,
+        "sha256": "335fc44411480814bb8eef06dd75645231f7dbffcb3afbb08f798d1d4bc98115"
+      },
+      {
+        "file_id": "485210762686",
+        "bytes": 1102,
+        "sha256": "22b04d0fbed59d30207c5e83589df2d386123de805445fcb42c5d48295bba1b8"
+      },
+      {
+        "file_id": "485600458003",
+        "bytes": 1137,
+        "sha256": "1690c4208b392c6850691c2e8d818f0751250c2fbef272d1263fb0cfa36405ad"
+      },
+      {
+        "file_id": "485985484634",
+        "bytes": 1116,
+        "sha256": "d2e6bc2ee102bd9e5101dbc4a1a54a0f33e86b3bb83109c4f835cb0d571e84ef"
+      },
+      {
+        "file_id": "486365141552",
+        "bytes": 1158,
+        "sha256": "0335835be71af8bde2d07f4fed169ea416dc51350d9763d4e74e227cb435f643"
+      },
+      {
+        "file_id": "486774161790",
+        "bytes": 1088,
+        "sha256": "db67de3340305f1070ee7c26f22160e996aeca2ce58f3ee703291e0af63d2ed9"
+      },
+      {
+        "file_id": "487160027219",
+        "bytes": 1270,
+        "sha256": "d3b19411436bfa5b67a6c7e2deb42542c2b20f0a0c45e39d481991b3c40a029e"
+      },
+      {
+        "file_id": "487516133328",
+        "bytes": 1123,
+        "sha256": "1a07149f6613545a230fb0eb21b8b7392155490e208670344517214c7ae7fc67"
+      },
+      {
+        "file_id": "487905457907",
+        "bytes": 1109,
+        "sha256": "a07175d10635f039249e857b7390d06888d3790cb8902572c09cdfe4fb003275"
+      },
+      {
+        "file_id": "488350869646",
+        "bytes": 1298,
+        "sha256": "d8e29824b7d1b0c2b1220b6dfd581a62a67d83fc97276946df379e7f2032fdd3"
+      },
+      {
+        "file_id": "488679413373",
+        "bytes": 1116,
+        "sha256": "4cba11600c240b071380f0ce67f300b2f0b59c6b8acc0e271f1ac5f08ac69403"
+      },
+      {
+        "file_id": "489056412557",
+        "bytes": 1130,
+        "sha256": "2951f4ffb255fc57639c5a5a7e2e7952fe879a1146580f3fe0aed633ce20f52d"
+      },
+      {
+        "file_id": "489470066694",
+        "bytes": 1221,
+        "sha256": "940becba35c071b18942f1e2e912691f5b68c9a611d3d23e39511a7f6d2d1ec6"
+      },
+      {
+        "file_id": "489831295225",
+        "bytes": 1144,
+        "sha256": "575f2c5ee01e4935db10325d91bac887d44de079911da726dce9c1fdff40f027"
+      },
+      {
+        "file_id": "490212794007",
+        "bytes": 1102,
+        "sha256": "9c6a50d5998c479548a488112f7a07d3daf70ac13c817ef9509cded02289e951"
+      },
+      {
+        "file_id": "490600395038",
+        "bytes": 1144,
+        "sha256": "18a5ee535d505d6ce3ace37daadc86dece95de5fcf72385e998f0d971e594efe"
+      },
+      {
+        "file_id": "490988710062",
+        "bytes": 1095,
+        "sha256": "ab2c1071d4a47dcbbfea7e8cc01b6728739e8ab2bcac065915fd50ae34ec8324"
+      },
+      {
+        "file_id": "491371854701",
+        "bytes": 1088,
+        "sha256": "bfd252f1606454684a77cd48f88f49e94e35d15455489427398526a8c60c96a0"
+      },
+      {
+        "file_id": "491749820739",
+        "bytes": 1123,
+        "sha256": "cbbaed6a0a1d5f84c5dd85390445b0d2d812f181b47c40ea65a1173664dec567"
+      },
+      {
+        "file_id": "492112659805",
+        "bytes": 948,
+        "sha256": "647d409b0da5c69b68ca10fcecee46e3d9adae5f5e4eef3888d743b45f6d7751"
+      }
+    ]
+  },
+  "decode": {
+    "script": "decode_27_nights.py (session scratchpad, reproduced below)",
+    "command": ".venv/Scripts/python.exe -I decode_27_nights.py <data dir>/captures/sprint-021-planning/hrv68-27-nights runcoach-api/tests/data/overnight-27-nights.csv",
+    "decoder": "runcoach_api.ingestion.overnight.map_night -> fit_parser.decode (fitdecode)",
+    "overnight_module_blob_sha": "f5d5d011108b2fca8324e6b0cba07996b489abf1",
+    "tree": "5962bc07d964927878b6d2224d2fa26a76056803",
+    "script_sha256": "932115715ca237583b9fd339d4605f65f46cca4efd255e88e0f944dfb6a86597",
+    "script_text": [
+      "\"\"\"Decode the 27 HRV_STATUS files into overnight-27-nights.csv.",
+      "",
+      "Usage: python decode_27_nights.py <source_dir> <out_csv>",
+      "",
+      "Each file goes through runcoach_api.ingestion.overnight.map_night (which decodes",
+      "with fit_parser.decode, i.e. fitdecode). One row per Night:",
+      "summary_timestamp_utc, series_start_utc, last_night_average_ms, hrv_values",
+      "(hrv_values = the count of hrv_value messages stored). Prints, per file, the",
+      "file id (the trailing number of the export's name), the Vancouver date of the",
+      "summary timestamp, the average and the count, and refuses anything that is not",
+      "a Night or any Vancouver date holding more than one night.",
+      "\"\"\"",
+      "",
+      "from __future__ import annotations",
+      "",
+      "import csv",
+      "import re",
+      "import sys",
+      "from collections import Counter",
+      "from datetime import datetime",
+      "from pathlib import Path",
+      "from zoneinfo import ZoneInfo",
+      "",
+      "from runcoach_api.ingestion.overnight import Night, map_night",
+      "",
+      "VAN = ZoneInfo(\"America/Vancouver\")",
+      "",
+      "",
+      "def main(src: str, out: str) -> None:",
+      "    rows = []",
+      "    ids = []",
+      "    for path in sorted(Path(src).glob(\"*.fit\")):",
+      "        file_id = re.search(r\"_(\\d+)\\.fit$\", path.name).group(1)",
+      "        night = map_night(path.read_bytes())",
+      "        assert isinstance(night, Night), (file_id, night)",
+      "        s = night.session",
+      "        local = datetime.fromisoformat(s.start_time).astimezone(VAN).date()",
+      "        rows.append(",
+      "            (s.start_time, s.summary[\"series_start\"], s.resting_rmssd_ms, s.summary[\"hrv_values\"], local, file_id)",
+      "        )",
+      "    rows.sort()",
+      "    per_day = Counter(r[4] for r in rows)",
+      "    assert all(c == 1 for c in per_day.values()), per_day",
+      "    with open(out, \"w\", newline=\"\", encoding=\"utf-8\") as fh:",
+      "        w = csv.writer(fh, lineterminator=\"\\n\")",
+      "        w.writerow([\"summary_timestamp_utc\", \"series_start_utc\", \"last_night_average_ms\", \"hrv_values\"])",
+      "        for start, series_start, avg, n, local, file_id in rows:",
+      "            w.writerow([start, series_start, repr(float(avg)), n])",
+      "            ids.append(file_id)",
+      "            print(file_id, local, start, series_start, avg, n)",
+      "    print(\"nights:\", len(rows), \"first:\", rows[0][4], \"last:\", rows[-1][4])",
+      "    print(\"file_ids:\", \",\".join(ids))",
+      "",
+      "",
+      "if __name__ == \"__main__\":",
+      "    main(sys.argv[1], sys.argv[2])"
+    ]
+  }
+}
