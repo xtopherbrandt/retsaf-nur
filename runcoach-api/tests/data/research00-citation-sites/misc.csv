@@ -9,19 +9,19 @@ repo,.claude/rules/project-api-contract.md,43,,literal
 repo,contracts/openapi.yaml,401,§1.9,GOAL-02
 repo,contracts/openapi.yaml,447,§1.9,GOAL-03
 repo,contracts/openapi.yaml,447,§1.9,GOAL-04
-repo,contracts/openapi.yaml,909,,PRIN-27
-repo,contracts/openapi.yaml,2020,,PRIN-27
-repo,contracts/openapi.yaml,2123,,PRIN-27
-repo,contracts/openapi.yaml,2122,§1.6,PRIN-12
-repo,contracts/openapi.yaml,2318,§1.6,PRIN-23
-repo,contracts/openapi.yaml,2462,§5.4 (v),HRV-31
-repo,contracts/openapi.yaml,2501,§5.4 (iii),HRV-57
-repo,contracts/openapi.yaml,2521,§5.4 (iii),HRV-22
-repo,contracts/openapi.yaml,2542,§1.7,PRIN-14
-repo,contracts/openapi.yaml,909,,PRIN-24
-repo,contracts/openapi.yaml,2020,,PRIN-24
-repo,contracts/openapi.yaml,2123,,PRIN-24
-repo,contracts/openapi.yaml,2288,,PRIN-24
+repo,contracts/openapi.yaml,914,,PRIN-27
+repo,contracts/openapi.yaml,2025,,PRIN-27
+repo,contracts/openapi.yaml,2128,,PRIN-27
+repo,contracts/openapi.yaml,2127,§1.6,PRIN-12
+repo,contracts/openapi.yaml,2323,§1.6,PRIN-23
+repo,contracts/openapi.yaml,2467,§5.4 (v),HRV-31
+repo,contracts/openapi.yaml,2506,§5.4 (iii),HRV-57
+repo,contracts/openapi.yaml,2526,§5.4 (iii),HRV-22
+repo,contracts/openapi.yaml,2547,§1.7,PRIN-14
+repo,contracts/openapi.yaml,914,,PRIN-24
+repo,contracts/openapi.yaml,2025,,PRIN-24
+repo,contracts/openapi.yaml,2128,,PRIN-24
+repo,contracts/openapi.yaml,2293,,PRIN-24
 repo,runcoach-api/tests/data/research00_census.csv,52,§3.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,60,§1.7,literal
 repo,runcoach-api/tests/data/research00_census.csv,101,PRIN-16,literal

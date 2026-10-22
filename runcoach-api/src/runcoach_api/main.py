@@ -1193,9 +1193,15 @@ from runcoach_api.schemas import SessionPage, SessionSummary
 def list_sessions(
     since: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    include_nights: bool = Query(False),
 ) -> SessionPage:
     """The stored sessions, newest first, keyset-paged (F019), on the contract's path
     (``operationId: listSessions``).
+
+    Nights (``activity_tag`` ``overnight_hrv``) are left out unless
+    ``include_nights`` is true (F028 AC6); a value that is not a boolean is
+    pydantic's 422. The filter sits in the query, so the order and the paging
+    are those of the store without the nights.
 
     ``db.read_session_page`` reads one page of ``limit`` rows plus one, ordered
     by ``start_time`` descending then ``session_id`` descending, after the row
@@ -1230,7 +1236,7 @@ def list_sessions(
     conn = db.get_connection()
     try:
         try:
-            rows = db.read_session_page(conn, limit=limit, before=before)
+            rows = db.read_session_page(conn, limit=limit, before=before, include_nights=include_nights)
         except db.SessionStoreOutOfStepError as exc:
             raise HTTPException(
                 500, f"the session store is out of step ({exc}); restart the API, whose startup repairs it"

@@ -119,7 +119,7 @@ def test_the_contract_session_summary_page_and_parameters_match_the_served_route
     # since and limit through their $ref: name, type, minimum, maximum, default.
     params = {p["name"]: p for p in (_resolve_parameter(contract, p) for p in op["parameters"])}
     built_params = {p["name"]: p for p in built_op["parameters"]}
-    assert set(params) == set(built_params) == {"since", "limit"}
+    assert set(params) == set(built_params) == {"since", "limit", "include_nights"}
     for name in ("since", "limit"):
         assert params[name]["in"] == built_params[name]["in"] == "query"
         assert not params[name].get("required", False) and not built_params[name].get("required", False)
@@ -150,10 +150,37 @@ def test_the_shared_paging_components_are_unchanged() -> None:
     assert parameters["Limit"]["schema"] == {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}
     page = contract["components"]["schemas"]["Page"]
     assert page["required"] == ["items"] and set(page["properties"]) == {"items", "next_cursor"}
-    assert contract["paths"][LIST_PATH]["get"]["parameters"] == [
+    assert contract["paths"][LIST_PATH]["get"]["parameters"][:2] == [
         {"$ref": "#/components/parameters/Since"},
         {"$ref": "#/components/parameters/Limit"},
     ]
+
+
+def test_the_list_parameters_are_since_limit_and_include_nights() -> None:
+    """F028 AC6: ``include_nights`` is an optional query boolean, default false, written inline on
+    ``listSessions`` (the shared ``Since`` and ``Limit`` stay as they are), and served the same."""
+    contract = _contract()
+    op = contract["paths"][LIST_PATH]["get"]
+    assert op["parameters"] == [
+        {"$ref": "#/components/parameters/Since"},
+        {"$ref": "#/components/parameters/Limit"},
+        {
+            "name": "include_nights",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "boolean", "default": False},
+            "description": op["parameters"][2]["description"],
+        },
+    ], op["parameters"]
+    description = op["parameters"][2]["description"]
+    assert "overnight_hrv" in description and "\n" not in description.strip(), description
+    built = {p["name"]: p for p in app.openapi()["paths"][LIST_PATH]["get"]["parameters"]}
+    print(f"  served parameters: {sorted(built)}")
+    assert list(built) == ["since", "limit", "include_nights"], list(built)
+    served = built["include_nights"]
+    assert served["in"] == "query" and not served.get("required", False), served
+    schema = _served_scalar(served["schema"])
+    assert (schema.get("type"), schema.get("default")) == ("boolean", False), schema
 
 
 def test_the_list_blocks_of_the_contract_are_ascii_only() -> None:

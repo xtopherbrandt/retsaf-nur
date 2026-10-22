@@ -617,6 +617,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Since"
         - $ref: "#/components/parameters/Limit"
+        - name: include_nights
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: "When false (the default), rows with activity_tag overnight_hrv are left out and the pages are those of the store without them; when true they are listed among the others, newest first, named Overnight HRV. A cursor that names a night is served without the flag and skips that night."
       responses:
         "200":
           description: Page of session summaries

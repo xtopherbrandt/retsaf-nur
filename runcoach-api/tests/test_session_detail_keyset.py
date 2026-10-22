@@ -32,6 +32,8 @@ module red).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -208,3 +210,41 @@ def test_detail_body_carries_neither_the_field_nor_a_strap_serial(post_fit, file
     for needle in (LEAK_FIELD, *CORPUS_STRAP_SERIALS):
         at = text.find(needle)
         assert at == -1, f"{needle!r} leaked into the {filename} detail body at offset {at}: {text[at - 40:at + 60]!r}"
+
+
+NIGHT_FIXTURE = Path(__file__).parent / "fixtures" / "nights" / "night_recent.fit"
+
+
+def test_a_night_detail_has_no_series(post_fit_bytes) -> None:
+    """F028 AC6: ``GET /sessions/{id}`` serves a night as it serves a Health Snapshot, with the same
+    key set and no records, beats, laps or steps; its overnight values stay in their own table."""
+    with TestClient(app) as client:
+        post = post_fit_bytes(client, "upload.fit", NIGHT_FIXTURE.read_bytes())
+        assert post.status_code == 201, post.text
+        night_id = post.json()["session_id"]
+        night = client.get(f"/sessions/{night_id}")
+        snapshot_post = post_fit_bytes(
+            client, "upload.fit", (Path(__file__).parent / "fixtures" / "strap_health_snapshot.fit").read_bytes()
+        )
+        assert snapshot_post.status_code == 201, snapshot_post.text
+        snapshot = client.get(f"/sessions/{snapshot_post.json()['session_id']}")
+    assert night.status_code == 200, night.text
+    body = night.json()
+    conn = db_module.get_connection()
+    try:
+        values = conn.execute(
+            "SELECT COUNT(*) FROM overnight_hrv_values WHERE session_id = ?", (night_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert values > 0, "the night stored no values; the no-series pin would be vacuous"
+    print(f"  night {night_id}: {values} stored values, served keys {sorted(body)}")
+    assert body["activity_tag"] == "overnight_hrv", body["activity_tag"]
+    assert set(body) == set(snapshot.json()) == SESSION_KEYS_AT_C2839B6 | {
+        "import_id",
+        "laps",
+        "workout_steps",
+        "laps_read_at",
+    }
+    assert (body["records"], body["rr_intervals"], body["laps"], body["workout_steps"]) == ([], [], [], [])
+    assert "overnight_hrv_values" not in night.text

@@ -1613,7 +1613,11 @@ class SessionStoreOutOfStepError(ValueError):
 
 
 def read_session_page(
-    conn: sqlite3.Connection, *, limit: int, before: tuple[str, str] | None = None
+    conn: sqlite3.Connection,
+    *,
+    limit: int,
+    before: tuple[str, str] | None = None,
+    include_nights: bool = False,
 ) -> list[dict]:
     """Up to ``limit + 1`` session rows for ``GET /sessions``, newest first (F019 AC1, AC3).
 
@@ -1627,6 +1631,12 @@ def read_session_page(
     ``sport``, ``activity_tag``, ``name``, ``quality_flags`` (JSON-decoded,
     ``[]`` when null) and ``context`` (JSON-decoded, ``{}`` when null).
 
+    Unless ``include_nights`` is true, rows tagged ``overnight_hrv`` are
+    left out in the ``WHERE`` (F028 AC6), and a row with no tag is kept, so
+    the page is the page of the same store without its nights. A ``before``
+    that names a night is still a position in the order: the rows after it
+    are returned.
+
     Raises ``SessionStoreOutOfStepError`` naming the column when ``sessions``
     lacks one the select names (a store that has not been through
     ``init_schema`` since the ``name`` column was added), so the route can
@@ -1636,11 +1646,15 @@ def read_session_page(
     does not decode, passes through as the bare 500 every route gives:
     a restart repairs neither.
     """
-    where = ""
+    clauses: list[str] = []
     params: dict[str, object] = {"limit": limit + 1}
     if before is not None:
-        where = "WHERE start_time < :st OR (start_time = :st AND session_id < :sid)"
+        clauses.append("(start_time < :st OR (start_time = :st AND session_id < :sid))")
         params["st"], params["sid"] = before
+    if not include_nights:
+        clauses.append("(activity_tag IS NULL OR activity_tag <> :night_tag)")
+        params["night_tag"] = OVERNIGHT_TAG
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         rows = conn.execute(
             f"""

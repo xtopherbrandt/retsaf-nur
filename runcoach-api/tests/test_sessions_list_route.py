@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -510,3 +511,105 @@ def test_startup_creates_the_records_index_on_session_id_and_t() -> None:
     finally:
         conn.close()
     assert ["session_id", "t"] in columns.values(), columns
+
+
+# --- F028 AC6: nights are listed only when asked -------------------------------------------------------
+
+NIGHTS = FIXTURES / "nights"
+# Three distinct real nights that store (``fixtures/README.md``, run proof "no"): the later file of the
+# re-summary pair stands for its night; the two files with no values are skipped as ``no_night``.
+NIGHT_FIXTURES = ("night_recent", "night_short", "night_resummary_later")
+
+
+def _upload_nights(client: TestClient) -> list[str]:
+    return [_upload(client, "upload.fit", (NIGHTS / f"{name}.fit").read_bytes()) for name in NIGHT_FIXTURES]
+
+
+def _tags(items: list[dict]) -> list[str | None]:
+    return [item["activity_tag"] for item in items]
+
+
+def test_nights_are_not_listed_by_default() -> None:
+    with TestClient(app) as client:
+        nights = _upload_nights(client)
+        run = _upload(client, "sample_run.fit")
+        snapshot = _upload(client, "strap_health_snapshot.fit")
+        for params in ({}, {"include_nights": "false"}, {"include_nights": "0"}):
+            page = _list(client, **params)
+            listed = [item["session_id"] for item in page["items"]]
+            print(f"  {params}: {listed}")
+            assert sorted(listed) == sorted([run, snapshot]), (params, listed)
+            assert not set(listed) & set(nights), params
+            assert "overnight_hrv" not in _tags(page["items"]), params
+            assert page["next_cursor"] is None, params
+
+
+def test_include_nights_lists_them_newest_first_named_overnight_hrv() -> None:
+    with TestClient(app) as client:
+        nights = _upload_nights(client)
+        run = _upload(client, "sample_run.fit")
+        snapshot = _upload(client, "strap_health_snapshot.fit")
+        page = _list(client, include_nights="true")
+        items = page["items"]
+    assert page["next_cursor"] is None
+    assert sorted(item["session_id"] for item in items) == sorted([*nights, run, snapshot])
+    stored = {item["session_id"]: _stored(item["session_id"])["start_time"] for item in items}
+    keys = [(stored[item["session_id"]], item["session_id"]) for item in items]
+    print(f"  served order: {keys}")
+    assert keys == sorted(keys, reverse=True), keys
+    listed_nights = [item for item in items if item["session_id"] in nights]
+    assert len(listed_nights) == len(NIGHT_FIXTURES)
+    for item in listed_nights:
+        assert set(item) == SUMMARY_KEYS, item
+        assert item["activity_tag"] == "overnight_hrv", item
+        assert item["sport"] == "other", item
+        assert item["name"] == "Overnight HRV", item
+        assert (item["distance_m"], item["duration_s"], item["avg_pace_s_per_km"]) == (None, None, None), item
+    assert "overnight_hrv" not in _tags([item for item in items if item["session_id"] not in nights])
+
+
+@pytest.mark.parametrize("bad", ["maybe", "2", "", "nights", "-1"])
+def test_an_invalid_include_nights_is_422(bad: str) -> None:
+    with TestClient(app) as client:
+        response = client.get("/sessions", params={"include_nights": bad})
+    assert response.status_code == 422, response.text
+    assert [error["loc"] for error in response.json()["detail"]] == [["query", "include_nights"]], response.text
+
+
+def test_paging_without_nights_matches_a_store_without_them() -> None:
+    """Runs whose start times sit on both sides of each night, and one on a night's very start time,
+    so a night falls inside a page and on a page edge; read without the flag, every page equals the
+    page of the same store once the nights are deleted. The constructed rows carry no tag (NULL), so a
+    filter that dropped NULL-tagged rows would list nothing here."""
+    with TestClient(app) as client:
+        nights = _upload_nights(client)
+        night_starts = {night: _stored(night)["start_time"] for night in nights}
+        runs = []
+        for index, start in enumerate(sorted(night_starts.values())):
+            for offset in (-30, 30):
+                at = (datetime.fromisoformat(start) + timedelta(minutes=offset)).isoformat()
+                runs.append(_persist(_session(at, f"device-{index}-{offset}")))
+        tied = _session(night_starts[nights[0]], "device-tied")
+        runs.append(_persist(tied))
+        assert _stored(tied.session_id)["start_time"] == night_starts[nights[0]]
+
+        with_nights = {limit: _walk(client, limit) for limit in (1, 2, 3, 50)}
+        everything = _list(client, include_nights="true", limit=200)["items"]
+        assert len(everything) == len(runs) + len(nights)
+
+        # A cursor minted on a night with the flag on, reused without it, is served and skips the night.
+        night_item = next(i for i, item in enumerate(everything) if item["session_id"] == nights[0])
+        night_cursor = _cursor(night_starts[nights[0]], nights[0])
+        after = _list(client, since=night_cursor, limit=200)["items"]
+        expected_after = [item for item in everything[night_item + 1 :] if item["session_id"] not in nights]
+        assert after == expected_after
+
+        for night in nights:
+            assert client.delete(f"/sessions/{night}").status_code == 204
+        without_nights = {limit: _walk(client, limit) for limit in (1, 2, 3, 50)}
+
+    for limit, pages in with_nights.items():
+        listed = [item["session_id"] for page in pages for item in page["items"]]
+        print(f"  limit {limit}: {len(pages)} pages, {len(listed)} rows")
+        assert sorted(listed) == sorted(runs), limit
+        assert pages == without_nights[limit], limit
