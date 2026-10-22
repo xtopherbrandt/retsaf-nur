@@ -187,7 +187,7 @@ def sessions(
     printed = 0
     while True:
         remaining = PAGE_SIZE if wanted is None else min(wanted - printed, PAGE_SIZE)
-        body = _fetch_page(cfg.api_url, since, remaining, nights)
+        body = _fetch_page(cfg.api_url, since, remaining, nights=nights)
         items = body["items"]
         if wanted is not None:
             items = items[: wanted - printed]
