@@ -4,8 +4,8 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
 
 - ``sync [--since YYYY-MM-DD]`` works out a date range and uploads what Garmin holds for it
   (the F022 reference, sections 2 and 3). The range starts one day before the date, in the
-  computer's zone (``sessions.LOCAL_ZONE``), of the newest stored run or recognised resting
-  capture, found by walking ``GET /sessions`` newest first; it starts 29 days before today when
+  computer's zone (``sessions.LOCAL_ZONE``), of the newest stored run, recognised resting
+  capture or night, found by walking ``GET /sessions`` newest first; it starts 29 days before today when
   there is none, and ends today (the ``today`` seam). A newest date after today is replaced by
   today, with a warning naming the session. That store rule is one candidate: the start is the
   earliest of it, the day before ``last_completed`` and ``oldest_failed``, read from the sync
@@ -169,9 +169,9 @@ def _adapter() -> ModuleType:
 
 # The range walk's page size (reference section 2).
 RANGE_PAGE_SIZE = 50
-# With no stored run or capture, the range covers today and the 29 days before it.
+# With no stored run, capture or night, the range covers today and the 29 days before it.
 EMPTY_STORE_DAYS = 30
-# A stored session counts for the range when it is a run or a recognised resting capture.
+# A stored session counts for the range when it is a run, a recognised resting capture or a night.
 RANGE_SPORT = "running"
 RANGE_TAGS = frozenset({"resting_hrv_check", "health_snapshot", "overnight_hrv"})
 # A listed activity is downloaded when its typeId or parentTypeId is the running family's, or its
@@ -349,7 +349,7 @@ def _local_date(start_time: Any) -> date:
 
 
 def _newest_stored(api_url: str) -> tuple[date, dict[str, Any]] | None:
-    """The local date and row of the newest stored run or recognised capture, or ``None``."""
+    """The local date and row of the newest stored run, recognised capture or night, or ``None``."""
     cursor: str | None = None
     while True:
         body = _range_page(api_url, cursor)
