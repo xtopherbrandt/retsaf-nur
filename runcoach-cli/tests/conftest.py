@@ -585,7 +585,9 @@ class FakeApi:
             items = self.pages[index]
             if request.url.params.get("include_nights") != "true":
                 items = [
-                    row for row in items if not (isinstance(row, dict) and row.get("activity_tag") == NIGHT_TAG)
+                    row
+                    for row in items
+                    if not (isinstance(row, dict) and row.get("activity_tag") == NIGHT_TAG)
                 ]
             return httpx.Response(200, json={"items": items, "next_cursor": next_cursor})
         if request.method == "GET" and request.url.path == "/openapi.json" and self.doc is not None:
