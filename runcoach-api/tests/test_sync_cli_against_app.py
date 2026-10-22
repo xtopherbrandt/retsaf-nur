@@ -14,7 +14,7 @@ The files, by their rows in ``fixtures/README.md``'s provenance table: ``sample_
 ``hilly_run_8k_fr945`` and ``wrist_ppg_run`` are real runs (run proof yes); ``strap_hrv_capture`` is
 an HRV capture on the HRV Snapshot profile; ``sample_health_snapshot`` is a health snapshot. The ski
 day is ``sample_run`` with its session sport patched to alpine skiing (13) and its timestamps moved,
-so it is a different file from the run rather than a duplicate of it. The four monitoring-type
+so it is a different file from the run rather than a duplicate of it. The three monitoring-type
 entries are one-message files built by ``support/import_archive.minimal_fit``. The race tag tests
 (F023) use ``sample_run`` and ``dev_fields_run``, two real runs (run proof yes) recorded on
 different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second; the workout
@@ -51,9 +51,10 @@ SESSION = 18  # FIT session: sport is field 5
 SPORT_FIELD = 5
 ALPINE_SKIING = 13
 SNAPSHOT_RESTING = 52
-# The FIT file types of a snapshot zip's non-activity entries: monitoring_b (32) and three the FIT
-# profile fitdecode ships does not name.
-NON_ACTIVITY_TYPES = (32, 44, 68, 49)
+# The FIT file types of a snapshot zip's non-activity entries: monitoring_b (32) and two the FIT
+# profile fitdecode ships does not name. Type 68 (HRV_STATUS) is not among them: the API answers a
+# type-68 file without a summary as a night skipped (``no_night``), not as a non-activity.
+NON_ACTIVITY_TYPES = (32, 44, 49)
 
 DAY_1 = date(2026, 10, 10)
 DAY_2 = date(2026, 10, 11)
@@ -151,7 +152,7 @@ def _first_sync(client: TestClient, monkeypatch: pytest.MonkeyPatch, declared_co
     assert "Stored: 5" in lines
     assert "Already stored: 0" in lines
     assert "Skipped alpine_skiing: 1 (activity 201 (activity 201))" in lines
-    assert "Not an activity: 4" in lines
+    assert "Not an activity: 3" in lines
     assert "No FIT file: 1 (activity 302 (activity 302))" in lines
     assert not any(line.startswith("Failed:") for line in lines)
     assert _tags_line(not_stored=5) in lines
@@ -170,7 +171,7 @@ def test_first_sync_stores_the_runs_the_strap_check_and_the_snapshot(
 ) -> None:
     """The served ``/openapi.json`` passes the switch check; the three runs, the strap check (as
     ``resting_hrv_check``) and the snapshot (as ``health_snapshot``) are stored; the ski day is
-    skipped by sport, the four monitoring-type entries are not activities, the manual activity has
+    skipped by sport, the three monitoring-type entries are not activities, the manual activity has
     no file, and the store holds exactly those five sessions."""
     client = cli_against_app
     _first_sync(client, monkeypatch, declared_config)
@@ -183,7 +184,7 @@ def test_resync_of_the_ac5_range_stores_nothing(
     cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch, declared_config
 ) -> None:
     """Syncing the same range again from its first day stores nothing new: the five are already
-    stored, and the ski day, the four entries and the manual activity are reported as before."""
+    stored, and the ski day, the three entries and the manual activity are reported as before."""
     client = cli_against_app
     _first_sync(client, monkeypatch, declared_config)
     before = sorted(row["session_id"] for row in _stored(client))
@@ -195,7 +196,7 @@ def test_resync_of_the_ac5_range_stores_nothing(
     assert "Stored: 0" in lines
     assert "Already stored: 5" in lines
     assert "Skipped alpine_skiing: 1 (activity 201 (activity 201))" in lines
-    assert "Not an activity: 4" in lines
+    assert "Not an activity: 3" in lines
     assert "No FIT file: 1 (activity 302 (activity 302))" in lines
     assert not any(line.startswith("Failed:") for line in lines)
     assert _tags_line(not_stored=5) in lines

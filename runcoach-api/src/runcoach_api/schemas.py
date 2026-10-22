@@ -2,6 +2,7 @@ import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from runcoach_api.metrics import hrv_trend
 
@@ -14,20 +15,31 @@ class HealthResponse(BaseModel):
 class IngestResponse(BaseModel):
     session_id: str
     quality_flags: list[str]
-    # True only on an upload sent with ``runs_and_captures_only``; absent otherwise.
-    filter_applied: bool | None = None
+    # The two optional keys are absent, never null: the route serves this model with
+    # ``response_model_exclude_none``, and ``SkipJsonSchema[None]`` keeps ``null`` out of the
+    # served schema. ``filter_applied`` is true only on an upload sent with
+    # ``runs_and_captures_only``; ``replaced_session_id`` is set only when an overnight night
+    # replaced a stored re-summary of the same night.
+    filter_applied: bool | SkipJsonSchema[None] = None
+    replaced_session_id: str | SkipJsonSchema[None] = None
 
 
 class IngestSkipped(BaseModel):
-    """``POST /sessions`` with ``runs_and_captures_only``: a file the rule does not keep; nothing stored."""
+    """``POST /sessions``'s 200: a file stored nothing.
+
+    ``non_activity`` and ``skipped_sport`` come only with ``runs_and_captures_only`` (a file the
+    rule does not keep); ``no_night`` is an HRV_STATUS file that holds no night, with or without
+    it. ``filter_applied`` says whether the switch was sent.
+    """
 
     skipped: Literal[True]
-    reason: Literal["non_activity", "skipped_sport"]
+    reason: Literal["non_activity", "skipped_sport", "no_night"]
     file_type: str | None = Field(
-        default=None, description="non_activity: the file_id type name, or its number as a string."
+        default=None,
+        description="non_activity: the file_id type name, or its number as a string; no_night: hrv_status.",
     )
     sport: str | None = Field(default=None, description="skipped_sport: the sport as the FIT file names it.")
-    filter_applied: Literal[True]
+    filter_applied: bool
 
 
 # ---------------------------------------------------------------------------

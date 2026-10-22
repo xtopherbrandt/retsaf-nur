@@ -7,10 +7,12 @@ optional fields and on the 200: it is the declared ``responses={200: ...}`` on t
 200 in the served document (runtime validation of the skipped body does not need it), and dropping
 that declaration turns the success-code comparison red.
 
-FastAPI serves the 201 as a ``$ref`` to ``IngestResponse`` merged with the route's
-``anyOf: [IngestResponse, IngestSkipped]`` return annotation, so the 201 and the 200 are compared
-by the components they name rather than by literal schema. The components are walked property by
-property with ``tests/support/contract_walk.py`` (which compares ``required`` too).
+The route's ``response_model`` is ``IngestResponse`` alone and the 200 is declared in
+``responses=``, so the served 201 is exactly a ``$ref`` to ``IngestResponse`` (a 201 never carries
+``IngestSkipped``) and the 200 a ``$ref`` to ``IngestSkipped``; the skip branches return a
+``JSONResponse`` of their own. The components are walked property by property with
+``tests/support/contract_walk.py`` (which compares ``required`` too, and reads the 201's optional
+``filter_applied`` and ``replaced_session_id`` as non-nullable).
 """
 
 from __future__ import annotations
@@ -88,11 +90,6 @@ def test_contract_and_served_route_agree_on_codes_and_components() -> None:
         assert contract_schema == {"$ref": f"{REF_PREFIX}{component}"}, code
         assert own == component, (code, own)
         assert union <= set(SUCCESS_COMPONENT.values()), (code, union)
-    # The 201's union holds both bodies the route can return; the 200 is the skipped body alone.
-    assert _named(built_op["responses"]["201"]["content"]["application/json"]["schema"])[1] == {
-        "IngestResponse",
-        "IngestSkipped",
-    }
 
     # The multipart fields: the same names, `file` alone required, the two switches booleans.
     body = op["requestBody"]["content"]["multipart/form-data"]["schema"]
@@ -108,7 +105,33 @@ def test_contract_and_served_route_agree_on_codes_and_components() -> None:
     seen, compared = contract_walk.walk(contract, built, ["IngestResponse", "IngestSkipped"])
     print(f"  {len(compared)} properties over {sorted(seen)}: {compared}")
     assert seen == {"IngestResponse", "IngestSkipped"}, seen
-    assert "IngestResponse.filter_applied" in compared
+    assert {"IngestResponse.filter_applied", "IngestResponse.replaced_session_id"} <= set(compared)
     assert {f"IngestSkipped.{f}" for f in ("skipped", "reason", "file_type", "sport", "filter_applied")} <= set(
         compared
     )
+
+
+def test_the_201_serves_ingest_response_alone() -> None:
+    """The served 201 and 200 are each exactly one ``$ref``, and the 201's optional keys are never null.
+
+    A ``response_model`` union merged with ``responses=`` served the 201 as ``anyOf [IngestResponse,
+    IngestSkipped]``; this pins the literal schemas, so the union coming back goes red.
+    """
+    built = app.openapi()
+    responses = built["paths"]["/sessions"]["post"]["responses"]
+    served = {code: responses[code]["content"]["application/json"]["schema"] for code in sorted(SUCCESS_CODES)}
+    print(f"  served success schemas: {served}")
+    assert served == {
+        "200": {"$ref": f"{REF_PREFIX}IngestSkipped"},
+        "201": {"$ref": f"{REF_PREFIX}IngestResponse"},
+    }
+    response = built["components"]["schemas"]["IngestResponse"]
+    print(f"  IngestResponse: {response}")
+    assert sorted(response["required"]) == ["quality_flags", "session_id"]
+    assert response["properties"]["filter_applied"] == {"type": "boolean", "title": "Filter Applied"}
+    assert response["properties"]["replaced_session_id"] == {"type": "string", "title": "Replaced Session Id"}
+    skipped = built["components"]["schemas"]["IngestSkipped"]
+    print(f"  IngestSkipped.reason {skipped['properties']['reason']}, filter_applied {skipped['properties']['filter_applied']}")
+    assert sorted(skipped["properties"]["reason"]["enum"]) == ["no_night", "non_activity", "skipped_sport"]
+    assert skipped["properties"]["filter_applied"] == {"type": "boolean", "title": "Filter Applied"}
+    assert sorted(skipped["required"]) == ["filter_applied", "reason", "skipped"]

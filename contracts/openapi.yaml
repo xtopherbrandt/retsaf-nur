@@ -575,25 +575,30 @@ paths:
                     201 carries `filter_applied: true`. Sent with `resting_capture`
                     true → 422 (the declaration bypasses the rule). Optional; without
                     it the call and every reply are unchanged.
+                    An HRV_STATUS file (file_id type 68) is an overnight night with or
+                    without it; with `resting_capture` true it is a 422.
       responses:
         "201":
-          description: Ingested (or re-derived deterministically)
+          description: >
+            Ingested (or re-derived deterministically). An HRV_STATUS file is stored as
+            one overnight night; `replaced_session_id` names a stored re-summary of the
+            same night it replaced.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IngestResponse" }
         "200":
           description: >
-            Skipped, only when `runs_and_captures_only` is sent: the file is not
-            an activity, or it is neither a run nor a recognised resting capture.
-            Nothing stored.
+            Skipped, nothing stored: with `runs_and_captures_only`, the file is not
+            an activity, or it is neither a run nor a recognised resting capture;
+            with or without it, an HRV_STATUS file that holds no night (`no_night`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IngestSkipped" }
         "400":
-          description: Not a FIT file / parse failure / a required canonical field could not be determined / (with `runs_and_captures_only`) a file_id the screen fails
+          description: Not a FIT file / parse failure / a required canonical field could not be determined / an overnight HRV series refused (two values at one timestamp, two summaries) / (with `runs_and_captures_only`) a file_id the screen fails
           content: { text/plain: { schema: { type: string } } }
         "409":
-          description: Duplicate — already ingested (body names the existing session id)
+          description: Duplicate — already ingested, or an HRV_STATUS night whose later re-summary is stored (body names the existing session id)
           content: { text/plain: { schema: { type: string } } }
         "413":
           description: Upload exceeds the size/record/beat limit
@@ -1449,25 +1454,34 @@ components:
           description: Data-quality flags raised at ingest (never hidden). See spec/02 §2.4.
         filter_applied:
           type: boolean
-          nullable: true
-          description: "True only on an upload sent with `runs_and_captures_only`; absent otherwise."
+          description: "True only on an upload sent with `runs_and_captures_only`; absent otherwise (never null)."
+        replaced_session_id:
+          type: string
+          description: >
+            An HRV_STATUS night only: the stored re-summary of the same night (same device and
+            series start, earlier summary time) this upload replaced. Absent otherwise (never null).
 
     IngestSkipped:
       type: object
-      description: "ingestSession's 200, only with `runs_and_captures_only`: a file the rule does not keep; nothing stored."
+      description: >
+        ingestSession's 200: a file stored nothing. `non_activity` and `skipped_sport` only with
+        `runs_and_captures_only` (a file the rule does not keep); `no_night` an HRV_STATUS file
+        that holds no night, with or without it.
       required: [skipped, reason, filter_applied]
       properties:
         skipped: { type: boolean, enum: [true] }
-        reason: { type: string, enum: [non_activity, skipped_sport] }
+        reason: { type: string, enum: [non_activity, skipped_sport, no_night] }
         file_type:
           type: string
           nullable: true
-          description: "non_activity: the file_id type name, or its number as a string."
+          description: "non_activity: the file_id type name, or its number as a string; no_night: hrv_status."
         sport:
           type: string
           nullable: true
           description: "skipped_sport: the sport as the FIT file names it."
-        filter_applied: { type: boolean, enum: [true] }
+        filter_applied:
+          type: boolean
+          description: Whether the upload was sent with `runs_and_captures_only`.
 
     SessionDetail:
       type: object

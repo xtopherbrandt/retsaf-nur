@@ -9,12 +9,14 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from runcoach_api import __version__, db
-from runcoach_api.imports.archive import HRV_STATUS_FILE_TYPE, screen_file_id
+from runcoach_api.imports.archive import screen_file_id
+from runcoach_api.ingestion import overnight
 from runcoach_api.ingestion.exceptions import (
     DuplicateSessionError,
     FitParseFailure,
     MissingCanonicalFieldError,
     NotAFitFileError,
+    OvernightSeriesError,
     TooManyRecordsError,
     http_status_detail,
 )
@@ -147,17 +149,16 @@ def health() -> HealthResponse:
 
 @app.post(
     "/sessions",
-    response_model=IngestResponse | IngestSkipped,
+    response_model=IngestResponse,
     status_code=201,
     response_model_exclude_none=True,
-    responses={201: {"model": IngestResponse}, 200: {"model": IngestSkipped}},
+    responses={200: {"model": IngestSkipped, "description": "Skipped: nothing stored."}},
 )
 def create_session(
-    response: Response,
     file: UploadFile = File(...),  # noqa: B008 -- FastAPI's parameter idiom
     resting_capture: bool = Form(False),
     runs_and_captures_only: bool = Form(False),
-) -> IngestResponse | IngestSkipped:
+) -> IngestResponse | Response:
     """Ingest one uploaded FIT file.
 
     ``resting_capture`` is F004's upload-time Tier-1 declaration: the athlete
@@ -183,6 +184,23 @@ def create_session(
     ``resting_capture`` is a 422: a declaration that bypasses the rule and a
     request to apply it contradict each other. Without the switch the call and
     every reply are as before the field existed (no ``filter_applied`` key).
+
+    Every upload is screened (one ``file_id`` read). An HRV_STATUS file (F028)
+    takes the night path, with or without the switch: ``overnight.map_night``,
+    then ``db.persist_night``. A night is a 201 (``filter_applied: true`` only
+    with the switch, ``replaced_session_id`` only when it replaced a stored
+    re-summary of the same night); a file without a night is a 200
+    ``IngestSkipped`` with reason ``no_night``, ``file_type: "hrv_status"`` and
+    ``filter_applied`` saying whether the switch was sent; the same night
+    again, or an earlier re-summary of a stored one, is a 409 naming the stored
+    id; a decode fault or a faulty series is a 400; ``resting_capture`` with an
+    HRV_STATUS file is a 422. Any other screen outcome takes the activity path
+    above; without the switch a file the screen fails still reaches
+    ``ingest_fit_bytes``, so its reply is the pipeline's own.
+
+    Every 200 is a ``JSONResponse`` of ``IngestSkipped`` with ``None`` keys
+    dropped; the route's ``response_model`` is ``IngestResponse`` alone, so the
+    served 201 names that component and nothing else.
     """
     raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -199,25 +217,29 @@ def create_session(
                 }
             ]
         )
+    screen = screen_file_id(raw)
+    if screen.outcome == "hrv_status":
+        if resting_capture:
+            raise RequestValidationError(
+                [
+                    {
+                        "type": "value_error",
+                        "loc": ("body", "resting_capture"),
+                        "msg": "Value error, resting_capture cannot be declared for an HRV_STATUS file",
+                        "input": resting_capture,
+                    }
+                ]
+            )
+        return _create_night(raw, filter_applied=runs_and_captures_only)
     kept_sessions: list = []
     try:
         if not runs_and_captures_only:
             result = ingest_fit_bytes(raw, resting_capture_override=resting_capture)
         else:
-            screen = screen_file_id(raw)
             if screen.outcome == "failed":
                 raise HTTPException(400, screen.detail)
             if screen.outcome == "non_activity":
-                response.status_code = 200
-                return IngestSkipped(
-                    skipped=True, reason="non_activity", file_type=screen.file_type, filter_applied=True
-                )
-            if screen.outcome == "hrv_status":
-                # An HRV_STATUS file is counted as non-activity here, as before, under its type number.
-                response.status_code = 200
-                return IngestSkipped(
-                    skipped=True, reason="non_activity", file_type=str(HRV_STATUS_FILE_TYPE), filter_applied=True
-                )
+                return _skipped(reason="non_activity", file_type=screen.file_type, filter_applied=True)
 
             def keep(session) -> bool:
                 kept_sessions.append(session)
@@ -242,15 +264,51 @@ def create_session(
     if not runs_and_captures_only:
         return IngestResponse(session_id=result.session_id, quality_flags=result.quality_flags)
     if result.skipped:
-        response.status_code = 200
-        return IngestSkipped(
-            skipped=True,
-            reason="skipped_sport",
-            sport=import_job._skip_label(kept_sessions[-1]),
-            filter_applied=True,
-        )
+        return _skipped(reason="skipped_sport", sport=import_job._skip_label(kept_sessions[-1]), filter_applied=True)
     return IngestResponse(
         session_id=result.session_id, quality_flags=result.quality_flags, filter_applied=True
+    )
+
+
+def _skipped(**fields) -> Response:
+    """``POST /sessions``'s 200: an ``IngestSkipped`` body, its ``None`` keys dropped.
+
+    A ``JSONResponse`` of its own, so the route's ``response_model`` stays
+    ``IngestResponse`` alone. JSONResponse is imported with the /me routes
+    below, as their validation handler uses it.
+    """
+    body = IngestSkipped(skipped=True, **fields)
+    return JSONResponse(status_code=200, content=body.model_dump(mode="json", exclude_none=True))
+
+
+def _create_night(raw: bytes, *, filter_applied: bool) -> IngestResponse | Response:
+    """The night path of ``POST /sessions`` for an HRV_STATUS file (the replies are in its docstring)."""
+    try:
+        mapped = overnight.map_night(raw)
+        if isinstance(mapped, overnight.NoNight):
+            return _skipped(reason=mapped.reason, file_type="hrv_status", filter_applied=filter_applied)
+        conn = db.get_connection()
+        try:
+            # As ingest_fit_bytes does: a store the lifespan never initialised gains its tables here.
+            db.init_schema(conn)
+            write = db.persist_night(conn, mapped)
+        finally:
+            conn.close()
+    except (
+        NotAFitFileError,
+        FitParseFailure,
+        TooManyRecordsError,
+        MissingCanonicalFieldError,
+        OvernightSeriesError,
+        DuplicateSessionError,
+    ) as exc:
+        status, detail = http_status_detail(exc)
+        raise HTTPException(status, detail) from exc
+    return IngestResponse(
+        session_id=write.session_id,
+        quality_flags=list(mapped.session.quality_flags),
+        filter_applied=True if filter_applied else None,
+        replaced_session_id=write.replaced_session_id,
     )
 
 
