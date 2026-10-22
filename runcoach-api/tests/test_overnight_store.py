@@ -197,6 +197,26 @@ def test_a_night_its_values_and_sidecar_are_written_together() -> None:
     assert loads == 1
 
 
+def test_an_invalid_value_is_stored_as_null_not_as_a_number() -> None:
+    """The earlier 2024-01-01 file holds 106 values, 2 of them the invalid sentinel (104 valid,
+    from a decode of the fixture): the store keeps those 2 as NULL, never as an invented reading."""
+    night = _night("night_resummary_earlier")
+    conn = _conn()
+    try:
+        db.persist_night(conn, night)
+        nulls, valid, total, lowest = conn.execute(
+            f"SELECT SUM(rmssd_ms IS NULL), COUNT(rmssd_ms), COUNT(*), MIN(rmssd_ms) FROM {VALUES_TABLE} "
+            "WHERE session_id = ?",
+            (night.session.session_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    print(f"[slice compared] nulls={nulls} valid={valid} total={total} min={lowest}")
+    assert (nulls, valid, total) == (2, 104, EARLIER_VALUES)
+    assert lowest > 0
+
+
 def test_a_failed_values_insert_leaves_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     night = _night("night_recent")
     calls: list[str] = []
