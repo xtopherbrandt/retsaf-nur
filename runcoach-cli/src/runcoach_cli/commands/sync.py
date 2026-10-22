@@ -22,10 +22,14 @@ This module holds the ``sync`` sub-app and its ``tags``, ``login`` and ``logout`
   day's running-family and ``other`` activities (by local start, then id) are downloaded, and
   every entry of every zip is read in memory and uploaded with
   ``runs_and_captures_only`` set. A manual activity is never downloaded (``no_fit_original``).
-  Before the first upload, ``GET /openapi.json`` must list the switch on ``POST /sessions``.
+  Before the first upload, ``GET /openapi.json`` must list the switch on ``POST /sessions`` and
+  ``no_night`` among ``IngestSkipped``'s reasons. The range walk sends ``include_nights=true``, so
+  a stored overnight HRV night counts for the range as a capture does.
   Each item is recorded in an ``ItemResult`` with its outcome (reference section 5): ``stored``,
-  ``already_stored``, ``skipped_sport``, ``non_activity``, ``no_fit_original`` or ``failed``. The
-  summary follows the ``From`` line; the exit code is 1 when any item failed. A download that
+  ``already_stored``, ``skipped_sport``, ``non_activity``, ``no_night`` (an HRV_STATUS file with no
+  night: counted, never retried, not a failure), ``no_fit_original`` or ``failed``. The
+  summary follows the ``From`` line; the exit code is 1 when any item failed. A 201 without
+  ``filter_applied`` stops the sync naming the item and the session it was stored as. A download that
   Garmin answers with an HTTP error status other than 401, 403, 404 and 429 is ``failed`` and the
   sync goes on. A stop (reference section 6: a login needed, a web page for a download, a rate
   limit, Garmin unreachable (no HTTP reply at all) or the API unreachable, any error on the
@@ -167,7 +171,7 @@ RANGE_PAGE_SIZE = 50
 EMPTY_STORE_DAYS = 30
 # A stored session counts for the range when it is a run or a recognised resting capture.
 RANGE_SPORT = "running"
-RANGE_TAGS = frozenset({"resting_hrv_check", "health_snapshot"})
+RANGE_TAGS = frozenset({"resting_hrv_check", "health_snapshot", "overnight_hrv"})
 # A listed activity is downloaded when its typeId or parentTypeId is the running family's, or its
 # typeKey is ``other`` (strap checks; F020's rule on the server decides what is kept).
 RUNNING_TYPE_ID = 1
@@ -180,6 +184,10 @@ WEB_PAGE = (
 )
 OLD_API = "the API does not support runs_and_captures_only: update it"
 SWITCH_FIELD = "runs_and_captures_only"
+# The served ``IngestSkipped.reason`` must list ``no_night``, or a night the API cannot read would
+# be answered as something else.
+INGEST_SKIPPED_SCHEMA = "IngestSkipped"
+OLD_API_NIGHTS = "the API does not store overnight HRV (no_night): update it and restart the API"
 
 # The most one zip entry may hold to be uploaded: ``POST /sessions``'s own cap; tests lower it.
 FIT_ENTRY_CAP = 50 * 1024 * 1024
@@ -220,6 +228,8 @@ STORED = "stored"
 ALREADY_STORED = "already_stored"
 SKIPPED_SPORT = "skipped_sport"
 NON_ACTIVITY = "non_activity"
+# An HRV_STATUS file that holds no night: counted, never retried, not a failure.
+NO_NIGHT = "no_night"
 NO_FIT_ORIGINAL = "no_fit_original"
 FAILED = "failed"
 
@@ -307,7 +317,7 @@ def _parse_since(value: str, end: date) -> date:
 def _range_page(api_url: str, cursor: str | None) -> dict[str, Any]:
     """One ``GET /sessions`` page for the range walk, or raise ``SyncStop``."""
     try:
-        resp = api_client.list_sessions(api_url, since=cursor, limit=RANGE_PAGE_SIZE)
+        resp = api_client.list_sessions(api_url, since=cursor, limit=RANGE_PAGE_SIZE, include_nights=True)
     except api_client.ApiUnreachableError:
         raise SyncStop(_api_unreachable(api_url, None)) from None
     if resp.status_code != 200:
@@ -677,6 +687,8 @@ def _classify(resp: httpx.Response) -> tuple[str, str, bool]:
         return SKIPPED_SPORT, str(body.get("sport")), True
     if reason == NON_ACTIVITY:
         return NON_ACTIVITY, str(body.get("file_type")), True
+    if reason == NO_NIGHT:
+        return NO_NIGHT, str(body.get("file_type")), True
     return FAILED, f"API returned 200 with an unknown skip reason {reason!r}", True
 
 
@@ -724,6 +736,30 @@ def _lists_switch(doc: Any) -> bool:
     return isinstance(properties, dict) and SWITCH_FIELD in properties
 
 
+def _lists_no_night(doc: Any) -> bool:
+    """True when the served ``IngestSkipped`` schema's ``reason`` lists ``no_night``: in its
+    ``enum`` or as a ``const``, directly or in one ``anyOf``/``oneOf`` branch, each ``$ref``
+    followed."""
+    schemas = doc.get("components") if isinstance(doc, dict) else None
+    schemas = schemas.get("schemas") if isinstance(schemas, dict) else None
+    skipped = _resolve(doc, schemas.get(INGEST_SKIPPED_SCHEMA)) if isinstance(schemas, dict) else None
+    properties = skipped.get("properties") if isinstance(skipped, dict) else None
+    reason = _resolve(doc, properties.get("reason")) if isinstance(properties, dict) else None
+    if not isinstance(reason, dict):
+        return False
+    branches = [reason]
+    for key in ("anyOf", "oneOf"):
+        if isinstance(reason.get(key), list):
+            branches.extend(_resolve(doc, branch) for branch in reason[key])
+    for branch in branches:
+        if not isinstance(branch, dict):
+            continue
+        enum = branch.get("enum")
+        if branch.get("const") == NO_NIGHT or (isinstance(enum, list) and NO_NIGHT in enum):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class OpenApiUnread:
     """``GET /openapi.json`` answered ``status``, not 200: the document was not read, so it says
@@ -754,8 +790,21 @@ class ServedDoc:
     read: bool = False
 
 
+def _old_api_stop(resp: httpx.Response, item: str) -> str:
+    """The stop for a reply without ``filter_applied: true``. A 201 has already stored ``item``
+    without the rule, so the message names it and the session it was stored as (when the reply
+    names one)."""
+    if resp.status_code != 201:
+        return OLD_API
+    body = _body(resp)
+    session_id = body.get("session_id") if isinstance(body, dict) else None
+    stored_as = f" as session {sessions._printable(session_id)}" if isinstance(session_id, str) else ""
+    return f"{OLD_API}; {sessions._printable(item)} was already stored{stored_as} without the rule"
+
+
 class _Uploader:
-    """Uploads entries for one sync, checking the API's switch once, before the first upload."""
+    """Uploads entries for one sync, checking the API's switch and ``no_night`` once, before the
+    first upload."""
 
     def __init__(self, api_url: str, results: list[ItemResult], served: ServedDoc | None = None) -> None:
         self.api_url = api_url
@@ -772,6 +821,8 @@ class _Uploader:
             raise SyncStop(f"{doc.message()}: run `runcoach sync --since {day.isoformat()}`")
         if not _lists_switch(doc):
             raise SyncStop(f"{OLD_API} and restart the API")
+        if not _lists_no_night(doc):
+            raise SyncStop(OLD_API_NIGHTS)
         self.served.doc, self.served.read = doc, True
         self.checked = True
 
@@ -799,7 +850,7 @@ class _Uploader:
             )
         )
         if not applied:
-            raise SyncStop(OLD_API)
+            raise SyncStop(_old_api_stop(resp, item))
 
     def fail(self, day: date, item: str, activity_id: int | None, detail: str, *, retry: bool) -> None:
         self.results.append(
@@ -1031,6 +1082,7 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
         names = by_sport[sport]
         lines.append(f"Skipped {printable(sport)}: {len(names)} ({', '.join(names)})")
     lines.append(f"Not an activity: {len(count(NON_ACTIVITY))}")
+    lines.append(f"No night: {len(count(NO_NIGHT))}")
     no_fit = [printable(r.summary_name) for r in count(NO_FIT_ORIGINAL)]
     lines.append(f"No FIT file: {len(no_fit)}" + (f" ({', '.join(no_fit)})" if no_fit else ""))
     for r in count(FAILED):

@@ -382,8 +382,25 @@ class FakeGarmin:
         return value
 
 
+# ``IngestSkipped`` as FastAPI serves it: ``reason`` an enum that lists ``no_night`` since F028 (an
+# older API lists the first two only).
+_SKIP_REASONS = ("non_activity", "skipped_sport", "no_night")
+
+
+def _ingest_skipped(no_night: bool) -> dict[str, Any]:
+    reasons = [reason for reason in _SKIP_REASONS if no_night or reason != "no_night"]
+    return {
+        "properties": {
+            "skipped": {"type": "boolean", "const": True},
+            "reason": {"type": "string", "enum": reasons, "title": "Reason"},
+            "filter_applied": {"type": "boolean"},
+        },
+        "type": "object",
+    }
+
+
 # ``/openapi.json`` as FastAPI serves it, with only ``POST /sessions`` listing the switch in its form
-# body; ``openapi_doc`` adds the operations a test names.
+# body and ``IngestSkipped`` listing ``no_night``; ``openapi_doc`` adds the operations a test names.
 _SWITCH_ONLY: dict[str, Any] = {
     "paths": {
         "/sessions": {
@@ -394,7 +411,12 @@ _SWITCH_ONLY: dict[str, Any] = {
             }
         },
     },
-    "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
+    "components": {
+        "schemas": {
+            "Body": {"properties": {"file": {}, "runs_and_captures_only": {}}},
+            "IngestSkipped": _ingest_skipped(no_night=True),
+        }
+    },
 }
 
 # Where each operation a capability check looks for is served: operationId -> (path, method).
@@ -433,15 +455,19 @@ def _set_race_tags(doc: dict[str, Any], workout_tags: bool) -> dict[str, Any]:
 
 
 def openapi_doc(
-    *operation_ids: str, base: dict[str, Any] | None = None, workout_tags: bool = True
+    *operation_ids: str, base: dict[str, Any] | None = None, workout_tags: bool = True, no_night: bool = True
 ) -> dict[str, Any]:
     """``/openapi.json`` as FastAPI serves it, listing ``POST /sessions`` with the switch and each of
     ``operation_ids`` at its path (``_OPERATION_PATHS``; an id not listed there is served as
     ``POST /<id>``). ``openapi_doc()`` lists the switch alone. ``base``, when given, is a copy's
     starting document instead of the switch's. ``setRaceTags`` carries its request body, whose
-    item schema lists ``tag`` unless ``workout_tags`` is false (an API from before F026)."""
+    item schema lists ``tag`` unless ``workout_tags`` is false (an API from before F026). The
+    ``IngestSkipped`` component is set on every document, its ``reason`` listing ``no_night``
+    unless ``no_night`` is false (an API from before F028)."""
     doc = json.loads(json.dumps(_SWITCH_ONLY if base is None else base))
     doc.setdefault("paths", {})
+    schemas = doc.setdefault("components", {}).setdefault("schemas", {})
+    schemas["IngestSkipped"] = _ingest_skipped(no_night)
     for op_id in operation_ids:
         path, method = _OPERATION_PATHS.get(op_id, (f"/{op_id}", "post"))
         operation = _set_race_tags(doc, workout_tags) if op_id == "setRaceTags" else {"operationId": op_id}
@@ -469,12 +495,17 @@ def _multipart_part(body: bytes, field: str) -> tuple[bytes, bytes] | None:
     return None
 
 
+# The tag ``GET /sessions`` lists a stored overnight HRV night with, only when asked to.
+NIGHT_TAG = "overnight_hrv"
+
+
 class FakeApi:
     """The RunCoach API as ``runcoach sync`` sees it: an ``httpx.MockTransport`` handler.
 
     ``GET /sessions`` answers ``pages`` as a cursor chain (page N's ``next_cursor`` is
-    ``cursor-<N+1>``; the default is one empty page). ``GET /openapi.json`` answers ``doc``; with
-    ``doc=None`` it fails the test. ``POST /sessions`` (refused when ``accept_uploads`` is false)
+    ``cursor-<N+1>``; the default is one empty page), leaving out the rows tagged ``overnight_hrv``
+    unless the request sends ``include_nights=true``, as the API does. ``GET /openapi.json``
+    answers ``doc``; with ``doc=None`` it fails the test. ``POST /sessions`` (refused when ``accept_uploads`` is false)
     records the file part's bytes in ``uploads`` (and the part's headers and the switch's value in
     ``heads`` and ``switches``), runs ``check(body)`` first when given, and answers
     ``replies[content]`` when the bytes are listed there, else ``reply(n, content)`` (``n`` counts
@@ -551,7 +582,12 @@ class FakeApi:
             since = request.url.params.get("since")
             index = 0 if since is None else int(since.removeprefix("cursor-"))
             next_cursor = f"cursor-{index + 1}" if index + 1 < len(self.pages) else None
-            return httpx.Response(200, json={"items": self.pages[index], "next_cursor": next_cursor})
+            items = self.pages[index]
+            if request.url.params.get("include_nights") != "true":
+                items = [
+                    row for row in items if not (isinstance(row, dict) and row.get("activity_tag") == NIGHT_TAG)
+                ]
+            return httpx.Response(200, json={"items": items, "next_cursor": next_cursor})
         if request.method == "GET" and request.url.path == "/openapi.json" and self.doc is not None:
             return httpx.Response(self.doc_status, json=self.doc)
         if request.method == "POST" and request.url.path == "/sessions" and self.accept_uploads:

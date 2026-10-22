@@ -18,7 +18,9 @@ so it is a different file from the run rather than a duplicate of it. The three 
 entries are one-message files built by ``support/import_archive.minimal_fit``. The race tag tests
 (F023) use ``sample_run`` and ``dev_fields_run``, two real runs (run proof yes) recorded on
 different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second; the workout
-tag test (F026) uses ``sample_run`` alone.
+tag test (F026) uses ``sample_run`` alone. The overnight HRV test (F028) uses
+``nights/night_recent`` and ``nights/night_midnight_no_average``, real HRV_STATUS files from the
+wellness FIT (run proof no): a night, and a midnight file that holds none.
 
 Resting HR is the observable input of the order tests: F021 borrows max and threshold HR from
 running files only, but resting HR from any stored file, so a snapshot stored before a run that
@@ -201,6 +203,63 @@ def test_resync_of_the_ac5_range_stores_nothing(
     assert not any(line.startswith("Failed:") for line in lines)
     assert _tags_line(not_stored=5) in lines
     assert sorted(row["session_id"] for row in _stored(client)) == before
+
+
+# --- F028: a day zip holding a night, a file with no night, a snapshot and monitoring entries ----
+
+
+def _night_day() -> FakeGarmin:
+    """One day zip, no activity: ``nights/night_recent`` (a real night, 2026-10-10, 57 values),
+    ``nights/night_midnight_no_average`` (a real midnight HRV_STATUS file with no night), the
+    health snapshot and the three monitoring-type entries."""
+    entries = [
+        ("1_HRV_STATUS.fit", (FIXTURES / "nights" / "night_recent.fit").read_bytes()),
+        ("2_HRV_STATUS.fit", (FIXTURES / "nights" / "night_midnight_no_average.fit").read_bytes()),
+        ("3_ACTIVITY.fit", _fixture("sample_health_snapshot")),
+    ] + [
+        (f"{n + 4}_WELLNESS.fit", import_archive.minimal_fit(file_type))
+        for n, file_type in enumerate(NON_ACTIVITY_TYPES)
+    ]
+    return FakeGarmin([], {}, {DAY_1: _zip(entries)})
+
+
+def _stored_with_nights(client: TestClient) -> list[tuple[str | None, int]]:
+    response = client.get("/sessions", params={"limit": 200, "include_nights": "true"})
+    assert response.status_code == 200, response.text
+    tags = [row.get("activity_tag") for row in response.json()["items"]]
+    return sorted((tag, tags.count(tag)) for tag in set(tags))
+
+
+def test_a_day_zip_with_a_night_syncs_against_the_app(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The served ``/openapi.json`` passes the switch and ``no_night`` checks; the night and the
+    snapshot are stored, the midnight file is counted on the ``No night`` line (not failed, exit 0),
+    the monitoring entries are not activities. Synced again, the night is already stored."""
+    client = cli_against_app
+    _serve(monkeypatch, _night_day())
+    result = _run("sync", "--since", DAY_1.isoformat())
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert "Stored: 2" in lines
+    assert "Already stored: 0" in lines
+    assert "Not an activity: 3" in lines
+    assert "No night: 1" in lines
+    assert not any(line.startswith("Failed:") for line in lines)
+    stored = _stored_with_nights(client)
+    print(stored)
+    assert stored == [("health_snapshot", 1), ("overnight_hrv", 1)]
+
+    _serve(monkeypatch, _night_day())
+    again = _run("sync", "--since", DAY_1.isoformat())
+    assert again.exit_code == 0, again.output
+    lines = again.output.splitlines()
+    assert "Stored: 0" in lines
+    assert "Already stored: 2" in lines
+    assert "Not an activity: 3" in lines
+    assert "No night: 1" in lines
+    assert not any(line.startswith("Failed:") for line in lines)
+    assert _stored_with_nights(client) == stored
 
 
 # --- The order pair: one run with no settings of its own and the same morning's snapshot ---------

@@ -414,10 +414,98 @@ def test_a_201_without_filter_applied_stops_before_a_second_upload(env, fake_gar
     result = _sync("--since", "2026-10-10")
 
     assert result.exit_code == 1, result.output
-    assert _ends_with(result.output, OLD_API), result.output
+    assert OLD_API in result.output.rstrip().splitlines()[-1], result.output
     assert api.uploads == [b"ACT-101"]
     assert "Stored: 1" in result.output
     assert ("original", 201) not in fake.events
+
+
+def test_the_old_api_stop_names_the_session_already_stored(env, fake_garmin, fake_api) -> None:
+    """The 201 that shows the API ignored the switch has stored its file without the rule: the stop
+    names the item and the session it was stored as. A 201 naming no session says so without one."""
+    fake = fake_garmin()
+    api = env(fake, fake_api(reply=lambda n, content: httpx.Response(201, json={"session_id": "s-old-7"})))
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    last = result.output.rstrip().splitlines()[-1]
+    assert last == (
+        f"Error: {OLD_API}; activity 101 (run 101): 101_ACTIVITY.fit was already stored as session "
+        "s-old-7 without the rule"
+    ), last
+    assert api.uploads == [b"ACT-101"]
+
+    env(fake_garmin(), fake_api(reply=lambda n, content: httpx.Response(201, text="stored")))
+    unnamed = _sync("--since", "2026-10-10")
+
+    assert unnamed.exit_code == 1, unnamed.output
+    assert unnamed.output.rstrip().splitlines()[-1] == (
+        f"Error: {OLD_API}; activity 101 (run 101): 101_ACTIVITY.fit was already stored without the rule"
+    )
+
+
+def test_an_api_without_no_night_stops_before_any_upload(env, fake_garmin, fake_api, openapi_with) -> None:
+    """A served contract whose ``IngestSkipped.reason`` lacks ``no_night`` (an API from before
+    overnight HRV, the switch listed) stops before the first upload, having uploaded nothing."""
+    fake = fake_garmin()
+    api = env(fake, fake_api(doc=openapi_with("setRaceTags", base=_sessions_doc(), no_night=False)))
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    assert result.output.rstrip().splitlines()[-1] == (
+        "Error: the API does not store overnight HRV (no_night): update it and restart the API"
+    ), result.output
+    assert api.uploads == []
+    assert "POST /sessions" not in api.calls
+    assert api.calls.count("GET /openapi.json") == 1
+
+
+@pytest.mark.parametrize(
+    "skipped",
+    [
+        None,
+        {"properties": {"reason": {"type": "string", "enum": ["non_activity", "skipped_sport"]}}},
+        {"properties": {"reason": {"type": "string"}}},
+        {"properties": {}},
+        [],
+    ],
+    ids=["no component", "two reasons", "no enum", "no reason", "not an object"],
+)
+def test_a_contract_that_cannot_be_read_as_listing_no_night_stops_too(
+    env, skipped, fake_garmin, fake_api, openapi_with
+) -> None:
+    doc = openapi_with("setRaceTags", base=_sessions_doc())
+    if skipped is None:
+        del doc["components"]["schemas"]["IngestSkipped"]
+    else:
+        doc["components"]["schemas"]["IngestSkipped"] = skipped
+    api = env(fake_garmin(), fake_api(doc=doc))
+
+    result = _sync("--since", "2026-10-10")
+
+    assert result.exit_code == 1, result.output
+    assert _ends_with(result.output, "(no_night): update it and restart the API"), result.output
+    assert api.uploads == []
+
+
+def test_a_reason_given_by_reference_or_as_a_const_lists_no_night(env, fake_garmin, fake_api, openapi_with) -> None:
+    """``reason`` read through a ``$ref`` to an enum schema, or as an ``anyOf`` of consts, lists
+    ``no_night`` as the plain enum does."""
+    for reason in (
+        {"$ref": "#/components/schemas/SkipReason"},
+        {"anyOf": [{"const": "non_activity"}, {"const": "no_night"}]},
+    ):
+        doc = openapi_with("setRaceTags", base=_sessions_doc())
+        doc["components"]["schemas"]["SkipReason"] = {"type": "string", "enum": ["non_activity", "no_night"]}
+        doc["components"]["schemas"]["IngestSkipped"] = {"properties": {"reason": reason}}
+        api = env(fake_garmin(), fake_api(doc=doc))
+
+        result = _sync("--since", "2026-10-10")
+
+        assert result.exit_code == 0, result.output
+        assert len(api.uploads) == 3
 
 
 def test_a_200_without_filter_applied_stops_before_a_second_upload(env, fake_garmin, fake_api) -> None:

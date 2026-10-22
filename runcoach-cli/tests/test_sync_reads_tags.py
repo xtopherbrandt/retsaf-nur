@@ -335,7 +335,8 @@ def test_batch_stop_keeps_earlier_batches_through_sync(
 
 
 def _switch_only_doc() -> dict[str, Any]:
-    """``/openapi.json`` of an API that has the upload switch but not ``setRaceTags``."""
+    """``/openapi.json`` of an API that has the upload switch and ``no_night`` but not ``setRaceTags``."""
+    reasons = ["non_activity", "skipped_sport", "no_night"]
     return {
         "paths": {
             "/sessions": {
@@ -346,7 +347,12 @@ def _switch_only_doc() -> dict[str, Any]:
                 }
             }
         },
-        "components": {"schemas": {"Body": {"properties": {"file": {}, "runs_and_captures_only": {}}}}},
+        "components": {
+            "schemas": {
+                "Body": {"properties": {"file": {}, "runs_and_captures_only": {}}},
+                "IngestSkipped": {"properties": {"reason": {"type": "string", "enum": reasons}}},
+            }
+        },
     }
 
 

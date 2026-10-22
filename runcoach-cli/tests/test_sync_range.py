@@ -87,6 +87,36 @@ def test_newest_run_2026_10_11_covers_10_10_to_10_13(install_mock_client, fake: 
     assert store.requests[0].url.params["limit"] == "50"
 
 
+def test_a_store_whose_newest_row_is_a_night_starts_the_day_before(
+    install_mock_client, fake: Any, sessions_store
+) -> None:
+    """A stored night counts for the range as a capture does. The mock API, as the API does, lists
+    it only when the walk sends ``include_nights=true``; without the night the older run on 10-08
+    would start the range on 10-07."""
+    # 13:30 UTC on 10-12 is 06:30 on 10-12 in UTC-7.
+    night = _row("n1", "2026-10-12T13:30:00+00:00", sport="other", tag="overnight_hrv", name="Overnight HRV")
+    store = sessions_store([[night, _row("r1", "2026-10-08T14:00:00+00:00")]])
+
+    result = _run(install_mock_client, store)
+
+    assert result.exit_code == 0, result.output
+    assert _first_line(result.output) == "From 2026-10-11 to 2026-10-13"
+    assert fake.listed == [(date(2026, 10, 11), TODAY), (TAGS_START, TODAY)]
+
+
+def test_the_range_walk_sends_include_nights(install_mock_client, fake: Any, sessions_store) -> None:
+    """Every ``GET /sessions`` page of the walk asks for the nights too."""
+    pages = [[_row(f"c{page}", f"2026-10-{12 - page:02d}T10:00:00+00:00", sport="other")] for page in range(3)]
+    store = sessions_store(pages)
+
+    result = _run(install_mock_client, store)
+
+    assert result.exit_code == 0, result.output
+    gets = [r for r in store.requests if r.method == "GET" and r.url.path == "/sessions"]
+    assert len(gets) == 3
+    assert [r.url.params.get("include_nights") for r in gets] == ["true", "true", "true"]
+
+
 def test_newest_run_date_is_taken_in_the_computer_zone(
     install_mock_client, fake: Any, sessions_store
 ) -> None:

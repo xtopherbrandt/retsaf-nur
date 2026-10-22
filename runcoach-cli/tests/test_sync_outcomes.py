@@ -72,6 +72,13 @@ def _non_activity(file_type: str) -> httpx.Response:
     )
 
 
+def _no_night() -> httpx.Response:
+    """The API's 200 for an HRV_STATUS file that holds no night, as the switch's reply carries it."""
+    return httpx.Response(
+        200, json={"skipped": True, "reason": "no_night", "file_type": "hrv_status", "filter_applied": True}
+    )
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, install_mock_client):
     monkeypatch.setattr(sync, "_library_missing", lambda: False)
@@ -146,6 +153,7 @@ def test_each_outcome_row_has_its_summary_line(env, fake_garmin, fake_api) -> No
         "Skipped alpine_skiing: 2 (activity 301 (Whistler Alpine Skiing), activity 302 (Whistler Again))",
         "Skipped yoga: 1 (activity 303 (Yoga?[2J))",
         "Not an activity: 2",
+        "No night: 0",
         "No FIT file: 3 (activity 203 (Typed In), activity 204 (Gone), activity 205 (Empty))",
         # The race tags step sends the seven non-manual activities; none is a race.
         _tags_line(unchanged=7),
@@ -180,9 +188,66 @@ def test_an_empty_range_prints_zero_counts_and_exits_0(env, fake_garmin, fake_ap
         "Stored: 0",
         "Already stored: 0",
         "Not an activity: 0",
+        "No night: 0",
         "No FIT file: 0",
         _tags_line(),
     ]
+
+
+def test_the_summary_prints_a_no_night_line(env, fake_garmin, fake_api) -> None:
+    """A ``no_night`` reply is counted on its own ``No night`` line, after ``Not an activity``,
+    not on that line and not as a failure."""
+    snapshot = _zip(
+        [("1_WELLNESS.fit", b"MON-1"), ("2_HRV_STATUS.fit", b"NIGHT-NONE-1"), ("3_HRV_STATUS.fit", b"NIGHT-NONE-2")]
+    )
+    fake = fake_garmin([_activity(101, "2026-10-11 07:00:00", "Run")], snapshots={START: snapshot})
+    replies = {b"MON-1": _non_activity("monitoring_b"), b"NIGHT-NONE-1": _no_night(), b"NIGHT-NONE-2": _no_night()}
+    env(fake, fake_api(replies=replies))
+
+    result = _sync()
+
+    assert result.exit_code == 0, result.output
+    assert _summary(result.output) == [
+        "Stored: 1",
+        "Already stored: 0",
+        "Not an activity: 1",
+        "No night: 2",
+        "No FIT file: 0",
+        _tags_line(unchanged=1),
+    ]
+
+
+def test_a_no_night_reply_is_counted_and_not_retried(env, fake_garmin, fake_api, fresh_sync_state) -> None:
+    """A sync whose only item is a no-night file exits 0 and remembers no failed day, so the next
+    default sync starts where the store and the completed run put it, not on that day."""
+    night_day = START
+    fake = fake_garmin([], snapshots={night_day: _zip([("1_HRV_STATUS.fit", b"NIGHT-NONE")])})
+    api = env(fake, fake_api(replies={b"NIGHT-NONE": _no_night()}))
+
+    result = _sync()
+
+    assert result.exit_code == 0, result.output
+    summary = _summary(result.output)
+    assert "No night: 1" in summary
+    assert "Stored: 0" in summary
+    assert not any(line.startswith("Failed") for line in summary), summary
+    assert api.uploads == [b"NIGHT-NONE"]
+    results = sync.fetch(fake, API_URL, START, TODAY)
+    assert [(r.item, r.outcome, r.detail) for r in results] == [
+        ("snapshot 2026-10-10: 1_HRV_STATUS.fit", "no_night", "hrv_status")
+    ]
+    assert fresh_sync_state.read_bytes() == b'{"last_completed": "2026-10-12", "oldest_failed": null}'
+
+    # The next default sync: the store's newest run is on 10-12, so the store rule and the completed
+    # run both start on 10-11; a remembered no-night day would have moved the start back to 10-10.
+    newest = {"session_id": "r1", "start_time": "2026-10-12T14:00:00+00:00", "sport": "running"}
+    env(fake_garmin([]), fake_api(pages=[[newest]]))
+
+    again = runner.invoke(app, ["sync"], input=b"")
+
+    assert again.exit_code == 0, again.output
+    assert again.output.splitlines()[0] == "From 2026-10-11 to 2026-10-12", again.output
+    assert "a failed item on that day" not in again.output
 
 
 def test_a_failed_item_prints_its_since_command_and_exits_1(env, fake_garmin, fake_api) -> None:
