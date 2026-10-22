@@ -68,3 +68,4 @@ stripper was run over each and found no position value. Dates in the notes are l
 | nights/night_lone_morning_no_average | real night (wellness FIT) | 2023-04-07 05:16, no average, no values; a lone morning | no records | FR945 LTE; none | no | no |
 | nights/night_resummary_earlier | real night (wellness FIT) | 2024-01-01 06:52, average 39.0, 106 values; the earlier summary of the re-summary pair | no records | FR945 LTE; none | no | no |
 | nights/night_resummary_later | real night (wellness FIT) | 2024-01-01 07:30, average 39.0, 104 values, same series start 06:03:39Z; the later summary of the re-summary pair | no records | FR945 LTE; none | no | no |
+| nights/night_before_snapshot | real night (wellness FIT) | 2026-09-01 05:10, average 48.0, 81 values; summarised 59 s before `sample_health_snapshot` started, the same morning | no records | FR945 LTE; none | no | no |

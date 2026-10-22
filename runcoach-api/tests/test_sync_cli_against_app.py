@@ -20,7 +20,9 @@ entries are one-message files built by ``support/import_archive.minimal_fit``. T
 different watches, with ``dev_fields_run`` moved to start on ``sample_run``'s second; the workout
 tag test (F026) uses ``sample_run`` alone. The overnight HRV test (F028) uses
 ``nights/night_recent`` and ``nights/night_midnight_no_average``, real HRV_STATUS files from the
-wellness FIT (run proof no): a night, and a midnight file that holds none.
+wellness FIT (run proof no): a night, and a midnight file that holds none. The same-second test
+uses ``nights/night_before_snapshot`` (the night of ``sample_health_snapshot``'s morning) with its
+summary moved onto the snapshot's start second.
 
 Resting HR is the observable input of the order tests: F021 borrows max and threshold HR from
 running files only, but resting HR from any stored file, so a snapshot stored before a run that
@@ -57,6 +59,11 @@ SNAPSHOT_RESTING = 52
 # profile fitdecode ships does not name. Type 68 (HRV_STATUS) is not among them: the API answers a
 # type-68 file without a summary as a night skipped (``no_night``), not as a non-activity.
 NON_ACTIVITY_TYPES = (32, 44, 49)
+# ``nights/night_before_snapshot`` with its summary timestamp (message 370, field 253) moved onto
+# ``sample_health_snapshot``'s start second, written as FIT seconds since 1989-12-31.
+HRV_STATUS_SUMMARY, TIMESTAMP = 370, 253
+SNAPSHOT_FIT_SECONDS = 1_157_199_086
+SNAPSHOT_START = "2026-09-01T12:11:26+00:00"
 
 DAY_1 = date(2026, 10, 10)
 DAY_2 = date(2026, 10, 11)
@@ -260,6 +267,34 @@ def test_a_day_zip_with_a_night_syncs_against_the_app(
     assert "No night: 1" in lines
     assert not any(line.startswith("Failed:") for line in lines)
     assert _stored_with_nights(client) == stored
+
+
+def test_a_day_zip_with_a_night_and_a_snapshot_in_one_second_syncs_both(
+    cli_against_app: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One day zip holding the wrist Health Snapshot and a night summarised in its start second:
+    both are stored, neither is counted already stored, and the two rows share the start."""
+    client = cli_against_app
+    night = fit_patch.set_field(
+        (FIXTURES / "nights" / "night_before_snapshot.fit").read_bytes(),
+        HRV_STATUS_SUMMARY,
+        TIMESTAMP,
+        SNAPSHOT_FIT_SECONDS,
+    )
+    entries = [("1_HRV_STATUS.fit", night), ("2_ACTIVITY.fit", _fixture("sample_health_snapshot"))]
+    _serve(monkeypatch, FakeGarmin([], {}, {DAY_1: _zip(entries)}))
+    result = _run("sync", "--since", DAY_1.isoformat())
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    print("[slice compared] lines:", lines)
+    assert "Stored: 2" in lines
+    assert "Already stored: 0" in lines
+    assert not any(line.startswith("Failed:") for line in lines)
+    response = client.get("/sessions", params={"limit": 200, "include_nights": "true"})
+    assert response.status_code == 200, response.text
+    rows = sorted((row["activity_tag"], row["start_time"]) for row in response.json()["items"])
+    print("[slice compared] rows:", rows)
+    assert rows == [("health_snapshot", SNAPSHOT_START), ("overnight_hrv", SNAPSHOT_START)]
 
 
 # --- The order pair: one run with no settings of its own and the same morning's snapshot ---------

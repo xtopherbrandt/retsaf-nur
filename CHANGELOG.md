@@ -18,7 +18,10 @@ starting at the summary's timestamp (near the wake time, not the sleep start). I
 (`rmssd_precomputed` and `resting_rmssd_ms`) is the file's `last_night_average` as Garmin computed
 it. The `summary` holds `duration_s`, `series_start`, `last_night_5_min_high`, `hrv_values` and
 `hrv_values_valid`; `duration_s` is the span of the 5-minute series, from its first value to its
-last (0 with no series), not the sleep time. The 5-minute values are stored in the new table
+last (0 with no series), not the sleep time. Its source reads as the watch followed by
+`hrv_status` (`fr945_lte fw17.4 hrv_status`), because the watch often writes a night's summary in
+the second a morning recording starts, and the label keeps the two from sharing one id, so both are
+stored. The 5-minute values are stored in the new table
 `overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
 go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
 without `runs_and_captures_only`, takes this path (before this release, a plain upload was a 400

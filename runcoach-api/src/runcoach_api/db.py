@@ -2423,7 +2423,8 @@ def persist_night(
     1. **The same night again.** A stored ``session_id`` equal to the night's is
        ``DuplicateSessionError`` naming it, checked before the re-summary rule,
        or a re-upload of one file would replace itself.
-    2. **A re-summary.** A stored night of the same ``source_device``, tagged
+    2. **A re-summary.** A stored night of the same ``source_device`` (the
+       watch's string with ``overnight.NIGHT_DEVICE_SUFFIX``), tagged
        ``overnight_hrv``, whose ``summary.series_start`` equals the night's
        (never matched when the night has no series) is the same night
        summarised twice. The file with the later summary timestamp
@@ -2446,7 +2447,10 @@ def persist_night(
     series insert leaves no session row, no sidecar and no deleted
     predecessor. A ``UNIQUE (source_device, start_time)`` violation on the
     insert is translated to ``DuplicateSessionError`` naming the row in the
-    slot, as ``persist`` does. The caller has run ``init_schema`` and holds no
+    slot, as ``persist`` does. A recording the watch starts in the summary's
+    second is never that row: its ``source_device`` is the bare watch string,
+    the night's carries the ``hrv_status`` label, so the two hold different
+    slots and different ids and both are stored. The caller has run ``init_schema`` and holds no
     open transaction.
     """
     session = night.session

@@ -269,6 +269,11 @@ _NIGHTS: dict[str, tuple[int, dict[str, int]]] = {
         "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
         "hrv_value": 104, "timestamp_correlation": 2, "unknown_22": 1,
     }),
+    # 2026-09-01 05:10 local, average 48.0: the night of sample_health_snapshot's morning.
+    "night_before_snapshot.fit": (1_116, {
+        "device_info": 2, "file_creator": 1, "file_id": 1, "hrv_status_summary": 1,
+        "hrv_value": 81, "timestamp_correlation": 2, "unknown_22": 1,
+    }),
 }
 
 

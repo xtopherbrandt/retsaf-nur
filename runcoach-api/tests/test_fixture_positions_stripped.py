@@ -205,7 +205,7 @@ def _pairs_in_box(data: bytes, box) -> tuple[int, dict[str, int]]:
 @pytest.mark.parametrize("fixture_name", NIGHT_FIXTURES)
 def test_a_night_fixture_declares_no_position_field(fixture_name: str) -> None:
     """A night has no record, lap, session or split message, so no position field is even declared."""
-    assert len(NIGHT_FIXTURES) == 6, NIGHT_FIXTURES
+    assert len(NIGHT_FIXTURES) == 7, NIGHT_FIXTURES
     declared: list[str] = []
     with fitdecode.FitReader(FIXTURES / fixture_name, check_crc=fitdecode.CrcCheck.RAISE) as reader:
         for frame in reader:

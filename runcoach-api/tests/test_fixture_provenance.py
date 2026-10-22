@@ -117,6 +117,7 @@ REFERENCE_ROWS: dict[str, tuple[str, str, str]] = {
     "nights/night_lone_morning_no_average": (REAL_NIGHT, NO_RECORDS, "no"),
     "nights/night_resummary_earlier": (REAL_NIGHT, NO_RECORDS, "no"),
     "nights/night_resummary_later": (REAL_NIGHT, NO_RECORDS, "no"),
+    "nights/night_before_snapshot": (REAL_NIGHT, NO_RECORDS, "no"),
 }
 
 #: The fixtures that may carry position values: the seven files committed with them before the
@@ -477,7 +478,7 @@ def test_each_night_fixture_has_a_real_night_provenance_row() -> None:
     rows = _rows_by_file()
     nights = sorted(f"{NIGHTS}/{p.stem}" for p in (FIXTURES / NIGHTS).glob("*.fit"))
     print(f"[slice compared] nights on disk {nights}; rows {sorted(stem for stem in rows if stem.startswith(NIGHTS + '/'))}")
-    assert len(nights) == 6, nights
+    assert len(nights) == 7, nights
     problems = []
     for stem in nights:
         if stem not in rows:

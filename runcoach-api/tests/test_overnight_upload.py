@@ -11,7 +11,9 @@ The nights are the real HRV_STATUS fixtures under ``fixtures/nights/``
 run proof "no"). The synthetic files are ``night_recent`` patched with
 ``support/fit_patch.py`` for the cases the export lacks: an average of 0, a
 negative one and a non-finite one, a series truncated inside a value and two
-values at one timestamp.
+values at one timestamp; and ``night_before_snapshot`` with its summary moved
+onto ``sample_health_snapshot``'s start second, the same-second collision the
+export holds no real pair of.
 
 The session ids, start times and value counts below were read from a decode
 of each fixture and written as literals, and every reply body is asserted
@@ -30,7 +32,8 @@ from fastapi.testclient import TestClient
 from runcoach_api import db
 from runcoach_api.main import app
 
-NIGHTS = Path(__file__).parent / "fixtures" / "nights"
+FIXTURES = Path(__file__).parent / "fixtures"
+NIGHTS = FIXTURES / "nights"
 SUPPORT = Path(__file__).parent / "support"
 
 # FIT global message numbers and field numbers: the summary's
@@ -44,15 +47,27 @@ SWITCH = {"runs_and_captures_only": "true"}
 ROUTES = {"plain": None, "switch": SWITCH}
 
 # Read from a decode of each fixture.
-RECENT_ID = "fe1b9839829c6200cc65ec6d239cac15"
+RECENT_ID = "f866f4fe46b0a62f032a1a0f1c3fd435"
 RECENT_START = "2026-10-10T11:33:29+00:00"
 RECENT_VALUES = 57
-SHORT_ID = "77eff81792e10fed993ce302d36b5a3a"
-EARLIER_ID = "d9271616992e11dae23c1a4fe1a47980"
-LATER_ID = "c4ea4e8e303cee715d151d723910777a"
+SHORT_ID = "80d94287ea6ec2be566d1a4d575ce2ae"
+EARLIER_ID = "531adcef7df4e7d034e716630b3f4832"
+LATER_ID = "1da122c0bb21c420b56c8d962a4981f5"
 LATER_START = "2024-01-01T15:30:53+00:00"
 LATER_VALUES = 104
 SIDECAR_FIELDS = 5
+
+# The wrist Health Snapshot ``sample_health_snapshot`` (a health snapshot, run proof "no") and
+# ``nights/night_before_snapshot``, the night of the same morning, summarised 59 s before the
+# snapshot started. Moving the summary timestamp (field 253) onto the snapshot's start second,
+# written as FIT seconds since 1989-12-31, makes the two start in one second. The ids are
+# ``derive_session_id`` of the watch's string and of the night's labelled one with that start.
+TIMESTAMP = 253
+SNAPSHOT_START = "2026-09-01T12:11:26+00:00"
+SNAPSHOT_FIT_SECONDS = 1_157_199_086
+SNAPSHOT_ID = "e25a77b6fa3e126533bbe348a0060460"
+SNAPSHOT_FLAGS: list[str] = []
+NIGHT_AT_SNAPSHOT_ID = "911d5b5999f2328c12d5605b481f7f17"
 
 
 def _load_support(name: str):
@@ -69,6 +84,17 @@ fit_patch = _load_support("fit_patch")
 
 def _night(name: str) -> bytes:
     return (NIGHTS / f"{name}.fit").read_bytes()
+
+
+def _snapshot() -> bytes:
+    return (FIXTURES / "sample_health_snapshot.fit").read_bytes()
+
+
+def _night_at_snapshot() -> bytes:
+    """``night_before_snapshot`` with its summary timestamp moved onto the snapshot's start second."""
+    return fit_patch.set_field(
+        _night("night_before_snapshot"), HRV_STATUS_SUMMARY, TIMESTAMP, SNAPSHOT_FIT_SECONDS
+    )
 
 
 def _post(client: TestClient, raw: bytes, data: dict | None = None):
@@ -179,6 +205,25 @@ def test_the_same_night_again_is_409_on_both_routes(first: str) -> None:
     assert _counts() == before
 
 
+@pytest.mark.parametrize("order", [("snapshot", "night"), ("night", "snapshot")], ids=["snapshot-first", "night-first"])
+def test_a_night_and_a_snapshot_in_one_second_both_upload(order: tuple[str, str]) -> None:
+    """A wrist Health Snapshot and a night summarised in the snapshot's start
+    second are two 201s in either order, and the same night file again is a
+    409 naming the night, not the snapshot."""
+    files = {"snapshot": _snapshot(), "night": _night_at_snapshot()}
+    with TestClient(app) as client:
+        replies = {name: _post(client, files[name]) for name in order}
+        again = _post(client, files["night"])
+    for name, reply in replies.items():
+        assert reply.status_code == 201, (name, reply.text)
+    assert replies["snapshot"].json() == {"session_id": SNAPSHOT_ID, "quality_flags": SNAPSHOT_FLAGS}
+    assert replies["night"].json() == {"session_id": NIGHT_AT_SNAPSHOT_ID, "quality_flags": []}
+    assert again.status_code == 409, again.text
+    assert again.json() == {"detail": f"already ingested as session {NIGHT_AT_SNAPSHOT_ID}"}
+    assert _row(NIGHT_AT_SNAPSHOT_ID)["start_time"] == _row(SNAPSHOT_ID)["start_time"] == SNAPSHOT_START
+    assert _counts()["sessions"] == 2
+
+
 @pytest.mark.parametrize("name", ["night_recent", "night_midnight_no_average"])
 def test_resting_capture_with_a_night_is_422(name: str) -> None:
     with TestClient(app) as client:
@@ -249,8 +294,8 @@ def test_every_stored_night_has_a_positive_value() -> None:
     finally:
         conn.close()
     assert [(r[0], r[1]) for r in rows] == [
-        (SHORT_ID, 57.0),
         (LATER_ID, 39.0),
+        (SHORT_ID, 57.0),
         (RECENT_ID, 43.0),
     ]
     assert non_positive == 0

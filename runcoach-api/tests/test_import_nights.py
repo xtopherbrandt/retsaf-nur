@@ -67,9 +67,9 @@ RUN = "run.fit"
 MONITORING = "monitoring.fit"
 
 # Read from a decode of each fixture (as test_overnight_upload.py does).
-RECENT_ID = "fe1b9839829c6200cc65ec6d239cac15"
-EARLIER_ID = "d9271616992e11dae23c1a4fe1a47980"
-LATER_ID = "c4ea4e8e303cee715d151d723910777a"
+RECENT_ID = "f866f4fe46b0a62f032a1a0f1c3fd435"
+EARLIER_ID = "531adcef7df4e7d034e716630b3f4832"
+LATER_ID = "1da122c0bb21c420b56c8d962a4981f5"
 # file_id.time_created of each file, as the import reports it.
 STAMPS = {
     MIDNIGHT: "2023-03-07T08:03:31+00:00",
@@ -78,6 +78,16 @@ STAMPS = {
     RECENT: "2026-10-10T11:33:29+00:00",
 }
 NIGHT_TAG = "overnight_hrv"
+
+# The wrist Health Snapshot ``sample_health_snapshot`` and ``nights/night_before_snapshot`` with
+# its summary timestamp (message 370, field 253) moved onto the snapshot's start second, as
+# ``test_overnight_upload.py`` builds the pair; the ids are its literals.
+SNAPSHOT = "snapshot.fit"
+NIGHT_AT_SNAPSHOT = "night_at_snapshot.fit"
+HRV_STATUS_SUMMARY, TIMESTAMP = 370, 253
+SNAPSHOT_FIT_SECONDS = 1_157_199_086
+SNAPSHOT_ID = "e25a77b6fa3e126533bbe348a0060460"
+NIGHT_AT_SNAPSHOT_ID = "911d5b5999f2328c12d5605b481f7f17"
 
 
 @pytest.fixture(autouse=True)
@@ -247,6 +257,43 @@ def test_a_second_import_stores_nothing(isolated_data_dir: Path, tmp_path: Path)
     assert _table_counts(isolated_data_dir) == tables
     # The sessions keep the first import's id.
     assert {row[0] for row in _sessions(isolated_data_dir).values()} == {first["import_id"]}
+
+
+def test_an_archive_with_a_night_and_a_snapshot_in_one_second_keeps_both(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """A wrist Health Snapshot and a night summarised in its start second are two stored rows:
+    nothing is ``already_stored`` and nothing is lost. The night's ``time_created`` is the
+    exported file's (12:10:27), so the import reads it before the snapshot (12:11:26)."""
+    inner = IA._zip_bytes(
+        [
+            (SNAPSHOT, (FIXTURES / "sample_health_snapshot.fit").read_bytes()),
+            (
+                NIGHT_AT_SNAPSHOT,
+                fit_patch.set_field(
+                    _night("night_before_snapshot"), HRV_STATUS_SUMMARY, TIMESTAMP, SNAPSHOT_FIT_SECONDS
+                ),
+            ),
+        ]
+    )
+    archive = tmp_path / "export.zip"
+    archive.write_bytes(IA._zip_bytes([(INNER, inner)]))
+    report = _import(isolated_data_dir, archive)
+    rows = _rows(report)
+    print("[slice compared] rows:", rows, "counts:", report["counts"])
+    assert rows == [
+        (_inner(NIGHT_AT_SNAPSHOT), "stored", NIGHT_AT_SNAPSHOT_ID, "other", NIGHT_TAG),
+        (_inner(SNAPSHOT), "stored", SNAPSHOT_ID, "other", "health_snapshot"),
+    ]
+    counts = report["counts"]
+    assert (counts["stored"], counts["replaced"], counts["no_night"], counts["already_stored"], counts["failed"]) == (
+        2,
+        0,
+        0,
+        0,
+        0,
+    )
+    assert set(_sessions(isolated_data_dir)) == {NIGHT_AT_SNAPSHOT_ID, SNAPSHOT_ID}
 
 
 def test_a_faulty_night_is_a_failed_row_and_writes_nothing(isolated_data_dir: Path, tmp_path: Path) -> None:

@@ -49,8 +49,9 @@ ZONE = "America/Vancouver"
 OVERNIGHT = "health_api_overnight"
 SNAPSHOT = "health_snapshot"
 # The device the 27 real files name (``fr945_lte`` firmware 17.4), as
-# ``mapping._build_source_device`` spells it.
-NIGHT_DEVICE = "fr945_lte fw17.4"
+# ``overnight.map_night`` spells a night's: ``mapping._build_source_device``'s
+# string followed by ``overnight.NIGHT_DEVICE_SUFFIX``.
+NIGHT_DEVICE = "fr945_lte fw17.4 hrv_status"
 
 # The last night's day. Baseline window [2026-08-05, 2026-10-03], judged
 # week [2026-10-04, 2026-10-10], previous window [2026-06-06, 2026-08-04].

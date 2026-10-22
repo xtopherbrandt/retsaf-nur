@@ -11,6 +11,16 @@ session message and no sport, so it does not go through
 (``_group_by_name``, ``_build_source_device``, ``derive_session_id``) are
 imported from there.
 
+**The night's device label.** A night's ``source_device`` is the watch's
+string as ``_build_source_device`` spells it for the watch's activities,
+followed by ``NIGHT_DEVICE_SUFFIX`` (`` hrv_status``), and that string
+feeds ``derive_session_id``. The watch writes the night's summary at the
+moment the athlete starts a morning recording, often in the same second; with
+the bare string the night and that recording would share both the id and the
+``UNIQUE (source_device, start_time)`` slot, and whichever arrived second
+would be refused as a duplicate. With the label the two never collide, so
+both are stored.
+
 **Raw over derived.** The only number stored as the night's rMSSD is the
 file's own ``last_night_average``, the one name in ``OVERNIGHT_INPUT_FIELDS``.
 Garmin's status label, its weekly average and its three baseline bounds are
@@ -73,6 +83,11 @@ OVERNIGHT_NON_INPUT_READS: tuple[str, ...] = ("timestamp", "last_night_5_min_hig
 #: ``file_id.type`` of an HRV_STATUS file, as ``context.provenance.raw_file_type``
 #: records it (fitdecode's profile names no type 68).
 HRV_STATUS_FILE_TYPE = 68
+
+#: Appended to the watch's device string to make a night's ``source_device``, so
+#: a night never shares the ``(source_device, start_time)`` slot, or the id, of
+#: a recording the watch starts in the summary's second.
+NIGHT_DEVICE_SUFFIX = " hrv_status"
 
 NO_NIGHT = "no_night"
 
@@ -137,7 +152,7 @@ def map_night(fit_bytes: bytes) -> Night | NoNight:
     five_min_high = summary.get_value("last_night_5_min_high", fallback=None)
 
     by_name = _group_by_name(messages)
-    source_device = _build_source_device(by_name)
+    source_device = _build_source_device(by_name) + NIGHT_DEVICE_SUFFIX
     row = Session(
         session_id=derive_session_id(source_device, start_time),
         sport="other",
@@ -217,6 +232,7 @@ def _span_seconds(stamps: list[str]) -> float:
 
 __all__ = [
     "HRV_STATUS_FILE_TYPE",
+    "NIGHT_DEVICE_SUFFIX",
     "NO_NIGHT",
     "Night",
     "NoNight",

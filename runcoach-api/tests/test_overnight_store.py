@@ -22,6 +22,10 @@ What is pinned:
   later file;
 - a second sleep on the same day (another ``series_start``) is its own row,
   and a night from another device is never a replacement;
+- a wrist Health Snapshot (in either order), or a stored run, started in the
+  second the night's summary was written stands beside the night: the
+  night's ``source_device`` carries the ``hrv_status`` label, so the two
+  share neither the id nor the ``(source_device, start_time)`` slot;
 - the replacement lookup reads only ``overnight_hrv`` rows, compares the
   summary timestamps as moments (another UTC offset does not reorder
   them), and a foreign row in the night's ``(source_device, start_time)``
@@ -34,18 +38,34 @@ What is pinned:
 from __future__ import annotations
 
 import dataclasses
+import importlib.util
 import sqlite3
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from runcoach_api import db
-from runcoach_api.ingestion import overnight
+from runcoach_api.ingestion import overnight, pipeline
 from runcoach_api.ingestion.exceptions import DuplicateSessionError
 from runcoach_api.ingestion.mapping import derive_session_id
 
-NIGHTS = Path(__file__).parent / "fixtures" / "nights"
+FIXTURES = Path(__file__).parent / "fixtures"
+NIGHTS = FIXTURES / "nights"
+SUPPORT = Path(__file__).parent / "support"
+
+
+def _load_support(name: str):
+    """``tests/`` is not a package (importlib mode), so support modules load from their path."""
+    spec = importlib.util.spec_from_file_location(name, SUPPORT / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+fit_patch = _load_support("fit_patch")
 
 # Read from a decode of each fixture (``test_overnight_mapping.py`` pins the
 # mapping itself); the store tests assert against these, not against the
@@ -60,10 +80,37 @@ LATER_VALUES = 104
 
 VALUES_TABLE = "overnight_hrv_values"
 
+# The watch's device string as ``mapping._build_source_device`` spells it for any of its
+# recordings, and the night's: the same string with the ``hrv_status`` label. The ids are
+# ``derive_session_id`` of each string and ``RECENT_START``, computed once and written here.
+WATCH_DEVICE = "fr945_lte fw17.4"
+NIGHT_DEVICE = "fr945_lte fw17.4 hrv_status"
+RECENT_ID = "f866f4fe46b0a62f032a1a0f1c3fd435"
+RUN_AT_RECENT_ID = "fe1b9839829c6200cc65ec6d239cac15"
+
+# The wrist Health Snapshot ``sample_health_snapshot`` and the night of the same morning,
+# ``nights/night_before_snapshot``, whose summary the watch wrote 59 s before the snapshot
+# started. The collision is that night with its summary timestamp (message 370, field 253)
+# moved onto the snapshot's start second, written as FIT seconds since 1989-12-31; the ids are
+# ``derive_session_id`` of each device string and ``SNAPSHOT_START``.
+SNAPSHOT_START = "2026-09-01T12:11:26+00:00"
+SNAPSHOT_FIT_SECONDS = 1_157_199_086
+SNAPSHOT_ID = "e25a77b6fa3e126533bbe348a0060460"
+NIGHT_AT_SNAPSHOT_ID = "911d5b5999f2328c12d5605b481f7f17"
+HRV_STATUS_SUMMARY, TIMESTAMP = 370, 253
+
 
 def _night(name: str) -> overnight.Night:
     mapped = overnight.map_night((NIGHTS / f"{name}.fit").read_bytes())
     assert isinstance(mapped, overnight.Night), name
+    return mapped
+
+
+def _night_at_snapshot() -> overnight.Night:
+    """``night_before_snapshot`` with its summary written in the snapshot's start second."""
+    raw = (NIGHTS / "night_before_snapshot.fit").read_bytes()
+    mapped = overnight.map_night(fit_patch.set_field(raw, HRV_STATUS_SUMMARY, TIMESTAMP, SNAPSHOT_FIT_SECONDS))
+    assert isinstance(mapped, overnight.Night)
     return mapped
 
 
@@ -358,6 +405,74 @@ def test_a_running_session_at_the_same_series_start_is_not_replaced() -> None:
     assert values == RECENT_VALUES
 
 
+@pytest.mark.parametrize("order", ["snapshot-first", "night-first"])
+def test_a_night_and_a_snapshot_in_one_second_are_both_stored(order: str) -> None:
+    """A wrist Health Snapshot and a night whose summary is written in the
+    snapshot's start second are two rows, in either order, and the snapshot
+    keeps the id every upload of it has always had."""
+    night = _night_at_snapshot()
+    assert night.session.start_time == SNAPSHOT_START
+    snapshot = (FIXTURES / "sample_health_snapshot.fit").read_bytes()
+    conn = _conn()
+    try:
+        if order == "snapshot-first":
+            stored = pipeline.ingest_fit_bytes(snapshot)
+            write = db.persist_night(conn, night)
+        else:
+            write = db.persist_night(conn, night)
+            stored = pipeline.ingest_fit_bytes(snapshot)
+        rows = conn.execute(
+            "SELECT session_id, source_device, start_time, activity_tag FROM sessions ORDER BY activity_tag"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    print("[slice compared] rows:", [tuple(r) for r in rows])
+    assert stored.session_id == SNAPSHOT_ID
+    assert write == db.NightWrite(session_id=NIGHT_AT_SNAPSHOT_ID, replaced_session_id=None)
+    assert [tuple(r) for r in rows] == [
+        (SNAPSHOT_ID, WATCH_DEVICE, SNAPSHOT_START, "health_snapshot"),
+        (NIGHT_AT_SNAPSHOT_ID, NIGHT_DEVICE, SNAPSHOT_START, "overnight_hrv"),
+    ]
+
+
+def test_a_run_at_the_nights_second_is_stored() -> None:
+    """A recording of the watch's bare device string at the night's exact
+    ``start_time`` holds neither the night's id nor its slot: the night's
+    ``source_device`` carries the ``hrv_status`` label, so both rows stand."""
+    night = _night("night_recent")
+    run = dataclasses.replace(
+        night.session,
+        session_id=derive_session_id(WATCH_DEVICE, RECENT_START),
+        source_device=WATCH_DEVICE,
+        sport="running",
+        activity_tag="training",
+        name="Morning Run",
+        summary={},
+    )
+    conn = _conn()
+    try:
+        db._insert_session(conn, run)
+        conn.commit()
+
+        write = db.persist_night(conn, night)
+
+        rows = conn.execute(
+            "SELECT session_id, source_device, start_time, activity_tag FROM sessions ORDER BY activity_tag"
+        ).fetchall()
+        values = _count(conn, VALUES_TABLE)
+    finally:
+        conn.close()
+
+    print("[slice compared] rows:", [tuple(r) for r in rows])
+    assert write == db.NightWrite(session_id=RECENT_ID, replaced_session_id=None)
+    assert [tuple(r) for r in rows] == [
+        (RECENT_ID, NIGHT_DEVICE, RECENT_START, "overnight_hrv"),
+        (RUN_AT_RECENT_ID, WATCH_DEVICE, RECENT_START, "training"),
+    ]
+    assert values == RECENT_VALUES
+
+
 @pytest.mark.parametrize("order", ["travelled-then-later", "later-then-travelled"])
 def test_a_later_summary_in_another_offset_still_wins(order: str) -> None:
     """The summary timestamps are compared as moments, not as text. A summary
@@ -398,7 +513,8 @@ def test_a_later_summary_in_another_offset_still_wins(order: str) -> None:
 
 def test_a_foreign_row_in_the_nights_slot_is_a_duplicate_naming_it() -> None:
     """A row under another id and another tag at the night's exact
-    ``(source_device, start_time)`` is not found by the re-summary lookup; the
+    ``(source_device, start_time)``, the device string with the ``hrv_status``
+    label, is not found by the re-summary lookup; the
     ``UNIQUE (source_device, start_time)`` refusal on the insert is translated
     to ``DuplicateSessionError`` naming that row, as ``persist`` does, and the
     transaction is closed."""
@@ -406,12 +522,15 @@ def test_a_foreign_row_in_the_nights_slot_is_a_duplicate_naming_it() -> None:
     foreign = dataclasses.replace(
         night.session,
         session_id="foreign-row-in-the-slot",
+        source_device=NIGHT_DEVICE,
+        start_time=RECENT_START,
         sport="running",
         activity_tag="training",
         name="Morning Run",
         summary={},
     )
-    assert foreign.session_id != derive_session_id(night.session.source_device, night.session.start_time)
+    assert (night.session.source_device, night.session.start_time) == (NIGHT_DEVICE, RECENT_START)
+    assert foreign.session_id != RECENT_ID
     conn = _conn()
     try:
         db._insert_session(conn, foreign)

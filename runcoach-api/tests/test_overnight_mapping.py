@@ -80,8 +80,12 @@ def test_a_recent_night_maps_to_the_reference_columns() -> None:
     assert session.activity_tag == "overnight_hrv"
     assert session.name == "Overnight HRV"
     assert session.source_vendor == "garmin"
-    assert session.source_device == "fr945_lte fw17.4"
-    assert session.session_id == derive_session_id("fr945_lte fw17.4", "2026-10-10T11:33:29+00:00")
+    # The watch's device string with the night's label, so a recording the watch starts in the
+    # summary's second holds neither the night's id nor its (source_device, start_time) slot.
+    assert session.source_device == "fr945_lte fw17.4 hrv_status"
+    assert session.session_id == "f866f4fe46b0a62f032a1a0f1c3fd435"
+    assert session.session_id == derive_session_id("fr945_lte fw17.4 hrv_status", "2026-10-10T11:33:29+00:00")
+    assert session.session_id != derive_session_id("fr945_lte fw17.4", "2026-10-10T11:33:29+00:00")
     assert session.hr_source == "wrist_ppg"
     assert session.hr_sensor_serial is None
     assert session.rmssd_precomputed == 43.0
@@ -135,7 +139,7 @@ def test_the_resummary_pair_shares_its_series_start_and_differs_in_summary_time(
     assert later.session.start_time == "2024-01-01T15:30:53+00:00"
     assert earlier.session.summary["series_start"] == later.session.summary["series_start"]
     assert earlier.session.summary["series_start"] == "2024-01-01T06:03:39+00:00"
-    assert earlier.session.source_device == later.session.source_device == "fr945_lte fw16.18"
+    assert earlier.session.source_device == later.session.source_device == "fr945_lte fw16.18 hrv_status"
     assert earlier.session.session_id != later.session.session_id
     assert earlier.session.resting_rmssd_ms == later.session.resting_rmssd_ms == 39.0
     assert (earlier.session.summary["hrv_values"], earlier.session.summary["hrv_values_valid"]) == (106, 104)
