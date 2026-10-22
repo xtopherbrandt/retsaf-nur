@@ -20,9 +20,10 @@ it. The `summary` holds `duration_s`, `series_start`, `last_night_5_min_high`, `
 `hrv_values_valid`; `duration_s` is the span of the 5-minute series, from its first value to its
 last (0 with no series), not the sleep time. Its source reads as the watch followed by
 `hrv_status` (`fr945_lte fw17.4 hrv_status`), because on a morning with a Health Snapshot the watch
-writes the night's summary in the same second the recording starts, or one second before it (8 of
-the 27 wrist Health Snapshots from 2026-08-28 to 2026-10-20 started in the night's second), and the
-label keeps the two from sharing one id, so both are stored. The 5-minute values are stored in the new table
+often writes the night's summary in the same second the recording starts, or one second before it
+(of the 27 wrist Health Snapshots from 2026-08-28 to 2026-10-20, 8 started in the night's second
+and 9 one second after it; on the other mornings the summary came earlier, on 2026-10-12 by 98
+minutes), and the label keeps the two from sharing one id, so both are stored. The 5-minute values are stored in the new table
 `overnight_hrv_values`, which no route serves; Garmin's status, weekly average and baseline bounds
 go to the quarantine sidecar and decide nothing. A plain upload of an HRV_STATUS file, with or
 without `runs_and_captures_only`, takes this path (before this release, a plain upload was a 400
@@ -107,12 +108,21 @@ night against the wrist snapshot reads r = -0.06 (19 days) and against the strap
 for a re-rank of the tiers; this release does not change the rank.
 
 **Correction to the sprint-017 entry: the daily Task Scheduler line.** That entry stands as
-released. Its command leaves the log path unquoted, which breaks for a profile path holding a space;
-the quoted form is
+released. Its command leaves the log path unquoted, which breaks for a profile path holding a space.
+The quoted form depends on the shell. From PowerShell 7.3 or later:
+
+    schtasks /Create /SC DAILY /ST 07:00 /TN "runcoach sync" /TR 'cmd /c runcoach sync >> "%USERPROFILE%\.runcoach\sync.log" 2>&1'
+
+From a Command Prompt (cmd.exe):
 
     schtasks /Create /SC DAILY /ST 07:00 /TN "runcoach sync" /TR "cmd /c runcoach sync >> \"%USERPROFILE%\.runcoach\sync.log\" 2>&1"
 
-(add `/F` to replace a task of that name). A task created this way runs only while the user is
+Each passes `/TR` as one argument with the log path quoted (checked by echoing the arguments in place
+of `schtasks`). Do not give the cmd.exe line to PowerShell: PowerShell does not read `\"` as an
+escape and splits `/TR` in two. Windows PowerShell 5.1 drops the inner quotes of the PowerShell line,
+so from 5.1 use the Command Prompt line. In the PowerShell line `%USERPROFILE%` stays as written and
+the task's `cmd /c` expands it when it runs; cmd.exe expands it when the task is created. Add `/F` to
+replace a task of that name. A task created this way runs only while the user is
 logged on; a day missed while logged off is fetched by the next run, whose range reaches back to the
 last completed sync.
 
@@ -125,7 +135,9 @@ with no night), `filter_applied` on that reply is now true or false where it was
 API an older CLI's `runcoach sync` reports an HRV_STATUS file with no night as `Failed` ("API returned
 200 with an unknown skip reason 'no_night'") and goes on with the sync, but exits 1, and because it
 counts the failure as temporary, every later `runcoach sync` without `--since` reaches back to that
-day ("Starting at ...: a failed item on that day") and fails on the same file again.
+day ("Starting at ...: a failed item on that day") and fails on the same file again. An older CLI's
+`runcoach ingest` of an HRV_STATUS file with no night ends in a `KeyError: 'session_id'` traceback
+(the API now answers it 200 `no_night`, a reply that CLI does not read); nothing is stored.
 
 The other changes are additive. `GET /imports/{import_id}`
 (and the `POST /imports` reply) gains the file-row outcomes `replaced` and `no_night`; every
