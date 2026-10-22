@@ -47,7 +47,7 @@ is each ``hrv_value``'s own reading, stored in the series.
   second summary message. ``MissingCanonicalFieldError`` (a 400) -- a summary
   with no timestamp, so no ``start_time``. ``FitParseFailure`` (a 400) --
   the decoder's own refusals: a series truncated mid-message, a
-  ``date_time`` out of range.
+  ``date_time`` out of range, another field value it cannot read.
 
 Timestamps are ``isoformat()`` of the aware UTC datetimes fitdecode decodes
 (``+00:00``, never ``Z``), the spelling ``db.read_hrv_rows`` requires.

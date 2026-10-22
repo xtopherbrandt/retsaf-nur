@@ -196,7 +196,11 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
             definition/data records, etc.), or a ``date_time`` field
             holds a value ``datetime.fromtimestamp`` cannot represent
             (``OverflowError`` beyond ``time_t``, ``OSError`` from the
-            platform's range, ``ValueError`` from ``datetime`` itself).
+            platform's range: the message names the ``date_time``
+            field), or the decoder raises a plain ``ValueError`` (a
+            field definition of size 0, or ``datetime``'s own year
+            range: the message says only that a field value was
+            refused).
         TooManyRecordsError: the stream passes one of the three
             ceilings -- more than ``MAX_RECORD_MESSAGES`` ``record``
             messages, more than ``MAX_DATA_MESSAGES`` data messages of
@@ -262,10 +266,15 @@ def decode(raw: bytes) -> list[fitdecode.FitDataMessage]:
         fitdecode.FitParseError,
     ) as exc:
         raise FitParseFailure(str(exc)) from exc
-    except (OverflowError, OSError, ValueError) as exc:
+    except (OverflowError, OSError) as exc:
         # fitdecode converts every date_time field through datetime.fromtimestamp
         # while reading; a raw value beyond what the platform represents escapes
         # as one of these rather than a fitdecode error.
         raise FitParseFailure(f"a date_time field is out of range: {exc}") from exc
+    except ValueError as exc:
+        # A plain ValueError has more than one source: fitdecode's own reads (a
+        # field definition of size 0 raises ValueError('size')) and datetime's
+        # year range. Nothing tells them apart, so the wording names neither.
+        raise FitParseFailure(f"the decoder refused a field value: {exc}") from exc
 
     return messages

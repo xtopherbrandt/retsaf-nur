@@ -104,8 +104,9 @@ class OvernightSeriesError(Exception):
     so two values there cannot both be stored and neither is the right
     one to keep) and for a second ``hrv_status_summary`` message (a night
     has one summary; two leave the file's average undefined). A fault the
-    decoder itself refuses, a series truncated mid-message or a
-    ``date_time`` out of range, is ``FitParseFailure`` as on every route.
+    decoder itself refuses, a series truncated mid-message, a
+    ``date_time`` out of range or another field value it cannot read, is
+    ``FitParseFailure`` as on every route.
     Nothing is written for a file that raises this.
     """
 

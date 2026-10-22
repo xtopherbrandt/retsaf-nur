@@ -18,6 +18,7 @@ shared-filename collision this avoids).
 from __future__ import annotations
 
 import importlib.util
+import struct
 import sys
 from pathlib import Path
 
@@ -81,6 +82,40 @@ def test_decode_truncated_file_raises_fit_parse_failure() -> None:
         pass
     else:
         raise AssertionError("expected FitParseFailure for truncated FIT bytes")
+
+
+def _fit_crc(data: bytes) -> int:
+    """The FIT CRC-16 over ``data``."""
+    table = (0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+             0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400)
+    crc = 0
+    for byte in data:
+        for nibble in (byte & 0xF, (byte >> 4) & 0xF):
+            tmp = table[crc & 0xF]
+            crc = ((crc >> 4) & 0x0FFF) ^ tmp ^ table[nibble]
+    return crc
+
+
+def _zero_size_field_bytes() -> bytes:
+    """A FIT whose one definition (``file_id``) declares a field of size 0, then one data message.
+
+    fitdecode accepts the definition and raises a plain ``ValueError('size')`` reading the data
+    message; no ``date_time`` field is involved.
+    """
+    definition = bytes([0x40, 0x00, 0x00]) + struct.pack("<H", 0) + bytes([1, 0, 0, 0x00])
+    body = definition + bytes([0x00])
+    header = struct.pack("<BBHI4s", 12, 0x10, 2093, len(body), b".FIT")
+    raw = header + body
+    return raw + struct.pack("<H", _fit_crc(raw))
+
+
+def test_a_decoder_value_error_is_not_reported_as_a_date_time_fault() -> None:
+    with pytest.raises(FitParseFailure) as caught:
+        decode(_zero_size_field_bytes())
+    message = str(caught.value)
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert "date_time" not in message
+    assert "size" in message
 
 
 # ---------------------------------------------------------------------------
