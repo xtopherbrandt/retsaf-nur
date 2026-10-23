@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-21 through 2026-10-22 — Sprint 021: Overnight HRV from the watch's HRV_STATUS files
+
 ### Overnight HRV from the watch's HRV_STATUS files
 
 F028: the watch writes one HRV_STATUS file (FIT `file_id.type` 68) for each night, and the API now
