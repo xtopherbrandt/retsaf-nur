@@ -10,7 +10,9 @@ The file needs no Developer Program: it arrives by the two routes that already r
 per-day zip `runcoach sync` downloads for Health Snapshots and the account export's uploaded-files
 archives that `runcoach import` reads. Both counted it as a non-activity file of type `68` before.
 The tier's rank is unchanged (strap, then Health Snapshot, then overnight), so a Health Snapshot
-dataset that selection can use still outranks the nights.
+dataset that selection can use still outranks the nights. Because the watch records a night almost
+every day, a Health Snapshot layoff of more than 21 days no longer reports a `coverage_gap` once
+nights are stored; the snapshot dataset's band and n are unchanged.
 
 **The stored night.** One `sessions` row per night: sport `other`, `activity_tag` `overnight_hrv`,
 name "Overnight HRV", `hr_source` `wrist_ppg`, `rr_source` `overnight_ppg`, `quality_flags` empty,
@@ -46,7 +48,9 @@ uploaded again is. Measured on the account export: 2 nights are summarised twice
 the one kept.
 
 **Listing.** `GET /sessions` leaves nights out unless the new query parameter `include_nights` is
-true (default false); `runcoach sessions --nights` lists them, each named "Overnight HRV".
+true (default false); `runcoach sessions --nights` lists them, each named "Overnight HRV". In
+`GET /metrics/load` a night appears under its day's `excluded` with reason `sport_not_running`;
+the day's load and `/state` are unchanged (checked for 2026-10-10 on a copy of the athlete's store).
 
 **`runcoach ingest`.** A file that stores nothing prints `Skipped: no_night` (exit 0); a night that
 replaced one prints `Ingested as session <new> (quality flags: none); replaces <old>`.
@@ -82,7 +86,9 @@ still stops the sync, and the stop now names an item already stored without the 
 
 The second form is a 201 that names no session, the third a 200.
 
-**Loading the nights already on disk.** With the updated API and CLI running, run `runcoach import`
+**Loading the nights already on disk.** First check that `~/.runcoach/api.toml` holds
+`threshold_workout_names` (required since the F027 release, `[]` allowed): without it the updated
+API stops at start. With the updated API and CLI running, run `runcoach import`
 on the account export already imported once (its runs and captures read `Already stored`), then
 `runcoach sync --since 2026-10-09` for the days after the export was made. Measured on the account
 export (exported 2026-10-10) at sprint planning, the import should report 1,361 nights stored, 2
