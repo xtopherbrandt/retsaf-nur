@@ -19,9 +19,12 @@ import re
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from runcoach_api import db
 from runcoach_api.imports import archive
+from runcoach_api.imports.archive import FileIdScreen, screen_file_id
 from runcoach_api.ingestion import overnight
+from runcoach_api.main import app
 
 pytest.importorskip("runcoach_cli")
 
@@ -79,3 +82,33 @@ def test_type_68_has_one_definition_in_the_api() -> None:
     assert [hit.split(": ", 1)[1] for hit in tag_hits] == ['OVERNIGHT_TAG = "overnight_hrv"']
     assert all(hit.startswith("ingestion/overnight.py:") for hit in tag_hits)
 
+
+def test_a_named_hrv_status_file_type_is_still_a_night(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = archive._read_file_id
+    raw = (NIGHTS / "night_recent.fit").read_bytes()
+    number, time_created = real(raw)
+    assert number == overnight.HRV_STATUS_FILE_TYPE
+
+    def named(data: bytes) -> tuple[str | int | None, int | None]:
+        _, stamp = real(data)
+        return "hrv_status", stamp
+
+    monkeypatch.setattr(archive, "_read_file_id", named)
+    assert overnight.HRV_STATUS_FILE_TYPE_NAME == "hrv_status"
+    assert screen_file_id(raw) == FileIdScreen("hrv_status", time_created=time_created)
+    # Another name is still a non-activity counted by that name.
+    monkeypatch.setattr(archive, "_read_file_id", lambda data: ("hrv", 7))
+    assert screen_file_id(raw) == FileIdScreen("non_activity", file_type="hrv")
+
+    # The named file goes through the upload route as a night.
+    monkeypatch.setattr(archive, "_read_file_id", named)
+    with TestClient(app) as client:
+        response = client.post("/sessions", files={"file": ("upload.fit", raw)})
+    assert response.status_code == 201, response.text
+    assert response.json() == {"session_id": RECENT_ID, "quality_flags": []}
+    conn = db.get_connection()
+    try:
+        tag = conn.execute("SELECT activity_tag FROM sessions WHERE session_id = ?", (RECENT_ID,)).fetchone()
+    finally:
+        conn.close()
+    assert tuple(tag) == (overnight.OVERNIGHT_TAG,)

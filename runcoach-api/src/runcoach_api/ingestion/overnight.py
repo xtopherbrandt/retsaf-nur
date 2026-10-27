@@ -87,6 +87,12 @@ OVERNIGHT_NON_INPUT_READS: tuple[str, ...] = ("timestamp", "last_night_5_min_hig
 #: API; every module that tests or records the type imports it from here.
 HRV_STATUS_FILE_TYPE = 68
 
+#: The name the file-id screen also admits as an HRV_STATUS type. No fitdecode
+#: release names file type 68 (0.11.0, the newest on PyPI on 2026-10-26, does
+#: not), so the screen accepts the number or this string, in case a later
+#: profile names the type and the decoder hands back the name.
+HRV_STATUS_FILE_TYPE_NAME = "hrv_status"
+
 #: The ``activity_tag`` of a night's ``sessions`` row (stored, replaced or
 #: ``no_night``). The one definition in the API; ``db`` and ``imports.job``
 #: import it.
@@ -240,6 +246,7 @@ def _span_seconds(stamps: list[str]) -> float:
 
 __all__ = [
     "HRV_STATUS_FILE_TYPE",
+    "HRV_STATUS_FILE_TYPE_NAME",
     "NIGHT_DEVICE_SUFFIX",
     "NO_NIGHT",
     "Night",

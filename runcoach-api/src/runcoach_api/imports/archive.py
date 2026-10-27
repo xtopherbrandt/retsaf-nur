@@ -60,7 +60,7 @@ from typing import Literal
 
 import fitdecode
 
-from runcoach_api.ingestion.overnight import HRV_STATUS_FILE_TYPE
+from runcoach_api.ingestion.overnight import HRV_STATUS_FILE_TYPE, HRV_STATUS_FILE_TYPE_NAME
 
 # 1 GiB of actual bytes per inner zip copy; tests lower it.
 INNER_ZIP_CAP = 1024**3
@@ -140,6 +140,12 @@ def _extension(name: str) -> str:
     return ext[1:].lower() if ext else "(none)"
 
 
+# ``file_id.type`` of the watch's HRV_STATUS file (a number the FIT profile fitdecode
+# ships does not name) and the name the screen also admits, both defined in
+# ``ingestion.overnight``.
+HRV_STATUS_TYPES = (HRV_STATUS_FILE_TYPE, HRV_STATUS_FILE_TYPE_NAME)
+
+
 @dataclass(frozen=True)
 class FileIdScreen:
     """What a FIT file's ``file_id`` says it is, before any decoding past ``file_id``.
@@ -176,7 +182,8 @@ def screen_file_id(data: bytes) -> FileIdScreen:
 
     The rule the archive import applies to every FIT candidate: a ``file_id``
     that cannot be read, or carries no usable ``type``, fails; type
-    ``HRV_STATUS_FILE_TYPE`` is an ``hrv_status``; any other ``type`` than
+    ``HRV_STATUS_FILE_TYPE`` (or ``HRV_STATUS_FILE_TYPE_NAME``, the name a newer
+    profile would give it) is an ``hrv_status``; any other ``type`` than
     ``activity`` is a non-activity; otherwise an activity.
     """
     try:
@@ -185,7 +192,8 @@ def screen_file_id(data: bytes) -> FileIdScreen:
         return FileIdScreen("failed", detail=f"file_id could not be read: {type(exc).__name__}: {exc}")
     if file_type is None:
         return FileIdScreen("failed", detail="file_id carries no type")
-    if file_type == HRV_STATUS_FILE_TYPE:
+    # The number, or the name a newer fitdecode profile would give it.
+    if file_type in HRV_STATUS_TYPES:
         return FileIdScreen("hrv_status", time_created=time_created)
     if file_type != "activity":
         return FileIdScreen("non_activity", file_type=str(file_type))
