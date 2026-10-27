@@ -32,6 +32,7 @@ import yaml
 from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
 from runcoach_api import main as main_module
+from runcoach_api.config import AppConfig
 from runcoach_api.ingestion.mapping import derive_session_id
 from runcoach_api.main import app
 from runcoach_api.metrics import load_chart, riegel_b
@@ -430,6 +431,59 @@ def test_fitness_is_the_chart_on_the_day_before_and_29_days_before() -> None:
     assert early["fitness_earlier"] is None and early["fitness_drop"] is None
     assert early["fitness_before"] == early_before["ctl"]
     assert early["fitness_provisional"] is True and early_before["provisional"] is True
+
+
+def test_fitness_days_are_local_days_in_the_athlete_timezone(
+    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In Pacific/Auckland (UTC+12 in September) a race at 2026-09-19 14:00 UTC is run on the local
+    2026-09-20, so its day before is the local 09-19, which a load of 1000 lifts above the screen;
+    read in UTC its day before would be 09-18, after four weeks at a load of 10, and the race would
+    be dropped. Both the predicate (which decides whether the race's features are read) and the
+    estimator date the race in the athlete's zone: the race is used, with the local 09-19 CTL."""
+    name = "Pacific/Auckland"
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone=name,
+    )
+    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+    db_module._load_config_cached.cache_clear()
+    zone = ZoneInfo(name)
+    loads = {}
+    for n in range((NOW.date() - date(2026, 6, 1)).days + 1):
+        day = date(2026, 6, 1) + timedelta(days=n)
+        loads[day] = 50.0 if day <= date(2026, 8, 22) else 10.0
+    loads[date(2026, 9, 19)] = 1000.0
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        ctl_path.plant(conn, loads, zone)
+    finally:
+        conn.close()
+    with TestClient(app) as client:
+        race = _store(datetime(2026, 9, 19, 14, 0, tzinfo=UTC), 10000.0, 262.0)
+        _put_tags(client, [race])
+        conn = db_module.get_connection()
+        try:
+            session_loads.plant_load(conn, race, value=50.0)
+        finally:
+            conn.close()
+        days = _chart_days(client)
+        riegel = _riegel(_body(client))
+    local = {d: days[d]["ctl"] for d in (date(2026, 8, 21), date(2026, 8, 22), date(2026, 9, 18), date(2026, 9, 19))}
+    print(f"  chart CTL by local day {local}")
+    print(f"  efforts {riegel['efforts']}; excluded {riegel['excluded']}")
+    assert local[date(2026, 9, 18)] < 0.7 * local[date(2026, 8, 21)]  # the UTC reading would drop it
+    assert local[date(2026, 9, 19)] >= 0.7 * local[date(2026, 8, 22)]
+    assert riegel["excluded"] == []
+    [effort] = riegel["efforts"]
+    assert effort["session_id"] == race
+    assert effort["fitness_before"] == local[date(2026, 9, 19)]
+    assert effort["fitness_earlier"] == local[date(2026, 8, 22)]
 
 
 def test_a_missing_load_row_is_a_500_without_a_tagged_race() -> None:
