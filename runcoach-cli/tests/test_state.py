@@ -5,6 +5,9 @@ the API's ``StateModel`` serves them (``as_of`` and start times in UTC with a ``
 compared are F024 reference section 6's, with F026 reference section 5's workouts, IDEA-167's
 weights and F027 reference section 5's admission after the date (``(tag)``, ``(name Progression
 Run)``, ``(tag, name Goal Pace Run)``) and its ``no_sustained_work`` reason in words.
+
+The bodies here serve no ``riegel_exponent`` entry, so every output ends with ``OLDER_API_LINE``
+(F029 reference section 6); the endurance exponent block is ``test_state_riegel.py``'s.
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ from runcoach_cli.main import app
 pytestmark = pytest.mark.usefixtures("prewritten_config")
 
 runner = CliRunner()
+
+OLDER_API_LINE = "Endurance exponent: not served by this API; update it and restart"
 
 PARAMETERS = {
     "typical_error": 0.025,
@@ -175,7 +180,8 @@ def test_each_race_used_prints_date_duration_gap_gain_and_gps(install_mock_clien
     assert _lines(result)[1:] == [
         "Race used 2026-08-09: 0:41:40, GAP 4:30/km, gain 1.00, degraded GPS 0.0 %, weight 20 %",
         "Race used 2026-09-20: 0:41:40, GAP 4:20/km, gain 0.80, degraded GPS 3.1 %, weight 80 %",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
 
 def test_a_race_with_no_degraded_gps_fraction_prints_a_dash(install_mock_client) -> None:
@@ -276,14 +282,14 @@ def test_workout_exclusion_reasons_in_words(install_mock_client) -> None:
     assert result.exit_code == 0, result.output
     assert _lines(result)[3:] == [
         f"Workout excluded 2026-07-01 (tag): {words}" for words in WORKOUT_REASON_WORDS.values()
-    ] + ["Race excluded 2026-07-02: not 20 to 60 minutes long"]
+    ] + ["Race excluded 2026-07-02: not 20 to 60 minutes long", OLDER_API_LINE], result.stdout
     assert not any(reason in result.stdout for reason in WORKOUT_REASON_WORDS)
 
     # The hint's date is the workout's own, in the response's timezone.
     body["timezone"] = "Pacific/Auckland"
     body["determinants"][0]["excluded"] = [_excluded_workout("w", "2026-07-01T23:30:00Z", "laps_not_read")]
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == (
+    assert _lines(_run())[-2] == (
         "Workout excluded 2026-07-02 (tag): its laps have not been read: run runcoach sync laps --since 2026-07-02"
     )
 
@@ -291,7 +297,7 @@ def test_workout_exclusion_reasons_in_words(install_mock_client) -> None:
     body["determinants"][0]["parameters"] = {**PARAMETERS, "workout_min_active_s": 900}
     body["determinants"][0]["excluded"][0]["reason"] = "active_time_below_minimum"
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == "Workout excluded 2026-07-02 (tag): under 15:00 of counted work reps"
+    assert _lines(_run())[-2] == "Workout excluded 2026-07-02 (tag): under 15:00 of counted work reps"
 
 
 def test_a_used_workout_shows_its_admission_after_the_date(install_mock_client) -> None:
@@ -315,7 +321,8 @@ def test_a_used_workout_shows_its_admission_after_the_date(install_mock_client) 
             "Workout used 2026-10-17 (name Progression Run): 0:15:00 active in 1 block, GAP 4:26/km, gain 0.98, "
             "degraded GPS 0.0 %, weight 98 %"
         ),
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
     # A tag-admitted workout that carries a name prints the tag alone: the name did not admit it.
     det["efforts"][0]["workout_name"] = "Tempo Run"
@@ -345,7 +352,8 @@ def test_an_excluded_workout_shows_its_admission_after_the_date(install_mock_cli
     assert _lines(result)[3:] == [
         "Workout excluded 2026-10-07 (name Speed Repeats): no work rep of 4:50 or longer",
         "Race excluded 2026-10-08: not 20 to 60 minutes long",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
 
 def test_tag_and_name_admission_reads_tag_comma_name(install_mock_client) -> None:
@@ -375,7 +383,8 @@ def test_tag_and_name_admission_reads_tag_comma_name(install_mock_client) -> Non
         ),
         "Workout excluded 2026-10-01 (tag, name Goal Pace Run): under 9:50 of counted work reps",
         "Workout excluded 2026-10-02 (tag): no lap of a work step",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
     for admitted_by in (["coach"], "tag", [1], [None]):
         det["efforts"][1]["admitted_by"] = admitted_by
@@ -394,16 +403,16 @@ def test_no_sustained_work_reads_in_words(install_mock_client) -> None:
     _serve(install_mock_client, body)
     result = _run()
     assert result.exit_code == 0, result.output
-    assert _lines(result)[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
+    assert _lines(result)[-2] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
     assert "no_sustained_work" not in result.stdout
 
     det["parameters"] = {**PARAMETERS, "workout_min_rep_s": 300}
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 5:00 or longer"
+    assert _lines(_run())[-2] == "Workout excluded 2026-10-07 (tag): no work rep of 5:00 or longer"
 
     det["parameters"] = {k: v for k, v in PARAMETERS.items() if k != "workout_min_rep_s"}
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
+    assert _lines(_run())[-2] == "Workout excluded 2026-10-07 (tag): no work rep of 4:50 or longer"
 
 
 def test_the_workout_minimum_reads_9_50(install_mock_client) -> None:
@@ -448,7 +457,8 @@ def test_an_older_api_without_admitted_by_prints_no_parenthesis(install_mock_cli
     assert _lines(result)[2:] == [
         "Workout used 2026-09-30: 0:27:10 active in 1 block, GAP 4:26/km, gain 0.98, degraded GPS 0.0 %, weight 98 %",
         "Workout excluded 2026-10-01: no lap of a work step",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
     for admitted_by in (None, []):
         det["efforts"][1]["admitted_by"] = admitted_by
@@ -473,7 +483,7 @@ def test_each_effort_line_shows_its_weight(install_mock_client) -> None:
 
     # Three, by hand: gains 1, 0.5, 0.5 give 0.25, 0.25, 0.5.
     _serve(install_mock_client, _mixed_body(1, 2))
-    assert [line.rsplit(", weight ", 1)[1] for line in _lines(_run())[1:]] == ["25 %", "25 %", "50 %"]
+    assert [line.rsplit(", weight ", 1)[1] for line in _lines(_run())[1:-1]] == ["25 %", "25 %", "50 %"]
 
 
 def test_weights_sum_to_one() -> None:
@@ -507,6 +517,7 @@ def test_smart_recording_is_worded_the_same_for_races_and_workouts(install_mock_
     assert lines[3:] == [
         "Race excluded 2026-07-01: recorded in smart or irregular recording mode",
         "Workout excluded 2026-07-02: recorded in smart or irregular recording mode",
+        OLDER_API_LINE,
     ]
     assert "recorded in smart recording mode" not in "\n".join(lines)
 
@@ -530,7 +541,8 @@ def test_an_older_api_body_without_kind_still_renders(install_mock_client) -> No
         "Race used 2026-08-09: 0:41:40, GAP 4:30/km, gain 1.00, degraded GPS 0.0 %, weight 20 %",
         "Race used 2026-09-20: 0:41:40, GAP 4:20/km, gain 0.80, degraded GPS 3.1 %, weight 80 %",
         "Race excluded 2026-07-01: not 20 to 60 minutes long",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
     # A kind the CLI does not know is refused rather than printed as a race.
     det["efforts"][0]["kind"] = "tempo_run"
@@ -562,8 +574,9 @@ def test_each_excluded_race_prints_its_reason_in_words(install_mock_client) -> N
     result = _run()
     assert result.exit_code == 0, result.output
     assert _lines(result)[3:] == [
-        f"Race excluded 2026-07-{i + 1:02d}: {REASON_WORDS[reason]}" for i, reason in enumerate(reasons)
-    ]
+        *(f"Race excluded 2026-07-{i + 1:02d}: {REASON_WORDS[reason]}" for i, reason in enumerate(reasons)),
+        OLDER_API_LINE,
+    ], result.stdout
     # No snake_case reason leaks into the words.
     assert not any(reason in result.stdout for reason in reasons)
 
@@ -576,11 +589,11 @@ def test_an_unknown_reason_prints_as_served(install_mock_client) -> None:
     _serve(install_mock_client, body)
     result = _run()
     assert result.exit_code == 0, result.output
-    assert _lines(result)[-1] == "Race excluded 2026-07-01: some_new_reason"
+    assert _lines(result)[-2] == "Race excluded 2026-07-01: some_new_reason"
     # The words fill in a date and a minimum; a served reason is never read as a template.
     body["determinants"][0]["excluded"][0]["reason"] = "new_{date}_{x}"
     _serve(install_mock_client, body)
-    assert _lines(_run())[-1] == "Race excluded 2026-07-01: new_{date}_{x}"
+    assert _lines(_run())[-2] == "Race excluded 2026-07-01: new_{date}_{x}"
 
 
 FORGED = "\x1b]0;x\x07\nThreshold pace 3:00/km"
@@ -608,7 +621,8 @@ def test_a_served_workout_name_cannot_forge_a_line_or_reach_the_terminal(install
         "Workout used 2026-09-30 (name ?]0;x??Threshold pace 3:00/km): 0:27:10 active in 1 block, GAP 4:26/km, "
         "gain 1.00, degraded GPS 0.0 %, weight 100 %",
         "Workout excluded 2026-10-01 (name ?]0;x??Threshold pace 3:00/km): no lap of a work step",
-    ]
+        OLDER_API_LINE,
+    ], result.stdout
 
 
 def test_served_text_printed_as_is_cannot_forge_a_line(install_mock_client) -> None:
@@ -623,14 +637,14 @@ def test_served_text_printed_as_is_cannot_forge_a_line(install_mock_client) -> N
     result = _run()
     assert result.exit_code == 0, result.output
     _no_forgery(result.stdout)
-    assert _lines(result)[-1] == "Race excluded 2026-07-01: ?]0;x??Threshold pace 3:00/km"
+    assert _lines(result)[-2] == "Race excluded 2026-07-01: ?]0;x??Threshold pace 3:00/km"
 
     unavailable = _unavailable_body(FORGED)
     _serve(install_mock_client, unavailable)
     result = _run()
     assert result.exit_code == 0, result.output
     _no_forgery(result.stdout)
-    assert _lines(result) == ["Threshold pace unavailable: ?]0;x??Threshold pace 3:00/km."]
+    assert _lines(result) == ["Threshold pace unavailable: ?]0;x??Threshold pace 3:00/km.", OLDER_API_LINE], result.stdout
 
     install_mock_client(lambda request: httpx.Response(500, text=FORGED + "y" * 300))
     result = _run()
@@ -680,7 +694,7 @@ def test_unavailable_message_names_training_workouts(install_mock_client) -> Non
     _serve(install_mock_client, body)
     result = _run()
     assert result.exit_code == 0, result.output
-    assert _lines(result) == [UNAVAILABLE_LINE, "Workout excluded 2026-09-30 (tag): no lap of a work step"]
+    assert _lines(result) == [UNAVAILABLE_LINE, "Workout excluded 2026-09-30 (tag): no lap of a work step", OLDER_API_LINE], result.stdout
     assert "Training" in UNAVAILABLE_LINE and "threshold_workout_names" in UNAVAILABLE_LINE
     assert "restart the API" in _lines(result)[0]
 
@@ -697,7 +711,7 @@ def test_unavailable_message_exits_0(install_mock_client) -> None:
     _serve(install_mock_client, body)
     result = _run()
     assert result.exit_code == 0, result.output
-    assert _lines(result) == [UNAVAILABLE_LINE, "Race excluded 2026-04-26: not 20 to 60 minutes long"]
+    assert _lines(result) == [UNAVAILABLE_LINE, "Race excluded 2026-04-26: not 20 to 60 minutes long", OLDER_API_LINE], result.stdout
 
 
 def test_estimate_not_finite_prints_words_and_the_races_used(install_mock_client) -> None:

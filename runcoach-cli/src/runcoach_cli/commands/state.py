@@ -1,4 +1,5 @@
-"""``runcoach state`` -- threshold pace from ``GET /state``, with the races and workouts used and excluded.
+"""``runcoach state`` -- threshold pace and the endurance exponent from ``GET /state``, with the races
+and workouts used and excluded.
 
 The first line is the estimate: ``Threshold pace 4:22/km (80 %: 4:15-4:30), high, from 2 races and 1
 workout, the last on 2026-09-30``, the interval fast end first and a zero count left out. Then one
@@ -25,6 +26,18 @@ With no qualifying race or workout the first line says how to tag one; ``<its da
 printed as is, for the athlete to fill in. When the API serves ``estimate_not_finite`` (an effort's
 GAP pace so far out of range that the estimate overflows), the first line says so and the efforts
 used are still listed, so the athlete can find the one. Both exit 0.
+
+After the threshold lines comes the endurance exponent block, from the ``riegel_exponent`` entry
+(F029 reference section 6). A fitted b prints to three decimals with its 80 % interval, its label,
+the race count, the window and the shortest and longest GAP-equivalent distance used: ``Endurance
+exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``.
+Below the bar the population value prints with why (too few races, or every race at one distance),
+the number the fitness screen excluded when any were, and a line on how to tag a race; a fitted b
+under 1 adds a warning line. Then one line per race used (distance, GAP-equivalent distance, time,
+the day-before fitness and its fall over the four weeks, a rise negative, the weight, and the
+residual against the line when one is served) and one per race excluded with its reason in words.
+An entry with ``estimate_not_finite`` says so and still lists the races. A body with no
+``riegel_exponent`` entry (an API from before it) ends with a line saying so, and exits 0.
 
 Dates print in the response's ``timezone`` (the API's ``athlete_timezone``), not the computer's.
 Paces and durations are rounded half up, as ``runcoach sessions`` rounds them. ``--as-of`` is sent
@@ -116,6 +129,30 @@ UNAVAILABLE_LINES = {
 SHORT_RACES_LINE = (
     "All races used are under 30 minutes: threshold likely reads fast; a 10K race or time trial would correct it."
 )
+
+RIEGEL_DETERMINANT = "riegel_exponent"
+
+# Each reason a race is left out of b, in words (F029 reference section 2). ``fitness_dropped``
+# and ``outside_window`` carry figures and are worded where the line is built; a reason not listed
+# prints as served.
+RIEGEL_REASON_WORDS = {
+    "admitted_as_workout": "its workout name is listed in threshold_workout_names, so it is read as a workout",
+    "summary_unreadable": REASON_WORDS["summary_unreadable"],
+    "duration_unavailable": "no timer or summary duration",
+    "quality_flags_unreadable": REASON_WORDS["quality_flags_unreadable"],
+    "distance_regressed": REASON_WORDS["distance_regressed"],
+    "smart_recording": REASON_WORDS["smart_recording"],
+    "features_unavailable": REASON_WORDS["features_unavailable"],
+    "grade_clamped": "a grade was outside the adjustment's range",
+    "gap_pace_unavailable": REASON_WORDS["gap_pace_unavailable"],
+}
+
+RIEGEL_TAGGING_LINE = "Mark a race as Race in Garmin Connect and run runcoach sync tags --since <its date>"
+RIEGEL_BELOW_ONE_LINE = (
+    "b reads below 1: a race used was probably not all-out, or a trail race; check the races listed"
+)
+RIEGEL_NOT_FINITE_LINE = "Endurance exponent unavailable: a race's figures are out of range; check the races listed"
+RIEGEL_NOT_SERVED_LINE = "Endurance exponent: not served by this API; update it and restart"
 
 
 def _number(value: Any, what: str) -> float:
@@ -268,12 +305,158 @@ def _workout_minimums(parameters: Any) -> dict[str, str]:
     return out
 
 
+def _flag(det: dict, key: str) -> bool:
+    value = det[key]
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} is not true or false")
+    return value
+
+
+def _b(value: Any, what: str, places: int = 3) -> str:
+    return f"{_number(value, what):.{places}f}"
+
+
+def _km(value: Any, what: str) -> str:
+    """Metres as ``N.N km``; ``-`` for a null."""
+    if value is None:
+        return "-"
+    return f"{_number(value, what) / 1000:.1f} km"
+
+
+def _whole(value: Any, what: str) -> str:
+    """A figure rounded half up to a whole number, a negative one included."""
+    return str(math.floor(_number(value, what) + 0.5))
+
+
+def _fitness(effort: dict) -> str:
+    """``fitness 36 (3 % over 4 weeks)``: the day-before CTL and its fall over the four weeks, a rise
+    negative; ``(-)`` without the fall, ``fitness -`` without the day-before figure."""
+    if effort["fitness_before"] is None:
+        return "fitness -"
+    before = _whole(effort["fitness_before"], "fitness_before")
+    drop = effort["fitness_drop"]
+    if drop is None:
+        return f"fitness {before} (-)"
+    return f"fitness {before} ({_whole(_number(drop, 'fitness_drop') * 100, 'fitness_drop')} % over 4 weeks)"
+
+
+def _residual(value: Any) -> str:
+    """A residual as a signed percentage to one decimal, rounded half up; one that rounds to zero
+    prints ``0.0 %``, never ``-0.0 %``."""
+    tenths = math.floor(_number(value, "residual") * 1000 + 0.5)
+    return "0.0 %" if tenths == 0 else f"{tenths / 10:+.1f} %"
+
+
+def _riegel_effort_line(effort: dict, zone: ZoneInfo) -> str:
+    weight = _number(effort["weight"], "weight")
+    line = (
+        f"Race used {_date(effort['start_time'], zone)}: {_km(effort['distance_m'], 'distance_m')} "
+        f"({_km(effort['gap_equivalent_m'], 'gap_equivalent_m')} adjusted), "
+        f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort)}, weight {weight:.2f}"
+    )
+    if effort["residual"] is not None:
+        line += f", {_residual(effort['residual'])} against the line"
+    return line
+
+
+def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo) -> str:
+    reason = row["reason"]
+    if not isinstance(reason, str):
+        raise ValueError("reason is not a string")
+    day = _date(row["start_time"], zone)
+    if reason == "fitness_dropped":
+        drop = _whole(_number(row["fitness_drop"], "fitness_drop") * 100, "fitness_drop")
+        earlier = _whole(row["fitness_earlier"], "fitness_earlier")
+        before = _whole(row["fitness_before"], "fitness_before")
+        words = f"fitness fell {drop} % in the 4 weeks before it ({earlier} to {before})"
+    elif reason == "outside_window":
+        words = f"more than {window} days before {as_of}"
+    elif reason in RIEGEL_REASON_WORDS:
+        words = RIEGEL_REASON_WORDS[reason]
+    else:
+        words = _printable(reason)
+    return f"Race excluded {day}: {words}"
+
+
+def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
+    """The endurance exponent block for a ``riegel_exponent`` entry (F029 reference section 6)."""
+    efforts = det["efforts"]
+    excluded = det["excluded"]
+    if not isinstance(efforts, list) or not isinstance(excluded, list):
+        raise ValueError("efforts or excluded is not a list")
+    if not all(isinstance(row, dict) for row in [*efforts, *excluded]):
+        raise ValueError("an entry of efforts or excluded is not an object")
+    parameters = det["parameters"]
+    if not isinstance(parameters, dict):
+        raise ValueError("parameters is not an object")
+    window = f"{_number(parameters['window_days'], 'window_days'):g}"
+    population_default = _flag(det, "population_default")
+    below_one = _flag(det, "below_one")
+
+    estimate = det["estimate"]
+    if estimate is not None:
+        label = estimate["confidence"]
+        if label not in ("low", "medium", "high"):
+            raise ValueError("confidence is not low, medium or high")
+        low = _b(estimate["interval"]["low"], "interval.low")
+        high = _b(estimate["interval"]["high"], "interval.high")
+        races = _count(len(efforts), "race")
+        if population_default:
+            min_races = _number(parameters["min_races"], "min_races")
+            if len(efforts) < min_races:
+                why = f"{races} in the last {window} days; {min_races:g} are needed"
+            else:
+                why = f"{races} at one distance; the longest must be at least twice the shortest"
+            screened = sum(1 for row in excluded if row["reason"] == "fitness_dropped")
+            if screened:
+                why += f", {screened} excluded by the fitness screen"
+            lines = [
+                f"Endurance exponent b {_b(estimate['value'], 'value', 2)} (population default, 80 %: {low} to "
+                f"{high}), {label}: {why}",
+                RIEGEL_TAGGING_LINE,
+            ]
+        else:
+            if not efforts:
+                raise ValueError("an estimate of b with no races used")
+            distances = [_number(e["gap_equivalent_m"], "gap_equivalent_m") / 1000 for e in efforts]
+            lines = [
+                f"Endurance exponent b {_b(estimate['value'], 'value')} (80 %: {low} to {high}), {label}, from "
+                f"{races} in the last {window} days, {min(distances):.1f} to {max(distances):.1f} km"
+            ]
+        if below_one:
+            lines.append(RIEGEL_BELOW_ONE_LINE)
+    else:
+        reason = det["unavailable"]
+        if not isinstance(reason, str):
+            raise ValueError("no estimate of b and no unavailable reason")
+        if reason == "estimate_not_finite":
+            lines = [RIEGEL_NOT_FINITE_LINE]
+        else:
+            lines = [f"Endurance exponent unavailable: {_printable(reason)}."]
+    lines += [_riegel_effort_line(effort, zone) for effort in efforts]
+    if excluded:
+        as_of_day = _date(as_of, zone)
+        lines += [_riegel_excluded_line(row, window, as_of_day, zone) for row in excluded]
+    return lines
+
+
 def render(body: Any) -> list[str]:
     """The lines for a ``GET /state`` body, or raise ``KeyError``/``TypeError``/``ValueError`` (or
     ``ZoneInfoNotFoundError``/``OverflowError``/``OSError``) on a body that cannot be read."""
     if not isinstance(body, dict):
         raise ValueError("the body is not an object")
     zone = ZoneInfo(body["timezone"])
+    lines = _threshold_lines(body, zone)
+    riegel = [d for d in body["determinants"] if isinstance(d, dict) and d.get("name") == RIEGEL_DETERMINANT]
+    if riegel:
+        lines += _riegel_lines(riegel[0], body["as_of"], zone)
+    else:
+        lines.append(RIEGEL_NOT_SERVED_LINE)
+    return lines
+
+
+def _threshold_lines(body: dict, zone: ZoneInfo) -> list[str]:
+    """The threshold pace lines of a ``GET /state`` body."""
     found = [d for d in body["determinants"] if isinstance(d, dict) and d.get("name") == DETERMINANT]
     if not found:
         raise ValueError(f"no {DETERMINANT} determinant")
@@ -325,6 +508,11 @@ def state(
     Each one used shows its weight: its share of today's estimate. The 80 % interval covers
     race-to-race scatter, not a biased input: a race or workout read wrongly moves the estimate and
     the interval together.
+
+    Then the endurance exponent b, the slope of race time on distance, fitted to your tagged races of
+    the last 1095 days (the population 1.06 until three races span a twofold distance), with each
+    race used and excluded. A race run while your fitness had fallen more than 30 % in the four
+    weeks before it is left out.
 
     This is the training state; for whether the API is running, see runcoach status.
     """
