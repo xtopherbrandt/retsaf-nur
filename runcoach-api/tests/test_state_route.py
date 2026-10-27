@@ -115,8 +115,9 @@ def _state(client: TestClient, as_of: str | None = None):
 
 
 def _ftp(body: dict) -> dict:
-    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace"]
-    return body["determinants"][0]
+    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent"]
+    [determinant] = [d for d in body["determinants"] if d["name"] == "functional_threshold_pace"]
+    return determinant
 
 
 def _ok(client: TestClient, as_of: str | None = None) -> dict:
@@ -204,7 +205,10 @@ def test_empty_store_is_unavailable_no_qualifying_effort() -> None:
 
 def test_only_a_marathon_tagged_is_unavailable_and_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
     start = datetime(2026, 4, 26, 8, 0, tzinfo=UTC)
-    marathon = _store(start, duration_s=11400.0, with_records=False)
+    # The stored smart_recording flag keeps the endurance exponent's read from reading the
+    # marathon's records too (it reads an out-of-band race the flags pass), so ``reads`` stays the
+    # threshold read's alone; the band is checked first, so the threshold reason is the band.
+    marathon = _store(start, duration_s=11400.0, with_records=False, flags=["smart_recording"])
     reads: list[str] = []
     real = db_module.read_session_feature_inputs
     monkeypatch.setattr(

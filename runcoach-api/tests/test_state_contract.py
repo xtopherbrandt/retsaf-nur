@@ -3,7 +3,7 @@
 ``check_drift.py`` compares paths, methods, success codes and required parameters only, so the
 response is checked here. ``tests/support/contract_validate.py`` validates each live
 ``determinants[]`` entry against the contract's ``Determinant`` (type, enum, nullable, required,
-properties, items, ``$ref``, one-member ``allOf``), for an estimate and for both unavailable
+properties, items, ``$ref``, one-member ``allOf``, the ``oneOf`` its ``name`` discriminates), for an estimate and for both unavailable
 reasons; a mutated body must go red. ``StateModel`` is not walked whole: its other properties are
 validated one by one. ``ConfidenceValue`` is compared with the served ``ThresholdPaceValue`` by
 hand, because the contract's inline ``interval`` is a named component when served and
@@ -121,9 +121,14 @@ def _body() -> dict:
     return response.json()
 
 
+def _threshold(body: dict) -> dict:
+    [determinant] = [d for d in body["determinants"] if d["name"] == "functional_threshold_pace"]
+    return determinant
+
+
 def _assert_valid(contract: dict, body: dict) -> dict:
-    """Validate each determinant against ``Determinant`` and the other ``StateModel`` properties one
-    by one; print the slice compared. Returns the one determinant."""
+    """Validate each determinant against ``Determinant`` (the discriminated ``oneOf``) and the other
+    ``StateModel`` properties one by one; print the slice compared. Returns the threshold entry."""
     state = _schema(contract, "StateModel")
     assert set(body) == set(state["properties"]), sorted(body)
     for name, value in body.items():
@@ -132,13 +137,14 @@ def _assert_valid(contract: dict, body: dict) -> dict:
         errors = contract_validate.validate(contract, state["properties"][name], value, f"$.{name}")
         print(f"  StateModel.{name} = {value!r}: {errors or 'valid'}")
         assert errors == [], errors
-    [determinant] = body["determinants"]
-    errors = contract_validate.validate(
-        contract, _schema(contract, "Determinant"), determinant, "$.determinants[0]"
-    )
-    print(f"  Determinant keys {sorted(determinant)}: {errors or 'valid'}")
-    assert errors == [], errors
-    return determinant
+    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent"]
+    for index, determinant in enumerate(body["determinants"]):
+        errors = contract_validate.validate(
+            contract, _schema(contract, "Determinant"), determinant, f"$.determinants[{index}]"
+        )
+        print(f"  {determinant['name']} keys {sorted(determinant)}: {errors or 'valid'}")
+        assert errors == [], errors
+    return _threshold(body)
 
 
 def _estimate_body() -> dict:
@@ -403,7 +409,7 @@ def test_a_no_sustained_work_exclusion_validates_against_the_contract(contract: 
 MUTATIONS = [
     ("drop efforts", lambda d: d.pop("efforts"), "required property 'efforts'"),
     ("drop parameters", lambda d: d.pop("parameters"), "required property 'parameters'"),
-    ("unknown name", lambda d: d.update(name="threshold"), "$.name"),
+    ("unknown name", lambda d: d.update(name="threshold"), "discriminator 'name' value 'threshold'"),
     ("unknown unavailable", lambda d: d.update(unavailable="bogus"), "$.unavailable"),
     ("string error", lambda d: d.update(error="small"), "$.error"),
     ("null short_races_only", lambda d: d.update(short_races_only=None), "$.short_races_only"),
@@ -439,7 +445,7 @@ MUTATIONS = [
 
 def test_validator_rejects_a_mutated_body(contract: dict) -> None:
     """Each mutation of a valid live determinant is reported at its path; the original stays valid."""
-    [determinant] = _estimate_body()["determinants"]
+    determinant = _threshold(_estimate_body())
     schema = _schema(contract, "Determinant")
     assert contract_validate.validate(contract, schema, determinant) == []
     for label, mutate, expected in MUTATIONS:
@@ -476,7 +482,7 @@ def test_contract_lists_as_of_and_is_implemented(contract: dict) -> None:
     assert (as_of["name"], as_of["in"], as_of.get("required", False)) == ("as_of", "query", False)
     assert (built_as_of["name"], built_as_of["in"], built_as_of["required"]) == ("as_of", "query", False)
     assert as_of["schema"]["type"] == "string"
-    assert set(op["responses"]) == set(built_op["responses"]) == {"200", "422"}
+    assert set(op["responses"]) == set(built_op["responses"]) == {"200", "422", "500"}
     assert op["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/StateModel"
     }
@@ -491,8 +497,18 @@ def test_contract_lists_as_of_and_is_implemented(contract: dict) -> None:
         "description": state["properties"]["gap_to_goal"]["description"],
     }
 
-    determinant = _schema(contract, "Determinant")
-    built_determinant = served["components"]["schemas"]["Determinant"]
+    # The served union has no Determinant component: FastAPI writes the oneOf inline on
+    # StateModel.determinants.items, so the contract's Determinant is compared with it by hand.
+    union = _schema(contract, "Determinant")
+    built_items = served["components"]["schemas"]["StateModel"]["properties"]["determinants"]["items"]
+    print(f"  contract Determinant {union}; served items {built_items}")
+    assert "Determinant" not in served["components"]["schemas"]
+    assert state["properties"]["determinants"]["items"] == {"$ref": "#/components/schemas/Determinant"}
+    assert union["oneOf"] == built_items["oneOf"]
+    assert union["discriminator"] == built_items["discriminator"]
+
+    determinant = _schema(contract, "ThresholdDeterminant")
+    built_determinant = served["components"]["schemas"]["ThresholdDeterminant"]
     assert set(determinant["properties"]) == set(built_determinant["properties"])
     assert set(NEW_DETERMINANT_FIELDS) <= set(determinant["properties"])
     assert set(determinant["required"]) == set(built_determinant["required"])
@@ -502,7 +518,7 @@ def test_contract_lists_as_of_and_is_implemented(contract: dict) -> None:
         and estimate["nullable"] is True
     )
     assert "functional_threshold_pace" in " ".join(determinant["description"].split())
-    assert "Only `functional_threshold_pace` is served" in " ".join(determinant["description"].split())
+    assert "The `functional_threshold_pace` entry" in " ".join(determinant["description"].split())
     assert contract_walk.normalised(determinant["properties"]["unavailable"]) == contract_walk.normalised(
         built_determinant["properties"]["unavailable"]
     )
@@ -540,3 +556,86 @@ def test_confidence_value_fields_match_by_hand(contract: dict) -> None:
     assert props["confidence"]["enum"] == served["confidence"]["enum"] == ["low", "medium", "high"]
     assert props["provisional"]["type"] == served["provisional"]["type"] == "boolean"
     assert set(ours["required"]) <= set(theirs["required"])
+
+
+RIEGEL_COMPONENTS = {"RiegelEffort", "RiegelExclusion", "RiegelExponentParameters"}
+DETERMINANT_NAMES = [
+    "critical_speed",
+    "d_prime",
+    "vvo2max",
+    "functional_threshold_pace",
+    "running_economy",
+    "durability",
+    "riegel_exponent",
+]
+
+
+def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
+    """F029 AC6, the contract half. ``Determinant`` is a ``oneOf`` of ``ThresholdDeterminant`` and
+    ``RiegelDeterminant`` discriminated on ``name``, as FastAPI serves the union; the threshold
+    schema keeps its name enum; ``info.version`` is unmoved. The strict half walks the three
+    components only ``RiegelDeterminant`` uses with ``contract_walk.walk`` (``normalised`` cannot read
+    a ``oneOf`` node, so the branches are walked, not the union); ``RiegelDeterminant`` itself and
+    its ``estimate`` are compared by hand, as ``test_confidence_value_fields_match_by_hand`` does.
+    The validator then picks the branch by ``name``: a Riegel body named as threshold pace goes red."""
+    served = app.openapi()
+    schemas = served["components"]["schemas"]
+    union = _schema(contract, "Determinant")
+    print(f"  Determinant {union}")
+    assert set(union) == {"description", "oneOf", "discriminator"}
+    assert union["oneOf"] == [
+        {"$ref": "#/components/schemas/ThresholdDeterminant"},
+        {"$ref": "#/components/schemas/RiegelDeterminant"},
+    ]
+    assert union["discriminator"] == {
+        "propertyName": "name",
+        "mapping": {
+            "functional_threshold_pace": "#/components/schemas/ThresholdDeterminant",
+            "riegel_exponent": "#/components/schemas/RiegelDeterminant",
+        },
+    }
+    assert union == {**union, **schemas["StateModel"]["properties"]["determinants"]["items"]}
+    assert _schema(contract, "ThresholdDeterminant")["properties"]["name"]["enum"] == DETERMINANT_NAMES
+    assert contract["info"]["version"] == "0.5.0-draft"
+
+    visited, compared = contract_walk.walk(contract, served, RIEGEL_COMPONENTS)
+    print(f"  walked {sorted(visited)}: {len(compared)} fields")
+    assert visited == RIEGEL_COMPONENTS
+
+    ours, theirs = _schema(contract, "RiegelDeterminant"), schemas["RiegelDeterminant"]
+    print(f"  RiegelDeterminant contract {sorted(ours['properties'])}; served {sorted(theirs['properties'])}")
+    assert set(ours["properties"]) == set(theirs["properties"])
+    assert set(ours["required"]) == set(theirs["required"])
+    props, built = ours["properties"], theirs["properties"]
+    assert props["name"] == {"type": "string", "enum": ["riegel_exponent"]}
+    assert (built["name"]["type"], built["name"]["const"]) == ("string", "riegel_exponent")
+    assert props["estimate"]["allOf"] == [{"$ref": "#/components/schemas/ConfidenceValue"}]
+    assert props["estimate"]["nullable"] is True
+    assert built["estimate"]["anyOf"] == [{"$ref": "#/components/schemas/RiegelExponentValue"}, {"type": "null"}]
+    assert props["trend"] == {"$ref": "#/components/schemas/Trend"}
+    assert built["trend"] == {"$ref": "#/components/schemas/DeterminantTrend"}
+    for field in ("unavailable", "error", "t_multiplier", "population_default", "below_one", "efforts", "excluded", "parameters"):
+        got, want = contract_walk.normalised(props[field]), contract_walk.normalised(built[field])
+        print(f"  RiegelDeterminant.{field}: contract {got}; served {want}")
+        assert got == want, field
+
+    confidence = _schema(contract, "ConfidenceValue")["properties"]
+    value = schemas["RiegelExponentValue"]["properties"]
+    interval = schemas[value["interval"]["$ref"].rsplit("/", 1)[1]]
+    assert set(confidence) == set(value) == {"value", "unit", "interval", "confidence", "provisional"}
+    assert value["value"]["type"] == confidence["value"]["type"] == "number"
+    assert value["unit"]["type"] == confidence["unit"]["type"] == "string" and value["unit"]["const"] == "1"
+    assert set(interval["properties"]) == set(confidence["interval"]["properties"]) == {"low", "high"}
+    assert value["confidence"]["enum"] == confidence["confidence"]["enum"] == ["low", "medium", "high"]
+    assert value["provisional"]["type"] == confidence["provisional"]["type"] == "boolean"
+    assert set(_schema(contract, "ConfidenceValue")["required"]) <= set(schemas["RiegelExponentValue"]["required"])
+
+    riegel = _estimate_body()["determinants"][1]
+    assert riegel["name"] == "riegel_exponent"
+    assert contract_validate.validate(contract, union, riegel) == []
+    misnamed = {**riegel, "name": "functional_threshold_pace"}
+    errors = contract_validate.validate(contract, union, misnamed)
+    print(f"  misnamed: {errors}")
+    assert any("required property 'short_races_only'" in e for e in errors), errors
+    with pytest.raises(ValueError, match="nullable"):
+        contract_validate.validate(contract, {**union, "nullable": True}, riegel)

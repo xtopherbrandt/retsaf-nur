@@ -75,7 +75,7 @@ tags:
   - name: Subjective
     description: "Session-RPE, wellness, pain reports. x-readiness: planned. Owner: research/03, routed per spec/08 §8.4."
   - name: State & Metrics
-    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getState (GET /state, threshold pace only), getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
+    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getState (GET /state, threshold pace and the endurance exponent b), getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
   - name: Decisions & Changes
     description: "Decision log (explainability) + apply-and-notify change feed. x-readiness: planned. Owner: spec/09, spec/06 §6.8."
   - name: Coach
@@ -868,13 +868,16 @@ paths:
       operationId: getState
       summary: Physiological state model + gap-to-goal, each with confidence
       x-readiness: implemented
-      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026, F027"
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026, F027, F029"
       x-story: [view-state]
       description: >
         Computed on read from the tagged races and the threshold workouts (tagged Training or named in
-        `threshold_workout_names`); nothing is stored or written. Only `functional_threshold_pace` is
-        served (F024, F026, F027): one determinant, with its 80 % interval, its confidence and the races
-        and workouts it was computed from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
+        `threshold_workout_names`); nothing is stored or written. Two determinants are served, in this
+        order: `functional_threshold_pace` (F024, F026, F027) and `riegel_exponent`, the endurance
+        exponent b from the tagged races (F029), each with its 80 % interval, its confidence and the
+        efforts it was computed from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
+        The load chart is built on every request for the fitness screen; a store whose chart cannot be
+        built is a 500.
       parameters:
         - name: as_of
           in: query
@@ -893,6 +896,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StateModel" }
         "422": { $ref: "#/components/responses/RequestValidationError" }
+        "500":
+          description: "The load chart could not be built (a session with no saved load row, or a naive or unparseable stored start time); the detail is the chart's message"
+          content: { application/json: { schema: { type: object } } }
 
   /metrics/hrv:
     get:
@@ -1967,11 +1973,25 @@ components:
           description: "Null while no goal is modelled."
 
     Determinant:
+      description: >
+        One determinant with its estimate and trend, told apart by `name`: `functional_threshold_pace`
+        (`ThresholdDeterminant`) and `riegel_exponent` (`RiegelDeterminant`) are served; the other
+        names are planned.
+      oneOf:
+        - $ref: "#/components/schemas/ThresholdDeterminant"
+        - $ref: "#/components/schemas/RiegelDeterminant"
+      discriminator:
+        propertyName: name
+        mapping:
+          functional_threshold_pace: "#/components/schemas/ThresholdDeterminant"
+          riegel_exponent: "#/components/schemas/RiegelDeterminant"
+
+    ThresholdDeterminant:
       type: object
       description: >
-        One determinant with its estimate and trend. Only `functional_threshold_pace` is served
+        The `functional_threshold_pace` entry, with its estimate and trend
         (F024, F026, F027: tagged races and the counted work reps of threshold workouts tagged
-        Training or named in `threshold_workout_names`); the other names are planned. Beside the
+        Training or named in `threshold_workout_names`). Beside the
         estimate, the served entry carries what reproduces it by hand (research/00 PRIN-12):
         `error`, `short_races_only`, the races and workouts used (`efforts`), those not used
         (`excluded`) and the constants (`parameters`). The 80 % interval covers effort-to-effort
@@ -3402,6 +3422,98 @@ components:
           type: array
           items: { $ref: "#/components/schemas/LapCandidateItemResult" }
           description: "One per request item, in request order."
+    RiegelDeterminant:
+      type: object
+      description: >
+        getState: the `riegel_exponent` entry (F029), the individual endurance exponent b from the
+        tagged races of the last 1095 days that pass the F029 reference section 2 screens, or the
+        population 1.06 until three races span a twofold distance ratio. Beside the estimate it
+        carries what reproduces it by hand: `error`, `t_multiplier`, the races used (`efforts`),
+        those not used (`excluded`) and the constants (`parameters`). Its interval covers
+        race-to-race scatter, not bias: a race not run all-out moves b and the interval together.
+        Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
+      required: [name, estimate, unavailable, trend, error, t_multiplier, population_default, below_one, efforts, excluded, parameters]
+      properties:
+        name: { type: string, enum: [riegel_exponent] }
+        estimate:
+          allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
+          nullable: true
+          description: "b with its 80 % interval, `unit` `1`, `provisional` true for the population value; null when `unavailable` is set."
+        unavailable:
+          type: string
+          enum: [estimate_not_finite]
+          nullable: true
+          description: "`estimate_not_finite` when a race's GAP-equivalent distance, b, the error, the interval or a residual is not finite: `estimate`, `error` and `t_multiplier` are null, `efforts` and `parameters` still served. Null with an estimate."
+        trend: { $ref: "#/components/schemas/Trend" }
+        error: { type: number, nullable: true, description: "The standard error of b (0.05 for the population value); null when unavailable." }
+        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for n - 2 degrees of freedom (z above 30 and for the population value); null when unavailable." }
+        population_default: { type: boolean, description: "True when fewer than three races are used or the longest is under twice the shortest: the population 1.06 is served." }
+        below_one: { type: boolean, description: "A fitted b under 1: a race used was probably not all-out, or a trail race. Outranks the label." }
+        efforts:
+          type: array
+          description: "The races used, in start-time order."
+          items: { $ref: "#/components/schemas/RiegelEffort" }
+        excluded:
+          type: array
+          description: "Every tagged running race at or before `as_of` not used, in start-time order."
+          items: { $ref: "#/components/schemas/RiegelExclusion" }
+        parameters: { $ref: "#/components/schemas/RiegelExponentParameters" }
+    RiegelEffort:
+      type: object
+      description: "getState: a tagged race the fit of b used, with its weight, its fitness figures and its residual."
+      required: [session_id, start_time, duration_s, distance_m, gap_pace_s_per_km, gap_equivalent_m, gap_coverage, gps_degraded_fraction, weight, fitness_before, fitness_earlier, fitness_drop, fitness_provisional, fitness_after_gap, residual]
+      properties:
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        duration_s: { type: number, description: "`timer_time_s`, else the summary's `duration_s`." }
+        distance_m: { type: number, nullable: true, description: "The summary's `distance_m`, shown beside the GAP-equivalent distance." }
+        gap_pace_s_per_km: { type: number, description: "F013's grade-adjusted pace of the race." }
+        gap_equivalent_m: { type: number, nullable: true, description: "`1000 * duration_s / gap_pace_s_per_km`, the distance the fit reads; null when not finite, and the estimate is then unavailable." }
+        gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance; below 1 counts at flat pace." }
+        gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance; shown, never judged." }
+        weight: { type: number, description: "`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095." }
+        fitness_before: { type: number, nullable: true, description: "The load chart's CTL on the local day before the race; null when that day is before the chart's first day." }
+        fitness_earlier: { type: number, nullable: true, description: "The load chart's CTL 29 days before the race's local day; null when that day is before the chart's first day." }
+        fitness_drop: { type: number, nullable: true, description: "`1 - fitness_before / fitness_earlier`, the fall over the four weeks; null without both figures." }
+        fitness_provisional: { type: boolean, nullable: true, description: "The day-before chart day's `provisional`; null when that day is before the chart's first day." }
+        fitness_after_gap: { type: boolean, nullable: true, description: "The day-before chart day's `after_gap`; null when that day is before the chart's first day." }
+        residual: { type: number, nullable: true, description: "`exp(r) - 1` against the fitted line, positive slower; null below the bar and when unavailable." }
+    RiegelExclusion:
+      type: object
+      description: "getState: a tagged running race at or before `as_of` that the fit of b did not use, and why."
+      required: [session_id, start_time, reason, fitness_before, fitness_earlier, fitness_drop]
+      properties:
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        reason:
+          type: string
+          enum: [admitted_as_workout, outside_window, summary_unreadable, duration_unavailable, quality_flags_unreadable, distance_regressed, smart_recording, fitness_dropped, features_unavailable, grade_clamped, gap_pace_unavailable]
+          description: >
+            The first of the F029 reference section 2 rows the race fails: `admitted_as_workout` (a
+            listed workout name), `outside_window` (1095 days or more before `as_of`),
+            `summary_unreadable` or `duration_unavailable`, `quality_flags_unreadable` or a stored
+            flag (`distance_regressed`, `smart_recording`), `fitness_dropped` (fitness fell more than
+            30 % in the four weeks before the day before the race), `features_unavailable` or an F013
+            flag (`distance_regressed`, `smart_recording`, `grade_clamped`), `gap_pace_unavailable`.
+        fitness_before: { type: number, nullable: true, description: "For `fitness_dropped`, the CTL on the local day before the race; else null." }
+        fitness_earlier: { type: number, nullable: true, description: "For `fitness_dropped`, the CTL 29 days before the race's local day; else null." }
+        fitness_drop: { type: number, nullable: true, description: "For `fitness_dropped`, `1 - fitness_before / fitness_earlier`; else null." }
+    RiegelExponentParameters:
+      type: object
+      description: "getState: the constants b was computed with (F029 reference section 1), so it can be redone by hand."
+      required: [window_days, fade_days, min_races, min_spread, fitness_drop, fitness_lookback_days, population_b, population_error, coverage, high_max_error, medium_max_error]
+      properties:
+        window_days: { type: integer }
+        fade_days: { type: integer }
+        min_races: { type: integer }
+        min_spread: { type: number }
+        fitness_drop: { type: number }
+        fitness_lookback_days: { type: integer }
+        population_b: { type: number }
+        population_error: { type: number }
+        coverage: { type: number }
+        high_max_error: { type: number }
+        medium_max_error: { type: number }
     ThresholdEffort:
       type: object
       description: "getState: a race or threshold workout (tagged Training or named in `threshold_workout_names`) the threshold estimate used, with the gain it entered with (1 for the first)."

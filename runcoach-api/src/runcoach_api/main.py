@@ -1638,10 +1638,13 @@ def set_race_tags(update: RaceTagsUpdate) -> RaceTagsResult:
 # above are, so the lines cited by number stay in place. The estimator lives
 # in metrics.threshold_pace; db.read_threshold_effort_rows reads its rows.
 # ---------------------------------------------------------------------------
+import functools
 import re
+from collections.abc import Callable
 
 from runcoach_api.metrics import threshold_pace
-from runcoach_api.schemas import Determinant, StateModel
+from runcoach_api.metrics import riegel_b
+from runcoach_api.schemas import RiegelDeterminant, StateModel, ThresholdDeterminant
 
 _AS_OF_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _AS_OF_DATE_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T.+")
@@ -1684,7 +1687,7 @@ def parse_as_of(value: str | None, zone: ZoneInfo, now: datetime.datetime) -> da
 
 def _threshold_determinant(
     result: threshold_pace.ThresholdPace, unreadable: list[dict]
-) -> Determinant:
+) -> ThresholdDeterminant:
     """The ``functional_threshold_pace`` entry: the estimator's result, with the races and workouts
     the reader could not read merged into ``excluded`` (those at or before ``as_of``, in start-time
     order), each exclusion with its ``kind``, ``admitted_by`` and ``workout_name`` as the reader
@@ -1713,7 +1716,7 @@ def _threshold_determinant(
             "confidence": result.confidence,
             "provisional": False,
         }
-    return Determinant(
+    return ThresholdDeterminant(
         name="functional_threshold_pace",
         estimate=estimate,
         unavailable=unavailable,
@@ -1726,11 +1729,88 @@ def _threshold_determinant(
     )
 
 
-@app.get("/state", response_model=StateModel, operation_id="getState", tags=["State & Metrics"])
+def _riegel_fitness(chart: load_chart.LoadChart) -> Callable[[datetime.date], tuple]:
+    """The fitness lookup ``riegel_b`` reads (F029 reference section 2 row 5): for a race's local
+    date, the chart's CTL on the day before and on the day ``FITNESS_LOOKBACK_DAYS + 1`` days before
+    it, with the day-before day's ``provisional`` and ``after_gap``. A day the chart does not hold
+    (before its ``first_day``) is null. The race day itself is never read: its CTL includes the
+    race's own load."""
+    days = {day.date: day for day in chart.days}
+    earlier_offset = datetime.timedelta(days=riegel_b.FITNESS_LOOKBACK_DAYS + 1)
+
+    def lookup(race_date: datetime.date) -> tuple:
+        before = days.get(race_date - datetime.timedelta(days=1))
+        earlier = days.get(race_date - earlier_offset)
+        return (
+            None if before is None else before.ctl,
+            None if earlier is None else earlier.ctl,
+            None if before is None else before.provisional,
+            None if before is None else before.after_gap,
+        )
+
+    return lookup
+
+
+def _finite_or_none(value: float | None) -> float | None:
+    return value if value is not None and math.isfinite(value) else None
+
+
+def _riegel_determinant(result: riegel_b.RiegelEstimate) -> RiegelDeterminant:
+    """The ``riegel_exponent`` entry: the estimator's result as served. A GAP-equivalent distance
+    that is not finite (the estimate is then ``estimate_not_finite``) is served null, never as a
+    value JSON cannot carry; each exclusion carries its session, start, reason and the three
+    fitness figures."""
+    estimate = None
+    if result.unavailable is None:
+        estimate = {
+            "value": result.value,
+            "unit": "1",
+            "interval": {"low": result.interval_low, "high": result.interval_high},
+            "confidence": result.confidence,
+            "provisional": result.provisional,
+        }
+    efforts = [
+        {**dataclasses.asdict(effort), "gap_equivalent_m": _finite_or_none(effort.gap_equivalent_m)}
+        for effort in result.efforts
+    ]
+    excluded = [
+        {
+            "session_id": e.session_id,
+            "start_time": e.start_time,
+            "reason": e.reason,
+            "fitness_before": e.fitness_before,
+            "fitness_earlier": e.fitness_earlier,
+            "fitness_drop": e.fitness_drop,
+        }
+        for e in result.excluded
+    ]
+    return RiegelDeterminant(
+        name="riegel_exponent",
+        estimate=estimate,
+        unavailable=result.unavailable,
+        trend={"direction": "unknown", "rate": None},
+        error=result.error,
+        t_multiplier=result.t_multiplier,
+        population_default=result.population_default,
+        below_one=result.below_one,
+        efforts=efforts,
+        excluded=excluded,
+        parameters=dict(result.parameters),
+    )
+
+
+@app.get(
+    "/state",
+    response_model=StateModel,
+    operation_id="getState",
+    tags=["State & Metrics"],
+    responses={500: {"description": "The load chart could not be built; the detail is the chart's message"}},
+)
 def get_state(as_of: str | None = Query(None)) -> StateModel:
-    """The determinant profile at ``as_of`` (F024, F026, F027): threshold pace from the tagged
+    """The determinant profile at ``as_of`` (F024, F026, F027, F029): threshold pace from the tagged
     races and the threshold workouts' counted work reps, with its 80 % interval and confidence,
-    on the contract's path (``operationId: getState``).
+    then the endurance exponent b from the tagged races, on the contract's path
+    (``operationId: getState``).
 
     The zone and the workout names are read per request from the config cached at startup, so a
     changed list needs a restart. ``parse_as_of`` reads
@@ -1748,27 +1828,50 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     ingest writes it with its offset; a naive or unparseable one, which only a write from outside
     the API could leave, fails the read. ``readiness`` and ``gap_to_goal`` are null. Nothing is
     written.
+
+    The clock is read once: ``instant`` and the athlete's local today both come from that one
+    value. ``db.read_state_inputs`` reads the loads, the threshold rows and the Riegel rows as one
+    snapshot; its factory builds the load chart (``load_chart.build_chart``, as ``GET
+    /metrics/load`` does) on every request, tagged races or none, and a chart that cannot be built
+    (a session with no saved load row, a naive or unparseable stored ``start_time`` on any session)
+    is a 500 with the chart's message, which withholds threshold pace too. The Riegel predicate,
+    bound to the instant, the chart's fitness lookup and the zone, decides which races' F013
+    features are read (each at most once per request, shared with the threshold read).
+    ``metrics.riegel_b.estimate`` then screens and fits the races (F029 reference sections 2 and
+    3), and the two entries are served threshold first.
     """
     config = db._load_config_cached()
     zone = ZoneInfo(config.athlete_timezone)
+    now = _utcnow()
     try:
-        instant = parse_as_of(as_of, zone, _utcnow())
+        instant = parse_as_of(as_of, zone, now)
     except ValueError as exc:
         raise RequestValidationError(
             [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
         ) from exc
+    today = now.astimezone(zone).date()
+    fitness: list[Callable[[datetime.date], tuple]] = []
+
+    def make_needs_features(load_rows: list) -> Callable[[dict], bool]:
+        try:
+            chart = load_chart.build_chart(load_rows, zone, today)
+        except ValueError as exc:
+            raise HTTPException(500, str(exc)) from exc
+        fitness.append(_riegel_fitness(chart))
+        return functools.partial(riegel_b.needs_features, instant=instant, fitness=fitness[0], zone=zone)
 
     conn = db.get_connection()
     try:
-        rows, unreadable = db.read_threshold_effort_rows(conn, config.threshold_workout_names)
+        inputs = db.read_state_inputs(conn, config.threshold_workout_names, make_needs_features)
     finally:
         conn.close()
 
-    result = threshold_pace.estimate(rows, instant)
+    result = threshold_pace.estimate(inputs.threshold_rows, instant)
+    riegel = riegel_b.estimate(inputs.riegel_rows, instant, fitness[0], zone)
     return StateModel(
         as_of=result.as_of,
         timezone=zone.key,
-        determinants=[_threshold_determinant(result, unreadable)],
+        determinants=[_threshold_determinant(result, inputs.threshold_unreadable), _riegel_determinant(riegel)],
         readiness=None,
         gap_to_goal=None,
     )

@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.json_schema import SkipJsonSchema
@@ -1867,9 +1867,9 @@ class ThresholdPaceParameters(BaseModel):
     )
 
 
-class Determinant(BaseModel):
-    """One determinant of the state model; only `functional_threshold_pace` is served, from tagged races
-    and the counted work reps of threshold workouts (tagged Training or named in `threshold_workout_names`).
+class ThresholdDeterminant(BaseModel):
+    """The `functional_threshold_pace` entry of the state model, from tagged races and the counted work
+    reps of threshold workouts (tagged Training or named in `threshold_workout_names`).
     Its 80 % interval covers effort-to-effort noise,
     not bias: an effort read wrongly (a workout tagged Race, read whole) moves the estimate and the
     interval with it, so the interval need not contain the true pace."""
@@ -1892,6 +1892,151 @@ class Determinant(BaseModel):
         "start-time order."
     )
     parameters: ThresholdPaceParameters
+
+
+# GET /state (F029): the endurance exponent (Riegel b) from tagged races, beside threshold pace.
+
+
+class RiegelExponentInterval(BaseModel):
+    """The 80 % interval of b, `b - t error` to `b + t error`."""
+
+    low: float
+    high: float
+
+
+class RiegelExponentValue(BaseModel):
+    """The contract's ``ConfidenceValue`` for the endurance exponent."""
+
+    value: float = Field(description="b, the slope of ln(time) on ln(GAP-equivalent distance); the population 1.06 below the bar.")
+    unit: Literal["1"]
+    interval: RiegelExponentInterval
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="`high` while the error is at most 0.02, `medium` while at most 0.04, `low` above, and for the "
+        "population value (F029 reference section 1)."
+    )
+    provisional: bool = Field(description="True for the population value, false for a fitted b.")
+
+
+class RiegelEffort(BaseModel):
+    """A tagged race the fit of b used, with its weight, its fitness figures and its residual."""
+
+    session_id: str
+    start_time: datetime.datetime
+    duration_s: float = Field(description="`timer_time_s`, else the summary's `duration_s`.")
+    distance_m: float | None = Field(description="The summary's `distance_m`, shown beside the GAP-equivalent distance.")
+    gap_pace_s_per_km: float = Field(description="F013's grade-adjusted pace of the race.")
+    gap_equivalent_m: float | None = Field(
+        description="`1000 * duration_s / gap_pace_s_per_km`, the distance the fit reads; null when not finite, and "
+        "the estimate is then unavailable."
+    )
+    gap_coverage: float | None = Field(description="F013's graded share of the distance; below 1 counts at flat pace.")
+    gps_degraded_fraction: float | None = Field(description="F013's degraded-GPS share of the distance; shown, never judged.")
+    weight: float = Field(description="`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095.")
+    fitness_before: float | None = Field(
+        description="The load chart's CTL on the local day before the race; null when that day is before the chart's "
+        "first day."
+    )
+    fitness_earlier: float | None = Field(
+        description="The load chart's CTL 29 days before the race's local day; null when that day is before the "
+        "chart's first day."
+    )
+    fitness_drop: float | None = Field(
+        description="`1 - fitness_before / fitness_earlier`, the fall over the four weeks; null without both figures."
+    )
+    fitness_provisional: bool | None = Field(
+        description="The day-before chart day's `provisional`; null when that day is before the chart's first day."
+    )
+    fitness_after_gap: bool | None = Field(
+        description="The day-before chart day's `after_gap`; null when that day is before the chart's first day."
+    )
+    residual: float | None = Field(
+        description="`exp(r) - 1` against the fitted line, positive slower; null below the bar and when unavailable."
+    )
+
+
+class RiegelExclusion(BaseModel):
+    """A tagged running race at or before `as_of` that the fit of b did not use, and why."""
+
+    session_id: str
+    start_time: datetime.datetime
+    reason: Literal[
+        "admitted_as_workout",
+        "outside_window",
+        "summary_unreadable",
+        "duration_unavailable",
+        "quality_flags_unreadable",
+        "distance_regressed",
+        "smart_recording",
+        "fitness_dropped",
+        "features_unavailable",
+        "grade_clamped",
+        "gap_pace_unavailable",
+    ] = Field(
+        description="The first of the F029 reference section 2 rows the race fails: `admitted_as_workout` (a listed "
+        "workout name), `outside_window` (1095 days or more before `as_of`), `summary_unreadable` or "
+        "`duration_unavailable`, `quality_flags_unreadable` or a stored flag (`distance_regressed`, "
+        "`smart_recording`), `fitness_dropped` (fitness fell more than 30 % in the four weeks before the day before "
+        "the race), `features_unavailable` or an F013 flag (`distance_regressed`, `smart_recording`, "
+        "`grade_clamped`), `gap_pace_unavailable`."
+    )
+    fitness_before: float | None = Field(description="For `fitness_dropped`, the CTL on the local day before the race; else null.")
+    fitness_earlier: float | None = Field(description="For `fitness_dropped`, the CTL 29 days before the race's local day; else null.")
+    fitness_drop: float | None = Field(description="For `fitness_dropped`, `1 - fitness_before / fitness_earlier`; else null.")
+
+
+class RiegelExponentParameters(BaseModel):
+    """The constants b was computed with (F029 reference section 1), so it can be redone by hand."""
+
+    window_days: int
+    fade_days: int
+    min_races: int
+    min_spread: float
+    fitness_drop: float
+    fitness_lookback_days: int
+    population_b: float
+    population_error: float
+    coverage: float
+    high_max_error: float
+    medium_max_error: float
+
+
+class RiegelDeterminant(BaseModel):
+    """The `riegel_exponent` entry: the individual endurance exponent b from the tagged races of the last
+    1095 days that pass the section 2 screens, or the population 1.06 until three races span a twofold
+    distance ratio. Its interval covers race-to-race scatter, not bias: a race not run all-out moves b and
+    the interval together."""
+
+    name: Literal["riegel_exponent"]
+    estimate: RiegelExponentValue | None
+    unavailable: Literal["estimate_not_finite"] | None = Field(
+        description="`estimate_not_finite` when a race's GAP-equivalent distance, b, the error, the interval or a "
+        "residual is not finite: `estimate`, `error` and `t_multiplier` are null, `efforts` and `parameters` "
+        "still served. Null with an estimate."
+    )
+    trend: DeterminantTrend
+    error: float | None = Field(
+        description="The standard error of b (0.05 for the population value); null when unavailable."
+    )
+    t_multiplier: float | None = Field(
+        description="Student's t at 0.90 for n - 2 degrees of freedom (z above 30 and for the population value); "
+        "null when unavailable."
+    )
+    population_default: bool = Field(
+        description="True when fewer than three races are used or the longest is under twice the shortest: the "
+        "population 1.06 is served."
+    )
+    below_one: bool = Field(
+        description="A fitted b under 1: a race used was probably not all-out, or a trail race. Outranks the label."
+    )
+    efforts: list[RiegelEffort] = Field(description="The races used, in start-time order.")
+    excluded: list[RiegelExclusion] = Field(
+        description="Every tagged running race at or before `as_of` not used, in start-time order."
+    )
+    parameters: RiegelExponentParameters
+
+
+Determinant = Annotated[ThresholdDeterminant | RiegelDeterminant, Field(discriminator="name")]
+"""One determinant of the state model, told apart by ``name``."""
 
 
 class StateModel(BaseModel):
