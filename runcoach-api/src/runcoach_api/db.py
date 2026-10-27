@@ -2167,13 +2167,23 @@ def read_threshold_effort_rows(
     """
     conn.execute("BEGIN")
     try:
-        rows: list[dict] = []
-        unreadable: list[dict] = []
-        named = _read_threshold_workouts(conn, workout_names, rows, unreadable)
-        _read_threshold_races(conn, rows, unreadable, named)
+        rows, unreadable, _named = _threshold_effort_rows_in(conn, workout_names, {})
     finally:
         conn.rollback()
     return rows, unreadable
+
+
+def _threshold_effort_rows_in(
+    conn: sqlite3.Connection, workout_names: Sequence[str], features: dict[str, dict | None]
+) -> tuple[list[dict], list[dict], set[str]]:
+    """``read_threshold_effort_rows``' reads inside the caller's open transaction (it opens none):
+    its ``(rows, unreadable)`` and the session ids admitted by name. Each race's ``_race_features``
+    result, ``None`` included, is kept in ``features`` by session id."""
+    rows: list[dict] = []
+    unreadable: list[dict] = []
+    named = _read_threshold_workouts(conn, workout_names, rows, unreadable)
+    _read_threshold_races(conn, rows, unreadable, named, features)
+    return rows, unreadable, named
 
 
 ADMITTED_BY_TAG = "tag"
@@ -2263,10 +2273,15 @@ def _read_threshold_workouts(
 
 
 def _read_threshold_races(
-    conn: sqlite3.Connection, rows: list[dict], unreadable: list[dict], named: set[str]
+    conn: sqlite3.Connection,
+    rows: list[dict],
+    unreadable: list[dict],
+    named: set[str],
+    features_by_session: dict[str, dict | None],
 ) -> None:
     """The race half of ``read_threshold_effort_rows``, appending to its two lists; a race-tagged
-    session in ``named`` is already a workout and is left out."""
+    session in ``named`` is already a workout and is left out. Each ``_race_features`` result is
+    also kept in ``features_by_session`` by session id."""
     kind = _threshold_pace.RACE
     stored = conn.execute(
         "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
@@ -2302,6 +2317,7 @@ def _read_threshold_races(
             unreadable.append(_unreadable(row, QUALITY_FLAGS_UNREADABLE))
             continue
         features = _race_features(conn, row["session_id"])
+        features_by_session[row["session_id"]] = features
         if features is None:
             unreadable.append(_unreadable(row, FEATURES_UNAVAILABLE))
             continue
@@ -2493,3 +2509,133 @@ def persist_night(
         raise
     conn.commit()
     return write
+
+
+# ---------------------------------------------------------------------------
+# F029: one snapshot of what GET /state reads
+#
+# Appended at the end so the lines cited above stay in place. The saved loads,
+# the threshold rows and the Riegel rows come from one deferred transaction,
+# and a race's F013 features are computed at most once per read.
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class StateInputs:
+    """What ``read_state_inputs`` read: the saved load rows (``read_session_load_rows``), the
+    threshold rows and unreadable list exactly as ``read_threshold_effort_rows`` returns them,
+    and the Riegel rows."""
+
+    load_rows: list[sqlite3.Row]
+    threshold_rows: list[dict]
+    threshold_unreadable: list[dict]
+    riegel_rows: list[dict]
+
+
+def _riegel_features(features: dict) -> dict:
+    """The F013 values a Riegel row carries, taken from ``_race_features``' result as the
+    threshold race row takes them."""
+    return {
+        "flags": list(features["flags"]),
+        "gap_avg_pace_s_per_km": features["features"]["gap_avg_pace_s_per_km"]["value"],
+        "gap_coverage": features["gap_coverage"],
+        "gps_degraded_fraction": features["gps_degraded_fraction"],
+    }
+
+
+def _read_riegel_races(
+    conn: sqlite3.Connection,
+    named: set[str],
+    needs_features: Callable[[dict], bool],
+    features_by_session: dict[str, dict | None],
+) -> list[dict]:
+    """Every running session tagged ``race``, ordered by ``start_time`` then ``session_id``, as a
+    Riegel row (F029 reference section 2), sessions admitted as workouts by name included.
+
+    A row holds ``session_id``, ``start_time``, ``sport``, ``activity_tag``, ``timer_time_s``,
+    ``summary`` and ``quality_flags`` (both the stored text, undecoded), ``duration_s`` (the
+    summary's, when the summary decodes to an object, else ``None``), ``admitted_as_workout``
+    (``True`` when the threshold read admitted it by name), ``unreadable`` and ``features``.
+    ``unreadable`` is ``summary_unreadable`` (a null timer and a summary that is not a JSON
+    object), else ``quality_flags_unreadable`` (stored flags that are not a JSON list), else
+    ``features_unavailable`` (features asked for and not computed), else ``None``.
+
+    ``needs_features(row)`` is called for every row, before ``features`` is set, and a row it
+    declines is never read: ``features`` stays ``None``. A row it accepts whose summary and flags
+    read takes its features from ``features_by_session`` or computes them once through
+    ``_race_features``; ``features`` is then ``_riegel_features``' mapping, or ``None`` with
+    ``features_unavailable``. Opens no transaction.
+    """
+    stored = conn.execute(
+        "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
+        " FROM sessions WHERE sport = ? AND activity_tag = ? ORDER BY start_time, session_id",
+        (_threshold_pace.RUNNING, _threshold_pace.RACE),
+    ).fetchall()
+    riegel_rows: list[dict] = []
+    for r in stored:
+        summary = _decoded(r["summary"])
+        flags = _decoded(r["quality_flags"])
+        unreadable: str | None = None
+        if r["timer_time_s"] is None and summary is not None and not isinstance(summary, dict):
+            unreadable = SUMMARY_UNREADABLE
+        elif flags is not None and not isinstance(flags, list):
+            unreadable = QUALITY_FLAGS_UNREADABLE
+        row = {
+            "session_id": r["session_id"],
+            "start_time": r["start_time"],
+            "sport": r["sport"],
+            "activity_tag": r["activity_tag"],
+            "timer_time_s": r["timer_time_s"],
+            "duration_s": summary.get("duration_s") if isinstance(summary, dict) else None,
+            "summary": r["summary"],
+            "quality_flags": r["quality_flags"],
+            "admitted_as_workout": r["session_id"] in named,
+            "unreadable": unreadable,
+            "features": None,
+        }
+        if needs_features(row) and unreadable is None:
+            session_id = row["session_id"]
+            if session_id not in features_by_session:
+                features_by_session[session_id] = _race_features(conn, session_id)
+            features = features_by_session[session_id]
+            if features is None:
+                row["unreadable"] = FEATURES_UNAVAILABLE
+            else:
+                row["features"] = _riegel_features(features)
+        riegel_rows.append(row)
+    return riegel_rows
+
+
+def read_state_inputs(
+    conn: sqlite3.Connection,
+    workout_names: Sequence[str],
+    make_needs_features: Callable[[list[sqlite3.Row]], Callable[[dict], bool]],
+) -> StateInputs:
+    """The saved loads, threshold rows and Riegel rows ``GET /state`` reads, as one snapshot.
+
+    One deferred ``BEGIN``, rolled back: ``read_session_load_rows`` first; then
+    ``make_needs_features(load_rows)``, the caller's factory, which returns the Riegel predicate
+    ``needs_features(row) -> bool`` (the caller builds what the predicate needs, such as the load
+    chart, from those rows, so this module imports neither the chart nor the estimator); then the
+    threshold rows and unreadable list exactly as ``read_threshold_effort_rows`` reads them; then
+    the Riegel rows (``_read_riegel_races``). Each race's F013 features are computed at most once:
+    a result the threshold read computed, ``None`` included, is reused for the Riegel row, and a
+    Riegel row the predicate declines is never read.
+
+    Riegel's unreadable reasons sit on the Riegel rows only; ``threshold_rows`` and
+    ``threshold_unreadable`` are those ``read_threshold_effort_rows`` returns for the same store.
+    An exception from the factory or the predicate rolls the transaction back and propagates
+    unchanged. The caller holds no open transaction.
+    """
+    conn.execute("BEGIN")
+    try:
+        load_rows = read_session_load_rows(conn)
+        needs_features = make_needs_features(load_rows)
+        features_by_session: dict[str, dict | None] = {}
+        threshold_rows, threshold_unreadable, named = _threshold_effort_rows_in(
+            conn, workout_names, features_by_session
+        )
+        riegel_rows = _read_riegel_races(conn, named, needs_features, features_by_session)
+    finally:
+        conn.rollback()
+    return StateInputs(load_rows, threshold_rows, threshold_unreadable, riegel_rows)
