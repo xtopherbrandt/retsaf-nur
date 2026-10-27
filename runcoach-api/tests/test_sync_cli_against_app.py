@@ -32,6 +32,7 @@ carries no resting value of its own supplies it.
 from __future__ import annotations
 
 import ast
+import copy
 import importlib.util
 import sys
 from datetime import date
@@ -683,6 +684,44 @@ def test_a_sync_stores_the_same_laps_as_one_file_upload(
     assert synced["laps"] and synced["workout_steps"], synced
     assert synced["laps_read_at"] == LAPS_READ_AT
     assert synced == uploaded
+
+
+def test_the_contract_checks_pass_against_the_real_app() -> None:
+    """The CLI's two served-contract checks read the app's own ``openapi()``: the switch is listed
+    on ``ingestSession`` and ``no_night`` is a listed skip reason. Each check goes false on a copy
+    of the same document with its one item taken out, so a pass is the document's, not the check's
+    default."""
+    from runcoach_api.main import app
+    from runcoach_cli.commands import sync
+
+    doc = app.openapi()
+    assert sync._lists_switch(doc) is True
+    assert sync._lists_no_night(doc) is True
+
+    no_switch = copy.deepcopy(doc)
+    body = no_switch["paths"]["/sessions"]["post"]["requestBody"]
+    resolved = sync._resolve(no_switch, body["content"]["multipart/form-data"]["schema"])
+    del resolved["properties"][sync.SWITCH_FIELD]
+    assert sync._lists_switch(no_switch) is False
+    assert sync._lists_no_night(no_switch) is True
+
+    no_night = copy.deepcopy(doc)
+    reason = sync._resolve(
+        no_night, no_night["components"]["schemas"][sync.INGEST_SKIPPED_SCHEMA]["properties"]["reason"]
+    )
+    branches = [reason]
+    branches += [sync._resolve(no_night, b) for key in ("anyOf", "oneOf") for b in reason.get(key, [])]
+    removed = 0
+    for branch in branches:
+        if isinstance(branch.get("enum"), list) and sync.NO_NIGHT in branch["enum"]:
+            branch["enum"].remove(sync.NO_NIGHT)
+            removed += 1
+        if branch.get("const") == sync.NO_NIGHT:
+            del branch["const"]
+            removed += 1
+    assert removed >= 1
+    assert sync._lists_no_night(no_night) is False
+    assert sync._lists_switch(no_night) is True
 
 
 def test_the_harness_lives_in_support() -> None:

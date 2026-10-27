@@ -227,6 +227,8 @@ _RANGE_TEXT_CHARS = 200
 _SINCE_FORM = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 STORED = "stored"
+# A night stored in place of an earlier summary of the same night, whose session the 201 names.
+REPLACED = "replaced"
 ALREADY_STORED = "already_stored"
 SKIPPED_SPORT = "skipped_sport"
 NON_ACTIVITY = "non_activity"
@@ -671,7 +673,8 @@ def _classify(resp: httpx.Response) -> tuple[str, str, bool]:
     """``(outcome, detail, switch_applied)`` of an upload reply (reference section 5).
 
     ``switch_applied`` is False for a 201 or 200 whose body lacks ``filter_applied: true``: an API
-    that ignored ``runs_and_captures_only``, which stops the sync.
+    that ignored ``runs_and_captures_only``, which stops the sync. A 201 whose
+    ``replaced_session_id`` is a non-empty string is ``replaced``; any other 201 is ``stored``.
     """
     status = resp.status_code
     if status == 409:
@@ -681,7 +684,8 @@ def _classify(resp: httpx.Response) -> tuple[str, str, bool]:
     body = _body(resp)
     applied = isinstance(body, dict) and body.get("filter_applied") is True
     if status == 201:
-        return STORED, "", applied
+        replaced = body.get("replaced_session_id") if isinstance(body, dict) else None
+        return (REPLACED if isinstance(replaced, str) and replaced else STORED), "", applied
     if not applied:
         return FAILED, f"API returned 200 without filter_applied: {resp.text[:_DETAIL_CHARS]}", False
     reason = body.get("reason") if body.get("skipped") is True else None
@@ -1069,14 +1073,22 @@ def summary_lines(results: list[ItemResult], start: date) -> list[str]:
 
     A failed item with no day (an unreadable activity summary) reads ``day unknown`` and is
     recovered from ``start``, the first day the activity list covered. A permanent failure's line
-    says ``NOT_REVISITED`` before its recover command.
+    says ``NOT_REVISITED`` before its recover command. A ``Replaced`` line follows ``Stored`` only
+    when a night replaced an earlier summary of itself, worded as the import report words it.
     """
     printable = sessions._printable
 
     def count(outcome: str) -> list[ItemResult]:
         return [r for r in results if r.outcome == outcome]
 
-    lines = [f"Stored: {len(count(STORED))}", f"Already stored: {len(count(ALREADY_STORED))}"]
+    lines = [f"Stored: {len(count(STORED))}"]
+    replaced = len(count(REPLACED))
+    if replaced:
+        lines.append(
+            f"Replaced: {replaced} (night summaries replaced by a later summary of the same night, "
+            "not extra nights)"
+        )
+    lines.append(f"Already stored: {len(count(ALREADY_STORED))}")
     by_sport: dict[str, list[str]] = {}
     for r in count(SKIPPED_SPORT):
         by_sport.setdefault(r.detail, []).append(printable(r.summary_name))

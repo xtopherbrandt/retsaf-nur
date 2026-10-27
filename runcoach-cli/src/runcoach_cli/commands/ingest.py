@@ -26,7 +26,9 @@ def ingest(
             "Declare this file a resting-HRV capture, overriding the "
             "resting_hrv_profile_names config for this upload only. For a "
             "capture recorded on an activity profile that is not configured "
-            "-- a one-off, or a historical file."
+            "-- a one-off, or a historical file. An HRV_STATUS file (an "
+            "overnight HRV summary) holds no capture: an HRV_STATUS file sent "
+            "with it is refused (422)."
         ),
     ),
 ) -> None:
@@ -44,7 +46,7 @@ def ingest(
         raise typer.Exit(code=1) from None
 
     if resp.status_code not in (200, 201):
-        typer.echo(f"Error: API returned {resp.status_code}: {resp.text}", err=True)
+        typer.echo(f"Error: API returned {resp.status_code}: {_printable(resp.text)}", err=True)
         raise typer.Exit(code=1)
 
     body = resp.json()

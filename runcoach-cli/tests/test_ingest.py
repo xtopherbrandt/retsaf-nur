@@ -8,6 +8,7 @@ that contract (POST /sessions multipart -> 201 {session_id, quality_flags}).
 
 import httpx
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from runcoach_cli.main import app
@@ -130,6 +131,37 @@ def test_the_flag_is_off_unless_asked_for(install_mock_client, fit_file) -> None
 
     assert result.exit_code == 0
     assert b"false" in captured[0]
+
+
+def test_resting_capture_help_names_the_hrv_status_refusal() -> None:
+    """The option's help says the API refuses an HRV_STATUS file sent with it, with a 422 (the
+    ``create_session`` rule), read from the declared option and from ``--help``'s flattened text."""
+    command = typer.main.get_command(app).commands["ingest"]  # type: ignore[attr-defined]
+    (option,) = [p for p in command.params if p.name == "resting_capture"]
+    help_text = " ".join(option.help.split())
+    assert "an HRV_STATUS file sent with it is refused (422)" in help_text, help_text
+
+    result = runner.invoke(app, ["ingest", "--help"], terminal_width=400)
+
+    assert result.exit_code == 0, result.output
+    assert "HRV_STATUS" in result.output and "(422)" in result.output, result.output
+
+
+def test_a_non_2xx_ingest_body_is_printed_safely(install_mock_client, fit_file) -> None:
+    """A refused upload's body is printed with each control character as ``?``: an ANSI escape and
+    a bell cannot reach the terminal, and a newline cannot forge a second line."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom\x1b[2J\x07\nForged: line")
+
+    install_mock_client(handler)
+
+    result = runner.invoke(app, ["ingest", str(fit_file)])
+
+    assert result.exit_code == 1, result.output
+    assert "\x1b" not in result.output
+    assert "\x07" not in result.output
+    assert result.output == "Error: API returned 500: boom?[2J??Forged: line\n", repr(result.output)
 
 
 # ---------------------------------------------------------------------------

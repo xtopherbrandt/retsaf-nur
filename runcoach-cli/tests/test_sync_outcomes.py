@@ -2,7 +2,8 @@
 
 A fake Garmin client serves the range 2026-10-10 to 10-12 and a mock API answers each upload by
 the bytes it was sent (every file is opaque bytes naming itself; nothing is decoded). The summary
-follows the ``From`` line: ``Stored``, ``Already stored``, one ``Skipped <sport>`` line per sport
+follows the ``From`` line: ``Stored``, ``Replaced`` (only when a night replaced an earlier summary of
+itself), ``Already stored``, one ``Skipped <sport>`` line per sport
 naming each item, ``Not an activity`` (a count), ``No FIT file`` (naming each) and one ``Failed``
 line per failed item ending with ``runcoach sync --since <its day>``. Exit 0 when nothing failed,
 else 1. A sync state file holding no dates is present (``fresh_sync_state``), so no line about a
@@ -361,3 +362,70 @@ def test_hostile_names_and_details_are_printed_with_controls_replaced(env, fake_
         )
     ]
     assert "\x1b" not in result.output and "\x07" not in result.output
+
+
+REPLACED_LINE = (
+    "Replaced: 1 (night summaries replaced by a later summary of the same night, not extra nights)"
+)
+
+
+def test_a_replaced_night_is_counted_as_replaced(env, fake_garmin, fake_api) -> None:
+    """A day zip holding both summaries of one night: the earlier is stored, and the later's 201
+    names the session it replaced, so it is counted on a ``Replaced`` line after ``Stored``, not as a
+    second stored night."""
+    snapshot = _zip([("1_HRV_STATUS.fit", b"NIGHT-EARLY"), ("2_HRV_STATUS.fit", b"NIGHT-LATE")])
+    fake = fake_garmin([], snapshots={START: snapshot})
+    api = env(fake, fake_api(replies={b"NIGHT-LATE": _created(replaced_session_id="s1")}))
+
+    result = _sync()
+
+    assert result.exit_code == 0, result.output
+    assert _summary(result.output) == [
+        "Stored: 1",
+        REPLACED_LINE,
+        "Already stored: 0",
+        "Not an activity: 0",
+        "No night: 0",
+        "No FIT file: 0",
+        _tags_line(),
+    ]
+    assert api.uploads == [b"NIGHT-EARLY", b"NIGHT-LATE"]
+    results = sync.fetch(fake, API_URL, START, TODAY)
+    assert [r.outcome for r in results] == ["stored", "replaced"]
+
+
+def _created(**fields: Any) -> httpx.Response:
+    """A 201 for an upload sent with the switch, carrying ``fields`` besides."""
+    body = {"session_id": "s2", "quality_flags": [], "filter_applied": True}
+    return httpx.Response(201, json={**body, **fields})
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        (_created(replaced_session_id="s1"), ("replaced", True)),
+        # Anything but a non-empty string names no replaced session: the file was stored.
+        (_created(replaced_session_id=None), ("stored", True)),
+        (_created(replaced_session_id=""), ("stored", True)),
+        (_created(replaced_session_id=7), ("stored", True)),
+        (_created(replaced_session_id=0), ("stored", True)),
+        (_created(replaced_session_id=True), ("stored", True)),
+        (_created(replaced_session_id=["s1"]), ("stored", True)),
+        (_created(), ("stored", True)),
+        # A 201 lacking the switch is the old-API stop whatever else it names.
+        (httpx.Response(201, json={"session_id": "s2", "replaced_session_id": "s1"}), ("replaced", False)),
+        (httpx.Response(201), ("stored", False)),
+        (httpx.Response(201, text="not json"), ("stored", False)),
+    ],
+)
+def test_only_a_named_replaced_session_makes_a_201_replaced(
+    reply: httpx.Response, expected: tuple[str, bool]
+) -> None:
+    outcome, detail, applied = sync._classify(reply)
+    assert (outcome, applied) == expected
+    assert detail == ""
+
+
+def test_no_replaced_line_when_nothing_was_replaced() -> None:
+    results = [sync.ItemResult(day=START, item="night", outcome=sync.STORED, name="night")]
+    assert sync.summary_lines(results, START)[:2] == ["Stored: 1", "Already stored: 0"]
