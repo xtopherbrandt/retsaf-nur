@@ -198,10 +198,11 @@ def _refused(install_mock_client, body: Any) -> None:
 
 def test_estimate_line(install_mock_client) -> None:
     """The real-store set of section 4: eight races, b 1.059757, 80 % 1.035116 to 1.084398, three
-    decimals; the distances are the GAP-equivalent ones, shortest to longest."""
+    decimals; the distances are the GAP-equivalent ones, shortest to longest, not the recorded
+    ones (each 2 % longer here, so 5.1 to 43.4 km would be the wrong range)."""
     d_eqs = [5000.0, 5010.0, 10000.0, 10050.0, 21100.0, 21150.0, 42200.0, 42500.0]
     efforts = [
-        _race(f"s-{i}", f"2024-0{i + 1}-01T08:00:00Z", d, d, d * 0.25, 40.0, 41.0, residual=0.001)
+        _race(f"s-{i}", f"2024-0{i + 1}-01T08:00:00Z", d * 1.02, d, d * 0.25, 40.0, 41.0, residual=0.001)
         for i, d in enumerate(d_eqs)
     ]
     lines = _riegel_lines(install_mock_client, _body(_riegel(efforts, 1.059757, 1.035116, 1.084398)))
