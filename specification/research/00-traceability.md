@@ -62,7 +62,7 @@
 | REG-02 | ACWR is advisory context and a spike flag inside injury risk only, with a wide ~0.8–1.5 band, and is never a hard gate. | Part 3 "ACWR" | REG-02 | T-07 | yes | T07-acwr-band |
 | REG-03 | Per-session load uses rTSS as primary when a valid GAP stream exists, reconciled against HR-TRIMP and sRPE. A divergence above 25% falls back to their mean, and load degrades to HR-TRIMP, then sRPE. | Part 3 "Per-session load" | REG-03, REG-21 | — | no | — |
 | REG-04 | The HR-TRIMP sex coefficients are men 0.64·e^(1.92·ΔHR) and women 0.86·e^(1.67·ΔHR). | Part 3, `research/05` §2.1 | REG-04 | — | no | — |
-| REG-05 | The endurance exponent is the individual Riegel *b* when confidence is adequate, else the population 1.06 with a widened interval. | Part 3 "Endurance exponent" | REG-05 | — | no | — |
+| REG-05 | The endurance exponent is the individual Riegel *b* when confidence is adequate, else the population 1.06 with a widened interval. | Part 3 "Endurance exponent" | REG-05, REG-32 | — | no | — |
 | REG-06 | Durability is EF/decoupling drift over the back third of long runs, tracked as a within-athlete trend only and flagged as emerging. | Part 3 "Durability" | REG-06 | — | no | — |
 | REG-07 | Training-intensity distribution is pyramidal-leaning in base and polarizing through build/peak, with ~80% easy by time throughout. The Z2/Z3 split is a phase- and distance-dependent parameter. | Part 3 "Training-intensity distribution" | REG-07, REG-22 | — | no | — |
 | REG-08 | The taper is about 2 weeks with a ~50% volume cut and exponential decay; intensity is maintained and frequency mostly held; it is then individualized by chronic load and distance. | Part 3 "Taper" | REG-08 | — | no | — |

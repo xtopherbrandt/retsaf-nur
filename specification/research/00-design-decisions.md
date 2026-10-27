@@ -388,7 +388,7 @@ Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
 **DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
-Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, and REG-31, the threshold-pace constants.
+Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, REG-31, the threshold-pace constants, and REG-32, the endurance-exponent constants.
 Not: a row ratified from the cited research, which DOC-18 governs.
 Pinned: none
 
@@ -397,7 +397,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, and REG-31, ratified as H-42, H-43 and H-44 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, ratified as H-42, H-43 and H-44 record, and REG-32, as H-45 records.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -427,6 +427,7 @@ Pinned: none
 Scope: every race-time projection that uses the endurance exponent.
 Not: an individual exponent fitted while its confidence is inadequate.
 Pinned: none
+Why: rule REG-32 states, as H-45 records, when the individual b is adequate and how wide the population interval is.
 
 **REG-06.** Durability MUST be EF/decoupling drift over the back third of long runs, tracked as a within-athlete trend only and flagged as emerging.
 Scope: every durability estimate.
@@ -565,6 +566,17 @@ Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
 Pinned: runcoach-api/tests/test_threshold_workout_active_block.py::test_counted_reps_at_589_99_and_590
 
+**REG-32.** The endurance exponent MUST be the weighted least-squares slope of log time on log GAP-equivalent distance over tagged races of the last 1095 days, faded over the last 182, that pass the stream, grade-clamp and fitness-drop screens, used when three or more span a twofold distance ratio, else the population 1.06 with error 0.05, with a Student's t interval and no filter step.
+Scope: the endurance exponent served, from `race` runs not admitted as workouts by a listed name, weighted min(1, (1095 - age in days) / 182), with a finite positive time and GAP pace, flagged none of `distance_regressed`, `smart_recording` or `grade_clamped`, and whose fitness (CTL) the day before is no more than 30 % below its value 28 days earlier; constants are engineering defaults.
+Not: the spec/04 section 4.3 filter and its staleness inflation, which this determinant does not use, the window and the fade being its staleness rule; a race screened by effort or heart rate, since only the athlete's Race tag admits one; and an individual b from fewer than three races or a spread under twofold, where the population 1.06 stands.
+Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_worked_examples_match_the_reference
+Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_bar_edges_at_a_ratio_of_two
+Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_weight_fades_from_913_to_1095_days
+Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_t_table_matches_an_independent_source
+Pinned: runcoach-api/tests/test_riegel_b_fitness_screen.py::test_race_d_is_excluded_on_the_day_before
+Pinned: runcoach-api/tests/test_riegel_b_qualifying.py::test_f013_flags_in_order
+Pinned: runcoach-api/tests/test_riegel_b_route.py::test_a_race_outside_the_window_is_listed_and_a_fading_race_is_weighted
+
 **HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
 Scope: every per-tier dataset's SWC band, as `build_band` builds it.
 Not: a coefficient of variation (CV) of rMSSD or of ln rMSSD, which is never the SWC band's statistic.
@@ -599,6 +611,7 @@ Why: decision C31 makes the constants defaults while §3.1 governs their tuning,
 Scope: every athlete's endurance exponent and CS profile.
 Not: an individual fit before those efforts exist.
 Pinned: none
+Why: rule REG-32 states, as H-45 records, the endurance exponent's enough: three tagged races spanning a twofold distance ratio; the CS profile's count stays open (IDEA-157).
 
 **IND-06.** The fitness/fatigue constants MUST stay at 42/7.
 Scope: every CTL and ATL computation.
