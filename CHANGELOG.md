@@ -107,8 +107,8 @@ re-measured at sprint planning and by the release demo, each figure with its met
 nights cover 1,358 local days from 2023-01-17 to 2026-10-10 (1,361 rows). Taking the earliest night
 on each local day, their ln rMSSD sd is 0.18 (0.12 over the 71 days since 2026-08-01), and their
 median night-to-night change in ln is 0.11 under every pairing the demo tried. The snapshot spreads
-are over all readings: an ln sd of 0.42 (0.30 from 2026-10-01) for the 26 wrist Health Snapshots and
-0.53 for the 13 strap snapshots. Their night-to-night change, 0.32 for the wrist and 0.35 for the
+are over all readings: an ln sd of 0.42 (0.30 from 2026-10-01) for the 26 wrist Health Snapshots
+from 2026-08-28 to 2026-10-18 and 0.53 for the 13 strap snapshots. Their night-to-night change, 0.32 for the wrist and 0.35 for the
 strap, pairs each reading with the next one only when the next falls on the consecutive calendar
 day. On days holding both, pairing the earliest reading on each side of the same local day, the
 night against the wrist snapshot reads r = -0.06 (19 days) and against the strap snapshot r = 0.60
