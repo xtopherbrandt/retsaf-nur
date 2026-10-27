@@ -2383,8 +2383,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from runcoach_api.ingestion.overnight import Night
 
-#: The ``activity_tag`` of a stored night; the replacement rule looks only among these rows.
-OVERNIGHT_TAG = "overnight_hrv"
+#: The ``activity_tag`` of a stored night (defined in ``ingestion.overnight``); the replacement rule looks only among these rows.
+from runcoach_api.ingestion.overnight import OVERNIGHT_TAG
 
 
 @dataclasses.dataclass(frozen=True)

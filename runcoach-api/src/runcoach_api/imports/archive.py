@@ -60,6 +60,8 @@ from typing import Literal
 
 import fitdecode
 
+from runcoach_api.ingestion.overnight import HRV_STATUS_FILE_TYPE
+
 # 1 GiB of actual bytes per inner zip copy; tests lower it.
 INNER_ZIP_CAP = 1024**3
 # The cap of one-file upload (``POST /sessions``); tests lower it.
@@ -136,10 +138,6 @@ def _extension(name: str) -> str:
     base = name.replace("\\", "/").rsplit("/", 1)[-1]
     ext = posixpath.splitext(base)[1]
     return ext[1:].lower() if ext else "(none)"
-
-
-HRV_STATUS_FILE_TYPE = 68
-"""``file_id.type`` of the watch's HRV_STATUS file, a number the FIT profile fitdecode ships does not name."""
 
 
 @dataclass(frozen=True)

@@ -83,7 +83,7 @@ ACTIVE_STATUSES = ("queued", "scanning", "running")
 KEEP_TAGS = frozenset({"resting_hrv_check", "health_snapshot"})
 # A night's report row names it as the stored night does (``overnight.map_night``).
 NIGHT_SPORT = "other"
-NIGHT_TAG = "overnight_hrv"
+NIGHT_TAG = overnight.OVERNIGHT_TAG
 # Seconds a store connection waits on another connection's lock before
 # "database is locked" (sqlite3's own default); tests lower it.
 STORE_TIMEOUT_S = 5.0

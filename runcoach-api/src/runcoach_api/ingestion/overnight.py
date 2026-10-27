@@ -83,8 +83,14 @@ OVERNIGHT_INPUT_FIELDS: tuple[str, ...] = ("last_night_average",)
 OVERNIGHT_NON_INPUT_READS: tuple[str, ...] = ("timestamp", "last_night_5_min_high", "value")
 
 #: ``file_id.type`` of an HRV_STATUS file, as ``context.provenance.raw_file_type``
-#: records it (fitdecode's profile names no type 68).
+#: records it (fitdecode's profile names no type 68). The one definition in the
+#: API; every module that tests or records the type imports it from here.
 HRV_STATUS_FILE_TYPE = 68
+
+#: The ``activity_tag`` of a night's ``sessions`` row (stored, replaced or
+#: ``no_night``). The one definition in the API; ``db`` and ``imports.job``
+#: import it.
+OVERNIGHT_TAG = "overnight_hrv"
 
 #: Appended to the watch's device string to make a night's ``source_device``, so
 #: a night never shares the ``(source_device, start_time)`` slot, or the id, of
@@ -160,7 +166,7 @@ def map_night(fit_bytes: bytes) -> Night | NoNight:
         sport="other",
         source_vendor="garmin",
         start_time=start_time,
-        activity_tag="overnight_hrv",
+        activity_tag=OVERNIGHT_TAG,
         source_device=source_device,
         hr_source="wrist_ppg",
         rmssd_precomputed=float(average),
@@ -240,5 +246,6 @@ __all__ = [
     "NoNight",
     "OVERNIGHT_INPUT_FIELDS",
     "OVERNIGHT_NON_INPUT_READS",
+    "OVERNIGHT_TAG",
     "map_night",
 ]
