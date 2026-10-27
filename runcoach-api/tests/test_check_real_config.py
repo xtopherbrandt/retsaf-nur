@@ -124,6 +124,19 @@ def test_no_runcoach_env_var_reports_none(tmp_path: Path, capsys: pytest.Capture
     assert "RUNCOACH_* environment variables: none set" in out
 
 
+@pytest.mark.parametrize("cli_text", [_VALID_CLI, 'other = "x"\n'], ids=["ok", "error"])
+def test_check_cli_restores_the_cli_config_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], cli_text: str
+) -> None:
+    original = check_real_config.cli_config.CONFIG_PATH
+    _, cli = _write_pair(tmp_path, cli_text=cli_text)
+    assert cli != original
+    ok = check_real_config.check_cli(cli)
+    capsys.readouterr()
+    assert ok is (cli_text == _VALID_CLI)
+    assert check_real_config.cli_config.CONFIG_PATH is original
+
+
 def test_no_store_is_opened(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

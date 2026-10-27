@@ -19,6 +19,7 @@ Adversarial rows (each is a test below):
 | flags not JSON on an out-of-band race | ``quality_flags_unreadable`` on the Riegel row only; threshold keeps it ``outside_threshold_band`` |
 | a feature computation that raises | ``features_unavailable`` on the Riegel row; computed and logged once |
 | a factory or a predicate that raises | rolled back, re-raised unchanged, the connection usable |
+| a factory or a predicate that writes a row through the connection, then raises | the row is gone, on that connection and a fresh one |
 """
 
 from __future__ import annotations
@@ -361,6 +362,74 @@ def test_a_predicate_error_rolls_back_and_re_raises() -> None:
         return needs
 
     _assert_rolls_back_and_re_raises(factory, error)
+
+
+WRITTEN_IN_SNAPSHOT = "written-inside-the-snapshot"
+
+
+def _write_a_session_row(conn) -> None:
+    """Copy the one stored session under a new id and start time, through ``conn``, inside its
+    open transaction (``source_device`` and ``start_time`` are unique together)."""
+    keys = ("session_id", "start_time")
+    columns = [r[1] for r in conn.execute("PRAGMA table_info(sessions)") if r[1] not in keys]
+    listed = ", ".join(columns)
+    conn.execute(
+        f"INSERT INTO sessions (session_id, start_time, {listed}) SELECT ?, ?, {listed} FROM sessions LIMIT 1",
+        (WRITTEN_IN_SNAPSHOT, "2026-08-03T07:00:00+00:00"),
+    )
+    assert conn.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2  # the write is visible inside
+
+
+def _assert_a_write_inside_the_snapshot_is_rolled_back(make_factory, error: Exception) -> None:
+    """``make_factory(conn)`` returns a factory that writes a row through ``conn`` and raises."""
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        with pytest.raises(type(error)) as raised:
+            db_module.read_state_inputs(conn, NAMES, make_factory(conn))
+        assert raised.value is error
+        assert not conn.in_transaction
+        written = "SELECT count(*) FROM sessions WHERE session_id = ?"
+        assert conn.execute(written, (WRITTEN_IN_SNAPSHOT,)).fetchone()[0] == 0
+    finally:
+        conn.close()
+    other = db_module.get_connection()
+    try:
+        assert other.execute(written, (WRITTEN_IN_SNAPSHOT,)).fetchone()[0] == 0
+        assert other.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
+    finally:
+        other.close()
+
+
+def test_a_row_the_factory_writes_before_raising_is_rolled_back() -> None:
+    _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC))
+    error = ValueError("the factory wrote and then failed")
+
+    def make_factory(conn):
+        def factory(_load_rows):
+            _write_a_session_row(conn)
+            raise error
+
+        return factory
+
+    _assert_a_write_inside_the_snapshot_is_rolled_back(make_factory, error)
+
+
+def test_a_row_the_predicate_writes_before_raising_is_rolled_back() -> None:
+    _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC))
+    error = RuntimeError("the predicate wrote and then failed")
+
+    def make_factory(conn):
+        def factory(_load_rows):
+            def needs(_row):
+                _write_a_session_row(conn)
+                raise error
+
+            return needs
+
+        return factory
+
+    _assert_a_write_inside_the_snapshot_is_rolled_back(make_factory, error)
 
 
 def test_riegel_unreadable_rows_never_reach_threshold(computed: list[str]) -> None:
