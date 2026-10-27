@@ -11,3 +11,8 @@ spec-mirror/** -text
 # normalisation on add or conversion on checkout would make the tree copy differ from the original on
 # a non-Windows checkout and fail that gate. `-text` stores and checks it out verbatim everywhere.
 runcoach-api/tests/data/T162-no-regression-rows.csv -text
+
+# Shell scripts are run by Git Bash on Windows and by sh on Linux. With core.autocrlf=true a
+# Windows checkout would otherwise write them CRLF, and Git Bash then fails on the stray
+# carriage return. ol=lf stores and checks them out LF everywhere.
+*.sh text eol=lf
