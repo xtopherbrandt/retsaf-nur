@@ -2,6 +2,115 @@
 
 ## Unreleased
 
+### The endurance exponent b from tagged races: `GET /state` and `runcoach state`
+
+F029: the system serves its second owned fitness estimate, the individual endurance exponent b, the
+`b` of the Riegel model `T2 = T1 · (D2 / D1)^b` that projects a time at one distance to another. It
+is fitted from the races the athlete marks Race in Garmin Connect, beside threshold pace, with the
+constants the user ruled on 2026-10-23 and 2026-10-24 (spec/04 section 4.3.5, `research/00` REG-32).
+The Race tag is the only signal: nothing judges from pace or heart rate whether a race was run
+all-out (user ruling 2026-10-26; IDEA-199 holds a shared heart-rate check).
+
+**Which races count.** Every running session tagged `race` at or before `as_of` is listed, used or
+excluded with its reason, checked in this order: a race whose workout name is listed in
+`threshold_workout_names` is read as a threshold workout (`admitted_as_workout`); a race 1095 days
+old or more is `outside_window`; one with no usable duration is `duration_unavailable` (or
+`summary_unreadable`); a stored `distance_regressed` or `smart_recording` flag excludes it before any
+record is read; then the fitness screen (`fitness_dropped`); then F013's flags from the records
+(`distance_regressed`, `smart_recording`, `grade_clamped`; `features_unavailable` when they do not
+compute); then a GAP pace that is missing, zero or not finite (`gap_pace_unavailable`). Degraded GPS
+excludes no race, and a race with no altitude counts at its flat pace.
+
+**The fit.** Each race enters by its GAP-equivalent distance, `D_eq = 1000 × time / GAP pace` metres:
+the flat distance its grade-adjusted pace covers in its time. On a hilly course `D_eq` reads longer
+than the distance run, because grade-adjusted pace counts the climbing: the corpus's hilly 8 km real
+run (`hilly_run_8k_fr945`) reads 8,801 m against 8,348 m run, 5.4 % longer. b is the weighted
+least-squares slope of log time on log `D_eq`; a race weighs 1 until it is 913 days old and its
+weight then falls to 0 at 1095 days, so a race fading out of the window moves b gradually rather
+than in a step. b is individual only when at least three races with weight above 0 are used and the
+longest `D_eq` is at least twice the shortest; its 80 % interval then uses Student's t for n - 2
+degrees of freedom (z past 30), and its label is `high` while the error is at most 0.02, `medium`
+to 0.04 and `low` above. Below that bar the population default stands: b 1.06, error 0.05, a z
+interval of 0.996 to 1.124, `low`, provisional, with the races still listed. A fitted b under 1 is
+served with `below_one` true, a warning that outranks the label and changes nothing else. Nothing is
+stored: b is recomputed on every read, so a race untagged in Connect drops out at the next read.
+
+**The fitness screen.** A race is left out, `fitness_dropped`, when the athlete's fitness (the load
+chart's CTL) on the day before the race had fallen more than 30 % from its value four weeks earlier
+(29 days before the race). The day before is read so that the race's own load does not count. On the
+athlete's store, measured at planning on 2026-10-24 before any race was tagged: the 2025-11-02
+marathon, run after an injured month, fell 40 % (47.9 to 28.9) and is left out once tagged; the other
+race-shaped runs measured, from 2023-10-08 to 2025-06-07, fell 1 to 24 %. A day before the chart's first day gives a null
+figure and the race passes.
+
+**`GET /state`.** `determinants` gains a second entry after `functional_threshold_pace`:
+`riegel_exponent`, with `estimate` (`value` b, `unit` `1`, its interval and label, `provisional` for
+the population value), `unavailable` (`estimate_not_finite` when a race's figures overflow; the races
+are still listed), `trend` (`unknown`), `error`, `t_multiplier`, `population_default`, `below_one`,
+`efforts` (each race used with its time, distance, GAP pace, `gap_equivalent_m`, weight, the two
+fitness figures and their drop, the day-before day's `provisional` and `after_gap`, and its residual
+against the line, null below the bar), `excluded` (with the three fitness figures for
+`fitness_dropped`) and `parameters`, the constants. The threshold entry is unchanged; its `excluded`
+lists, as before, each tagged race outside 20 to 60 minutes as `outside_threshold_band`.
+
+**`runcoach state`.** After the threshold lines it prints the b block, in this form (the figures are
+illustrative):
+
+    Endurance exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km
+    Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00, +0.4 % against the line
+    Race left out of b 2025-11-02: fitness fell 40 % over 4 weeks (48 to 29)
+
+The fitness change reads `rose 5 % over 4 weeks`, `fell 42 % over 4 weeks` or `no change over 4
+weeks`, and `fitness 29 (-)` when the earlier figure is missing. Below the bar the first line reads
+`Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low: 2 races in the last
+1095 days; 3 are needed` or `... low: 4 races at one distance; the longest must be at least twice the
+shortest`, with `, N excluded by the fitness screen` when any were, followed by `Mark a race as Race
+in Garmin Connect and run runcoach sync tags --since <its date>`. A race left out because it is too
+old reads `more than 1095 days before <as_of date>`. A fitted b under 1 adds `b reads below 1: a race
+used was probably not all-out, or a trail race; check the races listed`. The b block's race lines
+read `Race in b` and `Race left out of b`, and the threshold block keeps `Race used` and `Race
+excluded`, so a race in both blocks is not listed twice under one label. Against an API from before
+this release the block is one line, `Endurance exponent: not served by this API; update it and
+restart`, and the command exits 0. `--as-of` passes through.
+
+**Tagging your races.** Mark each race as Race in Garmin Connect, then run `runcoach sync tags
+--since <its date>`; to tag races already in the store, `runcoach sync tags --since 2023-01-01`
+reaches every race the 1095-day window can use today. A tagged race lasting 20 to 60 minutes also
+enters threshold pace: on the athlete's store, the five 5Ks of 2024 and 2025 (20:05 to 20:33) will,
+once tagged.
+
+### Changed
+
+`GET /state` now builds the load chart on every request, tagged races or none, for the fitness
+screen. A store whose chart cannot be built is a 500 with the chart's message, and threshold pace
+is withheld too: a running session with no saved load row is a 500 whether or not any race is
+tagged, and so is a stored `start_time` that is empty, naive or does not parse on any session.
+Before this release `GET /state` read only the tagged races and the threshold workouts. `GET
+/metrics/load` answers such a store with the same 500 and the same message.
+
+F028 follow-up: an archive import's cost per night no longer grows with the nights already stored.
+The import checks the schema once per job, not before every night, and the reads made for each night
+look up indexes instead of scanning every session; a night's load is dated in the time zone the job
+captured when it started, so a config change during the job no longer moves it. What an import
+stores and reports is unchanged. The first time the API starts after upgrading, it creates these
+indexes on the sessions table (`CREATE INDEX IF NOT EXISTS`): `sessions_upload_order`,
+`sessions_series_start` (on the source device, the summary's `series_start` and the start time),
+and `sessions_latest_sex`, `sessions_latest_body_mass_kg`, `sessions_latest_height_cm`,
+`sessions_latest_resting_hr_bpm`, `sessions_latest_max_hr_bpm` and
+`sessions_latest_threshold_hr_bpm`. No stored row changes. `sessions_series_start` reads each
+session's summary as JSON; the athlete's store was checked read-only and all 1,805 summaries are
+valid JSON, so it builds.
+
+### Migration required
+
+None for the store or the config. `contracts/openapi.yaml` keeps `info.version` `0.5.0-draft`: the
+change is additive. `Determinant` becomes a `oneOf` discriminated on `name`, of
+`ThresholdDeterminant` (the threshold schema, untouched) and the new `RiegelDeterminant` (with
+`RiegelEffort`, `RiegelExclusion` and `RiegelExponentParameters`), and `getState` documents its 500.
+A client that reads `determinants` as a list of threshold entries must read the `name` first, since
+the list now holds two. An older `runcoach state` prints the threshold lines as before and ignores the
+new entry; the updated one prints the line above against an older API.
+
 ## 2026-10-21 through 2026-10-22 — Sprint 021: Overnight HRV from the watch's HRV_STATUS files
 
 ### Overnight HRV from the watch's HRV_STATUS files
