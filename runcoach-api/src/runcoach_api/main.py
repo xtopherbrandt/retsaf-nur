@@ -1642,8 +1642,7 @@ import functools
 import re
 from collections.abc import Callable
 
-from runcoach_api.metrics import threshold_pace
-from runcoach_api.metrics import riegel_b
+from runcoach_api.metrics import riegel_b, threshold_pace
 from runcoach_api.schemas import RiegelDeterminant, StateModel, ThresholdDeterminant
 
 _AS_OF_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
