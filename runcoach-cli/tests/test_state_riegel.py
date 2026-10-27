@@ -256,27 +256,27 @@ def test_population_line_names_the_screened_count(install_mock_client) -> None:
 
 
 def test_race_used_lines(install_mock_client) -> None:
-    """Distance, GAP-equivalent distance, time, fitness before (whole) and its drop (whole percent,
-    a rise negative), weight to two decimals and the residual to one decimal with its sign; below
+    """Distance, GAP-equivalent distance, time, fitness before (whole) and its change in words (whole
+    percent, ``fell`` or ``rose``), weight to two decimals and the residual to one decimal with its sign; below
     the bar no residual clause; a null figure prints ``-``."""
     lines = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, D])))
     assert lines == [
         "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, 5.0 to 42.2 km",
-        "Race used 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36 (3 % over 4 weeks), weight 1.00, "
+        "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00, "
         "+0.4 % against the line",
-        "Race used 2024-09-15: 10.2 km (10.0 km adjusted), 0:42:00, fitness 40 (1 % over 4 weeks), weight 1.00, "
+        "Race in b 2024-09-15: 10.2 km (10.0 km adjusted), 0:42:00, fitness 40, fell 1 % over 4 weeks, weight 1.00, "
         "-0.2 % against the line",
-        "Race used 2025-03-30: 21.1 km (21.1 km adjusted), 1:33:20, fitness 42 (-5 % over 4 weeks), weight 1.00, "
+        "Race in b 2025-03-30: 21.1 km (21.1 km adjusted), 1:33:20, fitness 42, rose 5 % over 4 weeks, weight 1.00, "
         "-0.8 % against the line",
-        "Race used 2025-10-05: 42.2 km (42.2 km adjusted), 3:20:00, fitness 29 (-), weight 0.50, "
+        "Race in b 2025-10-05: 42.2 km (42.2 km adjusted), 3:20:00, fitness 29 (-), weight 0.50, "
         "+0.6 % against the line",
     ]
 
     no_fitness = _race("s-e", "2024-01-07T08:00:00Z", None, 5000.0, 1200.0, None, None)
     lines = _riegel_lines(install_mock_client, _body(_population([no_fitness, B])))
     assert lines[2:] == [
-        "Race used 2024-01-07: - (5.0 km adjusted), 0:20:00, fitness -, weight 1.00",
-        "Race used 2024-09-15: 10.2 km (10.0 km adjusted), 0:42:00, fitness 40 (1 % over 4 weeks), weight 1.00",
+        "Race in b 2024-01-07: - (5.0 km adjusted), 0:20:00, fitness -, weight 1.00",
+        "Race in b 2024-09-15: 10.2 km (10.0 km adjusted), 0:42:00, fitness 40, fell 1 % over 4 weeks, weight 1.00",
     ], "\n".join(lines)
 
     # A residual that rounds to zero prints without a sign rather than as -0.0.
@@ -301,7 +301,7 @@ def test_race_excluded_lines_in_words(install_mock_client) -> None:
         ("quality_flags_unreadable", "its stored quality flags could not be read"),
         ("distance_regressed", "its distance went backwards in the recording"),
         ("smart_recording", "recorded in smart or irregular recording mode"),
-        ("fitness_dropped", "fitness fell 40 % in the 4 weeks before it (48 to 29)"),
+        ("fitness_dropped", "fitness fell 40 % over 4 weeks (48 to 29)"),
         ("features_unavailable", "its pace features could not be computed"),
         ("grade_clamped", "a grade was outside the adjustment's range"),
         ("gap_pace_unavailable", "no grade-adjusted pace"),
@@ -313,8 +313,79 @@ def test_race_excluded_lines_in_words(install_mock_client) -> None:
     ]
     lines = _riegel_lines(install_mock_client, _body(_population([], excluded)))
     assert lines[2:] == [
-        f"Race excluded 2025-0{i // 10 + 1}-{i % 10 + 10}: {words}" for i, (_reason, words) in enumerate(reasons)
+        f"Race left out of b 2025-0{i // 10 + 1}-{i % 10 + 10}: {words}" for i, (_reason, words) in enumerate(reasons)
     ], "\n".join(lines)
+
+
+def test_b_block_race_lines_name_b(install_mock_client) -> None:
+    """A body with a race used and a race excluded in each block: the threshold block prints
+    ``Race used`` / ``Race excluded`` and the b block ``Race in b`` / ``Race left out of b``, so a
+    5K feeding both blocks never prints twice under one label with different figures."""
+    body = _body(_population([A], [_excluded("x-1", "2025-11-02T08:00:00Z", "smart_recording")]))
+    body["determinants"][0].update(
+        estimate={"value": 264.0, "unit": "s/km", "interval": {"low": 258.0, "high": 270.0}, "confidence": "low"},
+        unavailable=None,
+        efforts=[
+            {
+                "kind": "race",
+                "session_id": "s-a",
+                "start_time": "2024-05-05T08:00:00Z",
+                "duration_s": 1200.0,
+                "gap_pace_s_per_km": 240.0,
+                "gain": 1.0,
+                "gps_degraded_fraction": 0.0,
+            }
+        ],
+        excluded=[{"kind": "race", "session_id": "x-1", "start_time": "2025-11-02T08:00:00Z", "reason": "smart_recording"}],
+    )
+    _serve(install_mock_client, body)
+    result = runner.invoke(app, ["state"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    b_start = next(i for i, line in enumerate(lines) if line.startswith("Endurance exponent"))
+    threshold, b_block = lines[:b_start], lines[b_start:]
+    assert threshold[1:] == [
+        "Race used 2024-05-05: 0:20:00, GAP 4:00/km, gain 1.00, degraded GPS 0.0 %, weight 100 %",
+        "Race excluded 2025-11-02: recorded in smart or irregular recording mode",
+    ], result.stdout
+    assert b_block[2:] == [
+        "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
+        "Race left out of b 2025-11-02: recorded in smart or irregular recording mode",
+    ], result.stdout
+    assert not any(line.startswith(("Race in b", "Race left out of b")) for line in threshold), result.stdout
+    assert not any(line.startswith(("Race used", "Race excluded")) for line in b_block), result.stdout
+
+
+@pytest.mark.parametrize(
+    ("drop", "words"),
+    [
+        (0.42, "fell 42 % over 4 weeks"),
+        (-0.05, "rose 5 % over 4 weeks"),
+        (0.0, "no change over 4 weeks"),
+        # Half up, whole numbers, as before: 2.5 rounds to 3 and -2.5 to -2.
+        (0.025, "fell 3 % over 4 weeks"),
+        (-0.025, "rose 2 % over 4 weeks"),
+        # A figure that rounds to 0 is no change, never ``rose 0 %`` or ``fell -0 %``.
+        (0.004, "no change over 4 weeks"),
+        (-0.004, "no change over 4 weeks"),
+        (-0.005, "no change over 4 weeks"),
+        (-0.0, "no change over 4 weeks"),
+    ],
+)
+def test_a_fitness_change_reads_rose_or_fell(install_mock_client, drop: float, words: str) -> None:
+    """The served ``fitness_drop`` (a fall positive) prints in words on a race in b and on a
+    ``fitness_dropped`` line; a missing drop keeps ``(-)``."""
+    used = {**A, "fitness_before": 42.0, "fitness_drop": drop, "residual": None}
+    dropped = {**_excluded("x-1", "2025-11-02T08:00:00Z", "fitness_dropped", 29.0, 50.0), "fitness_drop": drop}
+    lines = _riegel_lines(install_mock_client, _body(_population([used], [dropped])))
+    assert lines[2:] == [
+        f"Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 42, {words}, weight 1.00",
+        f"Race left out of b 2025-11-02: fitness {words} (50 to 29)",
+    ], "\n".join(lines)
+    assert not any(" rose 0 %" in line or "fell -" in line or "rose -" in line for line in lines), "\n".join(lines)
+
+    no_drop = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": None}])))
+    assert no_drop[2] == "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 42 (-), weight 1.00"
 
 
 def test_below_one_line(install_mock_client) -> None:
@@ -328,7 +399,7 @@ def test_below_one_line(install_mock_client) -> None:
         "Endurance exponent b 0.948 (80 %: 0.911 to 0.985), high, from 3 races in the last 1095 days, 5.0 to 21.1 km",
         "b reads below 1: a race used was probably not all-out, or a trail race; check the races listed",
     ], "\n".join(lines)
-    assert lines[2].startswith("Race used 2024-05-05: ")
+    assert lines[2].startswith("Race in b 2024-05-05: ")
     assert len(lines) == 5
 
     above = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, D])))
@@ -345,9 +416,9 @@ def test_not_finite_line(install_mock_client) -> None:
     lines = _riegel_lines(install_mock_client, _body(riegel))
     assert lines == [
         "Endurance exponent unavailable: a race's figures are out of range; check the races listed",
-        "Race used 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36 (3 % over 4 weeks), weight 1.00",
-        "Race used 2025-02-02: 10.0 km (- adjusted), 0:42:00, fitness 40 (2 % over 4 weeks), weight 1.00",
-        "Race used 2025-03-30: 21.1 km (21.1 km adjusted), 1:33:20, fitness 42 (-5 % over 4 weeks), weight 1.00",
+        "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
+        "Race in b 2025-02-02: 10.0 km (- adjusted), 0:42:00, fitness 40, fell 2 % over 4 weeks, weight 1.00",
+        "Race in b 2025-03-30: 21.1 km (21.1 km adjusted), 1:33:20, fitness 42, rose 5 % over 4 weeks, weight 1.00",
     ], "\n".join(lines)
 
     # An unavailable value the CLI does not know is printed as served, through ``_printable``.
@@ -377,17 +448,17 @@ def test_dates_print_in_the_response_timezone(install_mock_client) -> None:
     body = _body(_population([race], excluded), "Pacific/Auckland", as_of="2026-10-15T20:00:00Z")
     lines = _riegel_lines(install_mock_client, body)
     assert lines[2:] == [
-        "Race used 2025-09-21: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36 (3 % over 4 weeks), weight 1.00",
-        "Race excluded 2025-08-01: recorded in smart or irregular recording mode",
-        "Race excluded 2022-08-01: more than 1095 days before 2026-10-16",
+        "Race in b 2025-09-21: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
+        "Race left out of b 2025-08-01: recorded in smart or irregular recording mode",
+        "Race left out of b 2022-08-01: more than 1095 days before 2026-10-16",
     ], "\n".join(lines)
 
     body["timezone"] = "America/New_York"
     lines = _riegel_lines(install_mock_client, body)
     assert lines[2:] == [
-        "Race used 2025-09-20: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36 (3 % over 4 weeks), weight 1.00",
-        "Race excluded 2025-07-31: recorded in smart or irregular recording mode",
-        "Race excluded 2022-07-31: more than 1095 days before 2026-10-15",
+        "Race in b 2025-09-20: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
+        "Race left out of b 2025-07-31: recorded in smart or irregular recording mode",
+        "Race left out of b 2022-07-31: more than 1095 days before 2026-10-15",
     ], "\n".join(lines)
 
 

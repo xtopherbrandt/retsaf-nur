@@ -350,10 +350,10 @@ def test_cli_prints_b_from_the_real_app(cli_against_app: TestClient, _no_network
     first = next(i for i, line in enumerate(lines) if line.startswith("Endurance exponent"))
     assert lines[first:] == [
         "Endurance exponent b 1.070 (80 %: 1.069 to 1.071), high, from 3 races in the last 1095 days, 5.0 to 21.1 km",
-        "Race used 2026-09-06: 5.0 km (5.0 km adjusted), 0:20:00, fitness -, weight 1.00, 0.0 % against the line",
-        f"Race used 2026-09-13: 10.0 km (10.0 km adjusted), 0:42:00, fitness {_whole(before[1])} (-), weight 1.00, "
+        "Race in b 2026-09-06: 5.0 km (5.0 km adjusted), 0:20:00, fitness -, weight 1.00, 0.0 % against the line",
+        f"Race in b 2026-09-13: 10.0 km (10.0 km adjusted), 0:42:00, fitness {_whole(before[1])} (-), weight 1.00, "
         "0.0 % against the line",
-        f"Race used 2026-09-20: 21.1 km (21.1 km adjusted), 1:33:20, fitness {_whole(before[2])} (-), weight 1.00, "
+        f"Race in b 2026-09-20: 21.1 km (21.1 km adjusted), 1:33:20, fitness {_whole(before[2])} (-), weight 1.00, "
         "0.0 % against the line",
     ], result.stdout
     assert _no_network == []

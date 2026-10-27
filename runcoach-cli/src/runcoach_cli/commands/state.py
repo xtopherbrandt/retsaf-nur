@@ -33,9 +33,12 @@ the race count, the window and the shortest and longest GAP-equivalent distance 
 exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``.
 Below the bar the population value prints with why (too few races, or every race at one distance),
 the number the fitness screen excluded when any were, and a line on how to tag a race; a fitted b
-under 1 adds a warning line. Then one line per race used (distance, GAP-equivalent distance, time,
-the day-before fitness and its fall over the four weeks, a rise negative, the weight, and the
-residual against the line when one is served) and one per race excluded with its reason in words.
+under 1 adds a warning line. Then one ``Race in b`` line per race used (distance, GAP-equivalent
+distance, time, the day-before fitness and its change over the four weeks in words, ``fell 3 %``,
+``rose 5 %`` or ``no change``, the weight, and the residual against the line when one is served)
+and one ``Race left out of b`` line per race excluded with its reason in words. The labels differ
+from the threshold block's ``Race used`` and ``Race excluded``, so a race in both blocks is not
+printed twice under one label with different figures.
 An entry with ``estimate_not_finite`` says so and still lists the races. A body with no
 ``riegel_exponent`` entry (an API from before it) ends with a line saying so, and exits 0.
 
@@ -328,16 +331,26 @@ def _whole(value: Any, what: str) -> str:
     return str(math.floor(_number(value, what) + 0.5))
 
 
+def _fitness_change(drop: Any) -> str:
+    """A served ``fitness_drop`` (a fall positive) in words: ``fell 42 % over 4 weeks``, ``rose 5 %
+    over 4 weeks``, or ``no change over 4 weeks`` when the percentage rounds to 0. The signed
+    percentage is rounded half up to a whole number before its sign picks the word."""
+    percent = math.floor(_number(drop, "fitness_drop") * 100 + 0.5)
+    if percent == 0:
+        return "no change over 4 weeks"
+    return f"{'fell' if percent > 0 else 'rose'} {abs(percent)} % over 4 weeks"
+
+
 def _fitness(effort: dict) -> str:
-    """``fitness 36 (3 % over 4 weeks)``: the day-before CTL and its fall over the four weeks, a rise
-    negative; ``(-)`` without the fall, ``fitness -`` without the day-before figure."""
+    """``fitness 36, fell 3 % over 4 weeks``: the day-before CTL and its change over the four weeks
+    in words; ``(-)`` without the change, ``fitness -`` without the day-before figure."""
     if effort["fitness_before"] is None:
         return "fitness -"
     before = _whole(effort["fitness_before"], "fitness_before")
     drop = effort["fitness_drop"]
     if drop is None:
         return f"fitness {before} (-)"
-    return f"fitness {before} ({_whole(_number(drop, 'fitness_drop') * 100, 'fitness_drop')} % over 4 weeks)"
+    return f"fitness {before}, {_fitness_change(drop)}"
 
 
 def _residual(value: Any) -> str:
@@ -350,7 +363,7 @@ def _residual(value: Any) -> str:
 def _riegel_effort_line(effort: dict, zone: ZoneInfo) -> str:
     weight = _number(effort["weight"], "weight")
     line = (
-        f"Race used {_date(effort['start_time'], zone)}: {_km(effort['distance_m'], 'distance_m')} "
+        f"Race in b {_date(effort['start_time'], zone)}: {_km(effort['distance_m'], 'distance_m')} "
         f"({_km(effort['gap_equivalent_m'], 'gap_equivalent_m')} adjusted), "
         f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort)}, weight {weight:.2f}"
     )
@@ -365,17 +378,16 @@ def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo) ->
         raise ValueError("reason is not a string")
     day = _date(row["start_time"], zone)
     if reason == "fitness_dropped":
-        drop = _whole(_number(row["fitness_drop"], "fitness_drop") * 100, "fitness_drop")
         earlier = _whole(row["fitness_earlier"], "fitness_earlier")
         before = _whole(row["fitness_before"], "fitness_before")
-        words = f"fitness fell {drop} % in the 4 weeks before it ({earlier} to {before})"
+        words = f"fitness {_fitness_change(row['fitness_drop'])} ({earlier} to {before})"
     elif reason == "outside_window":
         words = f"more than {window} days before {as_of}"
     elif reason in RIEGEL_REASON_WORDS:
         words = RIEGEL_REASON_WORDS[reason]
     else:
         words = _printable(reason)
-    return f"Race excluded {day}: {words}"
+    return f"Race left out of b {day}: {words}"
 
 
 def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
