@@ -18,6 +18,11 @@ evidence, never asserted: the test runs in the full suite and on WSL, where timi
 
 The stored nights are written with minimal rows (the session row and a saved load, no series),
 which is what the per-night reads touch.
+
+A night's anchor sync reads the profile narrowly (``db._resolve_profile_latest``, the latest
+carrying session per field). Three stores written through ``persist`` and ``persist_night`` pin it
+equal to ``profile.resolve`` over every session, with the values each must give: a start-time tie
+between two watches, a later ride carrying max and threshold HR, and fields split across runs.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ from runcoach_api.config import AppConfig
 from runcoach_api.imports import job
 from runcoach_api.ingestion import overnight
 from runcoach_api.ingestion.mapping import derive_session_id
+from runcoach_api.models import Session
 
 SUPPORT = Path(__file__).parent / "support"
 NIGHTS = Path(__file__).parent / "fixtures" / "nights"
@@ -160,12 +166,23 @@ def _create_job(data_dir: Path) -> str:
         conn.close()
 
 
+def _latest_index_walk(conn: sqlite3.Connection, detail: str) -> bool:
+    """Whether a plan row walks a ``sessions_latest_<field>`` index keyed ``(start_time, upload_order)``."""
+    named = re.search(r"USING (?:COVERING )?INDEX (sessions_latest_\w+)", detail)
+    if named is None:
+        return False
+    columns = [r[2] for r in conn.execute(f"PRAGMA index_info({named.group(1)})").fetchall()]
+    return columns == ["start_time", "upload_order"]
+
+
 def _sessions_scans(statements: list[str], data_dir: Path) -> list[str]:
     """The statements whose ``EXPLAIN QUERY PLAN`` scans the sessions table (by name or alias).
 
-    A walk of a ``sessions_latest_<field>`` index is not counted: that partial index holds only
-    the sessions carrying the field (runs, never a night), and the read stops at its first row
-    (``LIMIT 1`` in index order), so it does not grow with the nights stored."""
+    A walk of a ``sessions_latest_<field>`` index is not counted when that index's columns are
+    ``(start_time, upload_order)``: the partial index holds only the sessions carrying the field
+    (runs, never a night), and the read stops at its first row (``LIMIT 1`` in index order), so it
+    does not grow with the nights stored. A walk of one keyed otherwise is counted, since the
+    read then sorts or filters what it walks."""
     scanning = []
     conn = sqlite3.connect(data_dir / db.DB_FILENAME)
     try:
@@ -176,7 +193,7 @@ def _sessions_scans(statements: list[str], data_dir: Path) -> list[str]:
             plan = conn.execute(f"EXPLAIN QUERY PLAN {sql}").fetchall()
             for row in plan:
                 scanned = re.match(r"SCAN (\w+)", row[3])
-                if scanned and scanned.group(1) in aliases and "USING INDEX sessions_latest_" not in row[3]:
+                if scanned and scanned.group(1) in aliases and not _latest_index_walk(conn, row[3]):
                     scanning.append(sql)
                     break
     finally:
@@ -265,6 +282,112 @@ def test_a_night_import_meets_the_bound(tmp_path: Path, monkeypatch: pytest.Monk
     ratio = full["vm_steps"] / empty["vm_steps"]
     print(f"per item vm steps ratio {ratio:.3f} ({full['vm_steps']:.0f} / {empty['vm_steps']:.0f})")
     assert ratio <= BOUND
+
+
+# ---------------------------------------------------------------------------
+# the narrow profile read against the full one
+# ---------------------------------------------------------------------------
+
+
+def _profile_session(
+    session_id: str, start: str, *, sport: str = "running", device: str = "watch a", **fields
+):
+    return Session(
+        session_id=session_id,
+        sport=sport,
+        source_vendor="garmin",
+        start_time=start,
+        source_device=device,
+        **fields,
+    )
+
+
+def _narrow_after_writes(data_dir: Path, sessions: list[Session]) -> dict[str, profile.FieldValue]:
+    """Store ``sessions`` through ``persist`` in the order given, then a night through
+    ``persist_night`` (dated after all of them, carrying no profile field), and return the narrow
+    read, asserted equal to ``profile.resolve`` over every stored session."""
+    conn = db.get_connection(data_dir)
+    try:
+        db.init_schema(conn)
+        for session in sessions:
+            db.persist(conn, session, [], [], {}, zone=UTC_ZONE)
+        db.persist_night(conn, _template(), zone=UTC_ZONE)
+        narrow = db._resolve_profile_latest(conn)
+        full = profile.resolve(*db.read_profile_inputs(conn))
+    finally:
+        conn.close()
+    assert narrow == full, "the narrow profile read resolves differently from the full one"
+    return narrow
+
+
+def _picked(resolved: dict[str, profile.FieldValue], field: str) -> tuple[object, str | None]:
+    return resolved[field].value, resolved[field].session_id
+
+
+def test_the_later_upload_wins_a_start_time_tie(tmp_path: Path) -> None:
+    """Two runs from two watches at the same start time: the one stored second wins every field
+    both carry, whichever value is larger."""
+    start = "2025-03-01T07:00:00+00:00"
+    resolved = _narrow_after_writes(
+        tmp_path,
+        [
+            _profile_session("tie-first", start, device="watch a", max_hr_bpm=191, resting_hr_bpm=47),
+            _profile_session("tie-second", start, device="watch b", max_hr_bpm=186, resting_hr_bpm=49),
+        ],
+    )
+    assert _picked(resolved, "max_hr_bpm") == (186, "tie-second")
+    assert _picked(resolved, "resting_hr_bpm") == (49, "tie-second")
+
+
+def test_a_later_non_running_session_sets_no_running_only_field(tmp_path: Path) -> None:
+    """A ride after the run carries max and threshold HR and a resting HR: max and threshold come
+    from the run, which is stored as running; resting HR, which any sport may carry, from the ride."""
+    resolved = _narrow_after_writes(
+        tmp_path,
+        [
+            _profile_session(
+                "run", "2025-01-01T07:00:00+00:00", max_hr_bpm=188, threshold_hr_bpm=168, resting_hr_bpm=46
+            ),
+            _profile_session(
+                "ride",
+                "2025-02-01T07:00:00+00:00",
+                sport="cycling",
+                max_hr_bpm=199,
+                threshold_hr_bpm=181,
+                resting_hr_bpm=41,
+            ),
+        ],
+    )
+    assert _picked(resolved, "max_hr_bpm") == (188, "run")
+    assert _picked(resolved, "threshold_hr_bpm") == (168, "run")
+    assert _picked(resolved, "resting_hr_bpm") == (41, "ride")
+
+
+def test_each_field_comes_from_its_own_latest_carrying_session(tmp_path: Path) -> None:
+    """Resting HR and the body fields from the first run, max HR from the second, threshold HR from
+    the third: the profile joins all three, and the later runs' missing fields do not clear the
+    earlier ones."""
+    resolved = _narrow_after_writes(
+        tmp_path,
+        [
+            _profile_session(
+                "body",
+                "2025-01-01T07:00:00+00:00",
+                resting_hr_bpm=45,
+                sex="female",
+                body_mass_kg=58.4,
+                height_cm=166.0,
+            ),
+            _profile_session("max", "2025-02-01T07:00:00+00:00", max_hr_bpm=190),
+            _profile_session("threshold", "2025-03-01T07:00:00+00:00", threshold_hr_bpm=170),
+        ],
+    )
+    assert _picked(resolved, "resting_hr_bpm") == (45, "body")
+    assert _picked(resolved, "sex") == ("female", "body")
+    assert _picked(resolved, "body_mass_kg") == (58.4, "body")
+    assert _picked(resolved, "height_cm") == (166.0, "body")
+    assert _picked(resolved, "max_hr_bpm") == (190, "max")
+    assert _picked(resolved, "threshold_hr_bpm") == (170, "threshold")
 
 
 # ---------------------------------------------------------------------------
