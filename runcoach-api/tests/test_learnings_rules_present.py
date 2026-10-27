@@ -17,7 +17,16 @@ that records why it exists. Each file is also pinned to the phrases that carry i
 - ``re-measure-data-premises-at-planning.md`` (IDEA-179) asks sprint planning to list every spec
   sentence that states a bound or count on the athlete's data, re-measure it against the full census
   or a store copy, and record the query, its printed result and held or false, citing the 240 s rep
-  premise as its case.
+  premise as its case;
+- ``workout-rulings-show-step-targets.md`` (IDEA-178) asks a question on whether a workout, step or
+  rep counts toward an estimate to show, per step, the intensity, the Garmin target and the pace run
+  in one table before the question, citing the 2026-10-18 and 2026-10-20 Progression Run rulings;
+- ``platform-touching-fixes-pass-on-linux.md`` (IDEA-182) asks a change touching dates and times,
+  paths, line endings, shells, encodings or ``os`` / ``platform`` calls to name its tests and pass
+  them on Linux through ``run_on_linux.sh``, the Linux run's summary line as the evidence;
+- ``release-demo-checks-the-real-config.md`` (IDEA-183) asks the release gate to load the athlete's
+  real ``api.toml`` and ``cli.toml`` with ``check_real_config.py`` and to show a failure to the
+  athlete before approval.
 """
 
 from __future__ import annotations
@@ -67,6 +76,21 @@ RULES = (
         "re-measure-data-premises-at-planning.md",
         "IDEA-179",
         ("re-measure", "the full census", "held or false", "240 s"),
+    ),
+    (
+        "workout-rulings-show-step-targets.md",
+        "IDEA-178",
+        ("Garmin target", "pace run", "one table", "2026-10-18", "2026-10-20"),
+    ),
+    (
+        "platform-touching-fixes-pass-on-linux.md",
+        "IDEA-182",
+        ("run_on_linux.sh", "summary line", "dates and times", "line endings"),
+    ),
+    (
+        "release-demo-checks-the-real-config.md",
+        "IDEA-183",
+        ("check_real_config.py", "api.toml", "cli.toml", "before approval"),
     ),
 )
 
