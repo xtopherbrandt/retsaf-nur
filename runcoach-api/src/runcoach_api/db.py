@@ -437,12 +437,34 @@ def _ensure_unique_child_indexes(conn: sqlite3.Connection) -> None:
         conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {new_name} ON {table} (session_id, {column})")
 
 
+def _ensure_session_lookup_indexes(conn: sqlite3.Connection) -> None:
+    """The sessions indexes the per-upload reads search instead of scanning every session: one on
+    ``upload_order`` (``_insert_session``'s ``MAX``); one on ``source_device``, the summary's
+    ``series_start`` and ``start_time`` (``_stored_night_at``, which otherwise reads every night of
+    the device); and,
+    per ``profile.FIT_FIELDS`` column, one on ``(start_time, upload_order)`` over the sessions
+    carrying it (the latest carrying session, read by ``_run_date_candidates`` and
+    ``_resolve_profile_latest``). Created after ``_reconcile_columns``, since an older store gains
+    these columns there."""
+    conn.execute("CREATE INDEX IF NOT EXISTS sessions_upload_order ON sessions (upload_order)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS sessions_series_start"
+        " ON sessions (source_device, json_extract(summary, '$.series_start'), start_time)"
+    )
+    for field in profile_module.FIT_FIELDS:
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS sessions_latest_{field} ON sessions (start_time, upload_order)"
+            f" WHERE {field} IS NOT NULL"
+        )
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create the canonical-schema tables if they don't already exist,
     then additively reconcile any column added after a database was
     first created (see ``_reconcile_columns``), make the lap and workout step
     rows unique per session (``_ensure_unique_child_indexes``; a store holding a
-    duplicate refuses to start, named), and version the HR anchors
+    duplicate refuses to start, named), index the sessions the per-upload reads
+    look up (``_ensure_session_lookup_indexes``), and version the HR anchors
     of a store whose sessions or entries predate the anchor version log
     (``_sync_anchor_versions``; a no-op on a store the write paths kept), seed
     the athlete-settings row when there is none (``_seed_athlete_settings``), and
@@ -459,6 +481,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     try:
         _reconcile_columns(conn)
         _ensure_unique_child_indexes(conn)
+        _ensure_session_lookup_indexes(conn)
         resolved = _sync_anchor_versions(conn)
         _seed_athlete_settings(conn)
         _fill_session_loads(conn, resolved=resolved)
@@ -1196,7 +1219,12 @@ def read_profile_inputs(conn: sqlite3.Connection) -> tuple[list[dict], list[dict
             f"SELECT {', '.join(columns)} FROM sessions ORDER BY start_time, upload_order"
         ).fetchall()
     ]
-    entries = [
+    return sessions, _read_profile_entries(conn)
+
+
+def _read_profile_entries(conn: sqlite3.Connection) -> list[dict]:
+    """The entries half of ``read_profile_inputs``: every ``profile_entries`` row, ``ORDER BY entry_id``."""
+    return [
         {
             "entry_id": r["entry_id"],
             "field": r["field"],
@@ -1207,7 +1235,6 @@ def read_profile_inputs(conn: sqlite3.Connection) -> tuple[list[dict], list[dict
             f"SELECT entry_id, field, value, set_at FROM {PROFILE_ENTRIES_TABLE} ORDER BY entry_id"
         ).fetchall()
     ]
-    return sessions, entries
 
 
 def _read_anchor_log(conn: sqlite3.Connection) -> dict[str, tuple[object, int]]:
@@ -2421,11 +2448,37 @@ def _stored_night_at(conn: sqlite3.Connection, source_device: str | None, series
     ).fetchone()
 
 
+def _resolve_profile_latest(conn: sqlite3.Connection) -> dict[str, profile_module.FieldValue]:
+    """``profile.resolve`` over the sessions that can decide it, without reading every session.
+
+    ``resolve`` takes each field's value from the latest session that carries it (for max and
+    threshold HR, the latest stored as running), by ``(start_time, upload_order)``; a session
+    carrying none of the fields never counts. So the latest carrying session per
+    ``profile.FIT_FIELDS`` column, one indexed search each
+    (``_ensure_session_lookup_indexes``), and every entry resolve exactly as
+    ``read_profile_inputs`` does. Read-only, inside the caller's transaction.
+    """
+    columns = ("session_id", "start_time", "upload_order", "sport", *profile_module.FIT_FIELDS)
+    latest: dict[str, dict] = {}
+    for field in profile_module.FIT_FIELDS:
+        running_only = field in profile_module.RUNNING_ONLY_FIELDS
+        row = conn.execute(
+            f"SELECT {', '.join(columns)} FROM sessions WHERE {field} IS NOT NULL"
+            f"{' AND sport = ?' if running_only else ''}"
+            " ORDER BY start_time DESC, upload_order DESC LIMIT 1",
+            (profile_module.RUNNING_SPORT,) if running_only else (),
+        ).fetchone()
+        if row is not None:
+            latest[row["session_id"]] = {c: row[c] for c in columns}
+    return profile_module.resolve(latest.values(), _read_profile_entries(conn))
+
+
 def persist_night(
     conn: sqlite3.Connection,
     night: Night,
     *,
     after_write: Callable[[sqlite3.Connection, NightWrite], None] | None = None,
+    zone: ZoneInfo | None = None,
 ) -> NightWrite:
     """Write one night's rows in a single transaction, replacing a re-summarised one (F028 reference section 4).
 
@@ -2456,9 +2509,9 @@ def persist_night(
     3. **The insert.** ``_insert_session``, the series
        (``_insert_overnight_values``), the sidecar
        (``_insert_quarantine_sidecar``), the anchor sync and the saved load
-       (``_sync_anchor_versions``, ``_save_session_load``: a night is
-       ``sport_not_running``, which is harmless), then ``after_write(conn,
-       write)`` inside the same transaction, so an archive import's report row
+       (``_save_session_load``: a night is ``sport_not_running``, which is
+       harmless), then ``after_write(conn, write)`` inside the same
+       transaction, so an archive import's report row
        can say ``stored`` or ``replaced`` and a fault in it rolls the night
        back with everything above.
 
@@ -2471,6 +2524,14 @@ def persist_night(
     the night's carries the ``hrv_status`` label, so the two hold different
     slots and different ids and both are stored. The caller has run ``init_schema`` and holds no
     open transaction.
+
+    The anchor sync is ``_sync_anchor_versions``' log write over
+    ``_resolve_profile_latest``'s profile rather than over every session: a
+    night carries no profile field, so its insert leaves the profile as the
+    stored runs give it, and the sync's cost does not grow with the nights
+    stored. ``zone`` is the athlete's zone as the caller captured it (an
+    archive import's, read once per job), handed to ``_save_session_load``;
+    without it the configured ``athlete_timezone`` dates the night's load.
     """
     session = night.session
     conn.execute("BEGIN IMMEDIATE")
@@ -2499,8 +2560,9 @@ def persist_night(
             raise DuplicateSessionError(row[0]) from None
         _insert_overnight_values(conn, session.session_id, night.values)
         _insert_quarantine_sidecar(conn, session.session_id, night.sidecar)
-        resolved = _sync_anchor_versions(conn)
-        _save_session_load(conn, session.session_id, resolved=resolved)
+        resolved = _resolve_profile_latest(conn)
+        _write_anchor_log(conn, profile_module.next_versions(resolved, _read_anchor_log(conn)))
+        _save_session_load(conn, session.session_id, resolved=resolved, zone=zone)
         write = NightWrite(session_id=session.session_id, replaced_session_id=replaced)
         if after_write is not None:
             after_write(conn, write)

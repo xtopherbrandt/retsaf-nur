@@ -38,8 +38,11 @@ statement that reads or writes them lives here.
   ``stored`` or ``replaced`` (a re-summary that replaced a stored night),
   written by ``persist_night``'s ``after_write`` inside the night's
   transaction; ``no_night`` for a file with no night; ``already_stored`` and
-  ``failed`` as above. A night's row names ``sport`` ``other`` and
-  ``activity_tag`` ``overnight_hrv``, as a ``no_night`` row does.
+  ``failed`` as above. ``db.init_schema`` runs before the job's first night
+  is written, not before every night (an activity's ingest still runs it per
+  file), and the night's load is dated in the zone the job captured. A
+  night's row names ``sport`` ``other`` and ``activity_tag``
+  ``overnight_hrv``, as a ``no_night`` row does.
 - **Counts.** ``replaced`` and ``no_night`` count those rows; a job stored
   before they existed holds counts without them, which ``ImportCounts``
   serves as 0.
@@ -48,7 +51,7 @@ statement that reads or writes them lives here.
   in every outcome. If even that write fails, the job stays active until the
   next startup's ``recover_at_startup`` marks it ``interrupted`` and removes
   its temp dir; that runs only from the app's startup, never from
-  ``db.init_schema``, which every file's ingest calls.
+  ``db.init_schema``, which every activity's ingest and a job's first night call.
 - **The worker.** ``start_worker`` runs ``run_job`` on a daemon thread
   (stopping the API stops the import; the file in progress rolls back) and
   keeps it in a module registry; ``wait_idle`` joins every registered worker
@@ -328,6 +331,8 @@ class _Job:
     profile_names: list[str]
     zone: ZoneInfo
     counts: dict = field(default_factory=_empty_counts)
+    # True once a night's ingest has run db.init_schema; later nights skip it.
+    schema_ready: bool = False
 
     def connect(self) -> sqlite3.Connection:
         return db.get_connection(self.data_dir, timeout=STORE_TIMEOUT_S)
@@ -444,6 +449,8 @@ class _Job:
     def ingest_night(self, seq: int, label: str, time_created: str | None, raw: bytes) -> None:
         """An HRV_STATUS file: ``overnight.map_night``, then ``db.persist_night`` (F028 reference section 6).
 
+        ``db.init_schema`` runs for the job's first night only (``schema_ready``),
+        and ``persist_night`` dates the night's load in the captured ``zone``.
         A stored or replaced night's row is written by ``after_write`` inside
         the night's transaction, as a stored activity's is; a file with no
         night is ``no_night``, a duplicate ``already_stored`` and any other
@@ -477,8 +484,10 @@ class _Job:
                 return
             # As ingest_fit_bytes opens its connection: the captured data dir and the store timeout.
             with closing(db.get_connection(self.data_dir, timeout=STORE_TIMEOUT_S)) as conn:
-                db.init_schema(conn)
-                db.persist_night(conn, night, after_write=after_write)
+                if not self.schema_ready:
+                    db.init_schema(conn)
+                    self.schema_ready = True
+                db.persist_night(conn, night, after_write=after_write, zone=self.zone)
         except DuplicateSessionError as exc:
             row = FileRow(seq, label, time_created, "already_stored", session_id=exc.existing_session_id)
             self.finish_file(row)
