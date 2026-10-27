@@ -448,6 +448,7 @@ def test_validator_rejects_a_mutated_body(contract: dict) -> None:
         errors = contract_validate.validate(contract, schema, mutated)
         print(f"  {label}: {errors}")
         assert any(expected in error for error in errors), (label, errors)
+    # A oneOf is read only beside a discriminator; this bare one has none, so it still raises.
     with pytest.raises(ValueError, match="unsupported keyword"):
         contract_validate.validate(contract, {"oneOf": [{"type": "string"}]}, "x")
     with pytest.raises(ValueError, match="ignored by OpenAPI"):

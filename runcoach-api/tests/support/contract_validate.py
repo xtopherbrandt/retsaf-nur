@@ -6,7 +6,10 @@ boolean), ``enum``, ``nullable``, ``required``, ``properties``, ``items``, ``$re
 one-member ``allOf`` (the file's way to make a ``$ref`` nullable, since a ``nullable`` beside a
 bare ``$ref`` is ignored), and, for ``GET /sessions/{id}``'s ``SessionDetail``,
 ``exclusiveMinimum`` and ``additionalProperties`` (``false`` refuses an unlisted key, a schema
-validates each one). Prose keywords (``description``, ``example``, ``default``, ``title``,
+validates each one), and a ``oneOf`` only together with a ``discriminator`` (its ``propertyName``
+and a ``mapping`` of ``$ref`` strings, as the served OpenAPI writes a tagged union): the body's
+discriminator value picks the branch, and the body is validated against that branch alone. A
+``oneOf`` or a ``discriminator`` alone is not read. Prose keywords (``description``, ``example``, ``default``, ``title``,
 ``format``) and ``x-`` extensions are not checked. Any other keyword raises ``ValueError`` rather than passing
 unread, so a schema this module cannot judge is never reported valid.
 
@@ -34,6 +37,7 @@ CHECKED = {
     "exclusiveMinimum",
 }
 PROSE = {"description", "example", "default", "title", "format"}
+UNION = {"oneOf", "discriminator"}
 
 
 def _prose(key: str) -> bool:
@@ -66,9 +70,14 @@ def _type_ok(kind: str, value: Any) -> bool:
 
 def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
     """Every way ``value`` breaks ``schema`` (read in ``doc`` for its ``$ref``s), in walk order."""
-    unknown = {key for key in schema if key not in CHECKED and not _prose(key)}
+    union = UNION <= schema.keys()
+    unknown = {
+        key for key in schema if key not in CHECKED and not _prose(key) and not (union and key in UNION)
+    }
     if unknown:
         raise ValueError(f"{path}: unsupported keyword(s) {sorted(unknown)}")
+    if union:
+        return _validate_union(doc, schema, value, path)
     if "allOf" in schema:
         members = schema["allOf"]
         if len(members) != 1:
@@ -113,3 +122,49 @@ def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
         for index, item in enumerate(value):
             errors.extend(validate(doc, schema["items"], item, f"{path}[{index}]"))
     return errors
+
+
+def _validate_union(doc: dict, schema: dict, value: Any, path: str) -> list[str]:
+    """A ``oneOf`` of ``$ref`` members, the branch chosen by the body's discriminator property.
+
+    The schema must be readable whole, or ``ValueError`` is raised: no keyword beside the union
+    but prose, every member a bare ``$ref``, a ``discriminator`` of exactly ``propertyName`` and
+    ``mapping``, and every mapping value a ``$ref`` string naming one of the members.
+    """
+    beside = {key for key in schema if key not in UNION and not _prose(key)}
+    if beside:
+        raise ValueError(f"{path}: keywords beside a discriminated oneOf are not read: {sorted(beside)}")
+    members = schema["oneOf"]
+    if not isinstance(members, list) or not all(
+        isinstance(member, dict) and set(member) == {"$ref"} for member in members
+    ):
+        raise ValueError(f"{path}: only a oneOf of bare $ref members is supported, got {members!r}")
+    refs = [member["$ref"] for member in members]
+    discriminator = schema["discriminator"]
+    if not isinstance(discriminator, dict) or set(discriminator) != {"propertyName", "mapping"}:
+        raise ValueError(
+            f"{path}: a discriminator needs exactly propertyName and mapping, got {discriminator!r}"
+        )
+    name, mapping = discriminator["propertyName"], discriminator["mapping"]
+    if not isinstance(name, str) or not isinstance(mapping, dict) or not mapping:
+        raise ValueError(f"{path}: unsupported discriminator {discriminator!r}")
+    for target in mapping.values():
+        if not isinstance(target, str) or target not in refs:
+            raise ValueError(
+                f"{path}: discriminator mapping target {target!r} is not a $ref among the oneOf members"
+            )
+        resolve(doc, target)
+    if value is None:
+        return [f"{path}: null where the schema is not nullable"]
+    if not isinstance(value, dict):
+        return [f"{path}: expected object for discriminator {name!r}, got {type(value).__name__} {value!r}"]
+    if name not in value:
+        return [f"{path}: discriminator property {name!r} is missing"]
+    chosen = value[name]
+    if not isinstance(chosen, str):
+        return [f"{path}.{name}: discriminator expected string, got {type(chosen).__name__} {chosen!r}"]
+    if chosen not in mapping:
+        return [
+            f"{path}: discriminator {name!r} value {chosen!r} is not in discriminator mapping {sorted(mapping)}"
+        ]
+    return validate(doc, {"$ref": mapping[chosen]}, value, path)
