@@ -566,8 +566,8 @@ Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
 Pinned: runcoach-api/tests/test_threshold_workout_active_block.py::test_counted_reps_at_589_99_and_590
 
-**REG-32.** The endurance exponent MUST be the weighted least-squares slope of log time on log GAP-equivalent distance over tagged races of the last 1095 days, faded over the last 182, that pass the stream, grade-clamp and fitness-drop screens, used when three or more span a twofold distance ratio, else the population 1.06 with error 0.05, with a Student's t interval and no filter step.
-Scope: the endurance exponent served, from `race` runs not admitted as workouts by a listed name, weighted min(1, (1095 - age in days) / 182), with a finite positive time and GAP pace, flagged none of `distance_regressed`, `smart_recording` or `grade_clamped`, and whose fitness (CTL) the day before is no more than 30 % below its value 28 days earlier; constants are engineering defaults.
+**REG-32.** The endurance exponent MUST be the weighted least-squares slope of log time on log GAP-equivalent distance over tagged races of the last 1095 days, faded in the last 182, passing the stream, grade-clamp and fitness-drop screens, with a Student's t interval if three or more span a twofold ratio of that distance, else the population 1.06 with error 0.05 and a z interval; no filter step.
+Scope: the endurance exponent served, from `race` runs not admitted as workouts by a listed name, weighted min(1, (1095 - age in days) / 182), with a finite positive time and GAP pace, flagged none of `distance_regressed`, `smart_recording` or `grade_clamped`, and whose CTL the day before is no more than 30 % below its value 28 days earlier, or unknown; constants are engineering defaults.
 Not: the spec/04 section 4.3 filter and its staleness inflation, which this determinant does not use, the window and the fade being its staleness rule; a race screened by effort or heart rate, since only the athlete's Race tag admits one; and an individual b from fewer than three races or a spread under twofold, where the population 1.06 stands.
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_worked_examples_match_the_reference
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_bar_edges_at_a_ratio_of_two
@@ -611,7 +611,7 @@ Why: decision C31 makes the constants defaults while §3.1 governs their tuning,
 Scope: every athlete's endurance exponent and CS profile.
 Not: an individual fit before those efforts exist.
 Pinned: none
-Why: rule REG-32 states, as H-45 records, the endurance exponent's enough: three tagged races spanning a twofold distance ratio; the CS profile's count stays open (IDEA-157).
+Why: rule REG-32 states, as H-45 records, the endurance exponent's enough: three tagged races spanning a twofold GAP-equivalent distance ratio; the CS profile's count stays open (IDEA-157).
 
 **IND-06.** The fitness/fatigue constants MUST stay at 42/7.
 Scope: every CTL and ATL computation.
