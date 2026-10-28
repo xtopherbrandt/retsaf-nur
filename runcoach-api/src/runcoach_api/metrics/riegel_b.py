@@ -57,10 +57,11 @@ residuals served as ``exp(r) - 1``. A fading race counts by its weight: the coun
 number of races ``n_eff = (sum w)^2 / sum(w^2)`` (``n`` exactly when every weight is 1);
 ``se = sqrt(sum(w r^2) / (n_eff - 2) / sum(w (x - x_w)^2))``, the weighted standard error with the
 weights rescaled to sum to ``n_eff`` (the scale cancels); the 80 % interval ``b +- t se`` with
-Student's t at ``floor(n_eff) - 2`` degrees of freedom (``T_TABLE``, ``Z`` above 30). The bar,
-``n_eff >= MIN_RACES`` over the races with ``w > 0`` and ``max D_eq / min D_eq >= MIN_SPREAD``
-among them, is checked before any division (both read ``n_eff`` with ``COUNT_SLACK``); with
-exactly three races any weight under 1 leaves ``n_eff`` under 3. Row 2 already excludes a race at
+Student's t at ``floor(n_eff + COUNT_SLACK) - 2`` degrees of freedom (``T_TABLE``, ``Z`` above
+30), so the interval widens in a step each time a fade takes the count below a whole number. The
+bar, ``n_eff >= MIN_RACES`` over the races with ``w > 0`` and ``max D_eq / min D_eq >=
+MIN_SPREAD`` among them, is checked before any division (both read ``n_eff`` with
+``COUNT_SLACK``); with exactly three races any weight under 1 leaves ``n_eff`` under 3. Row 2 already excludes a race at
 weight 0, so every race used has ``w > 0``. Below the bar the population ``POPULATION_B`` with
 ``POPULATION_ERROR`` and ``Z`` stands, ``low``, provisional, every race listed with a null residual.
 Labels compare ``se`` with ``HIGH_MAX_ERROR`` and ``MEDIUM_MAX_ERROR``, inclusive on the better side;

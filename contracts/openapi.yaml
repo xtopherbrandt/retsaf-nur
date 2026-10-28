@@ -3449,7 +3449,7 @@ components:
           description: "`estimate_not_finite` when a race's GAP-equivalent distance, b, the error, the interval or a residual is not finite: `estimate`, `error` and `t_multiplier` are null, `efforts` and `parameters` still served. Null with an estimate."
         trend: { $ref: "#/components/schemas/Trend" }
         error: { type: number, nullable: true, description: "The weighted standard error of b over the effective number of races less 2, n_eff = (sum w)^2 / sum(w^2) (0.05 for the population value); null when unavailable." }
-        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for floor(n_eff) - 2 degrees of freedom, n_eff the effective number of races (z above 30 and for the population value); null when unavailable." }
+        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for floor(n_eff + 1e-9) - 2 degrees of freedom, n_eff the effective number of races (z above 30 and for the population value); null when unavailable." }
         population_default: { type: boolean, description: "True when the races used count fewer than three by their weights (the effective number of races, so a fading race counts as less than one) or the longest is under twice the shortest: the population 1.06 is served." }
         below_one: { type: boolean, description: "A fitted b under 1: a race used was probably not all-out, or a trail race. Outranks the label." }
         efforts:

@@ -29,14 +29,16 @@ weighted least-squares slope of log time on log `D_eq`; a race weighs 1 until it
 its weight then falls to 0 at 1095 days, so a race fading out of the window moves b gradually rather
 than in a step while the races still count three or more and the others still span twofold; a race
 that alone gives the twofold spread still leaves in a step at 1095 days, when b turns to the
-population value. b is individual only when the races used
-count at least three and the longest `D_eq` is at least twice the shortest. A fading race counts by
-its weight: the count is the effective number of races, (sum of weights)^2 / (sum of squared
-weights), which is the number of races while every weight is 1, and the same count sets the error
-(the weighted standard error over that count less 2) and the 80 % interval's Student's t (the whole
-part of the count less 2 degrees of freedom; z past 30). So with three races b is the population
-value as soon as one of them starts to fade; with more, the error moves toward that of the fit
-without the fading race. Its label is `high` while the error is at most 0.02, `medium` to 0.04 and
+population value. Its interval still widens in a step each time a fade takes the count below a
+whole number of races. b is individual only when the races used count at least three and the longest
+`D_eq` is at least twice the shortest. A fading race counts by its weight: the count is the
+effective number of races, (sum of weights)^2 / (sum of squared weights), which is the number of
+races while every weight is 1, and the same count sets the error (the weighted standard error over
+that count less 2) and the 80 % interval's Student's t (the whole part of the count less 2 degrees
+of freedom, the count read with a 1e-9 slack so that equal weights an ulp short still count whole;
+z past 30). So with three races b is the population value as soon as one of them starts to fade;
+with more, the error moves toward that of the fit without the fading race. Its label is `high`
+while the error is at most 0.02, `medium` to 0.04 and
 `low` above. Below that bar the population default stands: b 1.06, error 0.05, a z interval of 0.996
 to 1.124, `low`, provisional, with the races still listed. A fitted b under 1 is served with
 `below_one` true, a warning that outranks the label and changes nothing else. Nothing is stored: b
@@ -73,10 +75,11 @@ or, when it is under 1 but would print as 1.00, with the fewest decimals, up to 
 under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. Below the
 bar the first line reads `Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low:
 2 races in the last 1095 days; 3 are needed`, `... low: 3 races in the last 1095 days, 2.7 counting
-the fade; 3 are needed` when a fading race is what leaves the count short, or `... low: 4 races at
-one distance; the longest must be at least twice the shortest`, with `, N excluded by the fitness
-screen` when any were, followed by `Mark a race as Race in Garmin Connect and run runcoach sync tags
---since <its date>`. A race left out because it is too old reads `1095 days or more before <as_of
+the fade; 3 are needed` when a fading race is what leaves the count short, or `... low: 4 races
+in the last 1095 days, too close in distance; the longest must be at least twice the shortest` when
+the races clear the count but the longest is under twice the shortest (four 5Ks, or five 5Ks and an
+8K), with `, N excluded by the fitness screen` when any were, followed by `Mark a race as Race in
+Garmin Connect and run runcoach sync tags --since <its date>`. A race left out because it is too old reads `1095 days or more before <as_of
 date>`. A fitted b under 1 adds `b reads below 1: a race used was probably not all-out, or a trail
 race; check the races listed`. The b block's race lines read `Race in b` and `Race left out of b`,
 and the threshold block keeps `Race used` and `Race excluded`, so a race in both blocks is not
