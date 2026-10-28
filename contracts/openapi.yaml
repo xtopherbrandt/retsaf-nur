@@ -1975,8 +1975,10 @@ components:
     Determinant:
       description: >
         One determinant with its estimate and trend, told apart by `name`: `functional_threshold_pace`
-        (`ThresholdDeterminant`) and `riegel_exponent` (`RiegelDeterminant`) are served; the other
-        names are planned.
+        (`ThresholdDeterminant`) and `riegel_exponent` (`RiegelDeterminant`) are served, and each
+        branch's `name` enum holds its one name so a client can narrow on it. The other names
+        (`critical_speed`, `d_prime`, `vvo2max`, `running_economy`, `durability`) are planned; each
+        gets its own branch and mapping entry when it ships.
       oneOf:
         - $ref: "#/components/schemas/ThresholdDeterminant"
         - $ref: "#/components/schemas/RiegelDeterminant"
@@ -2001,7 +2003,7 @@ components:
       properties:
         name:
           type: string
-          enum: [critical_speed, d_prime, vvo2max, functional_threshold_pace, running_economy, durability, riegel_exponent]
+          enum: [functional_threshold_pace]
         estimate:
           allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
           nullable: true

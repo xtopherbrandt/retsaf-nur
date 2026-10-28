@@ -110,8 +110,10 @@ summary holds, and a summary that is not JSON can still be written.
 
 None for the store or the config. `contracts/openapi.yaml` keeps `info.version` `0.5.0-draft`: the
 change is additive. `Determinant` becomes a `oneOf` discriminated on `name`, of
-`ThresholdDeterminant` (the threshold schema, untouched) and the new `RiegelDeterminant` (with
-`RiegelEffort`, `RiegelExclusion` and `RiegelExponentParameters`), and `getState` documents its 500.
+`ThresholdDeterminant` (the threshold schema, its `name` enum narrowed to
+`functional_threshold_pace`, the one name it serves, so a generated client can narrow on `name`)
+and the new `RiegelDeterminant` (with `RiegelEffort`, `RiegelExclusion` and
+`RiegelExponentParameters`), and `getState` documents its 500.
 A client that reads `determinants` as a list of threshold entries must read the `name` first, since
 the list now holds two. An older `runcoach state` prints the threshold lines as before and ignores the
 new entry; the updated one prints the line above against an older API.

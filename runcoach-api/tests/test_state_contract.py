@@ -559,22 +559,14 @@ def test_confidence_value_fields_match_by_hand(contract: dict) -> None:
 
 
 RIEGEL_COMPONENTS = {"RiegelEffort", "RiegelExclusion", "RiegelExponentParameters"}
-DETERMINANT_NAMES = [
-    "critical_speed",
-    "d_prime",
-    "vvo2max",
-    "functional_threshold_pace",
-    "running_economy",
-    "durability",
-    "riegel_exponent",
-]
+THRESHOLD_NAMES = ["functional_threshold_pace"]
 
 
 def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
     """F029 AC6, the contract half. ``Determinant`` is a ``oneOf`` of ``ThresholdDeterminant`` and
     ``RiegelDeterminant`` discriminated on ``name``, as FastAPI serves the union; the threshold
-    schema keeps its name enum; ``info.version`` is unmoved. The strict half walks the three
-    components only ``RiegelDeterminant`` uses with ``contract_walk.walk`` (``normalised`` cannot read
+    schema's ``name`` enum is ``functional_threshold_pace`` alone, as served; ``info.version`` is
+    unmoved. The strict half walks the three components only ``RiegelDeterminant`` uses with ``contract_walk.walk`` (``normalised`` cannot read
     a ``oneOf`` node, so the branches are walked, not the union); ``RiegelDeterminant`` itself and
     its ``estimate`` are compared by hand, as ``test_confidence_value_fields_match_by_hand`` does.
     The validator then picks the branch by ``name``: a Riegel body named as threshold pace goes red."""
@@ -595,7 +587,11 @@ def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
         },
     }
     assert union == {**union, **schemas["StateModel"]["properties"]["determinants"]["items"]}
-    assert _schema(contract, "ThresholdDeterminant")["properties"]["name"]["enum"] == DETERMINANT_NAMES
+    # The threshold branch names only what it serves, so a generated client can narrow on ``name``:
+    # a planned determinant gets its own branch and mapping entry when it ships.
+    assert _schema(contract, "ThresholdDeterminant")["properties"]["name"]["enum"] == THRESHOLD_NAMES
+    built_name = schemas["ThresholdDeterminant"]["properties"]["name"]
+    assert (built_name["type"], [built_name["const"]]) == ("string", THRESHOLD_NAMES)
     assert contract["info"]["version"] == "0.5.0-draft"
 
     visited, compared = contract_walk.walk(contract, served, RIEGEL_COMPONENTS)
