@@ -95,6 +95,22 @@ def test_a_missing_threshold_workout_names_prints_the_remediation(
     assert code == 1
 
 
+def test_a_missing_api_toml_prints_the_message_serve_prints(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``serve`` answers a missing file with the loader's message and how to make one; the check
+    prints the same line, as its docstring says."""
+    _api, cli = _write_pair(tmp_path)
+    missing = tmp_path / "absent" / "api.toml"
+    with pytest.raises(check_real_config.ConfigNotFoundError) as raised:
+        check_real_config.load_config(missing)
+    code, out = _run(missing, cli, capsys)
+    print(out)
+    assert any(line.startswith("api.toml: ERROR") for line in out.splitlines()), out
+    assert f"  Error: {raised.value}. Run `runcoach-api init` first." in out.splitlines()
+    assert code == 1
+
+
 def test_a_missing_api_url_prints_the_cli_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     api, cli = _write_pair(tmp_path, cli_text='other = "x"\n')
     code, out = _run(api, cli, capsys)

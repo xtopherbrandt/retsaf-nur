@@ -69,7 +69,7 @@ def check_api(path: Path) -> bool:
     try:
         load_config(path)
     except ConfigNotFoundError as exc:
-        message = f"Error: {exc}"
+        message = f"Error: {exc}. Run `runcoach-api init` first."  # as runcoach_api.cli.serve prints it
     except ConfigCorruptError as exc:
         message = f"Error: config file could not be parsed: {exc}"
     except ValidationError as exc:
