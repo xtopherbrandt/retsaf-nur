@@ -29,7 +29,8 @@ a date the mapping lacks, or ``None`` from the callable, reads as all four null.
 CTL is never read here (it includes the race's load).
 
 **Which races qualify** (F029 reference section 2), checked in this order, the first that fails
-being the reason; rows after the instant are ignored entirely:
+being the reason. A row after the instant is in neither list, though its ``start_time`` is still
+read, so a naive one raises there too:
 
 1. ``admitted_as_workout`` is not true, else ``admitted_as_workout``.
 2. The age ``(instant - start_time)`` in fractional days is under ``WINDOW_DAYS``, else

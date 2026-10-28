@@ -9,7 +9,7 @@ bare ``$ref`` is ignored), and, for ``GET /sessions/{id}``'s ``SessionDetail``,
 validates each one), and a ``oneOf`` only together with a ``discriminator`` (its ``propertyName``
 and a ``mapping`` of ``$ref`` strings, as the served OpenAPI writes a tagged union): the body's
 discriminator value picks the branch, and the body is validated against that branch alone. A
-``oneOf`` or a ``discriminator`` alone is not read. Prose keywords (``description``, ``example``, ``default``, ``title``,
+``oneOf`` or a ``discriminator`` alone raises ``ValueError``, as an unsupported keyword does. Prose keywords (``description``, ``example``, ``default``, ``title``,
 ``format``) and ``x-`` extensions are not checked. Any other keyword raises ``ValueError`` rather than passing
 unread, so a schema this module cannot judge is never reported valid.
 
