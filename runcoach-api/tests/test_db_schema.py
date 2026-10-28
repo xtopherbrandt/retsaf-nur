@@ -1689,3 +1689,85 @@ def test_overnight_values_are_keyed_by_session_and_time():
         ("night-1", "2026-10-09T23:10:00Z", None),
         ("night-2", "2026-10-09T23:05:00Z", 58.0),
     ]
+
+
+_PLAIN_SERIES_START_INDEX = (
+    "CREATE INDEX sessions_series_start"
+    " ON sessions (source_device, json_extract(summary, '$.series_start'), start_time)"
+)
+
+
+def _series_start_index_sql(conn) -> str | None:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'sessions_series_start'").fetchone()
+    return None if row is None else row[0]
+
+
+def _insert_session_with_summary(conn, session_id: str, start_time: str, summary: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO sessions (session_id, start_time, sport, source_vendor, source_device, summary)
+        VALUES (?, ?, 'other', 'garmin', 'dev-1', ?)
+        """,
+        (session_id, start_time, summary),
+    )
+
+
+def test_an_unreadable_summary_does_not_stop_the_schema_or_a_write(tmp_path):
+    """``sessions_series_start`` indexes an expression that is NULL for a summary that is not JSON,
+    so neither building the index nor writing such a summary fails.
+
+    (a) A store built with the plain ``json_extract`` index (by hand) gains the tolerant form at
+    ``init_schema``; a store holding a summary that is not JSON on a session whose load is saved
+    (written while no series-start index existed, since a store cannot hold both: the plain index
+    refuses that write) starts and builds the index. (b) A summary that is not JSON is then written,
+    by UPDATE on both stores and by INSERT. (c) ``_stored_night_at``'s query walks the
+    index, and still finds the night whose summary is JSON."""
+    plain = db.get_connection(tmp_path / "plain-index")
+    try:
+        plain.executescript(db._SCHEMA_DDL)
+        plain.execute(_PLAIN_SERIES_START_INDEX)
+        _insert_session_with_summary(plain, "night-1", "2026-10-10T07:00:00Z", '{"series_start": "s-1"}')
+        plain.commit()
+        before = _series_start_index_sql(plain)
+        db.init_schema(plain)
+        upgraded = _series_start_index_sql(plain)
+        plain.execute("UPDATE sessions SET summary = 'not json' WHERE session_id = 'night-1'")
+        plain.commit()
+        db.init_schema(plain)
+        reinit = _series_start_index_sql(plain)
+    finally:
+        plain.close()
+    assert before == _PLAIN_SERIES_START_INDEX
+    assert upgraded is not None and "json_valid(summary)" in upgraded, upgraded
+    assert reinit == upgraded
+
+    unreadable = db.get_connection(tmp_path / "unreadable-row")
+    try:
+        db.init_schema(unreadable)
+        _insert_session_with_summary(unreadable, "bad-1", "2026-10-10T07:00:00Z", "{}")
+        _insert_session_with_summary(unreadable, "night-1", "2026-10-11T07:00:00Z", '{"series_start": "s-1"}')
+        unreadable.execute("UPDATE sessions SET activity_tag = ?", (db.OVERNIGHT_TAG,))
+        unreadable.commit()
+        db.init_schema(unreadable)
+        unreadable.execute("DROP INDEX sessions_series_start")
+        unreadable.execute("UPDATE sessions SET summary = 'not json' WHERE session_id = 'bad-1'")
+        unreadable.commit()
+        db.init_schema(unreadable)
+        built = _series_start_index_sql(unreadable)
+        _insert_session_with_summary(unreadable, "bad-2", "2026-10-12T07:00:00Z", "not json")
+        unreadable.execute("UPDATE sessions SET summary = 'still not json' WHERE session_id = 'bad-1'")
+        unreadable.commit()
+        summaries = dict(unreadable.execute("SELECT session_id, summary FROM sessions").fetchall())
+
+        statements: list[str] = []
+        unreadable.set_trace_callback(statements.append)
+        found = db._stored_night_at(unreadable, "dev-1", "s-1")
+        unreadable.set_trace_callback(None)
+        (query,) = [s for s in statements if "FROM sessions" in s]
+        plan = [row[3] for row in unreadable.execute(f"EXPLAIN QUERY PLAN {query}").fetchall()]
+    finally:
+        unreadable.close()
+    assert built == upgraded
+    assert summaries == {"bad-1": "still not json", "bad-2": "not json", "night-1": '{"series_start": "s-1"}'}
+    assert found is not None and found["session_id"] == "night-1"
+    assert any("USING INDEX sessions_series_start" in detail for detail in plan), plan

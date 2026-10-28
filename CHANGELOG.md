@@ -98,8 +98,8 @@ indexes on the sessions table (`CREATE INDEX IF NOT EXISTS`): `sessions_upload_o
 and `sessions_latest_sex`, `sessions_latest_body_mass_kg`, `sessions_latest_height_cm`,
 `sessions_latest_resting_hr_bpm`, `sessions_latest_max_hr_bpm` and
 `sessions_latest_threshold_hr_bpm`. No stored row changes. `sessions_series_start` reads each
-session's summary as JSON; the athlete's store was checked read-only and all 1,805 summaries are
-valid JSON, so it builds.
+session's `series_start` only from a summary that is valid JSON, so it builds whatever a stored
+summary holds, and a summary that is not JSON can still be written.
 
 ### Migration required
 

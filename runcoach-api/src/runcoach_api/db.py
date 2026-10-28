@@ -437,19 +437,31 @@ def _ensure_unique_child_indexes(conn: sqlite3.Connection) -> None:
         conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {new_name} ON {table} (session_id, {column})")
 
 
+# The summary's ``series_start``, or NULL when the summary is not JSON. ``sessions_series_start``
+# indexes this expression, and a query uses that index only when it compares the same text.
+SERIES_START_EXPR = "CASE WHEN json_valid(summary) THEN json_extract(summary, '$.series_start') END"
+
+
 def _ensure_session_lookup_indexes(conn: sqlite3.Connection) -> None:
     """The sessions indexes the per-upload reads search instead of scanning every session: one on
     ``upload_order`` (``_insert_session``'s ``MAX``); one on ``source_device``, the summary's
     ``series_start`` and ``start_time`` (``_stored_night_at``, which otherwise reads every night of
-    the device); and,
+    the device), whose ``SERIES_START_EXPR`` is NULL for a summary that is not JSON, so neither
+    building it nor writing such a summary fails (a store holding the plain ``json_extract`` form
+    has it dropped and rebuilt); and,
     per ``profile.FIT_FIELDS`` column, one on ``(start_time, upload_order)`` over the sessions
     carrying it (the latest carrying session, read by ``_run_date_candidates`` and
     ``_resolve_profile_latest``). Created after ``_reconcile_columns``, since an older store gains
     these columns there."""
     conn.execute("CREATE INDEX IF NOT EXISTS sessions_upload_order ON sessions (upload_order)")
+    existing = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'sessions_series_start'"
+    ).fetchone()
+    if existing is not None and SERIES_START_EXPR not in existing[0]:
+        conn.execute("DROP INDEX sessions_series_start")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS sessions_series_start"
-        " ON sessions (source_device, json_extract(summary, '$.series_start'), start_time)"
+        f" ON sessions (source_device, {SERIES_START_EXPR}, start_time)"
     )
     for field in profile_module.FIT_FIELDS:
         conn.execute(
@@ -2438,10 +2450,10 @@ def _stored_night_at(conn: sqlite3.Connection, source_device: str | None, series
     """The stored night of ``source_device`` whose series starts at ``series_start``:
     the latest such ``(session_id, start_time)`` row, or ``None``."""
     return conn.execute(
-        """
+        f"""
         SELECT session_id, start_time FROM sessions
         WHERE source_device = ? AND activity_tag = ?
-          AND json_extract(summary, '$.series_start') = ?
+          AND {SERIES_START_EXPR} = ?
         ORDER BY start_time DESC LIMIT 1
         """,
         (source_device, OVERNIGHT_TAG, series_start),
