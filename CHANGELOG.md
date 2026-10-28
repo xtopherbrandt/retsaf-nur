@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-26 through 2026-10-28 — Sprint 022: The endurance exponent b from tagged races
+
 ### The endurance exponent b from tagged races: `GET /state` and `runcoach state`
 
 F029: the system serves its second owned fitness estimate, the individual endurance exponent b, the
