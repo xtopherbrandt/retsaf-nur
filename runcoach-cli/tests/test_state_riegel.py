@@ -224,6 +224,39 @@ def test_population_too_few_races_line(install_mock_client) -> None:
     assert one[0] == POPULATION + "1 race in the last 1095 days; 3 are needed", "\n".join(one)
 
 
+def test_population_line_counts_the_fade(install_mock_client) -> None:
+    """Three races with one fading: the API counts races by their weight, (sum w)^2 / sum(w^2), so
+    the line gives that count beside the races listed, cut (not rounded) to one decimal, so it
+    never reads 3.0 when the count is short of 3."""
+    faded = {**C, "weight": 0.5}
+    lines = _riegel_lines(install_mock_client, _body(_population([A, B, faded])))
+    assert lines[:2] == [
+        POPULATION + "3 races in the last 1095 days, 2.7 counting the fade; 3 are needed",
+        TAGGING_LINE,
+    ], "\n".join(lines)
+
+    nearly = _riegel_lines(install_mock_client, _body(_population([A, B, {**C, "weight": 0.999}])))
+    assert nearly[0] == POPULATION + "3 races in the last 1095 days, 2.9 counting the fade; 3 are needed"
+
+    two_fading = [A, {**B, "weight": 0.2}, {**C, "weight": 0.2}, {**D, "weight": 1.0}]
+    excluded = [_excluded("x-1", "2025-11-02T08:00:00Z", "fitness_dropped", 29.0, 48.0)]
+    four = _riegel_lines(install_mock_client, _body(_population(two_fading, excluded)))
+    assert four[0] == (
+        POPULATION + "4 races in the last 1095 days, 2.7 counting the fade; 3 are needed, "
+        "1 excluded by the fitness screen"
+    ), "\n".join(four)
+
+    # Counted by weight at 3 or more, a population default is the spread's.
+    spread = [
+        _race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0, 1200.0, 40.0, 41.0, weight=w)
+        for i, w in enumerate((1.0, 1.0, 1.0, 0.5))
+    ]
+    one_distance = _riegel_lines(install_mock_client, _body(_population(spread)))
+    assert one_distance[0] == (
+        POPULATION + "4 races at one distance; the longest must be at least twice the shortest"
+    )
+
+
 def test_population_one_distance_line(install_mock_client) -> None:
     """Four 5Ks clear the race count, not the spread."""
     fives = [_race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0 + 100 * i, 1200.0, 40.0, 41.0) for i in range(4)]

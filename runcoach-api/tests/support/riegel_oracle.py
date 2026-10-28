@@ -11,8 +11,11 @@ It takes the races already chosen, as ``(d_eq_m, time_s, weight)`` triples; it q
 - **The fit** is weighted least squares of ``y = ln(T)`` on ``x = ln(D_eq)`` solved from the 2x2
   normal equations in raw sums, ``[[S_w, S_wx], [S_wx, S_wxx]] [a, b] = [S_wy, S_wxy]``, by
   Cramer's rule, rather than the reference's centred sums, so a slip in the estimator's centring
-  cannot be copied here. The standard error is ``sqrt(sum(w r^2) / (n - 2) / (S_wxx - S_wx^2 /
-  S_w))``, the same quantity as the reference's centred denominator.
+  cannot be copied here. The count is the effective number of races, ``n_eff = S_w^2 /
+  sum(w^2)``, and the standard error is the weighted one with the weights rescaled to sum to it,
+  ``w' = w * n_eff / S_w``: ``sqrt(sum(w' r^2) / (n_eff - 2) / (S'_wxx - S'_wx^2 / S'_w))``,
+  computed over the rescaled weights literally rather than in the reference's cancelled form. Its
+  degrees of freedom are ``n_eff - 2`` truncated, read with a 1e-9 slack.
 - **Student's t quantiles** come from the regularized incomplete beta function by its continued
   fraction (W. H. Press et al., *Numerical Recipes*, 3rd ed., section 6.4, ``betai`` and
   ``betacf``): for ``t >= 0`` and ``nu`` degrees of freedom, ``P(T <= t) = 1 - I_x(nu / 2, 1 / 2) /
@@ -131,10 +134,18 @@ def fit(races: list[tuple[float, float, float]]) -> Fit:
     a = (swy * swxx - swx * swxy) / det
     b = (sw * swxy - swx * swy) / det
     resid = [y - (a + b * x) for x, y, _w in points]
-    n = len(points)
-    sxx = swxx - swx * swx / sw
-    se = math.sqrt(sum(w * r * r for (_x, _y, w), r in zip(points, resid, strict=True)) / (n - 2) / sxx)
-    t = t_quantile(0.9, n - 2) if n - 2 <= 30 else Z
+    # The effective count, and the weights rescaled to sum to it (the athlete's ruling of
+    # 2026-10-28): the standard error is the weighted one over the rescaled weights.
+    n_eff = sw * sw / sum(w * w for _x, _y, w in points)
+    scaled = [(x, y, w * n_eff / sw) for x, y, w in points]
+    s1 = sum(w for _x, _y, w in scaled)
+    s1x = sum(w * x for x, _y, w in scaled)
+    s1xx = sum(w * x * x for x, _y, w in scaled)
+    sxx = s1xx - s1x * s1x / s1
+    ssr = sum(w * r * r for (_x, _y, w), r in zip(scaled, resid, strict=True))
+    se = math.sqrt(ssr / (n_eff - 2) / sxx)
+    df = int(n_eff - 2 + 1e-9)
+    t = t_quantile(0.9, df) if df <= 30 else Z
     return Fit(b, se, t, b - t * se, b + t * se, tuple(math.exp(r) - 1 for r in resid))
 
 
@@ -157,7 +168,7 @@ WORKED_EXAMPLES: dict[str, tuple[list[tuple[float, float, float]], tuple[float, 
     ),
     "A, B, C, D at 0.5": (
         [(*A, 1.0), (*B, 1.0), (*C, 1.0), (*D, 0.5)],
-        (1.076416, 0.005066, 1.885618, 1.066864, 1.085969, 0.294, -0.124, -0.646, 0.959),
+        (1.076416, 0.005386, 3.077684, 1.059839, 1.092993, 0.294, -0.124, -0.646, 0.959),
     ),
     "A, H, F": (
         [(*A, 1.0), (*H, 1.0), (*F, 1.0)],

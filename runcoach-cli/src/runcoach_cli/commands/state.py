@@ -31,12 +31,14 @@ After the threshold lines comes the endurance exponent block, from the ``riegel_
 (F029 reference section 6). A fitted b prints to three decimals with its 80 % interval, its label,
 the race count, the window and the shortest and longest GAP-equivalent distance used: ``Endurance
 exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``.
-Below the bar the population value prints with why (too few races, or every race at one distance),
-the number the fitness screen excluded when any were, and a line on how to tag a race; a fitted b
-under 1 adds a warning line. Then one ``Race in b`` line per race used (distance, GAP-equivalent
-distance, time, the day-before fitness and its change over the four weeks in words, ``fell 3 %``,
-``rose 5 %`` or ``no change``, the weight, and the residual against the line when one is served)
-and one ``Race left out of b`` line per race excluded with its reason in words. The labels differ
+Below the bar the population value prints with why (too few races; too few counted by their weight,
+``3 races in the last 1095 days, 2.7 counting the fade; 3 are needed``, when a fading race is what
+leaves the count short; or every race at one distance), the number the fitness screen excluded when
+any were, and a line on how to tag a race; a fitted b under 1 adds a warning line. Then one ``Race
+in b`` line per race used (distance, GAP-equivalent distance, time, the day-before fitness and its
+change over the four weeks in words, ``fell 3 %``, ``rose 5 %`` or ``no change``, the weight, and
+the residual against the line when one is served) and one ``Race left out of b`` line per race
+excluded with its reason in words. The labels differ
 from the threshold block's ``Race used`` and ``Race excluded``, so a race in both blocks is not
 printed twice under one label with different figures.
 An entry with ``estimate_not_finite`` says so and still lists the races. A body with no
@@ -134,6 +136,17 @@ SHORT_RACES_LINE = (
 )
 
 RIEGEL_DETERMINANT = "riegel_exponent"
+
+# The API counts the races of b by their weight, (sum w)^2 / sum(w^2), and reads that count with
+# this slack (an ulp-short count of equal weights is whole); the population line recomputes it from
+# the served weights to say when the fade is what leaves the count short.
+COUNT_SLACK = 1e-9
+
+
+def _effective_count(weights: list[float]) -> float:
+    squares = sum(w * w for w in weights)
+    return sum(weights) ** 2 / squares if squares > 0 else 0.0
+
 
 # Each reason a race is left out of b, in words (F029 reference section 2). ``fitness_dropped``
 # and ``outside_window`` carry figures and are worded where the line is built; a reason not listed
@@ -415,8 +428,16 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
         races = _count(len(efforts), "race")
         if population_default:
             min_races = _number(parameters["min_races"], "min_races")
+            counted = _effective_count([_number(e["weight"], "weight") for e in efforts])
             if len(efforts) < min_races:
                 why = f"{races} in the last {window} days; {min_races:g} are needed"
+            elif counted + COUNT_SLACK < min_races:
+                # Cut, not rounded, to one decimal: a count short of the bar never prints as 3.0.
+                tenths = math.floor(counted * 10) / 10
+                why = (
+                    f"{races} in the last {window} days, {tenths:.1f} counting the fade; "
+                    f"{min_races:g} are needed"
+                )
             else:
                 why = f"{races} at one distance; the longest must be at least twice the shortest"
             screened = sum(1 for row in excluded if row["reason"] == "fitness_dropped")
@@ -522,9 +543,10 @@ def state(
     the interval together.
 
     Then the endurance exponent b, the slope of race time on distance, fitted to your tagged races of
-    the last 1095 days (the population 1.06 until three races span a twofold distance), with each
-    race used and excluded. A race run while your fitness had fallen more than 30 % in the four
-    weeks before it is left out.
+    the last 1095 days (the population 1.06 until three races span a twofold distance, a race in
+    the last 182 days of the window counted by its fading weight), with each race used and
+    excluded. A race run while your fitness had fallen more than 30 % in the four weeks before it
+    is left out.
 
     This is the training state; for whether the API is running, see runcoach status.
     """

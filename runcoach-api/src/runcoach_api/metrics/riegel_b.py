@@ -52,10 +52,15 @@ nothing; both are carried on the effort.
 
 **The fit** (reference section 3): ``D_eq = 1000 * T / gap_pace``; weight ``w = min(1, (WINDOW_DAYS
 - age) / FADE_DAYS)``; weighted least squares of ``ln T`` on ``ln D_eq`` by centred weighted sums;
-residuals served as ``exp(r) - 1``; ``se = sqrt(sum(w r^2) / (n - 2) / sum(w (x - x_w)^2))``; the
-80 % interval ``b +- t se`` with Student's t at ``n - 2`` degrees of freedom (``T_TABLE``, ``Z``
-above 30). The bar, ``n >= MIN_RACES`` races with ``w > 0`` and ``max D_eq / min D_eq >=
-MIN_SPREAD``, is checked before any division; below it the population ``POPULATION_B`` with
+residuals served as ``exp(r) - 1``. A fading race counts by its weight: the count is the effective
+number of races ``n_eff = (sum w)^2 / sum(w^2)`` (``n`` exactly when every weight is 1);
+``se = sqrt(sum(w r^2) / (n_eff - 2) / sum(w (x - x_w)^2))``, the weighted standard error with the
+weights rescaled to sum to ``n_eff`` (the scale cancels); the 80 % interval ``b +- t se`` with
+Student's t at ``floor(n_eff - 2)`` degrees of freedom (``T_TABLE``, ``Z`` above 30). The bar,
+``n_eff >= MIN_RACES`` over the races with ``w > 0`` and ``max D_eq / min D_eq >= MIN_SPREAD``
+among them, is checked before any division (both read ``n_eff`` with ``COUNT_SLACK``); with
+exactly three races any weight under 1 leaves ``n_eff`` under 3. Row 2 already excludes a race at
+weight 0, so every race used has ``w > 0``. Below the bar the population ``POPULATION_B`` with
 ``POPULATION_ERROR`` and ``Z`` stands, ``low``, provisional, every race listed with a null residual.
 Labels compare ``se`` with ``HIGH_MAX_ERROR`` and ``MEDIUM_MAX_ERROR``, inclusive on the better side;
 ``below_one`` marks a fitted b under 1 and changes no label. Any ``D_eq``, b, se, interval end or
@@ -90,6 +95,12 @@ COVERAGE = 0.80
 HIGH_MAX_ERROR = 0.02
 MEDIUM_MAX_ERROR = 0.04
 SECONDS_PER_DAY = 86400.0
+COUNT_SLACK = 1e-9
+"""The bar and the t multiplier's floor read the effective count with this slack. Weights of 1 give
+a whole count exactly, but n equal weights under 1 can come out an ulp under n as a ratio of float
+sums (three races at 913.008 days: 2.9999999999999996), which would drop them below the bar or a
+degree of freedom. The slack also counts any count within 1e-9 under a whole number as that number:
+with three races, one within about 4e-5 of weight 1, the first ten minutes of its fade."""
 
 Z = 1.2815515655446004
 """The 0.9 quantile of the standard normal, as ``threshold_pace.Z``: the multiplier above 30
@@ -381,6 +392,14 @@ def _label(error: float) -> str:
     return "low"
 
 
+def effective_count(weights: Iterable[float]) -> float:
+    """The effective number of races, ``(sum w)^2 / sum(w^2)``; 0 for none. ``n`` weights of 1
+    give ``n`` exactly, since the sums of ones are exact."""
+    weights = list(weights)
+    squares = sum(w * w for w in weights)
+    return sum(weights) ** 2 / squares if squares > 0 else 0.0
+
+
 def t_multiplier(df: int) -> float:
     """Student's t at 0.90 for ``df`` degrees of freedom: ``T_TABLE`` to 30, ``Z`` above."""
     return T_TABLE[df] if df <= 30 else Z
@@ -486,7 +505,8 @@ def estimate(
         return unavailable()  # an underflow to 0 has no finite logarithm either
     weighted = [item for item in used if item[0].weight > 0]
     served = [d_eq for _stored, _features, _pace, d_eq in weighted]
-    if len(weighted) < MIN_RACES or max(served) / min(served) < MIN_SPREAD:
+    n_eff = effective_count([stored.weight for stored, _features, _pace, _d_eq in weighted])
+    if n_eff + COUNT_SLACK < MIN_RACES or max(served) / min(served) < MIN_SPREAD:
         return RiegelEstimate(
             as_of=instant,
             efforts=efforts([None] * len(used)),
@@ -513,9 +533,11 @@ def estimate(
     sxy = sum(wi * (xi - x_w) * (yi - y_w) for wi, xi, yi in zip(w, x, y, strict=True))
     b = sxy / sxx
     r = [yi - (y_w + b * (xi - x_w)) for xi, yi in zip(x, y, strict=True)]
-    n = len(weighted)
-    error = math.sqrt(sum(wi * ri * ri for wi, ri in zip(w, r, strict=True)) / (n - 2) / sxx)
-    t = t_multiplier(n - 2)
+    # The weighted standard error over the weights rescaled to sum to n_eff, w' = w * n_eff / sum(w):
+    # sum(w' r^2) and sum(w' (x - x_w)^2) both carry the factor n_eff / sum(w), which cancels, so
+    # se = sqrt(sum(w r^2) / (n_eff - 2) / sxx); b and the residuals do not move with the scale.
+    error = math.sqrt(sum(wi * ri * ri for wi, ri in zip(w, r, strict=True)) / (n_eff - 2) / sxx)
+    t = t_multiplier(math.floor(n_eff - 2 + COUNT_SLACK))
     low, high = b - t * error, b + t * error
     try:
         residuals = [math.expm1(ri) for ri in r]

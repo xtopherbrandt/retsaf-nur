@@ -798,8 +798,9 @@ def test_the_bar_and_fade_through_the_route() -> None:
     served ``D_eq`` 5000.0 and 10000.0, a ratio of exactly 2.0, and with a 7 km race between them
     the individual b; 9,995 m in place of 10 km (1.999) the population; the 7 km race excluded by
     a screen (stored ``smart_recording``) the population. Races at 913 and 1004 days are used at
-    weight 1 and 0.5; a third race at exactly 1095 days (weight 0) is not counted by the bar, one
-    at 1094.99 days (weight above 0) is."""
+    weight 1 and 0.5 (an effective count of 3.77, fitted); a third race at exactly 1095 days is
+    excluded ``outside_window`` by the window's row, and one at 1094.99 days is used at a weight
+    under 1e-4, which leaves the effective count under 3, so b is the population's."""
     five = (datetime(2026, 8, 2, 7, 0, tzinfo=UTC), 5000.0, 240.0)
     seven = (datetime(2026, 8, 16, 7, 0, tzinfo=UTC), 7000.0, 246.0)
     ten = (datetime(2026, 8, 30, 7, 0, tzinfo=UTC), 10000.0, 252.0)
@@ -872,7 +873,8 @@ def test_the_bar_and_fade_through_the_route() -> None:
         )
         assert _used(inside_edge) == [inside, a, b]
         assert 0 < _effort(inside_edge, inside)["weight"] < 1e-4
-        assert inside_edge["population_default"] is False
+        assert inside_edge["population_default"] is True
+        assert inside_edge["estimate"]["value"] == 1.06
     for riegel in (fitted, narrow, screened, faded, at_edge, inside_edge):
         for e in riegel["efforts"]:
             print(

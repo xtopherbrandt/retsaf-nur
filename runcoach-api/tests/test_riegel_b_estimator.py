@@ -260,11 +260,13 @@ def test_bar_edges_at_a_ratio_of_two() -> None:
         assert [e.reason for e in result.excluded] == [reason], reason
         assert result.population_default is True, reason
 
-    # The bar counts races with a weight above 0: at 1095.00 days the third is out, at 1094.99 in.
+    # The bar counts races by their weight: at 1095.00 days the third is out by row 2; at 1094.99
+    # it is used at a weight under 1e-4, and the effective count (2 + w)^2 / (2 + w^2) is under 3.
     assert _run(_edge(_mid(age_days=1095.0))).population_default is True
     barely = _run(_edge(_mid(age_days=1094.99)))
-    assert barely.population_default is False
     assert 0 < {e.session_id: e.weight for e in barely.efforts}["mid"] < 1e-4
+    assert barely.population_default is True and barely.value == 1.06 and barely.confidence == "low"
+    assert [e.residual for e in barely.efforts] == [None, None, None]
 
 
 def test_weight_fades_from_913_to_1095_days() -> None:
@@ -302,6 +304,148 @@ def test_weight_fades_from_913_to_1095_days() -> None:
     assert [(e.session_id, e.reason) for e in by_date.excluded] == [("out", "outside_window")]
     with pytest.raises(ValueError):
         estimate(edge, day, {})
+
+
+_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def _age(weight: float) -> float:
+    """The age in days at which a race's weight is ``weight`` (inside the fade)."""
+    return riegel_oracle.WINDOW_DAYS - riegel_oracle.FADE_DAYS * weight
+
+
+def _power_law_races() -> dict[str, tuple[float, float]]:
+    """A 5K, a 10K 1 % slow of a b = 1.06 line from it, a half 10 % slow and a marathon 1 % fast."""
+    five = 1200.0
+    return {
+        "5k": (5000.0, five),
+        "10k": (10000.0, five * 2**1.06 * 1.01),
+        "half": (21100.0, five * (21100 / 5000) ** 1.06 * 1.10),
+        "marathon": (42200.0, five * (42200 / 5000) ** 1.06 * 0.99),
+    }
+
+
+def test_a_fading_third_race_leaves_the_bar_at_once() -> None:
+    """With three races, any fade below weight 1 takes the effective count under 3, so b is the
+    population's until the race leaves: counted whole, the half at 1094 days read ``high`` on an
+    error of 0.011 (and 0.004 at 1094.9) where the fit at weight 1 reads ``medium`` on 0.029."""
+    races = _power_law_races()
+    labels, errors = [], []
+    for age in (900, 1000, 1080, 1090, 1094, 1094.9, 1095):
+        rows = [
+            _race("5k", *races["5k"], 30),
+            _race("10k", *races["10k"], 60),
+            _race("half", *races["half"], age),
+        ]
+        result = _run(rows)
+        print(f"  half at {age} days: b {result.value} error {result.error} {result.confidence}")
+        labels.append(_RANK[result.confidence])
+        errors.append(result.error)
+        if age == 900:
+            assert result.population_default is False and result.confidence == "medium"
+            assert result.error == pytest.approx(0.028804, abs=5e-7)
+            assert result.t_multiplier == riegel_b.T_TABLE[1]
+        else:
+            assert result.population_default is True, age
+            assert (result.value, result.error, result.confidence) == (1.06, 0.05, "low"), age
+    assert labels == sorted(labels, reverse=True)
+    assert errors == sorted(errors)
+
+
+def test_a_fading_race_never_makes_the_fit_more_certain_than_without_it() -> None:
+    """With four races, a fading race's weight shrinks its share of both the residuals and the
+    count, so the error tends to the error of the three races without it, never below it, and the
+    label is never better than theirs. Counted whole, the half's fade took the error to that of the
+    three over the square root of 2. This is not a promise that the error only rises: as an
+    outlier fades the error falls toward the fit without it (the half, 10 % slow, takes the label
+    from ``medium`` to ``high``), and as a race on the line fades it rises."""
+    races = _power_law_races()
+    for fading in ("half", "marathon"):
+        kept = [name for name in races if name != fading]
+        without = _run([_race(name, *races[name], 30 + 10 * i) for i, name in enumerate(kept)])
+        assert without.population_default is False and without.t_multiplier == riegel_b.T_TABLE[1]
+        for weight in (0.999, 0.9, 0.5, 0.2, 0.1, 0.01, 0.001, 1e-6):
+            rows = [_race(name, *races[name], 30 + 10 * i) for i, name in enumerate(kept)]
+            rows.append(_race(fading, *races[fading], _age(weight)))
+            result = _run(rows)
+            print(
+                f"  {fading} at {weight}: error {result.error} {result.confidence}; without {without.error}"
+            )
+            assert result.population_default is False, (fading, weight)
+            assert result.error >= without.error * (1 - 1e-9), (fading, weight)
+            assert _RANK[result.confidence] <= _RANK[without.confidence], (fading, weight)
+            assert result.t_multiplier == without.t_multiplier, (fading, weight)
+            assert result.interval_high - result.interval_low >= (
+                without.interval_high - without.interval_low
+            ) * (1 - 1e-9), (fading, weight)
+        assert result.error == pytest.approx(without.error, rel=1e-4), fading
+
+
+def test_the_t_multiplier_takes_the_whole_part_of_the_effective_count() -> None:
+    """Five races, one at weight 0.5: the effective count is 4.5^2 / 4.25 = 4.765, so t is t(2)
+    (rounding would give t(3)) and the error divides by 2.765; the oracle computes the same over
+    the weights rescaled to sum to 4.765."""
+    distances = (5000.0, 10000.0, 21100.0, 42200.0, 15000.0)
+    rows = [
+        _race(str(d), d, 0.24 * d**1.06 * (1 + 0.01 * (-1) ** i), 100 + i) for i, d in enumerate(distances)
+    ]
+    rows[-1] = _race("15000.0", 15000.0, 0.24 * 15000.0**1.06 * 1.02, _age(0.5))
+    result = _run(rows)
+    weights = [e.weight for e in result.efforts]
+    assert sorted(weights) == [0.5, 1.0, 1.0, 1.0, 1.0]
+    assert sum(weights) ** 2 / sum(w * w for w in weights) == pytest.approx(4.5**2 / 4.25, abs=1e-12)
+    assert result.t_multiplier == riegel_b.T_TABLE[2]
+    oracle = riegel_oracle.fit([(e.gap_equivalent_m, e.duration_s, e.weight) for e in result.efforts])
+    assert abs(result.error - oracle.error) <= ORACLE_TOLERANCE
+    assert abs(result.value - oracle.b) <= ORACLE_TOLERANCE
+    assert abs(result.interval_low - oracle.low) <= ORACLE_TOLERANCE
+
+
+def test_equal_weights_under_1_count_whole() -> None:
+    """n equal weights give an effective count of n, but as a ratio of float sums it can land an
+    ulp under: three races at 913.008 days compute 2.9999999999999996 and five at 913.003 days
+    4.999999999999998. The count is read with a 1e-9 slack, so the three are fitted and the five
+    take t(3), not the population and t(2)."""
+    three = [
+        _race(str(d), d, 0.24 * d**1.06 * (1.01 if d == 10000.0 else 1.0), 913.008)
+        for d in (5000.0, 10000.0, 21100.0)
+    ]
+    fitted = _run(three)
+    weights = [e.weight for e in fitted.efforts]
+    assert sum(weights) ** 2 / sum(w * w for w in weights) < 3
+    assert fitted.population_default is False and fitted.t_multiplier == riegel_b.T_TABLE[1]
+
+    distances = (5000.0, 10000.0, 21100.0, 42200.0, 15000.0)
+    five = [
+        _race(str(d), d, 0.24 * d**1.06 * (1 + 0.01 * (-1) ** i), 913.003) for i, d in enumerate(distances)
+    ]
+    result = _run(five)
+    weights = [e.weight for e in result.efforts]
+    assert sum(weights) ** 2 / sum(w * w for w in weights) < 5
+    assert result.t_multiplier == riegel_b.T_TABLE[3]
+
+
+def test_the_bar_counts_races_by_their_weight() -> None:
+    """Four races in the window, two of them fading: at weight 0.5 each the effective count is
+    3^2 / 2.5 = 3.6 and b is fitted; at 0.2 each it is 2.4^2 / 2.08 = 2.77 and b is the
+    population's, with every race still listed and its weight served."""
+    races = _power_law_races()
+    for weight, fitted in ((0.5, True), (0.2, False)):
+        rows = [
+            _race("5k", *races["5k"], 30),
+            _race("marathon", *races["marathon"], 40),
+            _race("10k", *races["10k"], _age(weight)),
+            _race("half", *races["half"], _age(weight) + 1e-9),
+        ]
+        result = _run(rows)
+        print(
+            f"  two at {weight}: population {result.population_default}, weights {[e.weight for e in result.efforts]}"
+        )
+        assert len(result.efforts) == 4
+        assert result.population_default is (not fitted), weight
+        if not fitted:
+            assert (result.value, result.confidence) == (1.06, "low")
+            assert all(e.residual is None for e in result.efforts)
 
 
 def test_t_table_matches_an_independent_source() -> None:
