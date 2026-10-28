@@ -21,23 +21,24 @@ record is read; then the fitness screen (`fitness_dropped`); then F013's flags f
 compute); then a GAP pace that is missing, zero or not finite (`gap_pace_unavailable`). Degraded GPS
 excludes no race, and a race with no altitude counts at its flat pace.
 
-**The fit.** Each race enters by its GAP-equivalent distance, `D_eq = 1000 × time / GAP pace` metres:
-the flat distance its grade-adjusted pace covers in its time. On a hilly course `D_eq` reads longer
-than the distance run, because grade-adjusted pace counts the climbing: the corpus's hilly 8 km real
-run (`hilly_run_8k_fr945`) reads 8,801 m against 8,348 m run, 5.4 % longer. b is the weighted
-least-squares slope of log time on log `D_eq`; a race weighs 1 until it is 913 days old and its
-weight then falls to 0 at 1095 days, so a race fading out of the window moves b gradually rather
-than in a step while the races still count three or more. b is individual only when the races used count at least three and the longest
-`D_eq` is at least twice the shortest. A fading race counts by its weight: the count is the
-effective number of races, (sum of weights)^2 / (sum of squared weights), which is the number of
-races while every weight is 1, and the same count sets the error (the weighted standard error over
-that count less 2) and the 80 % interval's Student's t (the whole part of the count less 2 degrees
-of freedom; z past 30). So with three races b is the population value as soon as one of them
-starts to fade; with more, the error moves toward that of the fit without the fading race. Its
-label is `high` while the error is at most 0.02, `medium` to 0.04 and `low` above. Below that bar the population default stands: b 1.06, error 0.05, a z
-interval of 0.996 to 1.124, `low`, provisional, with the races still listed. A fitted b under 1 is
-served with `below_one` true, a warning that outranks the label and changes nothing else. Nothing is
-stored: b is recomputed on every read, so a race untagged in Connect drops out at the next read.
+**The fit.** Each race enters by its GAP-equivalent distance, `D_eq = 1000 × time / GAP pace`
+metres: the flat distance its grade-adjusted pace covers in its time. On a hilly course `D_eq` reads
+longer than the distance run, because grade-adjusted pace counts the climbing: the corpus's hilly 8
+km real run (`hilly_run_8k_fr945`) reads 8,801 m against 8,348 m run, 5.4 % longer. b is the
+weighted least-squares slope of log time on log `D_eq`; a race weighs 1 until it is 913 days old and
+its weight then falls to 0 at 1095 days, so a race fading out of the window moves b gradually rather
+than in a step while the races still count three or more. b is individual only when the races used
+count at least three and the longest `D_eq` is at least twice the shortest. A fading race counts by
+its weight: the count is the effective number of races, (sum of weights)^2 / (sum of squared
+weights), which is the number of races while every weight is 1, and the same count sets the error
+(the weighted standard error over that count less 2) and the 80 % interval's Student's t (the whole
+part of the count less 2 degrees of freedom; z past 30). So with three races b is the population
+value as soon as one of them starts to fade; with more, the error moves toward that of the fit
+without the fading race. Its label is `high` while the error is at most 0.02, `medium` to 0.04 and
+`low` above. Below that bar the population default stands: b 1.06, error 0.05, a z interval of 0.996
+to 1.124, `low`, provisional, with the races still listed. A fitted b under 1 is served with
+`below_one` true, a warning that outranks the label and changes nothing else. Nothing is stored: b
+is recomputed on every read, so a race untagged in Connect drops out at the next read.
 
 **The fitness screen.** A race is left out, `fitness_dropped`, when the athlete's fitness (the load
 chart's CTL) on the day before the race had fallen more than 30 % from its value four weeks earlier
@@ -67,18 +68,19 @@ illustrative):
 The fitness change reads `rose 5 % over 4 weeks`, `fell 42 % over 4 weeks` or `no change over 4
 weeks`, and `fitness 29 (-)` when the earlier figure is missing. The weight prints to two decimals,
 or, when it is under 1 but would print as 1.00, with the fewest decimals, up to 6, that show it
-under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. Below the bar the first line reads
-`Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low: 2 races in the last
-1095 days; 3 are needed`, `... low: 3 races in the last 1095 days, 2.7 counting the fade; 3 are
-needed` when a fading race is what leaves the count short, or `... low: 4 races at one distance;
-the longest must be at least twice the shortest`, with `, N excluded by the fitness screen` when any were, followed by `Mark a race as Race
-in Garmin Connect and run runcoach sync tags --since <its date>`. A race left out because it is too
-old reads `1095 days or more before <as_of date>`. A fitted b under 1 adds `b reads below 1: a race
-used was probably not all-out, or a trail race; check the races listed`. The b block's race lines
-read `Race in b` and `Race left out of b`, and the threshold block keeps `Race used` and `Race
-excluded`, so a race in both blocks is not listed twice under one label. Against an API from before
-this release the block is one line, `Endurance exponent: not served by this API; update it and
-restart`, and the command exits 0. `--as-of` passes through.
+under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. Below the
+bar the first line reads `Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low:
+2 races in the last 1095 days; 3 are needed`, `... low: 3 races in the last 1095 days, 2.7 counting
+the fade; 3 are needed` when a fading race is what leaves the count short, or `... low: 4 races at
+one distance; the longest must be at least twice the shortest`, with `, N excluded by the fitness
+screen` when any were, followed by `Mark a race as Race in Garmin Connect and run runcoach sync tags
+--since <its date>`. A race left out because it is too old reads `1095 days or more before <as_of
+date>`. A fitted b under 1 adds `b reads below 1: a race used was probably not all-out, or a trail
+race; check the races listed`. The b block's race lines read `Race in b` and `Race left out of b`,
+and the threshold block keeps `Race used` and `Race excluded`, so a race in both blocks is not
+listed twice under one label. Against an API from before this release the block is one line,
+`Endurance exponent: not served by this API; update it and restart`, and the command exits 0.
+`--as-of` passes through.
 
 **Tagging your races.** Mark each race as Race in Garmin Connect, then run `runcoach sync tags
 --since <its date>`; to tag races already in the store, `runcoach sync tags --since 2023-01-01`
