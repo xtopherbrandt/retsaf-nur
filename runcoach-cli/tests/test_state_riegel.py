@@ -301,6 +301,17 @@ def test_population_line_names_the_screened_count(install_mock_client) -> None:
     none = _riegel_lines(install_mock_client, _body(_population([A, B], one[1:])))
     assert none[0] == POPULATION + "2 races in the last 1095 days; 3 are needed"
 
+    # A race too old for the window (the athlete's 2023-10-08 marathon is one) is not counted as
+    # screened, nor is any other reason beside the one fitness_dropped.
+    others = [
+        _excluded("x-0", "2023-10-08T08:00:00Z", "outside_window"),
+        *one,
+        _excluded("x-4", "2026-02-02T08:00:00Z", "grade_clamped"),
+        _excluded("x-5", "2026-03-02T08:00:00Z", "features_unavailable"),
+    ]
+    mixed = _riegel_lines(install_mock_client, _body(_population([A, B], others)))
+    assert mixed[0] == POPULATION + "2 races in the last 1095 days; 3 are needed, 1 excluded by the fitness screen"
+
 
 def test_race_used_lines(install_mock_client) -> None:
     """Distance, GAP-equivalent distance, time, fitness before (whole) and its change in words (whole
