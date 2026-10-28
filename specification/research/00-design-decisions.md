@@ -427,7 +427,7 @@ Pinned: none
 Scope: every race-time projection that uses the endurance exponent.
 Not: an individual exponent fitted while its confidence is inadequate.
 Pinned: none
-Why: rule REG-32 states, as H-45 records, when the individual b is adequate and how wide the population interval is.
+Why: rule REG-32 states, as H-45 and H-46 record, when the individual b is adequate and how wide the population interval is.
 
 **REG-06.** Durability MUST be EF/decoupling drift over the back third of long runs, tracked as a within-athlete trend only and flagged as emerging.
 Scope: every durability estimate.
@@ -566,7 +566,7 @@ Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
 Pinned: runcoach-api/tests/test_threshold_workout_active_block.py::test_counted_reps_at_589_99_and_590
 
-**REG-32.** The endurance exponent MUST be the weighted least-squares slope of log time on log GAP-equivalent distance over tagged races of the last 1095 days, faded in the last 182, passing the stream, grade-clamp and fitness-drop screens, with a Student's t interval if three or more by weight span a twofold distance ratio, else the population 1.06, error 0.05, with a z interval; no filter step.
+**REG-32.** The endurance exponent MUST be the weighted least-squares slope of log time on log GAP-equivalent distance over tagged races of the last 1095 days, faded in the last 182, passing the stream, grade-clamp and fitness-drop screens, with a Student's t interval if three or more by weight span a twofold ratio of that distance, else the population 1.06, error 0.05, z interval; no filter step.
 Scope: the endurance exponent served, from `race` runs not admitted as workouts by a listed name, weighted min(1, (1095 - age in days) / 182), with a finite positive time and GAP pace, flagged none of `distance_regressed`, `smart_recording` or `grade_clamped`, and whose CTL the day before is no more than 30 % below its value 28 days earlier, or unknown; constants are engineering defaults.
 Not: the spec/04 section 4.3 filter and its staleness inflation, which this determinant does not use, the window and the fade being its staleness rule; a race screened by effort or heart rate, since only the athlete's Race tag admits one; and an individual b from races counting fewer than three by their weights or a spread under twofold, where the population 1.06 stands.
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_worked_examples_match_the_reference
