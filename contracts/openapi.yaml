@@ -3427,7 +3427,8 @@ components:
       description: >
         getState: the `riegel_exponent` entry (F029), the individual endurance exponent b from the
         tagged races of the last 1095 days that pass the F029 reference section 2 screens, or the
-        population 1.06 until three races span a twofold distance ratio. Beside the estimate it
+        population 1.06 until three races, a fading race counted by its weight, span a twofold
+        distance ratio. Beside the estimate it
         carries what reproduces it by hand: `error`, `t_multiplier`, the races used (`efforts`),
         those not used (`excluded`) and the constants (`parameters`). Its interval covers
         race-to-race scatter, not bias: a race not run all-out moves b and the interval together.
@@ -3445,9 +3446,9 @@ components:
           nullable: true
           description: "`estimate_not_finite` when a race's GAP-equivalent distance, b, the error, the interval or a residual is not finite: `estimate`, `error` and `t_multiplier` are null, `efforts` and `parameters` still served. Null with an estimate."
         trend: { $ref: "#/components/schemas/Trend" }
-        error: { type: number, nullable: true, description: "The standard error of b (0.05 for the population value); null when unavailable." }
-        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for n - 2 degrees of freedom (z above 30 and for the population value); null when unavailable." }
-        population_default: { type: boolean, description: "True when fewer than three races are used or the longest is under twice the shortest: the population 1.06 is served." }
+        error: { type: number, nullable: true, description: "The weighted standard error of b over the effective number of races less 2, n_eff = (sum w)^2 / sum(w^2) (0.05 for the population value); null when unavailable." }
+        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for floor(n_eff - 2) degrees of freedom, n_eff the effective number of races (z above 30 and for the population value); null when unavailable." }
+        population_default: { type: boolean, description: "True when the races used count fewer than three by their weights (the effective number of races, so a fading race counts as less than one) or the longest is under twice the shortest: the population 1.06 is served." }
         below_one: { type: boolean, description: "A fitted b under 1: a race used was probably not all-out, or a trail race. Outranks the label." }
         efforts:
           type: array
@@ -3471,7 +3472,7 @@ components:
         gap_equivalent_m: { type: number, nullable: true, description: "`1000 * duration_s / gap_pace_s_per_km`, the distance the fit reads; null when not finite, and the estimate is then unavailable." }
         gap_coverage: { type: number, nullable: true, description: "F013's graded share of the distance; below 1 counts at flat pace." }
         gps_degraded_fraction: { type: number, nullable: true, description: "F013's degraded-GPS share of the distance; shown, never judged." }
-        weight: { type: number, description: "`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095." }
+        weight: { type: number, description: "`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095. The race counts by it in the effective number of races, (sum w)^2 / sum(w^2), that sets the bar, the error and t." }
         fitness_before: { type: number, nullable: true, description: "The load chart's CTL on the local day before the race; null when that day is before the chart's first day." }
         fitness_earlier: { type: number, nullable: true, description: "The load chart's CTL 29 days before the race's local day; null when that day is before the chart's first day." }
         fitness_drop: { type: number, nullable: true, description: "`1 - fitness_before / fitness_earlier`, the fall over the four weeks; null without both figures." }

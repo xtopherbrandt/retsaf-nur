@@ -1911,8 +1911,8 @@ class RiegelExponentValue(BaseModel):
     unit: Literal["1"]
     interval: RiegelExponentInterval
     confidence: Literal["low", "medium", "high"] = Field(
-        description="`high` while the error is at most 0.02, `medium` while at most 0.04, `low` above, and for the "
-        "population value (F029 reference section 1)."
+        description="`high` while the error (a fading race counted by its weight) is at most 0.02, `medium` while at "
+        "most 0.04, `low` above, and for the population value (F029 reference section 1)."
     )
     provisional: bool = Field(description="True for the population value, false for a fitted b.")
 
@@ -1931,7 +1931,10 @@ class RiegelEffort(BaseModel):
     )
     gap_coverage: float | None = Field(description="F013's graded share of the distance; below 1 counts at flat pace.")
     gps_degraded_fraction: float | None = Field(description="F013's degraded-GPS share of the distance; shown, never judged.")
-    weight: float = Field(description="`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095.")
+    weight: float = Field(
+        description="`min(1, (1095 - age in days) / 182)`: 1 until 913 days old, falling to 0 at 1095. The race counts "
+        "by it in the effective number of races, (sum w)^2 / sum(w^2), that sets the bar, the error and t."
+    )
     fitness_before: float | None = Field(
         description="The load chart's CTL on the local day before the race; null when that day is before the chart's "
         "first day."
@@ -2002,8 +2005,8 @@ class RiegelExponentParameters(BaseModel):
 
 class RiegelDeterminant(BaseModel):
     """The `riegel_exponent` entry: the individual endurance exponent b from the tagged races of the last
-    1095 days that pass the section 2 screens, or the population 1.06 until three races span a twofold
-    distance ratio. Its interval covers race-to-race scatter, not bias: a race not run all-out moves b and
+    1095 days that pass the section 2 screens, or the population 1.06 until three races, a fading race
+    counted by its weight, span a twofold distance ratio. Its interval covers race-to-race scatter, not bias: a race not run all-out moves b and
     the interval together."""
 
     name: Literal["riegel_exponent"]
@@ -2015,14 +2018,16 @@ class RiegelDeterminant(BaseModel):
     )
     trend: DeterminantTrend
     error: float | None = Field(
-        description="The standard error of b (0.05 for the population value); null when unavailable."
+        description="The weighted standard error of b over the effective number of races less 2, n_eff = (sum w)^2 / "
+        "sum(w^2) (0.05 for the population value); null when unavailable."
     )
     t_multiplier: float | None = Field(
-        description="Student's t at 0.90 for n - 2 degrees of freedom (z above 30 and for the population value); "
-        "null when unavailable."
+        description="Student's t at 0.90 for floor(n_eff - 2) degrees of freedom, n_eff the effective number of races "
+        "(z above 30 and for the population value); null when unavailable."
     )
     population_default: bool = Field(
-        description="True when fewer than three races are used or the longest is under twice the shortest: the "
+        description="True when the races used count fewer than three by their weights (the effective number of "
+        "races, so a fading race counts as less than one) or the longest is under twice the shortest: the "
         "population 1.06 is served."
     )
     below_one: bool = Field(
