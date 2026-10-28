@@ -655,6 +655,44 @@ def test_rows_after_the_instant_and_other_sports_are_in_neither_list() -> None:
     assert result.efforts == () and result.excluded == ()
 
 
+def test_exclusion_fitness_figures_are_set_for_fitness_dropped_only() -> None:
+    """Every excluded race below carries a chart day for both fitness figures, but only the
+    ``fitness_dropped`` one serves them; rows 6 and 7 exclude races whose figures were read and
+    still serve null, as the contract's ``RiegelExclusion`` says."""
+    fit = (40, 41, False, False)
+    rows = [
+        _race("features", 5000.0, 1200.0, 100, fit, features=None),
+        _race(
+            "clamped",
+            5000.0,
+            1200.0,
+            110,
+            fit,
+            features={"gap_avg_pace_s_per_km": 240.0, "flags": ["grade_clamped"]},
+        ),
+        _race("pace", 5000.0, 1200.0, 120, fit, pace=0),
+        _race("smart", 5000.0, 1200.0, 130, fit, quality_flags='["smart_recording"]'),
+        _race("workout", 5000.0, 1200.0, 140, fit, admitted_as_workout=True),
+        _race("dropped", 5000.0, 1200.0, 150, (29, 50, False, False)),
+    ]
+    result = _run(rows)
+    reasons = {e.session_id: e.reason for e in result.excluded}
+    assert reasons == {
+        "features": "features_unavailable",
+        "clamped": "grade_clamped",
+        "pace": "gap_pace_unavailable",
+        "smart": "smart_recording",
+        "workout": "admitted_as_workout",
+        "dropped": "fitness_dropped",
+    }
+    for e in result.excluded:
+        figures = (e.fitness_before, e.fitness_earlier, e.fitness_drop)
+        if e.reason == "fitness_dropped":
+            assert figures[:2] == (29, 50) and figures[2] == pytest.approx(0.42, abs=1e-12)
+        else:
+            assert figures == (None, None, None), e
+
+
 def test_a_race_at_the_instant_is_used() -> None:
     """A race that starts exactly at the instant is at it, not after it: used at weight 1, and the
     predicate passes it on to have its features read."""
