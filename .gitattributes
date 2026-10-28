@@ -14,5 +14,5 @@ runcoach-api/tests/data/T162-no-regression-rows.csv -text
 
 # Shell scripts are run by Git Bash on Windows and by sh on Linux. With core.autocrlf=true a
 # Windows checkout would otherwise write them CRLF, and Git Bash then fails on the stray
-# carriage return. ol=lf stores and checks them out LF everywhere.
+# carriage return. `eol=lf` stores and checks them out LF everywhere.
 *.sh text eol=lf
