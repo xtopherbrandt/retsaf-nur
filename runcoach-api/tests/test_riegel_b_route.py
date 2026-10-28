@@ -353,6 +353,22 @@ def test_races_after_as_of_are_ignored() -> None:
     assert [e["session_id"] for e in now["efforts"]] == [five, ten, half]
 
 
+def test_a_race_that_starts_at_as_of_is_used() -> None:
+    """``as_of`` equal to a race's stored start: the race is at the instant, not after it, so it is
+    used at age 0 (weight 1) with its features read. Skipping it, or declining it in the predicate
+    that decides whose features are read (it would then read ``features_unavailable``), goes red."""
+    with TestClient(app) as client:
+        five, ten, half = _races(client, FIVE_K, TEN_K, HALF)
+        body = _body(client, HALF[0].isoformat())
+    riegel = _riegel(body)
+    print(f"  as_of {body['as_of']}; efforts {riegel['efforts']}; excluded {riegel['excluded']}")
+    assert datetime.fromisoformat(body["as_of"]) == HALF[0]
+    assert [e["session_id"] for e in riegel["efforts"]] == [five, ten, half]
+    assert riegel["excluded"] == []
+    assert riegel["efforts"][-1]["weight"] == 1.0
+    assert riegel["population_default"] is False
+
+
 def test_a_race_outside_the_window_is_listed_and_a_fading_race_is_weighted() -> None:
     """Ages are measured from ``as_of``: at 1100 days a race is ``outside_window``; at 1004 days its
     weight is (1095 - 1004) / 182 = 0.5."""

@@ -655,6 +655,17 @@ def test_rows_after_the_instant_and_other_sports_are_in_neither_list() -> None:
     assert result.efforts == () and result.excluded == ()
 
 
+def test_a_race_at_the_instant_is_used() -> None:
+    """A race that starts exactly at the instant is at it, not after it: used at weight 1, and the
+    predicate passes it on to have its features read."""
+    at = _race("at", 5000.0, 1200.0, 0)
+    assert datetime.fromisoformat(at["start_time"]) == INSTANT
+    assert needs_features(at, INSTANT, {}) is True
+    result = _run([at])
+    assert [(e.session_id, e.weight) for e in result.efforts] == [("at", 1.0)]
+    assert result.excluded == ()
+
+
 def test_the_oracle_imports_nothing_from_the_estimator() -> None:
     def imports(path: Path) -> set[str]:
         names: set[str] = set()
