@@ -768,7 +768,7 @@ PINNED_SHA256 = {
     "REG-29/Pinned": "6f6a2e0e1e2d",
     "REG-30/Pinned": "6f6a2e0e1e2d",
     "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487.6c48a4794dba",
-    "REG-32/Pinned": "0dce9981d74c.c6a9b8ebb202.f0d3ccf75cb1.3776571e3026.a03d22903888.bcecd2f1c203.d89aba1f1c27",
+    "REG-32/Pinned": "0dce9981d74c.c6a9b8ebb202.f0d3ccf75cb1.3776571e3026.a03d22903888.bcecd2f1c203.d89aba1f1c27.a99a36360c06.449d2aaf610a.dd7f54419317",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -1046,6 +1046,7 @@ HISTORY_SHA256 = {
     "H-43": "e4fa49a899eb",
     "H-44": "445782a59d91",
     "H-45": "685e13222541",
+    "H-46": "a728484b147e",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1062,7 +1063,8 @@ REVIEW_PROSE_SHA256 = (
     "ca0e1376449f", "1ab83c31c697", "9129d180bcf2", "394aca2810e8", "4bab88c420df", "a27a119979ce",
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
-    "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "6f04cc17398b",
+    "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "afe00eb5205d", "cab83feaf822",
+    "63fa0a525d66",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1098,6 +1100,8 @@ FROZEN_ROUNDS = {
     "23": "e1042d5f25d3",
     "24": "f2824d0fdaf4",
     "25": "41d592e87044",
+    "26": "afe00eb5205d",
+    "27": "cab83feaf822",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1130,6 +1134,8 @@ _FROZEN_ROUNDS_PIN = {
     "23": "e1042d5f25d3",
     "24": "f2824d0fdaf4",
     "25": "41d592e87044",
+    "26": "afe00eb5205d",
+    "27": "cab83feaf822",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1306,7 +1312,7 @@ REVIEW_LINE_SHA256 = {
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "9a4bd68f5ebc",
+    "DOC-18": "d3dfc99b7207",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1428,7 +1434,7 @@ REVIEW_LINE_SHA256 = {
     "REG-05": "1892fe161740",
     "REG-05/Scope": "e3cdfc03e324",
     "REG-05/Not": "8cd3c0dfa582",
-    "REG-05/Why": "ad30ece1aa7f",
+    "REG-05/Why": "8f978294608a",
     "REG-06": "699cc2e82c93",
     "REG-06/Scope": "cb41c82e3188",
     "REG-06/Not": "a60f490951bc",
@@ -1512,9 +1518,9 @@ REVIEW_LINE_SHA256 = {
     "REG-31": "b4d843004d31",
     "REG-31/Scope": "6c5a2eebde08",
     "REG-31/Not": "4b64ee2e1b81",
-    "REG-32": "35d794681b08",
+    "REG-32": "a0658e9b2c58",
     "REG-32/Scope": "d7bdffc049c6",
-    "REG-32/Not": "bce3e62c88ac",
+    "REG-32/Not": "106480f8fc9b",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
@@ -1532,7 +1538,7 @@ REVIEW_LINE_SHA256 = {
     "IND-05": "f33b25078d54",
     "IND-05/Scope": "1ee9a7af3575",
     "IND-05/Not": "55afd92af766",
-    "IND-05/Why": "d10a6bb74a96",
+    "IND-05/Why": "b28fa81e2c2b",
     "IND-06": "acd850ac63c4",
     "IND-06/Scope": "8d9b6c1ca841",
     "IND-06/Not": "2d3fead522b7",
