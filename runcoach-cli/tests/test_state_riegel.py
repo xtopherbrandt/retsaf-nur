@@ -227,6 +227,32 @@ def test_estimate_line_range_is_shortest_to_longest_whatever_the_date_order(inst
     ), "\n".join(lines)
 
 
+def test_fitted_line_counts_the_fade(install_mock_client) -> None:
+    """Section 4's four races with the marathon at weight 0.5: the fit counts them as 3.5^2 / 3.25 =
+    3.77 races (and reads t at one degree of freedom), so the fitted line gives that count beside the
+    races listed, cut (not rounded) to one decimal, as the population line does. With every weight 1,
+    or a count short of the races by no more than the 1e-9 slack, it prints nothing extra."""
+    lines = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, D], 1.076416, 1.059839, 1.092993)))
+    assert lines[0] == (
+        "Endurance exponent b 1.076 (80 %: 1.060 to 1.093), high, from 4 races in the last 1095 days, "
+        "3.7 counting the fade, 5.0 to 42.2 km"
+    ), "\n".join(lines)
+
+    nearly = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, {**D, "weight": 0.999}])))
+    assert nearly[0] == (
+        "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, "
+        "3.9 counting the fade, 5.0 to 42.2 km"
+    ), "\n".join(nearly)
+
+    whole = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, {**D, "weight": 1.0}])))
+    assert whole[0] == (
+        "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, 5.0 to 42.2 km"
+    ), "\n".join(whole)
+
+    within_slack = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, {**D, "weight": 1 - 1e-12}])))
+    assert within_slack[0] == whole[0], "\n".join(within_slack)
+
+
 def test_population_too_few_races_line(install_mock_client) -> None:
     lines = _riegel_lines(install_mock_client, _body(_population([A, B])))
     assert lines[:2] == [POPULATION + "2 races in the last 1095 days; 3 are needed", TAGGING_LINE], "\n".join(lines)
@@ -351,7 +377,10 @@ def test_race_used_lines(install_mock_client) -> None:
     the bar no residual clause; a null figure prints ``-``."""
     lines = _riegel_lines(install_mock_client, _body(_riegel([A, B, C, D])))
     assert lines == [
-        "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, 5.0 to 42.2 km",
+        (
+            "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, "
+            "3.7 counting the fade, 5.0 to 42.2 km"
+        ),
         "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00, "
         "+0.4 % against the line",
         "Race in b 2024-09-15: 10.2 km (10.0 km adjusted), 0:42:00, fitness 40, fell 1 % over 4 weeks, weight 1.00, "

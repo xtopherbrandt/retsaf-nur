@@ -30,7 +30,9 @@ used are still listed, so the athlete can find the one. Both exit 0.
 After the threshold lines comes the endurance exponent block, from the ``riegel_exponent`` entry
 (F029 reference section 6). A fitted b prints to three decimals with its 80 % interval, its label,
 the race count, the window and the shortest and longest GAP-equivalent distance used: ``Endurance
-exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``.
+exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``;
+when a race is fading the count by weight follows the window, cut to one decimal (``from 4 races in
+the last 1095 days, 3.7 counting the fade, 5.0 to 42.2 km``), and with every weight 1 nothing does.
 Below the bar the population value prints with why (too few races; too few counted by their weight,
 ``3 races in the last 1095 days, 2.7 counting the fade; 3 are needed``, when a fading race is what
 leaves the count short; or the races too close in distance, the longest under twice the shortest,
@@ -471,9 +473,14 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
             if not efforts:
                 raise ValueError("an estimate of b with no races used")
             distances = [_number(e["gap_equivalent_m"], "gap_equivalent_m") / 1000 for e in efforts]
+            counted = _effective_count([_number(e["weight"], "weight") for e in efforts])
+            fade = ""
+            if counted + COUNT_SLACK < len(efforts):
+                # Cut, not rounded, as on the population line: a fading race never reads as counted whole.
+                fade = f", {math.floor(counted * 10) / 10:.1f} counting the fade"
             lines = [
                 f"Endurance exponent b {_b(estimate['value'], 'value')} (80 %: {low} to {high}), {label}, from "
-                f"{races} in the last {window} days, {min(distances):.1f} to {max(distances):.1f} km"
+                f"{races} in the last {window} days{fade}, {min(distances):.1f} to {max(distances):.1f} km"
             ]
         if below_one:
             lines.append(RIEGEL_BELOW_ONE_LINE)
