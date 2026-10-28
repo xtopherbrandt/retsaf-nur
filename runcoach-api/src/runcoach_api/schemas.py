@@ -2022,7 +2022,7 @@ class RiegelDeterminant(BaseModel):
         "sum(w^2) (0.05 for the population value); null when unavailable."
     )
     t_multiplier: float | None = Field(
-        description="Student's t at 0.90 for floor(n_eff - 2) degrees of freedom, n_eff the effective number of races "
+        description="Student's t at 0.90 for floor(n_eff) - 2 degrees of freedom, n_eff the effective number of races "
         "(z above 30 and for the population value); null when unavailable."
     )
     population_default: bool = Field(

@@ -425,6 +425,90 @@ def test_equal_weights_under_1_count_whole() -> None:
     assert result.t_multiplier == riegel_b.T_TABLE[3]
 
 
+def test_a_count_that_clears_the_bar_by_the_slack_takes_one_degree_of_freedom() -> None:
+    """A 5K and a 10K at weight 1 and a half 913 days 609.010783 s old (weight 0.99996127...) give
+    an effective count of 2.999999999. The bar reads it with the slack as 3, so b is fitted, and
+    the degrees of freedom are the whole part of that same reading less 2, which is 1: read as a
+    separate float expression the count less 2 came out under 1 and the t lookup raised."""
+    rows = [
+        _race("a", 5000.0, 1200.0, 100),
+        _race("b", 10000.0, 2520.0, 200),
+        _race("c", 21100.0, 5600.0, 0),
+    ]
+    rows[2]["start_time"] = (
+        INSTANT.astimezone(UTC) - timedelta(days=913, seconds=609, microseconds=10783)
+    ).isoformat()
+    result = _run(rows)
+    weights = [e.weight for e in result.efforts]
+    n_eff = riegel_b.effective_count(weights)
+    print(f"  weights {weights}, effective count {n_eff!r}")
+    assert n_eff < 3 and n_eff + riegel_b.COUNT_SLACK >= 3
+    assert result.population_default is False
+    assert result.t_multiplier == riegel_b.t_multiplier(1) == riegel_b.T_TABLE[1]
+
+
+def _edge_weight(others: int) -> float:
+    """A float weight that, beside ``others`` races at weight 1, gives an effective count read as
+    ``others + 1`` while the next float down reads as ``others``, found by bisection on
+    ``effective_count``."""
+    bar = others + 1
+
+    def passes(w: float) -> bool:
+        return riegel_b.effective_count([1.0] * others + [w]) + riegel_b.COUNT_SLACK >= bar
+
+    low, high = 0.99, 1.0
+    assert not passes(low) and passes(high)
+    while math.nextafter(low, 1.0) < high:
+        mid = (low + high) / 2
+        if mid in (low, high):
+            mid = math.nextafter(low, 1.0)
+        low, high = (low, mid) if passes(mid) else (mid, high)
+    return high
+
+
+@pytest.mark.parametrize("others", [2, 3, 4])
+def test_every_weight_at_the_bar_edge_fits_with_at_least_one_degree_of_freedom(
+    monkeypatch: pytest.MonkeyPatch, others: int
+) -> None:
+    """Every float weight within 4,000 ulps of the edge, and 2,000 spread 1e-12 either side of it,
+    given to the last of ``others + 1`` races (the others at weight 1): the estimate never raises;
+    the count, read with the slack, is ``others`` or ``others + 1`` (both occur in the band; the
+    effective count is not monotonic in the weight at the ulp level, so the edge is a band, not a
+    point); a count the bar passes takes the whole part of that same reading less 2 as its degrees
+    of freedom, at least 1; and with three races a count read as 2 serves the population."""
+    edge = _edge_weight(others)
+    band = [edge]
+    up = down = edge
+    for _ in range(2000):
+        up, down = math.nextafter(up, 2.0), math.nextafter(down, 0.0)
+        band += [up, down]
+    band += [edge + (k - 1000) * 1e-15 for k in range(2001)]
+    print(f"  {others} at weight 1: edge {edge!r}, {len(band)} weights")
+    names = ["5k", "10k", "half", "marathon", "15k"][: others + 1]
+    distances = (5000.0, 10000.0, 21100.0, 42200.0, 15000.0)
+    rows = [
+        _race(name, d, 0.24 * d**1.06 * (1 + 0.01 * (-1) ** i), 100 + i)
+        for i, (name, d) in enumerate(zip(names, distances, strict=False))
+    ]
+    rows[-1] = {**rows[-1], "start_time": (INSTANT.astimezone(UTC) - timedelta(days=950)).isoformat()}
+    readings: dict[int, int] = {}
+    for w in band:
+        monkeypatch.setattr(riegel_b, "weight_at", lambda age, w=w: w if age > 900 else 1.0)
+        result = _run(rows)
+        n_eff = riegel_b.effective_count([e.weight for e in result.efforts])
+        whole = math.floor(n_eff + riegel_b.COUNT_SLACK)
+        assert whole in (others, others + 1), w
+        readings[whole] = readings.get(whole, 0) + 1
+        if whole < riegel_b.MIN_RACES:
+            assert result.population_default is True, w
+            continue
+        assert whole - 2 >= 1, w
+        assert result.population_default is False, w
+        assert result.t_multiplier == riegel_b.t_multiplier(whole - 2) == riegel_b.T_TABLE[whole - 2], w
+    print(f"  the count read as {readings}")
+    assert sorted(readings) == [others, others + 1]
+
+
 def test_the_bar_counts_races_by_their_weight() -> None:
     """Four races in the window, two of them fading: at weight 0.5 each the effective count is
     3^2 / 2.5 = 3.6 and b is fitted; at 0.2 each it is 2.4^2 / 2.08 = 2.77 and b is the

@@ -57,7 +57,7 @@ residuals served as ``exp(r) - 1``. A fading race counts by its weight: the coun
 number of races ``n_eff = (sum w)^2 / sum(w^2)`` (``n`` exactly when every weight is 1);
 ``se = sqrt(sum(w r^2) / (n_eff - 2) / sum(w (x - x_w)^2))``, the weighted standard error with the
 weights rescaled to sum to ``n_eff`` (the scale cancels); the 80 % interval ``b +- t se`` with
-Student's t at ``floor(n_eff - 2)`` degrees of freedom (``T_TABLE``, ``Z`` above 30). The bar,
+Student's t at ``floor(n_eff) - 2`` degrees of freedom (``T_TABLE``, ``Z`` above 30). The bar,
 ``n_eff >= MIN_RACES`` over the races with ``w > 0`` and ``max D_eq / min D_eq >= MIN_SPREAD``
 among them, is checked before any division (both read ``n_eff`` with ``COUNT_SLACK``); with
 exactly three races any weight under 1 leaves ``n_eff`` under 3. Row 2 already excludes a race at
@@ -538,7 +538,7 @@ def estimate(
     # sum(w' r^2) and sum(w' (x - x_w)^2) both carry the factor n_eff / sum(w), which cancels, so
     # se = sqrt(sum(w r^2) / (n_eff - 2) / sxx); b and the residuals do not move with the scale.
     error = math.sqrt(sum(wi * ri * ri for wi, ri in zip(w, r, strict=True)) / (n_eff - 2) / sxx)
-    t = t_multiplier(math.floor(n_eff - 2 + COUNT_SLACK))
+    t = t_multiplier(math.floor(n_eff + COUNT_SLACK) - 2)  # the bar's own reading, so at least 1
     low, high = b - t * error, b + t * error
     try:
         residuals = [math.expm1(ri) for ri in r]

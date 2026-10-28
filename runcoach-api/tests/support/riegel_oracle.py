@@ -15,7 +15,7 @@ It takes the races already chosen, as ``(d_eq_m, time_s, weight)`` triples; it q
   sum(w^2)``, and the standard error is the weighted one with the weights rescaled to sum to it,
   ``w' = w * n_eff / S_w``: ``sqrt(sum(w' r^2) / (n_eff - 2) / (S'_wxx - S'_wx^2 / S'_w))``,
   computed over the rescaled weights literally rather than in the reference's cancelled form. Its
-  degrees of freedom are ``n_eff - 2`` truncated, read with a 1e-9 slack.
+  degrees of freedom are the whole part of ``n_eff``, read with a 1e-9 slack, less 2.
 - **Student's t quantiles** come from the regularized incomplete beta function by its continued
   fraction (W. H. Press et al., *Numerical Recipes*, 3rd ed., section 6.4, ``betai`` and
   ``betacf``): for ``t >= 0`` and ``nu`` degrees of freedom, ``P(T <= t) = 1 - I_x(nu / 2, 1 / 2) /
@@ -144,7 +144,7 @@ def fit(races: list[tuple[float, float, float]]) -> Fit:
     sxx = s1xx - s1x * s1x / s1
     ssr = sum(w * r * r for (_x, _y, w), r in zip(scaled, resid, strict=True))
     se = math.sqrt(ssr / (n_eff - 2) / sxx)
-    df = int(n_eff - 2 + 1e-9)
+    df = int(n_eff + 1e-9) - 2
     t = t_quantile(0.9, df) if df <= 30 else Z
     return Fit(b, se, t, b - t * se, b + t * se, tuple(math.exp(r) - 1 for r in resid))
 
