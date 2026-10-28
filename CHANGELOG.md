@@ -27,7 +27,7 @@ than the distance run, because grade-adjusted pace counts the climbing: the corp
 run (`hilly_run_8k_fr945`) reads 8,801 m against 8,348 m run, 5.4 % longer. b is the weighted
 least-squares slope of log time on log `D_eq`; a race weighs 1 until it is 913 days old and its
 weight then falls to 0 at 1095 days, so a race fading out of the window moves b gradually rather
-than in a step. b is individual only when the races used count at least three and the longest
+than in a step while the races still count three or more. b is individual only when the races used count at least three and the longest
 `D_eq` is at least twice the shortest. A fading race counts by its weight: the count is the
 effective number of races, (sum of weights)^2 / (sum of squared weights), which is the number of
 races while every weight is 1, and the same count sets the error (the weighted standard error over
