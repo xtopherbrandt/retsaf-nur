@@ -395,7 +395,7 @@ def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo) ->
         before = _whole(row["fitness_before"], "fitness_before")
         words = f"fitness {_fitness_change(row['fitness_drop'])} ({earlier} to {before})"
     elif reason == "outside_window":
-        words = f"more than {window} days before {as_of}"
+        words = f"{window} days or more before {as_of}"
     elif reason in RIEGEL_REASON_WORDS:
         words = RIEGEL_REASON_WORDS[reason]
     else:

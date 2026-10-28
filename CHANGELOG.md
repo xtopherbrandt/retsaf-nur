@@ -71,7 +71,7 @@ weeks`, and `fitness 29 (-)` when the earlier figure is missing. Below the bar t
 needed` when a fading race is what leaves the count short, or `... low: 4 races at one distance;
 the longest must be at least twice the shortest`, with `, N excluded by the fitness screen` when any were, followed by `Mark a race as Race
 in Garmin Connect and run runcoach sync tags --since <its date>`. A race left out because it is too
-old reads `more than 1095 days before <as_of date>`. A fitted b under 1 adds `b reads below 1: a race
+old reads `1095 days or more before <as_of date>`. A fitted b under 1 adds `b reads below 1: a race
 used was probably not all-out, or a trail race; check the races listed`. The b block's race lines
 read `Race in b` and `Race left out of b`, and the threshold block keeps `Race used` and `Race
 excluded`, so a race in both blocks is not listed twice under one label. Against an API from before
@@ -81,7 +81,7 @@ restart`, and the command exits 0. `--as-of` passes through.
 **Tagging your races.** Mark each race as Race in Garmin Connect, then run `runcoach sync tags
 --since <its date>`; to tag races already in the store, `runcoach sync tags --since 2023-01-01`
 reaches every race the 1095-day window can use today. A tagged race lasting 20 to 60 minutes also
-enters threshold pace: on the athlete's store, the five 5Ks of 2024 and 2025 (20:05 to 20:33) will,
+enters threshold pace: on the athlete's store, the five 5Ks of 2024 and 2025 (20:06 to 20:33) will,
 once tagged.
 
 ### Changed

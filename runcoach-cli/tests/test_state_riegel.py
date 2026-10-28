@@ -353,7 +353,7 @@ def test_race_excluded_lines_in_words(install_mock_client) -> None:
     through ``_printable``."""
     reasons = [
         ("admitted_as_workout", "its workout name is listed in threshold_workout_names, so it is read as a workout"),
-        ("outside_window", "more than 1095 days before 2026-10-15"),
+        ("outside_window", "1095 days or more before 2026-10-15"),
         ("summary_unreadable", "its stored summary could not be read"),
         ("duration_unavailable", "no timer or summary duration"),
         ("quality_flags_unreadable", "its stored quality flags could not be read"),
@@ -508,7 +508,7 @@ def test_dates_print_in_the_response_timezone(install_mock_client) -> None:
     assert lines[2:] == [
         "Race in b 2025-09-21: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
         "Race left out of b 2025-08-01: recorded in smart or irregular recording mode",
-        "Race left out of b 2022-08-01: more than 1095 days before 2026-10-16",
+        "Race left out of b 2022-08-01: 1095 days or more before 2026-10-16",
     ], "\n".join(lines)
 
     body["timezone"] = "America/New_York"
@@ -516,7 +516,7 @@ def test_dates_print_in_the_response_timezone(install_mock_client) -> None:
     assert lines[2:] == [
         "Race in b 2025-09-20: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
         "Race left out of b 2025-07-31: recorded in smart or irregular recording mode",
-        "Race left out of b 2022-07-31: more than 1095 days before 2026-10-15",
+        "Race left out of b 2022-07-31: 1095 days or more before 2026-10-15",
     ], "\n".join(lines)
 
 
