@@ -213,6 +213,20 @@ def test_estimate_line(install_mock_client) -> None:
     assert TAGGING_LINE not in lines
 
 
+def test_estimate_line_range_is_shortest_to_longest_whatever_the_date_order(install_mock_client) -> None:
+    """The athlete's races do not run short to long by date: here the marathon is first and a 5K
+    last, so the range is the shortest and longest used, not the first and last listed."""
+    d_eqs = [42200.0, 10000.0, 21100.0, 5000.0]
+    efforts = [
+        _race(f"s-{i}", f"2024-0{i + 1}-01T08:00:00Z", d, d, d * 0.25, 40.0, 41.0, residual=0.001)
+        for i, d in enumerate(d_eqs)
+    ]
+    lines = _riegel_lines(install_mock_client, _body(_riegel(efforts)))
+    assert lines[0] == (
+        "Endurance exponent b 1.078 (80 %: 1.069 to 1.088), high, from 4 races in the last 1095 days, 5.0 to 42.2 km"
+    ), "\n".join(lines)
+
+
 def test_population_too_few_races_line(install_mock_client) -> None:
     lines = _riegel_lines(install_mock_client, _body(_population([A, B])))
     assert lines[:2] == [POPULATION + "2 races in the last 1095 days; 3 are needed", TAGGING_LINE], "\n".join(lines)
