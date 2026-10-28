@@ -3441,7 +3441,7 @@ components:
         estimate:
           allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
           nullable: true
-          description: "b with its 80 % interval, `unit` `1`, `provisional` true for the population value; null when `unavailable` is set."
+          description: "b with its 80 % interval, `unit` `1`, `provisional` true for the population value; null when `unavailable` is set. The label reads the error alone; the interval carries the precision, t included, so a consumer comparing fits reads the interval."
         unavailable:
           type: string
           enum: [estimate_not_finite]

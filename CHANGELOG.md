@@ -39,7 +39,8 @@ of freedom, the count read with a 1e-9 slack so that equal weights an ulp short 
 z past 30). So with three races b is the population value as soon as one of them starts to fade;
 with more, the error moves toward that of the fit without the fading race. Its label is `high`
 while the error is at most 0.02, `medium` to 0.04 and
-`low` above. Below that bar the population default stands: b 1.06, error 0.05, a z interval of 0.996
+`low` above; it reads the error alone, and the interval, t included, carries the precision, so with
+few races compare fits by the interval. Below that bar the population default stands: b 1.06, error 0.05, a z interval of 0.996
 to 1.124, `low`, provisional, with the races still listed. A fitted b under 1 is served with
 `below_one` true, a warning that outranks the label and changes nothing else. Nothing is stored: b
 is recomputed on every read, so a race untagged in Connect drops out at the next read.
@@ -72,7 +73,9 @@ illustrative):
 The fitness change reads `rose 5 % over 4 weeks`, `fell 42 % over 4 weeks` or `no change over 4
 weeks`, and `fitness 29 (-)` when the earlier figure is missing. The weight prints to two decimals,
 or, when it is under 1 but would print as 1.00, with the fewest decimals, up to 6, that show it
-under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. Below the
+under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. While a race used is fading, the fitted first line
+gives the races counted by their weight after the window, cut to one decimal (`from 4 races in the
+last 1095 days, 3.7 counting the fade, 5.0 to 42.2 km`). Below the
 bar the first line reads `Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low:
 2 races in the last 1095 days; 3 are needed`, `... low: 3 races in the last 1095 days, 2.7 counting
 the fade; 3 are needed` when a fading race is what leaves the count short, or `... low: 4 races

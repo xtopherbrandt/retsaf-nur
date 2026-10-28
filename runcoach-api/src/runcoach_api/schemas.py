@@ -1912,7 +1912,7 @@ class RiegelExponentValue(BaseModel):
     interval: RiegelExponentInterval
     confidence: Literal["low", "medium", "high"] = Field(
         description="`high` while the error (a fading race counted by its weight) is at most 0.02, `medium` while at "
-        "most 0.04, `low` above, and for the population value (F029 reference section 1)."
+        "most 0.04, `low` above, and for the population value (F029 reference section 1). The label reads the error alone; the interval carries the precision, t included, so a consumer comparing fits reads the interval."
     )
     provisional: bool = Field(description="True for the population value, false for a fitted b.")
 
