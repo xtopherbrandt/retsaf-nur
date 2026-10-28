@@ -9,9 +9,10 @@
 #           edits are not seen: commit first.
 #   <file>  test paths relative to the repo root.
 #
-# Prints pytest's own output, then three lines prefixed "linux: ": the resolved
-# ref, the platform line and pytest's summary line. The exit status is pytest's
-# (2 for a usage or setup fault).
+# Prints "linux: ref <sha>" first, the resolved ref, before WSL is entered; then
+# the setup's and pytest's own output; then two lines prefixed "linux: ": the
+# platform line and pytest's summary line, which end the output. The exit status
+# is pytest's (2 for a usage or setup fault).
 #
 # The tests run in a Linux clone at ~/rn-linux inside WSL, never in a venv under
 # /mnt/c (that would overwrite the Windows .venv, and the Windows working copy is

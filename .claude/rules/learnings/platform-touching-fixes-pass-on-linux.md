@@ -18,10 +18,10 @@ runner prints it:
 bash .github/scripts/run_on_linux.sh <ref> <test files>
 ```
 
-The script runs the named files in a Linux clone inside WSL at a committed ref, and ends with three
-lines prefixed `linux: `: the resolved ref, the platform line and pytest's summary line. Its exit
-status is pytest's. Commit first: the ref is resolved on the Windows side and uncommitted edits are
-not seen. Its usage comment records the measured cost: on 2026-10-26 a warm run of two test files
+The script runs the named files in a Linux clone inside WSL at a committed ref. It prints `linux: ref
+<sha>`, the resolved ref, first, before the setup's and pytest's output, and ends with two lines
+prefixed `linux: `: the platform line and pytest's summary line. Its exit status is pytest's.
+Commit first: the ref is resolved on the Windows side and uncommitted edits are not seen. Its usage comment records the measured cost: on 2026-10-26 a warm run of two test files
 (45 tests, the lock unchanged) took 8 to 19 s of wall time.
 
 A Windows run is not Linux evidence, however many times it is green.
