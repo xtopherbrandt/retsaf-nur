@@ -15,7 +15,7 @@ all-out (user ruling 2026-10-26; IDEA-199 holds a shared heart-rate check).
 excluded with its reason, checked in this order: a race whose workout name is listed in
 `threshold_workout_names` is read as a threshold workout (`admitted_as_workout`); a race 1095 days
 old or more is `outside_window`; one with no usable duration is `duration_unavailable` (or
-`summary_unreadable`); a stored `distance_regressed` or `smart_recording` flag excludes it before any
+`summary_unreadable`); stored flags that do not decode are `quality_flags_unreadable`, and a stored `distance_regressed` or `smart_recording` flag excludes it before any
 record is read; then the fitness screen (`fitness_dropped`); then F013's flags from the records
 (`distance_regressed`, `smart_recording`, `grade_clamped`; `features_unavailable` when they do not
 compute); then a GAP pace that is missing, zero or not finite (`gap_pace_unavailable`). Degraded GPS
@@ -83,13 +83,13 @@ once tagged.
 
 `GET /state` now builds the load chart on every request, tagged races or none, for the fitness
 screen. A store whose chart cannot be built is a 500 with the chart's message, and threshold pace
-is withheld too: a running session with no saved load row is a 500 whether or not any race is
+is withheld too: any session with no saved load row, whatever its sport, is a 500 whether or not any race is
 tagged, and so is a stored `start_time` that is empty, naive or does not parse on any session.
 Before this release `GET /state` read only the tagged races and the threshold workouts. `GET
 /metrics/load` answers such a store with the same 500 and the same message.
 
 F028 follow-up: an archive import's cost per night no longer grows with the nights already stored.
-The import checks the schema once per job, not before every night, and the reads made for each night
+The night path checks the schema at a job's first night only, where it checked before every night (each activity's ingest still checks it), and the reads made for each night
 look up indexes instead of scanning every session; a night's load is dated in the time zone the job
 captured when it started, so a config change during the job no longer moves it. What an import
 stores and reports is unchanged. The first time the API starts after upgrading, it creates these
