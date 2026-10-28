@@ -280,6 +280,20 @@ def test_population_one_distance_line(install_mock_client) -> None:
         TAGGING_LINE,
     ], "\n".join(lines)
 
+    # Three equal weights under 1 count 3 but compute an ulp under it (three races 913.008 days
+    # old: 2.9999999999999996). The API reads the count with a 1e-9 slack and serves the
+    # population for the spread, so the line names the spread, not the fade.
+    weight = (1095 - 913.008) / 182
+    assert sum([weight] * 3) ** 2 / sum([weight * weight] * 3) == 2.9999999999999996
+    fading = [
+        _race(f"s-{i}", f"2023-0{i + 4}-01T08:00:00Z", 5000.0, 5000.0 + 100 * i, 1200.0, 40.0, 41.0, weight=weight)
+        for i in range(3)
+    ]
+    lines = _riegel_lines(install_mock_client, _body(_population(fading)))
+    assert lines[0] == (
+        POPULATION + "3 races at one distance; the longest must be at least twice the shortest"
+    ), "\n".join(lines)
+
 
 def test_population_line_names_the_screened_count(install_mock_client) -> None:
     """Only ``fitness_dropped`` counts toward the screened number; other reasons do not."""
