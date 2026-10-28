@@ -93,7 +93,11 @@ tagged, and so is a stored `start_time` that is empty, naive or does not parse o
 Before this release `GET /state` read only the tagged races and the threshold workouts. `GET
 /metrics/load` answers such a store with the same 500 and the same message.
 
-F028 follow-up: an archive import's cost per night no longer grows with the nights already stored.
+F028 follow-up: an archive import's cost for a night that replaces nothing no longer grows with the
+nights already stored. A night that replaces an earlier summary of itself still costs more as the
+store's RR intervals and sidecar rows grow, since deleting the earlier summary's rows scans those
+two tables: they have no index on the session, and none is added here, since it would be built on
+the athlete's store at the next start.
 The night path checks the schema at a job's first night only, where it checked before every night (each activity's ingest still checks it), and the reads made for each night
 look up indexes instead of scanning every session; a night's load is dated in the time zone the job
 captured when it started, so a config change during the job no longer moves it. What an import
