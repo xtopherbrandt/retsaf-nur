@@ -389,6 +389,29 @@ def test_race_excluded_lines_in_words(install_mock_client) -> None:
     ], "\n".join(lines)
 
 
+@pytest.mark.parametrize(
+    ("weight", "printed"),
+    [
+        (1.0, "1.00"),
+        (0.5, "0.50"),
+        (0.994, "0.99"),
+        (0.999, "0.999"),
+        (0.9951, "0.995"),
+        (0.99996, "0.99996"),
+        ((1095 - 913.008) / 182, "0.99996"),
+        (0.9999995, "0.999999"),
+        (1 - 1e-12, "0.999999"),
+    ],
+)
+def test_a_fading_weight_never_prints_as_1(install_mock_client, weight: float, printed: str) -> None:
+    """A weight of exactly 1, or one that already shows under 1 at two decimals, prints to two
+    decimals; a weight under 1 that would round to 1.00 prints with the fewest decimals, up to 6,
+    that show it under 1, and one still 1.000000 at 6 prints 0.999999, so a fading race never
+    reads as weight 1.00 beside a line that counts its fade."""
+    lines = _riegel_lines(install_mock_client, _body(_population([A, B, {**C, "weight": weight}])))
+    assert lines[-1].endswith(f", weight {printed}"), "\n".join(lines)
+
+
 def test_b_block_race_lines_name_b(install_mock_client) -> None:
     """A body with a race used and a race excluded in each block: the threshold block prints
     ``Race used`` / ``Race excluded`` and the b block ``Race in b`` / ``Race left out of b``, so a

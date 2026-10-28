@@ -373,12 +373,27 @@ def _residual(value: Any) -> str:
     return "0.0 %" if tenths == 0 else f"{tenths / 10:+.1f} %"
 
 
+def _weight(value: Any) -> str:
+    """A race's weight to two decimals, unless it is under 1 and would print as 1.00: then with the
+    fewest decimals, up to 6, that show it under 1, and 0.999999 when even 6 round it to 1, so a
+    fading race never reads as weight 1.00."""
+    weight = _number(value, "weight")
+    printed = f"{weight:.2f}"
+    if weight >= 1 or printed != "1.00":
+        return printed
+    for places in range(3, 7):
+        printed = f"{weight:.{places}f}"
+        if not printed.startswith("1."):
+            return printed
+    return "0.999999"
+
+
 def _riegel_effort_line(effort: dict, zone: ZoneInfo) -> str:
-    weight = _number(effort["weight"], "weight")
+    weight = _weight(effort["weight"])
     line = (
         f"Race in b {_date(effort['start_time'], zone)}: {_km(effort['distance_m'], 'distance_m')} "
         f"({_km(effort['gap_equivalent_m'], 'gap_equivalent_m')} adjusted), "
-        f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort)}, weight {weight:.2f}"
+        f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort)}, weight {weight}"
     )
     if effort["residual"] is not None:
         line += f", {_residual(effort['residual'])} against the line"

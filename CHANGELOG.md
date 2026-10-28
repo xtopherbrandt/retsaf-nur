@@ -65,7 +65,9 @@ illustrative):
     Race left out of b 2025-11-02: fitness fell 40 % over 4 weeks (48 to 29)
 
 The fitness change reads `rose 5 % over 4 weeks`, `fell 42 % over 4 weeks` or `no change over 4
-weeks`, and `fitness 29 (-)` when the earlier figure is missing. Below the bar the first line reads
+weeks`, and `fitness 29 (-)` when the earlier figure is missing. The weight prints to two decimals,
+or, when it is under 1 but would print as 1.00, with the fewest decimals, up to 6, that show it
+under 1 (`weight 0.999`, `weight 0.99996`), so a fading race never reads `weight 1.00`. Below the bar the first line reads
 `Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low: 2 races in the last
 1095 days; 3 are needed`, `... low: 3 races in the last 1095 days, 2.7 counting the fade; 3 are
 needed` when a fading race is what leaves the count short, or `... low: 4 races at one distance;
