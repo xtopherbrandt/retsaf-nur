@@ -20,9 +20,10 @@ The stored nights are written with minimal rows (the session row and a saved loa
 which is what the per-night reads touch.
 
 A night's anchor sync reads the profile narrowly (``db._resolve_profile_latest``, the latest
-carrying session per field). Three stores written through ``persist`` and ``persist_night`` pin it
-equal to ``profile.resolve`` over every session, with the values each must give: a start-time tie
-between two watches, a later ride carrying max and threshold HR, and fields split across runs.
+carrying session per field). Four stores written through ``persist`` and ``persist_night`` pin it
+equal to ``profile.resolve`` over every session and entry, with the values each must give: a
+start-time tie between two watches, a later ride carrying max and threshold HR, fields split
+across runs, and entered values written through ``write_profile_entries`` beside a run.
 """
 
 from __future__ import annotations
@@ -302,15 +303,20 @@ def _profile_session(
     )
 
 
-def _narrow_after_writes(data_dir: Path, sessions: list[Session]) -> dict[str, profile.FieldValue]:
-    """Store ``sessions`` through ``persist`` in the order given, then a night through
-    ``persist_night`` (dated after all of them, carrying no profile field), and return the narrow
-    read, asserted equal to ``profile.resolve`` over every stored session."""
+def _narrow_after_writes(
+    data_dir: Path, sessions: list[Session], entries: list[dict[str, object]] | None = None
+) -> dict[str, profile.FieldValue]:
+    """Store ``sessions`` through ``persist`` in the order given, each mapping of ``entries`` through
+    ``write_profile_entries`` (as ``PATCH /me`` does), then a night through ``persist_night`` (dated
+    after all of them, carrying no profile field), and return the narrow read, asserted equal to
+    ``profile.resolve`` over every stored session and entry."""
     conn = db.get_connection(data_dir)
     try:
         db.init_schema(conn)
         for session in sessions:
             db.persist(conn, session, [], [], {}, zone=UTC_ZONE)
+        for n, values in enumerate(entries or []):
+            db.write_profile_entries(conn, values, set_at=f"2025-06-0{n + 1}T08:00:00+00:00")
         db.persist_night(conn, _template(), zone=UTC_ZONE)
         narrow = db._resolve_profile_latest(conn)
         full = profile.resolve(*db.read_profile_inputs(conn))
@@ -388,6 +394,29 @@ def test_each_field_comes_from_its_own_latest_carrying_session(tmp_path: Path) -
     assert _picked(resolved, "height_cm") == (166.0, "body")
     assert _picked(resolved, "max_hr_bpm") == (190, "max")
     assert _picked(resolved, "threshold_hr_bpm") == (170, "threshold")
+
+
+def test_entered_values_resolve_in_the_narrow_read_as_in_the_full_one(tmp_path: Path) -> None:
+    """Entered values beside a run that carries max HR: the entered max HR is shadowed by the
+    file's and still reported as ``entered_value``; the entered threshold HR, which no session
+    carries, is the value; the birth date, which no file can carry, comes only from its entry; and
+    a later clear of the entered resting HR leaves the file's. A narrow read that dropped the
+    entries would lose all three entered figures."""
+    resolved = _narrow_after_writes(
+        tmp_path,
+        [_profile_session("run", "2025-01-01T07:00:00+00:00", max_hr_bpm=190, resting_hr_bpm=46)],
+        [
+            {"max_hr_bpm": 194, "threshold_hr_bpm": 171, "birth_date": "1985-04-02", "resting_hr_bpm": 44},
+            {"resting_hr_bpm": None},
+        ],
+    )
+    print(f"  resolved {resolved}")
+    assert _picked(resolved, "max_hr_bpm") == (190, "run")
+    assert resolved["max_hr_bpm"].entered_value == 194
+    assert (resolved["threshold_hr_bpm"].value, resolved["threshold_hr_bpm"].source) == (171, "entered")
+    assert (resolved["birth_date"].value, resolved["birth_date"].source) == ("1985-04-02", "entered")
+    assert _picked(resolved, "resting_hr_bpm") == (46, "run")
+    assert resolved["resting_hr_bpm"].entered_value is None
 
 
 # ---------------------------------------------------------------------------
