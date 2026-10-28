@@ -33,8 +33,9 @@ the race count, the window and the shortest and longest GAP-equivalent distance 
 exponent b 1.060 (80 %: 1.035 to 1.084), high, from 8 races in the last 1095 days, 5.0 to 42.5 km``.
 Below the bar the population value prints with why (too few races; too few counted by their weight,
 ``3 races in the last 1095 days, 2.7 counting the fade; 3 are needed``, when a fading race is what
-leaves the count short; or every race at one distance), the number the fitness screen excluded when
-any were, and a line on how to tag a race; a fitted b under 1 adds a warning line. Then one ``Race
+leaves the count short; or the races too close in distance, the longest under twice the shortest,
+whether at one distance or at several), the number the fitness screen excluded when any were, and a
+line on how to tag a race; a fitted b under 1 adds a warning line. Then one ``Race
 in b`` line per race used (distance, GAP-equivalent distance, time, the day-before fitness and its
 change over the four weeks in words, ``fell 3 %``, ``rose 5 %`` or ``no change``, the weight, and
 the residual against the line when one is served) and one ``Race left out of b`` line per race
@@ -454,7 +455,10 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
                     f"{min_races:g} are needed"
                 )
             else:
-                why = f"{races} at one distance; the longest must be at least twice the shortest"
+                why = (
+                    f"{races} in the last {window} days, too close in distance; "
+                    "the longest must be at least twice the shortest"
+                )
             screened = sum(1 for row in excluded if row["reason"] == "fitness_dropped")
             if screened:
                 why += f", {screened} excluded by the fitness screen"

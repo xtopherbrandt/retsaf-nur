@@ -267,7 +267,8 @@ def test_population_line_counts_the_fade(install_mock_client) -> None:
     ]
     one_distance = _riegel_lines(install_mock_client, _body(_population(spread)))
     assert one_distance[0] == (
-        POPULATION + "4 races at one distance; the longest must be at least twice the shortest"
+        POPULATION + "4 races in the last 1095 days, too close in distance; "
+        "the longest must be at least twice the shortest"
     )
 
 
@@ -276,7 +277,8 @@ def test_population_one_distance_line(install_mock_client) -> None:
     fives = [_race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0 + 100 * i, 1200.0, 40.0, 41.0) for i in range(4)]
     lines = _riegel_lines(install_mock_client, _body(_population(fives)))
     assert lines[:2] == [
-        POPULATION + "4 races at one distance; the longest must be at least twice the shortest",
+        POPULATION + "4 races in the last 1095 days, too close in distance; "
+        "the longest must be at least twice the shortest",
         TAGGING_LINE,
     ], "\n".join(lines)
 
@@ -291,8 +293,23 @@ def test_population_one_distance_line(install_mock_client) -> None:
     ]
     lines = _riegel_lines(install_mock_client, _body(_population(fading)))
     assert lines[0] == (
-        POPULATION + "3 races at one distance; the longest must be at least twice the shortest"
+        POPULATION + "3 races in the last 1095 days, too close in distance; "
+        "the longest must be at least twice the shortest"
     ), "\n".join(lines)
+
+
+def test_population_spread_line_is_true_of_races_at_two_distances(install_mock_client) -> None:
+    """Five 5Ks and an 8K clear the count but not the spread (8000 / 5000 = 1.6): the races are not
+    at one distance, so the line must not say so; it names the twofold rule instead."""
+    mixed = [_race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0, 1200.0, 40.0, 41.0) for i in range(5)]
+    mixed.append(_race("s-8k", "2025-07-01T08:00:00Z", 8000.0, 8000.0, 2000.0, 40.0, 41.0))
+    lines = _riegel_lines(install_mock_client, _body(_population(mixed)))
+    assert "one distance" not in lines[0], "\n".join(lines)
+    assert lines[:2] == [
+        POPULATION + "6 races in the last 1095 days, too close in distance; "
+        "the longest must be at least twice the shortest",
+        TAGGING_LINE,
+    ], "\n".join(lines)
 
 
 def test_population_line_names_the_screened_count(install_mock_client) -> None:
@@ -308,7 +325,8 @@ def test_population_line_names_the_screened_count(install_mock_client) -> None:
     fives = [_race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0, 1200.0, 40.0, 41.0) for i in range(3)]
     lines = _riegel_lines(install_mock_client, _body(_population(fives, two)))
     assert lines[0] == (
-        POPULATION + "3 races at one distance; the longest must be at least twice the shortest, "
+        POPULATION + "3 races in the last 1095 days, too close in distance; "
+        "the longest must be at least twice the shortest, "
         "2 excluded by the fitness screen"
     ), "\n".join(lines)
 
