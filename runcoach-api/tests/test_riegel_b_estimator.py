@@ -474,6 +474,17 @@ def test_a_non_finite_figure_is_unavailable() -> None:
     assert alone.unavailable == "estimate_not_finite" and alone.value is None
 
 
+def test_a_gap_equivalent_distance_that_underflows_to_0_is_unavailable() -> None:
+    """A finite timer above 0 (the smallest subnormal) at a finite GAP pace of 1e10 s/km gives a
+    ``D_eq`` of exactly 0.0, whose logarithm does not exist: the estimate is unavailable, never a
+    raise (a 500 at the route)."""
+    rows = _abcd()[:3] + [_race("zero", 42200.0, 5e-324, 50, pace=1e10)]
+    result = _run(rows)
+    assert result.efforts[-1].gap_equivalent_m == 0.0
+    assert result.unavailable == "estimate_not_finite" and result.value is None
+    assert [e.session_id for e in result.efforts] == ["a", "b", "c", "zero"]
+
+
 def test_parameters_are_the_reference_keys() -> None:
     assert dict(riegel_b.PARAMETERS) == {
         "window_days": 1095,
