@@ -1853,28 +1853,18 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
             [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
         ) from exc
     today = now.astimezone(zone).date()
-    fitness: list[Callable[[datetime.date], tuple]] = []
-
-    def make_needs_features(load_rows: list) -> Callable[[dict], bool]:
-        try:
-            chart = load_chart.build_chart(load_rows, zone, today)
-        except ValueError as exc:
-            raise HTTPException(500, str(exc)) from exc
-        fitness.append(_riegel_fitness(chart))
-        return functools.partial(riegel_b.needs_features, instant=instant, fitness=fitness[0], zone=zone)
 
     conn = db.get_connection()
     try:
-        inputs = db.read_state_inputs(conn, config.threshold_workout_names, make_needs_features)
+        at = _riegel_at(conn, instant, zone, today)
     finally:
         conn.close()
 
-    result = threshold_pace.estimate(inputs.threshold_rows, instant)
-    riegel = riegel_b.estimate(inputs.riegel_rows, instant, fitness[0], zone)
+    result = threshold_pace.estimate(at.threshold_rows, instant)
     return StateModel(
         as_of=result.as_of,
         timezone=zone.key,
-        determinants=[_threshold_determinant(result, inputs.threshold_unreadable), _riegel_determinant(riegel)],
+        determinants=[_threshold_determinant(result, at.threshold_unreadable), _riegel_determinant(at.estimate)],
         readiness=None,
         gap_to_goal=None,
     )
@@ -1986,3 +1976,65 @@ def match_lap_candidates(request: LapCandidatesRequest) -> LapCandidatesResult:
     finally:
         conn.close()
     return LapCandidatesResult(items=lap_candidates.decide(items, rows))
+
+
+# ---------------------------------------------------------------------------
+# b and the load chart for one request (F029, F032)
+#
+# Appended below the earlier routes, as the routes above are, so the lines
+# cited by number stay in place. Everything it reads (db, load_chart,
+# riegel_b, functools, HTTPException, dataclasses) is imported by the blocks
+# above; sqlite3 is its own. GET /state calls _riegel_at; the goal routes read
+# the same estimate, chart and rows from it.
+# ---------------------------------------------------------------------------
+import sqlite3
+
+
+@dataclasses.dataclass(frozen=True)
+class RiegelAt:
+    """What one request knows about b: the estimate at the instant, the load chart it was screened
+    against, the threshold rows and unreadable list from the same snapshot (``threshold_pace``
+    reads them), and the raw Riegel rows."""
+
+    estimate: riegel_b.RiegelEstimate
+    chart: load_chart.LoadChart
+    threshold_rows: list[dict]
+    threshold_unreadable: list[dict]
+    riegel_rows: list[dict]
+
+
+def _riegel_at(
+    conn: sqlite3.Connection, instant: datetime.datetime, zone: ZoneInfo, today: datetime.date
+) -> RiegelAt:
+    """b and the load chart at ``instant`` from one ``db.read_state_inputs`` snapshot on ``conn``.
+
+    The snapshot's factory builds the chart from the saved load rows (``load_chart.build_chart``
+    to ``today``, the athlete's local date in ``zone``); a chart that cannot be built (a session
+    with no saved load row, a naive or unparseable stored ``start_time``) is the route's 500 with
+    the chart's own message, raised here so every caller answers it alike. The Riegel predicate,
+    bound to the instant, the chart's fitness lookup (``_riegel_fitness``) and the zone, decides
+    which races' F013 features the snapshot reads; ``riegel_b.estimate`` then screens and fits the
+    Riegel rows against that same lookup. The workout names come from the config cached at
+    startup. Nothing is written; the caller owns ``conn``.
+    """
+    config = db._load_config_cached()
+    charts: list[load_chart.LoadChart] = []
+
+    def make_needs_features(load_rows: list) -> Callable[[dict], bool]:
+        try:
+            chart = load_chart.build_chart(load_rows, zone, today)
+        except ValueError as exc:
+            raise HTTPException(500, str(exc)) from exc
+        charts.append(chart)
+        return functools.partial(riegel_b.needs_features, instant=instant, fitness=_riegel_fitness(chart), zone=zone)
+
+    inputs = db.read_state_inputs(conn, config.threshold_workout_names, make_needs_features)
+    (chart,) = charts
+    estimate = riegel_b.estimate(inputs.riegel_rows, instant, _riegel_fitness(chart), zone)
+    return RiegelAt(
+        estimate=estimate,
+        chart=chart,
+        threshold_rows=inputs.threshold_rows,
+        threshold_unreadable=inputs.threshold_unreadable,
+        riegel_rows=inputs.riegel_rows,
+    )
