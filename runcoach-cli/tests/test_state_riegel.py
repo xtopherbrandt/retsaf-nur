@@ -264,6 +264,53 @@ def test_population_too_few_races_line(install_mock_client) -> None:
     assert one[0] == POPULATION + "1 race in the last 1095 days; 3 are needed", "\n".join(one)
 
 
+def test_count_and_spread_short_are_both_named(install_mock_client) -> None:
+    """Two 5Ks fall short of the count and of the spread (the served ``min_spread``, 2), so the line
+    names both bars, not the count alone; a 5K and a 10K (ratio exactly 2) fall short of the count
+    alone; three 5Ks with one fading name the fade and the spread; a single race has no spread to
+    name; the screened count still follows; and a race with no adjusted distance is left out of the
+    ratio."""
+    fives = [
+        _race(f"s-{i}", f"2025-0{i + 1}-01T08:00:00Z", 5000.0, 5000.0 + 100 * i, 1200.0, 40.0, 41.0) for i in range(3)
+    ]
+    both = _riegel_lines(install_mock_client, _body(_population(fives[:2])))
+    assert both[:2] == [
+        POPULATION + "2 races in the last 1095 days, too close in distance; 3 are needed "
+        "and the longest must be at least twice the shortest",
+        TAGGING_LINE,
+    ], "\n".join(both)
+
+    count_alone = _riegel_lines(install_mock_client, _body(_population([A, B])))
+    assert count_alone[0] == POPULATION + "2 races in the last 1095 days; 3 are needed", "\n".join(count_alone)
+
+    fading = _riegel_lines(install_mock_client, _body(_population([*fives[:2], {**fives[2], "weight": 0.5}])))
+    assert fading[0] == (
+        POPULATION + "3 races in the last 1095 days, 2.7 counting the fade, too close in distance; 3 are needed "
+        "and the longest must be at least twice the shortest"
+    ), "\n".join(fading)
+
+    one = _riegel_lines(install_mock_client, _body(_population(fives[:1])))
+    assert one[0] == POPULATION + "1 race in the last 1095 days; 3 are needed", "\n".join(one)
+
+    screened = [_excluded("x-1", "2025-11-02T08:00:00Z", "fitness_dropped", 29.0, 48.0)]
+    with_screen = _riegel_lines(install_mock_client, _body(_population(fives[:2], screened)))
+    assert with_screen[0] == (
+        POPULATION + "2 races in the last 1095 days, too close in distance; 3 are needed "
+        "and the longest must be at least twice the shortest, 1 excluded by the fitness screen"
+    ), "\n".join(with_screen)
+
+    # A 5K beside a race whose adjusted distance is not served: one known distance is no spread.
+    unknown = _race("s-z", "2025-02-02T08:00:00Z", 10000.0, None, 2520.0, 40.0, 41.0)
+    no_ratio = _riegel_lines(install_mock_client, _body(_population([fives[0], unknown])))
+    assert no_ratio[0] == POPULATION + "2 races in the last 1095 days; 3 are needed", "\n".join(no_ratio)
+
+    # The spread bar is the served parameter: at 1.5 a 5K and an 8K clear it.
+    body = _body(_population([fives[0], _race("s-8k", "2025-07-01T08:00:00Z", 8000.0, 8000.0, 2000.0, 40.0, 41.0)]))
+    assert _riegel_lines(install_mock_client, body)[0].endswith("too close in distance; 3 are needed and the longest must be at least twice the shortest")
+    body["determinants"][1]["parameters"]["min_spread"] = 1.5
+    assert _riegel_lines(install_mock_client, body)[0] == POPULATION + "2 races in the last 1095 days; 3 are needed"
+
+
 def test_population_line_counts_the_fade(install_mock_client) -> None:
     """Three races with one fading: the API counts races by their weight, (sum w)^2 / sum(w^2), so
     the line gives that count beside the races listed, cut (not rounded) to one decimal, so it
@@ -528,6 +575,41 @@ def test_a_fitness_change_reads_rose_or_fell(install_mock_client, drop: float, w
 
     no_drop = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": None}])))
     assert no_drop[2] == "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 42 (-), weight 1.00"
+
+
+def test_fitness_line_names_the_drop_on_its_own_side(install_mock_client) -> None:
+    """The screen leaves out a race whose fitness fell more than the served ``fitness_drop`` bar
+    (0.30), so a fall of 0.2996 (50 to 35.02) is used and one of 0.3004 (50 to 34.98) is left out,
+    and both round to 30. The word is chosen from the unrounded fall against the bar, then the
+    rounded figure printed: the race used reads ``fell just under 30 %`` and the race left out
+    ``fell more than 30 %``, so the same words never stand on both sides of the line. A fall of
+    exactly the bar is used and reads ``fell 30 %``; a fall that rounds away from the bar keeps its
+    plain figure; and the bar is the served parameter, not a fixed 30."""
+    used = {**_race("s-u", "2024-05-05T08:00:00Z", 5020.0, 5000.0, 1200.0, 35.02, 50.0), "residual": None}
+    dropped = _excluded("x-1", "2025-11-02T08:00:00Z", "fitness_dropped", 34.98, 50.0)
+    assert used["fitness_drop"] < 0.30 < dropped["fitness_drop"]
+    lines = _riegel_lines(install_mock_client, _body(_population([used], [dropped])))
+    assert lines[2:] == [
+        "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 35, fell just under 30 % over 4 weeks, "
+        "weight 1.00",
+        "Race left out of b 2025-11-02: fitness fell more than 30 % over 4 weeks (50 to 35)",
+    ], "\n".join(lines)
+    assert not any("fell 30 %" in line for line in lines), "\n".join(lines)
+
+    exact = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": 0.30}])))
+    assert exact[2] == "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 35, fell 30 % over 4 weeks, weight 1.00"
+
+    away = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": 0.2949}])))
+    assert away[2].endswith("fitness 35, fell 29 % over 4 weeks, weight 1.00"), "\n".join(away)
+
+    body = _body(_population([used], [dropped]))
+    body["determinants"][1]["parameters"]["fitness_drop"] = 0.25
+    other_bar = _riegel_lines(install_mock_client, body)
+    assert [line.split("fell ")[1].split(" over")[0] for line in other_bar[2:]] == ["30 %", "30 %"], "\n".join(other_bar)
+    quarter = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": 0.2504}])))
+    assert quarter[2].endswith("fitness 35, fell 25 % over 4 weeks, weight 1.00"), "\n".join(quarter)
+    body["determinants"][1]["efforts"][0]["fitness_drop"] = 0.2504
+    assert _riegel_lines(install_mock_client, body)[2].endswith("fell more than 25 % over 4 weeks, weight 1.00")
 
 
 def test_below_one_line(install_mock_client) -> None:

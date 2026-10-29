@@ -347,17 +347,24 @@ def _whole(value: Any, what: str) -> str:
     return str(math.floor(_number(value, what) + 0.5))
 
 
-def _fitness_change(drop: Any) -> str:
+def _fitness_change(drop: Any, bar: float) -> str:
     """A served ``fitness_drop`` (a fall positive) in words: ``fell 42 % over 4 weeks``, ``rose 5 %
     over 4 weeks``, or ``no change over 4 weeks`` when the percentage rounds to 0. The signed
-    percentage is rounded half up to a whole number before its sign picks the word."""
-    percent = math.floor(_number(drop, "fitness_drop") * 100 + 0.5)
+    percentage is rounded half up to a whole number before its sign picks the word. A fall that
+    rounds to the screen's ``bar`` (the served ``fitness_drop``, 0.30) without equalling it is
+    compared with the bar unrounded first, so a race used reads ``fell just under 30 %`` and a race
+    the screen left out ``fell more than 30 %``: the same words never stand on both sides of it."""
+    fall = _number(drop, "fitness_drop")
+    percent = math.floor(fall * 100 + 0.5)
     if percent == 0:
         return "no change over 4 weeks"
-    return f"{'fell' if percent > 0 else 'rose'} {abs(percent)} % over 4 weeks"
+    side = ""
+    if percent > 0 and percent == math.floor(bar * 100 + 0.5) and fall != bar:
+        side = "more than " if fall > bar else "just under "
+    return f"{'fell' if percent > 0 else 'rose'} {side}{abs(percent)} % over 4 weeks"
 
 
-def _fitness(effort: dict) -> str:
+def _fitness(effort: dict, bar: float) -> str:
     """``fitness 36, fell 3 % over 4 weeks``: the day-before CTL and its change over the four weeks
     in words; ``(-)`` without the change, ``fitness -`` without the day-before figure."""
     if effort["fitness_before"] is None:
@@ -366,7 +373,7 @@ def _fitness(effort: dict) -> str:
     drop = effort["fitness_drop"]
     if drop is None:
         return f"fitness {before} (-)"
-    return f"fitness {before}, {_fitness_change(drop)}"
+    return f"fitness {before}, {_fitness_change(drop, bar)}"
 
 
 def _residual(value: Any) -> str:
@@ -391,19 +398,19 @@ def _weight(value: Any) -> str:
     return "0.999999"
 
 
-def _riegel_effort_line(effort: dict, zone: ZoneInfo) -> str:
+def _riegel_effort_line(effort: dict, zone: ZoneInfo, bar: float) -> str:
     weight = _weight(effort["weight"])
     line = (
         f"Race in b {_date(effort['start_time'], zone)}: {_km(effort['distance_m'], 'distance_m')} "
         f"({_km(effort['gap_equivalent_m'], 'gap_equivalent_m')} adjusted), "
-        f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort)}, weight {weight}"
+        f"{format_duration(_number(effort['duration_s'], 'duration_s'))}, {_fitness(effort, bar)}, weight {weight}"
     )
     if effort["residual"] is not None:
         line += f", {_residual(effort['residual'])} against the line"
     return line
 
 
-def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo) -> str:
+def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo, bar: float) -> str:
     reason = row["reason"]
     if not isinstance(reason, str):
         raise ValueError("reason is not a string")
@@ -411,7 +418,7 @@ def _riegel_excluded_line(row: dict, window: str, as_of: str, zone: ZoneInfo) ->
     if reason == "fitness_dropped":
         earlier = _whole(row["fitness_earlier"], "fitness_earlier")
         before = _whole(row["fitness_before"], "fitness_before")
-        words = f"fitness {_fitness_change(row['fitness_drop'])} ({earlier} to {before})"
+        words = f"fitness {_fitness_change(row['fitness_drop'], bar)} ({earlier} to {before})"
     elif reason == "outside_window":
         words = f"{window} days or more before {as_of}"
     elif reason in RIEGEL_REASON_WORDS:
@@ -433,6 +440,7 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
     if not isinstance(parameters, dict):
         raise ValueError("parameters is not an object")
     window = f"{_number(parameters['window_days'], 'window_days'):g}"
+    bar = _number(parameters["fitness_drop"], "fitness_drop")
     population_default = _flag(det, "population_default")
     below_one = _flag(det, "below_one")
 
@@ -446,15 +454,21 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
         races = _count(len(efforts), "race")
         if population_default:
             min_races = _number(parameters["min_races"], "min_races")
+            min_spread = _number(parameters["min_spread"], "min_spread")
             counted = _effective_count([_number(e["weight"], "weight") for e in efforts])
+            # The spread is judged over the adjusted distances served; it needs two of them.
+            known = [_number(e["gap_equivalent_m"], "gap_equivalent_m") for e in efforts if e["gap_equivalent_m"] is not None]
+            spread_short = len(known) >= 2 and max(known) / min(known) < min_spread
+            close = ", too close in distance" if spread_short else ""
+            twice = " and the longest must be at least twice the shortest" if spread_short else ""
             if len(efforts) < min_races:
-                why = f"{races} in the last {window} days; {min_races:g} are needed"
+                why = f"{races} in the last {window} days{close}; {min_races:g} are needed{twice}"
             elif counted + COUNT_SLACK < min_races:
                 # Cut, not rounded, to one decimal: a count short of the bar never prints as 3.0.
                 tenths = math.floor(counted * 10) / 10
                 why = (
-                    f"{races} in the last {window} days, {tenths:.1f} counting the fade; "
-                    f"{min_races:g} are needed"
+                    f"{races} in the last {window} days, {tenths:.1f} counting the fade{close}; "
+                    f"{min_races:g} are needed{twice}"
                 )
             else:
                 why = (
@@ -492,10 +506,10 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
             lines = [RIEGEL_NOT_FINITE_LINE]
         else:
             lines = [f"Endurance exponent unavailable: {_printable(reason)}."]
-    lines += [_riegel_effort_line(effort, zone) for effort in efforts]
+    lines += [_riegel_effort_line(effort, zone, bar) for effort in efforts]
     if excluded:
         as_of_day = _date(as_of, zone)
-        lines += [_riegel_excluded_line(row, window, as_of_day, zone) for row in excluded]
+        lines += [_riegel_excluded_line(row, window, as_of_day, zone, bar) for row in excluded]
     return lines
 
 
