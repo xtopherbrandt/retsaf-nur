@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import math
 import sys
 from datetime import UTC, date, datetime, time, timedelta
@@ -399,6 +400,43 @@ def test_the_t_multiplier_takes_the_whole_part_of_the_effective_count() -> None:
     assert abs(result.error - oracle.error) <= ORACLE_TOLERANCE
     assert abs(result.value - oracle.b) <= ORACLE_TOLERANCE
     assert abs(result.interval_low - oracle.low) <= ORACLE_TOLERANCE
+
+
+def test_four_races_step_from_df_two_to_df_one() -> None:
+    """Four races at weight 1 count 4 and read t at two degrees of freedom, 1.885618. As one of
+    them passes 913 days its weight falls under 1, the effective count falls under 4, the count's
+    whole part is 3 and t steps to one degree of freedom, 3.077684; the interval widens by that
+    step while b barely moves. At 913 days exactly the weight is still 1 and nothing has stepped."""
+
+    def with_a_at(age_days: float) -> riegel_b.RiegelEstimate:
+        rows = _abcd()
+        rows[0] = _race("a", 5000.0, 1200.0, age_days)
+        return _run(rows)
+
+    at_913 = with_a_at(913.0)
+    assert [e.weight for e in at_913.efforts] == [1.0, 1.0, 1.0, 1.0]
+    assert riegel_b.effective_count([e.weight for e in at_913.efforts]) == 4.0
+    assert at_913.t_multiplier == riegel_b.T_TABLE[2]
+    assert abs(at_913.t_multiplier - 1.885618) <= PRINTED_TOLERANCE
+
+    past_913 = with_a_at(914.0)
+    weights = [e.weight for e in past_913.efforts]
+    assert weights[0] == pytest.approx(181 / 182, abs=1e-12) and weights[1:] == [1.0, 1.0, 1.0]
+    n_eff = riegel_b.effective_count(weights)
+    assert 3 < n_eff + riegel_b.COUNT_SLACK < 4
+    assert past_913.t_multiplier == riegel_b.T_TABLE[1]
+    assert abs(past_913.t_multiplier - 3.077684) <= PRINTED_TOLERANCE
+    assert past_913.population_default is False and at_913.population_default is False
+
+    # The step is t's alone: b moves by less than a thousandth, the interval's half-width grows by
+    # more than the t ratio's share of the error change.
+    assert abs(past_913.value - at_913.value) < 1e-3
+    half_before = (at_913.interval_high - at_913.interval_low) / 2
+    half_after = (past_913.interval_high - past_913.interval_low) / 2
+    assert half_after / half_before > 1.5
+    oracle = riegel_oracle.fit([(e.gap_equivalent_m, e.duration_s, e.weight) for e in past_913.efforts])
+    assert abs(past_913.t_multiplier - oracle.t) <= ORACLE_TOLERANCE
+    assert abs(past_913.interval_low - oracle.low) <= ORACLE_TOLERANCE
 
 
 def test_equal_weights_under_1_count_whole() -> None:
@@ -797,6 +835,53 @@ def test_a_race_at_the_instant_is_used() -> None:
     result = _run([at])
     assert [(e.session_id, e.weight) for e in result.efforts] == [("at", 1.0)]
     assert result.excluded == ()
+
+
+def test_the_timer_is_the_race_time_and_the_races_fit_in_start_order() -> None:
+    """The estimator's contract with any reader, stated where a reader can change it. On the app's
+    write path a stored row's timer and summary duration agree and rows arrive in start order, so a
+    pin on either is not reachable there; here the rows disagree and arrive shuffled. The race time
+    is ``timer_time_s`` when it is set, over ``duration_s`` and the summary's ``duration_s`` (the
+    fit is the reference's A, B, C, D to the printed digits), a summary that does not decode leaves
+    a race with a timer qualified, and the races are served in start order whatever the input order.
+    Fit the time from ``duration_s`` instead, or serve the input order, and this reads red."""
+    rows = _abcd()
+    for row in rows:
+        distance = json.loads(row["summary"])["distance_m"]
+        row["duration_s"] = row["timer_time_s"] * 2
+        row["summary"] = json.dumps({"distance_m": distance, "duration_s": row["timer_time_s"] * 3})
+    rows[2]["summary"] = "{bad"
+    shuffled = [rows[2], rows[0], rows[3], rows[1]]
+    assert [r["session_id"] for r in shuffled] == ["c", "a", "d", "b"]
+    result = _run(shuffled)
+    _assert_fit(result, "A, B, C, D", "abcd")
+    assert [e.session_id for e in result.efforts] == ["a", "b", "c", "d"]
+    assert [e.duration_s for e in result.efforts] == [1200.0, 2520.0, 5600.0, 12000.0]
+    assert result.excluded == ()
+
+
+def test_below_one_reads_the_fitted_b_against_1_on_both_sides() -> None:
+    """Three races on an exact b = 1 law fit 1.0000000000000013, so no reachable fit lands on 1 and
+    the comparison's own edge cannot be pinned. What can be is each side of it: three races on a
+    law a billionth under 1 read ``below_one``, the same races a billionth over 1 do not, and the
+    population default (b 1.06) never does. Move either exponent across 1 and this reads red."""
+
+    def on_a_law(b: float) -> riegel_b.RiegelEstimate:
+        return _run([_race(str(d), d, 0.24 * d**b, 100 + i) for i, d in enumerate((5000.0, 10000.0, 21100.0))])
+
+    exact = on_a_law(1.0)
+    assert exact.value != 1.0 and abs(exact.value - 1.0) < 1e-12
+
+    under = on_a_law(1 - 1e-9)
+    assert abs(under.value - (1 - 1e-9)) < 1e-12 and under.value < 1
+    assert under.below_one is True and under.population_default is False
+
+    over = on_a_law(1 + 1e-9)
+    assert abs(over.value - (1 + 1e-9)) < 1e-12 and over.value > 1
+    assert over.below_one is False and over.population_default is False
+
+    population = _run(_abcd()[:2])
+    assert population.population_default is True and population.below_one is False
 
 
 def test_the_oracle_imports_nothing_from_the_estimator() -> None:

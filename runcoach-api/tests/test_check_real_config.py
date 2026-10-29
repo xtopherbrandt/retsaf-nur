@@ -20,6 +20,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from runcoach_api import cli as api_cli
 from runcoach_api import db as db_module
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -95,19 +96,26 @@ def test_a_missing_threshold_workout_names_prints_the_remediation(
     assert code == 1
 
 
-def test_a_missing_api_toml_prints_the_message_serve_prints(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_check_real_config_reads_serves_own_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``serve`` answers a missing file with the loader's message and how to make one; the check
-    prints the same line, as its docstring says."""
+    prints the same line, as its docstring says. The line is read from ``serve`` itself: the
+    command is run with its loader pointed at the same missing file and what it writes to stderr is
+    what the check must print, indented, so a change to ``serve``'s words reaches this test without
+    a copy of them typed here."""
     _api, cli = _write_pair(tmp_path)
     missing = tmp_path / "absent" / "api.toml"
-    with pytest.raises(check_real_config.ConfigNotFoundError) as raised:
-        check_real_config.load_config(missing)
+    monkeypatch.setattr(api_cli, "load_config", lambda: check_real_config.load_config(missing))
+    with pytest.raises(SystemExit) as exited:
+        api_cli.serve()
+    assert exited.value.code == 1
+    serve_lines = capsys.readouterr().err.splitlines()
+    assert len(serve_lines) == 1 and serve_lines[0].startswith("Error: ") and str(missing) in serve_lines[0]
+
     code, out = _run(missing, cli, capsys)
-    print(out)
     assert any(line.startswith("api.toml: ERROR") for line in out.splitlines()), out
-    assert f"  Error: {raised.value}. Run `runcoach-api init` first." in out.splitlines()
+    assert f"  {serve_lines[0]}" in out.splitlines(), out
     assert code == 1
 
 
