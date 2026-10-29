@@ -30,7 +30,7 @@
 - **T-26 input tiers** IS the three tiers of T-05 that feed the trend, stated as three input tiers plus the quarantined HRV Status classification rather than as four tiers.
 - **T-27 rung / loop** IS a rung, a position on the arbitration ladder (ARB-01), and a loop or timescale, one of ARCH-03's five; the ladder arbitrates between loops, but its rungs are not the loops.
 - **T-28 single-ecosystem** IS one vendor ecosystem per athlete's data at a time, and multi-vendor ingestion is not multi-device coordination.
-- **T-29 goal contract** IS the three athlete-owned fields {`goal_pace_target`, `race_date`, `distance_m`}.
+- **T-29 goal contract** IS the three athlete-owned fields {`goal_pace_target`, `race_date`, `distance_m`}, `goal_pace_target` entered as `target_time_s` and the goal's `name` outside the contract (H-47).
 - **T-30 safety override / safety pathway** IS the override, the system's deterministic stop-or-escalate (ARB-02), and the pathway, the athlete-facing instructions that override issues (AUT-02).
 - **T-31 D, R, R+k, k₃** IS D, the target local date; R, the first reading of the new era after a tier change or of the resumption after a coverage gap; R+k, the k-th local day after R; and k₃, the offset of the returning dataset's third day, as HRV-33 uses it.
 - **T-32 resolved tier / rule 1–4** IS retired vocabulary (HRV-44), replaced by the selected or presented dataset, with rule 4 surviving only as the name of the era rule (HRV-38).
@@ -273,7 +273,7 @@ Scope: the split between the plan and the goal contract.
 Not: the safety pathway, which AUT-02 governs.
 Pinned: none
 
-**GOAL-02.** The goal contract IS the three athlete-owned fields `goal_pace_target`, `race_date` and `distance_m`, which the system MAY propose to change but MUST never change itself, so a change takes effect only as an athlete-supplied input, exactly as at program start.
+**GOAL-02.** The goal contract IS the three athlete-owned fields `goal_pace_target`, `race_date` and `distance_m`, which the system MAY propose to change but MUST never change itself, so a change takes effect only as an athlete-supplied input, exactly as at program start, `goal_pace_target` being entered as `target_time_s` over `distance_m` (H-47).
 Scope: every goal-contract field, and every proposal the system makes about one.
 Not: the order in which the system proposes remedies, which GOAL-03 sets.
 Pinned: none
@@ -388,7 +388,7 @@ Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
 **DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
-Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, REG-31, the threshold-pace constants, and REG-32, the endurance-exponent constants.
+Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, REG-31, the threshold-pace constants, REG-32, the endurance-exponent constants, and REG-33, the goal-projection constants.
 Not: a row ratified from the cited research, which DOC-18 governs.
 Pinned: none
 
@@ -397,7 +397,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, and REG-32, as H-45 and H-46 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10 to REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, REG-32, as H-45 and H-46 record, and REG-33, as H-47 records.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -580,6 +580,22 @@ Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_a_fading_third_race_
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_the_bar_counts_races_by_their_weight
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_the_t_multiplier_takes_the_whole_part_of_the_effective_count
 
+**REG-33.** The goal time MUST be REG-32's line at the goal distance with a Student's t prediction interval above its bar, else the closest race in log distance scaled by 1.06 with no interval, labelled high at an uncertainty up to 0.02, medium up to 0.05, else low, a step lower on a fitness gap, and low on the fallback, at a b below 1, outside 5000 to 42195 m or past 1.5 times the longest race.
+Scope: the served projection; `u` is the larger of the halfwidth and the largest leave-one-out shift whose remaining races clear the bar, and the fitness gap fitness now under 70 % of that at the races; engineering defaults `high_max_uncertainty` 0.02, `medium_max_uncertainty` 0.05, `fitness_gap` 0.30, `max_extrapolation` 1.5, `calibrated_min_m` 5000, `calibrated_max_m` 42195, `tie_slack` 1e-9.
+Not: an adjustment of the time for fitness or age, whose figures are served beside it; an interval on the closest-race route, a recorded deviation from spec/01 section 1.4.2; a course profile or conditions, which are refused; and a stored projection, each read recomputing it, the goal itself being the contract of GOAL-02 with `goal_pace_target` entered as `target_time_s`.
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_fitted_line_matches_the_worked_examples
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_closest_race_fallback
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_tie_goes_to_the_higher_weight
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_tie_at_equal_weight_goes_to_the_later_start
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_unavailable_reasons
+Pinned: runcoach-api/tests/test_pace_target_projection.py::test_leave_one_out_matches_the_reference
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_table_rows
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_table_fewer_than_three_races
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_edges
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_fitness_gap_lowers_one_step
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_time_is_unchanged_by_the_fitness_gap
+Why: spec/01 sections 1.4.2 and 1.4.6 ask for a projection with a lower-confidence flag on a wide extrapolation, and research/01 section 4.3 finds a long race under-predicted from short ones; the values are engineering defaults the athlete chose (H-47), and the projection degrades to the closest race below the bar, then to `no_races`, `riegel_unavailable` or `projection_not_finite`.
+
 **HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
 Scope: every per-tier dataset's SWC band, as `build_band` builds it.
 Not: a coefficient of variation (CV) of rMSSD or of ln rMSSD, which is never the SWC band's statistic.
@@ -610,7 +626,7 @@ Not: a constant tuned per athlete outside rule IND-01.
 Pinned: none
 Why: decision C31 makes the constants defaults while §3.1 governs their tuning, and keeps design invariants such as §1.7 out of it.
 
-**IND-05.** The endurance exponent and the CS profile MUST individualize once enough qualifying maximal efforts exist.
+**IND-05.** The endurance exponent and the CS profile MUST individualize once enough qualifying maximal efforts exist, a qualifying effort being a run the athlete tags Race, their word on effort rather than a measured maximum (H-47).
 Scope: every athlete's endurance exponent and CS profile.
 Not: an individual fit before those efforts exist.
 Pinned: none
