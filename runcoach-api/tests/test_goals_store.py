@@ -103,7 +103,9 @@ def test_a_superseded_only_store_has_no_active_goal(conn):
 
 
 def test_session_names_are_read_by_id(conn):
-    for session_id, name in (("race-a", "Spring Half"), ("race-b", None)):
+    """Only the requested ids come back: a stored session that was not asked for is absent, as is an
+    unknown id; a session whose file carried no name maps to ``None``."""
+    for session_id, name in (("race-a", "Spring Half"), ("race-b", None), ("race-c", "Not Requested")):
         db.persist(
             conn,
             Session(
@@ -118,7 +120,10 @@ def test_session_names_are_read_by_id(conn):
             [],
             {},
         )
-    assert db.read_session_names(conn, ["race-a", "race-b", "unknown"]) == {"race-a": "Spring Half", "race-b": None}
+    names = db.read_session_names(conn, ["race-a", "race-b", "unknown"])
+    assert names == {"race-a": "Spring Half", "race-b": None}
+    assert "race-c" not in names
+    assert db.read_session_names(conn, ["race-c"]) == {"race-c": "Not Requested"}
     assert db.read_session_names(conn, []) == {}
 
 
