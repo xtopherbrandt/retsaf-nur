@@ -305,6 +305,22 @@ _SCHEMA_DDL = """
     -- F019: the list reads one session's (t, distance) in t order for every
     -- row of a page; without this each read scanned the whole records table.
     CREATE INDEX IF NOT EXISTS records_session_id_t ON records (session_id, t);
+    CREATE TABLE IF NOT EXISTS goals (
+      -- F032: the athlete's goal race. One row per PUT /goal; the active row
+      -- is the one whose superseded_at is NULL, and write_goal sets the
+      -- previous active row's superseded_at as it inserts the new one, in one
+      -- transaction. created_at and superseded_at are UTC ISO-8601 text the
+      -- route passes in. The projection is never stored: it is recomputed on
+      -- every read. Nothing deletes a row. No session_id, so _child_tables
+      -- does not list it and delete_session leaves it alone.
+      id INTEGER PRIMARY KEY, name TEXT, race_date TEXT, distance_m REAL,
+      target_time_s REAL, created_at TEXT, superseded_at TEXT
+    );
+    -- One active goal at a time. A plain UNIQUE index on superseded_at would
+    -- admit two NULLs (SQLite treats NULLs as distinct), so the index is over
+    -- the expression (superseded_at IS NULL), filtered to the active rows.
+    CREATE UNIQUE INDEX IF NOT EXISTS goals_one_active
+      ON goals((superseded_at IS NULL)) WHERE superseded_at IS NULL;
 """
 
 # The entered-values table's name, for callers and tests that address it.
@@ -2713,3 +2729,75 @@ def read_state_inputs(
     finally:
         conn.rollback()
     return StateInputs(load_rows, threshold_rows, threshold_unreadable, riegel_rows)
+
+
+# ---------------------------------------------------------------------------
+# F032: the goal race (the goals table)
+#
+# Appended at the end so the lines cited above stay in place. One active goal
+# at a time, held by the goals_one_active expression index; write_goal
+# supersedes the active row and inserts the new one in one transaction.
+# ---------------------------------------------------------------------------
+
+GOALS_TABLE = "goals"
+
+_GOAL_COLUMNS = ("id", "name", "race_date", "distance_m", "target_time_s", "created_at", "superseded_at")
+
+
+def _goal_row(row: sqlite3.Row) -> dict:
+    return {column: row[column] for column in _GOAL_COLUMNS}
+
+
+def write_goal(
+    conn: sqlite3.Connection,
+    *,
+    name: str | None,
+    race_date: str,
+    distance_m: float,
+    target_time_s: float | None,
+    now: str,
+) -> dict:
+    """Store a new goal as the active one and return its row (F032 AC1, reference section 2).
+
+    One ``BEGIN IMMEDIATE`` transaction takes the write lock, sets ``superseded_at = now`` on the
+    active row (the one whose ``superseded_at`` is null, if any), inserts the new row with
+    ``created_at = now`` and ``superseded_at`` null, and commits: all or nothing. Any exception rolls
+    the transaction back and propagates unchanged, so a refused insert leaves the previous goal
+    active. ``now`` is the caller's UTC instant as ISO-8601 text (the route's ``_utcnow``); this
+    module never reads the clock. Values are not validated here: the route screens them. The row is
+    ``id``, ``name``, ``race_date``, ``distance_m``, ``target_time_s``, ``created_at`` and
+    ``superseded_at`` (null). The caller has run ``init_schema`` and holds no open transaction.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(f"UPDATE {GOALS_TABLE} SET superseded_at = ? WHERE superseded_at IS NULL", (now,))
+        goal_id = conn.execute(
+            f"INSERT INTO {GOALS_TABLE} (name, race_date, distance_m, target_time_s, created_at, superseded_at)"
+            " VALUES (?, ?, ?, ?, ?, NULL)",
+            (name, race_date, distance_m, target_time_s, now),
+        ).lastrowid
+        row = conn.execute(f"SELECT * FROM {GOALS_TABLE} WHERE id = ?", (goal_id,)).fetchone()
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+    return _goal_row(row)
+
+
+def read_active_goal(conn: sqlite3.Connection) -> dict | None:
+    """The active goal (the row whose ``superseded_at`` is null) as ``write_goal`` returns it, or
+    None when the store holds no active goal. Read-only."""
+    row = conn.execute(f"SELECT * FROM {GOALS_TABLE} WHERE superseded_at IS NULL").fetchone()
+    return None if row is None else _goal_row(row)
+
+
+def read_session_names(conn: sqlite3.Connection, session_ids: Sequence[str]) -> dict[str, str | None]:
+    """``{session_id: name}`` for every id in ``session_ids`` that names a stored session, the
+    session row's ``name`` column as saved at upload (null when the file carried none). An unknown id
+    is absent from the result. Read-only."""
+    ids = list(dict.fromkeys(session_ids))
+    if not ids:
+        return {}
+    placeholders = ", ".join("?" for _ in ids)
+    rows = conn.execute(f"SELECT session_id, name FROM sessions WHERE session_id IN ({placeholders})", ids)
+    return {row["session_id"]: row["name"] for row in rows}
