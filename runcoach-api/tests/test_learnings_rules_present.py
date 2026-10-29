@@ -26,7 +26,15 @@ that records why it exists. Each file is also pinned to the phrases that carry i
   them on Linux through ``run_on_linux.sh``, the Linux run's summary line as the evidence;
 - ``release-demo-checks-the-real-config.md`` (IDEA-183) asks the release gate to load the athlete's
   real ``api.toml`` and ``cli.toml`` with ``check_real_config.py`` and to show a failure to the
-  athlete before approval.
+  athlete before approval;
+- ``rulings-on-a-computed-number-show-every-rule-that-reads-it.md`` (IDEA-205) asks a question that
+  has the athlete rule on how a number is computed to carry a worked table in the question itself: a
+  few input sets, and for each the changed number beside every rule that reads it, citing the three
+  sprint-022 rulings on b that were judged on different days;
+- ``release-demo-questions-are-asked-before-review.md`` (IDEA-206) asks each item in the release
+  demo summary that only the athlete can answer to be put to them with AskUserQuestion when execute
+  ends, in plain words with its effect on the served number, and the answer recorded before review
+  starts, citing the 2026-06-06 half that waited for the review critic.
 """
 
 from __future__ import annotations
@@ -91,6 +99,16 @@ RULES = (
         "release-demo-checks-the-real-config.md",
         "IDEA-183",
         ("check_real_config.py", "api.toml", "cli.toml", "before approval"),
+    ),
+    (
+        "rulings-on-a-computed-number-show-every-rule-that-reads-it.md",
+        "IDEA-205",
+        ("worked table", "every rule that reads it", "in the question itself", "2026-10-24"),
+    ),
+    (
+        "release-demo-questions-are-asked-before-review.md",
+        "IDEA-206",
+        ("AskUserQuestion", "when execute ends", "before review starts", "2026-06-06"),
     ),
 )
 
