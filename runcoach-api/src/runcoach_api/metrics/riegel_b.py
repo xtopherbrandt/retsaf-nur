@@ -12,11 +12,15 @@ it imports neither ``config`` nor ``db`` nor ``fastapi``. Rows are read **by key
   ``running`` or whose ``activity_tag`` is not ``race`` is in neither list; a row without the key
   is the reader's race-tagged running session);
 - ``admitted_as_workout``: ``True`` when the reader admitted the race-tagged session as a threshold
-  workout by its name, with ``workout_name`` carried onto the exclusion when given;
+  workout by its name;
 - ``timer_time_s``, and ``duration_s`` or the raw ``summary`` (a JSON object as text, or a decoded
   mapping) whose ``duration_s`` and ``distance_m`` are read;
 - ``quality_flags``: the session's stored flags, a JSON list as text or a decoded list (``None``
   reads as none);
+- ``unreadable``, when the reader carries it: its word on which stored value does not read
+  (``summary_unreadable``, ``quality_flags_unreadable``, ``features_unavailable`` or ``None``). A
+  row with the key is excluded for that reason, or not, as the key says; only a row without the
+  key is checked here from its stored values (``_unreadable``), so the logic has one source;
 - ``features``, where ``needs_features`` was true: F013's ``gap_avg_pace_s_per_km``,
   ``gap_coverage``, ``gps_degraded_fraction`` and ``flags`` as a mapping, or ``None`` when they did
   not compute.
@@ -207,7 +211,7 @@ class Effort:
 @dataclass(frozen=True)
 class Exclusion:
     """A candidate at or before the instant that was not used, and why; the three fitness figures
-    are set for ``fitness_dropped`` only, ``workout_name`` for ``admitted_as_workout`` when given."""
+    are set for ``fitness_dropped`` only."""
 
     session_id: str
     start_time: datetime
@@ -215,7 +219,27 @@ class Exclusion:
     fitness_before: float | None = None
     fitness_earlier: float | None = None
     fitness_drop: float | None = None
-    workout_name: str | None = None
+
+
+@dataclass(frozen=True)
+class Fit:
+    """``fit``'s result over ``(d_eq, T, w)`` efforts: the bar (``clears_bar``), the effective count
+    ``n_eff``, and, when the bar is cleared, the line (``b``, its weighted standard error ``se``, the
+    t multiplier ``t``), the weighted means ``x_w`` of ``ln D_eq`` and ``y_w`` of ``ln T``, the weight
+    sum ``sum_w``, the weighted squared-residual sum ``sum_w_r2`` (``sum(w r^2)``, in log space) and
+    the log residuals ``r`` in the efforts' order. Below the bar every figure but ``n_eff`` is
+    ``None``."""
+
+    clears_bar: bool
+    n_eff: float
+    b: float | None
+    se: float | None
+    t: float | None
+    x_w: float | None
+    y_w: float | None
+    sum_w: float | None
+    sum_w_r2: float | None
+    r: tuple[float, ...] | None
 
 
 @dataclass(frozen=True)
@@ -263,7 +287,11 @@ def _aware(value: Any, what: str) -> datetime:
 def resolve_instant(as_of: datetime | date, zone: tzinfo | None = None) -> tuple[datetime, tzinfo]:
     """The aware instant ``as_of`` names and the zone races are dated in: a ``date`` is the last
     instant of that local day in ``zone`` (required then); a ``datetime`` must be aware, and
-    ``zone`` defaults to its own."""
+    ``zone`` defaults to its own.
+
+    The ``date`` branch is part of the module's public surface and pinned by
+    ``test_riegel_b_estimator.py`` (``as_of`` given as a date); ``GET /state`` never reaches it,
+    since the route always passes an aware instant. Retiring it would need a ruling."""
     if isinstance(as_of, datetime):
         instant = _aware(as_of, "as_of")
         return instant, zone if zone is not None else instant.tzinfo  # type: ignore[return-value]
@@ -333,6 +361,22 @@ def _is_candidate(row: Mapping[str, Any]) -> bool:
     return row.get("sport", RUNNING) == RUNNING and row.get("activity_tag", RACE) == RACE
 
 
+def _unreadable(row: Mapping[str, Any], summary: Mapping[str, Any] | None, timer: Any) -> str | None:
+    """Which stored value of ``row`` does not read, ``None`` when both do. The reader
+    (``db._read_riegel_races``) owns this logic and writes its answer on the row's ``unreadable``
+    key; a row that carries the key is read, and only a row without it (one built by hand) is
+    screened here: ``summary_unreadable`` when the duration must come from a summary that is not a
+    JSON object, else ``quality_flags_unreadable`` when the flags are not a JSON list."""
+    if "unreadable" in row:
+        return row["unreadable"]
+    if timer is None and row.get("duration_s") is None and summary is None:
+        return SUMMARY_UNREADABLE
+    readable, flags = _decoded(row.get("quality_flags"))
+    if not readable or not (flags is None or isinstance(flags, list)):
+        return QUALITY_FLAGS_UNREADABLE
+    return None
+
+
 def _screen_stored(
     row: Mapping[str, Any], instant: datetime, zone: tzinfo, fitness: Fitness | None
 ) -> _Stored:
@@ -347,21 +391,22 @@ def _screen_stored(
         return _Stored(session_id, start, OUTSIDE_WINDOW)
     summary = _summary(row) if "summary" in row else {}
     timer = row.get("timer_time_s")
+    unreadable = _unreadable(row, summary, timer)
     if timer is None:
         raw = row.get("duration_s")
         if raw is None:
-            if summary is None:
+            if unreadable == SUMMARY_UNREADABLE:
                 return _Stored(session_id, start, SUMMARY_UNREADABLE)
-            raw = summary.get("duration_s")
+            raw = (summary or {}).get("duration_s")
         duration = _real(raw)
     else:
         duration = _real(timer)
     if duration is None or not duration > 0:
         return _Stored(session_id, start, DURATION_UNAVAILABLE)
-    readable, flags = _decoded(row.get("quality_flags"))
-    if not readable or not (flags is None or isinstance(flags, list)):
+    if unreadable == QUALITY_FLAGS_UNREADABLE:
         return _Stored(session_id, start, QUALITY_FLAGS_UNREADABLE)
-    stored = flags or []
+    _readable, flags = _decoded(row.get("quality_flags"))
+    stored = flags if isinstance(flags, list) else []
     flagged = next((flag for flag in STORED_FLAG_ORDER if flag in stored), None)
     if flagged is not None:
         return _Stored(session_id, start, flagged)
@@ -411,6 +456,38 @@ def _all_finite(*values: float) -> bool:
     return all(math.isfinite(value) for value in values)
 
 
+def fit(efforts: Iterable[tuple[float, float, float]]) -> Fit:
+    """The fit of reference section 3 over ``(d_eq, T, w)`` triples in the efforts' order, the one
+    source of b for ``estimate`` and for every projection built on it: the bar first (``n_eff``
+    with ``COUNT_SLACK`` against ``MIN_RACES``, then the spread of ``d_eq`` against ``MIN_SPREAD``,
+    both before any division), then the weighted means, the centred sums, ``b``, the log residuals,
+    the standard error and the t multiplier. Every ``d_eq`` and ``T`` must be finite and positive
+    (``estimate`` checks the distances before calling; a duration is positive by its screen) and
+    every ``w`` positive. Below the bar only ``clears_bar`` and ``n_eff`` are set."""
+    used = list(efforts)
+    served = [d_eq for d_eq, _duration, _weight in used]
+    n_eff = effective_count([weight for _d_eq, _duration, weight in used])
+    if n_eff + COUNT_SLACK < MIN_RACES or max(served) / min(served) < MIN_SPREAD:
+        return Fit(False, n_eff, None, None, None, None, None, None, None, None)
+    w = [weight for _d_eq, _duration, weight in used]
+    x = [math.log(d_eq) for d_eq in served]
+    y = [math.log(duration) for _d_eq, duration, _weight in used]
+    total = sum(w)
+    x_w = sum(wi * xi for wi, xi in zip(w, x, strict=True)) / total
+    y_w = sum(wi * yi for wi, yi in zip(w, y, strict=True)) / total
+    sxx = sum(wi * (xi - x_w) ** 2 for wi, xi in zip(w, x, strict=True))
+    sxy = sum(wi * (xi - x_w) * (yi - y_w) for wi, xi, yi in zip(w, x, y, strict=True))
+    b = sxy / sxx
+    r = [yi - (y_w + b * (xi - x_w)) for xi, yi in zip(x, y, strict=True)]
+    # The weighted standard error over the weights rescaled to sum to n_eff, w' = w * n_eff / sum(w):
+    # sum(w' r^2) and sum(w' (x - x_w)^2) both carry the factor n_eff / sum(w), which cancels, so
+    # se = sqrt(sum(w r^2) / (n_eff - 2) / sxx); b and the residuals do not move with the scale.
+    sum_w_r2 = sum(wi * ri * ri for wi, ri in zip(w, r, strict=True))
+    error = math.sqrt(sum_w_r2 / (n_eff - 2) / sxx)
+    t = t_multiplier(math.floor(n_eff + COUNT_SLACK) - 2)  # the bar's own reading, so at least 1
+    return Fit(True, n_eff, b, error, t, x_w, y_w, total, sum_w_r2, tuple(r))
+
+
 def estimate(
     rows: Iterable[Mapping[str, Any]],
     instant: datetime | date,
@@ -456,7 +533,6 @@ def estimate(
                     fitness_before=stored.fitness[0] if dropped else None,
                     fitness_earlier=stored.fitness[1] if dropped else None,
                     fitness_drop=stored.drop if dropped else None,
-                    workout_name=row.get("workout_name") if reason == ADMITTED_AS_WORKOUT else None,
                 )
             )
             continue
@@ -505,10 +581,9 @@ def estimate(
     distances = [d_eq for _stored, _features, _pace, d_eq in used]
     if not _all_finite(*distances) or not all(d_eq > 0 for d_eq in distances):
         return unavailable()  # an underflow to 0 has no finite logarithm either
-    weighted = [item for item in used if item[0].weight > 0]
-    served = [d_eq for _stored, _features, _pace, d_eq in weighted]
-    n_eff = effective_count([stored.weight for stored, _features, _pace, _d_eq in weighted])
-    if n_eff + COUNT_SLACK < MIN_RACES or max(served) / min(served) < MIN_SPREAD:
+    # Row 2 excluded every race at weight 0, so every effort here has w > 0.
+    line = fit([(d_eq, stored.duration, stored.weight) for stored, _features, _pace, d_eq in used])
+    if not line.clears_bar:
         return RiegelEstimate(
             as_of=instant,
             efforts=efforts([None] * len(used)),
@@ -525,24 +600,11 @@ def estimate(
             unavailable=None,
         )
 
-    w = [stored.weight for stored, _features, _pace, _d_eq in used]
-    x = [math.log(d_eq) for d_eq in distances]
-    y = [math.log(stored.duration) for stored, _features, _pace, _d_eq in used]
-    total = sum(w)
-    x_w = sum(wi * xi for wi, xi in zip(w, x, strict=True)) / total
-    y_w = sum(wi * yi for wi, yi in zip(w, y, strict=True)) / total
-    sxx = sum(wi * (xi - x_w) ** 2 for wi, xi in zip(w, x, strict=True))
-    sxy = sum(wi * (xi - x_w) * (yi - y_w) for wi, xi, yi in zip(w, x, y, strict=True))
-    b = sxy / sxx
-    r = [yi - (y_w + b * (xi - x_w)) for xi, yi in zip(x, y, strict=True)]
-    # The weighted standard error over the weights rescaled to sum to n_eff, w' = w * n_eff / sum(w):
-    # sum(w' r^2) and sum(w' (x - x_w)^2) both carry the factor n_eff / sum(w), which cancels, so
-    # se = sqrt(sum(w r^2) / (n_eff - 2) / sxx); b and the residuals do not move with the scale.
-    error = math.sqrt(sum(wi * ri * ri for wi, ri in zip(w, r, strict=True)) / (n_eff - 2) / sxx)
-    t = t_multiplier(math.floor(n_eff + COUNT_SLACK) - 2)  # the bar's own reading, so at least 1
+    assert line.b is not None and line.se is not None and line.t is not None and line.r is not None
+    b, error, t = line.b, line.se, line.t
     low, high = b - t * error, b + t * error
     try:
-        residuals = [math.expm1(ri) for ri in r]
+        residuals = [math.expm1(ri) for ri in line.r]
     except OverflowError:
         return unavailable()
     if not _all_finite(b, error, low, high, *residuals):

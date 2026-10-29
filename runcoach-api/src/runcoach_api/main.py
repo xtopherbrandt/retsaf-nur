@@ -1757,14 +1757,18 @@ def _finite_or_none(value: float | None) -> float | None:
 def _riegel_determinant(result: riegel_b.RiegelEstimate) -> RiegelDeterminant:
     """The ``riegel_exponent`` entry: the estimator's result as served. A GAP-equivalent distance
     that is not finite (the estimate is then ``estimate_not_finite``) is served null, never as a
-    value JSON cannot carry; each exclusion carries its session, start, reason and the three
-    fitness figures."""
+    value JSON cannot carry, and so are b, the interval ends, the error and t, here rather than by
+    pydantic's serialiser alone (the estimator already withholds them when any is not finite);
+    each exclusion carries its session, start, reason and the three fitness figures."""
     estimate = None
     if result.unavailable is None:
         estimate = {
-            "value": result.value,
+            "value": _finite_or_none(result.value),
             "unit": "1",
-            "interval": {"low": result.interval_low, "high": result.interval_high},
+            "interval": {
+                "low": _finite_or_none(result.interval_low),
+                "high": _finite_or_none(result.interval_high),
+            },
             "confidence": result.confidence,
             "provisional": result.provisional,
         }
@@ -1788,8 +1792,8 @@ def _riegel_determinant(result: riegel_b.RiegelEstimate) -> RiegelDeterminant:
         estimate=estimate,
         unavailable=result.unavailable,
         trend={"direction": "unknown", "rate": None},
-        error=result.error,
-        t_multiplier=result.t_multiplier,
+        error=_finite_or_none(result.error),
+        t_multiplier=_finite_or_none(result.t_multiplier),
         population_default=result.population_default,
         below_one=result.below_one,
         efforts=efforts,
