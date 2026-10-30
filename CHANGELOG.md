@@ -23,7 +23,7 @@ Setting a new goal supersedes the old one in the same transaction, and nothing d
 `(completed)` once the race day has passed), then the projection, in this form (illustrative):
 
     Goal 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40
-    Projected 1:32:23 (4:23/km), 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high
+    Projected 1:32:23 (4:23/km) for today, not race day, 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high
     Confidence high: from the range, 0.5 %
     Goal time 1:31:40 is 0:00:43 faster than the projection (-0.8 %), outside the 80 % range
     Route: the fitted line through the races used
@@ -54,20 +54,32 @@ largest leave-one-out shift among the races without which the rest still clear F
 time moves without one race), is at most 2 %, `medium` to 5 %, else `low`; the `Confidence` line
 names which of the two set it, with the figure to one decimal, or to two decimals rounded up when
 it is just above 2 % or 5 % (`2.01 %`), so it never reads as the edge the label passed. A race without which the rest fall below the bar still prints its
-`without it` time, but its shift does not enter the label. It is lowered one step when
+`without it` time, but its shift does not enter the label. When the rest still count three races
+or more but span less than twice the shortest distance without it, that race alone sets the line,
+and the label is `low` whatever the uncertainty: the `Confidence` line reads `one race sets the
+line: <date> <name> (the other races span less than twice the distance without it)`, and that
+race's own line reads `sets the line (its +0.0 % against the line is no check)` in place of its
+residual. With exactly three races this never applies. It is lowered one step when
 fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
 marathon needs a race whose GAP-equivalent distance is at least 28.13 km, so a hilly race reads
 longer than its course). Every reason that holds is printed. The athlete's own
-set: eight races clear the bar for a half and a marathon with a wide range at `low`: the range's
-6.7 % on the half and 7.5 % on the marathon sets the label, and the leave-one-out shift of the
-Chicago marathon is 4.7 % and 7.3 %.
+set before the two trail halves are untagged: eight races clear the bar for a half and a marathon
+with a wide range at `low`: the range's 6.7 % on the half and 7.5 % on the marathon sets the label,
+and the leave-one-out shift of the Chicago marathon is 4.7 % and 7.3 %. After the untag, five 5Ks
+and Chicago are left: the half reads 1:30:01 with a 2.1 % range, which measures only the 5Ks'
+scatter, and `low`, because Chicago alone sets the line (without it the 5Ks span under twice;
+Chicago 3 minutes either way would move the half from 1:29:02 to 1:30:59 at the same range).
 
 **What it assumes.** Every projection lists the same seven assumptions, because none of these inputs
 is read: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment,
 projected for today and not race day (no plan moves it toward the race), and watch timer time (the
-races' times are the watch timer, which an auto-pause shortens; chip time may differ). A request
+races' times are the watch timer, which an auto-pause shortens; chip time may differ). The
+`Projected` line itself says `for today, not race day`. A race's distance is the watch's GPS
+distance (GAP-adjusted), not the certified course, and GPS in a race usually reads long, which
+leans the projection fast: Chicago enters at 42.52 km against a 42.195 km course, and at the course
+distance the athlete's post-untag half would read 1:30:30 instead of 1:30:01. A request
 that carries a course profile or conditions is refused with a 422 (`course profile and conditions
 are not modelled yet`), not accepted and ignored.
 
@@ -104,7 +116,8 @@ client generated from `0.5.0-draft`, which the entry below called additive) and 
 one required: `as_of`, `timezone`, `race`, `provenance`, `assumptions` and `parameters` are never
 null, the projection's figures, `projected_time_s` and `avg_pace_s_per_km` among them, become
 nullable, and `gap_to_goal` (a `GapToGoal` before) and `effort_note` (a nullable string before)
-narrow to null only, a non-null value refused). A client generated from `0.5.0-draft` regenerates. The CLI and API are released together.
+narrow to null only, a non-null value refused; each `GoalLeaveOneOut` row carries a required boolean
+`sets_the_line`, and `GoalConfidence.reasons` can hold `one_race_sets_the_line`). A client generated from `0.5.0-draft` regenerates. The CLI and API are released together.
 
 ## 2026-10-26 through 2026-10-28 — Sprint 022: The endurance exponent b from tagged races
 

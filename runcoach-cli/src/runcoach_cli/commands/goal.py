@@ -16,14 +16,17 @@ field above it, or a zero time, exits 2. The date is sent as given; the API refu
 past one with a 422, reported like any other non-2xx.
 
 Printed, one line each: the goal (date, name, distance, goal time, ``(completed)`` once the race day
-has passed); the projected time and the pace per km (athlete, 2026-10-29) with the 80 % range, or
+has passed); the projected time and the pace per km (athlete, 2026-10-29), ``for today, not race
+day``, with the 80 % range, or
 ``no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest)``
 on the closest-race route (F029's bar fails on the count or on the spread, and the served body says
 only that it failed), and the label; the label with its
-basis and each reason in words; the goal time's gap and whether it sits inside the range; the route
+basis and each reason in words (``one_race_sets_the_line`` naming each race whose leave-one-out row
+is marked ``sets_the_line``); the goal time's gap and whether it sits inside the range; the route
 in words; b with its label (``b unavailable`` when the API serves it null); the newest race;
 fitness now and at the races; one line per race used (date, name, adjusted distance, time,
-weight, residual, leave-one-out time and shift); ``Largest shift the label reads: <date> <name>,
+weight, residual, leave-one-out time and shift; a race that sets the line prints ``sets the line
+(its <residual> against the line is no check)`` in place of the residual); ``Largest shift the label reads: <date> <name>,
 without it <time> (<shift>)``, the largest shift among the races without which the rest
 still clear F029's bar (a race the fit cannot lose may move the time further on its own line and is not
 read); the assumptions in words. Every race line leads with
