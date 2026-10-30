@@ -83,8 +83,11 @@ races' times are the watch timer, which an auto-pause shortens; chip time may di
 day asked, so that line and the assumption read `for <date>, not race day` (the `as_of` the API
 used, as a date in the athlete's timezone). A race's distance is the watch's GPS
 distance (GAP-adjusted), not the certified course, and GPS in a race usually reads long, which
-leans the projection fast: Chicago enters at 42.52 km against a 42.195 km course, and at the course
-distance the athlete's post-untag half would read 1:30:30 instead of 1:30:01. A request
+leans the projection fast: Chicago enters at a GAP-equivalent 42.52 km against a 42.195 km course.
+Read at the course distance, the athlete's post-untag half would be 1:30:30 instead of 1:30:01;
+those 29 s are the whole difference between the GAP-equivalent and the course distance, of which
+the GPS overrun is a part (about 18 s if the watch read 42.4 km: the course distance with Chicago's
+grade adjustment kept reads 1:30:19), not the GPS overrun alone. A request
 that carries a course profile or conditions is refused with a 422 (`course profile and conditions
 are not modelled yet`), not accepted and ignored.
 
