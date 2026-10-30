@@ -456,6 +456,29 @@ def test_unreachable_api_exits_1(install_mock_client) -> None:
         assert len(api.calls) == 1
 
 
+def test_only_a_transport_error_is_unreachable(install_mock_client) -> None:
+    """``get_goal``, ``put_goal`` and ``post_goal_preview`` translate ``httpx.TransportError`` alone
+    into ``ApiUnreachableError``: a non-transport error raised under the request (a ``RuntimeError``
+    here) propagates as itself from the client function, and the command does not report it as an
+    unreachable API."""
+    from runcoach_cli import api_client
+
+    calls = (
+        (lambda: api_client.get_goal("http://example.test", None), ["goal"], "GET_goal"),
+        (lambda: api_client.put_goal("http://example.test", {}), ["goal", "set", "half", "--date", "2027-04-11"], "PUT_goal"),
+        (lambda: api_client.post_goal_preview("http://example.test", {}, None), ["goal", "preview", "half"], "POST_goal_preview"),
+    )
+    for call, args, key in calls:
+        _install(install_mock_client, **{key: RuntimeError("not a transport error")})
+        with pytest.raises(RuntimeError, match="not a transport error"):
+            call()
+        _install(install_mock_client, **{key: RuntimeError("not a transport error")})
+        result = runner.invoke(app, args)
+        assert result.exit_code == 1, result.output
+        assert isinstance(result.exception, RuntimeError), repr(result.exception)
+        assert "could not reach API" not in result.output, result.output
+
+
 def test_closest_race_names_the_bar_not_a_count(install_mock_client) -> None:
     """F029's bar fails on the count (fewer than 3 effective races) and on the spread (the longest
     adjusted distance under twice the shortest), so the closest-race route is taken for one race

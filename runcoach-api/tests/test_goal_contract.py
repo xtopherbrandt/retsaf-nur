@@ -370,6 +370,22 @@ def test_validator_accepts_fitted_line_fallback_and_unavailable(contract: dict) 
         assert any(expected in error for error in errors), (label, errors)
 
 
+def test_validator_enforces_the_race_name_max_length(contract: dict) -> None:
+    """``race.name`` is at most 200 characters on both request bodies: a 200-character name passes
+    ``GoalContractInput`` and ``GoalPreviewInput``, a 201-character one is reported at
+    ``$.race.name`` as over the ``maxLength``, and a null name passes."""
+    for name, make in (
+        ("GoalContractInput", lambda n: {"race": {"date": TODAY, "distance_m": HALF_M, "name": n}}),
+        ("GoalPreviewInput", lambda n: {"race": {"distance_m": HALF_M, "name": n}}),
+    ):
+        schema = _schema(contract, name)
+        assert contract_validate.validate(contract, schema, make("n" * 200)) == []
+        assert contract_validate.validate(contract, schema, make(None)) == []
+        errors = contract_validate.validate(contract, schema, make("n" * 201))
+        print(f"  {name} 201-character name: {errors}")
+        assert errors == ["$.race.name: 201 characters is over the maxLength 200"], errors
+
+
 def test_validator_refuses_a_non_null_gap_to_goal(contract: dict) -> None:
     """``gap_to_goal`` is typed null-only: an empty object and a ``GapToGoal``-shaped object are
     both refused at ``$.gap_to_goal``, as is a non-null ``effort_note``; null passes."""
