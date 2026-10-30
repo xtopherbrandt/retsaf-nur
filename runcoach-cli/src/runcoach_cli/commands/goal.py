@@ -17,7 +17,8 @@ past one with a 422, reported like any other non-2xx.
 
 Printed, one line each: the goal (date, name, distance, goal time, ``(completed)`` once the race day
 has passed); the projected time and the pace per km (athlete, 2026-10-29), ``for today, not race
-day``, with the 80 % range, or
+day`` (with ``--as-of``, ``for <date>, not race day``, the served ``as_of`` as a date in the served
+timezone, here and in the assumptions), with the 80 % range, or
 ``no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest)``
 on the closest-race route (F029's bar fails on the count or on the spread, and the served body says
 only that it failed), and the label; the label with its
@@ -125,16 +126,22 @@ ASSUMPTION_WORDS = {
     "cool_conditions": "cool conditions",
     "no_economy_adjustment": "no economy adjustment",
     "no_durability_adjustment": "no durability adjustment",
-    "projected_for_today_not_race_day": "projected for today, not race day",
     "watch_timer_time": "watch timer time (an auto-pause shortens it; chip time may differ)",
 }
 # The label reads only the shifts whose remaining races still clear the bar, so the line says it
 # names the largest of those, not the largest shift on the page (a race the fit cannot lose can
 # move the time further and still not count).
 LARGEST_WORDS = "Largest shift the label reads"
-# The projection is for today's fitness, never race day's; said on the Projected line itself, and
-# still listed among the assumptions.
+# The projection is for the fitness on the day used, never race day's; said on the Projected line
+# itself, and still listed among the assumptions. Without --as-of that day is today; with it, the
+# served ``as_of`` as a date in the served timezone (a backtest is not a projection for today).
 FOR_TODAY = "for today, not race day"
+PROJECTED_FOR_TODAY = "projected_for_today_not_race_day"
+
+
+def _for_day(body: dict, dated: bool, zone: ZoneInfo) -> str:
+    """``for today, not race day``, or ``for <as_of date>, not race day`` when ``dated``."""
+    return f"for {_date(body['as_of'], zone)}, not race day" if dated else FOR_TODAY
 # ``one_race_sets_the_line`` names the races whose leave-one-out row is marked ``sets_the_line``.
 SETS_THE_LINE = "one_race_sets_the_line"
 SETS_THE_LINE_WORDS = "one race sets the line"
@@ -270,7 +277,7 @@ def _head(word: str, body: dict, status: Any) -> str:
     return line
 
 
-def _projected_line(body: dict, route: str) -> str:
+def _projected_line(body: dict, route: str, for_day: str) -> str:
     time = body["projected_time_s"]
     pace = body["avg_pace_s_per_km"]
     if not isinstance(time, dict) or not isinstance(pace, dict):
@@ -278,7 +285,7 @@ def _projected_line(body: dict, route: str) -> str:
     label = _label(time["confidence"])
     line = (
         f"Projected {format_duration(_number(time['value'], 'projected_time_s'))} "
-        f"({format_pace(_number(pace['value'], 'avg_pace_s_per_km'))}) {FOR_TODAY}"
+        f"({format_pace(_number(pace['value'], 'avg_pace_s_per_km'))}) {for_day}"
     )
     if route == FITTED_LINE:
         interval, pace_interval = time["interval"], pace["interval"]
@@ -384,13 +391,15 @@ def _unavailable_line(reason: Any) -> str:
     return f"Projection unavailable: {words}"
 
 
-def render(word: str, body: Any, status: Any = None) -> list[str]:
+def render(word: str, body: Any, status: Any = None, dated: bool = False) -> list[str]:
     """The lines for a ``PaceTarget`` body headed ``word`` (``Goal`` or ``Preview``), or raise
     ``KeyError``/``TypeError``/``ValueError`` (or ``ZoneInfoNotFoundError``/``OverflowError``/``OSError``)
-    on a body that cannot be read."""
+    on a body that cannot be read. ``dated`` (the request carried ``--as-of``) names the served
+    ``as_of`` date as the day projected for, in place of today."""
     if not isinstance(body, dict):
         raise ValueError("the body is not an object")
     zone = ZoneInfo(_string(body["timezone"], "timezone"))
+    for_day = _for_day(body, dated, zone)
     provenance = body["provenance"]
     if not isinstance(provenance, dict):
         raise ValueError("provenance is not an object")
@@ -423,7 +432,7 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
             for race in races
             if without_by_id.get(race["session_id"], {}).get("sets_the_line") is True
         ]
-        lines.append(_projected_line(body, route))
+        lines.append(_projected_line(body, route, for_day))
         lines.append(_confidence_line(body["confidence"], body["parameters"], setters))
         lines.append(_gap_line(body, route))
         lines.append(f"Route: {ROUTE_WORDS[route]}")
@@ -459,7 +468,14 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
                 f"{LARGEST_WORDS}: {_dated_name(race['start_time'], race['name'], zone)}, without it {_without(largest)}"
             )
 
-    words = [ASSUMPTION_WORDS[a] if a in ASSUMPTION_WORDS else _string(a, "assumption") for a in assumptions]
+    words = [
+        f"projected {for_day}"
+        if a == PROJECTED_FOR_TODAY
+        else ASSUMPTION_WORDS[a]
+        if a in ASSUMPTION_WORDS
+        else _string(a, "assumption")
+        for a in assumptions
+    ]
     lines.append(f"Assumes: {', '.join(words)}")
     return lines
 
@@ -476,9 +492,10 @@ def _request(cfg: config.Config, request) -> httpx.Response:
         raise _fail(f"could not reach API at {cfg.api_url}. Is it running? Start it with `runcoach-api`.") from None
 
 
-def _print(resp: httpx.Response, word: str, contract: bool) -> None:
+def _print(resp: httpx.Response, word: str, contract: bool, dated: bool = False) -> None:
     """Print the lines of a 200 body: a ``GoalContract`` (its ``target`` and ``status``) when
-    ``contract``, else a ``PaceTarget``; any other status is an error, exit 1."""
+    ``contract``, else a ``PaceTarget``; ``dated`` when the request carried ``--as-of``; any other
+    status is an error, exit 1."""
     if resp.status_code != 200:
         raise _fail(f"API returned {resp.status_code}: {_printable(resp.text[:ERROR_TEXT_CHARS])}")
     try:
@@ -486,9 +503,9 @@ def _print(resp: httpx.Response, word: str, contract: bool) -> None:
         if contract:
             if not isinstance(body, dict):
                 raise ValueError("the body is not an object")
-            lines = render(word, body["target"], body["status"])
+            lines = render(word, body["target"], body["status"], dated)
         else:
-            lines = render(word, body)
+            lines = render(word, body, dated=dated)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, ZoneInfoNotFoundError, OverflowError, OSError) as exc:
         raise _fail(f"the API's response could not be understood: {_printable(str(exc))}") from None
     for line in lines:
@@ -538,7 +555,7 @@ def goal(
     if _no_goal(resp):
         _write_utf8(NO_GOAL_LINE)
         return
-    _print(resp, "Goal", contract=True)
+    _print(resp, "Goal", contract=True, dated=as_of is not None)
 
 
 @goal_app.command(name="set")
@@ -571,4 +588,4 @@ def preview(
     metres = parse_distance(distance)
     body = {"race": {"distance_m": metres}}
     cfg = config.load_config()
-    _print(_request(cfg, lambda: post_goal_preview(cfg.api_url, body, as_of)), "Preview", contract=False)
+    _print(_request(cfg, lambda: post_goal_preview(cfg.api_url, body, as_of)), "Preview", contract=False, dated=as_of is not None)

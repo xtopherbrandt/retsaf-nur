@@ -195,6 +195,12 @@ CLOSEST_LINES = [
 ]
 
 
+def _projected_for(lines: list[str], day: str) -> list[str]:
+    """``lines`` as a backtest prints them: the projection is for ``day``, not today, on the
+    Projected line and in the assumptions."""
+    return [line.replace("for today, not race day", f"for {day}, not race day") for line in lines]
+
+
 def _contract(target: dict[str, Any], status: str = "active") -> dict[str, Any]:
     return {
         "id": "1",
@@ -361,11 +367,16 @@ def test_show_prints_every_line(install_mock_client) -> None:
     assert api.requests[0].url.params.get("as_of") is None
     assert result.stdout.splitlines() == ["Goal 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
 
-    api = _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(CLOSEST, "completed")))
+    backtest = copy.deepcopy(CLOSEST)
+    backtest["as_of"] = "2027-05-01T23:59:59.999999Z"
+    api = _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(backtest, "completed")))
     result = runner.invoke(app, ["goal", "--as-of", "2027-05-01"])
     assert result.exit_code == 0, result.output
     assert api.requests[0].url.params.get("as_of") == "2027-05-01"
-    assert result.stdout.splitlines() == ["Goal 2027-04-11: 21.1 km, goal time 1:31:40 (completed)", *CLOSEST_LINES]
+    assert result.stdout.splitlines() == [
+        "Goal 2027-04-11: 21.1 km, goal time 1:31:40 (completed)",
+        *_projected_for(CLOSEST_LINES, "2027-05-01"),
+    ]
 
     unavailable = copy.deepcopy(CLOSEST)
     unavailable.update(
@@ -450,12 +461,17 @@ def test_preview_prints_every_line(install_mock_client) -> None:
     assert _sent(api) == {"race": {"distance_m": HALF_M}}
     assert result.stdout.splitlines() == ["Preview 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
 
-    api = _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=CLOSEST))
+    backtest = copy.deepcopy(CLOSEST)
+    backtest["as_of"] = "2026-10-01T23:59:59.999999Z"
+    api = _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=backtest))
     result = runner.invoke(app, ["goal", "preview", "13.1 mi", "--as-of", "2026-10-01"])
     assert result.exit_code == 0, result.output
     assert api.requests[0].url.params.get("as_of") == "2026-10-01"
     assert _sent(api) == {"race": {"distance_m": pytest.approx(13.1 * 1609.344)}}
-    assert result.stdout.splitlines() == ["Preview 2027-04-11: 21.1 km, goal time 1:31:40", *CLOSEST_LINES]
+    assert result.stdout.splitlines() == [
+        "Preview 2027-04-11: 21.1 km, goal time 1:31:40",
+        *_projected_for(CLOSEST_LINES, "2026-10-01"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -719,6 +735,43 @@ def test_one_race_sets_the_line_is_named_in_words(install_mock_client) -> None:
         "Race 2024-10-26 Run: 5.0 km in 0:20:33, weight 1.00, +1.0 % against the line, without it 1:29:54 (-0.1 %)"
     )
     assert lines[-2] == "Largest shift the label reads: 2024-11-09 Run, without it 1:30:08 (+0.1 %)"
+
+
+@pytest.mark.parametrize("given", ["2025-06-01", "2025-06-01T23:59:59.999999-07:00"], ids=["date", "date-time"])
+def test_a_backtest_names_the_day_projected_for(install_mock_client, given: str) -> None:
+    """With ``--as-of`` the projection is for the instant used, not today: the Projected line and
+    the assumptions name the served ``as_of`` as a date in the served timezone (2025-06-01 in
+    Vancouver, which is 2025-06-02 in UTC), on ``preview`` and on the bare command. Without
+    ``--as-of`` the same body still says today."""
+    body = _one_race_sets_the_line()
+    body["timezone"] = "America/Vancouver"
+    body["as_of"] = "2025-06-02T06:59:59.999999Z"
+    projected = (
+        "Projected 1:30:01 (4:16/km) for 2025-06-01, not race day, 80 %: 1:28:09 to 1:31:55 (4:11 to 4:21/km), low"
+    )
+    assumes = (
+        "Assumes: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment, "
+        "projected for 2025-06-01, not race day, watch timer time (an auto-pause shortens it; chip time may differ)"
+    )
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half", "--as-of", given])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert (lines[1], lines[-1]) == (projected, assumes)
+    assert "today" not in result.stdout
+
+    _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(body)))
+    result = runner.invoke(app, ["goal", "--as-of", given])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert (lines[1], lines[-1]) == (projected, assumes)
+
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[1] == projected.replace("for 2025-06-01", "for today")
+    assert lines[-1] == ASSUMES_LINE
 
 
 def test_two_races_that_each_set_the_line_are_both_named(install_mock_client) -> None:

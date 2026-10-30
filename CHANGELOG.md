@@ -38,7 +38,8 @@ would read without that race (the closest-race route has no leave-one-out), and 
 it prints `No goal set. Set one with runcoach goal set.` and exits 0.
 `runcoach goal preview <distance> [--as-of DATE]` (`POST /goal/preview`) prints the same projection
 for any distance without storing anything; with `--as-of` on a past date it backtests a race the
-athlete has run; `--as-of` goes after the distance, and given before `preview` or `set` it exits 2.
+athlete has run, and the `Projected` line names that day in place of today; `--as-of` goes after
+the distance, and given before `preview` or `set` it exits 2.
 An API without `/goal` and an unreachable API exit 1, as `runcoach state` does.
 
 **The projection.** When the races used clear b's bar (three races by their weights, the longest
@@ -76,7 +77,9 @@ Chicago 3 minutes either way would move the half from 1:29:02 to 1:30:59 at the 
 is read: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment,
 projected for today and not race day (no plan moves it toward the race), and watch timer time (the
 races' times are the watch timer, which an auto-pause shortens; chip time may differ). The
-`Projected` line itself says `for today, not race day`. A race's distance is the watch's GPS
+`Projected` line itself says `for today, not race day`; with `--as-of` the projection is for the
+day asked, so that line and the assumption read `for <date>, not race day` (the `as_of` the API
+used, as a date in the athlete's timezone). A race's distance is the watch's GPS
 distance (GAP-adjusted), not the certified course, and GPS in a race usually reads long, which
 leans the projection fast: Chicago enters at 42.52 km against a 42.195 km course, and at the course
 distance the athlete's post-untag half would read 1:30:30 instead of 1:30:01. A request
