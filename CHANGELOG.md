@@ -55,7 +55,7 @@ fitness now (the load chart's CTL) is more than 30 % below the weighted fitness 
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
 marathon needs a race of at least 28.1 km). Every reason that holds is printed. The athlete's own
 set: eight races clear the bar for a half and a marathon with a wide range at `low`: the range's
-6.8 % on the half and 7.5 % on the marathon sets the label, and the leave-one-out shift of the
+6.7 % on the half and 7.5 % on the marathon sets the label, and the leave-one-out shift of the
 Chicago marathon is 4.7 % and 7.3 %.
 
 **What it assumes.** Every projection lists the same seven assumptions, because none of these inputs
