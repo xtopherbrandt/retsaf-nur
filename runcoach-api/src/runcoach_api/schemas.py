@@ -2146,7 +2146,7 @@ class GoalPreviewInput(BaseModel):
 
 
 class GoalRace(BaseModel):
-    """The goal race as served: the date used (the request's, else the reference date), the distance and the name."""
+    """The goal race as served: the race date (the request's, else the reference date), the distance and the name."""
 
     date: str = Field(description="The race day, `YYYY-MM-DD`.")
     distance_m: float
@@ -2219,7 +2219,10 @@ class GoalProvenance(BaseModel):
     the effective race count, the races used in F029's order, the newest race, and F032 reference
     section 5's fitness figures, served beside the time and never applied to it."""
 
-    b: float | None = Field(description="F029's b at the instant; the population 1.06 below the bar; null when unavailable.")
+    b: float | None = Field(
+        description="F029's b at the instant; the population 1.06 below the bar; null when the exponent's estimate is "
+        "not finite (`riegel_unavailable`), and served on `no_races` and `projection_not_finite`."
+    )
     error: float | None
     label: Literal["low", "medium", "high"] | None = Field(description="F029's own label for b.")
     population_default: bool
@@ -2230,7 +2233,8 @@ class GoalProvenance(BaseModel):
         description="The F029-weighted mean of the races' `fitness_before`, nulls skipped; null when none carries one."
     )
     fitness_now: float | None = Field(
-        description="The load chart's CTL on the local day before the date used; null when that day is not in the chart."
+        description="The load chart's CTL on the local day before the local date of `as_of`, the instant the projection is "
+        "for (now when no `as_of` is given; never the race date); null when that day is not in the chart."
     )
 
 

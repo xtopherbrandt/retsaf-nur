@@ -42,7 +42,8 @@ route to compose:
 
 - ``fitness_context`` (section 5): ``fitness_at_races``, the mean of the races' ``fitness_before``
   (F029's ``ctl_before``) weighted by F029 weight, nulls skipped; ``fitness_now`` as the caller
-  supplies it (the chart's CTL on the local day before the date used); ``gap_holds`` when both are
+  supplies it (the chart's CTL on the local day before the local date of the instant the projection
+  is for, never the race date); ``gap_holds`` when both are
   present and ``fitness_now < (1 - FITNESS_GAP) * fitness_at_races`` (at exactly 0.70, not held);
   ``newest_race`` the latest start. Served beside the time, never applied to it.
 - ``label`` (section 4.2), in order: ``u = max(halfwidth, |largest.shift|)`` on route

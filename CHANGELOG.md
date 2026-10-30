@@ -32,8 +32,8 @@ Setting a new goal supersedes the old one in the same transaction, and nothing d
     Race 2026-09-20 Run: 21.1 km in 1:32:10, weight 1.00, -0.2 % against the line, without it 1:32:37 (+0.3 %)
     Largest shift the label reads: 2026-09-20 Run, without it 1:32:37 (+0.3 %)
 
-One `Race` line prints per race used, each with the time the projection would read without that
-race, and an `Assumes:` line closes the block with the assumptions below in words. With no goal set
+One `Race` line prints per race used; on the fitted line each also carries the time the projection
+would read without that race (the closest-race route has no leave-one-out), and an `Assumes:` line closes the block with the assumptions below in words. With no goal set
 it prints `No goal set. Set one with runcoach goal set.` and exits 0.
 `runcoach goal preview <distance> [--as-of DATE]` (`POST /goal/preview`) prints the same projection
 for any distance without storing anything; with `--as-of` on a past date it backtests a race the
@@ -56,7 +56,8 @@ names which of the two set it. A race without which the rest fall below the bar 
 fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
-marathon needs a race of at least 28.1 km). Every reason that holds is printed. The athlete's own
+marathon needs a race whose GAP-equivalent distance is at least 28.13 km, so a hilly race reads
+longer than its course). Every reason that holds is printed. The athlete's own
 set: eight races clear the bar for a half and a marathon with a wide range at `low`: the range's
 6.7 % on the half and 7.5 % on the marathon sets the label, and the leave-one-out shift of the
 Chicago marathon is 4.7 % and 7.3 %.
@@ -94,8 +95,11 @@ breaking: the sprint-022 `Determinant` `oneOf` (each `determinants[]` entry chan
 client generated from `0.5.0-draft`, which the entry below called additive) and the goal contract
 (`GET /goal`, `PUT /goal` and `POST /goal/preview` are `implemented`; `GoalContract.status` loses
 `superseded`, which is never served; `GoalRace` loses the planned `course_elevation` and
-`environment` objects, which the input accepts only as null; `PaceTarget` gains its fields, each
-nullable). A client generated from `0.5.0-draft` regenerates. The CLI and API are released together.
+`environment` objects, which the input accepts only as null; `PaceTarget` gains its fields, every
+one required: `as_of`, `timezone`, `race`, `provenance`, `assumptions` and `parameters` are never
+null, the projection's figures, `projected_time_s` and `avg_pace_s_per_km` among them, become
+nullable, and `gap_to_goal` (a `GapToGoal` before) and `effort_note` (a nullable string before)
+narrow to null only, a non-null value refused). A client generated from `0.5.0-draft` regenerates. The CLI and API are released together.
 
 ## 2026-10-26 through 2026-10-28 — Sprint 022: The endurance exponent b from tagged races
 

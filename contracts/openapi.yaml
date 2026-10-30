@@ -1422,7 +1422,7 @@ components:
       description: >
         Request failed validation, as served: FastAPI's {detail}, one entry per refused input,
         naming where it is (loc), why (msg) and the error type. Nothing is written. getState,
-        setRaceTags, matchLapCandidates and attachSessionLaps reference it.
+        setRaceTags, matchLapCandidates, attachSessionLaps, getGoal, setGoal and previewGoal reference it.
       content:
         application/json:
           schema:
@@ -1817,7 +1817,7 @@ components:
 
     GoalRace:
       type: object
-      description: "The goal race as served: the date used (the request's, else the reference date), the distance and the name."
+      description: "The goal race as served: the race date (the request's, else the reference date), the distance and the name."
       required: [date, distance_m, name]
       properties:
         date: { type: string, description: "The race day, `YYYY-MM-DD`." }
@@ -1902,7 +1902,7 @@ components:
       description: "What the projection was built from: the endurance exponent b with its error, label and `population_default` as the `riegel_exponent` determinant serves them, the effective race count, the races used in that determinant's order, the newest race, and F032 reference section 5's fitness figures, served beside the time and never applied to it."
       required: [b, error, label, population_default, n_eff, races, newest_race, fitness_at_races, fitness_now]
       properties:
-        b: { type: number, nullable: true, description: "The exponent at the instant; the population 1.06 below the bar; null when unavailable." }
+        b: { type: number, nullable: true, description: "The exponent at the instant; the population 1.06 below the bar; null when the exponent's estimate is not finite (`riegel_unavailable`), and served on `no_races` and `projection_not_finite`." }
         error: { type: number, nullable: true }
         label: { type: string, nullable: true, enum: [low, medium, high], description: "The exponent's own label." }
         population_default: { type: boolean }
@@ -1914,7 +1914,7 @@ components:
           allOf: [{ $ref: "#/components/schemas/GoalNewestRace" }]
           nullable: true
         fitness_at_races: { type: number, nullable: true, description: "The weighted mean of the races' `fitness_before`, nulls skipped; null when none carries one." }
-        fitness_now: { type: number, nullable: true, description: "The load chart's CTL on the local day before the date used; null when that day is not in the chart." }
+        fitness_now: { type: number, nullable: true, description: "The load chart's CTL on the local day before the local date of `as_of`, the instant the projection is for (now when no `as_of` is given; never the race date); null when that day is not in the chart." }
 
     GoalRaceUsed:
       type: object
