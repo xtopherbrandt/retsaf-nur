@@ -50,7 +50,7 @@ reads `no range: the races do not clear the fit's bar (3 races, the longest at l
 shortest)`. With no race used the projection is unavailable and the goal is still served.
 
 **The label.** `high` while the uncertainty, the larger of the range's upper half-width and the
-largest leave-one-out shift among the races whose removal leaves the rest above b's bar (how far the
+largest leave-one-out shift among the races without which the rest still clear F029's bar (how far the
 time moves without one race), is at most 2 %, `medium` to 5 %, else `low`; the `Confidence` line
 names which of the two set it, with the figure to one decimal, or to two decimals rounded up when
 it is just above 2 % or 5 % (`2.01 %`), so it never reads as the edge the label passed. A race without which the rest fall below the bar still prints its

@@ -24,8 +24,8 @@ basis and each reason in words; the goal time's gap and whether it sits inside t
 in words; b with its label (``b unavailable`` when the API serves it null); the newest race;
 fitness now and at the races; one line per race used (date, name, adjusted distance, time,
 weight, residual, leave-one-out time and shift); ``Largest shift the label reads: <date> <name>,
-without it <time> (<shift>)``, the largest shift among the races whose removal leaves the rest
-above the bar (a race the fit cannot lose may move the time further on its own line and is not
+without it <time> (<shift>)``, the largest shift among the races without which the rest
+still clear F029's bar (a race the fit cannot lose may move the time further on its own line and is not
 read); the assumptions in words. Every race line leads with
 its date, since every session on the athlete's store is named ``Run``. When the API serves
 ``unavailable`` the reason prints in its place and b, the races and the assumptions still follow.
