@@ -488,7 +488,7 @@ TRACEABILITY_ROW_SHA256 = {
     "REG-02": "8851291a18ea.ee616bc65186.91b47fbf02ec.8851291a18ea.ed777df09525.8a798890fe93.4c7546809706",
     "REG-03": "46739600e3aa.e6cd4bb9de95.49185ebface6.9901af2d4b73.bda050585a00.9390298f3fb0.bda050585a00",
     "REG-04": "7b02e057a1f4.8d240f5f740c.99b3afaff7b9.7b02e057a1f4.bda050585a00.9390298f3fb0.bda050585a00",
-    "REG-05": "00ff87265672.82aaa29d1402.90d8b41320a1.4cd1c63c2980.bda050585a00.9390298f3fb0.bda050585a00",
+    "REG-05": "00ff87265672.82aaa29d1402.90d8b41320a1.2de2ee014ab5.bda050585a00.9390298f3fb0.bda050585a00",
     "REG-06": "16b77275c0e4.a2360c8cd0f8.cea4cd09cf57.16b77275c0e4.bda050585a00.9390298f3fb0.bda050585a00",
     "REG-07": "cd1674ed9e54.07205c6f2542.8404e3c7d8fa.f70aa13013a4.bda050585a00.9390298f3fb0.bda050585a00",
     "REG-08": "36a915c98bbb.f603aeb013aa.a67714682961.36a915c98bbb.bda050585a00.9390298f3fb0.bda050585a00",
@@ -504,7 +504,7 @@ TRACEABILITY_ROW_SHA256 = {
     "REG-18": "a55a21406c93.9ce47b2da463.15b49fba9d7b.70c17c5db4c4.bda050585a00.9390298f3fb0.bda050585a00",
     "REG-19": "e52a08532a45.3de0a38757b7.0d42a18b72d9.e52a08532a45.6731f758068f.8a798890fe93.2e71bf85dbaf",
     "IND-01": "45344277e3d8.9cd5b1ce2b12.581cdb8ed5b6.a650ba82004b.ba9d0f8031fa.8a798890fe93.c80441c1aa5c",
-    "IND-02": "d5584bd276b1.4ae2f8dec412.d7b496df724b.6077f84f18cf.bda050585a00.9390298f3fb0.bda050585a00",
+    "IND-02": "d5584bd276b1.4ae2f8dec412.c9c9b7f1e3c3.6077f84f18cf.bda050585a00.9390298f3fb0.bda050585a00",
     "COLD-01": "aa569cba809e.9effcb79c1f9.8ee90f7ec740.32d88d386866.31c65e049802.8a798890fe93.386195ff7f81",
     "COLD-02": "37273b252a93.8d1f36e9f6cd.67092354fec7.135584b4163f.bda050585a00.9390298f3fb0.bda050585a00",
     "COLD-03": "152f5df3f3f7.96c95a803f87.67092354fec7.152f5df3f3f7.bda050585a00.9390298f3fb0.bda050585a00",
@@ -769,6 +769,7 @@ PINNED_SHA256 = {
     "REG-30/Pinned": "6f6a2e0e1e2d",
     "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487.6c48a4794dba",
     "REG-32/Pinned": "0dce9981d74c.c6a9b8ebb202.f0d3ccf75cb1.3776571e3026.a03d22903888.bcecd2f1c203.d89aba1f1c27.a99a36360c06.449d2aaf610a.dd7f54419317",
+    "REG-33/Pinned": "d90c7d6ea813.60c897436887.648cbc80473b.24c86ce98046.81a06ec66892.3124d65c9604.a34d6a90fb58.527545f6a9f9.64b908c90bd9.ca1670f4f435.7e1dc2a966d6",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -961,7 +962,7 @@ RESEARCH_STRUCTURE = (
     "DOC-06", "DOC-07", "DOC-08", "DOC-17", "DOC-18", "REG-01", "REG-02", "REG-03", "REG-04", "REG-05",
     "REG-06", "REG-07", "REG-08", "REG-09", "REG-10", "REG-11", "REG-12", "REG-13", "REG-14", "REG-15",
     "REG-16", "REG-17", "REG-18", "REG-19", "REG-20", "REG-21", "REG-22", "REG-23", "REG-24", "REG-25",
-    "REG-26", "REG-27", "REG-28", "REG-29", "REG-30", "REG-31", "REG-32", "HRV-07",
+    "REG-26", "REG-27", "REG-28", "REG-29", "REG-30", "REG-31", "REG-32", "REG-33", "HRV-07",
     "### 3.1 Individualization — the governing rule (resolved)",
     "IND-01", "IND-02", "IND-03", "IND-04", "IND-05", "IND-06",
     "### 3.2 Cold-start — establishing day-one state (resolved, amends `research/05` §3.2)",
@@ -1046,7 +1047,8 @@ HISTORY_SHA256 = {
     "H-43": "e4fa49a899eb",
     "H-44": "445782a59d91",
     "H-45": "685e13222541",
-    "H-46": "a728484b147e",
+    "H-46": "b6fe69c8908d",
+    "H-47": "d545679a28bf",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1064,7 +1066,7 @@ REVIEW_PROSE_SHA256 = (
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
     "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "afe00eb5205d", "cab83feaf822",
-    "63fa0a525d66",
+    "78230d41eec8", "06eac0481428", "d2b8a007c9ed",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1102,6 +1104,8 @@ FROZEN_ROUNDS = {
     "25": "41d592e87044",
     "26": "afe00eb5205d",
     "27": "cab83feaf822",
+    "28": "78230d41eec8",
+    "29": "06eac0481428",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1136,6 +1140,8 @@ _FROZEN_ROUNDS_PIN = {
     "25": "41d592e87044",
     "26": "afe00eb5205d",
     "27": "cab83feaf822",
+    "28": "78230d41eec8",
+    "29": "06eac0481428",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1283,7 +1289,7 @@ REVIEW_LINE_SHA256 = {
     "GOAL-01": "de303104f378",
     "GOAL-01/Scope": "b510a1f2effc",
     "GOAL-01/Not": "95387af77c69",
-    "GOAL-02": "b2c8f6e7959b",
+    "GOAL-02": "61b2664e1159",
     "GOAL-02/Scope": "ff2bd8b3612d",
     "GOAL-02/Not": "08e605a3ad37",
     "GOAL-02/Why": "3596b46c7220",
@@ -1307,12 +1313,12 @@ REVIEW_LINE_SHA256 = {
     "DOC-07/Scope": "0c1b40d2a350",
     "DOC-07/Not": "a65c8186cda7",
     "DOC-08": "665c938d6dce",
-    "DOC-08/Scope": "8502a905e750",
+    "DOC-08/Scope": "4dbb7a4d020a",
     "DOC-08/Not": "5e3bba338cf9",
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "d3dfc99b7207",
+    "DOC-18": "d56d4782ccb8",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1521,6 +1527,10 @@ REVIEW_LINE_SHA256 = {
     "REG-32": "a0658e9b2c58",
     "REG-32/Scope": "d7bdffc049c6",
     "REG-32/Not": "106480f8fc9b",
+    "REG-33": "e61d468eb5be",
+    "REG-33/Scope": "f3f4c3222b3b",
+    "REG-33/Not": "a63b9f64a75b",
+    "REG-33/Why": "996235b8574b",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
@@ -1535,7 +1545,7 @@ REVIEW_LINE_SHA256 = {
     "IND-04/Scope": "3b9a2c2b2d0d",
     "IND-04/Not": "02549a06ff5a",
     "IND-04/Why": "1be99321f3af",
-    "IND-05": "f33b25078d54",
+    "IND-05": "ec953479860a",
     "IND-05/Scope": "1ee9a7af3575",
     "IND-05/Not": "55afd92af766",
     "IND-05/Why": "b28fa81e2c2b",
@@ -1986,7 +1996,7 @@ REVIEW_LINE_SHA256 = {
     "T-26": "a4feff5cba8e",
     "T-27": "96193acf57e1",
     "T-28": "12619b4b4664",
-    "T-29": "7c1305033cc9",
+    "T-29": "7fa40c0c4bf9",
     "T-30": "5c8a43064104",
     "T-31": "c3305747107d",
     "T-32": "26cc12f15622",
@@ -4888,7 +4898,7 @@ def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
     print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
           f"{errors[:10]}")
     assert errors == []
-    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 47)]
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 48)]
     assert listed == derived and listed
     assert not set(listed) & set(rule_ids(research))
 
