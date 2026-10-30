@@ -769,7 +769,7 @@ PINNED_SHA256 = {
     "REG-30/Pinned": "6f6a2e0e1e2d",
     "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487.6c48a4794dba",
     "REG-32/Pinned": "0dce9981d74c.c6a9b8ebb202.f0d3ccf75cb1.3776571e3026.a03d22903888.bcecd2f1c203.d89aba1f1c27.a99a36360c06.449d2aaf610a.dd7f54419317",
-    "REG-33/Pinned": "d90c7d6ea813.60c897436887.648cbc80473b.24c86ce98046.81a06ec66892.3124d65c9604.a34d6a90fb58.527545f6a9f9.64b908c90bd9.ca1670f4f435.7e1dc2a966d6",
+    "REG-33/Pinned": "d90c7d6ea813.60c897436887.648cbc80473b.24c86ce98046.81a06ec66892.3124d65c9604.a34d6a90fb58.fb19941ff787.527545f6a9f9.64b908c90bd9.ca1670f4f435.7e1dc2a966d6",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -1049,6 +1049,7 @@ HISTORY_SHA256 = {
     "H-45": "685e13222541",
     "H-46": "b6fe69c8908d",
     "H-47": "d545679a28bf",
+    "H-48": "b17cb7c32a17",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
@@ -1066,7 +1067,7 @@ REVIEW_PROSE_SHA256 = (
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
     "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "afe00eb5205d", "cab83feaf822",
-    "78230d41eec8", "06eac0481428", "d2b8a007c9ed",
+    "78230d41eec8", "06eac0481428", "37bbe528e395", "0170e02e7fbe", "1436f552d714",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1106,6 +1107,8 @@ FROZEN_ROUNDS = {
     "27": "cab83feaf822",
     "28": "78230d41eec8",
     "29": "06eac0481428",
+    "30": "37bbe528e395",
+    "31": "0170e02e7fbe",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1142,6 +1145,8 @@ _FROZEN_ROUNDS_PIN = {
     "27": "cab83feaf822",
     "28": "78230d41eec8",
     "29": "06eac0481428",
+    "30": "37bbe528e395",
+    "31": "0170e02e7fbe",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1318,7 +1323,7 @@ REVIEW_LINE_SHA256 = {
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "d56d4782ccb8",
+    "DOC-18": "4e06bf16b590",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1527,7 +1532,7 @@ REVIEW_LINE_SHA256 = {
     "REG-32": "a0658e9b2c58",
     "REG-32/Scope": "d7bdffc049c6",
     "REG-32/Not": "106480f8fc9b",
-    "REG-33": "e61d468eb5be",
+    "REG-33": "f42ff2ace96d",
     "REG-33/Scope": "f3f4c3222b3b",
     "REG-33/Not": "a63b9f64a75b",
     "REG-33/Why": "996235b8574b",
@@ -4898,7 +4903,7 @@ def test_real_path_ac3_ac5_history_entries_retired_ids_and_arrows() -> None:
     print(f"[slice compared] {len(history_ids(history))} entries, retired listed {listed}, derived {derived}: "
           f"{errors[:10]}")
     assert errors == []
-    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 48)]
+    assert history_ids(history) == [f"H-{i:02d}" for i in range(1, 49)]
     assert listed == derived and listed
     assert not set(listed) & set(rule_ids(research))
 
