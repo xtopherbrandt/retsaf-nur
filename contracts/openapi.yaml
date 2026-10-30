@@ -1886,7 +1886,8 @@ components:
         uncertainty: { type: number, nullable: true }
         reasons:
           type: array
-          items: { type: string, enum: [fitness_below_races, population_default, below_one, outside_calibrated_range, beyond_longest_race] }
+          items: { type: string, enum: [fitness_below_races, population_default, one_race_sets_the_line, below_one, outside_calibrated_range, beyond_longest_race] }
+          description: "`one_race_sets_the_line`: on the fitted line, a race without which the rest still count three effective races but span less than twice the shortest distance, so it alone sets the line and the label is `low`; the leave-one-out row marked `sets_the_line` names it."
 
     GoalTimeGap:
       type: object
@@ -1953,13 +1954,14 @@ components:
 
     GoalLeaveOneOut:
       type: object
-      description: "The projection from every race but this one: its route, time and `shift = T_without / T - 1`."
-      required: [session_id, route, projected_time_s, shift]
+      description: "The projection from every race but this one: its route, time and `shift = T_without / T - 1`, and whether this race alone sets the line."
+      required: [session_id, route, projected_time_s, shift, sets_the_line]
       properties:
         session_id: { type: string }
         route: { type: string, enum: [fitted_line, closest_race] }
         projected_time_s: { type: number }
         shift: { type: number }
+        sets_the_line: { type: boolean, description: "True when the other races still count three effective races but span less than twice the shortest distance without this one, so it alone sets the line (reason `one_race_sets_the_line`)." }
 
     PaceTargetParameters:
       type: object

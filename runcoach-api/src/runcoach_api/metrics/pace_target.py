@@ -27,7 +27,9 @@ weight, then the later start. The time is ``T * (D / D_eq) ** POPULATION_B``; no
 with the weights unchanged and the bar re-applied, its route, ``shift = T_without / T - 1``;
 ``countable`` when the route is ``fitted_line``; ``largest`` the row with the largest countable
 ``|shift|``, the earlier start on a tie, ``None`` when none is countable (with exactly three races
-none is). ``None`` on route ``closest_race``.
+none is). ``sets_the_line`` marks a race without which the rest still clear F029's count
+(``riegel_b.clears_count``) but fail its spread (``riegel_b.clears_spread``): that race alone sets
+the line. ``None`` on route ``closest_race``.
 
 **Unavailable** (section 3.3), in this order: ``no_races`` with no race; ``riegel_unavailable`` when
 F029's estimate is ``estimate_not_finite``; ``projection_not_finite`` when the goal distance or a
@@ -50,8 +52,9 @@ route to compose:
   ``fitted_line`` (the halfwidth alone when no shift is countable); ``high`` at ``u <= 0.02``,
   ``medium`` at ``u <= 0.05``, else ``low``; ``basis`` ``range`` when the halfwidth is the larger or
   equal, else ``one_race``. Lowered one step when the fitness gap holds (``fitness_below_races``).
-  ``low`` whatever ``u`` when any of ``population_default`` (route ``closest_race``), ``below_one``
-  (F029), ``outside_calibrated_range`` (bounds inclusive) or ``beyond_longest_race`` (``D >
+  ``low`` whatever ``u`` when any of ``population_default`` (route ``closest_race``),
+  ``one_race_sets_the_line`` (route ``fitted_line``, a leave-one-out row marked ``sets_the_line``),
+  ``below_one`` (F029), ``outside_calibrated_range`` (bounds inclusive) or ``beyond_longest_race`` (``D >
   MAX_EXTRAPOLATION * D_max * (1 + 1e-9)``, ``D_max`` the largest ``d_eq_m`` among the races used)
   holds; ``reasons`` lists the codes that hold, in that order. ``basis`` and ``uncertainty`` are
   ``None`` on route ``closest_race``; the whole label is ``None`` when the projection is unavailable.
@@ -117,6 +120,7 @@ RANGE = "range"
 ONE_RACE = "one_race"
 FITNESS_BELOW_RACES = "fitness_below_races"
 POPULATION_DEFAULT = "population_default"
+ONE_RACE_SETS_THE_LINE = "one_race_sets_the_line"
 BELOW_ONE = "below_one"
 OUTSIDE_CALIBRATED_RANGE = "outside_calibrated_range"
 BEYOND_LONGEST_RACE = "beyond_longest_race"
@@ -164,7 +168,9 @@ class Race:
 @dataclass(frozen=True)
 class LeaveOneOut:
     """The projection from every race but this one (section 4.1): its route, time and ``shift =
-    T_without / T - 1``; ``countable`` when its route is ``fitted_line``."""
+    T_without / T - 1``; ``countable`` when its route is ``fitted_line``; ``sets_the_line`` when the
+    other races still clear F029's count but fail its spread, so this race alone sets the line
+    (section 4.2, rule 3)."""
 
     session_id: str
     start_time: datetime
@@ -172,6 +178,7 @@ class LeaveOneOut:
     time_s: float
     shift: float
     countable: bool
+    sets_the_line: bool = False
 
 
 @dataclass(frozen=True)
@@ -322,6 +329,8 @@ def _leave_one_out(races: list[Race], distance_m: float, time_s: float) -> tuple
     for index, race in enumerate(races):
         others = races[:index] + races[index + 1 :]
         without = _route(others, distance_m)
+        rest = riegel_b.effective_count([other.weight for other in others])
+        alone = riegel_b.clears_count(rest) and not riegel_b.clears_spread([other.d_eq_m for other in others])
         rows.append(
             LeaveOneOut(
                 session_id=race.session_id,
@@ -330,6 +339,7 @@ def _leave_one_out(races: list[Race], distance_m: float, time_s: float) -> tuple
                 time_s=without.time_s,
                 shift=without.time_s / time_s - 1,
                 countable=without.route == FITTED_LINE,
+                sets_the_line=alone,
             )
         )
     return tuple(rows)
@@ -462,6 +472,8 @@ def label(
         reasons.append(FITNESS_BELOW_RACES)
     if projection.route == CLOSEST_RACE:
         reasons.append(POPULATION_DEFAULT)
+    if projection.route == FITTED_LINE and any(row.sets_the_line for row in projection.leave_one_out or ()):
+        reasons.append(ONE_RACE_SETS_THE_LINE)
     if below_one:
         reasons.append(BELOW_ONE)
     if not CALIBRATED_MIN_M <= projection.distance_m <= CALIBRATED_MAX_M:

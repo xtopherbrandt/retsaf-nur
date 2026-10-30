@@ -857,3 +857,71 @@ def test_preview_closest_race_and_unavailable() -> None:
     assert none["provenance"]["fitness_at_races"] is None
     assert none["target_time_s"] == 5400.0
     assert none["assumptions"] == one["assumptions"] and len(none["assumptions"]) == 7
+
+
+# ---------------------------------------------------------------------------
+# One race sets the line (reference section 4.2; the athlete's ruling of 2026-10-30)
+# ---------------------------------------------------------------------------
+
+# The athlete's races as (D m, T s), Chicago first: their six once the trail halves are untagged
+# (Chicago at its GPS distance and five 5Ks), and their eight with the halves (reference section 12).
+_CHICAGO = (42515.75986034907, 11138.164)
+_FIVE_5KS = (
+    (4974.797208376185, 1232.761),
+    (5019.445737328818, 1205.641),
+    (4950.807486237603, 1206.331),
+    (5047.4541635015075, 1233.371),
+    (4978.700365474373, 1218.939),
+)
+_TRAIL_HALVES = ((21575.213329635622, 5928.903), (21599.242285194607, 6196.946))
+ATHLETE_SIX = tuple((datetime(2026, 8, 1 + 3 * n, 7, 0, tzinfo=UTC), *race) for n, race in enumerate((_CHICAGO, *_FIVE_5KS)))
+ATHLETE_EIGHT = (
+    *ATHLETE_SIX,
+    *((datetime(2026, 9, 1 + 3 * n, 7, 0, tzinfo=UTC), *race) for n, race in enumerate(_TRAIL_HALVES)),
+)
+
+
+def _one_race_sets_the_line_preview(races: tuple) -> tuple[list[str], dict]:
+    _plant_chart(ZoneInfo("UTC"), NOW.date(), start=date(2026, 6, 1), flat=50.0)
+    with TestClient(app) as client:
+        ids = _races(client, *races)
+        target = _preview(client, _goal(HALF_M))
+    return ids, target
+
+
+def test_preview_one_race_sets_the_line() -> None:
+    """The athlete's six at the route: the 5Ks span under twice without Chicago, so the half reads
+    ``low`` with reason ``one_race_sets_the_line``; Chicago's leave-one-out row is the one marked
+    ``sets_the_line``; the time and the range are the oracle's and the basis is the range."""
+    ids, target = _one_race_sets_the_line_preview(ATHLETE_SIX)
+    print(f"  confidence {target['confidence']}\n  rows {target['leave_one_out']['races']}")
+    triples = _served_races(target)
+    assert [r["session_id"] for r in target["provenance"]["races"]] == ids
+    assert [w for _d, _t, w, _s in triples] == [1.0] * 6
+    expected = oracle.projection(triples, HALF_M)
+    assert target["route"] == "fitted_line"
+    assert target["projected_time_s"]["value"] == pytest.approx(expected.time_s, abs=1e-3)
+    assert target["projected_time_s"]["value"] == pytest.approx(5400.925134, abs=1e-3)
+    assert target["halfwidth"] == pytest.approx(expected.halfwidth, abs=1e-6)
+    assert target["confidence"] == {
+        "label": "low",
+        "basis": "range",
+        "uncertainty": target["halfwidth"],
+        "reasons": ["one_race_sets_the_line"],
+    }
+    assert target["projected_time_s"]["confidence"] == target["avg_pace_s_per_km"]["confidence"] == "low"
+    rows = target["leave_one_out"]["races"]
+    assert [row["sets_the_line"] for row in rows] == oracle.sets_the_line(triples) == [True] + [False] * 5
+    assert rows[0]["session_id"] == ids[0] and rows[0]["route"] == "closest_race"
+    assert target["leave_one_out"]["largest"]["sets_the_line"] is False
+
+
+def test_preview_the_athletes_eight_are_unchanged() -> None:
+    """The athlete's eight (the trail halves tagged): no race sets the line, so the half reads
+    ``low`` from the range with no reason, as before the rule."""
+    _ids, target = _one_race_sets_the_line_preview(ATHLETE_EIGHT)
+    print(f"  confidence {target['confidence']}")
+    assert target["projected_time_s"]["value"] == pytest.approx(5647.433136, abs=1e-3)
+    assert target["confidence"]["label"] == "low"
+    assert target["confidence"]["basis"] == "range" and target["confidence"]["reasons"] == []
+    assert not any(row["sets_the_line"] for row in target["leave_one_out"]["races"])

@@ -29,6 +29,8 @@ already used; nothing here qualifies them.
   and a tie goes to the higher weight, then the later start. ``T (D / D_eq)^1.06``, no interval.
 - **Leave-one-out** (section 4.1): for each race, the projection from the others with the bar
   re-applied; ``shift = T_without / T - 1``, countable on route ``fitted_line`` only.
+- **One race sets the line** (section 4.2, rule 3): a race without which the rest still count
+  ``n_eff >= 3`` but span under twice the shortest ``D_eq``.
 - **The goal-time gap** (section 6): ``gap_s = target - projected``, ``gap_fraction = gap_s /
   projected``, ``within_range`` against the interval, null on route ``closest_race``.
 """
@@ -200,6 +202,21 @@ def leave_one_out(races: Sequence[Race], distance_m: float) -> list[LeaveOneOut]
         rest = used[:i] + used[i + 1 :]
         p = projection(rest, distance_m)
         out.append(LeaveOneOut(p.route, p.time_s, p.time_s / base.time_s - 1.0))
+    return out
+
+
+def sets_the_line(races: Sequence[Race]) -> list[bool]:
+    """Section 4.2's ``one_race_sets_the_line``, per race used: without it the rest still count
+    ``n_eff >= 3`` (1e-9 slack) but their longest ``D_eq`` is under twice the shortest."""
+    used = _used(races)
+    out: list[bool] = []
+    for i in range(len(used)):
+        rest = used[:i] + used[i + 1 :]
+        sw = sum(w for _d, _t, w, _s in rest)
+        squares = sum(w * w for _d, _t, w, _s in rest)
+        n_eff = sw * sw / squares if squares > 0 else 0.0
+        ds = [d for d, _t, _w, _s in rest]
+        out.append(bool(ds) and n_eff + COUNT_SLACK >= MIN_RACES and max(ds) / min(ds) < MIN_SPREAD)
     return out
 
 

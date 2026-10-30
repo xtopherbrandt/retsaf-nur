@@ -447,6 +447,17 @@ def effective_count(weights: Iterable[float]) -> float:
     return sum(weights) ** 2 / squares if squares > 0 else 0.0
 
 
+def clears_count(n_eff: float) -> bool:
+    """The bar's count half: ``n_eff >= MIN_RACES`` read with ``COUNT_SLACK``."""
+    return n_eff + COUNT_SLACK >= MIN_RACES
+
+
+def clears_spread(d_eqs: Iterable[float]) -> bool:
+    """The bar's spread half: the longest ``D_eq`` at least ``MIN_SPREAD`` times the shortest."""
+    served = list(d_eqs)
+    return max(served) / min(served) >= MIN_SPREAD
+
+
 def t_multiplier(df: int) -> float:
     """Student's t at 0.90 for ``df`` degrees of freedom: ``T_TABLE`` to 30, ``Z`` above."""
     return T_TABLE[df] if df <= 30 else Z
@@ -467,7 +478,7 @@ def fit(efforts: Iterable[tuple[float, float, float]]) -> Fit:
     used = list(efforts)
     served = [d_eq for d_eq, _duration, _weight in used]
     n_eff = effective_count([weight for _d_eq, _duration, weight in used])
-    if n_eff + COUNT_SLACK < MIN_RACES or max(served) / min(served) < MIN_SPREAD:
+    if not clears_count(n_eff) or not clears_spread(served):
         return Fit(False, n_eff, None, None, None, None, None, None, None, None)
     w = [weight for _d_eq, _duration, weight in used]
     x = [math.log(d_eq) for d_eq in served]

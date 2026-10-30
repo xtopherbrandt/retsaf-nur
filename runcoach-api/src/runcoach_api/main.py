@@ -2119,7 +2119,13 @@ def _fitness_now(chart: load_chart.LoadChart, reference_date: datetime.date) -> 
 
 
 def _leave_one_out_row(row: pace_target.LeaveOneOut) -> GoalLeaveOneOut:
-    return GoalLeaveOneOut(session_id=row.session_id, route=row.route, projected_time_s=row.time_s, shift=row.shift)
+    return GoalLeaveOneOut(
+        session_id=row.session_id,
+        route=row.route,
+        projected_time_s=row.time_s,
+        shift=row.shift,
+        sets_the_line=row.sets_the_line,
+    )
 
 
 def _confidence_value(

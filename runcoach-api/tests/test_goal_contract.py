@@ -280,8 +280,22 @@ def _fitted_line() -> dict:
             "fitness_now": 44.5,
         },
         "leave_one_out": {
-            "races": [{"session_id": RACE_USED["session_id"], "route": "fitted_line", "projected_time_s": 5550.0, "shift": 0.0013}],
-            "largest": {"session_id": RACE_USED["session_id"], "route": "fitted_line", "projected_time_s": 5550.0, "shift": 0.0013},
+            "races": [
+                {
+                    "session_id": RACE_USED["session_id"],
+                    "route": "fitted_line",
+                    "projected_time_s": 5550.0,
+                    "shift": 0.0013,
+                    "sets_the_line": False,
+                }
+            ],
+            "largest": {
+                "session_id": RACE_USED["session_id"],
+                "route": "fitted_line",
+                "projected_time_s": 5550.0,
+                "shift": 0.0013,
+                "sets_the_line": False,
+            },
         },
         "effort_note": None,
         "assumptions": ASSUMPTIONS,

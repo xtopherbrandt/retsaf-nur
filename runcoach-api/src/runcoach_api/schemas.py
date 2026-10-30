@@ -2180,8 +2180,19 @@ class GoalConfidence(BaseModel):
     basis: Literal["range", "one_race"] | None
     uncertainty: float | None
     reasons: list[
-        Literal["fitness_below_races", "population_default", "below_one", "outside_calibrated_range", "beyond_longest_race"]
-    ]
+        Literal[
+            "fitness_below_races",
+            "population_default",
+            "one_race_sets_the_line",
+            "below_one",
+            "outside_calibrated_range",
+            "beyond_longest_race",
+        ]
+    ] = Field(
+        description="`one_race_sets_the_line`: on the fitted line, a race without which the rest still count three "
+        "effective races but span less than twice the shortest distance, so it alone sets the line; the "
+        "leave-one-out row marked `sets_the_line` names it."
+    )
 
 
 class GoalTimeGap(BaseModel):
@@ -2241,12 +2252,16 @@ class GoalProvenance(BaseModel):
 
 class GoalLeaveOneOut(BaseModel):
     """The projection from every race but this one (F032 reference section 4.1): its route, time and
-    `shift = T_without / T - 1`."""
+    `shift = T_without / T - 1`, and whether this race alone sets the line."""
 
     session_id: str
     route: Literal["fitted_line", "closest_race"]
     projected_time_s: float
     shift: float
+    sets_the_line: bool = Field(
+        description="True when the other races still count three effective races but span less than twice the "
+        "shortest distance without this one, so it alone sets the line (reason `one_race_sets_the_line`)."
+    )
 
 
 class GoalLeaveOneOutSet(BaseModel):

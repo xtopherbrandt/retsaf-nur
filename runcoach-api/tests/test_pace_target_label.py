@@ -4,13 +4,15 @@ AC6's pure part and AC7; reference sections 4.2, 5 and 6).
 Every row of the reference section 4.2 table that is built from section 8's sets is pinned with its
 served label, basis, uncertainty and reasons, in order; the uncertainty is checked against
 ``support/pace_target_oracle.py`` (the halfwidth and the largest countable shift restated in raw
-sums) and against the table's printed percentages. Three perturbations of the label go red against
+sums) and against the table's printed percentages. Four perturbations of the label go red against
 these rows: reading b's label instead of ``u`` (E1 reads ``high``), ignoring the shift (E4's marathon
-reads ``medium``) and counting closest-race shifts (case A's half reads ``medium``).
+reads ``medium``), counting closest-race shifts (case A's half reads ``medium``) and removing the
+rule that one race sets the line (five 5Ks and a marathon read ``medium`` over the half).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import math
 import sys
@@ -450,3 +452,220 @@ def test_race_from_effort_carries_the_fitness_figure() -> None:
     assert race.fitness_before == 47.5 and race.weight == 0.8 and race.d_eq_m == HALF
     # The figure is optional: a race built without it has none.
     assert Race("s", FIRST_START, HALF, 5530.0, 1.0).fitness_before is None
+
+
+# ---------------------------------------------------------------------------
+# One race sets the line (reference section 4.2, rule 3; the athlete's ruling of 2026-10-30)
+# ---------------------------------------------------------------------------
+
+# The athlete's races once the two trail halves are untagged, as the sprint's demo served them:
+# Chicago (the GPS distance, 42515.76 m) and five 5Ks of 4951 to 5047 m, every weight 1.
+CHICAGO = (42515.75986034907, 11138.164, 1.0)
+FIVE_5KS = [
+    (4974.797208376185, 1232.761, 1.0),
+    (5019.445737328818, 1205.641, 1.0),
+    (4950.807486237603, 1206.331, 1.0),
+    (5047.4541635015075, 1233.371, 1.0),
+    (4978.700365474373, 1218.939, 1.0),
+]
+SIX = [CHICAGO, *FIVE_5KS]
+# The same set with the two trail halves still tagged: eight races, low from the range.
+EIGHT = [(21575.213329635622, 5928.903, 1.0), *SIX, (21599.242285194607, 6196.946, 1.0)]
+
+
+def _sets_the_line(projection: Projection) -> list[bool]:
+    return [row.sets_the_line for row in projection.leave_one_out or ()]
+
+
+@pytest.mark.parametrize(
+    ("distance_m", "from_u"), [(5000.0, "high"), (HALF, "medium"), (MARATHON, "medium")]
+)
+def test_one_race_sets_the_line_reads_low(distance_m: float, from_u: str) -> None:
+    """Five 5Ks and one marathon: without the marathon the 5Ks still count five but span under
+    twice, so the marathon alone sets the line. The label is ``low`` with the reason, whatever ``u``
+    would read; the marathon's row is the one marked; the time, the range, ``u`` and the basis are
+    what they were without the rule (checked against the oracle, which imports nothing from the
+    estimator). Remove the rule and these read ``high`` or ``medium``, as ``from_u`` says."""
+    races = _races(SIX)
+    projection = project(races, _estimate(), distance_m)
+    served = pace_target.label(projection, races, below_one=False)
+    assert served is not None
+    print(f"  {distance_m:g} m: {served}; rows {_sets_the_line(projection)}")
+    expected = oracle.projection(SIX, distance_m)
+    assert projection.route == expected.route == pace_target.FITTED_LINE
+    assert projection.time_s == pytest.approx(expected.time_s, abs=TIME)
+    assert projection.halfwidth == pytest.approx(expected.halfwidth, abs=FRACTION)
+    assert _sets_the_line(projection) == oracle.sets_the_line(SIX) == [True, False, False, False, False, False]
+    assert served.label == pace_target.LOW
+    assert served.reasons == (pace_target.ONE_RACE_SETS_THE_LINE,)
+    assert pace_target.ONE_RACE_SETS_THE_LINE == "one_race_sets_the_line"
+    # u and the basis are unchanged: the range, and from u alone the label the rule overrides.
+    assert served.basis == pace_target.RANGE and served.uncertainty == projection.halfwidth
+    assert served.uncertainty == pytest.approx(_oracle_u(SIX, distance_m), abs=ORACLE)
+    assert pace_target._from_uncertainty(served.uncertainty) == from_u
+    # The marathon's own leave-one-out is the closest race, still not countable.
+    assert projection.leave_one_out[0].route == pace_target.CLOSEST_RACE
+    assert projection.leave_one_out[0].countable is False
+
+
+def test_one_race_sets_the_line_half_is_the_demo_figure() -> None:
+    """The half from the athlete's six: 5400.925 s (1:30:01), halfwidth 2.12 %, unchanged; now low."""
+    races = _races(SIX)
+    projection = project(races, _estimate(), HALF)
+    assert projection.time_s == pytest.approx(5400.925134, abs=TIME)
+    assert projection.halfwidth == pytest.approx(0.021198, abs=FRACTION)
+    served = pace_target.label(projection, races, below_one=False)
+    assert served is not None and served.label == pace_target.LOW
+
+
+def test_the_reason_sits_after_population_default_and_before_below_one() -> None:
+    """The reason's place in the defined order: after ``fitness_below_races`` and
+    ``population_default`` (the route's own reason, never served beside it), before ``below_one``,
+    ``outside_calibrated_range`` and ``beyond_longest_race``."""
+    races = _races(SIX, fitness=[50.0] * 6)
+    gap = pace_target.fitness_context(races, 30.0)
+    served = pace_target.label(project(races, _estimate(), 70000.0), races, below_one=True, fitness=gap)
+    assert served is not None and served.reasons == (
+        pace_target.FITNESS_BELOW_RACES,
+        pace_target.ONE_RACE_SETS_THE_LINE,
+        pace_target.BELOW_ONE,
+        pace_target.OUTSIDE_CALIBRATED_RANGE,
+        pace_target.BEYOND_LONGEST_RACE,
+    )
+
+
+# Every label today for the worked sets (E3 is E2 with the marathon at weight 0.5), recorded at the
+# commit before the rule: (label, basis, reasons) at 5 km, the half, the marathon and 60 km.
+E3 = [*E2[:3], (MARATHON, 11610.0, 0.5)]
+TODAY = {
+    "E1": [
+        ("low", "range", ()),
+        ("low", "range", ()),
+        ("low", "range", ("beyond_longest_race",)),
+        ("low", "range", ("outside_calibrated_range", "beyond_longest_race")),
+    ],
+    "E2": [
+        ("high", "range", ()),
+        ("high", "range", ()),
+        ("high", "range", ()),
+        ("low", "range", ("outside_calibrated_range",)),
+    ],
+    "E3": [
+        ("high", "range", ()),
+        ("high", "range", ()),
+        ("high", "range", ()),
+        ("low", "range", ("outside_calibrated_range",)),
+    ],
+    "E4": [
+        ("medium", "range", ()),
+        ("medium", "one_race", ()),
+        ("low", "one_race", ()),
+        ("low", "one_race", ("outside_calibrated_range",)),
+    ],
+    "A": [
+        ("high", "range", ()),
+        ("high", "range", ()),
+        ("low", "range", ("beyond_longest_race",)),
+        ("low", "range", ("outside_calibrated_range", "beyond_longest_race")),
+    ],
+    "EIGHT": [
+        ("low", "range", ()),
+        ("low", "range", ()),
+        ("low", "range", ()),
+        ("low", "one_race", ("outside_calibrated_range",)),
+    ],
+}
+
+
+@pytest.mark.parametrize("name", sorted(TODAY))
+def test_the_worked_sets_and_the_eight_serve_what_they_served(name: str) -> None:
+    """E1, E2, E3, E4, case A and the athlete's eight races: no race sets the line, so every label,
+    basis and reason list is the one served before the rule. E3's faded marathon leaves the rest
+    under three effective races when a full-weight race is removed, which is the count failing,
+    not the spread."""
+    triples = {"E1": E1, "E2": E2, "E3": E3, "E4": E4, "A": A, "EIGHT": EIGHT}[name]
+    races = _races(triples)
+    for distance_m, (label, basis, reasons) in zip((5000.0, HALF, MARATHON, 60000.0), TODAY[name], strict=True):
+        projection = project(races, _estimate(), distance_m)
+        served = pace_target.label(projection, races, below_one=False)
+        assert served is not None
+        assert (served.label, served.basis, served.reasons) == (label, basis, reasons), distance_m
+        assert not any(_sets_the_line(projection)) and not any(oracle.sets_the_line(triples))
+
+
+def test_exactly_three_races_never_fire() -> None:
+    """With three races, removing one leaves two, which fail on the count, so the rule never fires,
+    even when the two left also span under twice (two 5Ks and a marathon)."""
+    for triples in (E1, A, [(5000.0, 1200.0, 1.0), (5100.0, 1230.0, 1.0), (MARATHON, 11300.0, 1.0)]):
+        races = _races(triples)
+        for distance_m in (5000.0, HALF, MARATHON):
+            projection = project(races, _estimate(), distance_m)
+            served = pace_target.label(projection, races, below_one=False)
+            assert served is not None
+            assert pace_target.ONE_RACE_SETS_THE_LINE not in served.reasons
+            assert _sets_the_line(projection) == [False, False, False] == oracle.sets_the_line(triples)
+
+
+@pytest.mark.parametrize(
+    ("top", "fires"),
+    [(math.nextafter(10000.0, 0.0), True), (10000.0, False)],
+    ids=["rest-just-under-twice", "rest-at-twice"],
+)
+def test_the_spread_boundary(top: float, fires: bool) -> None:
+    """The rest spanning just under twice (5000 to the float below 10000 m) fail F029's spread and
+    the marathon sets the line; at exactly twice they clear it, the marathon's shift is countable
+    and the reason is absent."""
+    triples = [(5000.0, 1200.0, 1.0), (6000.0, 1460.0, 1.0), (top, 2510.0, 1.0), (MARATHON, 11300.0, 1.0)]
+    races = _races(triples)
+    projection = project(races, _estimate(), HALF)
+    served = pace_target.label(projection, races, below_one=False)
+    assert served is not None
+    print(f"  top {top!r}: {served}; rows {_sets_the_line(projection)}")
+    assert _sets_the_line(projection) == [False, False, False, fires] == oracle.sets_the_line(triples)
+    assert (pace_target.ONE_RACE_SETS_THE_LINE in served.reasons) is fires
+    assert projection.leave_one_out[3].countable is not fires
+    if fires:
+        assert served.label == pace_target.LOW
+
+
+@pytest.mark.parametrize(
+    ("weight", "fires"),
+    [(0.99, False), (1.0 - math.sqrt(5e-10), True), (1.0, True)],
+    ids=["rest-n-eff-2.9999", "rest-n-eff-within-the-slack", "rest-n-eff-3"],
+)
+def test_the_count_boundary(weight: float, fires: bool) -> None:
+    """Three 5Ks (one at ``weight``) and a marathon. Without the marathon the 5Ks span under twice;
+    they count ``(2 + w)^2 / (2 + w^2)``: 2.9999 at 0.99, which fails F029's count and does not fire;
+    about 3 - 5e-10 just under 1, inside F029's 1e-9 slack, which fires as the bar counts it."""
+    triples = [(5000.0, 1200.0, 1.0), (5050.0, 1215.0, 1.0), (4980.0, 1198.0, weight), (MARATHON, 11300.0, 1.0)]
+    rest = (2 + weight) ** 2 / (2 + weight**2)
+    print(f"  w {weight!r}: rest n_eff {rest!r}")
+    races = _races(triples)
+    projection = project(races, _estimate(), HALF)
+    assert projection.route == pace_target.FITTED_LINE
+    served = pace_target.label(projection, races, below_one=False)
+    assert served is not None
+    assert _sets_the_line(projection)[3] is fires and oracle.sets_the_line(triples)[3] is fires
+    assert (pace_target.ONE_RACE_SETS_THE_LINE in served.reasons) is fires
+
+
+def test_the_rule_reads_only_the_fitted_line() -> None:
+    """On route ``closest_race`` there is no leave-one-out and the reason is never listed; on a
+    fitted line whose rows carry no mark it is absent, and one marked row is enough."""
+    fallback = _label(ONE, HALF)
+    assert pace_target.ONE_RACE_SETS_THE_LINE not in fallback.reasons
+    races = _races(E2)
+    marked = pace_target.LeaveOneOut("s9", FIRST_START, pace_target.CLOSEST_RACE, 5600.0, 0.018, False, True)
+    plain = pace_target.LeaveOneOut("s8", FIRST_START, pace_target.FITTED_LINE, 5510.0, 0.002, True)
+    assert plain.sets_the_line is False
+    base = _fitted(HALF, 0.01)
+    unmarked = pace_target.label(
+        dataclasses.replace(base, leave_one_out=(plain,)), races, below_one=False
+    )
+    assert unmarked is not None and unmarked.label == pace_target.HIGH and unmarked.reasons == ()
+    fired = pace_target.label(
+        dataclasses.replace(base, leave_one_out=(plain, marked)), races, below_one=False
+    )
+    assert fired is not None and fired.label == pace_target.LOW
+    assert fired.reasons == (pace_target.ONE_RACE_SETS_THE_LINE,)
+    assert fired.uncertainty == 0.01 and fired.basis == pace_target.RANGE

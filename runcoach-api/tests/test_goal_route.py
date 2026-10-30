@@ -139,6 +139,22 @@ def test_put_serves_the_active_goal() -> None:
     assert read == goal
 
 
+def test_get_goal_names_the_race_that_sets_the_line() -> None:
+    """The athlete's six (five 5Ks and Chicago) behind a stored half: ``GET /goal`` serves the label
+    ``low`` with reason ``one_race_sets_the_line`` and Chicago's row marked, as the preview does."""
+    preview._plant_chart(ZoneInfo("UTC"), NOW.date(), start=date(2026, 6, 1), flat=50.0)
+    with TestClient(app) as client:
+        ids = _races(client, *preview.ATHLETE_SIX)
+        _put(client, _goal(HALF_M, race_date=TODAY, target_time_s=5580.0))
+        read = _get(client)
+    target = read["target"]
+    print(f"  confidence {target['confidence']}")
+    assert target["confidence"]["label"] == "low"
+    assert target["confidence"]["reasons"] == ["one_race_sets_the_line"]
+    marked = [row["session_id"] for row in target["leave_one_out"]["races"] if row["sets_the_line"]]
+    assert marked == [ids[0]]
+
+
 def test_a_second_put_supersedes_the_first() -> None:
     """Two PUTs: the second goal is served; the first row keeps ``superseded_at`` set to the clock's
     instant and is not served; nothing is deleted."""
