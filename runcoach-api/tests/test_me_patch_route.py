@@ -232,6 +232,15 @@ def test_patch_me_unknown_field_is_422() -> None:
         _assert_422(client, "weight_kg", json={"max_hr_bpm": 190, "weight_kg": 70})
 
 
+@pytest.mark.parametrize("escaped", ["\\ud800", "\\udfff\\ud800", "ok \\udc80"])
+def test_patch_me_display_name_with_a_lone_surrogate_is_422(escaped: str) -> None:
+    """A JSON string escape for a lone UTF-16 surrogate parses to a Python ``str`` that UTF-8 cannot
+    encode, so it can be neither stored nor echoed as it came. ``display_name`` refuses it with a
+    422 naming the field, and the error body itself encodes (the input echoed escaped), not a 500."""
+    with TestClient(app) as client:
+        _assert_422(client, "display_name", content=('{"display_name": "' + escaped + '"}').encode())
+
+
 def test_patch_me_hr_true_is_422() -> None:
     with TestClient(app) as client:
         _assert_422(client, "max_hr_bpm", json={"max_hr_bpm": True})

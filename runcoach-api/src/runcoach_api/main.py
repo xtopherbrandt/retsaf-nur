@@ -983,9 +983,17 @@ _NON_FINITE_TOKENS = {math.inf: "Infinity", -math.inf: "-Infinity"}
 
 
 def _json_safe(value):
-    """``value`` with every non-finite float written as the JSON token that carried it."""
+    """``value`` with every non-finite float written as the JSON token that carried it, and every
+    string UTF-8 cannot encode (a lone surrogate from a ``\\ud800`` escape) with the offending
+    code points written as backslash escapes."""
     if isinstance(value, float) and not math.isfinite(value):
         return "NaN" if math.isnan(value) else _NON_FINITE_TOKENS[value]
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return value.encode("utf-8", "backslashreplace").decode("utf-8")
+        return value
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -998,7 +1006,9 @@ async def _request_validation_error(request, exc: RequestValidationError) -> JSO
     """FastAPI's own 422 body (``fastapi.exception_handlers.request_validation_exception_handler``),
     except that a non-finite input is echoed as text. The request parser reads the ``NaN`` and
     ``Infinity`` tokens, so a refused one sits in the error's ``input``, and the response encoder
-    refuses non-finite floats: without this a refused ``NaN`` body value was a 500, not a 422."""
+    refuses non-finite floats: without this a refused ``NaN`` body value was a 500, not a 422. A
+    refused string holding a lone surrogate is echoed with it backslash-escaped, for the same
+    reason: the encoder cannot write it as UTF-8."""
     return JSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
 
 

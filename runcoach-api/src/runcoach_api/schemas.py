@@ -949,6 +949,17 @@ class AthleteProfileUpdate(BaseModel):
             datetime.date.fromisoformat(value)
         return value
 
+    @field_validator("display_name")
+    @classmethod
+    def _encodable(cls, value: str | None) -> str | None:
+        """A ``\\ud800`` escape parses to a lone surrogate, which the store cannot write as UTF-8."""
+        if value is not None:
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise ValueError("the name holds a lone surrogate, which is not text") from exc
+        return value
+
 
 class Athlete(BaseModel):
     """The athlete's profile (F016). Each field's effective value is the stored session with the latest start

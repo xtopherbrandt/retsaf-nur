@@ -338,6 +338,8 @@ BAD_INPUTS = [
     ("unknown_key", '{"race": {"distance_m": 21097.5}, "pace_s_per_km": 255}', "pace_s_per_km", None),
     ("unknown_race_key", '{"race": {"distance_m": 21097.5, "surface": "trail"}}', "surface", None),
     ("name_201", '{"race": {"distance_m": 21097.5, "name": "' + _LONG_NAME + '"}}', "name", None),
+    ("name_lone_surrogate", '{"race": {"distance_m": 21097.5, "name": "\\ud800"}}', "name", None),
+    ("name_reversed_surrogates", '{"race": {"distance_m": 21097.5, "name": "\\udfff\\ud800"}}', "name", None),
 ]  # fmt: skip
 
 
