@@ -2054,6 +2054,8 @@ from collections.abc import Mapping
 from runcoach_api.metrics import pace_target
 from runcoach_api.schemas import (
     GoalConfidence,
+    GoalContract,
+    GoalContractInput,
     GoalLeaveOneOut,
     GoalLeaveOneOutSet,
     GoalNewestRace,
@@ -2217,12 +2219,134 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
             body.race.date,
         )
 
+    race = GoalRace(date=race_date.isoformat(), distance_m=body.race.distance_m, name=body.race.name)
     conn = db.get_connection()
     try:
-        at = _riegel_at(conn, instant, zone, today)
-        names = db.read_session_names(conn, [effort.session_id for effort in at.estimate.efforts])
+        return _projection(conn, instant, zone, today, race, body.target_time_s)
     finally:
         conn.close()
 
+
+def _projection(
+    conn: sqlite3.Connection,
+    instant: datetime.datetime,
+    zone: ZoneInfo,
+    today: datetime.date,
+    race: GoalRace,
+    target_time_s: float | None,
+) -> PaceTarget:
+    """The projection every goal route serves: b and the chart at ``instant`` through
+    ``_riegel_at`` (its 500 when the chart cannot be built stands), the race names joined by id,
+    ``fitness_now`` the chart's CTL on the local day before the instant's local date, composed by
+    ``_pace_target``. Nothing is written; the caller owns ``conn``, which is left outside any
+    transaction (the state reader rolls its own back)."""
+    at = _riegel_at(conn, instant, zone, today)
+    names = db.read_session_names(conn, [effort.session_id for effort in at.estimate.efforts])
+    reference_date = instant.astimezone(zone).date()
+    return _pace_target(at, instant, zone, race, target_time_s, names, _fitness_now(at.chart, reference_date))
+
+
+# ---------------------------------------------------------------------------
+# PUT /goal and GET /goal (F032)
+#
+# Appended below the preview, which they share _projection with. PUT judges
+# the race date against the athlete's local today by the wall clock, computes
+# the projection on F029's read snapshot first and only then writes the row in
+# db.write_goal's own short BEGIN IMMEDIATE, so a projection that raises
+# stores nothing. GET serves the active row whatever as_of is; as_of moves the
+# projection only, and status is derived from the instant used, never stored.
+# ---------------------------------------------------------------------------
+
+
+def _goal_contract(row: dict, race: GoalRace, target: PaceTarget, reference_date: datetime.date) -> GoalContract:
+    """The served goal: the row's id as a string, ``completed`` when the race date is before
+    ``reference_date`` (the local date of the instant the projection is for), else ``active``."""
+    completed = datetime.date.fromisoformat(row["race_date"]) < reference_date
+    return GoalContract(
+        id=str(row["id"]),
+        race=race,
+        target_time_s=row["target_time_s"],
+        status="completed" if completed else "active",
+        created_at=row["created_at"],
+        target=target,
+    )
+
+
+@app.put("/goal", response_model=GoalContract, operation_id="setGoal", tags=["Goal"])
+def set_goal(body: GoalContractInput) -> GoalContract:
+    """Store the goal race as the active one and serve it with its projection (F032 AC1 and AC2,
+    reference sections 2 and 6).
+
+    The reference date is the athlete's local today by the wall clock (``_utcnow`` in
+    ``athlete_timezone``); ``PUT`` takes no ``as_of``. A race date before it is a 422 on
+    ``race.date`` and nothing is stored. The projection is computed first, as of now, on F029's
+    read snapshot; ``db.write_goal`` then supersedes the active row and inserts the new one in one
+    short ``BEGIN IMMEDIATE`` with ``created_at`` the same instant. A projection that raises (the
+    chart's 500 for a running session with no saved load row) never reaches the write. The stored
+    row never carries the projection or the status: both are recomputed on every read.
+    """
+    config = db._load_config_cached()
+    zone = ZoneInfo(config.athlete_timezone)
+    now = _utcnow()
+    today = now.astimezone(zone).date()
+    race_date = datetime.date.fromisoformat(body.race.date)
+    if race_date < today:
+        raise _body_validation_error(
+            ("race", "date"),
+            f"the race date {race_date.isoformat()} is before today {today.isoformat()} in {zone.key}",
+            body.race.date,
+        )
     race = GoalRace(date=race_date.isoformat(), distance_m=body.race.distance_m, name=body.race.name)
-    return _pace_target(at, instant, zone, race, body.target_time_s, names, _fitness_now(at.chart, reference_date))
+    conn = db.get_connection()
+    try:
+        target = _projection(conn, now, zone, today, race, body.target_time_s)
+        row = db.write_goal(
+            conn,
+            name=body.race.name,
+            race_date=race.date,
+            distance_m=body.race.distance_m,
+            target_time_s=body.target_time_s,
+            now=now.isoformat(),
+        )
+    finally:
+        conn.close()
+    return _goal_contract(row, race, target, today)
+
+
+@app.get(
+    "/goal",
+    response_model=GoalContract,
+    operation_id="getGoal",
+    tags=["Goal"],
+    responses={404: {"description": 'No active goal: `{"detail": "no_goal"}`.'}},
+)
+def get_goal(as_of: str | None = Query(None)) -> GoalContract:
+    """The active goal with its projection at the instant used (F032 AC1, reference sections 2
+    and 6).
+
+    The active row is served whatever ``as_of`` is; ``as_of`` (parsed as ``GET /state`` parses it,
+    a ``ValueError`` a 422 on the query parameter) moves the projection only. ``status`` is
+    ``completed`` when the race date is before the local date of that instant in
+    ``athlete_timezone``, derived here and never written; a completed goal still serves its
+    projection. No active row: 404 ``{"detail": "no_goal"}``. Nothing is written.
+    """
+    config = db._load_config_cached()
+    zone = ZoneInfo(config.athlete_timezone)
+    now = _utcnow()
+    try:
+        instant = parse_as_of(as_of, zone, now)
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
+        ) from exc
+    today = now.astimezone(zone).date()
+    conn = db.get_connection()
+    try:
+        row = db.read_active_goal(conn)
+        if row is None:
+            raise HTTPException(404, "no_goal")
+        race = GoalRace(date=row["race_date"], distance_m=row["distance_m"], name=row["name"])
+        target = _projection(conn, instant, zone, today, race, row["target_time_s"])
+    finally:
+        conn.close()
+    return _goal_contract(row, race, target, instant.astimezone(zone).date())

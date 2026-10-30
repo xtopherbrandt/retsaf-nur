@@ -2286,6 +2286,20 @@ class PaceTarget(BaseModel):
     )
 
 
+class GoalContract(BaseModel):
+    """`PUT /goal` 200 and `GET /goal` 200: the stored goal race and its projection, recomputed on
+    every read (F032 reference sections 2 and 6). `status` is derived on read and never stored:
+    `completed` when the race date is before the local date of the instant the projection is for,
+    else `active`. A superseded row is never served."""
+
+    id: str = Field(description="The stored row's id, as a string.")
+    race: GoalRace
+    target_time_s: float | None = Field(description="The athlete's goal finish time in seconds, or null.")
+    status: Literal["active", "completed"]
+    created_at: datetime.datetime = Field(description="The UTC instant the goal was set.")
+    target: PaceTarget = Field(description="The projection at the instant used (`as_of`, else now); not stored.")
+
+
 class StateModel(BaseModel):
     """``GET /state``: the determinant profile, computed on read from the tagged races and threshold
     workouts; nothing is stored."""
