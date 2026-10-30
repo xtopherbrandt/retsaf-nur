@@ -2,6 +2,97 @@
 
 ## Unreleased
 
+### The goal race and its projected finish: `/goal` and `runcoach goal`
+
+F032: the athlete sets a goal race and the system projects its finish from the tagged races, with
+the range, a label and every reason, so the first owned pace target is served (spec/01 sections
+1.2 and 1.4, `research/00` REG-33 and H-47). The projection is recomputed on every read and never
+stored.
+
+**Setting the goal.** `runcoach goal set <distance> --date YYYY-MM-DD [--time H:MM:SS] [--name
+TEXT]` stores the goal through `PUT /goal`: `runcoach goal set half --date 2027-04-11 --time
+1:31:40 --name "Vancouver Half"`. `<distance>` is `5k`, `10k`, `half` or `marathon` (5000, 10000,
+21097.5 and 42195 m), or a positive number with `km`, `m` or `mi` in one argument (`13.1mi`, or
+quoted `"5 km"`); a zero, negative, bare or unparseable number exits 2 before any request. `--time`
+is `H:MM:SS` or `MM:SS`; `--date` is the race day, today or later by the athlete's local calendar (a
+past date is a 422). The goal time is the whole time over the distance, not a pace; it is optional.
+Setting a new goal supersedes the old one in the same transaction, and nothing deletes a goal.
+
+**Reading it.** `runcoach goal [--as-of DATE]` prints the goal (date, name, distance, goal time,
+`(completed)` once the race day has passed), then the projection, in this form (illustrative):
+
+    Goal 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40
+    Projected 1:32:23 (4:23/km), 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high
+    Confidence high: from the range, 0.5 %
+    Goal time 1:31:40 is 0:00:43 faster than the projection (-0.8 %), outside the 80 % range
+    Route: the fitted line through the races used
+    b 1.064 (error 0.002), high
+    Newest race 2026-09-27 Run
+    Fitness now 42, at the races 45
+    Race 2026-09-20 Run: 21.1 km in 1:32:10, weight 1.00, -0.2 % against the line, without it 1:32:37 (+0.3 %)
+    Rests most on 2026-09-20 Run: without it 1:32:37 (+0.3 %)
+
+One `Race` line prints per race used, each with the time the projection would read without that
+race, and an `Assumes:` line closes the block with the assumptions below in words. With no goal set
+it prints `No goal set. Set one with runcoach goal set.` and exits 0.
+`runcoach goal preview <distance> [--as-of DATE]` (`POST /goal/preview`) prints the same projection
+for any distance without storing anything; with `--as-of` on a past date it backtests a race the
+athlete has run. An API without `/goal` and an unreachable API exit 1, as `runcoach state` does.
+
+**The projection.** When the races used clear b's bar (three races by their weights, the longest
+GAP-equivalent distance at least twice the shortest), the time is b's fitted line read at the goal
+distance, with the 80 % prediction interval of that line (Student's t, as b's own interval) as the
+range; the pace per km is the time over the distance. Below the bar the closest race in log distance
+is scaled to the goal distance by the population b 1.06: no range, `low`, provisional, and the line
+reads `no range: the races do not clear the fit's bar (3 races, the longest at least twice the
+shortest)`. With no race used the projection is unavailable and the goal is still served.
+
+**The label.** `high` while the uncertainty, the larger of the range's upper half-width and the
+largest leave-one-out shift (how far the time moves without one race), is at most 2 %, `medium` to
+5 %, else `low`; the `Confidence` line names which of the two set it. It is lowered one step when
+fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
+`low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
+outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
+marathon needs a race of at least 28.1 km). Every reason that holds is printed. The athlete's own
+set: eight races clear the bar for a half and a marathon with a wide range at `low`, since the
+leave-one-out shift of the Chicago marathon is 4.7 % on the half and 7.3 % on the marathon.
+
+**What it assumes.** Every projection lists the same seven assumptions, because none of these inputs
+is read: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment,
+projected for today and not race day (no plan moves it toward the race), and watch timer time (the
+races' times are the watch timer, which an auto-pause shortens; chip time may differ). A request
+that carries a course profile or conditions is refused with a 422 (`course profile and conditions
+are not modelled yet`), not accepted and ignored.
+
+**Age and fitness** are served beside the time, never applied: the newest race used, fitness now
+and the weighted fitness at the races. A trail race or a race not run all-out enters by its tag and
+reads slow; its residual and its leave-one-out line point at it, and untagging it in Connect drops
+it at the next read.
+
+### Changed
+
+`runcoach state` words the fitness screen's line on its own side of the 30 % bar: a race used whose
+fall rounds to 30 % reads `fell just under 30 % over 4 weeks`, and a race left out `fell more than
+30 % over 4 weeks`; only a fall of exactly the bar reads `fell 30 %`. When the race count and the
+distance spread both fall short of b's bar, the population line names both: `2 races in the last
+1095 days, too close in distance; 3 are needed and the longest must be at least twice the shortest`.
+The sprint-022 entry below shows the plain forms it printed then.
+
+The `--help` of `runcoach state` says that a race's age is counted to the second, so a race leaves
+the 1095-day window at the time of day it started: with no `--as-of`, a race on its last day can be
+in this morning and out this evening.
+
+### Migration required
+
+None for the store: the API creates the `goals` table on its first start. `contracts/openapi.yaml`
+bumps `info.version` to `0.6.0-draft`. One bump covers two changes a generated client sees as
+breaking: the sprint-022 `Determinant` `oneOf` (each `determinants[]` entry changed type for a
+client generated from `0.5.0-draft`, which the entry below called additive) and the goal contract
+(`GET /goal`, `PUT /goal` and `POST /goal/preview` are `implemented`; `GoalContract.status` loses
+`superseded`, which is never served; `GoalRace` loses the planned `course_elevation` and
+`environment` objects, which the input accepts only as null; `PaceTarget` gains its fields, each
+nullable). A client generated from `0.5.0-draft` regenerates. The CLI and API are released together.
+
 ## 2026-10-26 through 2026-10-28 — Sprint 022: The endurance exponent b from tagged races
 
 ### The endurance exponent b from tagged races: `GET /state` and `runcoach state`

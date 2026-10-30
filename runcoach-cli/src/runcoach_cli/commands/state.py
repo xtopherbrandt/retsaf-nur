@@ -586,7 +586,9 @@ def state(
     the last 1095 days (the population 1.06 until three races span a twofold distance, a race in
     the last 182 days of the window counted by its fading weight), with each race used and
     excluded. A race run while your fitness had fallen more than 30 % in the four weeks before it
-    is left out.
+    is left out. A race's age is counted to the second, so it leaves the window at the time of day
+    it started, 1095 days on: with no --as-of, a race on its last day can be in this morning and
+    out this evening.
 
     This is the training state; for whether the API is running, see runcoach status.
     """
