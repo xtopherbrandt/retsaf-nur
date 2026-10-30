@@ -15,7 +15,8 @@ TEXT]` stores the goal through `PUT /goal`: `runcoach goal set half --date 2027-
 21097.5 and 42195 m), or a positive number with `km`, `m` or `mi` in one argument (`13.1mi`, or
 quoted `"5 km"`); a zero, negative, bare or unparseable number exits 2 before any request. `--time`
 is `H:MM:SS` or `MM:SS`; `--date` is the race day, today or later by the athlete's local calendar (a
-past date is a 422). The goal time is the whole time over the distance, not a pace; it is optional.
+past date is a 422, and so is a name holding a lone surrogate, a `\ud800` escape that is not text).
+The goal time is the whole time over the distance, not a pace; it is optional.
 Setting a new goal supersedes the old one in the same transaction, and nothing deletes a goal.
 
 **Reading it.** `runcoach goal [--as-of DATE]` prints the goal (date, name, distance, goal time,
@@ -86,6 +87,9 @@ The sprint-022 entry below shows the plain forms it printed then.
 The `--help` of `runcoach state` says that a race's age is counted to the second, so a race leaves
 the 1095-day window at the time of day it started: with no `--as-of`, a race on its last day can be
 in this morning and out this evening.
+
+`PATCH /me` refuses a `display_name` holding a lone surrogate (a `\ud800` escape in the JSON, which
+is not text) with a 422 naming `display_name`, and nothing is written; it was a 500.
 
 ### Migration required
 

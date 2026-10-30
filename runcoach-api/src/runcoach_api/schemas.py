@@ -916,7 +916,8 @@ class AthleteProfileUpdate(BaseModel):
     A field left out is unchanged. For a profile field, null clears the entry, so the field falls to the
     stored FIT value or unavailable, never to an earlier entry. HR values are strict whole numbers above 0
     (``true``, ``"188"`` and ``188.5`` are refused); body values are finite numbers above 0, strict so a
-    JSON ``true`` is not taken as 1. ``birth_date`` is a ``YYYY-MM-DD`` date; the route also refuses one
+    JSON ``true`` is not taken as 1. A ``display_name`` holding a lone surrogate (a ``\\ud800`` escape) is
+    refused: it is not text. ``birth_date`` is a ``YYYY-MM-DD`` date; the route also refuses one
     after today in ``athlete_timezone``. Ordering across fields is not checked here: it is the anchor
     lookup's rule, and ``GET /me`` shows a conflicting entry as ``order_conflict``."""
 

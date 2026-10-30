@@ -145,7 +145,7 @@ paths:
         nullable) change the settings. An empty object is a 200 that changes
         nothing. The response is getMe's shape, read after the write. 422, with
         nothing written, for an unknown field (units' keys included); a units
-        object missing a key, or null; an HR
+        object missing a key, or null; a display_name holding a lone surrogate (a `\ud800` escape), which is not text; an HR
         value that is not a whole number above 0 (true, "188" and 188.5 are
         refused); a body value that is not a finite number above 0; a sex
         outside the enum; a birth_date that is not a YYYY-MM-DD date or lies
