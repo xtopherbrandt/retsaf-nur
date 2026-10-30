@@ -140,7 +140,7 @@ def _expected(head: str, target: dict[str, Any]) -> list[str]:
             f"without it {_hms(without[r['session_id']]['projected_time_s'])} ({_pct(without[r['session_id']]['shift'])})"
             for r in prov["races"]
         ],
-        f"Rests most on {_day(rests['start_time'], zone)}: without it {_hms(largest['projected_time_s'])} "
+        f"Largest shift the label reads: {_day(rests['start_time'], zone)}, without it {_hms(largest['projected_time_s'])} "
         f"({_pct(largest['shift'])})",
         ASSUMES_LINE,
     ]
@@ -182,7 +182,7 @@ def test_goal_against_the_app(cli_against_app: TestClient, _no_network: list[Any
         f"Fitness now {'-' if prov['fitness_now'] is None else _whole(prov['fitness_now'])}, "
         f"at the races {'-' if prov['fitness_at_races'] is None else _whole(prov['fitness_at_races'])}",
         *[f"Race {_day(start.isoformat(), zone)}" for start, _d, _t in E2],
-        f"Rests most on {_day(rests['start_time'], zone)}",
+        "Largest shift the label reads",
         "Assumes",
     ], result.stdout
 

@@ -133,7 +133,7 @@ FITTED_LINES = [
     "Race 2026-09-13 Run: 10.0 km in 0:41:42, weight 1.00, -0.1 % against the line, without it 1:32:20 (0.0 %)",
     "Race 2026-09-20 Run: 21.1 km in 1:32:10, weight 1.00, -0.2 % against the line, without it 1:32:37 (+0.3 %)",
     "Race 2026-09-27 Run: 42.2 km in 3:13:30, weight 1.00, +0.2 % against the line, without it 1:32:09 (-0.3 %)",
-    "Rests most on 2026-09-20 Run: without it 1:32:37 (+0.3 %)",
+    "Largest shift the label reads: 2026-09-20 Run, without it 1:32:37 (+0.3 %)",
     ASSUMES_LINE,
 ]
 
@@ -566,7 +566,25 @@ def test_goal_time_gap_in_words(install_mock_client) -> None:
     assert result.exit_code == 0, result.output
     lines = result.stdout.splitlines()
     assert lines[3] == "Goal time 1:31:40 is 0:00:30 slower than the projection (+0.5 %), inside the 80 % range"
-    assert lines[-2] == "Rests most on no single race: no leave-one-out keeps the fitted line"
+    assert lines[-2] == "Largest shift the label reads: none, no leave-one-out keeps the fitted line"
+
+
+def test_the_largest_line_names_the_shift_the_label_reads_not_the_largest_overall(install_mock_client) -> None:
+    """A race without which the rest fall below the bar prints its own ``without it`` time, and its
+    shift can be the largest on the page (the athlete's Chicago marathon, +4.0 % beside a 5K at
+    +0.1 %); the label does not read it. The closing line names the shift the label does read, and
+    says so, so it never contradicts the race lines above it."""
+    body = copy.deepcopy(FITTED)
+    rows = body["leave_one_out"]["races"]
+    rows[3].update(route="closest_race", projected_time_s=5764.5, shift=0.040049)
+    rows[0].update(shift=0.001408)
+    body["leave_one_out"]["largest"] = rows[0]
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[-3].endswith("without it 1:36:05 (+4.0 %)"), lines[-3]
+    assert lines[-2] == "Largest shift the label reads: 2026-09-06 Run, without it 1:32:30 (+0.1 %)"
 
 
 @pytest.mark.parametrize(

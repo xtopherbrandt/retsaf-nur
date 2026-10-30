@@ -20,8 +20,11 @@ on the closest-race route (F029's bar fails on the count or on the spread, and t
 only that it failed), and the label; the label with its
 basis and each reason in words; the goal time's gap and whether it sits inside the range; the route
 in words; b with its label (``b unavailable`` when the API serves it null); the newest race;
-fitness now and at the races; one line per race used (date, name, adjusted distance, time, weight, residual, leave-one-out time and shift); ``Rests most on
-<date> <name>: without it <time> (<shift>)``; the assumptions in words. Every race line leads with
+fitness now and at the races; one line per race used (date, name, adjusted distance, time,
+weight, residual, leave-one-out time and shift); ``Largest shift the label reads: <date> <name>,
+without it <time> (<shift>)``, the largest shift among the races whose removal leaves the rest
+above the bar (a race the fit cannot lose may move the time further on its own line and is not
+read); the assumptions in words. Every race line leads with
 its date, since every session on the athlete's store is named ``Run``. When the API serves
 ``unavailable`` the reason prints in its place and b, the races and the assumptions still follow.
 
@@ -119,7 +122,11 @@ ASSUMPTION_WORDS = {
     "projected_for_today_not_race_day": "projected for today, not race day",
     "watch_timer_time": "watch timer time (an auto-pause shortens it; chip time may differ)",
 }
-NO_LARGEST_LINE = "Rests most on no single race: no leave-one-out keeps the fitted line"
+# The label reads only the shifts whose remaining races still clear the bar, so the line says it
+# names the largest of those, not the largest shift on the page (a race the fit cannot lose can
+# move the time further and still not count).
+LARGEST_WORDS = "Largest shift the label reads"
+NO_LARGEST_LINE = f"{LARGEST_WORDS}: none, no leave-one-out keeps the fitted line"
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +404,9 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
             [race] = [r for r in races if r["session_id"] == largest["session_id"]] or [None]
             if race is None:
                 raise ValueError("largest names a race not used")
-            lines.append(f"Rests most on {_dated_name(race['start_time'], race['name'], zone)}: without it {_without(largest)}")
+            lines.append(
+                f"{LARGEST_WORDS}: {_dated_name(race['start_time'], race['name'], zone)}, without it {_without(largest)}"
+            )
 
     words = [ASSUMPTION_WORDS[a] if a in ASSUMPTION_WORDS else _string(a, "assumption") for a in assumptions]
     lines.append(f"Assumes: {', '.join(words)}")

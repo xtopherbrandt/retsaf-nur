@@ -30,7 +30,7 @@ Setting a new goal supersedes the old one in the same transaction, and nothing d
     Newest race 2026-09-27 Run
     Fitness now 42, at the races 45
     Race 2026-09-20 Run: 21.1 km in 1:32:10, weight 1.00, -0.2 % against the line, without it 1:32:37 (+0.3 %)
-    Rests most on 2026-09-20 Run: without it 1:32:37 (+0.3 %)
+    Largest shift the label reads: 2026-09-20 Run, without it 1:32:37 (+0.3 %)
 
 One `Race` line prints per race used, each with the time the projection would read without that
 race, and an `Assumes:` line closes the block with the assumptions below in words. With no goal set
