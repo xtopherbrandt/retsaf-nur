@@ -2268,7 +2268,8 @@ class PaceTarget(BaseModel):
     target_time_s: float | None
     unavailable: Literal["no_races", "riegel_unavailable", "projection_not_finite"] | None = Field(
         description="`no_races` with no race used; `riegel_unavailable` when F029's estimate is `estimate_not_finite`; "
-        "`projection_not_finite` when a served figure is not finite or overflows."
+        "`projection_not_finite` when a served figure is not finite or overflows, or a served time or pace "
+        "underflows to 0 (it must be a finite positive number)."
     )
     route: Literal["fitted_line", "closest_race"] | None
     projected_time_s: PaceTargetValue | None

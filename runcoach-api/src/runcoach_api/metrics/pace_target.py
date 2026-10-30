@@ -31,10 +31,11 @@ none is). ``None`` on route ``closest_race``.
 
 **Unavailable** (section 3.3), in this order: ``no_races`` with no race; ``riegel_unavailable`` when
 F029's estimate is ``estimate_not_finite``; ``projection_not_finite`` when the goal distance or a
-race's figure is not a finite positive number, when any figure served (time, interval ends,
-halfwidth, pace, a leave-one-out time or shift) is not finite, or when ``exp``, ``log`` or a power
-raises ``OverflowError`` or ``ValueError`` on the way (a 1e308 m goal overflows ``exp``). Every
-figure is then ``None`` and ``unavailable`` names the reason.
+race's figure is not a finite positive number, when a time or pace served (the time, the interval
+ends, the pace and its ends, a leave-one-out time) is not a finite positive number, when the
+halfwidth, a leave-one-out shift or the goal-time gap is not finite, or when ``exp``, ``log``, a
+power or a division raises on the way (a 1e308 m goal overflows ``exp``; a 1e-310 m goal underflows
+the time to 0 s). Every figure is then ``None`` and ``unavailable`` names the reason.
 
 ``project`` itself serves no label. The rules that read it are pure functions beside it, for the
 route to compose:
@@ -359,19 +360,25 @@ def project(
         return _unavailable(distance_m, PROJECTION_NOT_FINITE)
     try:
         main = _route(used, distance_m)
+        if not _positive_finite(main.time_s):
+            return _unavailable(distance_m, PROJECTION_NOT_FINITE)
         rows = _leave_one_out(used, distance_m, main.time_s) if main.route == FITTED_LINE else None
         km = distance_m / 1000
         pace = main.time_s / km
         pace_low = None if main.interval_low is None else main.interval_low / km
         pace_high = None if main.interval_high is None else main.interval_high / km
+        gap = () if target_time_s is None else _gap_figures(main.time_s, target_time_s)
     except (OverflowError, ValueError, ZeroDivisionError):
         return _unavailable(distance_m, PROJECTION_NOT_FINITE)
-    figures = [main.time_s, pace, main.interval_low, main.interval_high, main.halfwidth, pace_low, pace_high]
+    # Times and paces must be finite positive numbers: a time that underflows to 0 s is no finish.
+    times = [main.time_s, pace, main.interval_low, main.interval_high, pace_low, pace_high]
+    figures = [main.halfwidth, *gap]
     for row in rows or ():
-        figures.extend((row.time_s, row.shift))
-    if target_time_s is not None:
-        figures.extend(_gap_figures(main.time_s, target_time_s))
-    if not all(math.isfinite(figure) for figure in figures if figure is not None):
+        times.append(row.time_s)
+        figures.append(row.shift)
+    if not all(_positive_finite(time) for time in times if time is not None) or not all(
+        math.isfinite(figure) for figure in figures if figure is not None
+    ):
         return _unavailable(distance_m, PROJECTION_NOT_FINITE)
     return Projection(
         distance_m=distance_m,

@@ -1844,7 +1844,7 @@ components:
           type: string
           nullable: true
           enum: [no_races, riegel_unavailable, projection_not_finite]
-          description: "`no_races` with no race used; `riegel_unavailable` when the exponent's estimate is not finite; `projection_not_finite` when a served figure is not finite or overflows. Null when a projection is served."
+          description: "`no_races` with no race used; `riegel_unavailable` when the exponent's estimate is not finite; `projection_not_finite` when a served figure is not finite or overflows, or a served time or pace underflows to 0 (it must be a finite positive number). Null when a projection is served."
         route: { type: string, nullable: true, enum: [fitted_line, closest_race], description: "Null when unavailable." }
         projected_time_s:
           allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]

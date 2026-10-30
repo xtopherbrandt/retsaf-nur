@@ -430,6 +430,27 @@ def test_preview_goal_time_whose_gap_overflows_is_projection_not_finite() -> Non
     ]
 
 
+@pytest.mark.parametrize(("name", "races"), [("one race", ONE_RACE), ("E2", E2)])
+def test_preview_a_time_that_underflows_is_projection_not_finite(name: str, races: tuple) -> None:
+    """A 1e-310 m goal is a positive finite number the schema accepts; its projected time underflows
+    to 0.0 s on the closest-race route (one race) and the fitted line (E2) alike. With a goal time
+    and without one, the preview is a 200 ``projection_not_finite`` with every figure null: not a
+    500 from the gap or the leave-one-out shift dividing by 0 s, and not a served 0 s finish."""
+    with TestClient(app) as client:
+        _races(client, *races)
+        responses = [
+            client.post("/goal/preview", json=_goal(1e-310, target_time_s=goal_time)) for goal_time in (None, 5400.0)
+        ]
+    for response in responses:
+        print(f"  {name}: {response.status_code} {response.text[:200]}")
+        assert response.status_code == 200, response.text
+        target = response.json()
+        assert target["unavailable"] == "projection_not_finite"
+        assert target["route"] is None and target["projected_time_s"] is None
+        assert target["avg_pace_s_per_km"] is None and target["goal_time_gap"] is None
+        assert target["confidence"] is None and target["leave_one_out"] is None
+
+
 def test_preview_writes_nothing() -> None:
     """Row counts of every table and the hash of every store file are unchanged by a preview with
     and without ``as_of`` and a goal time."""

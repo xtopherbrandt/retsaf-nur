@@ -290,6 +290,29 @@ def test_goal_without_races_is_served_unavailable() -> None:
     assert read["target"]["unavailable"] == "no_races" and read["id"] == goal["id"]
 
 
+def test_put_a_time_that_underflows_is_served_projection_not_finite() -> None:
+    """One race and a 1e-310 m goal with a goal time: the projected time underflows to 0.0 s, so
+    the gap would divide by zero. The PUT is a 200 whose ``target`` is ``projection_not_finite``
+    with every figure null, the goal is stored as the one active row (the goal is still served,
+    section 3.3) and ``GET /goal`` serves the same; no other table changes."""
+    with TestClient(app) as client:
+        _races(client, *preview.ONE_RACE)
+        before = _snapshot()
+        response = client.put("/goal", json=_goal(1e-310, race_date=TODAY, target_time_s=5400.0))
+        after = _snapshot()
+        read = client.get("/goal")
+    print(f"  put {response.status_code} {response.text[:200]}; get {read.status_code}")
+    assert response.status_code == 200, response.text
+    target = response.json()["target"]
+    assert target["unavailable"] == "projection_not_finite"
+    assert target["projected_time_s"] is None and target["goal_time_gap"] is None
+    assert {k: v for k, v in after[0].items() if k != "goals"} == {k: v for k, v in before[0].items() if k != "goals"}
+    assert before[0]["goals"] == 0 and after[0]["goals"] == 1
+    rows = _goal_rows()
+    assert len(rows) == 1 and rows[0]["distance_m"] == 1e-310 and rows[0]["superseded_at"] is None
+    assert read.status_code == 200 and read.json() == response.json()
+
+
 # ---------------------------------------------------------------------------
 # AC2's PUT half: refusals and the reference date
 # ---------------------------------------------------------------------------

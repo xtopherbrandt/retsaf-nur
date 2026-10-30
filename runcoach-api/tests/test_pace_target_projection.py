@@ -261,6 +261,25 @@ def test_unavailable_reasons() -> None:
     assert project(_races([(21580.0, 5928.0, 1.0)]), population, HALF).route == pace_target.CLOSEST_RACE
 
 
+@pytest.mark.parametrize(
+    "triples", [pytest.param([(21580.0, 5928.0, 1.0)], id="closest-race"), pytest.param(E2, id="fitted-line")]
+)
+@pytest.mark.parametrize("target_time_s", [None, 5400.0])
+def test_a_projected_time_that_underflows_is_projection_not_finite(triples, target_time_s) -> None:
+    """A goal of 1e-310 m is a positive finite distance, and its projected time underflows to 0.0 s
+    on both routes (``(1e-310 / 21580) ** 1.06 == 0.0``). A time that is not a finite positive
+    number is ``projection_not_finite``, as an overflowing one is (section 3.3): never a served 0 s
+    finish and a 0 s/km pace, and never a ``ZeroDivisionError`` from the goal-time gap or the
+    leave-one-out shift, which both divide by the time."""
+    assert (1e-310 / 21580.0) ** 1.06 == 0.0
+    served = project(_races(triples), _estimate(), 1e-310, target_time_s=target_time_s)
+    print(f"  {len(triples)} races, goal time {target_time_s}: {served.unavailable} time {served.time_s}")
+    assert served.unavailable == pace_target.PROJECTION_NOT_FINITE
+    assert served.route is None and served.time_s is None and served.pace_s_per_km is None
+    assert pace_target.goal_time_gap(served, target_time_s) is None
+    assert pace_target.label(served, _races(triples), below_one=False) is None
+
+
 def _loo(served: Projection):
     assert served.leave_one_out is not None
     return served.leave_one_out
@@ -410,6 +429,8 @@ def test_the_module_is_pure() -> None:
         pytest.param(E2, math.nan, id="distance-nan"),
         pytest.param(E2, math.inf, id="distance-inf"),
         pytest.param(E2, 1e308, id="distance-1e308"),
+        pytest.param(E2, 1e-310, id="distance-subnormal"),
+        pytest.param([(21580.0, 5928.0, 1.0)], 1e-310, id="closest-distance-subnormal"),
         pytest.param([(21580.0, 5928.0, 1.0)], 0.0, id="closest-distance-zero"),
         pytest.param([(21580.0, 5928.0, 1.0)], math.nan, id="closest-distance-nan"),
         pytest.param([(21580.0, 5928.0, 1.0)], math.inf, id="closest-distance-inf"),
