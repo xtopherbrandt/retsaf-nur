@@ -389,6 +389,36 @@ def test_show_prints_every_line(install_mock_client) -> None:
     ]
 
 
+def test_riegel_unavailable_prints_its_reason_and_the_rest(install_mock_client) -> None:
+    """``riegel_unavailable`` as the API serves it: F029's estimate is not finite, so ``b``, its
+    error and its label are null and ``population_default`` false, every figure is null, and the
+    races, the newest race and the fitness are still served. The CLI prints the reason, ``b
+    unavailable``, the newest race, the fitness, each race and the assumptions, and exits 0."""
+    body = copy.deepcopy(CLOSEST)
+    body.update(
+        unavailable="riegel_unavailable",
+        route=None,
+        projected_time_s=None,
+        avg_pace_s_per_km=None,
+        halfwidth=None,
+        confidence=None,
+        goal_time_gap=None,
+    )
+    body["provenance"].update(b=None, error=None, label=None, population_default=False)
+    _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(body)))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "Goal 2027-04-11: 21.1 km, goal time 1:31:40",
+        "Projection unavailable: the endurance exponent could not be computed; check the races in runcoach state",
+        "b unavailable",
+        "Newest race 2026-09-20 Run",
+        "Fitness now 42, at the races 46",
+        "Race 2026-09-20 Run: 21.6 km in 1:38:48, weight 1.00",
+        ASSUMES_LINE,
+    ]
+
+
 def test_preview_prints_every_line(install_mock_client) -> None:
     """``preview`` posts the distance alone (no date, no time, no name) to ``POST /goal/preview``,
     sends ``--as-of`` as given, and prints section 7's lines headed ``Preview``, on a fitted-line

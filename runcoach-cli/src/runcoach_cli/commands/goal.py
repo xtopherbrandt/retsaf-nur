@@ -19,8 +19,8 @@ has passed); the projected time and the pace per km (athlete, 2026-10-29) with t
 on the closest-race route (F029's bar fails on the count or on the spread, and the served body says
 only that it failed), and the label; the label with its
 basis and each reason in words; the goal time's gap and whether it sits inside the range; the route
-in words; b with its label; the newest race; fitness now and at the races; one line per race used
-(date, name, adjusted distance, time, weight, residual, leave-one-out time and shift); ``Rests most on
+in words; b with its label (``b unavailable`` when the API serves it null); the newest race;
+fitness now and at the races; one line per race used (date, name, adjusted distance, time, weight, residual, leave-one-out time and shift); ``Rests most on
 <date> <name>: without it <time> (<shift>)``; the assumptions in words. Every race line leads with
 its date, since every session on the athlete's store is named ``Run``. When the API serves
 ``unavailable`` the reason prints in its place and b, the races and the assumptions still follow.
@@ -297,6 +297,10 @@ def _gap_line(body: dict, route: str) -> str:
 
 
 def _b_line(provenance: dict) -> str:
+    """b with its error and label; ``b unavailable`` when the API serves b and its label null (the
+    exponent's estimate is not finite)."""
+    if provenance["b"] is None and provenance["label"] is None:
+        return "b unavailable"
     label = _label(provenance["label"])
     if provenance["population_default"] is True:
         return f"b {_number(provenance['b'], 'b'):.2f} (population default), {label}"
