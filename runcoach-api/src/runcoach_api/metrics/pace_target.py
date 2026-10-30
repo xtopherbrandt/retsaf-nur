@@ -361,8 +361,6 @@ def project(
         return _unavailable(distance_m, PROJECTION_NOT_FINITE)
     try:
         main = _route(used, distance_m)
-        if not _positive_finite(main.time_s):
-            return _unavailable(distance_m, PROJECTION_NOT_FINITE)
         rows = _leave_one_out(used, distance_m, main.time_s) if main.route == FITTED_LINE else None
         km = distance_m / 1000
         pace = main.time_s / km
