@@ -395,7 +395,7 @@ paths:
             The instant to project at; default now. Parsed as getState's `as_of` is: an ISO 8601
             extended-form date-time with a zone, at or before now, or a `YYYY-MM-DD` date, meaning
             the last instant before the next local midnight in `athlete_timezone`, clamped to now;
-            a future instant, a naive date-time and an unparseable value are 422.
+            a future instant, a naive date-time and an unparseable value are 422, and so is an instant whose local date in `athlete_timezone` would fall before 0001-01-01; on a local date of 0001-01-01 `fitness_now` is null (the day before is outside the calendar).
           schema: { type: string }
       responses:
         "200":

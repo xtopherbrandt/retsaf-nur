@@ -2076,9 +2076,31 @@ def _body_validation_error(loc: tuple[str, ...], message: str, value: object) ->
     return RequestValidationError([{"type": "value_error", "loc": ("body", *loc), "msg": f"Value error, {message}", "input": value}])
 
 
+def _as_of_local_date(instant: datetime.datetime, zone: ZoneInfo, as_of: str | None) -> datetime.date:
+    """The local date of ``instant`` in ``zone``, or a 422 on ``("query", "as_of")`` when that date
+    would fall outside the calendar (a UTC instant on 0001-01-01 read west of UTC), which
+    ``parse_as_of`` checks in UTC only."""
+    try:
+        return instant.astimezone(zone).date()
+    except OverflowError as exc:
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("query", "as_of"),
+                    "msg": f"Value error, {as_of!r} falls before the calendar's first day in {zone.key}",
+                    "input": as_of,
+                }
+            ]
+        ) from exc
+
+
 def _fitness_now(chart: load_chart.LoadChart, reference_date: datetime.date) -> float | None:
     """The chart's CTL on the local day before ``reference_date``, the same day-before reading as
-    the races' ``fitness_before``; ``None`` when the chart has no such day."""
+    the races' ``fitness_before``; ``None`` when the chart has no such day, as on 0001-01-01, whose
+    day before is outside the calendar."""
+    if reference_date == datetime.date.min:
+        return None
     wanted = reference_date - datetime.timedelta(days=1)
     for day in chart.days:
         if day.date == wanted:
@@ -2192,7 +2214,8 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
     """The projection for a proposed goal, nothing stored (F032 reference sections 2, 5 and 6).
 
     The clock is read once; ``as_of`` is parsed as ``GET /state`` parses it (a ``ValueError`` is a
-    422 on the query parameter). The reference date is the local date of the instant used, in
+    422 on the query parameter, as is an instant whose local date falls before 0001-01-01). The
+    reference date is the local date of the instant used, in
     ``athlete_timezone``: the race's ``date`` defaults to it, and a date before it is a 422 on
     ``race.date``, so a preview can backtest a past race through ``as_of``. ``_riegel_at`` builds
     b and the load chart on one read snapshot (its 500 when the chart cannot be built stands);
@@ -2210,7 +2233,7 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
             [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
         ) from exc
     today = now.astimezone(zone).date()
-    reference_date = instant.astimezone(zone).date()
+    reference_date = _as_of_local_date(instant, zone, as_of)
     race_date = reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
     if race_date < reference_date:
         raise _body_validation_error(
@@ -2325,7 +2348,8 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
     and 6).
 
     The active row is served whatever ``as_of`` is; ``as_of`` (parsed as ``GET /state`` parses it,
-    a ``ValueError`` a 422 on the query parameter) moves the projection only. ``status`` is
+    a ``ValueError`` or a local date before 0001-01-01 a 422 on the query parameter) moves the
+    projection only. ``status`` is
     ``completed`` when the race date is before the local date of that instant in
     ``athlete_timezone``, derived here and never written; a completed goal still serves its
     projection. No active row: 404 ``{"detail": "no_goal"}``. Nothing is written.
@@ -2340,6 +2364,7 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
             [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
         ) from exc
     today = now.astimezone(zone).date()
+    reference_date = _as_of_local_date(instant, zone, as_of)
     conn = db.get_connection()
     try:
         row = db.read_active_goal(conn)
@@ -2349,4 +2374,4 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
         target = _projection(conn, instant, zone, today, race, row["target_time_s"])
     finally:
         conn.close()
-    return _goal_contract(row, race, target, instant.astimezone(zone).date())
+    return _goal_contract(row, race, target, reference_date)

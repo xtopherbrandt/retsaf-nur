@@ -406,6 +406,67 @@ def test_preview_refuses_a_malformed_as_of() -> None:
         assert error["type"] == "value_error"
 
 
+def _install_zone(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone=name,
+    )
+    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+    db_module._load_config_cached.cache_clear()
+
+
+# (zone, as_of, expected): 200 with fitness_now null when the local date is 0001-01-01, whose day
+# before cannot exist; 422 on as_of when the instant's local date falls before the calendar.
+_FIRST_DAY_AS_OF = [
+    ("UTC", "0001-01-01", 200),
+    ("UTC", "0001-01-01T00:00:00+00:00", 200),
+    ("UTC", "0001-01-02", 200),
+    ("America/Los_Angeles", "0001-01-01", 200),
+    ("America/Los_Angeles", "0001-01-01T12:00:00Z", 200),
+    ("America/Los_Angeles", "0001-01-01T00:00:00+00:00", 422),
+    ("Pacific/Auckland", "0001-01-01", 200),
+    ("Pacific/Auckland", "0001-01-01T12:00:00Z", 200),
+]
+
+
+@pytest.mark.parametrize(("zone", "as_of", "expected"), _FIRST_DAY_AS_OF)
+def test_an_as_of_on_the_calendar_s_first_day_is_never_a_500(
+    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch, zone: str, as_of: str, expected: int
+) -> None:
+    """``GET /state`` accepts every ``as_of`` here, so the goal routes never answer a 500 for one.
+    When the instant's local date is 0001-01-01 the chart has no day before it, so ``fitness_now``
+    is null and the projection is served; when the instant's local date would fall before
+    0001-01-01 (a UTC instant on the first day, read west of UTC) the date cannot be formed and the
+    request is a 422 on ``("query", "as_of")``, on preview and ``GET /goal`` alike."""
+    _install_zone(isolated_data_dir, monkeypatch, zone)
+    with TestClient(app) as client:
+        _races(client, *E2)
+        assert client.put("/goal", json=_goal(HALF_M, race_date="2027-01-01")).status_code == 200
+        state = client.get("/state", params={"as_of": as_of})
+        previewed = client.post("/goal/preview", json=_goal(HALF_M), params={"as_of": as_of})
+        read = client.get("/goal", params={"as_of": as_of})
+    print(f"  {zone} {as_of}: state {state.status_code}, preview {previewed.status_code} {previewed.text[:160]}")
+    print(f"  get {read.status_code} {read.text[:160]}")
+    assert state.status_code == 200
+    for response in (previewed, read):
+        assert response.status_code == expected, response.text
+        if expected == 422:
+            [error] = response.json()["detail"]
+            assert error["loc"] == ["query", "as_of"] and error["input"] == as_of
+    if expected == 200:
+        target = previewed.json()
+        assert target["unavailable"] == "no_races"
+        assert read.json()["target"]["unavailable"] == "no_races" and read.json()["status"] == "active"
+        local_day = datetime.fromisoformat(target["as_of"]).astimezone(ZoneInfo(zone)).date()
+        if local_day == date(1, 1, 1):
+            assert target["provenance"]["fitness_now"] is None
+            assert read.json()["target"]["provenance"]["fitness_now"] is None
+
+
 def test_preview_goal_time_whose_gap_overflows_is_projection_not_finite() -> None:
     """A goal time of 1e308 s is a finite float the schema accepts; over a 1 mm goal the projected
     time is a fraction of a second, so ``gap_fraction`` overflows to infinity. The goal time goes
