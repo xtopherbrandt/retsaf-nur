@@ -514,6 +514,50 @@ def test_preview_a_time_that_underflows_is_projection_not_finite(name: str, race
         assert target["confidence"] is None and target["leave_one_out"] is None
 
 
+@pytest.mark.parametrize(
+    ("variant", "timer_s", "gap_pace"),
+    [("zero", 5e-324, 1e10), ("inf", None, 5e-324)],
+    ids=["d-eq-zero", "d-eq-inf"],
+)
+def test_riegel_unavailable_is_served_with_the_goal(
+    monkeypatch: pytest.MonkeyPatch, variant: str, timer_s: float | None, gap_pace: float
+) -> None:
+    """F029's ``estimate_not_finite``, reached as its own pinned sets reach it: the newest race's
+    GAP-equivalent distance ``1000 * T / pace`` underflows to 0 (a 5e-324 s timer at 1e10 s/km) or
+    overflows to infinity (a 5e-324 s/km pace). Neither is reachable from a FIT file, so the race's
+    stored row is altered on its way into ``riegel_b.estimate``, which then decides on it as it
+    would on a stored row. Preview and ``GET /goal`` are a 200 ``riegel_unavailable`` with every
+    figure null, b, its error and its label null, the four races served and ``n_eff`` 4: never a
+    500 from re-fitting races F029 has already refused."""
+    real = main_module.riegel_b.estimate
+
+    def altered(rows, *args, **kwargs):
+        rows = [dict(row) for row in rows]
+        newest = rows[-1]
+        if timer_s is not None:
+            newest["timer_time_s"] = timer_s
+        newest["features"] = {**newest["features"], "gap_avg_pace_s_per_km": gap_pace}
+        return real(rows, *args, **kwargs)
+
+    with TestClient(app) as client:
+        _races(client, *E2)
+        assert client.put("/goal", json=_goal(HALF_M, race_date=TODAY, target_time_s=5400.0)).status_code == 200
+        monkeypatch.setattr(main_module.riegel_b, "estimate", altered)
+        previewed = client.post("/goal/preview", json=_goal(HALF_M, target_time_s=5400.0))
+        read = client.get("/goal")
+    print(f"  {variant}: preview {previewed.status_code} {previewed.text[:200]}\n  get {read.status_code}")
+    assert previewed.status_code == 200, previewed.text
+    assert read.status_code == 200, read.text
+    for target in (previewed.json(), read.json()["target"]):
+        assert target["unavailable"] == "riegel_unavailable"
+        assert target["route"] is None and target["projected_time_s"] is None
+        assert target["confidence"] is None and target["goal_time_gap"] is None
+        provenance = target["provenance"]
+        assert provenance["b"] is None and provenance["error"] is None and provenance["label"] is None
+        assert provenance["population_default"] is False
+        assert len(provenance["races"]) == 4 and provenance["n_eff"] == pytest.approx(4.0, abs=1e-9)
+
+
 def test_preview_writes_nothing() -> None:
     """Row counts of every table and the hash of every store file are unchanged by a preview with
     and without ``as_of`` and a goal time."""

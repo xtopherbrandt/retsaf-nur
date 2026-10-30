@@ -2151,7 +2151,8 @@ def _pace_target(
     confidence = pace_target.label(projection, races, below_one=estimate.below_one, fitness=fitness)
     gap = pace_target.goal_time_gap(projection, target_time_s)
     label = None if confidence is None else confidence.label
-    n_eff = riegel_b.fit([(r.d_eq_m, r.time_s, r.weight) for r in races]).n_eff if races else None
+    # The weights alone: a re-fit would divide by a D_eq that F029 has already refused as not finite.
+    n_eff = riegel_b.effective_count([r.weight for r in races]) if races else None
     newest = fitness.newest_race
     leave_one_out = None
     if projection.leave_one_out is not None:
