@@ -156,6 +156,50 @@ def test_a_second_put_supersedes_the_first() -> None:
     assert read["race"]["date"] == "2027-04-18" and read["status"] == "active"
 
 
+def test_a_third_put_supersedes_only_the_active_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Three PUTs an hour apart: each earlier row keeps the instant of the PUT that superseded it
+    (the first 13:00, the second 14:00), not the latest one, and the unique index on the active
+    row admits two superseded rows; the third goal is served."""
+    instants = [NOW, NOW + timedelta(hours=1), NOW + timedelta(hours=2)]
+    with TestClient(app) as client:
+        _races(client, *E2)
+        puts = []
+        for when, day in zip(instants, ("2026-11-01", "2026-11-02", "2026-11-03"), strict=True):
+            monkeypatch.setattr(main_module, "_utcnow", lambda when=when: when)
+            puts.append(_put(client, _goal(HALF_M, race_date=day)))
+        read = _get(client)
+    rows = _goal_rows()
+    print(f"  rows {[(r['id'], r['created_at'], r['superseded_at']) for r in rows]}")
+    assert [r["created_at"] for r in rows] == [when.isoformat() for when in instants]
+    assert [r["superseded_at"] for r in rows] == [instants[1].isoformat(), instants[2].isoformat(), None]
+    assert read["id"] == puts[2]["id"] and read["race"]["date"] == "2026-11-03"
+
+
+def test_get_as_of_reads_fitness_now_the_day_before_the_as_of_date() -> None:
+    """With a chart whose CTL differs every day, ``GET /goal?as_of=2026-09-25`` and the preview at
+    the same ``as_of`` serve ``fitness_now`` as the chart's CTL on 2026-09-24, the local day before
+    the ``as_of`` date, not the CTL on the day before the clock's today."""
+    preview._plant_chart(ZoneInfo("UTC"), NOW.date())
+    with TestClient(app) as client:
+        ids = _races(client, *E2, loads=False)
+        conn = db_module.get_connection()
+        try:
+            for session_id in ids:
+                preview.session_loads.plant_load(conn, session_id, value=50.0)
+        finally:
+            conn.close()
+        days = preview._chart_days(client)
+        _put(client, _goal(HALF_M, race_date="2026-11-01"))
+        read = _get(client, as_of="2026-09-25")
+        previewed = preview._preview(client, _goal(HALF_M), as_of="2026-09-25")
+    want, wall = days[date(2026, 9, 24)]["ctl"], days[NOW.date() - timedelta(days=1)]["ctl"]
+    print(f"  GET {read['target']['provenance']['fitness_now']} preview {previewed['provenance']['fitness_now']}; "
+          f"day before as_of {want}, day before today {wall}")
+    assert want != wall
+    assert read["target"]["provenance"]["fitness_now"] == want
+    assert previewed["provenance"]["fitness_now"] == want
+
+
 def test_past_race_date_reads_completed(monkeypatch: pytest.MonkeyPatch) -> None:
     """With the clock moved two days past the race date, ``GET /goal`` serves the same row as
     ``completed`` (derived on read: the stored row is unchanged) with a projection for that
@@ -228,8 +272,10 @@ def test_get_status_is_derived_from_the_as_of_instant(
     on, so the same row is ``completed`` with no ``as_of`` but ``active`` for every ``as_of``
     whose local date is on or before the race date: the day before, the race date itself (its last
     local instant), and an instant whose UTC date is 2026-10-14 but whose Auckland date is the race
-    date. The day after, and an instant whose UTC date is the day after but whose Auckland date is
-    two days after, read ``completed``. The projection is at the instant used in every case."""
+    date. The day after, an instant whose UTC date is the race date itself but whose Auckland date
+    is the day after (``2026-10-16T00:30:00+13:00``, UTC 2026-10-15 11:30, the instant a status read
+    from the UTC date gets wrong), and an instant whose UTC date is the day after but whose Auckland
+    date is two days after, read ``completed``. The projection is at the instant used in every case."""
     name = _auckland(isolated_data_dir, monkeypatch)
     zone = ZoneInfo(name)
     race_day = date(2026, 10, 15)
@@ -247,6 +293,7 @@ def test_get_status_is_derived_from_the_as_of_instant(
                 "2026-10-15",
                 "2026-10-15T00:30:00+13:00",
                 "2026-10-16",
+                "2026-10-16T00:30:00+13:00",
                 "2026-10-16T13:00:00Z",
             )
         }
@@ -262,13 +309,15 @@ def test_get_status_is_derived_from_the_as_of_instant(
         instant = datetime.fromisoformat(read["target"]["as_of"])
         if as_of == "2026-10-15T00:30:00+13:00":
             assert instant == datetime(2026, 10, 14, 11, 30, tzinfo=UTC), as_of
+        elif as_of == "2026-10-16T00:30:00+13:00":
+            assert instant == datetime(2026, 10, 15, 11, 30, tzinfo=UTC) and instant.date() == race_day, as_of
         elif as_of == "2026-10-16T13:00:00Z":
             assert instant == datetime(2026, 10, 16, 13, 0, tzinfo=UTC), as_of
         else:
             assert instant.astimezone(zone).date() == date.fromisoformat(as_of), as_of
         expected = "completed" if instant.astimezone(zone).date() > race_day else "active"
         assert read["status"] == expected, f"{as_of}: {read['status']} (local {instant.astimezone(zone)})"
-    assert [reads[k]["status"] for k in reads] == ["active", "active", "active", "completed", "completed"]
+    assert [reads[k]["status"] for k in reads] == ["active", "active", "active", "completed", "completed", "completed"]
     assert reads["2026-10-15"]["target"]["as_of"] != at_now["target"]["as_of"]
 
 

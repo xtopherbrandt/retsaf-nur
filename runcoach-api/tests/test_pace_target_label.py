@@ -292,9 +292,10 @@ def test_fitness_figures() -> None:
     assert served.newest_race is races[1] and served.newest_race.start_time == starts[1]
 
     # Every figure null: fitness_at_races null, nothing held, fitness_now served as given.
-    none = pace_target.fitness_context(_races(E2), 44.0)
+    plain = _races(E2)
+    none = pace_target.fitness_context(plain, 44.0)
     assert none.fitness_at_races is None and none.fitness_now == 44.0 and none.gap_holds is False
-    assert none.newest_race is _races(E2)[3] or none.newest_race.session_id == "s3"
+    assert none.newest_race is plain[3] and none.newest_race.session_id == "s3"
     # fitness_now null: served null, nothing held.
     missing = pace_target.fitness_context(_races(E2, fitness=[50.0] * 4), None)
     assert missing.fitness_at_races == 50.0 and missing.fitness_now is None and missing.gap_holds is False

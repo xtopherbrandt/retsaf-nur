@@ -42,13 +42,14 @@ ASSUMES_LINE = (
     "projected for today, not race day, watch timer time (an auto-pause shortens it; chip time may differ)"
 )
 
+# The values the API serves (``metrics.pace_target.PARAMETERS``, the F032 reference section 1).
 PARAMETERS = {
     "high_max_uncertainty": 0.02,
     "medium_max_uncertainty": 0.05,
-    "fitness_gap": 0.70,
+    "fitness_gap": 0.30,
     "max_extrapolation": 1.5,
-    "calibrated_min_m": 1500.0,
-    "calibrated_max_m": 50000.0,
+    "calibrated_min_m": 5000,
+    "calibrated_max_m": 42195,
     "population_b": 1.06,
     "tie_slack": 1e-9,
 }
@@ -417,6 +418,23 @@ def test_riegel_unavailable_prints_its_reason_and_the_rest(install_mock_client) 
         "Race 2026-09-20 Run: 21.6 km in 1:38:48, weight 1.00",
         ASSUMES_LINE,
     ]
+
+
+def test_race_dates_print_in_the_response_timezone(install_mock_client) -> None:
+    """The marathon started at 18:30 on 2026-09-27 in Vancouver, stored in UTC as 01:30 on
+    2026-09-28. With ``timezone`` America/Vancouver every line prints it as the athlete's
+    2026-09-27, the same lines as the UTC body whose start is 07:00 that day: the race line, the
+    newest race and nothing dated the UTC day."""
+    body = copy.deepcopy(FITTED)
+    body["timezone"] = "America/Vancouver"
+    evening = "2026-09-28T01:30:00Z"
+    body["provenance"]["races"][3]["start_time"] = evening
+    body["provenance"]["newest_race"]["start_time"] = evening
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["Preview 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
+    assert "2026-09-28" not in result.stdout
 
 
 def test_preview_prints_every_line(install_mock_client) -> None:

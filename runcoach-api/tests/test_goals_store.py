@@ -73,6 +73,19 @@ def test_write_goal_supersedes_the_active_row(conn):
     assert active["target_time_s"] == 5400.0
 
 
+def test_a_third_write_supersedes_only_the_active_row(conn):
+    """A third goal supersedes the second alone: the first keeps the instant the second superseded
+    it, not the third's, and the unique index on the active row admits two superseded rows."""
+    now_3 = "2026-10-29T12:00:00+00:00"
+    for name, now in (("first", _NOW_1), ("second", _NOW_2), ("third", now_3)):
+        db.write_goal(conn, name=name, race_date="2027-05-02", distance_m=42195.0, target_time_s=None, now=now)
+    rows = [tuple(r) for r in conn.execute("SELECT name, created_at, superseded_at FROM goals ORDER BY id")]
+    print(f"  rows {rows}")
+    assert rows == [("first", _NOW_1, _NOW_2), ("second", _NOW_2, now_3), ("third", now_3, None)]
+    assert _counts(conn) == (3, 1)
+    assert db.read_active_goal(conn)["name"] == "third"
+
+
 def test_a_raising_write_stores_nothing(conn):
     """The insert fails after the supersede: the supersede is rolled back too, and the store is as it
     was. ``sqlite3.Connection.execute`` is read-only, so a trigger makes the insert raise."""

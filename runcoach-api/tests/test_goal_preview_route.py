@@ -310,6 +310,43 @@ def test_preview_matches_the_worked_sets_at_four_distances(name: str) -> None:
         assert time["interval"]["high"] == pytest.approx(expected.interval[1], abs=1e-3)
         assert target["avg_pace_s_per_km"]["value"] == pytest.approx(expected.pace_s_per_km, abs=1e-3)
         assert target["halfwidth"] == pytest.approx(expected.halfwidth, abs=1e-6)
+    # The served n_eff is the races' own, not their count: E3's faded marathon gives 3.769231.
+    n_eff = {"E1": 3.0, "E2": 4.0, "E3": 3.769231}[name]
+    assert served[HALF_M]["provenance"]["n_eff"] == pytest.approx(n_eff, abs=1e-6)
+    # The reference section 4 table's rows for these sets, read at the route, so the races and
+    # F029's flags reach the label as the route passes them.
+    for distance_m, (label, reasons) in SERVED_LABELS.get(name, {}).items():
+        confidence = served[distance_m]["confidence"]
+        print(f"  {name} {distance_m:g} m: served {confidence}")
+        assert (confidence["label"], confidence["reasons"]) == (label, reasons), distance_m
+
+
+# The reference section 4 table's served labels for the worked sets (a flat chart, so no fitness gap).
+SERVED_LABELS = {
+    "E1": {HALF_M: ("low", []), MARATHON_M: ("low", ["beyond_longest_race"])},
+    "E2": {HALF_M: ("high", []), 60000.0: ("low", ["outside_calibrated_range"])},
+}
+
+
+def test_a_b_below_one_reads_low_at_the_route() -> None:
+    """Four races whose times grow slower than their distances fit a b under 1, which F029 flags
+    ``below_one``; the route passes the flag to the label, so the half reads ``low`` with reason
+    ``below_one`` on the fitted line, whatever its range."""
+    races = (
+        (_SEPT[0], 5000.0, 1200.0),
+        (_SEPT[1], 10000.0, 2350.0),
+        (_SEPT[2], HALF_M, 4900.0),
+        (_SEPT[3], MARATHON_M, 9700.0),
+    )
+    _plant_chart(ZoneInfo("UTC"), NOW.date(), flat=50.0)
+    with TestClient(app) as client:
+        _races(client, *races)
+        target = _preview(client, _goal(HALF_M))
+    print(f"  b {target['provenance']['b']} route {target['route']} confidence {target['confidence']}")
+    assert target["provenance"]["b"] < 1
+    assert target["route"] == "fitted_line"
+    assert target["confidence"]["label"] == "low" and target["confidence"]["reasons"] == ["below_one"]
+    assert target["confidence"]["uncertainty"] is not None and target["confidence"]["uncertainty"] <= 0.05
 
 
 # ---------------------------------------------------------------------------
