@@ -368,7 +368,8 @@ def _race_line(race: dict, without: dict | None, zone: ZoneInfo) -> str:
         f"{format_duration(_number(race['duration_s'], 'duration_s'))}, weight {_number(race['weight'], 'weight'):.2f}"
     )
     if without is not None and without["sets_the_line"] is True:
-        # Alone at its end of the distances, the line runs through it: its residual checks nothing.
+        # Alone at its end of the distances (leverage near 1), the line is drawn close to it whatever
+        # its time: its residual is shrunk toward zero, not zero, and checks nothing.
         line += ", sets the line"
         if race["residual"] is not None:
             line += f" (its {_percent(race['residual'], 'residual', signed=True)} against the line is no check)"

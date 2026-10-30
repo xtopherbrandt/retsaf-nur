@@ -59,8 +59,10 @@ it is just above 2 % or 5 % (`2.01 %`), so it never reads as the edge the label 
 or more but span less than twice the shortest distance without it, that race alone sets the line,
 and the label is `low` whatever the uncertainty: the `Confidence` line reads `one race sets the
 line: <date> <name> (the other races span less than twice the distance without it)`, and that
-race's own line reads `sets the line (its +0.0 % against the line is no check)` in place of its
-residual. With exactly three races this never applies. It is lowered one step when
+race's own line reads `sets the line (its <residual> against the line is no check)` in place of its
+residual: the line is drawn close to that race whatever its time, so its residual is near zero but
+not zero (`0.0 %` for Chicago in the athlete's set; `-0.4 %` for one half beside 5, 7 and 9.9 km
+races). With exactly three races this never applies. It is lowered one step when
 fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
