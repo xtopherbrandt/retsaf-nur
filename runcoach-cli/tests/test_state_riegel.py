@@ -726,3 +726,18 @@ def test_a_malformed_riegel_entry_takes_the_error_path(install_mock_client, brea
     riegel = copy.deepcopy(_riegel([A, B, C, D]))
     breaks(riegel)
     _refused(install_mock_client, _body(riegel))
+
+
+def test_help_states_the_within_day_window_edge() -> None:
+    """``runcoach state --help`` states the within-day edge of the race window, and that edge is
+    what ``metrics/riegel_b.py`` implements: ``_screen_stored`` ages a race as
+    ``(instant - start_time).total_seconds()`` in fractional days, ``weight_at`` is 0 once that age
+    reaches ``WINDOW_DAYS`` (1095), and with no ``--as-of`` the instant is now, so a race leaves the
+    window at its own start time of day, 1095 days on. Two fragments are pinned, not the sentence,
+    so a reword that keeps the meaning words still passes."""
+    result = runner.invoke(app, ["state", "--help"])
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.stdout.split())
+    assert "counted to the second" in text, text
+    assert "1095 days on" in text, text
+    assert "out this evening" in text, text
