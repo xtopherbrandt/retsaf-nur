@@ -18,7 +18,7 @@ from __future__ import annotations
 import importlib.util
 import socket
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
@@ -123,7 +123,8 @@ def _expected(head: str, target: dict[str, Any]) -> list[str]:
     [rests] = [r for r in prov["races"] if r["session_id"] == largest["session_id"]]
     return [
         head,
-        f"Projected {_hms(time['value'])} ({_mss(pace['value'])}/km), 80 %: {_hms(time['interval']['low'])} to "
+        f"Projected {_hms(time['value'])} ({_mss(pace['value'])}/km) for today, not race day, 80 %: "
+        f"{_hms(time['interval']['low'])} to "
         f"{_hms(time['interval']['high'])} ({_mss(pace['interval']['low'])} to {_mss(pace['interval']['high'])}/km), "
         f"{confidence['label']}",
         f"Confidence {confidence['label']}: from the range, {_pct(confidence['uncertainty'], signed=False)}",
@@ -169,7 +170,9 @@ def test_goal_against_the_app(cli_against_app: TestClient, _no_network: list[Any
     assert result.exit_code == 0, result.output
     lines = result.stdout.splitlines()
     assert lines[0] == f"Preview {NOW.date().isoformat()}: 21.1 km, no goal time"
-    assert lines[1] == "Projected 1:32:23 (4:23/km), 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high"
+    assert lines[1] == (
+        "Projected 1:32:23 (4:23/km) for today, not race day, 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high"
+    )
     assert lines[3] == "Goal time: none set"
     zone = previewed["timezone"]
     prov = previewed["provenance"]
@@ -212,4 +215,29 @@ def test_goal_against_the_app(cli_against_app: TestClient, _no_network: list[Any
         refused = against_app.runner.invoke(against_app.cli_app, args)
         assert refused.exit_code == 2, refused.output
     assert client.get("/goal").json() == body
+    assert _no_network == []
+
+
+def test_one_race_sets_the_line_against_the_app(cli_against_app: TestClient, _no_network: list[Any]) -> None:
+    """The athlete's six (five 5Ks and Chicago) served by the real preview route: the confidence
+    line names Chicago by its date (the stored sessions carry no name) as the race that sets the
+    line, and Chicago's own line says so in place of a bare residual."""
+    client = cli_against_app
+    preview._plant_chart(ZoneInfo("UTC"), NOW.date(), start=date(2026, 6, 1), flat=50.0)
+    ids = _races(client, *preview.ATHLETE_SIX)
+    served = client.post("/goal/preview", json={"race": {"distance_m": HALF_M}}).json()
+    print(f"  served confidence {served['confidence']}")
+    assert served["confidence"]["reasons"] == ["one_race_sets_the_line"]
+    zone = served["timezone"]
+    [chicago] = [r for r in served["provenance"]["races"] if r["session_id"] == ids[0]]
+    [row] = [r for r in served["leave_one_out"]["races"] if r["session_id"] == ids[0]]
+    day = _day(chicago["start_time"], zone)
+    result = _run("goal", "preview", "half")
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[2] == (
+        f"Confidence low: from the range, {_pct(served['confidence']['uncertainty'], signed=False)}; one race sets "
+        f"the line: {day} (the other races span less than twice the distance without it)"
+    )
+    assert f"Race {day}: 42.5 km in 3:05:38, weight 1.00, sets the line (its {_pct(chicago['residual'])} against the line is no check), without it {_hms(row['projected_time_s'])} ({_pct(row['shift'])})" in lines
     assert _no_network == []

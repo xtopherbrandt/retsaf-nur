@@ -87,10 +87,10 @@ E2_RACES = [
     _race_used("s-mar", "Run", "2026-09-27T07:00:00Z", 42195.0, 11610.0, 0.0019, 48.0),
 ]
 E2_LEAVE_ONE_OUT = [
-    {"session_id": "s-5k", "route": "fitted_line", "projected_time_s": 5549.5, "shift": 0.001208},
-    {"session_id": "s-10k", "route": "fitted_line", "projected_time_s": 5540.1, "shift": -0.000488},
-    {"session_id": "s-half", "route": "fitted_line", "projected_time_s": 5557.2, "shift": 0.002597},
-    {"session_id": "s-mar", "route": "fitted_line", "projected_time_s": 5528.6, "shift": -0.002563},
+    {"session_id": "s-5k", "route": "fitted_line", "projected_time_s": 5549.5, "shift": 0.001208, "sets_the_line": False},
+    {"session_id": "s-10k", "route": "fitted_line", "projected_time_s": 5540.1, "shift": -0.000488, "sets_the_line": False},
+    {"session_id": "s-half", "route": "fitted_line", "projected_time_s": 5557.2, "shift": 0.002597, "sets_the_line": False},
+    {"session_id": "s-mar", "route": "fitted_line", "projected_time_s": 5528.6, "shift": -0.002563, "sets_the_line": False},
 ]
 
 FITTED: dict[str, Any] = {
@@ -124,7 +124,7 @@ FITTED: dict[str, Any] = {
 }
 
 FITTED_LINES = [
-    "Projected 1:32:23 (4:23/km), 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high",
+    "Projected 1:32:23 (4:23/km) for today, not race day, 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high",
     "Confidence high: from the range, 0.5 %",
     "Goal time 1:31:40 is 0:00:43 faster than the projection (-0.8 %), outside the 80 % range",
     "Route: the fitted line through the races used",
@@ -179,7 +179,7 @@ CLOSEST: dict[str, Any] = {
     "gap_to_goal": None,
 }
 
-NO_RANGE_LINE = "Projected 1:36:28 (4:34/km), no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest), low, provisional"
+NO_RANGE_LINE = "Projected 1:36:28 (4:34/km) for today, not race day, no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest), low, provisional"
 BELOW_BAR_LINE = "Confidence low: below the fit's bar, so the population b 1.06 scales the closest race"
 
 CLOSEST_LINES = [
@@ -659,6 +659,101 @@ def test_the_largest_line_names_the_shift_the_label_reads_not_the_largest_overal
     lines = result.stdout.splitlines()
     assert lines[-3].endswith("without it 1:36:05 (+4.0 %)"), lines[-3]
     assert lines[-2] == "Largest shift the label reads: 2026-09-06 Run, without it 1:32:30 (+0.1 %)"
+
+
+# The athlete's six once the trail halves are untagged (five 5Ks and Chicago), the half as the demo's
+# figures give it: 1:30:01, range 2.1 %, Chicago setting the line.
+SIX_RACES = [
+    _race_used("s-chi", "Run", "2024-10-13T12:30:00Z", 42515.76, 11138.164, 0.0001, 47.1),
+    _race_used("s-a", "Run", "2024-10-26T15:00:00Z", 4974.80, 1232.761, 0.0103, 41.5),
+    _race_used("s-b", "Run", "2024-11-09T15:00:00Z", 5019.45, 1205.641, -0.0127, 36.4),
+    _race_used("s-c", "Run", "2025-03-08T15:00:00Z", 4950.81, 1206.331, 0.0008, 30.8),
+    _race_used("s-d", "Run", "2025-03-15T15:00:00Z", 5047.45, 1233.371, 0.0050, 30.4),
+    _race_used("s-e", "Run", "2025-05-24T15:00:00Z", 4978.70, 1218.939, -0.0035, 31.5),
+]
+SIX_LEAVE_ONE_OUT = [
+    {"session_id": "s-chi", "route": "closest_race", "projected_time_s": 5617.22, "shift": 0.040049, "sets_the_line": True},
+    {"session_id": "s-a", "route": "fitted_line", "projected_time_s": 5394.44, "shift": -0.001201, "sets_the_line": False},
+    {"session_id": "s-b", "route": "fitted_line", "projected_time_s": 5408.39, "shift": 0.001382, "sets_the_line": False},
+    {"session_id": "s-c", "route": "fitted_line", "projected_time_s": 5401.67, "shift": 0.000138, "sets_the_line": False},
+    {"session_id": "s-d", "route": "fitted_line", "projected_time_s": 5400.72, "shift": -0.000038, "sets_the_line": False},
+    {"session_id": "s-e", "route": "fitted_line", "projected_time_s": 5399.68, "shift": -0.00023, "sets_the_line": False},
+]
+
+
+def _one_race_sets_the_line() -> dict[str, Any]:
+    body = copy.deepcopy(FITTED)
+    body["projected_time_s"] = _value(5400.925134, "s", 5288.81, 5515.41, "low", False)
+    body["avg_pace_s_per_km"] = _value(255.997, "s/km", 250.68, 261.43, "low", False)
+    body["halfwidth"] = 0.021198
+    body["confidence"] = {"label": "low", "basis": "range", "uncertainty": 0.021198, "reasons": ["one_race_sets_the_line"]}
+    body["target_time_s"] = 5580.0
+    body["goal_time_gap"] = {"gap_s": 179.07, "gap_fraction": 0.033156, "within_range": False}
+    body["provenance"]["races"] = copy.deepcopy(SIX_RACES)
+    body["provenance"]["newest_race"] = {"session_id": "s-e", "name": "Run", "start_time": "2025-05-24T15:00:00Z"}
+    rows = copy.deepcopy(SIX_LEAVE_ONE_OUT)
+    body["leave_one_out"] = {"races": rows, "largest": copy.deepcopy(rows[2])}
+    return body
+
+
+def test_one_race_sets_the_line_is_named_in_words(install_mock_client) -> None:
+    """Reason ``one_race_sets_the_line`` prints in words naming the race by date and name, from the
+    leave-one-out row marked ``sets_the_line``; that race's own line says it sets the line in place
+    of a bare residual, and keeps its ``without it`` time; the other race lines are unchanged."""
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=_one_race_sets_the_line()))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[1] == (
+        "Projected 1:30:01 (4:16/km) for today, not race day, 80 %: 1:28:09 to 1:31:55 (4:11 to 4:21/km), low"
+    )
+    assert lines[2] == (
+        "Confidence low: from the range, 2.1 %; one race sets the line: 2024-10-13 Run (the other races span "
+        "less than twice the distance without it)"
+    )
+    assert lines[8] == (
+        "Race 2024-10-13 Run: 42.5 km in 3:05:38, weight 1.00, sets the line (its 0.0 % against the line is no "
+        "check), without it 1:33:37 (+4.0 %)"
+    )
+    assert lines[9] == (
+        "Race 2024-10-26 Run: 5.0 km in 0:20:33, weight 1.00, +1.0 % against the line, without it 1:29:54 (-0.1 %)"
+    )
+    assert lines[-2] == "Largest shift the label reads: 2024-11-09 Run, without it 1:30:08 (+0.1 %)"
+
+
+def test_two_races_that_each_set_the_line_are_both_named(install_mock_client) -> None:
+    """When two rows are marked (each end of a narrow middle), the reason names both, in race order."""
+    body = _one_race_sets_the_line()
+    body["leave_one_out"]["races"][2]["sets_the_line"] = True
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[2] == (
+        "Confidence low: from the range, 2.1 %; one race sets the line: 2024-10-13 Run, 2024-11-09 Run (the "
+        "other races span less than twice the distance without it)"
+    )
+    assert lines[10].startswith("Race 2024-11-09 Run: 5.0 km in 0:20:06, weight 1.00, sets the line (")
+
+
+@pytest.mark.parametrize(
+    "breaks",
+    [
+        pytest.param(lambda b: b["leave_one_out"]["races"][0].pop("sets_the_line"), id="mark_missing"),
+        pytest.param(lambda b: b["leave_one_out"]["races"][0].update(sets_the_line="yes"), id="mark_not_a_bool"),
+        pytest.param(
+            lambda b: b["leave_one_out"]["races"][0].update(sets_the_line=False), id="reason_without_a_marked_row"
+        ),
+    ],
+)
+def test_a_malformed_mark_takes_the_error_path(install_mock_client, breaks) -> None:
+    body = _one_race_sets_the_line()
+    breaks(body)
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "the API's response could not be understood" in result.stderr
 
 
 @pytest.mark.parametrize(

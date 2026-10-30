@@ -129,6 +129,13 @@ ASSUMPTION_WORDS = {
 # names the largest of those, not the largest shift on the page (a race the fit cannot lose can
 # move the time further and still not count).
 LARGEST_WORDS = "Largest shift the label reads"
+# The projection is for today's fitness, never race day's; said on the Projected line itself, and
+# still listed among the assumptions.
+FOR_TODAY = "for today, not race day"
+# ``one_race_sets_the_line`` names the races whose leave-one-out row is marked ``sets_the_line``.
+SETS_THE_LINE = "one_race_sets_the_line"
+SETS_THE_LINE_WORDS = "one race sets the line"
+SETS_THE_LINE_WHY = "the other races span less than twice the distance without it"
 NO_LARGEST_LINE = f"{LARGEST_WORDS}: none, no leave-one-out keeps the fitted line"
 
 
@@ -266,7 +273,10 @@ def _projected_line(body: dict, route: str) -> str:
     if not isinstance(time, dict) or not isinstance(pace, dict):
         raise ValueError("projected_time_s or avg_pace_s_per_km is not an object")
     label = _label(time["confidence"])
-    line = f"Projected {format_duration(_number(time['value'], 'projected_time_s'))} ({format_pace(_number(pace['value'], 'avg_pace_s_per_km'))})"
+    line = (
+        f"Projected {format_duration(_number(time['value'], 'projected_time_s'))} "
+        f"({format_pace(_number(pace['value'], 'avg_pace_s_per_km'))}) {FOR_TODAY}"
+    )
     if route == FITTED_LINE:
         interval, pace_interval = time["interval"], pace["interval"]
         if not isinstance(interval, dict) or not isinstance(pace_interval, dict):
@@ -281,7 +291,16 @@ def _projected_line(body: dict, route: str) -> str:
     return line
 
 
-def _confidence_line(confidence: Any, parameters: Any) -> str:
+def _reason_words(reason: Any, setters: list[str]) -> str:
+    """A reason code in words; ``one_race_sets_the_line`` names the races that set the line."""
+    if reason == SETS_THE_LINE:
+        if not setters:
+            raise ValueError("one_race_sets_the_line without a race marked sets_the_line")
+        return f"{SETS_THE_LINE_WORDS}: {', '.join(setters)} ({SETS_THE_LINE_WHY})"
+    return REASON_WORDS[reason] if reason in REASON_WORDS else _string(reason, "reason")
+
+
+def _confidence_line(confidence: Any, parameters: Any, setters: list[str]) -> str:
     if not isinstance(confidence, dict) or not isinstance(parameters, dict):
         raise ValueError("confidence or parameters is not an object")
     parts: list[str] = []
@@ -294,7 +313,7 @@ def _confidence_line(confidence: Any, parameters: Any) -> str:
     reasons = confidence["reasons"]
     if not isinstance(reasons, list):
         raise ValueError("reasons is not a list")
-    parts += [REASON_WORDS[r] if r in REASON_WORDS else _string(r, "reason") for r in reasons]
+    parts += [_reason_words(r, setters) for r in reasons]
     return f"Confidence {_label(confidence['label'])}: {'; '.join(parts)}"
 
 
@@ -338,7 +357,12 @@ def _race_line(race: dict, without: dict | None, zone: ZoneInfo) -> str:
         f"{_km(race['gap_equivalent_m'], 'gap_equivalent_m')} in "
         f"{format_duration(_number(race['duration_s'], 'duration_s'))}, weight {_number(race['weight'], 'weight'):.2f}"
     )
-    if race["residual"] is not None:
+    if without is not None and without["sets_the_line"] is True:
+        # Alone at its end of the distances, the line runs through it: its residual checks nothing.
+        line += ", sets the line"
+        if race["residual"] is not None:
+            line += f" (its {_percent(race['residual'], 'residual', signed=True)} against the line is no check)"
+    elif race["residual"] is not None:
         line += f", {_percent(race['residual'], 'residual', signed=True)} against the line"
     if without is not None:
         line += f", without it {_without(without)}"
@@ -376,16 +400,31 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
 
     lines = [_head(word, body, status)]
     unavailable = body["unavailable"]
+    route = None if unavailable is not None else body["route"]
+    without_by_id: dict[Any, dict] = {}
+    leave_one_out = body["leave_one_out"]
+    if route == FITTED_LINE:
+        if not isinstance(leave_one_out, dict) or not isinstance(leave_one_out["races"], list):
+            raise ValueError("a fitted line without its leave-one-out")
+        for row in leave_one_out["races"]:
+            if not isinstance(row, dict):
+                raise ValueError("a leave-one-out row is not an object")
+            if not isinstance(row["sets_the_line"], bool):
+                raise ValueError("sets_the_line is not true or false")
+            without_by_id[row["session_id"]] = row
     if unavailable is None:
-        route = body["route"]
         if route not in ROUTE_WORDS:
             raise ValueError("route is not fitted_line or closest_race")
+        setters = [
+            _dated_name(race["start_time"], race["name"], zone)
+            for race in races
+            if without_by_id.get(race["session_id"], {}).get("sets_the_line") is True
+        ]
         lines.append(_projected_line(body, route))
-        lines.append(_confidence_line(body["confidence"], body["parameters"]))
+        lines.append(_confidence_line(body["confidence"], body["parameters"], setters))
         lines.append(_gap_line(body, route))
         lines.append(f"Route: {ROUTE_WORDS[route]}")
     else:
-        route = None
         lines.append(_unavailable_line(unavailable))
     lines.append(_b_line(provenance))
 
@@ -401,15 +440,6 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
         f"at the races {_whole(provenance['fitness_at_races'], 'fitness_at_races')}"
     )
 
-    without_by_id: dict[Any, dict] = {}
-    leave_one_out = body["leave_one_out"]
-    if route == FITTED_LINE:
-        if not isinstance(leave_one_out, dict) or not isinstance(leave_one_out["races"], list):
-            raise ValueError("a fitted line without its leave-one-out")
-        for row in leave_one_out["races"]:
-            if not isinstance(row, dict):
-                raise ValueError("a leave-one-out row is not an object")
-            without_by_id[row["session_id"]] = row
     for race in races:
         lines.append(_race_line(race, without_by_id.get(race["session_id"]), zone))
     if route == FITTED_LINE:
