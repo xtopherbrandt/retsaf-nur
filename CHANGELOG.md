@@ -54,8 +54,9 @@ fitness now (the load chart's CTL) is more than 30 % below the weighted fitness 
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
 marathon needs a race of at least 28.1 km). Every reason that holds is printed. The athlete's own
-set: eight races clear the bar for a half and a marathon with a wide range at `low`, since the
-leave-one-out shift of the Chicago marathon is 4.7 % on the half and 7.3 % on the marathon.
+set: eight races clear the bar for a half and a marathon with a wide range at `low`: the range's
+6.8 % on the half and 7.5 % on the marathon sets the label, and the leave-one-out shift of the
+Chicago marathon is 4.7 % and 7.3 %.
 
 **What it assumes.** Every projection lists the same seven assumptions, because none of these inputs
 is read: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment,
@@ -64,10 +65,10 @@ races' times are the watch timer, which an auto-pause shortens; chip time may di
 that carries a course profile or conditions is refused with a 422 (`course profile and conditions
 are not modelled yet`), not accepted and ignored.
 
-**Age and fitness** are served beside the time, never applied: the newest race used, fitness now
-and the weighted fitness at the races. A trail race or a race not run all-out enters by its tag and
-reads slow; its residual and its leave-one-out line point at it, and untagging it in Connect drops
-it at the next read.
+**Age and fitness** are served beside the time, never applied to the time: the newest race used,
+fitness now and the weighted fitness at the races. A trail race or a race not run all-out enters by
+its tag and reads slow; its residual and its leave-one-out line point at it, and untagging it in
+Connect and running `runcoach sync tags --since <its date>` drops it at the next read.
 
 ### Changed
 
