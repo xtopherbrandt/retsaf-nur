@@ -48,8 +48,10 @@ reads `no range: the races do not clear the fit's bar (3 races, the longest at l
 shortest)`. With no race used the projection is unavailable and the goal is still served.
 
 **The label.** `high` while the uncertainty, the larger of the range's upper half-width and the
-largest leave-one-out shift (how far the time moves without one race), is at most 2 %, `medium` to
-5 %, else `low`; the `Confidence` line names which of the two set it. It is lowered one step when
+largest leave-one-out shift among the races whose removal leaves the rest above b's bar (how far the
+time moves without one race), is at most 2 %, `medium` to 5 %, else `low`; the `Confidence` line
+names which of the two set it. A race without which the rest fall below the bar still prints its
+`without it` time, but its shift does not enter the label. It is lowered one step when
 fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is
 outside 5 km to the marathon, or when the goal is more than 1.5 times the longest race used (a
