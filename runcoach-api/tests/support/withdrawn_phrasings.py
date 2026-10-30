@@ -65,7 +65,7 @@ WITHDRAWN_SCAN_ANCHORS = (
     ),
     (
         _REPO_ROOT / "runcoach-api" / "src" / "runcoach_api" / "schemas.py",
-        "Not computed yet: always null; no goal is modelled.",
+        "whose `goal_time_gap` holds the gap to the goal time.",
     ),
     (
         _REPO_ROOT / "contracts" / "openapi.yaml",

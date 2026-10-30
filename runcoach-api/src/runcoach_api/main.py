@@ -2038,3 +2038,191 @@ def _riegel_at(
         threshold_unreadable=inputs.threshold_unreadable,
         riegel_rows=inputs.riegel_rows,
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /goal/preview (F032)
+#
+# Appended below the earlier routes, as the routes above are, so the lines
+# cited by number stay in place. The projection is metrics.pace_target's,
+# pure; this block reads the clock once, parses as_of as GET /state does,
+# dates the race, builds b and the chart through _riegel_at, joins the race
+# names and composes the response. Nothing is written.
+# ---------------------------------------------------------------------------
+from collections.abc import Mapping
+
+from runcoach_api.metrics import pace_target
+from runcoach_api.schemas import (
+    GoalConfidence,
+    GoalLeaveOneOut,
+    GoalLeaveOneOutSet,
+    GoalNewestRace,
+    GoalPreviewInput,
+    GoalProvenance,
+    GoalRace,
+    GoalRaceUsed,
+    GoalTimeGap,
+    PaceTarget,
+    PaceTargetInterval,
+    PaceTargetParameters,
+    PaceTargetValue,
+)
+
+
+def _body_validation_error(loc: tuple[str, ...], message: str, value: object) -> RequestValidationError:
+    """A 422 in FastAPI's own shape for a body value the schema cannot screen alone."""
+    return RequestValidationError([{"type": "value_error", "loc": ("body", *loc), "msg": f"Value error, {message}", "input": value}])
+
+
+def _fitness_now(chart: load_chart.LoadChart, reference_date: datetime.date) -> float | None:
+    """The chart's CTL on the local day before ``reference_date``, the same day-before reading as
+    the races' ``fitness_before``; ``None`` when the chart has no such day."""
+    wanted = reference_date - datetime.timedelta(days=1)
+    for day in chart.days:
+        if day.date == wanted:
+            return day.ctl
+    return None
+
+
+def _leave_one_out_row(row: pace_target.LeaveOneOut) -> GoalLeaveOneOut:
+    return GoalLeaveOneOut(session_id=row.session_id, route=row.route, projected_time_s=row.time_s, shift=row.shift)
+
+
+def _confidence_value(
+    value: float | None, low: float | None, high: float | None, unit: str, label: str | None, provisional: bool
+) -> PaceTargetValue | None:
+    if value is None or label is None:
+        return None
+    interval = None if low is None or high is None else PaceTargetInterval(low=low, high=high)
+    return PaceTargetValue(value=value, unit=unit, interval=interval, confidence=label, provisional=provisional)
+
+
+def _pace_target(
+    at: RiegelAt,
+    instant: datetime.datetime,
+    zone: ZoneInfo,
+    race: GoalRace,
+    target_time_s: float | None,
+    names: Mapping[str, str | None],
+    fitness_now: float | None,
+) -> PaceTarget:
+    """The response for one request: ``pace_target.project`` over the races behind F029's efforts
+    (re-fitted there, so the bar is decided on them), then the label, the fitness context and the
+    goal-time gap beside it. The goal time goes into ``project`` so a gap that is not finite is
+    ``projection_not_finite``; ``goal_time_gap`` itself screens nothing."""
+    estimate = at.estimate
+    races = [pace_target.Race.from_effort(effort) for effort in estimate.efforts]
+    projection = pace_target.project(races, estimate, race.distance_m, target_time_s=target_time_s)
+    fitness = pace_target.fitness_context(races, fitness_now)
+    confidence = pace_target.label(projection, races, below_one=estimate.below_one, fitness=fitness)
+    gap = pace_target.goal_time_gap(projection, target_time_s)
+    label = None if confidence is None else confidence.label
+    n_eff = riegel_b.fit([(r.d_eq_m, r.time_s, r.weight) for r in races]).n_eff if races else None
+    newest = fitness.newest_race
+    leave_one_out = None
+    if projection.leave_one_out is not None:
+        leave_one_out = GoalLeaveOneOutSet(
+            races=[_leave_one_out_row(row) for row in projection.leave_one_out],
+            largest=None if projection.largest is None else _leave_one_out_row(projection.largest),
+        )
+    return PaceTarget(
+        as_of=instant,
+        timezone=zone.key,
+        race=race,
+        target_time_s=target_time_s,
+        unavailable=projection.unavailable,
+        route=projection.route,
+        projected_time_s=_confidence_value(
+            projection.time_s, projection.interval_low, projection.interval_high, "s", label, projection.provisional
+        ),
+        avg_pace_s_per_km=_confidence_value(
+            projection.pace_s_per_km, projection.pace_low, projection.pace_high, "s/km", label, projection.provisional
+        ),
+        halfwidth=projection.halfwidth,
+        confidence=None
+        if confidence is None
+        else GoalConfidence(
+            label=confidence.label,
+            basis=confidence.basis,
+            uncertainty=confidence.uncertainty,
+            reasons=list(confidence.reasons),
+        ),
+        goal_time_gap=None
+        if gap is None
+        else GoalTimeGap(gap_s=gap.gap_s, gap_fraction=gap.gap_fraction, within_range=gap.within_range),
+        provenance=GoalProvenance(
+            b=estimate.value,
+            error=estimate.error,
+            label=estimate.confidence,
+            population_default=estimate.population_default,
+            n_eff=n_eff,
+            races=[
+                GoalRaceUsed(
+                    session_id=effort.session_id,
+                    name=names.get(effort.session_id),
+                    start_time=effort.start_time,
+                    gap_equivalent_m=effort.gap_equivalent_m,
+                    duration_s=effort.duration_s,
+                    weight=effort.weight,
+                    residual=effort.residual,
+                    fitness_before=effort.fitness_before,
+                )
+                for effort in estimate.efforts
+            ],
+            newest_race=None
+            if newest is None
+            else GoalNewestRace(
+                session_id=newest.session_id, name=names.get(newest.session_id), start_time=newest.start_time
+            ),
+            fitness_at_races=fitness.fitness_at_races,
+            fitness_now=fitness.fitness_now,
+        ),
+        leave_one_out=leave_one_out,
+        effort_note=None,
+        assumptions=list(pace_target.assumptions()),
+        parameters=PaceTargetParameters(**dict(projection.parameters)),
+        gap_to_goal=None,
+    )
+
+
+@app.post("/goal/preview", response_model=PaceTarget, operation_id="previewGoal", tags=["Goal"])
+def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> PaceTarget:
+    """The projection for a proposed goal, nothing stored (F032 reference sections 2, 5 and 6).
+
+    The clock is read once; ``as_of`` is parsed as ``GET /state`` parses it (a ``ValueError`` is a
+    422 on the query parameter). The reference date is the local date of the instant used, in
+    ``athlete_timezone``: the race's ``date`` defaults to it, and a date before it is a 422 on
+    ``race.date``, so a preview can backtest a past race through ``as_of``. ``_riegel_at`` builds
+    b and the load chart on one read snapshot (its 500 when the chart cannot be built stands);
+    ``fitness_now`` is the chart's CTL on the local day before the reference date; the race names
+    are joined from the session rows by id (null when the row has none). The projection, label,
+    gap and assumptions are ``metrics.pace_target``'s.
+    """
+    config = db._load_config_cached()
+    zone = ZoneInfo(config.athlete_timezone)
+    now = _utcnow()
+    try:
+        instant = parse_as_of(as_of, zone, now)
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
+        ) from exc
+    today = now.astimezone(zone).date()
+    reference_date = instant.astimezone(zone).date()
+    race_date = reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
+    if race_date < reference_date:
+        raise _body_validation_error(
+            ("race", "date"),
+            f"the race date {race_date.isoformat()} is before the reference date {reference_date.isoformat()}",
+            body.race.date,
+        )
+
+    conn = db.get_connection()
+    try:
+        at = _riegel_at(conn, instant, zone, today)
+        names = db.read_session_names(conn, [effort.session_id for effort in at.estimate.efforts])
+    finally:
+        conn.close()
+
+    race = GoalRace(date=race_date.isoformat(), distance_m=body.race.distance_m, name=body.race.name)
+    return _pace_target(at, instant, zone, race, body.target_time_s, names, _fitness_now(at.chart, reference_date))

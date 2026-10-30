@@ -26,7 +26,7 @@ import json
 import math
 import sqlite3
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -61,6 +61,7 @@ def _load_support(name: str):
 
 
 session_loads = _load_support("session_loads")
+ctl_path = _load_support("ctl_path")
 
 
 @pytest.fixture(autouse=True)
@@ -185,6 +186,33 @@ def test_riegel_at_returns_the_estimate_and_the_chart() -> None:
     assert sorted(row["session_id"] for row in at.threshold_rows) == sorted(ids)
     assert at.threshold_unreadable == []
     assert sorted(row["session_id"] for row in at.riegel_rows) == sorted(ids)
+
+
+def test_riegel_at_builds_the_chart_to_the_local_today() -> None:
+    """The chart runs to ``today``, the athlete's local date, not to the instant's UTC date: in
+    Pacific/Auckland (UTC+13 in October) the frozen 2026-10-14 12:00 UTC is the local 10-15, so with
+    a load planted on every local day to 10-15 the chart's last day is 10-15, and the fitness lookup
+    for that day reads the local 10-14's CTL (a chart built to the UTC date would end on 10-14)."""
+    zone = ZoneInfo("Pacific/Auckland")
+    local_today = NOW.astimezone(zone).date()
+    assert local_today == date(2026, 10, 15) and NOW.date() == date(2026, 10, 14)
+    start = date(2026, 6, 1)
+    loads = {start + timedelta(days=n): 30.0 + 4.0 * (n % 9) for n in range((local_today - start).days + 1)}
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        ctl_path.plant(conn, loads, zone)
+        at = main_module._riegel_at(conn, NOW, zone, local_today)
+    finally:
+        conn.close()
+    days = {day.date: day.ctl for day in at.chart.days}
+    print(f"  chart last day {at.chart.days[-1].date}; local today {local_today}; UTC date {NOW.date()}")
+    assert at.chart.days[-1].date == local_today, "the chart ends on the UTC date, not the athlete's local today"
+    assert at.chart.days[-1].date != NOW.date()
+    print(f"  CTL 10-13 {days[date(2026, 10, 13)]} 10-14 {days[date(2026, 10, 14)]} 10-15 {days[date(2026, 10, 15)]}")
+    assert len({days[date(2026, 10, 13)], days[date(2026, 10, 14)], days[date(2026, 10, 15)]}) == 3
+    before, _earlier, _provisional, _after_gap = main_module._riegel_fitness(at.chart)(local_today)
+    assert before == days[date(2026, 10, 14)]
 
 
 def test_riegel_at_reads_one_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:

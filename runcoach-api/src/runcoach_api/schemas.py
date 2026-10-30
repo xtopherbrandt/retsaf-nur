@@ -2044,6 +2044,248 @@ Determinant = Annotated[ThresholdDeterminant | RiegelDeterminant, Field(discrimi
 """One determinant of the state model, told apart by ``name``."""
 
 
+# ---------------------------------------------------------------------------
+# The goal race and its projected finish (F032)
+# ---------------------------------------------------------------------------
+
+GOAL_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+GOAL_NOT_MODELLED = "course profile and conditions are not modelled yet"
+"""The 422 message for a `course_elevation` or `environment` that is not null (F032 reference section 2)."""
+
+
+def _goal_not_modelled(value: object) -> None:
+    """``course_elevation`` and ``environment`` are accepted only as null, so a client that sends a
+    course profile or conditions learns they are not read rather than having them silently dropped."""
+    if value is not None:
+        raise ValueError(GOAL_NOT_MODELLED)
+
+
+class GoalRaceInput(BaseModel):
+    """The goal race as `PUT /goal` takes it (F032 reference section 2). Strict: `date` is a
+    `YYYY-MM-DD` string that names a real day (a timestamp or a datetime string is a 422);
+    `distance_m` a finite JSON number above 0 (a bool, a string or an integer too large for a float
+    is a 422); `name` a string of at most 200 characters or null; `course_elevation` and
+    `environment` only null; any other key a 422. The route refuses a date before its reference
+    date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: str = Field(
+        strict=True,
+        pattern=GOAL_DATE_PATTERN,
+        json_schema_extra={"format": "date"},
+        description="The race day as `YYYY-MM-DD`, not before the reference date (the athlete's local today for "
+        "`PUT /goal`; the local date of the instant used for a preview).",
+    )
+    distance_m: float = Field(
+        strict=True, allow_inf_nan=False, gt=0, description="The race distance in metres, a finite number above 0."
+    )
+    name: str | None = Field(None, strict=True, max_length=200, description="The race's name, at most 200 characters.")
+    course_elevation: None = Field(None, description=f"Accepted only as null: {GOAL_NOT_MODELLED}.")
+    environment: None = Field(None, description=f"Accepted only as null: {GOAL_NOT_MODELLED}.")
+
+    @field_validator("date")
+    @classmethod
+    def _a_calendar_date(cls, value: str | None) -> str | None:
+        """The pattern admits ``2026-13-01``; ``date.fromisoformat`` refuses it."""
+        if value is not None:
+            datetime.date.fromisoformat(value)
+        return value
+
+    @field_validator("course_elevation", "environment", mode="before")
+    @classmethod
+    def _only_null(cls, value: object) -> None:
+        return _goal_not_modelled(value)
+
+
+class GoalPreviewRaceInput(GoalRaceInput):
+    """`POST /goal/preview`'s race: as `GoalRaceInput`, with `date` optional. Absent, the route
+    dates the race on the local date of the instant used, so a client's own clock never matters."""
+
+    date: str | None = Field(  # type: ignore[assignment]
+        None,
+        strict=True,
+        pattern=GOAL_DATE_PATTERN,
+        json_schema_extra={"format": "date"},
+        description="The race day as `YYYY-MM-DD`, not before the local date of the instant used; null or absent "
+        "means that date.",
+    )
+
+
+class GoalContractInput(BaseModel):
+    """The body of `PUT /goal`: the race and an optional goal time, a finite number of seconds above 0."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    race: GoalRaceInput
+    target_time_s: float | None = Field(
+        None, strict=True, allow_inf_nan=False, gt=0, description="The athlete's goal finish time in seconds, or null."
+    )
+
+
+class GoalPreviewInput(BaseModel):
+    """The body of `POST /goal/preview`: `GoalContractInput` with the race's `date` optional."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    race: GoalPreviewRaceInput
+    target_time_s: float | None = Field(
+        None, strict=True, allow_inf_nan=False, gt=0, description="The athlete's goal finish time in seconds, or null."
+    )
+
+
+class GoalRace(BaseModel):
+    """The goal race as served: the date used (the request's, else the reference date), the distance and the name."""
+
+    date: str = Field(description="The race day, `YYYY-MM-DD`.")
+    distance_m: float
+    name: str | None
+
+
+class PaceTargetInterval(BaseModel):
+    low: float
+    high: float
+
+
+class PaceTargetValue(BaseModel):
+    """The contract's `ConfidenceValue` for the projected time (unit `s`) and the pace (unit `s/km`):
+    the value, its 80 % prediction interval (null on route `closest_race`), the label
+    (`confidence.label`, the same on both) and `provisional` (true on route `closest_race`)."""
+
+    value: float
+    unit: Literal["s", "s/km"]
+    interval: PaceTargetInterval | None
+    confidence: Literal["low", "medium", "high"]
+    provisional: bool
+
+
+class GoalConfidence(BaseModel):
+    """F032 reference section 4.2: the label; `basis` (`range` when the halfwidth is the uncertainty,
+    `one_race` when a leave-one-out shift is; null on route `closest_race`); `uncertainty` (`u`, null
+    there); `reasons`, the codes of the rules that held, in the reference's order."""
+
+    label: Literal["low", "medium", "high"]
+    basis: Literal["range", "one_race"] | None
+    uncertainty: float | None
+    reasons: list[
+        Literal["fitness_below_races", "population_default", "below_one", "outside_calibrated_range", "beyond_longest_race"]
+    ]
+
+
+class GoalTimeGap(BaseModel):
+    """The goal time against the projection: `gap_s = target_time_s - projected_time_s` (negative when
+    the goal is faster), `gap_fraction = gap_s / projected_time_s`, and whether the goal sits inside
+    the interval (null on route `closest_race`, which has none)."""
+
+    gap_s: float
+    gap_fraction: float
+    within_range: bool | None
+
+
+class GoalRaceUsed(BaseModel):
+    """A race the projection was built from, as F029 served it, with the session's stored name."""
+
+    session_id: str
+    name: str | None = Field(description="The session row's name; null when the file carried none or the session is unknown.")
+    start_time: datetime.datetime
+    gap_equivalent_m: float = Field(description="`D_eq`, the distance the fit reads, in metres.")
+    duration_s: float = Field(description="`T`, the timer time in seconds.")
+    weight: float
+    residual: float | None = Field(description="F029's `exp(r) - 1`, positive slower than the line.")
+    fitness_before: float | None = Field(description="The load chart's CTL on the local day before the race.")
+
+
+class GoalNewestRace(BaseModel):
+    """The latest race used, with its session name."""
+
+    session_id: str
+    name: str | None
+    start_time: datetime.datetime
+
+
+class GoalProvenance(BaseModel):
+    """What the projection was built from: F029's b with its error, label and `population_default`,
+    the effective race count, the races used in F029's order, the newest race, and F032 reference
+    section 5's fitness figures, served beside the time and never applied to it."""
+
+    b: float | None = Field(description="F029's b at the instant; the population 1.06 below the bar; null when unavailable.")
+    error: float | None
+    label: Literal["low", "medium", "high"] | None = Field(description="F029's own label for b.")
+    population_default: bool
+    n_eff: float | None = Field(description="`(sum w)^2 / sum(w^2)` over the races used; null with no race.")
+    races: list[GoalRaceUsed]
+    newest_race: GoalNewestRace | None
+    fitness_at_races: float | None = Field(
+        description="The F029-weighted mean of the races' `fitness_before`, nulls skipped; null when none carries one."
+    )
+    fitness_now: float | None = Field(
+        description="The load chart's CTL on the local day before the date used; null when that day is not in the chart."
+    )
+
+
+class GoalLeaveOneOut(BaseModel):
+    """The projection from every race but this one (F032 reference section 4.1): its route, time and
+    `shift = T_without / T - 1`."""
+
+    session_id: str
+    route: Literal["fitted_line", "closest_race"]
+    projected_time_s: float
+    shift: float
+
+
+class GoalLeaveOneOutSet(BaseModel):
+    """Every race's leave-one-out, in F029's race order, and `largest`, the race with the largest
+    countable shift (one whose route is `fitted_line`); null when none is countable."""
+
+    races: list[GoalLeaveOneOut]
+    largest: GoalLeaveOneOut | None
+
+
+class PaceTargetParameters(BaseModel):
+    """The constants the projection and its label were computed with (F032 reference section 1)."""
+
+    high_max_uncertainty: float
+    medium_max_uncertainty: float
+    fitness_gap: float
+    max_extrapolation: float
+    calibrated_min_m: float
+    calibrated_max_m: float
+    population_b: float
+    tie_slack: float
+
+
+class PaceTarget(BaseModel):
+    """`POST /goal/preview` 200 and `GoalContract.target`: the projected finish over the goal
+    distance from the races F029 used at the instant, by the fitted line when they clear F029's bar
+    (route `fitted_line`) and by the closest race below it (route `closest_race`, no interval,
+    `provisional`), with the label, the goal-time gap, the provenance and the assumptions (F032
+    reference section 6). When `unavailable` is set every figure is null and the assumptions are
+    still served. Nothing is stored."""
+
+    as_of: datetime.datetime = Field(description="The instant the projection is for.")
+    timezone: str = Field(description="The configured `athlete_timezone`, which the reference date was read in.")
+    race: GoalRace
+    target_time_s: float | None
+    unavailable: Literal["no_races", "riegel_unavailable", "projection_not_finite"] | None = Field(
+        description="`no_races` with no race used; `riegel_unavailable` when F029's estimate is `estimate_not_finite`; "
+        "`projection_not_finite` when a served figure is not finite or overflows."
+    )
+    route: Literal["fitted_line", "closest_race"] | None
+    projected_time_s: PaceTargetValue | None
+    avg_pace_s_per_km: PaceTargetValue | None
+    halfwidth: float | None = Field(description="`exp(t sp) - 1`, the interval's upper side as a fraction of the time.")
+    confidence: GoalConfidence | None
+    goal_time_gap: GoalTimeGap | None = Field(description="Null without a goal time or when unavailable.")
+    provenance: GoalProvenance
+    leave_one_out: GoalLeaveOneOutSet | None = Field(description="Null on route `closest_race` and when unavailable.")
+    effort_note: None = Field(description="Always null: no effort note is composed.")
+    assumptions: list[str] = Field(description="The defaults the projection assumes, in the reference's order.")
+    parameters: PaceTargetParameters
+    gap_to_goal: None = Field(
+        description="Always null: the determinant breakdown is not modelled; the goal time's gap is `goal_time_gap`."
+    )
+
+
 class StateModel(BaseModel):
     """``GET /state``: the determinant profile, computed on read from the tagged races and threshold
     workouts; nothing is stored."""
@@ -2052,4 +2294,7 @@ class StateModel(BaseModel):
     timezone: str = Field(description="The configured `athlete_timezone`, which an `as_of` date was read in.")
     determinants: list[Determinant]
     readiness: None = Field(description="Not computed yet: always null.")
-    gap_to_goal: None = Field(description="Not computed yet: always null; no goal is modelled.")
+    gap_to_goal: None = Field(
+        description="Always null here: the goal race and its projected finish are served by `GET /goal` and "
+        "`POST /goal/preview`, whose `goal_time_gap` holds the gap to the goal time."
+    )
