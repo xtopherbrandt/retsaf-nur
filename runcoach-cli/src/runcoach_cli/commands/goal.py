@@ -479,15 +479,16 @@ def goal(
     as_of: str | None = typer.Option(
         None,
         "--as-of",
-        help="The date (YYYY-MM-DD, in the athlete's timezone) or date-time with zone to project at; default now.",
+        help="The date (YYYY-MM-DD, in the athlete's timezone) or date-time with zone to project at; default now. Read by the bare command only: given before preview or set it exits 2 (preview takes its own --as-of after the distance).",
     ),
 ) -> None:
     """Show the goal race and its projected finish from your tagged races.
 
     Without a subcommand, prints the active goal (GET /goal): the projected time and pace per km
     with the 80 % range and its label, the goal time's gap, the route, b, the newest race, fitness
-    now and at the races, each race used with what the projection reads without it, and the
-    assumptions. With no goal set, says so and exits 0.
+    now and at the races, each race used (on the fitted line, with what the projection would read
+    without it), and the assumptions. With no goal set, says so and exits 0. --as-of applies here
+    only: given before preview or set it exits 2.
     """
     if ctx.invoked_subcommand is not None:
         if as_of is not None:
