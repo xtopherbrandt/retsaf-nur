@@ -139,6 +139,13 @@ FITTED_LINES = [
 
 # Section 8's fallback: one race of 21,580 m in 5,928 s alone, the half projected by the closest race.
 ONE_RACE = [_race_used("s-one", "Run", "2026-09-20T07:00:00Z", 21580.0, 5928.0, None, 46.0)]
+# Three races at full weight whose adjusted distances span under twice (10.0 to 10.6 km): the count
+# clears F029's bar and the spread fails it, so the closest race is used all the same.
+THREE_CLOSE_RACES = [
+    _race_used("s-a", "Run", "2026-05-10T07:00:00Z", 10050.0, 2460.0, None, 44.0),
+    _race_used("s-b", "Run", "2026-07-12T07:00:00Z", 10210.0, 2490.0, None, 45.0),
+    _race_used("s-c", "Run", "2026-09-20T07:00:00Z", 10600.0, 2600.0, None, 46.0),
+]
 
 CLOSEST: dict[str, Any] = {
     "as_of": "2026-10-14T12:00:00Z",
@@ -170,9 +177,12 @@ CLOSEST: dict[str, Any] = {
     "gap_to_goal": None,
 }
 
+NO_RANGE_LINE = "Projected 1:36:28 (4:34/km), no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest), low, provisional"
+BELOW_BAR_LINE = "Confidence low: below the fit's bar, so the population b 1.06 scales the closest race"
+
 CLOSEST_LINES = [
-    "Projected 1:36:28 (4:34/km), no range: fewer than three races, low, provisional",
-    "Confidence low: fewer than three races, so the population b scales the closest race",
+    NO_RANGE_LINE,
+    BELOW_BAR_LINE,
     "Goal time 1:31:40 is 0:04:48 faster than the projection (-5.0 %)",
     "Route: the closest race, scaled by b",
     "b 1.06 (population default), low",
@@ -444,6 +454,32 @@ def test_unreachable_api_exits_1(install_mock_client) -> None:
         assert "could not reach API at http://example.test" in result.stderr
         assert "Traceback" not in result.output
         assert len(api.calls) == 1
+
+
+def test_closest_race_names_the_bar_not_a_count(install_mock_client) -> None:
+    """F029's bar fails on the count (fewer than 3 effective races) and on the spread (the longest
+    adjusted distance under twice the shortest), so the closest-race route is taken for one race
+    and for three races too close in distance alike. The no-range and reason sentences name the
+    bar, never a race count, on both bodies; every other closest-race line stays as it is."""
+    for races in (ONE_RACE, THREE_CLOSE_RACES):
+        body = copy.deepcopy(CLOSEST)
+        body["provenance"]["races"] = races
+        body["provenance"]["n_eff"] = float(len(races))
+        _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+        result = runner.invoke(app, ["goal", "preview", "half"])
+        assert result.exit_code == 0, result.output
+        lines = result.stdout.splitlines()
+        assert lines[1] == NO_RANGE_LINE, lines[1]
+        assert lines[2] == BELOW_BAR_LINE, lines[2]
+        assert "fewer than three" not in result.stdout
+        assert "three races" not in result.stdout
+        assert lines[3:8] == CLOSEST_LINES[2:7]
+        assert lines[8 : 8 + len(races)] == [
+            f"Race {r['start_time'][:10]} Run: {r['gap_equivalent_m'] / 1000:.1f} km in "
+            f"{int(r['duration_s']) // 3600}:{int(r['duration_s']) % 3600 // 60:02d}:{int(r['duration_s']) % 60:02d}, weight 1.00"
+            for r in races
+        ]
+        assert lines[-1] == ASSUMES_LINE
 
 
 def test_label_basis_and_reasons_in_words(install_mock_client) -> None:

@@ -15,7 +15,9 @@ past one with a 422, reported like any other non-2xx.
 
 Printed, one line each: the goal (date, name, distance, goal time, ``(completed)`` once the race day
 has passed); the projected time and the pace per km (athlete, 2026-10-29) with the 80 % range, or
-``no range: fewer than three races`` on the closest-race route, and the label; the label with its
+``no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest)``
+on the closest-race route (F029's bar fails on the count or on the spread, and the served body says
+only that it failed), and the label; the label with its
 basis and each reason in words; the goal time's gap and whether it sits inside the range; the route
 in words; b with its label; the newest race; fitness now and at the races; one line per race used
 (date, name, adjusted distance, time, weight, residual, leave-one-out time and shift); ``Rests most on
@@ -87,13 +89,16 @@ ROUTE_WORDS = {
     FITTED_LINE: "the fitted line through the races used",
     CLOSEST_RACE: "the closest race, scaled by b",
 }
-NO_RANGE = "no range: fewer than three races"
+# F029's bar fails on the count (3 effective races) or on the spread (the longest adjusted distance
+# at least twice the shortest); the served body says only that it failed, so the sentences name the
+# bar, never a race count.
+NO_RANGE = "no range: the races do not clear the fit's bar (3 races, the longest at least twice the shortest)"
 LABELS = ("low", "medium", "high")
 
 BASIS_WORDS = {"range": "from the range", "one_race": "from one race's leave-one-out shift"}
 REASON_WORDS = {
     "fitness_below_races": "fitness now is below 70 % of fitness at the races",
-    "population_default": "fewer than three races, so the population b scales the closest race",
+    "population_default": "below the fit's bar, so the population b 1.06 scales the closest race",
     "below_one": "b reads below 1",
     "outside_calibrated_range": "the goal distance is outside the calibrated range",
     "beyond_longest_race": "the goal distance is beyond the longest race used",
