@@ -37,7 +37,8 @@ race, and an `Assumes:` line closes the block with the assumptions below in word
 it prints `No goal set. Set one with runcoach goal set.` and exits 0.
 `runcoach goal preview <distance> [--as-of DATE]` (`POST /goal/preview`) prints the same projection
 for any distance without storing anything; with `--as-of` on a past date it backtests a race the
-athlete has run. An API without `/goal` and an unreachable API exit 1, as `runcoach state` does.
+athlete has run; `--as-of` goes after the distance, and given before `preview` or `set` it exits 2.
+An API without `/goal` and an unreachable API exit 1, as `runcoach state` does.
 
 **The projection.** When the races used clear b's bar (three races by their weights, the longest
 GAP-equivalent distance at least twice the shortest), the time is b's fitted line read at the goal

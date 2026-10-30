@@ -439,6 +439,28 @@ def test_preview_prints_every_line(install_mock_client) -> None:
     assert result.stdout.splitlines() == ["Preview 2027-04-11: 21.1 km, goal time 1:31:40", *CLOSEST_LINES]
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["goal", "--as-of", "2026-09-01", "preview", "half"],
+        ["goal", "--as-of", "2026-09-01", "set", "half", "--date", "2026-11-29"],
+    ],
+    ids=["preview", "set"],
+)
+def test_as_of_before_a_subcommand_exits_2(install_mock_client, args: list[str]) -> None:
+    """``--as-of`` belongs to the bare command and to ``preview``'s own option; given before a
+    subcommand it would be dropped and a projection for now printed as if it were the backtest.
+    It exits 2 naming ``--as-of`` before any request, and points ``preview`` at its own option."""
+    api = _install(install_mock_client)
+    result = runner.invoke(app, args)
+    assert result.exit_code == 2, result.output
+    assert "--as-of" in result.output
+    unboxed = " ".join("".join(" " if "─" <= c <= "╿" else c for c in result.output).split())
+    assert "runcoach goal preview <distance> --as-of DATE" in unboxed, unboxed
+    assert "Traceback" not in result.output
+    assert api.calls == []
+
+
 def test_no_goal_set_exits_0(install_mock_client) -> None:
     _install(install_mock_client, GET_goal=httpx.Response(404, json={"detail": "no_goal"}))
     result = runner.invoke(app, ["goal"])

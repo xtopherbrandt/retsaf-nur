@@ -4,6 +4,8 @@
 through ``PUT /goal``; ``runcoach goal [--as-of DATE]`` reads it through ``GET /goal``;
 ``runcoach goal preview <distance> [--as-of DATE]`` posts the distance alone to
 ``POST /goal/preview`` (no race date, so the API dates it on the day used; nothing is stored).
+``--as-of`` given before a subcommand (``runcoach goal --as-of DATE preview half``) would not be
+read, so it exits 2 before any request.
 
 ``<distance>`` is case-insensitive: ``5k``, ``10k``, ``half``, ``marathon`` (5000, 10000, 21097.5,
 42195 m) or a positive decimal number with ``km``, ``m`` or ``mi``, a space allowed between them
@@ -472,6 +474,14 @@ def goal(
     assumptions. With no goal set, says so and exits 0.
     """
     if ctx.invoked_subcommand is not None:
+        if as_of is not None:
+            # A subcommand never reads this option: dropped, a projection for now would print as
+            # if it were the backtest asked for.
+            raise typer.BadParameter(
+                f"--as-of before {ctx.invoked_subcommand} is not read; for a backtest give it after the "
+                "distance: runcoach goal preview <distance> --as-of DATE (set always uses today)",
+                param_hint="--as-of",
+            )
         return
     cfg = config.load_config()
     resp = _request(cfg, lambda: get_goal(cfg.api_url, as_of))
