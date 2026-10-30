@@ -390,6 +390,46 @@ def test_preview_as_of_backtests() -> None:
     assert dated_today["race"]["date"] == TODAY
 
 
+def test_preview_refuses_a_malformed_as_of() -> None:
+    """``as_of=not-a-date`` is a 422 (not a 500) whose detail names ``("query", "as_of")`` and
+    carries the value sent; a basic-form date is refused the same way."""
+    with TestClient(app) as client:
+        _races(client, *E2)
+        malformed = client.post("/goal/preview", json=_goal(HALF_M), params={"as_of": "not-a-date"})
+        basic = client.post("/goal/preview", json=_goal(HALF_M), params={"as_of": "20261001"})
+    print(f"  not-a-date {malformed.status_code} {malformed.text[:300]}\n  20261001 {basic.status_code}")
+    for response, sent in ((malformed, "not-a-date"), (basic, "20261001")):
+        assert response.status_code == 422, response.text
+        [error] = response.json()["detail"]
+        assert error["loc"] == ["query", "as_of"]
+        assert error["input"] == sent
+        assert error["type"] == "value_error"
+
+
+def test_preview_goal_time_whose_gap_overflows_is_projection_not_finite() -> None:
+    """A goal time of 1e308 s is a finite float the schema accepts; over a 1 mm goal the projected
+    time is a fraction of a second, so ``gap_fraction`` overflows to infinity. The goal time goes
+    into the projection, so the preview is ``unavailable`` ``projection_not_finite`` with every
+    figure null (reference section 3.3), not a served number beside an infinite gap. The same
+    goal without the time serves a finite time, so the overflow is the gap's alone."""
+    with TestClient(app) as client:
+        _races(client, *E2)
+        plain = _preview(client, _goal(0.001))
+        overflow = _preview(client, _goal(0.001, target_time_s=1e308))
+    print(f"  without a goal time {plain['projected_time_s']}\n  with 1e308 s: {overflow['unavailable']}")
+    assert plain["unavailable"] is None and math.isfinite(plain["projected_time_s"]["value"])
+    assert 1e308 / plain["projected_time_s"]["value"] == math.inf  # the gap this goal time makes
+    assert overflow["unavailable"] == "projection_not_finite"
+    assert overflow["target_time_s"] == 1e308
+    assert overflow["route"] is None and overflow["projected_time_s"] is None
+    assert overflow["avg_pace_s_per_km"] is None and overflow["halfwidth"] is None
+    assert overflow["confidence"] is None and overflow["goal_time_gap"] is None
+    assert overflow["leave_one_out"] is None
+    assert [r["session_id"] for r in overflow["provenance"]["races"]] == [
+        r["session_id"] for r in plain["provenance"]["races"]
+    ]
+
+
 def test_preview_writes_nothing() -> None:
     """Row counts of every table and the hash of every store file are unchanged by a preview with
     and without ``as_of`` and a goal time."""
@@ -491,6 +531,95 @@ def test_preview_fitness_now_reads_the_local_day_in_the_athlete_timezone(
     assert target["provenance"]["fitness_now"] == ctl[date(2026, 10, 14)]
     assert target["race"]["date"] == "2026-10-15" and target["timezone"] == name
     assert yesterday.status_code == 422
+
+
+_LOWERED = {"high": "medium", "medium": "low", "low": "low"}
+
+
+def test_preview_fitness_below_races_lowers_the_label_and_not_the_time() -> None:
+    """A chart at CTL 50 through the 2026-09-20 half and empty afterwards: by the day before the
+    reference date the CTL has decayed below 70 % of the races' weighted ``fitness_before``, so the
+    gap holds, ``confidence.reasons`` is ``["fitness_below_races"]`` and the label is one step below
+    the pure label. The served time is identical to 1e-9 with the gap and without it (the same
+    store after the autumn days' loads are raised to 50) and matches the oracle: the gap lowers the
+    label and never the time (AC6, reference section 5)."""
+    zone = ZoneInfo("UTC")
+    start, cut, end = date(2026, 6, 1), date(2026, 9, 20), NOW.date() - timedelta(days=1)
+    loads = {start + timedelta(days=n): 50.0 for n in range((cut - start).days + 1)}
+    loads.update({cut + timedelta(days=n): 0.0 for n in range(1, (end - cut).days + 1)})
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        planted = ctl_path.plant(conn, loads, zone)
+    finally:
+        conn.close()
+    with TestClient(app) as client:
+        ids = _races(client, *E2, loads=False)
+        conn = db_module.get_connection()
+        try:
+            for session_id in ids:
+                session_loads.plant_load(conn, session_id, value=50.0)
+        finally:
+            conn.close()
+        days = _chart_days(client)
+        lowered = _preview(client, _goal(HALF_M))
+        conn = db_module.get_connection()
+        try:
+            for day, row in planted.items():
+                if day > cut:
+                    session_loads.plant_load(conn, row.session_id, value=50.0)
+        finally:
+            conn.close()
+        raised_days = _chart_days(client)
+        pure = _preview(client, _goal(HALF_M))
+    provenance = lowered["provenance"]
+    at_races = sum(r["weight"] * r["fitness_before"] for r in provenance["races"]) / sum(
+        r["weight"] for r in provenance["races"]
+    )
+    print(
+        f"  low chart: CTL on {end} {days[end]['ctl']:.3f}, fitness_now {provenance['fitness_now']:.3f}, "
+        f"fitness_at_races {provenance['fitness_at_races']:.3f}, 70 % of it {0.7 * at_races:.3f}; "
+        f"raised chart CTL on {end} {raised_days[end]['ctl']:.3f}, fitness_now {pure['provenance']['fitness_now']:.3f}"
+    )
+    print(f"  lowered {lowered['confidence']} time {lowered['projected_time_s']}")
+    print(f"  pure    {pure['confidence']} time {pure['projected_time_s']}")
+    assert provenance["fitness_now"] == days[end]["ctl"]
+    assert provenance["fitness_at_races"] == pytest.approx(at_races, abs=1e-9)
+    assert provenance["fitness_now"] < 0.7 * at_races
+    assert pure["provenance"]["fitness_now"] >= 0.7 * at_races
+    assert [r["session_id"] for r in pure["provenance"]["races"]] == ids
+    assert [r["session_id"] for r in provenance["races"]] == ids
+    assert lowered["route"] == pure["route"] == "fitted_line"
+    assert pure["confidence"]["reasons"] == [] and pure["confidence"]["label"] != "low"
+    assert lowered["confidence"]["reasons"] == ["fitness_below_races"]
+    assert lowered["confidence"]["label"] == _LOWERED[pure["confidence"]["label"]]
+    assert lowered["confidence"]["basis"] == pure["confidence"]["basis"]
+    assert lowered["confidence"]["uncertainty"] == pure["confidence"]["uncertainty"]
+    assert lowered["projected_time_s"]["confidence"] == lowered["confidence"]["label"]
+    assert lowered["avg_pace_s_per_km"]["confidence"] == lowered["confidence"]["label"]
+    for key in ("value", "interval"):
+        assert lowered["projected_time_s"][key] == pytest.approx(pure["projected_time_s"][key], abs=1e-9)
+        assert lowered["avg_pace_s_per_km"][key] == pytest.approx(pure["avg_pace_s_per_km"][key], abs=1e-9)
+    assert lowered["halfwidth"] == pytest.approx(pure["halfwidth"], abs=1e-12)
+    expected = oracle.projection(_served_races(lowered), HALF_M)
+    assert lowered["projected_time_s"]["value"] == pytest.approx(expected.time_s, abs=1e-3)
+    assert lowered["projected_time_s"]["value"] == pytest.approx(5542.806803, abs=1e-3)
+
+
+def test_preview_newest_race_with_no_stored_name_serves_null() -> None:
+    """When the newest race's session row has no name, ``newest_race.name`` is null, not the
+    session id or any other stand-in, while the older named race keeps its name in ``races``."""
+    with TestClient(app) as client:
+        ids = [_store(*race, name=name) for race, name in zip(E2[:2], ("Spring 5K", None), strict=True)]
+        _put_tags(client, ids)
+        _plant_every_load()
+        target = _preview(client, _goal(HALF_M))
+    newest = target["provenance"]["newest_race"]
+    print(f"  newest {newest}; races {[(r['session_id'], r['name']) for r in target['provenance']['races']]}")
+    assert newest["session_id"] == ids[1]
+    assert newest["name"] is None
+    assert newest["start_time"].startswith("2026-09-13T07:00:00")
+    assert [r["name"] for r in target["provenance"]["races"]] == ["Spring 5K", None]
 
 
 def test_preview_names_the_newest_race() -> None:
