@@ -52,7 +52,8 @@ shortest)`. With no race used the projection is unavailable and the goal is stil
 **The label.** `high` while the uncertainty, the larger of the range's upper half-width and the
 largest leave-one-out shift among the races whose removal leaves the rest above b's bar (how far the
 time moves without one race), is at most 2 %, `medium` to 5 %, else `low`; the `Confidence` line
-names which of the two set it. A race without which the rest fall below the bar still prints its
+names which of the two set it, with the figure to one decimal, or to two decimals rounded up when
+it is just above 2 % or 5 % (`2.01 %`), so it never reads as the edge the label passed. A race without which the rest fall below the bar still prints its
 `without it` time, but its shift does not enter the label. It is lowered one step when
 fitness now (the load chart's CTL) is more than 30 % below the weighted fitness at the races. It is
 `low` whatever the uncertainty on the closest-race route, when b reads below 1, when the distance is

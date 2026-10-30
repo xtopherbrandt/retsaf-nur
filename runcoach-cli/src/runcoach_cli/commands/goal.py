@@ -210,11 +210,14 @@ def _percent(fraction: Any, what: str, signed: bool) -> str:
 def _uncertainty(value: Any, edges: tuple[float, ...]) -> str:
     """``u`` as ``_percent`` prints it, except just above a label edge: a ``u`` above an edge whose
     one-decimal form rounds onto it (0.020049 to ``2.0 %``) prints to two decimals rounded up
-    (``2.01 %``), so the figure is never read as at the edge the label says it passed."""
+    (``2.01 %``), so the figure is never read as at the edge the label says it passed. The ceiling is
+    taken of the product rounded to six decimals, so a float artifact (0.0204 times 10000 is
+    204.00000000000003) does not print 0.01 high, and never below the edge plus 0.01."""
     u = _number(value, "uncertainty")
     for edge in edges:
         if u > edge and math.floor(u * 1000 + 0.5) <= round(edge * 1000):
-            return f"{math.ceil(u * 10000) / 100:.2f} %"
+            hundredths = max(math.ceil(round(u * 10000, 6)), round(edge * 10000) + 1)
+            return f"{hundredths / 100:.2f} %"
     return _percent(u, "uncertainty", signed=False)
 
 
