@@ -397,7 +397,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10 to REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, REG-32, as H-45 and H-46 record, and REG-33, as H-47 records.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10 to REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, REG-32, as H-45 and H-46 record, and REG-33, as H-47 and H-48 record.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -580,7 +580,7 @@ Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_a_fading_third_race_
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_the_bar_counts_races_by_their_weight
 Pinned: runcoach-api/tests/test_riegel_b_estimator.py::test_the_t_multiplier_takes_the_whole_part_of_the_effective_count
 
-**REG-33.** The goal time MUST be REG-32's line at the goal distance with a Student's t prediction interval above its bar, else the closest race in log distance scaled by 1.06 with no interval, labelled high at an uncertainty up to 0.02, medium up to 0.05, else low, a step lower on a fitness gap, and low on the fallback, at a b below 1, outside 5000 to 42195 m or past 1.5 times the longest race.
+**REG-33.** Above REG-32's bar the goal time MUST be its line at the goal distance with a Student's t prediction interval, else the closest race in log distance scaled by 1.06, no interval; high at u up to 0.02, medium to 0.05, else low, a step lower on a fitness gap, and low on the fallback, if one race alone sets the line, at b under 1, outside 5000 to 42195 m or past 1.5 times the longest race.
 Scope: the served projection; `u` is the larger of the halfwidth and the largest absolute leave-one-out shift whose remaining races clear the bar, and the fitness gap fitness now under 70 % of the races'; engineering defaults `high_max_uncertainty` 0.02, `medium_max_uncertainty` 0.05, `fitness_gap` 0.30, `max_extrapolation` 1.5, `calibrated_min_m` 5000, `calibrated_max_m` 42195, `tie_slack` 1e-9.
 Not: an adjustment of the time for fitness or age, whose figures are served beside it; an interval on the closest-race route, a recorded deviation from spec/01 section 1.4.2; a course profile or conditions, which are refused; and a stored projection, each read recomputing it, the goal itself being the contract of GOAL-02 with `goal_pace_target` entered as `target_time_s`.
 Pinned: runcoach-api/tests/test_pace_target_projection.py::test_fitted_line_matches_the_worked_examples
@@ -590,6 +590,7 @@ Pinned: runcoach-api/tests/test_pace_target_projection.py::test_tie_at_equal_wei
 Pinned: runcoach-api/tests/test_pace_target_projection.py::test_unavailable_reasons
 Pinned: runcoach-api/tests/test_pace_target_projection.py::test_leave_one_out_matches_the_reference
 Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_table_rows
+Pinned: runcoach-api/tests/test_pace_target_label.py::test_one_race_sets_the_line_reads_low
 Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_table_fewer_than_three_races
 Pinned: runcoach-api/tests/test_pace_target_label.py::test_label_edges
 Pinned: runcoach-api/tests/test_pace_target_label.py::test_fitness_gap_lowers_one_step
