@@ -577,6 +577,34 @@ def test_label_basis_and_reasons_in_words(install_mock_client) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("label", "uncertainty", "printed"),
+    [
+        ("high", 0.02, "2.0 %"),
+        ("medium", 0.020049, "2.01 %"),
+        ("medium", 0.0200000001, "2.01 %"),
+        ("medium", 0.0205, "2.1 %"),
+        ("medium", 0.05, "5.0 %"),
+        ("low", 0.050049, "5.01 %"),
+        ("low", 0.0549, "5.5 %"),
+        ("high", 0.019951, "2.0 %"),
+    ],
+)
+def test_the_printed_uncertainty_never_contradicts_the_label(
+    install_mock_client, label: str, uncertainty: float, printed: str
+) -> None:
+    """The label compares the unrounded ``u`` with the served edges (2 % and 5 %, at most); a ``u``
+    just above an edge rounds onto it at one decimal, so it prints to two decimals rounded up,
+    which shows it above the edge as the label says. At or below an edge, and clear of one, the
+    one-decimal half-up form stands."""
+    body = copy.deepcopy(FITTED)
+    body["confidence"] = {"label": label, "basis": "range", "uncertainty": uncertainty, "reasons": []}
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[2] == f"Confidence {label}: from the range, {printed}"
+
+
 def test_goal_time_gap_in_words(install_mock_client) -> None:
     """A slower goal reads ``slower``, one inside the range ``inside``, and a null ``largest`` on the
     fitted line says no single race decides it."""

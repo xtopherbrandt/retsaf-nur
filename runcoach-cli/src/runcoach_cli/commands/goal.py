@@ -37,7 +37,8 @@ that cannot be read each print an error and exit 1, as ``runcoach state`` does.
 
 Dates print in the response's ``timezone``. Paces and durations are rounded half up, as
 ``runcoach sessions`` rounds them; percentages to one decimal, half up, as ``runcoach state`` prints
-a residual. Served text printed as served (a race name, an unknown reason, an unknown assumption)
+a residual, except an uncertainty just above a label edge (the served ``high_max_uncertainty`` or
+``medium_max_uncertainty``), which prints to two decimals rounded up so it never reads as the edge. Served text printed as served (a race name, an unknown reason, an unknown assumption)
 passes through ``sessions._printable``.
 """
 
@@ -206,6 +207,17 @@ def _percent(fraction: Any, what: str, signed: bool) -> str:
     return f"{tenths / 10:+.1f} %" if signed else f"{tenths / 10:.1f} %"
 
 
+def _uncertainty(value: Any, edges: tuple[float, ...]) -> str:
+    """``u`` as ``_percent`` prints it, except just above a label edge: a ``u`` above an edge whose
+    one-decimal form rounds onto it (0.020049 to ``2.0 %``) prints to two decimals rounded up
+    (``2.01 %``), so the figure is never read as at the edge the label says it passed."""
+    u = _number(value, "uncertainty")
+    for edge in edges:
+        if u > edge and math.floor(u * 1000 + 0.5) <= round(edge * 1000):
+            return f"{math.ceil(u * 10000) / 100:.2f} %"
+    return _percent(u, "uncertainty", signed=False)
+
+
 def _whole(value: Any, what: str) -> str:
     """A figure rounded half up to a whole number; ``-`` for a null."""
     return "-" if value is None else str(math.floor(_number(value, what) + 0.5))
@@ -266,15 +278,16 @@ def _projected_line(body: dict, route: str) -> str:
     return line
 
 
-def _confidence_line(confidence: Any) -> str:
-    if not isinstance(confidence, dict):
-        raise ValueError("confidence is not an object")
+def _confidence_line(confidence: Any, parameters: Any) -> str:
+    if not isinstance(confidence, dict) or not isinstance(parameters, dict):
+        raise ValueError("confidence or parameters is not an object")
     parts: list[str] = []
     basis = confidence["basis"]
     if basis is not None:
         if basis not in BASIS_WORDS:
             raise ValueError("basis is not range or one_race")
-        parts.append(f"{BASIS_WORDS[basis]}, {_percent(confidence['uncertainty'], 'uncertainty', signed=False)}")
+        edges = tuple(_number(parameters[k], k) for k in ("high_max_uncertainty", "medium_max_uncertainty"))
+        parts.append(f"{BASIS_WORDS[basis]}, {_uncertainty(confidence['uncertainty'], edges)}")
     reasons = confidence["reasons"]
     if not isinstance(reasons, list):
         raise ValueError("reasons is not a list")
@@ -365,7 +378,7 @@ def render(word: str, body: Any, status: Any = None) -> list[str]:
         if route not in ROUTE_WORDS:
             raise ValueError("route is not fitted_line or closest_race")
         lines.append(_projected_line(body, route))
-        lines.append(_confidence_line(body["confidence"]))
+        lines.append(_confidence_line(body["confidence"], body["parameters"]))
         lines.append(_gap_line(body, route))
         lines.append(f"Route: {ROUTE_WORDS[route]}")
     else:
