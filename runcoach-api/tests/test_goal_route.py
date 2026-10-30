@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -79,6 +79,23 @@ def _get(client: TestClient, as_of: str | None = None) -> dict:
 
 def _names_field(errors: list[dict], field: str) -> list[dict]:
     return [e for e in errors if field in [str(part) for part in e["loc"]]]
+
+
+def _auckland(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Install an ``AppConfig`` whose ``athlete_timezone`` is Pacific/Auckland (UTC+13 in October,
+    so the frozen 2026-10-14 12:00 UTC is the local 2026-10-15 01:00) and return the zone name."""
+    name = "Pacific/Auckland"
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone=name,
+    )
+    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
+    db_module._load_config_cached.cache_clear()
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +220,58 @@ def test_get_as_of_moves_the_projection_only() -> None:
     assert _names_field(future.json()["detail"], "as_of"), future.text
 
 
+def test_get_status_is_derived_from_the_as_of_instant(
+    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``status`` is read against the local date of the instant used, not the clock's. In
+    Pacific/Auckland a goal dated the local 2026-10-15 is stored; the clock then moves three days
+    on, so the same row is ``completed`` with no ``as_of`` but ``active`` for every ``as_of``
+    whose local date is on or before the race date: the day before, the race date itself (its last
+    local instant), and an instant whose UTC date is 2026-10-14 but whose Auckland date is the race
+    date. The day after, and an instant whose UTC date is the day after but whose Auckland date is
+    two days after, read ``completed``. The projection is at the instant used in every case."""
+    name = _auckland(isolated_data_dir, monkeypatch)
+    zone = ZoneInfo(name)
+    race_day = date(2026, 10, 15)
+    later = NOW + timedelta(days=3)
+    assert later.astimezone(zone).date() == date(2026, 10, 18)
+    with TestClient(app) as client:
+        _races(client, *E2)
+        goal = _put(client, _goal(HALF_M, race_date=race_day.isoformat(), target_time_s=5400.0))
+        monkeypatch.setattr(main_module, "_utcnow", lambda: later)
+        at_now = _get(client)
+        reads = {
+            as_of: _get(client, as_of=as_of)
+            for as_of in (
+                "2026-10-14",
+                "2026-10-15",
+                "2026-10-15T00:30:00+13:00",
+                "2026-10-16",
+                "2026-10-16T13:00:00Z",
+            )
+        }
+    rows = _goal_rows()
+    print(f"  now {at_now['target']['as_of']} -> {at_now['status']}")
+    for as_of, read in reads.items():
+        print(f"  as_of {as_of} -> {read['target']['as_of']} {read['status']}")
+    assert goal["status"] == "active" and len(rows) == 1 and rows[0]["race_date"] == race_day.isoformat()
+    assert at_now["id"] == goal["id"] and at_now["status"] == "completed"
+    assert datetime.fromisoformat(at_now["target"]["as_of"]) == later
+    for as_of, read in reads.items():
+        assert read["id"] == goal["id"], as_of
+        instant = datetime.fromisoformat(read["target"]["as_of"])
+        if as_of == "2026-10-15T00:30:00+13:00":
+            assert instant == datetime(2026, 10, 14, 11, 30, tzinfo=UTC), as_of
+        elif as_of == "2026-10-16T13:00:00Z":
+            assert instant == datetime(2026, 10, 16, 13, 0, tzinfo=UTC), as_of
+        else:
+            assert instant.astimezone(zone).date() == date.fromisoformat(as_of), as_of
+        expected = "completed" if instant.astimezone(zone).date() > race_day else "active"
+        assert read["status"] == expected, f"{as_of}: {read['status']} (local {instant.astimezone(zone)})"
+    assert [reads[k]["status"] for k in reads] == ["active", "active", "active", "completed", "completed"]
+    assert reads["2026-10-15"]["target"]["as_of"] != at_now["target"]["as_of"]
+
+
 def test_goal_without_races_is_served_unavailable() -> None:
     """No race tagged: the goal is stored and served with ``unavailable`` ``no_races``, every
     figure null and the assumptions listed, on PUT and on GET alike."""
@@ -253,17 +322,7 @@ def test_put_refuses_yesterday_and_accepts_today(
     """In Pacific/Auckland (UTC+13 in October) the frozen 2026-10-14 12:00 UTC is the local
     2026-10-15: a race dated 2026-10-14 (today in UTC, yesterday for the athlete) is a 422 on
     ``race.date`` and stores nothing; 2026-10-15 is accepted."""
-    name = "Pacific/Auckland"
-    config = AppConfig(
-        host="127.0.0.1",
-        port=8000,
-        data_dir=isolated_data_dir,
-        resting_hrv_profile_names=[],
-        threshold_workout_names=[],
-        athlete_timezone=name,
-    )
-    monkeypatch.setattr(db_module.config_module, "load_config", lambda *a, **k: config)
-    db_module._load_config_cached.cache_clear()
+    name = _auckland(isolated_data_dir, monkeypatch)
     assert NOW.astimezone(ZoneInfo(name)).date() == date(2026, 10, 15) and NOW.date() == date(2026, 10, 14)
     with TestClient(app) as client:
         _races(client, *E2)
