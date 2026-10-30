@@ -1,0 +1,505 @@
+"""``runcoach goal set``, ``runcoach goal`` and ``runcoach goal preview`` (F032 AC8, reference
+section 7).
+
+Every test runs the real command against ``install_mock_client``'s fake API, with bodies shaped as
+the API's ``GoalContract`` and ``PaceTarget`` serve them. The fitted-line body is reference section
+8's E2 half with a goal of 5500 s (its goal-time gap example); the closest-race body is section 8's
+fallback, one 21,580 m race alone. The lines compared are section 7's, written from its text. The
+distance and time parsers each get an adversarial table: zero, negative, a bare number, ``nan``,
+``inf``, a number too large for a float, an empty string and a minute of 60, each refused with
+exit 2 before any request is made.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from typing import Any
+
+import httpx
+import pytest
+from runcoach_cli.main import app
+from typer.testing import CliRunner
+
+pytestmark = pytest.mark.usefixtures("prewritten_config")
+
+runner = CliRunner()
+
+HALF_M = 21097.5
+NO_GOAL_LINE = "No goal set. Set one with runcoach goal set."
+
+ASSUMPTIONS = [
+    "flat_course",
+    "still_air",
+    "cool_conditions",
+    "no_economy_adjustment",
+    "no_durability_adjustment",
+    "projected_for_today_not_race_day",
+    "watch_timer_time",
+]
+ASSUMES_LINE = (
+    "Assumes: a flat course, still air, cool conditions, no economy adjustment, no durability adjustment, "
+    "projected for today, not race day, watch timer time (an auto-pause shortens it; chip time may differ)"
+)
+
+PARAMETERS = {
+    "high_max_uncertainty": 0.02,
+    "medium_max_uncertainty": 0.05,
+    "fitness_gap": 0.70,
+    "max_extrapolation": 1.5,
+    "calibrated_min_m": 1500.0,
+    "calibrated_max_m": 50000.0,
+    "population_b": 1.06,
+    "tie_slack": 1e-9,
+}
+
+
+def _value(value: float, unit: str, low: float | None, high: float | None, label: str, provisional: bool) -> dict:
+    return {
+        "value": value,
+        "unit": unit,
+        "interval": None if low is None else {"low": low, "high": high},
+        "confidence": label,
+        "provisional": provisional,
+    }
+
+
+def _race_used(session_id: str, name: str | None, start: str, d_eq: float, t: float, residual: float | None, before: float | None) -> dict:
+    return {
+        "session_id": session_id,
+        "name": name,
+        "start_time": start,
+        "gap_equivalent_m": d_eq,
+        "duration_s": t,
+        "weight": 1.0,
+        "residual": residual,
+        "fitness_before": before,
+    }
+
+
+# Section 8's E2 (four tight races) projected over the half, goal 5500 s: the gap example.
+E2_RACES = [
+    _race_used("s-5k", "Run", "2026-09-06T07:00:00Z", 5000.0, 1200.0, 0.0011, 40.0),
+    _race_used("s-10k", "Run", "2026-09-13T07:00:00Z", 10000.0, 2502.0, -0.0008, 44.0),
+    _race_used("s-half", "Run", "2026-09-20T07:00:00Z", HALF_M, 5530.0, -0.0023, 46.0),
+    _race_used("s-mar", "Run", "2026-09-27T07:00:00Z", 42195.0, 11610.0, 0.0019, 48.0),
+]
+E2_LEAVE_ONE_OUT = [
+    {"session_id": "s-5k", "route": "fitted_line", "projected_time_s": 5549.5, "shift": 0.001208},
+    {"session_id": "s-10k", "route": "fitted_line", "projected_time_s": 5540.1, "shift": -0.000488},
+    {"session_id": "s-half", "route": "fitted_line", "projected_time_s": 5557.2, "shift": 0.002597},
+    {"session_id": "s-mar", "route": "fitted_line", "projected_time_s": 5528.6, "shift": -0.002563},
+]
+
+FITTED: dict[str, Any] = {
+    "as_of": "2026-10-14T12:00:00Z",
+    "timezone": "UTC",
+    "race": {"date": "2027-04-11", "distance_m": HALF_M, "name": "Vancouver Half"},
+    "target_time_s": 5500.0,
+    "unavailable": None,
+    "route": "fitted_line",
+    "projected_time_s": _value(5542.806803, "s", 5512.797559, 5572.979404, "high", False),
+    "avg_pace_s_per_km": _value(262.723394, "s/km", 261.301044, 264.153528, "high", False),
+    "halfwidth": 0.005444,
+    "confidence": {"label": "high", "basis": "range", "uncertainty": 0.005444, "reasons": []},
+    "goal_time_gap": {"gap_s": -42.806803, "gap_fraction": -0.007723, "within_range": False},
+    "provenance": {
+        "b": 1.063891,
+        "error": 0.001578,
+        "label": "high",
+        "population_default": False,
+        "n_eff": 4.0,
+        "races": E2_RACES,
+        "newest_race": {"session_id": "s-mar", "name": "Run", "start_time": "2026-09-27T07:00:00Z"},
+        "fitness_at_races": 44.5,
+        "fitness_now": 42.3,
+    },
+    "leave_one_out": {"races": E2_LEAVE_ONE_OUT, "largest": E2_LEAVE_ONE_OUT[2]},
+    "effort_note": None,
+    "assumptions": list(ASSUMPTIONS),
+    "parameters": dict(PARAMETERS),
+    "gap_to_goal": None,
+}
+
+FITTED_LINES = [
+    "Projected 1:32:23 (4:23/km), 80 %: 1:31:53 to 1:32:53 (4:21 to 4:24/km), high",
+    "Confidence high: from the range, 0.5 %",
+    "Goal time 1:31:40 is 0:00:43 faster than the projection (-0.8 %), outside the 80 % range",
+    "Route: the fitted line through the races used",
+    "b 1.064 (error 0.002), high",
+    "Newest race 2026-09-27 Run",
+    "Fitness now 42, at the races 45",
+    "Race 2026-09-06 Run: 5.0 km in 0:20:00, weight 1.00, +0.1 % against the line, without it 1:32:30 (+0.1 %)",
+    "Race 2026-09-13 Run: 10.0 km in 0:41:42, weight 1.00, -0.1 % against the line, without it 1:32:20 (0.0 %)",
+    "Race 2026-09-20 Run: 21.1 km in 1:32:10, weight 1.00, -0.2 % against the line, without it 1:32:37 (+0.3 %)",
+    "Race 2026-09-27 Run: 42.2 km in 3:13:30, weight 1.00, +0.2 % against the line, without it 1:32:09 (-0.3 %)",
+    "Rests most on 2026-09-20 Run: without it 1:32:37 (+0.3 %)",
+    ASSUMES_LINE,
+]
+
+# Section 8's fallback: one race of 21,580 m in 5,928 s alone, the half projected by the closest race.
+ONE_RACE = [_race_used("s-one", "Run", "2026-09-20T07:00:00Z", 21580.0, 5928.0, None, 46.0)]
+
+CLOSEST: dict[str, Any] = {
+    "as_of": "2026-10-14T12:00:00Z",
+    "timezone": "UTC",
+    "race": {"date": "2027-04-11", "distance_m": HALF_M, "name": None},
+    "target_time_s": 5500.0,
+    "unavailable": None,
+    "route": "closest_race",
+    "projected_time_s": _value(5787.600207, "s", None, None, "low", True),
+    "avg_pace_s_per_km": _value(274.326784, "s/km", None, None, "low", True),
+    "halfwidth": None,
+    "confidence": {"label": "low", "basis": None, "uncertainty": None, "reasons": ["population_default"]},
+    "goal_time_gap": {"gap_s": -287.600207, "gap_fraction": -0.049693, "within_range": None},
+    "provenance": {
+        "b": 1.06,
+        "error": 0.05,
+        "label": "low",
+        "population_default": True,
+        "n_eff": 1.0,
+        "races": ONE_RACE,
+        "newest_race": {"session_id": "s-one", "name": "Run", "start_time": "2026-09-20T07:00:00Z"},
+        "fitness_at_races": 46.0,
+        "fitness_now": 42.3,
+    },
+    "leave_one_out": None,
+    "effort_note": None,
+    "assumptions": list(ASSUMPTIONS),
+    "parameters": dict(PARAMETERS),
+    "gap_to_goal": None,
+}
+
+CLOSEST_LINES = [
+    "Projected 1:36:28 (4:34/km), no range: fewer than three races, low, provisional",
+    "Confidence low: fewer than three races, so the population b scales the closest race",
+    "Goal time 1:31:40 is 0:04:48 faster than the projection (-5.0 %)",
+    "Route: the closest race, scaled by b",
+    "b 1.06 (population default), low",
+    "Newest race 2026-09-20 Run",
+    "Fitness now 42, at the races 46",
+    "Race 2026-09-20 Run: 21.6 km in 1:38:48, weight 1.00",
+    ASSUMES_LINE,
+]
+
+
+def _contract(target: dict[str, Any], status: str = "active") -> dict[str, Any]:
+    return {
+        "id": "1",
+        "race": copy.deepcopy(target["race"]),
+        "target_time_s": target["target_time_s"],
+        "status": status,
+        "created_at": "2026-10-14T12:00:00Z",
+        "target": copy.deepcopy(target),
+    }
+
+
+class Api:
+    """A fake API: records every request and answers ``responses``, keyed ``METHOD_path_segments``
+    (``PUT_goal`` answers ``PUT /goal``, ``POST_goal_preview`` answers ``POST /goal/preview``)."""
+
+    def __init__(self, **responses: httpx.Response | Exception) -> None:
+        self.responses = {}
+        for key, value in responses.items():
+            method, _, path = key.partition("_")
+            self.responses[f"{method} /{path.replace('_', '/')}"] = value
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        answer = self.responses.get(f"{request.method} {request.url.path}")
+        if answer is None:
+            raise AssertionError(f"unexpected request {request.method} {request.url}")
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    @property
+    def calls(self) -> list[str]:
+        return [f"{request.method} {request.url.path}" for request in self.requests]
+
+
+def _install(install_mock_client, **responses: httpx.Response | Exception) -> Api:
+    api = Api(**responses)
+    install_mock_client(api)
+    return api
+
+
+def _sent(api: Api) -> dict:
+    [request] = api.requests
+    return json.loads(request.read())
+
+
+@pytest.mark.parametrize(
+    ("given", "metres"),
+    [
+        ("5k", 5000.0),
+        ("5K", 5000.0),
+        ("10k", 10000.0),
+        ("half", HALF_M),
+        ("HALF", HALF_M),
+        ("marathon", 42195.0),
+        ("Marathon", 42195.0),
+        ("13.1mi", 13.1 * 1609.344),
+        ("5 km", 5000.0),
+        ("21097.5m", HALF_M),
+        ("8km", 8000.0),
+        ("0.5 mi", 804.672),
+    ],
+)
+def test_distance_parses(install_mock_client, given: str, metres: float) -> None:
+    """The table's words and a positive number with km, m or mi (a space allowed inside one quoted
+    argument) parse to metres, case-insensitively, and go to the API as ``race.distance_m``."""
+    api = _install(install_mock_client, PUT_goal=httpx.Response(200, json=_contract(FITTED)))
+    result = runner.invoke(app, ["goal", "set", given, "--date", "2027-04-11"])
+    assert result.exit_code == 0, result.output
+    assert api.calls == ["PUT /goal"]
+    assert _sent(api)["race"]["distance_m"] == pytest.approx(metres, abs=1e-9)
+
+
+@pytest.mark.parametrize(
+    "given",
+    ["0km", "-5k", "5x", "5", "nan km", "infkm", "1e400m", "", " ", "km", "0.0 mi", "-0m", "5 k m", "half marathon", "5kms", "0x10m"],
+)
+def test_bad_distance_exits_2_before_any_request(install_mock_client, given: str) -> None:
+    """Zero, negative, a bare number, a non-finite or overflowing number and an unknown word each
+    exit 2 with the parameter named, and the API sees no request; ``preview`` refuses the same."""
+    api = _install(install_mock_client)
+    for args in (["goal", "set", given, "--date", "2027-04-11"], ["goal", "preview", given]):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 2, result.output
+        assert "distance" in result.output.lower(), result.output
+        assert "Traceback" not in result.output
+    assert api.calls == []
+
+
+@pytest.mark.parametrize(
+    ("given", "seconds"),
+    [
+        ("1:30:00", 5400.0),
+        ("90:00", 5400.0),
+        ("0:19:59", 1199.0),
+        ("19:59", 1199.0),
+        ("2:05:07", 7507.0),
+        ("0:01", 1.0),
+        ("125:00", 7500.0),
+    ],
+)
+def test_time_parses(install_mock_client, given: str, seconds: float) -> None:
+    """``H:MM:SS`` and ``MM:SS`` go to the API as ``target_time_s`` in seconds; a bad time exits 2
+    before any request."""
+    api = _install(install_mock_client, PUT_goal=httpx.Response(200, json=_contract(FITTED)))
+    result = runner.invoke(app, ["goal", "set", "half", "--date", "2027-04-11", "--time", given])
+    assert result.exit_code == 0, result.output
+    assert api.calls == ["PUT /goal"]
+    assert _sent(api)["target_time_s"] == seconds
+
+    for bad in ("1:60:00", "1:30:60", "0:00", "0:00:00", "90", "1h30", "", " ", "1:30:00:00", "-1:30:00", "nan", "inf", "1e400:00", "1:3", "01:30:00.5", "1:-5:00"):
+        api = _install(install_mock_client)
+        result = runner.invoke(app, ["goal", "set", "half", "--date", "2027-04-11", "--time", bad])
+        assert result.exit_code == 2, (bad, result.output)
+        assert "time" in result.output.lower(), result.output
+        assert "Traceback" not in result.output
+        assert api.calls == [], bad
+
+
+def test_set_prints_every_line(install_mock_client) -> None:
+    """``set`` sends the race and goal time as ``PUT /goal`` takes them (no time: no
+    ``target_time_s``; no name: ``name`` null) and prints section 7's lines from the returned
+    contract, on a fitted-line and a closest-race response."""
+    api = _install(install_mock_client, PUT_goal=httpx.Response(200, json=_contract(FITTED)))
+    result = runner.invoke(
+        app, ["goal", "set", "half", "--date", "2027-04-11", "--time", "1:31:40", "--name", "Vancouver Half"]
+    )
+    assert result.exit_code == 0, result.output
+    assert _sent(api) == {
+        "race": {"date": "2027-04-11", "distance_m": HALF_M, "name": "Vancouver Half"},
+        "target_time_s": 5500.0,
+    }
+    assert result.stdout.splitlines() == ["Goal 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
+
+    api = _install(install_mock_client, PUT_goal=httpx.Response(200, json=_contract(CLOSEST)))
+    result = runner.invoke(app, ["goal", "set", "21097.5m", "--date", "2027-04-11", "--time", "91:40"])
+    assert result.exit_code == 0, result.output
+    assert _sent(api) == {"race": {"date": "2027-04-11", "distance_m": HALF_M, "name": None}, "target_time_s": 5500.0}
+    assert result.stdout.splitlines() == ["Goal 2027-04-11: 21.1 km, goal time 1:31:40", *CLOSEST_LINES]
+
+    # No goal time: none is sent, and the goal-time line says so.
+    no_time = copy.deepcopy(FITTED)
+    no_time["target_time_s"] = None
+    no_time["goal_time_gap"] = None
+    api = _install(install_mock_client, PUT_goal=httpx.Response(200, json=_contract(no_time)))
+    result = runner.invoke(app, ["goal", "set", "half", "--date", "2027-04-11"])
+    assert result.exit_code == 0, result.output
+    assert _sent(api) == {"race": {"date": "2027-04-11", "distance_m": HALF_M, "name": None}}
+    lines = result.stdout.splitlines()
+    assert lines[0] == "Goal 2027-04-11 Vancouver Half: 21.1 km, no goal time"
+    assert lines[3] == "Goal time: none set"
+    assert lines[1:3] + lines[4:] == FITTED_LINES[:2] + FITTED_LINES[3:]
+
+
+def test_show_prints_every_line(install_mock_client) -> None:
+    """The bare command reads ``GET /goal`` and prints the same lines; a completed goal says so;
+    ``--as-of`` is sent as given; and every served figure is read from the body, not recomputed:
+    an unavailable projection prints its reason and still lists b, the races and the assumptions."""
+    api = _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(FITTED)))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 0, result.output
+    assert api.calls == ["GET /goal"]
+    assert api.requests[0].url.params.get("as_of") is None
+    assert result.stdout.splitlines() == ["Goal 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
+
+    api = _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(CLOSEST, "completed")))
+    result = runner.invoke(app, ["goal", "--as-of", "2027-05-01"])
+    assert result.exit_code == 0, result.output
+    assert api.requests[0].url.params.get("as_of") == "2027-05-01"
+    assert result.stdout.splitlines() == ["Goal 2027-04-11: 21.1 km, goal time 1:31:40 (completed)", *CLOSEST_LINES]
+
+    unavailable = copy.deepcopy(CLOSEST)
+    unavailable.update(
+        unavailable="no_races",
+        route=None,
+        projected_time_s=None,
+        avg_pace_s_per_km=None,
+        halfwidth=None,
+        confidence=None,
+        goal_time_gap=None,
+    )
+    unavailable["provenance"].update(races=[], newest_race=None, fitness_at_races=None, n_eff=None)
+    _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(unavailable)))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "Goal 2027-04-11: 21.1 km, goal time 1:31:40",
+        "Projection unavailable: no race used; mark a race as Race in Garmin Connect and run runcoach sync tags --since <its date>",
+        "b 1.06 (population default), low",
+        "Newest race: none",
+        "Fitness now 42, at the races -",
+        ASSUMES_LINE,
+    ]
+
+
+def test_preview_prints_every_line(install_mock_client) -> None:
+    """``preview`` posts the distance alone (no date, no time, no name) to ``POST /goal/preview``,
+    sends ``--as-of`` as given, and prints section 7's lines headed ``Preview``, on a fitted-line
+    and a closest-race response."""
+    api = _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=FITTED))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    assert api.calls == ["POST /goal/preview"]
+    assert api.requests[0].url.params.get("as_of") is None
+    assert _sent(api) == {"race": {"distance_m": HALF_M}}
+    assert result.stdout.splitlines() == ["Preview 2027-04-11 Vancouver Half: 21.1 km, goal time 1:31:40", *FITTED_LINES]
+
+    api = _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=CLOSEST))
+    result = runner.invoke(app, ["goal", "preview", "13.1 mi", "--as-of", "2026-10-01"])
+    assert result.exit_code == 0, result.output
+    assert api.requests[0].url.params.get("as_of") == "2026-10-01"
+    assert _sent(api) == {"race": {"distance_m": pytest.approx(13.1 * 1609.344)}}
+    assert result.stdout.splitlines() == ["Preview 2027-04-11: 21.1 km, goal time 1:31:40", *CLOSEST_LINES]
+
+
+def test_no_goal_set_exits_0(install_mock_client) -> None:
+    _install(install_mock_client, GET_goal=httpx.Response(404, json={"detail": "no_goal"}))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [NO_GOAL_LINE]
+
+
+def test_api_without_goal_exits_1(install_mock_client) -> None:
+    """An API from before the route answers 404 ``Not Found``: an error, not "no goal"; a 422 and a
+    500 are reported the same way, the body cut to 200 characters and made printable."""
+    _install(install_mock_client, GET_goal=httpx.Response(404, json={"detail": "Not Found"}))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "API returned 404" in result.stderr and "Not Found" in result.stderr
+    assert NO_GOAL_LINE not in result.output
+    assert "Traceback" not in result.output
+
+    long_body = "x" * 300 + "\x1b[2J"
+    _install(install_mock_client, PUT_goal=httpx.Response(422, text=long_body))
+    result = runner.invoke(app, ["goal", "set", "half", "--date", "2020-01-01"])
+    assert result.exit_code == 1, result.output
+    assert "API returned 422: " + "x" * 200 in result.stderr
+    assert "\x1b" not in result.stderr and "x" * 201 not in result.stderr
+
+    _install(install_mock_client, POST_goal_preview=httpx.Response(500, text="boom"))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 1, result.output
+    assert "API returned 500: boom" in result.stderr
+
+
+def test_unreachable_api_exits_1(install_mock_client) -> None:
+    for args in (["goal"], ["goal", "set", "half", "--date", "2027-04-11"], ["goal", "preview", "half"]):
+        api = _install(
+            install_mock_client,
+            GET_goal=httpx.ConnectError("connection refused"),
+            PUT_goal=httpx.ConnectError("connection refused"),
+            POST_goal_preview=httpx.ConnectError("connection refused"),
+        )
+        result = runner.invoke(app, args)
+        assert result.exit_code == 1, result.output
+        assert result.stdout == ""
+        assert "could not reach API at http://example.test" in result.stderr
+        assert "Traceback" not in result.output
+        assert len(api.calls) == 1
+
+
+def test_label_basis_and_reasons_in_words(install_mock_client) -> None:
+    """Basis ``one_race`` names the leave-one-out shift; each reason code prints in words after it,
+    in the served order; an unknown code prints as served through ``_printable``."""
+    body = copy.deepcopy(FITTED)
+    body["confidence"] = {
+        "label": "low",
+        "basis": "one_race",
+        "uncertainty": 0.058655,
+        "reasons": ["fitness_below_races", "below_one", "outside_calibrated_range", "beyond_longest_race", "new\x1bcode"],
+    }
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "marathon"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[2] == (
+        "Confidence low: from one race's leave-one-out shift, 5.9 %; fitness now is below 70 % of fitness at the "
+        "races; b reads below 1; the goal distance is outside the calibrated range; the goal distance is beyond "
+        "the longest race used; new?code"
+    )
+
+
+def test_goal_time_gap_in_words(install_mock_client) -> None:
+    """A slower goal reads ``slower``, one inside the range ``inside``, and a null ``largest`` on the
+    fitted line says no single race decides it."""
+    body = copy.deepcopy(FITTED)
+    body["goal_time_gap"] = {"gap_s": 30.0, "gap_fraction": 0.005413, "within_range": True}
+    body["leave_one_out"]["largest"] = None
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert lines[3] == "Goal time 1:31:40 is 0:00:30 slower than the projection (+0.5 %), inside the 80 % range"
+    assert lines[-2] == "Rests most on no single race: no leave-one-out keeps the fitted line"
+
+
+@pytest.mark.parametrize(
+    "breaks",
+    [
+        pytest.param(lambda b: b.pop("provenance"), id="provenance_missing"),
+        pytest.param(lambda b: b["projected_time_s"].update(value="5542"), id="time_a_string"),
+        pytest.param(lambda b: b.update(route="guess"), id="route_unknown"),
+        pytest.param(lambda b: b.update(route=None), id="route_null_while_served"),
+        pytest.param(lambda b: b["confidence"].update(label="certain"), id="label_unknown"),
+        pytest.param(lambda b: b.update(assumptions="flat"), id="assumptions_not_a_list"),
+        pytest.param(lambda b: b["provenance"]["races"][0].update(start_time="yesterday"), id="start_unreadable"),
+        pytest.param(lambda b: b["provenance"].update(races={}), id="races_not_a_list"),
+        pytest.param(lambda b: b.update(projected_time_s=None, unavailable=None), id="no_time_and_no_reason"),
+    ],
+)
+def test_a_malformed_body_takes_the_error_path(install_mock_client, breaks) -> None:
+    body = copy.deepcopy(FITTED)
+    breaks(body)
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "the API's response could not be understood" in result.stderr
+    assert "Traceback" not in result.output

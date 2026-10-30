@@ -1,6 +1,6 @@
 import typer
 
-from runcoach_cli.commands import imports, ingest, init, loads, profile, sessions, state, status, sync
+from runcoach_cli.commands import goal, imports, ingest, init, loads, profile, sessions, state, status, sync
 
 app = typer.Typer(no_args_is_help=True)
 profile_app = typer.Typer(no_args_is_help=True, help="Show or set the athlete profile and HR anchors.")
@@ -30,6 +30,7 @@ app.add_typer(profile_app, name="profile")
 loads_app.command(name="recompute")(loads.recompute)
 app.add_typer(loads_app, name="loads")
 app.add_typer(sync.sync_app, name="sync")
+app.add_typer(goal.goal_app, name="goal")
 
 
 def main():

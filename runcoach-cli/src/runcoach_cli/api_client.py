@@ -290,6 +290,50 @@ def get_state(base_url: str, as_of: str | None) -> httpx.Response:
         raise ApiUnreachableError(base_url) from exc
 
 
+def put_goal(base_url: str, body: dict) -> httpx.Response:
+    """Send ``body`` (the race and an optional goal time) as the JSON body of PUT {base_url}/goal and
+    return the raw response.
+
+    The body is sent as given; the API validates it. The route replays every tagged race on the
+    read, as ``GET /state`` does, so the call gets the list call's timeout. Only network-layer
+    failures are translated into ApiUnreachableError; status and body are the caller's job.
+    """
+    try:
+        return client.put(f"{base_url}/goal", json=body, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def get_goal(base_url: str, as_of: str | None) -> httpx.Response:
+    """Call GET {base_url}/goal (the active goal race with its projection) and return the raw response.
+
+    ``as_of`` is sent as given; ``None`` omits it (the API's default is now). The route replays every
+    tagged race on each read, so the call gets the list call's timeout. Only network-layer failures
+    are translated into ApiUnreachableError; status and body (a 404 included) are the caller's job.
+    """
+    params = {} if as_of is None else {"as_of": as_of}
+    try:
+        return client.get(f"{base_url}/goal", params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
+def post_goal_preview(base_url: str, body: dict, as_of: str | None) -> httpx.Response:
+    """Send ``body`` as the JSON body of POST {base_url}/goal/preview (a projection, nothing stored)
+    and return the raw response.
+
+    ``as_of`` is sent as given; ``None`` omits it. The body is sent as given; the API validates it.
+    The route replays every tagged race on the read, so the call gets the list call's timeout. Only
+    network-layer failures are translated into ApiUnreachableError; status and body are the caller's
+    job.
+    """
+    params = {} if as_of is None else {"as_of": as_of}
+    try:
+        return client.post(f"{base_url}/goal/preview", json=body, params=params, timeout=LIST_TIMEOUT)
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
 def put_session_laps(base_url: str, session_id: str, data: bytes) -> httpx.Response:
     """Send ``data`` (one FIT file) as the multipart part ``file`` of PUT
     {base_url}/sessions/{session_id}/laps and return the raw response.
