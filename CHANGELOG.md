@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-29 through 2026-10-30 — Sprint 023: A goal race and its projected finish
+
 ### The goal race and its projected finish: `/goal` and `runcoach goal`
 
 F032: the athlete sets a goal race and the system projects its finish from the tagged races, with
