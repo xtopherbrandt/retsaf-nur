@@ -428,8 +428,8 @@ paths:
         the projected finish over the goal distance from the tagged races, the goal time's gap to
         it and the label. No plan is built from it. The race date is judged against the athlete's
         local today (a date before it is a 422 on `race.date` and nothing is stored); the
-        projection is computed before the row is written, so a projection that fails stores
-        nothing. Takes no `as_of`. A course profile or conditions are refused (422), not modelled.
+        projection is computed before the row is written, so a projection that raises stores
+        nothing; one served unavailable (`projection_not_finite` among them) is stored and served with its reason. Takes no `as_of`. A course profile or conditions are refused (422), not modelled.
       x-readiness: implemented
       x-owner-spec: "spec/01; spec/08 §8.5.2; research/00 GOAL-02"
       x-story: [initialize-race-goal, discuss-race-goal]
