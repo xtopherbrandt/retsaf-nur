@@ -6,7 +6,9 @@ boolean), ``enum``, ``nullable``, ``required``, ``properties``, ``items``, ``$re
 one-member ``allOf`` (the file's way to make a ``$ref`` nullable, since a ``nullable`` beside a
 bare ``$ref`` is ignored), and, for ``GET /sessions/{id}``'s ``SessionDetail``,
 ``exclusiveMinimum`` and ``additionalProperties`` (``false`` refuses an unlisted key, a schema
-validates each one), and a ``oneOf`` only together with a ``discriminator`` (its ``propertyName``
+validates each one), for the ``/goal`` operations ``maxLength`` and the null-only ``type: "null"``
+(a property typed so admits null and refuses everything else, as ``PaceTarget.gap_to_goal`` is),
+and a ``oneOf`` only together with a ``discriminator`` (its ``propertyName``
 and a ``mapping`` of ``$ref`` strings, as the served OpenAPI writes a tagged union): the body's
 discriminator value picks the branch, and the body is validated against that branch alone. A
 ``oneOf`` or a ``discriminator`` alone raises ``ValueError``, as an unsupported keyword does. Prose keywords (``description``, ``example``, ``default``, ``title``,
@@ -35,6 +37,7 @@ CHECKED = {
     "allOf",
     "additionalProperties",
     "exclusiveMinimum",
+    "maxLength",
 }
 PROSE = {"description", "example", "default", "title", "format"}
 UNION = {"oneOf", "discriminator"}
@@ -65,6 +68,8 @@ def _type_ok(kind: str, value: Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
     if kind == "number":
         return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if kind == "null":
+        return value is None
     raise ValueError(f"unsupported type {kind!r}")
 
 
@@ -93,15 +98,18 @@ def validate(doc: dict, schema: dict, value: Any, path: str = "$") -> list[str]:
         if rest:
             raise ValueError(f"{path}: keywords beside a bare $ref are ignored by OpenAPI: {sorted(rest)}")
         return validate(doc, resolve(doc, schema["$ref"]), value, path)
+    kind = schema.get("type")
     if value is None:
-        return [] if schema.get("nullable") is True else [f"{path}: null where the schema is not nullable"]
+        nullable = schema.get("nullable") is True or kind == "null"
+        return [] if nullable else [f"{path}: null where the schema is not nullable"]
 
     errors: list[str] = []
-    kind = schema.get("type")
     if kind is not None and not _type_ok(kind, value):
         return [f"{path}: expected {kind}, got {type(value).__name__} {value!r}"]
     if "enum" in schema and value not in schema["enum"]:
         errors.append(f"{path}: {value!r} is not one of {schema['enum']}")
+    if "maxLength" in schema and isinstance(value, str) and len(value) > schema["maxLength"]:
+        errors.append(f"{path}: {len(value)} characters is over the maxLength {schema['maxLength']}")
     if "exclusiveMinimum" in schema and _type_ok("number", value) and not value > schema["exclusiveMinimum"]:
         errors.append(f"{path}: {value!r} is not above {schema['exclusiveMinimum']}")
     if isinstance(value, dict):

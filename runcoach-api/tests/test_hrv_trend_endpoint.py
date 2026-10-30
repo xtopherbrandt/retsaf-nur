@@ -4371,8 +4371,9 @@ def test_the_schema_and_the_contract_both_publish_the_dataset_block() -> None:
 
     # T152's breaking change took the contract to 0.2.0-draft; this one is
     # additive and did not move it (AC12); F026's retagged outcome took it to 0.3.0-draft and
-    # F027's additions to 0.4.0; the overnight upload's new skip reason and filter_applied to 0.5.0-draft.
-    assert contract["info"]["version"] == "0.5.0-draft"
+    # F027's additions to 0.4.0; the overnight upload's new skip reason and filter_applied to 0.5.0-draft;
+    # the Determinant oneOf and the implemented /goal operations to 0.6.0-draft.
+    assert contract["info"]["version"] == "0.6.0-draft"
 
 
 def test_both_tier_descriptions_say_the_sensor_serial_is_stored_but_unread() -> None:

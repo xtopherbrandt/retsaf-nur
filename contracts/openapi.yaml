@@ -43,7 +43,7 @@ openapi: 3.1.0
 
 info:
   title: Run Coaching System — UI↔Engine API
-  version: 0.5.0-draft
+  version: 0.6.0-draft
   description: >
     Target contract for the athlete-facing web + mobile UI. Read/write surface
     over the deterministic coaching engine. The engine is the single source of
@@ -65,7 +65,7 @@ tags:
   - name: Connections & Sync
     description: "Garmin OAuth + sync controls. x-readiness: planned. Owner: spec/02; Garmin API per research/07 §10. `runcoach sync` (F022) implements none of these operations: it is a CLI client of ingestSession."
   - name: Goal
-    description: "Goal contract + pace target + system-proposed goal changes. x-readiness: planned. Owner: spec/01, spec/08 §8.5.2."
+    description: "Goal contract + pace target + system-proposed goal changes. x-readiness: implemented for GET /goal, PUT /goal and POST /goal/preview (the goal race, its stored goal time and the projected finish from the tagged races; F032); planned for the proposals; each operation's own x-readiness is authoritative. Owner: spec/01, spec/08 section 8.5.2."
   - name: Plan & Calendar
     description: "Planned+completed calendar, load series, constraint-driven modify. x-readiness: planned. Owner: spec/05, spec/06."
   - name: Sessions
@@ -377,27 +377,60 @@ paths:
     get:
       tags: [Goal]
       operationId: getGoal
-      summary: The current goal contract
-      x-readiness: planned
-      x-owner-spec: "spec/01 (goal-race + pace target)"
+      summary: The active goal with its projection
+      description: >
+        The stored goal race and goal time with the projection recomputed at the instant used
+        (F032 reference sections 2 and 6). `as_of` moves the projection only: the active row is
+        served whatever it is, and `status` is `completed` when the race date is before the local
+        date of that instant in `athlete_timezone`, else `active`; a completed goal still serves its
+        projection. Nothing is written.
+      x-readiness: implemented
+      x-owner-spec: "spec/01 (goal-race + pace target); runcoach-api F032 (2026-10-29)"
       x-story: [initialize-race-goal, view-state]
+      parameters:
+        - name: as_of
+          in: query
+          required: false
+          description: >
+            The instant to project at; default now. Parsed as getState's `as_of` is: an ISO 8601
+            extended-form date-time with a zone, at or before now, or a `YYYY-MM-DD` date, meaning
+            the last instant before the next local midnight in `athlete_timezone`, clamped to now;
+            a future instant, a naive date-time and an unparseable value are 422.
+          schema: { type: string }
       responses:
         "200":
-          description: Goal contract
+          description: The active goal and its projection
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GoalContract" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "404":
+          description: 'No active goal: `{"detail": "no_goal"}` (an API without the route answers `Not Found`, which a client tells apart by `detail`)'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [detail]
+                properties:
+                  detail: { type: string, enum: [no_goal] }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
+        "500":
+          description: "The load chart could not be built (a session with no saved load row, or a naive or unparseable stored start time); the detail is the chart's message"
+          content: { application/json: { schema: { type: object } } }
     put:
       tags: [Goal]
       operationId: setGoal
-      summary: Set or confirm the goal contract (an exception to autonomy, not a gate)
+      summary: Set the goal race (an exception to autonomy, not a gate)
       description: >
         The goal contract is one of the two athlete-owned exceptions to the system's
-        autonomy, not a gate (research/00 AUT-02, AUT-03, GOAL-02). Setting
-        it is an explicit athlete confirmation and triggers (re-)periodization;
-        the plan itself is then applied without any further gate.
-      x-readiness: planned
+        autonomy, not a gate (research/00 AUT-02, AUT-03, GOAL-02). Setting it stores the race
+        (date, distance, name) and the optional goal time as the active goal, superseding the one
+        before it, and serves it with its projection as of now (F032 reference sections 2 and 6):
+        the projected finish over the goal distance from the tagged races, the goal time's gap to
+        it and the label. No plan is built from it. The race date is judged against the athlete's
+        local today (a date before it is a 422 on `race.date` and nothing is stored); the
+        projection is computed before the row is written, so a projection that fails stores
+        nothing. Takes no `as_of`. A course profile or conditions are refused (422), not modelled.
+      x-readiness: implemented
       x-owner-spec: "spec/01; spec/08 §8.5.2; research/00 GOAL-02"
       x-story: [initialize-race-goal, discuss-race-goal]
       requestBody:
@@ -407,32 +440,49 @@ paths:
             schema: { $ref: "#/components/schemas/GoalContractInput" }
       responses:
         "200":
-          description: Goal set; re-periodization triggered
+          description: Goal stored; served with its projection as of now
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GoalContract" }
-        "422": { $ref: "#/components/responses/ValidationError" }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
+        "500":
+          description: "The load chart could not be built (a session with no saved load row, or a naive or unparseable stored start time); the detail is the chart's message, and nothing is stored"
+          content: { application/json: { schema: { type: object } } }
 
   /goal/preview:
     post:
       tags: [Goal]
       operationId: previewGoal
-      summary: Compute the pace/effort target for a proposed goal, without committing
-      description: The wizard's preview step — the engine's translation of a proposed race into a pace/effort target, with confidence.
-      x-readiness: planned
-      x-owner-spec: "spec/01 (race→pace/effort target)"
+      summary: Compute the pace target for a proposed goal, without storing it
+      description: >
+        The projection a proposed race would get, nothing stored (F032 reference sections 2, 5 and
+        6). The body is `setGoal`'s with the race's `date` optional: absent, the race is dated on
+        the local date of the instant used (`as_of`, else now), and a date before that is a 422 on
+        `race.date`, so a past race can be backtested through `as_of`. Nothing is written.
+      x-readiness: implemented
+      x-owner-spec: "spec/01 (race→pace/effort target); runcoach-api F032 (2026-10-29)"
       x-story: [initialize-race-goal]
+      parameters:
+        - name: as_of
+          in: query
+          required: false
+          description: The instant to project at; default now. Parsed as getGoal's `as_of` is.
+          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/GoalContractInput" }
+            schema: { $ref: "#/components/schemas/GoalPreviewInput" }
       responses:
         "200":
-          description: Pace/effort target preview
+          description: The projection for the proposed goal
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaceTarget" }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
+        "500":
+          description: "The load chart could not be built (a session with no saved load row, or a naive or unparseable stored start time); the detail is the chart's message"
+          content: { application/json: { schema: { type: object } } }
 
   /goal/proposals:
     get:
@@ -1697,59 +1747,233 @@ components:
         runs_per_week: { type: integer, nullable: true }
         consent_import_history: { type: boolean, description: "Consent to import historical Garmin data for the initial fit." }
 
-    # ---- Goal (planned) -------------------------------------------------
+    # ---- Goal (getGoal, setGoal and previewGoal implemented; the proposals planned) ----
     GoalContract:
       type: object
-      description: "Planned. Owner spec/01."
+      description: >
+        setGoal and getGoal: the stored goal race and goal time with the projection recomputed on
+        every read (F032 reference sections 2 and 6). `status` is derived on read and never stored:
+        `completed` when the race date is before the local date of the instant the projection is
+        for, else `active`; a goal replaced by a later setGoal is never served.
+      required: [id, race, target_time_s, status, created_at, target]
       properties:
-        id: { type: string }
+        id: { type: string, description: "The stored row's id, as a string." }
         race: { $ref: "#/components/schemas/GoalRace" }
-        target: { $ref: "#/components/schemas/PaceTarget" }
-        status: { type: string, enum: [active, superseded, completed] }
-        created_at: { type: string }
+        target_time_s: { type: number, nullable: true, description: "The athlete's goal finish time in seconds, or null." }
+        status: { type: string, enum: [active, completed] }
+        created_at: { type: string, format: date-time, description: "The UTC instant the goal was set." }
+        target:
+          allOf: [{ $ref: "#/components/schemas/PaceTarget" }]
+          description: "The projection at the instant used (`as_of`, else now); not stored."
 
     GoalContractInput:
       type: object
+      description: "The body of setGoal: the race and an optional goal time. Any other key is a 422."
       required: [race]
+      additionalProperties: false
       properties:
-        race: { $ref: "#/components/schemas/GoalRace" }
-        target_time_s: { type: number, nullable: true, description: "Athlete's goal finish time; omit to let the engine propose one." }
+        race: { $ref: "#/components/schemas/GoalRaceInput" }
+        target_time_s: { type: number, nullable: true, exclusiveMinimum: 0, description: "The athlete's goal finish time in seconds, a finite number above 0, or null; a goal time is stored and compared with the projection (`goal_time_gap`), never proposed." }
+
+    GoalPreviewInput:
+      type: object
+      description: "The body of previewGoal: GoalContractInput with the race's `date` optional. Any other key is a 422."
+      required: [race]
+      additionalProperties: false
+      properties:
+        race: { $ref: "#/components/schemas/GoalPreviewRaceInput" }
+        target_time_s: { type: number, nullable: true, exclusiveMinimum: 0, description: "The athlete's goal finish time in seconds, a finite number above 0, or null." }
+
+    GoalRaceInput:
+      type: object
+      description: >
+        The goal race as setGoal takes it (F032 reference section 2). Strict: `date` is a
+        `YYYY-MM-DD` string naming a real day (a timestamp or a date-time is a 422), not before the
+        athlete's local today; `distance_m` a finite number above 0 (a boolean or a string is a
+        422); `name` at most 200 characters or null; `course_elevation` and `environment` are
+        accepted only as null (a course profile and conditions are not modelled; the projection
+        assumes a flat course in cool, still conditions and lists that in `assumptions`); any other
+        key is a 422.
+      required: [date, distance_m]
+      additionalProperties: false
+      properties:
+        date: { type: string, format: date, description: "The race day as `YYYY-MM-DD`, not before the reference date." }
+        distance_m: { type: number, exclusiveMinimum: 0, description: "The race distance in metres, a finite number above 0." }
+        name: { type: string, nullable: true, maxLength: 200, description: "The race's name, at most 200 characters, or null." }
+        course_elevation: { type: "null", description: "Accepted only as null: a course profile is not modelled." }
+        environment: { type: "null", description: "Accepted only as null: conditions are not modelled." }
+
+    GoalPreviewRaceInput:
+      type: object
+      description: "previewGoal's race: as GoalRaceInput, with `date` optional. Absent or null, the route dates the race on the local date of the instant used."
+      required: [distance_m]
+      additionalProperties: false
+      properties:
+        date: { type: string, format: date, nullable: true, description: "The race day as `YYYY-MM-DD`, not before the local date of the instant used; null or absent means that date." }
+        distance_m: { type: number, exclusiveMinimum: 0, description: "The race distance in metres, a finite number above 0." }
+        name: { type: string, nullable: true, maxLength: 200, description: "The race's name, at most 200 characters, or null." }
+        course_elevation: { type: "null", description: "Accepted only as null: a course profile is not modelled." }
+        environment: { type: "null", description: "Accepted only as null: conditions are not modelled." }
 
     GoalRace:
       type: object
-      required: [distance_m, date]
+      description: "The goal race as served: the date used (the request's, else the reference date), the distance and the name."
+      required: [date, distance_m, name]
       properties:
-        name: { type: string, nullable: true }
-        date: { type: string, format: date }
+        date: { type: string, description: "The race day, `YYYY-MM-DD`." }
         distance_m: { type: number }
-        course_elevation:
-          type: object
-          nullable: true
-          description: Course elevation profile (spec/01). Series or reference; exact encoding TBD at drafting.
-          properties:
-            points:
-              type: array
-              items:
-                type: object
-                properties:
-                  distance_m: { type: number }
-                  altitude_m: { type: number }
-        environment:
-          type: object
-          nullable: true
-          properties:
-            temperature_c: { type: number, nullable: true }
-            humidity_pct: { type: number, nullable: true }
-            wind_ms: { type: number, nullable: true }
+        name: { type: string, nullable: true }
 
     PaceTarget:
       type: object
-      description: The engine's translation of the goal into a pace/effort target, with confidence.
+      description: >
+        previewGoal's 200 and `GoalContract.target`: the projected finish over the goal distance
+        from the races the `riegel_exponent` determinant used at the instant, by the fitted line
+        when they clear its bar (`route` `fitted_line`) and by the closest race with the population
+        exponent below it (`route` `closest_race`: no interval, `provisional`), with the label, the
+        goal time's gap, the provenance and the assumptions (F032 reference sections 3, 4 and 6).
+        When `unavailable` is set every figure is null and the assumptions and parameters are still
+        served. Nothing is stored.
+      required: [as_of, timezone, race, target_time_s, unavailable, route, projected_time_s, avg_pace_s_per_km, halfwidth, confidence, goal_time_gap, provenance, leave_one_out, effort_note, assumptions, parameters, gap_to_goal]
       properties:
-        avg_pace_s_per_km: { $ref: "#/components/schemas/ConfidenceValue" }
-        projected_time_s: { $ref: "#/components/schemas/ConfidenceValue" }
-        effort_note: { type: string, nullable: true }
-        gap_to_goal: { $ref: "#/components/schemas/GapToGoal" }
+        as_of: { type: string, format: date-time, description: "The instant the projection is for." }
+        timezone: { type: string, description: "The configured `athlete_timezone`, which the reference date was read in." }
+        race: { $ref: "#/components/schemas/GoalRace" }
+        target_time_s: { type: number, nullable: true, description: "The goal time the gap is read against, or null." }
+        unavailable:
+          type: string
+          nullable: true
+          enum: [no_races, riegel_unavailable, projection_not_finite]
+          description: "`no_races` with no race used; `riegel_unavailable` when the exponent's estimate is not finite; `projection_not_finite` when a served figure is not finite or overflows. Null when a projection is served."
+        route: { type: string, nullable: true, enum: [fitted_line, closest_race], description: "Null when unavailable." }
+        projected_time_s:
+          allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
+          nullable: true
+          description: "The projected finish in seconds (`unit` `s`): the value, its 80 % prediction interval (null on route `closest_race`), the label (`confidence.label`) and `provisional` (true on route `closest_race`). Null when unavailable."
+        avg_pace_s_per_km:
+          allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
+          nullable: true
+          description: "The same projection as a pace (`unit` `s/km`), the interval its ends divided by the distance. Null when unavailable."
+        halfwidth: { type: number, nullable: true, description: "The interval's upper side as a fraction of the time; null on route `closest_race` and when unavailable." }
+        confidence:
+          allOf: [{ $ref: "#/components/schemas/GoalConfidence" }]
+          nullable: true
+          description: "The label and what it was read from (F032 reference section 4); null when unavailable."
+        goal_time_gap:
+          allOf: [{ $ref: "#/components/schemas/GoalTimeGap" }]
+          nullable: true
+          description: "Null without a goal time or when unavailable."
+        provenance: { $ref: "#/components/schemas/GoalProvenance" }
+        leave_one_out:
+          allOf: [{ $ref: "#/components/schemas/GoalLeaveOneOutSet" }]
+          nullable: true
+          description: "Null on route `closest_race` and when unavailable."
+        effort_note: { type: "null", description: "Always null: no effort note is composed." }
+        assumptions:
+          type: array
+          items: { type: string }
+          description: "The defaults the projection assumes, in this order: `flat_course`, `still_air`, `cool_conditions`, `no_economy_adjustment`, `no_durability_adjustment`, `projected_for_today_not_race_day`, `watch_timer_time` (the races' times are watch timer times, which an auto-pause shortens; chip time may differ)."
+        parameters: { $ref: "#/components/schemas/PaceTargetParameters" }
+        gap_to_goal: { type: "null", description: "Always null: the determinant breakdown (`GapToGoal`) is not modelled, so a non-null value is refused; the goal time's gap is `goal_time_gap`." }
+
+    GoalConfidence:
+      type: object
+      description: "F032 reference section 4: the label; `basis` (`range` when the interval's halfwidth is the uncertainty read, `one_race` when a leave-one-out shift is; null on route `closest_race`); `uncertainty` (the figure read, null there); `reasons`, the codes of the rules that held, in the reference's order."
+      required: [label, basis, uncertainty, reasons]
+      properties:
+        label: { type: string, enum: [low, medium, high] }
+        basis: { type: string, nullable: true, enum: [range, one_race] }
+        uncertainty: { type: number, nullable: true }
+        reasons:
+          type: array
+          items: { type: string, enum: [fitness_below_races, population_default, below_one, outside_calibrated_range, beyond_longest_race] }
+
+    GoalTimeGap:
+      type: object
+      description: "The goal time against the projection: `gap_s = target_time_s - projected_time_s` (negative when the goal is faster), `gap_fraction = gap_s / projected_time_s`, and whether the goal sits inside the interval (null on route `closest_race`, which has none)."
+      required: [gap_s, gap_fraction, within_range]
+      properties:
+        gap_s: { type: number }
+        gap_fraction: { type: number }
+        within_range: { type: boolean, nullable: true }
+
+    GoalProvenance:
+      type: object
+      description: "What the projection was built from: the endurance exponent b with its error, label and `population_default` as the `riegel_exponent` determinant serves them, the effective race count, the races used in that determinant's order, the newest race, and F032 reference section 5's fitness figures, served beside the time and never applied to it."
+      required: [b, error, label, population_default, n_eff, races, newest_race, fitness_at_races, fitness_now]
+      properties:
+        b: { type: number, nullable: true, description: "The exponent at the instant; the population 1.06 below the bar; null when unavailable." }
+        error: { type: number, nullable: true }
+        label: { type: string, nullable: true, enum: [low, medium, high], description: "The exponent's own label." }
+        population_default: { type: boolean }
+        n_eff: { type: number, nullable: true, description: "`(sum w)^2 / sum(w^2)` over the races used; null with no race." }
+        races:
+          type: array
+          items: { $ref: "#/components/schemas/GoalRaceUsed" }
+        newest_race:
+          allOf: [{ $ref: "#/components/schemas/GoalNewestRace" }]
+          nullable: true
+        fitness_at_races: { type: number, nullable: true, description: "The weighted mean of the races' `fitness_before`, nulls skipped; null when none carries one." }
+        fitness_now: { type: number, nullable: true, description: "The load chart's CTL on the local day before the date used; null when that day is not in the chart." }
+
+    GoalRaceUsed:
+      type: object
+      description: "A race the projection was built from, as the `riegel_exponent` determinant served it, with the session's stored name."
+      required: [session_id, name, start_time, gap_equivalent_m, duration_s, weight, residual, fitness_before]
+      properties:
+        session_id: { type: string }
+        name: { type: string, nullable: true, description: "The session row's name; null when the file carried none or the session is unknown." }
+        start_time: { type: string, format: date-time }
+        gap_equivalent_m: { type: number, description: "The GAP-equivalent distance the fit reads, in metres." }
+        duration_s: { type: number, description: "The timer time in seconds." }
+        weight: { type: number }
+        residual: { type: number, nullable: true, description: "`exp(r) - 1`, positive slower than the line." }
+        fitness_before: { type: number, nullable: true, description: "The load chart's CTL on the local day before the race." }
+
+    GoalNewestRace:
+      type: object
+      description: The latest race used, with its session name.
+      required: [session_id, name, start_time]
+      properties:
+        session_id: { type: string }
+        name: { type: string, nullable: true }
+        start_time: { type: string, format: date-time }
+
+    GoalLeaveOneOutSet:
+      type: object
+      description: "Every race's leave-one-out (F032 reference section 4), in the races' order, and `largest`, the race with the largest countable shift (one whose route is `fitted_line`); null when none is countable."
+      required: [races, largest]
+      properties:
+        races:
+          type: array
+          items: { $ref: "#/components/schemas/GoalLeaveOneOut" }
+        largest:
+          allOf: [{ $ref: "#/components/schemas/GoalLeaveOneOut" }]
+          nullable: true
+
+    GoalLeaveOneOut:
+      type: object
+      description: "The projection from every race but this one: its route, time and `shift = T_without / T - 1`."
+      required: [session_id, route, projected_time_s, shift]
+      properties:
+        session_id: { type: string }
+        route: { type: string, enum: [fitted_line, closest_race] }
+        projected_time_s: { type: number }
+        shift: { type: number }
+
+    PaceTargetParameters:
+      type: object
+      description: "The constants the projection and its label were computed with (F032 reference section 1), so they can be redone by hand."
+      required: [high_max_uncertainty, medium_max_uncertainty, fitness_gap, max_extrapolation, calibrated_min_m, calibrated_max_m, population_b, tie_slack]
+      properties:
+        high_max_uncertainty: { type: number }
+        medium_max_uncertainty: { type: number }
+        fitness_gap: { type: number }
+        max_extrapolation: { type: number }
+        calibrated_min_m: { type: number }
+        calibrated_max_m: { type: number }
+        population_b: { type: number }
+        tie_slack: { type: number }
 
     GapToGoal:
       type: object
@@ -1970,7 +2194,7 @@ components:
         gap_to_goal:
           allOf: [{ $ref: "#/components/schemas/GapToGoal" }]
           nullable: true
-          description: "Null while no goal is modelled."
+          description: "Null: the goal is modelled by the Goal operations (getGoal, previewGoal), whose `PaceTarget.goal_time_gap` reads the goal time against the projection; the determinant breakdown this would hold is not."
 
     Determinant:
       description: >

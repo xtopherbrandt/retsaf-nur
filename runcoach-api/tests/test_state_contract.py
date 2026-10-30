@@ -351,7 +351,7 @@ def test_the_contract_lists_admission_fields_reason_and_bounds(contract: dict) -
         assert field in parameters["required"], field
         assert parameters["properties"][field]["type"] == kind, field
     print(f"  info.version {contract['info']['version']}")
-    assert contract["info"]["version"] == "0.5.0-draft"
+    assert contract["info"]["version"] == "0.6.0-draft"
 
 
 _STALE_EFFORT_PHRASES = ("active laps", "active time", "active windows", "consecutive active laps")
@@ -592,7 +592,9 @@ def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
     assert _schema(contract, "ThresholdDeterminant")["properties"]["name"]["enum"] == THRESHOLD_NAMES
     built_name = schemas["ThresholdDeterminant"]["properties"]["name"]
     assert (built_name["type"], [built_name["const"]]) == ("string", THRESHOLD_NAMES)
-    assert contract["info"]["version"] == "0.5.0-draft"
+    # The oneOf changed a generated client's type for every entry, so the version was bumped
+    # (0.6.0-draft, athlete 2026-10-29), together with the implemented /goal operations.
+    assert contract["info"]["version"] == "0.6.0-draft"
 
     visited, compared = contract_walk.walk(contract, served, RIEGEL_COMPONENTS)
     print(f"  walked {sorted(visited)}: {len(compared)} fields")
