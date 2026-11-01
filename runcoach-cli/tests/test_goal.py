@@ -659,6 +659,66 @@ def test_goal_time_gap_in_words(install_mock_client) -> None:
     assert lines[-2] == "Largest shift the label reads: none, no leave-one-out keeps the fitted line"
 
 
+@pytest.mark.parametrize(
+    ("gap_s", "fraction", "words"),
+    [
+        (-2.75, -0.0005, "is 0:00:03 faster than the projection (-0.1 %)"),
+        (2.75, 0.0005, "is 0:00:03 slower than the projection (+0.1 %)"),
+        (-8.0, -0.00145, "is 0:00:08 faster than the projection (-0.1 %)"),
+        (-8.25, -0.0015, "is 0:00:08 faster than the projection (-0.2 %)"),
+        # A negative figure that rounds to zero prints unsigned, never ``-0.0 %``.
+        (-2.2, -0.0004, "is 0:00:02 faster than the projection (0.0 %)"),
+    ],
+)
+def test_a_negative_half_percent_rounds_away_from_zero(
+    install_mock_client, gap_s: float, fraction: float, words: str
+) -> None:
+    """The signed gap percentage rounds half away from zero (the athlete's ruling, 2026-10-30): a
+    faster goal half a tenth below zero reads ``-0.1 %``, as its slower twin reads ``+0.1 %``."""
+    body = copy.deepcopy(FITTED)
+    body["goal_time_gap"] = {"gap_s": gap_s, "gap_fraction": fraction, "within_range": True}
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[3] == f"Goal time 1:31:40 {words}, inside the 80 % range"
+
+
+@pytest.mark.parametrize(("gap_s", "fraction"), [(0.3, 0.000054), (-0.3, -0.000054)])
+def test_goal_time_matches_the_projection_when_the_gap_rounds_to_zero(
+    install_mock_client, gap_s: float, fraction: float
+) -> None:
+    """A gap that rounds to 0 s matches the projection, on either side, and its percentage prints
+    ``0.0 %`` without a sign."""
+    body = copy.deepcopy(FITTED)
+    body["goal_time_gap"] = {"gap_s": gap_s, "gap_fraction": fraction, "within_range": True}
+    _install(install_mock_client, POST_goal_preview=httpx.Response(200, json=body))
+    result = runner.invoke(app, ["goal", "preview", "half"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[3] == "Goal time 1:31:40 matches the projection (0.0 %), inside the 80 % range"
+
+
+def test_projection_not_finite_names_the_goal_and_the_races(install_mock_client) -> None:
+    """``projection_not_finite`` fires for the goal's own distance or time as well as for a race's
+    figures, so its words send the athlete to the goal first, then to the races listed."""
+    body = copy.deepcopy(CLOSEST)
+    body.update(
+        unavailable="projection_not_finite",
+        route=None,
+        projected_time_s=None,
+        avg_pace_s_per_km=None,
+        halfwidth=None,
+        confidence=None,
+        goal_time_gap=None,
+    )
+    _install(install_mock_client, GET_goal=httpx.Response(200, json=_contract(body)))
+    result = runner.invoke(app, ["goal"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines()[1] == (
+        "Projection unavailable: the projection is out of range for this goal; check its distance and time, "
+        "and the races listed"
+    )
+
+
 def test_the_largest_line_names_the_shift_the_label_reads_not_the_largest_overall(install_mock_client) -> None:
     """A race without which the rest fall below the bar prints its own ``without it`` time, and its
     shift can be the largest on the page (the athlete's Chicago marathon, +4.0 % beside a 5K at
@@ -814,6 +874,7 @@ def test_a_malformed_mark_takes_the_error_path(install_mock_client, breaks) -> N
     [
         pytest.param(lambda b: b.pop("provenance"), id="provenance_missing"),
         pytest.param(lambda b: b["projected_time_s"].update(value="5542"), id="time_a_string"),
+        pytest.param(lambda b: b["projected_time_s"].update(value=True), id="time_a_bool"),
         pytest.param(lambda b: b.update(route="guess"), id="route_unknown"),
         pytest.param(lambda b: b.update(route=None), id="route_null_while_served"),
         pytest.param(lambda b: b["confidence"].update(label="certain"), id="label_unknown"),

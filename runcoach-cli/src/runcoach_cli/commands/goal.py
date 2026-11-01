@@ -40,7 +40,7 @@ non-200 status (the body cut to 200 characters and made printable), an unreachab
 that cannot be read each print an error and exit 1, as ``runcoach state`` does.
 
 Dates print in the response's ``timezone``. Paces and durations are rounded half up, as
-``runcoach sessions`` rounds them; percentages to one decimal, half up, as ``runcoach state`` prints
+``runcoach sessions`` rounds them; percentages to one decimal, half away from zero, as ``runcoach state`` prints
 a residual, except an uncertainty just above a label edge (the served ``high_max_uncertainty`` or
 ``medium_max_uncertainty``), which prints to two decimals rounded up so it never reads as the edge. Served text printed as served (a race name, an unknown reason, an unknown assumption)
 passes through ``sessions._printable``.
@@ -118,7 +118,9 @@ UNAVAILABLE_WORDS = {
         "no race used; mark a race as Race in Garmin Connect and run runcoach sync tags --since <its date>"
     ),
     "riegel_unavailable": "the endurance exponent could not be computed; check the races in runcoach state",
-    "projection_not_finite": "a served figure is out of range; check the races listed",
+    "projection_not_finite": (
+        "the projection is out of range for this goal; check its distance and time, and the races listed"
+    ),
 }
 ASSUMPTION_WORDS = {
     "flat_course": "a flat course",
@@ -216,9 +218,10 @@ def _mss(seconds: float) -> str:
 
 
 def _percent(fraction: Any, what: str, signed: bool) -> str:
-    """A fraction as a percentage to one decimal, rounded half up; signed when asked, and one that
-    rounds to zero prints ``0.0 %``, never ``-0.0 %``."""
-    tenths = math.floor(_number(fraction, what) * 1000 + 0.5)
+    """A fraction as a percentage to one decimal, rounded half away from zero; signed when asked, and
+    one that rounds to zero prints ``0.0 %``, never ``-0.0 %``."""
+    value = _number(fraction, what)
+    tenths = math.copysign(math.floor(abs(value) * 1000 + 0.5), value)
     if tenths == 0:
         return "0.0 %"
     return f"{tenths / 10:+.1f} %" if signed else f"{tenths / 10:.1f} %"

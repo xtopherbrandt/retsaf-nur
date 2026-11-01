@@ -455,6 +455,22 @@ def test_race_used_lines(install_mock_client) -> None:
     ], "\n".join(lines)
 
 
+def test_a_negative_half_residual_rounds_away_from_zero(install_mock_client) -> None:
+    """A residual rounds half away from zero (the athlete's ruling, 2026-10-30): -0.05 % reads
+    ``-0.1 %`` as +0.05 % reads ``+0.1 %``, -0.15 % reads ``-0.2 %``, and a negative residual that
+    rounds to zero still prints ``0.0 %``, never ``-0.0 %``."""
+    halves = _riegel(
+        [{**A, "residual": -0.0005}, {**B, "residual": 0.0005}, {**C, "residual": -0.0015}, {**D, "residual": -0.0004}]
+    )
+    lines = _riegel_lines(install_mock_client, _body(halves))
+    assert [line.rsplit(", ", 1)[1] for line in lines[1:]] == [
+        "-0.1 % against the line",
+        "+0.1 % against the line",
+        "-0.2 % against the line",
+        "0.0 % against the line",
+    ], "\n".join(lines)
+
+
 def test_race_excluded_lines_in_words(install_mock_client) -> None:
     """Every reason of section 2 in words; ``fitness_dropped`` with its figures, ``outside_window``
     naming the window and the as-of date; a reason the CLI does not know is printed as served
@@ -551,13 +567,12 @@ def test_b_block_race_lines_name_b(install_mock_client) -> None:
         (0.42, "fell 42 % over 4 weeks"),
         (-0.05, "rose 5 % over 4 weeks"),
         (0.0, "no change over 4 weeks"),
-        # Half up, whole numbers, as before: 2.5 rounds to 3 and -2.5 to -2.
+        # Half away from zero, whole numbers: 2.5 rounds to 3 and -2.5 to -3.
         (0.025, "fell 3 % over 4 weeks"),
-        (-0.025, "rose 2 % over 4 weeks"),
+        (-0.025, "rose 3 % over 4 weeks"),
         # A figure that rounds to 0 is no change, never ``rose 0 %`` or ``fell -0 %``.
         (0.004, "no change over 4 weeks"),
         (-0.004, "no change over 4 weeks"),
-        (-0.005, "no change over 4 weeks"),
         (-0.0, "no change over 4 weeks"),
     ],
 )
@@ -575,6 +590,20 @@ def test_a_fitness_change_reads_rose_or_fell(install_mock_client, drop: float, w
 
     no_drop = _riegel_lines(install_mock_client, _body(_population([{**used, "fitness_drop": None}])))
     assert no_drop[2] == "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 42 (-), weight 1.00"
+
+
+def test_a_half_point_fitness_change_reads_alike_both_ways(install_mock_client) -> None:
+    """A change of half a percent rounds away from zero on both sides (the athlete's ruling,
+    2026-10-30): a fall of 0.5 % reads ``fell 1 %`` and a rise of 0.5 % ``rose 1 %``, never ``no
+    change`` on one side only."""
+    for drop, words in ((0.005, "fell 1 % over 4 weeks"), (-0.005, "rose 1 % over 4 weeks")):
+        used = {**A, "fitness_before": 42.0, "fitness_drop": drop, "residual": None}
+        dropped = {**_excluded("x-1", "2025-11-02T08:00:00Z", "fitness_dropped", 29.0, 50.0), "fitness_drop": drop}
+        lines = _riegel_lines(install_mock_client, _body(_population([used], [dropped])))
+        assert lines[2:] == [
+            f"Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 42, {words}, weight 1.00",
+            f"Race left out of b 2025-11-02: fitness {words} (50 to 29)",
+        ], "\n".join(lines)
 
 
 def test_fitness_line_names_the_drop_on_its_own_side(install_mock_client) -> None:

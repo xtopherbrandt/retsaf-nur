@@ -350,12 +350,13 @@ def _whole(value: Any, what: str) -> str:
 def _fitness_change(drop: Any, bar: float) -> str:
     """A served ``fitness_drop`` (a fall positive) in words: ``fell 42 % over 4 weeks``, ``rose 5 %
     over 4 weeks``, or ``no change over 4 weeks`` when the percentage rounds to 0. The signed
-    percentage is rounded half up to a whole number before its sign picks the word. A fall that
+    percentage is rounded half away from zero to a whole number before its sign picks the word, so
+    a fall and a rise of the same size read alike. A fall that
     rounds to the screen's ``bar`` (the served ``fitness_drop``, 0.30) without equalling it is
     compared with the bar unrounded first, so a race used reads ``fell just under 30 %`` and a race
     the screen left out ``fell more than 30 %``: the same words never stand on both sides of it."""
     fall = _number(drop, "fitness_drop")
-    percent = math.floor(fall * 100 + 0.5)
+    percent = int(math.copysign(math.floor(abs(fall) * 100 + 0.5), fall))
     if percent == 0:
         return "no change over 4 weeks"
     side = ""
@@ -377,9 +378,10 @@ def _fitness(effort: dict, bar: float) -> str:
 
 
 def _residual(value: Any) -> str:
-    """A residual as a signed percentage to one decimal, rounded half up; one that rounds to zero
-    prints ``0.0 %``, never ``-0.0 %``."""
-    tenths = math.floor(_number(value, "residual") * 1000 + 0.5)
+    """A residual as a signed percentage to one decimal, rounded half away from zero; one that rounds
+    to zero prints ``0.0 %``, never ``-0.0 %``."""
+    residual = _number(value, "residual")
+    tenths = math.copysign(math.floor(abs(residual) * 1000 + 0.5), residual)
     return "0.0 %" if tenths == 0 else f"{tenths / 10:+.1f} %"
 
 
