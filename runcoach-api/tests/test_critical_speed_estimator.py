@@ -547,6 +547,23 @@ def test_a_slow_bound_at_zero_speed_is_not_finite() -> None:
     assert negative.unavailable == cs.ESTIMATE_NOT_FINITE
 
 
+def test_a_slow_bound_of_exactly_zero_speed_is_not_finite(monkeypatch: pytest.MonkeyPatch) -> None:
+    # "At or below 0": the t multiplier is set to CS / se, so the slow bound CS - t * se is exactly
+    # 0.0 in floats (asserted below), and the result is refused, never a division by zero.
+    points = [(120, 540.0), (300, 1290.0), (480, 2016.0), (720, 2952.0)]
+    monkeypatch.setattr(cs.riegel_b, "t_multiplier", lambda dof: 1.0)
+    unit = _fit(_points(points))
+    _available(unit)
+    speed, se = unit.cs_m_per_s, unit.error_m_per_s
+    t = speed / se
+    assert speed - t * se == 0.0, (speed, se, t)
+    monkeypatch.setattr(cs.riegel_b, "t_multiplier", lambda dof: t)
+    zero = _fit(_points(points))
+    assert zero.unavailable == cs.ESTIMATE_NOT_FINITE
+    assert zero.cs_m_per_s is None and zero.interval_high_s_per_km is None
+    assert len(zero.stretches) == 4
+
+
 def test_d_prime_not_positive_is_flagged() -> None:
     # Equal speeds put D' at exactly 0 (the shape check drops any shorter stretch slower than a
     # longer one, which is what a negative intercept needs). Served as computed, flagged.
@@ -654,6 +671,17 @@ def test_a_dropped_stretch_at_or_below_zero_metres_is_ignored() -> None:
         kept_bad = _fit(_points([*points[1:4], (720, distance)]))
         assert _by_length(kept_bad)[720].drop_reason is None
         assert kept_bad.unavailable == cs.ESTIMATE_NOT_FINITE
+
+
+def test_a_stationary_run_through_estimate_is_not_finite_and_never_raises() -> None:
+    # An 800 s run whose every counted segment has v_actual 0 (a treadmill run with no speed):
+    # its best stretches are 0 m and kept, so no pace can be served; estimate refuses, never raises.
+    result = cs.estimate([_row("still", segments=_segments(800, 0.0))], INSTANT)
+    print(f"  {result.unavailable} {[(s.length_s, s.distance_m, s.pace_s_per_km) for s in result.stretches]}")
+    assert result.unavailable == cs.ESTIMATE_NOT_FINITE
+    assert result.excluded == ()
+    assert result.stretches and all(s.distance_m == 0.0 for s in result.stretches)
+    assert all(s.drop_reason is None and s.pace_s_per_km is None for s in result.stretches)
 
 
 # ---------------------------------------------------------------------------- independence

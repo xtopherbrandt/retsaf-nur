@@ -215,6 +215,36 @@ def test_get_as_of_reads_fitness_now_the_day_before_the_as_of_date() -> None:
     assert previewed["provenance"]["fitness_now"] == want
 
 
+def test_put_reads_fitness_now_from_the_athletes_local_today(
+    isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PUT at 2026-10-15 03:00 UTC in America/Los_Angeles, the local 2026-10-14 20:00: the
+    reference date is the local today, so ``fitness_now`` is the chart's CTL on 2026-10-13, not on
+    2026-10-14 (the day before the UTC date)."""
+    name = "America/Los_Angeles"
+    preview._install_zone(isolated_data_dir, monkeypatch, name)
+    evening = datetime(2026, 10, 15, 3, 0, tzinfo=UTC)
+    zone = ZoneInfo(name)
+    assert evening.astimezone(zone).date() == date(2026, 10, 14) and evening.date() == date(2026, 10, 15)
+    monkeypatch.setattr(main_module, "_utcnow", lambda: evening)
+    preview._plant_chart(zone, date(2026, 10, 14))
+    with TestClient(app) as client:
+        ids = _races(client, *E2, loads=False)
+        conn = db_module.get_connection()
+        try:
+            for session_id in ids:
+                preview.session_loads.plant_load(conn, session_id, value=50.0)
+        finally:
+            conn.close()
+        days = preview._chart_days(client)
+        goal = _put(client, _goal(HALF_M, race_date="2026-11-01"))
+    want, utc = days[date(2026, 10, 13)]["ctl"], days[date(2026, 10, 14)]["ctl"]
+    print(f"  PUT fitness_now {goal['target']['provenance']['fitness_now']}; local {want}, UTC {utc}")
+    assert want != utc
+    assert goal["target"]["provenance"]["fitness_now"] == want
+    assert goal["status"] == "active"
+
+
 def test_past_race_date_reads_completed(monkeypatch: pytest.MonkeyPatch) -> None:
     """With the clock moved two days past the race date, ``GET /goal`` serves the same row as
     ``completed`` (derived on read: the stored row is unchanged) with a projection for that
