@@ -34,7 +34,11 @@ that records why it exists. Each file is also pinned to the phrases that carry i
 - ``release-demo-questions-are-asked-before-review.md`` (IDEA-206) asks each item in the release
   demo summary that only the athlete can answer to be put to them with AskUserQuestion when execute
   ends, in plain words with its effect on the served number, and the answer recorded before review
-  starts, citing the 2026-06-06 half that waited for the review critic.
+  starts, citing the 2026-06-06 half that waited for the review critic;
+- ``the-critic-runs-before-the-full-suite-in-review.md`` (IDEA-208) asks a review to run its scans,
+  spec review and the critic read-only first and to start the full suite once, on the final head,
+  with that order written in the review cursor at entry beside the stop rule, citing the sprint-023
+  suite stopped at 21 %.
 """
 
 from __future__ import annotations
@@ -109,6 +113,18 @@ RULES = (
         "release-demo-questions-are-asked-before-review.md",
         "IDEA-206",
         ("AskUserQuestion", "when execute ends", "before review starts", "2026-06-06"),
+    ),
+    (
+        "the-critic-runs-before-the-full-suite-in-review.md",
+        "IDEA-208",
+        (
+            "the critic",
+            "read-only first",
+            "once, on the final head",
+            "the review cursor at entry",
+            "the stop rule",
+            "21 %",
+        ),
     ),
 )
 
