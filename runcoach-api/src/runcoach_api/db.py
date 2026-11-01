@@ -2099,15 +2099,43 @@ def _decoded(value):
         return _UNREADABLE
 
 
-def _race_features(conn: sqlite3.Connection, session_id: str) -> dict | None:
+#: One session's F013 flags and ``segment_rows`` stream from one record read, or ``None`` when
+#: they did not compute; kept by session id for one ``read_state_inputs`` snapshot (F033).
+CsBlock = tuple[list, list] | None
+
+
+def _race_features(
+    conn: sqlite3.Connection, session_id: str, blocks: dict[str, CsBlock] | None = None
+) -> dict | None:
     """F013's features of one in-band race, or ``None`` when its stored rows do not compute (logged
-    with the session id, so a defect in the computation is not silent)."""
+    with the session id, so a defect in the computation is not silent). Given ``blocks``, the same
+    records also give ``segment_rows``, and ``(flags, stream)`` (``None`` when either failed) is
+    kept there by session id; the features returned are the same either way."""
     try:
         session, rows = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
-        return session_features.compute_session_features(session, rows)
+        features = session_features.compute_session_features(session, rows)
     except Exception:  # a race whose records cannot be read is excluded, never a 500
         logger.exception(
             "race %s: its features did not compute; excluded as %s", session_id, FEATURES_UNAVAILABLE
+        )
+        if blocks is not None:
+            blocks.setdefault(session_id, None)
+        return None
+    if blocks is not None and session_id not in blocks:
+        blocks[session_id] = _with_stream(session_id, session, rows, features)
+    return features
+
+
+def _with_stream(session_id: str, session: dict, rows: list[dict], features: dict) -> CsBlock:
+    """``(flags, segment_rows)`` over records already read, or ``None`` when the stream does not
+    compute (logged with the session id): a stream failure never changes a threshold or Riegel row."""
+    try:
+        return list(features["flags"]), session_features.segment_rows(session, rows)
+    except Exception:
+        logger.exception(
+            "session %s: its segment stream did not compute; %s for critical speed",
+            session_id,
+            FEATURES_UNAVAILABLE,
         )
         return None
 
@@ -2140,21 +2168,30 @@ def read_workout_laps(conn: sqlite3.Connection, session_id: str) -> tuple[list[d
 
 
 def _workout_block(
-    conn: sqlite3.Connection, session_id: str, laps: list[dict], steps: list[dict]
+    conn: sqlite3.Connection,
+    session_id: str,
+    laps: list[dict],
+    steps: list[dict],
+    blocks: dict[str, CsBlock] | None = None,
 ) -> tuple[list, _threshold_pace.ActiveBlock] | None:
     """F013's flags and the block of one workout past orders 1 to 5, from one record read:
     ``read_session_feature_inputs`` once, for both ``compute_session_features`` (the flags) and
     ``segment_rows`` (the stream ``active_block`` reads for orders 8 to 11). ``None`` when they
-    do not compute (logged with the session id)."""
+    do not compute (logged with the session id). Given ``blocks``, ``(flags, stream)`` is kept
+    there by session id once both computed (``None`` when they did not)."""
     try:
         session, records = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
         features = session_features.compute_session_features(session, records)
         stream = session_features.segment_rows(session, records)
+        if blocks is not None:
+            blocks.setdefault(session_id, (list(features["flags"]), stream))
         return list(features["flags"]), _threshold_pace.active_block(laps, steps, stream)
     except Exception:  # a workout whose records cannot be read is excluded, never a 500
         logger.exception(
             "threshold workout %s: its features did not compute; excluded as %s", session_id, FEATURES_UNAVAILABLE
         )
+        if blocks is not None:
+            blocks.setdefault(session_id, None)
         return None
 
 
@@ -2229,16 +2266,28 @@ def read_threshold_effort_rows(
 
 
 def _threshold_effort_rows_in(
-    conn: sqlite3.Connection, workout_names: Sequence[str], features: dict[str, dict | None]
+    conn: sqlite3.Connection,
+    workout_names: Sequence[str],
+    features: dict[str, dict | None],
+    blocks: dict[str, CsBlock] | None = None,
 ) -> tuple[list[dict], list[dict], set[str]]:
     """``read_threshold_effort_rows``' reads inside the caller's open transaction (it opens none):
     its ``(rows, unreadable)`` and the session ids admitted by name. Each race's ``_race_features``
-    result, ``None`` included, is kept in ``features`` by session id."""
+    result, ``None`` included, is kept in ``features`` by session id. ``blocks``, when given, is
+    handed to ``_workout_block`` and ``_race_features``; the rows are the same either way."""
     rows: list[dict] = []
     unreadable: list[dict] = []
-    named = _read_threshold_workouts(conn, workout_names, rows, unreadable)
-    _read_threshold_races(conn, rows, unreadable, named, features)
+    named = _read_threshold_workouts(conn, workout_names, rows, unreadable, blocks)
+    _read_threshold_races(conn, rows, unreadable, named, features, blocks)
     return rows, unreadable, named
+
+
+def _features_kept(conn: sqlite3.Connection, session_id: str, blocks: dict[str, CsBlock] | None) -> dict | None:
+    """``_race_features(conn, session_id)``, handing it ``blocks`` only when there is one, so a read
+    without critical-speed rows calls it exactly as before."""
+    if blocks is None:
+        return _race_features(conn, session_id)
+    return _race_features(conn, session_id, blocks)
 
 
 ADMITTED_BY_TAG = "tag"
@@ -2246,7 +2295,11 @@ ADMITTED_BY_NAME = "name"
 
 
 def _read_threshold_workouts(
-    conn: sqlite3.Connection, workout_names: Sequence[str], rows: list[dict], unreadable: list[dict]
+    conn: sqlite3.Connection,
+    workout_names: Sequence[str],
+    rows: list[dict],
+    unreadable: list[dict],
+    blocks: dict[str, CsBlock] | None = None,
 ) -> set[str]:
     """The workout half of ``read_threshold_effort_rows``, appending to its two lists; returns the
     session ids admitted by name, which the race half leaves out."""
@@ -2307,7 +2360,11 @@ def _read_threshold_workouts(
         if flags is not None and not isinstance(flags, list):
             unreadable.append(_unreadable(row, QUALITY_FLAGS_UNREADABLE))
             continue
-        computed = _workout_block(conn, row["session_id"], laps, steps)
+        computed = (
+            _workout_block(conn, row["session_id"], laps, steps)
+            if blocks is None
+            else _workout_block(conn, row["session_id"], laps, steps, blocks)
+        )
         if computed is None:
             unreadable.append(_unreadable(row, FEATURES_UNAVAILABLE))
             continue
@@ -2333,10 +2390,11 @@ def _read_threshold_races(
     unreadable: list[dict],
     named: set[str],
     features_by_session: dict[str, dict | None],
+    blocks: dict[str, CsBlock] | None = None,
 ) -> None:
     """The race half of ``read_threshold_effort_rows``, appending to its two lists; a race-tagged
     session in ``named`` is already a workout and is left out. Each ``_race_features`` result is
-    also kept in ``features_by_session`` by session id."""
+    also kept in ``features_by_session`` by session id (and its stream in ``blocks``, when given)."""
     kind = _threshold_pace.RACE
     stored = conn.execute(
         "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
@@ -2371,7 +2429,7 @@ def _read_threshold_races(
         if flags is not None and not isinstance(flags, list):
             unreadable.append(_unreadable(row, QUALITY_FLAGS_UNREADABLE))
             continue
-        features = _race_features(conn, row["session_id"])
+        features = _features_kept(conn, row["session_id"], blocks)
         features_by_session[row["session_id"]] = features
         if features is None:
             unreadable.append(_unreadable(row, FEATURES_UNAVAILABLE))
@@ -2614,12 +2672,13 @@ def persist_night(
 class StateInputs:
     """What ``read_state_inputs`` read: the saved load rows (``read_session_load_rows``), the
     threshold rows and unreadable list exactly as ``read_threshold_effort_rows`` returns them,
-    and the Riegel rows."""
+    the Riegel rows, and the critical-speed rows (``_read_cs_rows``; empty unless asked for)."""
 
     load_rows: list[sqlite3.Row]
     threshold_rows: list[dict]
     threshold_unreadable: list[dict]
     riegel_rows: list[dict]
+    cs_rows: list[dict] = dataclasses.field(default_factory=list)
 
 
 def _riegel_features(features: dict) -> dict:
@@ -2638,6 +2697,7 @@ def _read_riegel_races(
     named: set[str],
     needs_features: Callable[[dict], bool],
     features_by_session: dict[str, dict | None],
+    blocks: dict[str, CsBlock] | None = None,
 ) -> list[dict]:
     """Every running session tagged ``race``, ordered by ``start_time`` then ``session_id``, as a
     Riegel row (F029 reference section 2), sessions admitted as workouts by name included.
@@ -2654,7 +2714,8 @@ def _read_riegel_races(
     declines is never read: ``features`` stays ``None``. A row it accepts whose summary and flags
     read takes its features from ``features_by_session`` or computes them once through
     ``_race_features``; ``features`` is then ``_riegel_features``' mapping, or ``None`` with
-    ``features_unavailable``. Opens no transaction.
+    ``features_unavailable``. ``blocks``, when given, is handed to ``_race_features``. Opens no
+    transaction.
     """
     stored = conn.execute(
         "SELECT session_id, start_time, sport, activity_tag, timer_time_s, summary, quality_flags"
@@ -2686,7 +2747,7 @@ def _read_riegel_races(
         if needs_features(row) and unreadable is None:
             session_id = row["session_id"]
             if session_id not in features_by_session:
-                features_by_session[session_id] = _race_features(conn, session_id)
+                features_by_session[session_id] = _features_kept(conn, session_id, blocks)
             features = features_by_session[session_id]
             if features is None:
                 row["unreadable"] = FEATURES_UNAVAILABLE
@@ -2700,6 +2761,8 @@ def read_state_inputs(
     conn: sqlite3.Connection,
     workout_names: Sequence[str],
     make_needs_features: Callable[[list[sqlite3.Row]], Callable[[dict], bool]],
+    *,
+    cs_needs_records: Callable[[dict], bool] | None = None,
 ) -> StateInputs:
     """The saved loads, threshold rows and Riegel rows ``GET /state`` reads, as one snapshot.
 
@@ -2716,19 +2779,121 @@ def read_state_inputs(
     ``threshold_unreadable`` are those ``read_threshold_effort_rows`` returns for the same store.
     An exception from the factory or the predicate rolls the transaction back and propagates
     unchanged. The caller holds no open transaction.
+
+    ``cs_needs_records`` (F033) asks for the critical-speed rows: ``None``, the default, reads
+    none (``cs_rows`` is empty) and the reads above run exactly as without it. Given, the
+    threshold and Riegel reads also keep each session's ``(flags, stream)`` from the records they
+    already read, and ``_read_cs_rows`` runs last, reading each accepted session's records at most
+    once in the whole snapshot.
     """
     conn.execute("BEGIN")
     try:
         load_rows = read_session_load_rows(conn)
         needs_features = make_needs_features(load_rows)
         features_by_session: dict[str, dict | None] = {}
+        blocks: dict[str, CsBlock] | None = None if cs_needs_records is None else {}
         threshold_rows, threshold_unreadable, named = _threshold_effort_rows_in(
-            conn, workout_names, features_by_session
+            conn, workout_names, features_by_session, blocks
         )
-        riegel_rows = _read_riegel_races(conn, named, needs_features, features_by_session)
+        riegel_rows = _read_riegel_races(conn, named, needs_features, features_by_session, blocks)
+        cs_rows: list[dict] = []
+        if cs_needs_records is not None:
+            cs_rows = _read_cs_rows(conn, named, cs_needs_records, features_by_session, blocks)
     finally:
         conn.rollback()
-    return StateInputs(load_rows, threshold_rows, threshold_unreadable, riegel_rows)
+    return StateInputs(load_rows, threshold_rows, threshold_unreadable, riegel_rows, cs_rows)
+
+
+# ---------------------------------------------------------------------------
+# F033: the critical-speed rows of the GET /state snapshot
+#
+# Appended after read_state_inputs so the lines cited above stay in place.
+# Every session is listed with its stored values; the estimator's predicate
+# decides which are read, and a session's records are read at most once per
+# snapshot, shared with the threshold and Riegel reads through ``blocks``.
+# ---------------------------------------------------------------------------
+
+
+def _read_cs_rows(
+    conn: sqlite3.Connection,
+    named: set[str],
+    cs_needs_records: Callable[[dict], bool],
+    features_by_session: dict[str, dict | None],
+    blocks: dict[str, CsBlock] | None = None,
+) -> list[dict]:
+    """Every session (any sport), ordered by ``start_time`` then ``session_id``, as a
+    critical-speed row (F033 reference section 2).
+
+    A row holds ``session_id``, ``start_time``, ``sport``, ``activity_tag``, ``name``,
+    ``timer_time_s``, ``duration_s`` (the summary's, when the summary decodes to an object, else
+    ``None``), ``summary`` and ``quality_flags`` (both the stored text), ``admitted_as_workout``
+    (``True`` when the threshold read admitted it by name), ``unreadable``, ``flags`` and
+    ``segments``. ``unreadable`` is ``quality_flags_unreadable`` when the stored flags are not a
+    JSON list, else ``None``: a corrupt summary is not a reason here.
+
+    ``cs_needs_records(row)`` is called for every row before ``flags`` and ``segments`` are set,
+    and a row it declines, or one whose flags do not read, reads no record. An accepted row takes
+    its ``(flags, stream)`` from ``blocks`` when an earlier read of the snapshot kept them (a kept
+    ``None`` is not retried), else reads the records once and computes both; ``flags`` is then
+    F013's flags and ``segments`` the ``segment_rows`` stream, or both stay ``None`` with
+    ``features_unavailable`` when the read or a computation raises (logged with the session id).
+    Opens no transaction.
+    """
+    if blocks is None:
+        blocks = {}
+    stored = conn.execute(
+        "SELECT session_id, start_time, sport, activity_tag, name, timer_time_s, summary, quality_flags"
+        " FROM sessions ORDER BY start_time, session_id"
+    ).fetchall()
+    cs_rows: list[dict] = []
+    for r in stored:
+        summary = _decoded(r["summary"])
+        flags = _decoded(r["quality_flags"])
+        unreadable = QUALITY_FLAGS_UNREADABLE if flags is not None and not isinstance(flags, list) else None
+        row = {
+            "session_id": r["session_id"],
+            "start_time": r["start_time"],
+            "sport": r["sport"],
+            "activity_tag": r["activity_tag"],
+            "name": r["name"],
+            "timer_time_s": r["timer_time_s"],
+            "duration_s": summary.get("duration_s") if isinstance(summary, dict) else None,
+            "summary": r["summary"],
+            "quality_flags": r["quality_flags"],
+            "admitted_as_workout": r["session_id"] in named,
+            "unreadable": unreadable,
+            "flags": None,
+            "segments": None,
+        }
+        if cs_needs_records(row) and unreadable is None:
+            session_id = row["session_id"]
+            if session_id not in blocks:
+                blocks[session_id] = _cs_block(conn, session_id, features_by_session)
+            block = blocks[session_id]
+            if block is None:
+                row["unreadable"] = FEATURES_UNAVAILABLE
+            else:
+                row["flags"], row["segments"] = list(block[0]), block[1]
+        cs_rows.append(row)
+    return cs_rows
+
+
+def _cs_block(conn: sqlite3.Connection, session_id: str, features_by_session: dict[str, dict | None]) -> CsBlock:
+    """One session's ``(flags, segment_rows)`` from one ``read_session_feature_inputs``; its
+    features are kept in ``features_by_session`` as the Riegel read keeps them. ``None`` when the
+    read or a computation raises (logged with the session id), never a 500."""
+    try:
+        session, records = read_session_feature_inputs(conn, session_id)  # type: ignore[misc]
+        features = session_features.compute_session_features(session, records)
+        stream = session_features.segment_rows(session, records)
+    except Exception:  # a run whose records cannot be read is excluded, never a 500
+        logger.exception(
+            "session %s: its features did not compute; %s for critical speed", session_id, FEATURES_UNAVAILABLE
+        )
+        features_by_session.setdefault(session_id, None)
+        return None
+    features_by_session.setdefault(session_id, features)
+    return list(features["flags"]), stream
 
 
 # ---------------------------------------------------------------------------

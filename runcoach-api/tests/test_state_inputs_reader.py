@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
@@ -54,13 +55,16 @@ def _store(
     tag: str | None = "race",
     named: bool = False,
     timer_time_s: float | None | str = "same",
+    sport: str = "running",
+    name: str | None = None,
 ) -> str:
-    """One running session of ``duration_s`` at 270 s/km; ``named`` stores one lap and a listed
-    workout name on a four-step plan, so the threshold read admits it by name."""
+    """One session of ``duration_s`` at 270 s/km (``sport`` running unless given); ``named`` stores
+    one lap and a listed workout name on a four-step plan, so the threshold read admits it by name."""
     start_time = start.isoformat()
     session = Session(
         session_id=derive_session_id("fr945", start_time),
-        sport="running",
+        sport=sport,
+        name=name,
         source_vendor="garmin",
         start_time=start_time,
         source_device="fr945",
@@ -496,3 +500,282 @@ def test_flags_null_read_as_no_flags(computed: list[str]) -> None:
     row = _riegel(inputs, session_id)
     assert row["unreadable"] is None and row["quality_flags"] == "null" and row["features"] is not None
     assert computed == [session_id]
+
+
+# ---------------------------------------------------------------------------
+# F033: the critical-speed rows, read only when asked
+#
+# Adversarial rows (each is asserted below):
+#
+# | input | what happens |
+# |---|---|
+# | no ``cs_needs_records`` (every goal route) | ``cs_rows == []``; ``_read_cs_rows`` never called |
+# | a cycling session, a declared capture | listed with stored values; the predicate decides |
+# | flags not a JSON list | ``quality_flags_unreadable``; never read, even when accepted |
+# | a corrupt summary with a null timer | not a CS reason: ``unreadable`` None, ``duration_s`` None |
+# | the predicate declines | no record read; ``flags`` and ``segments`` stay None |
+# | a record read or computation that raises | ``features_unavailable``, logged with the session id |
+# | a session whose threshold computation failed | ``features_unavailable``, not retried |
+# ---------------------------------------------------------------------------
+
+CS_KEYS = {
+    "session_id",
+    "start_time",
+    "sport",
+    "activity_tag",
+    "name",
+    "timer_time_s",
+    "duration_s",
+    "summary",
+    "quality_flags",
+    "admitted_as_workout",
+    "unreadable",
+    "flags",
+    "segments",
+}
+
+
+def _read_cs(cs_needs_records, make_needs_features=_accept_all, names=NAMES) -> db_module.StateInputs:
+    conn = db_module.get_connection()
+    try:
+        db_module.init_schema(conn)
+        return db_module.read_state_inputs(conn, names, make_needs_features, cs_needs_records=cs_needs_records)
+    finally:
+        conn.close()
+
+
+def _cs(inputs: db_module.StateInputs, session_id: str) -> dict:
+    (row,) = [r for r in inputs.cs_rows if r["session_id"] == session_id]
+    return row
+
+
+def _recorded_inputs(session_id: str) -> tuple[dict, list[dict]]:
+    conn = db_module.get_connection()
+    try:
+        return db_module.read_session_feature_inputs(conn, session_id)  # type: ignore[return-value]
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def record_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """``(what, session_id)`` in call order for ``read_session_feature_inputs`` (``read``),
+    ``compute_session_features`` (``features``) and ``segment_rows`` (``segments``), with
+    ``("cs", "")`` when ``_read_cs_rows`` starts."""
+    calls: list[tuple[str, str]] = []
+    read = db_module.read_session_feature_inputs
+    features = db_module.session_features.compute_session_features
+    segments = db_module.session_features.segment_rows
+    cs = db_module._read_cs_rows
+
+    def counted_read(conn, session_id):
+        calls.append(("read", session_id))
+        return read(conn, session_id)
+
+    def counted_features(session, rows):
+        calls.append(("features", session["session_id"]))
+        return features(session, rows)
+
+    def counted_segments(session, rows):
+        calls.append(("segments", session["session_id"]))
+        return segments(session, rows)
+
+    def counted_cs(*args, **kwargs):
+        calls.append(("cs", ""))
+        return cs(*args, **kwargs)
+
+    monkeypatch.setattr(db_module, "read_session_feature_inputs", counted_read)
+    monkeypatch.setattr(db_module.session_features, "compute_session_features", counted_features)
+    monkeypatch.setattr(db_module.session_features, "segment_rows", counted_segments)
+    monkeypatch.setattr(db_module, "_read_cs_rows", counted_cs)
+    return calls
+
+
+def test_cs_rows_are_not_read_unless_asked(monkeypatch: pytest.MonkeyPatch) -> None:
+    _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None)
+    calls: list[tuple] = []
+    real = db_module._read_cs_rows
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(db_module, "_read_cs_rows", spy)
+    inputs = _read(_accept_all)  # the positional three-argument call
+    assert inputs.cs_rows == [] and calls == []
+    asked = _read_cs(lambda _row: False)
+    assert len(calls) == 1 and len(asked.cs_rows) == 1
+
+
+def test_cs_rows_list_every_session_with_its_stored_values() -> None:
+    ride = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None, sport="cycling", name="Ride")
+    capture = _store(datetime(2026, 8, 3, 7, 0, tzinfo=UTC), tag="resting_hrv_check", duration_s=300.0)
+    easy = _store(datetime(2026, 8, 4, 7, 0, tzinfo=UTC), tag=None, name="Easy Run")
+    named = _store(datetime(2026, 8, 5, 7, 0, tzinfo=UTC), tag=None, named=True)
+    seen: list[str] = []
+
+    def needs(row):
+        seen.append(row["session_id"])
+        return False
+
+    inputs = _read_cs(needs)
+    assert [r["session_id"] for r in inputs.cs_rows] == [ride, capture, easy, named] == seen
+    for row in inputs.cs_rows:
+        assert set(row) == CS_KEYS
+        assert row["unreadable"] is None and row["flags"] is None and row["segments"] is None
+        assert row["quality_flags"] == "[]"
+    assert [r["sport"] for r in inputs.cs_rows] == ["cycling", "running", "running", "running"]
+    assert [r["activity_tag"] for r in inputs.cs_rows] == [None, "resting_hrv_check", None, None]
+    assert _cs(inputs, ride)["name"] == "Ride" and _cs(inputs, easy)["name"] == "Easy Run"
+    assert [r["admitted_as_workout"] for r in inputs.cs_rows] == [False, False, False, True]
+    row = _cs(inputs, easy)
+    assert row["timer_time_s"] == IN_BAND and row["duration_s"] == IN_BAND
+    assert json.loads(row["summary"]) == {"duration_s": IN_BAND}  # the stored text, as written
+    assert _cs(inputs, capture)["duration_s"] == 300.0
+
+    # Stored flags that are not a JSON list are the one stored-value reason; a corrupt summary is not.
+    _sql("UPDATE sessions SET quality_flags = '{\"a\": 1}' WHERE session_id = ?", easy)
+    _sql("UPDATE sessions SET summary = 'not json', timer_time_s = NULL WHERE session_id = ?", ride)
+    inputs = _read_cs(lambda _row: True)
+    assert _cs(inputs, easy)["unreadable"] == "quality_flags_unreadable"
+    assert _cs(inputs, easy)["flags"] is None and _cs(inputs, easy)["segments"] is None  # never read
+    ride_row = _cs(inputs, ride)
+    assert ride_row["unreadable"] is None and ride_row["duration_s"] is None and ride_row["timer_time_s"] is None
+    assert ride_row["summary"] == "not json"
+
+
+def test_a_cs_row_the_predicate_declines_reads_no_records(record_calls: list[tuple[str, str]]) -> None:
+    declined = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None)
+    accepted = _store(datetime(2026, 8, 4, 7, 0, tzinfo=UTC), tag=None)
+    record_calls.clear()  # the upload's own load computation read the records too
+    inputs = _read_cs(lambda row: row["session_id"] == accepted)
+    reads = [sid for what, sid in record_calls if what == "read"]
+    assert reads == [accepted]
+    assert _cs(inputs, declined)["flags"] is None and _cs(inputs, declined)["segments"] is None
+    assert _cs(inputs, declined)["unreadable"] is None
+    assert _cs(inputs, accepted)["segments"]
+
+
+def test_a_cs_row_carries_flags_and_segments_from_one_record_read(record_calls: list[tuple[str, str]]) -> None:
+    first = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None)
+    second = _store(datetime(2026, 8, 4, 7, 0, tzinfo=UTC), tag=None, duration_s=HALF)
+    record_calls.clear()  # the upload's own load computation read the records too
+    inputs = _read_cs(lambda _row: True)
+    for session_id in (first, second):
+        assert record_calls.count(("read", session_id)) == 1
+        assert record_calls.count(("features", session_id)) == 1
+        assert record_calls.count(("segments", session_id)) == 1
+    for session_id in (first, second):
+        session, records = _recorded_inputs(session_id)
+        row = _cs(inputs, session_id)
+        assert row["unreadable"] is None
+        assert row["segments"] == db_module.session_features.segment_rows(session, records)
+        assert row["flags"] == list(db_module.session_features.compute_session_features(session, records)["flags"])
+        assert len(row["segments"]) > 0
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["threshold_race", "riegel_only_race", "named_workout"],
+)
+def test_cs_reuses_features_computed_earlier_in_the_snapshot(
+    shape: str, record_calls: list[tuple[str, str]]
+) -> None:
+    if shape == "threshold_race":
+        session_id = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC))
+    elif shape == "riegel_only_race":
+        session_id = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), duration_s=HALF)
+    else:
+        session_id = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None, named=True)
+    record_calls.clear()  # the upload's own load computation read the records too
+    inputs = _read_cs(lambda _row: True, _accept_all)
+    for what in ("read", "features", "segments"):
+        assert record_calls.count((what, session_id)) == 1, what
+    # The one read happened before the CS read started: CS reused it rather than making it.
+    assert record_calls.index(("read", session_id)) < record_calls.index(("cs", ""))
+    row = _cs(inputs, session_id)
+    assert row["unreadable"] is None and row["segments"]
+    session, records = _recorded_inputs(session_id)
+    assert row["segments"] == db_module.session_features.segment_rows(session, records)
+    assert row["flags"] == list(db_module.session_features.compute_session_features(session, records)["flags"])
+    if shape == "named_workout":
+        assert row["admitted_as_workout"] is True
+        (workout,) = inputs.threshold_rows
+        assert workout["active_time_s"] is not None
+    else:
+        assert _riegel(inputs, session_id)["features"] is not None
+
+
+def test_threshold_paths_are_unchanged_without_cs(
+    monkeypatch: pytest.MonkeyPatch, record_calls: list[tuple[str, str]]
+) -> None:
+    five_k = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC))
+    half = _store(datetime(2026, 8, 9, 7, 0, tzinfo=UTC), duration_s=HALF)
+    _store(datetime(2026, 8, 16, 7, 0, tzinfo=UTC), tag=None, named=True)
+    _store(datetime(2026, 8, 23, 7, 0, tzinfo=UTC), tag=None)
+    race_args: list[tuple] = []
+    real_race = db_module._race_features
+
+    def spy_race(*args, **kwargs):
+        race_args.append(args[2:] + tuple(kwargs.values()))
+        return real_race(*args, **kwargs)
+
+    monkeypatch.setattr(db_module, "_race_features", spy_race)
+    record_calls.clear()  # the upload's own load computation read the records too
+    without = _read(_accept_all)
+    assert without.cs_rows == []
+    assert ("cs", "") not in record_calls
+    for race in (five_k, half):
+        assert ("segments", race) not in record_calls  # no stream computed for a race
+    assert race_args and all(extra in ((), (None,)) for extra in race_args)  # no blocks built
+    rows, unreadable = _threshold()
+    with_cs = _read_cs(lambda _row: True)
+    for inputs in (without, with_cs):
+        assert json.dumps(inputs.threshold_rows, sort_keys=True) == json.dumps(rows, sort_keys=True)
+        assert json.dumps(inputs.threshold_unreadable, sort_keys=True) == json.dumps(unreadable, sort_keys=True)
+    assert json.dumps(without.riegel_rows, sort_keys=True) == json.dumps(with_cs.riegel_rows, sort_keys=True)
+
+
+def test_a_cs_row_whose_records_fail_is_features_unavailable(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    unread = _store(datetime(2026, 8, 2, 7, 0, tzinfo=UTC), tag=None)
+    no_stream = _store(datetime(2026, 8, 4, 7, 0, tzinfo=UTC), tag=None)
+    failed_race = _store(datetime(2026, 8, 6, 7, 0, tzinfo=UTC))  # in band: the threshold read computes it
+    fine = _store(datetime(2026, 8, 8, 7, 0, tzinfo=UTC), tag=None)
+    real_read = db_module.read_session_feature_inputs
+    real_features = db_module.session_features.compute_session_features
+    real_segments = db_module.session_features.segment_rows
+    computed: list[str] = []
+
+    def read(conn, session_id):
+        if session_id == unread:
+            raise sqlite3.DatabaseError("a record row does not read")
+        return real_read(conn, session_id)
+
+    def features(session, rows):
+        computed.append(session["session_id"])
+        if session["session_id"] == failed_race:
+            raise RuntimeError("a defect in the feature computation")
+        return real_features(session, rows)
+
+    def segments(session, rows):
+        if session["session_id"] == no_stream:
+            raise RuntimeError("a defect in the segment stream")
+        return real_segments(session, rows)
+
+    monkeypatch.setattr(db_module, "read_session_feature_inputs", read)
+    monkeypatch.setattr(db_module.session_features, "compute_session_features", features)
+    monkeypatch.setattr(db_module.session_features, "segment_rows", segments)
+    with caplog.at_level(logging.ERROR, logger="runcoach_api.db"):
+        inputs = _read_cs(lambda _row: True)
+    for session_id in (unread, no_stream, failed_race):
+        row = _cs(inputs, session_id)
+        assert row["unreadable"] == "features_unavailable", session_id
+        assert row["flags"] is None and row["segments"] is None
+        assert [r for r in caplog.records if session_id in r.getMessage()], session_id
+    assert computed.count(failed_race) == 1  # the threshold read's failure is not retried
+    assert [(u["session_id"], u["reason"]) for u in inputs.threshold_unreadable] == [
+        (failed_race, "features_unavailable")
+    ]
+    assert _cs(inputs, fine)["unreadable"] is None and _cs(inputs, fine)["segments"]
