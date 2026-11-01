@@ -5,7 +5,7 @@ The three subcommands run through Typer's ``CliRunner`` on the harness in
 ``tests/support/against_app.py``: ``runcoach_cli.api_client.client`` is a ``TestClient(app)``, so
 ``PUT /goal``, ``GET /goal`` and ``POST /goal/preview`` are answered by the real routes on the
 isolated store (the autouse ``isolated_data_dir``). The seeding helpers are
-``test_goal_preview_route.py``'s, loaded by path: reference section 8's E2 (four tight races)
+``support/goal_seed.py``'s, loaded by path: reference section 8's E2 (four tight races)
 stored as flat constant-speed runs, tagged through ``PUT /race-tags`` and given a saved load each.
 The clock is frozen through ``main._utcnow``; the autouse ``_no_network`` refuses every socket
 connection off the loopback. Every figure the lines are compared with is read back from the served
@@ -42,7 +42,7 @@ def _load_by_path(name: str, path: Path):
 
 
 against_app = _load_by_path("against_app", HERE / "support" / "against_app.py")
-preview = _load_by_path("goal_preview_route_helpers", HERE / "test_goal_preview_route.py")
+preview = _load_by_path("goal_seed", HERE / "support" / "goal_seed.py")
 
 cli_against_app = against_app.cli_against_app
 _run = against_app._run

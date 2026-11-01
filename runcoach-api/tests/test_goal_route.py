@@ -1,9 +1,8 @@
 """``PUT /goal`` stores the goal race and ``GET /goal`` serves it with its projection (F032 AC1,
 AC2's PUT half, reference sections 2 and 6).
 
-The seeding helpers and the refused-input table are ``test_goal_preview_route.py``'s, loaded by
-path (the suite runs under ``--import-mode=importlib``, so a sibling test module is not importable
-by name): races are stored untagged as flat constant-speed runs, tagged through ``PUT /race-tags``
+The seeding helpers and the refused-input table are ``support/goal_seed.py``'s, loaded by path as
+the other ``tests/support`` modules are (the suite runs under ``--import-mode=importlib``): races are stored untagged as flat constant-speed runs, tagged through ``PUT /race-tags``
 and given a saved load each. The clock is frozen through ``main._utcnow``; every request runs under
 the autouse isolated store, whose ``athlete_timezone`` is UTC unless a test installs its own
 ``AppConfig``. The race date is judged in the athlete's zone, so this file is named to the release
@@ -38,7 +37,7 @@ def _load_by_path(name: str, path: Path):
     return module
 
 
-preview = _load_by_path("goal_preview_route_helpers", HERE / "test_goal_preview_route.py")
+preview = _load_by_path("goal_seed", HERE / "support" / "goal_seed.py")
 
 NOW: datetime = preview.NOW
 TODAY: str = preview.TODAY

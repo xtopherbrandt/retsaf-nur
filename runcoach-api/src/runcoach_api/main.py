@@ -1694,6 +1694,18 @@ def parse_as_of(value: str | None, zone: ZoneInfo, now: datetime.datetime) -> da
     return instant
 
 
+def _query_as_of(as_of: str | None, zone: ZoneInfo, now: datetime.datetime) -> datetime.datetime:
+    """``parse_as_of`` for a route's ``as_of`` query parameter: every route that takes one parses
+    it here, so a value it refuses is the same ``RequestValidationError`` on ``("query", "as_of")``
+    everywhere, as ``list_sessions`` raises its cursor check."""
+    try:
+        return parse_as_of(as_of, zone, now)
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
+        ) from exc
+
+
 def _threshold_determinant(
     result: threshold_pace.ThresholdPace, unreadable: list[dict]
 ) -> ThresholdDeterminant:
@@ -1856,12 +1868,7 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     config = db._load_config_cached()
     zone = ZoneInfo(config.athlete_timezone)
     now = _utcnow()
-    try:
-        instant = parse_as_of(as_of, zone, now)
-    except ValueError as exc:
-        raise RequestValidationError(
-            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
-        ) from exc
+    instant = _query_as_of(as_of, zone, now)
     today = now.astimezone(zone).date()
 
     conn = db.get_connection()
@@ -2243,15 +2250,10 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
     config = db._load_config_cached()
     zone = ZoneInfo(config.athlete_timezone)
     now = _utcnow()
-    try:
-        instant = parse_as_of(as_of, zone, now)
-    except ValueError as exc:
-        raise RequestValidationError(
-            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
-        ) from exc
+    instant = _query_as_of(as_of, zone, now)
     today = now.astimezone(zone).date()
     reference_date = _as_of_local_date(instant, zone, as_of)
-    race_date = reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
+    race_date =reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
     if race_date < reference_date:
         raise _body_validation_error(
             ("race", "date"),
@@ -2262,7 +2264,7 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
     race = GoalRace(date=race_date.isoformat(), distance_m=body.race.distance_m, name=body.race.name)
     conn = db.get_connection()
     try:
-        return _projection(conn, instant, zone, today, race, body.target_time_s)
+        return _projection(conn, instant, zone, today, race, body.target_time_s, reference_date=reference_date)
     finally:
         conn.close()
 
@@ -2274,15 +2276,18 @@ def _projection(
     today: datetime.date,
     race: GoalRace,
     target_time_s: float | None,
+    *,
+    reference_date: datetime.date,
 ) -> PaceTarget:
     """The projection every goal route serves: b and the chart at ``instant`` through
     ``_riegel_at`` (its 500 when the chart cannot be built stands), the race names joined by id,
-    ``fitness_now`` the chart's CTL on the local day before the instant's local date, composed by
-    ``_pace_target``. Nothing is written; the caller owns ``conn``, which is left outside any
-    transaction (the state reader rolls its own back)."""
+    ``fitness_now`` the chart's CTL on the local day before ``reference_date``, composed by
+    ``_pace_target``. ``reference_date`` is the caller's: the local date ``_as_of_local_date``
+    gave the instant (preview and ``GET /goal``) or today (``PUT /goal``), so the instant's local
+    date is never recomputed here. Nothing is written; the caller owns ``conn``, which is left
+    outside any transaction (the state reader rolls its own back)."""
     at = _riegel_at(conn, instant, zone, today)
     names = db.read_session_names(conn, [effort.session_id for effort in at.estimate.efforts])
-    reference_date = instant.astimezone(zone).date()
     return _pace_target(at, instant, zone, race, target_time_s, names, _fitness_now(at.chart, reference_date))
 
 
@@ -2339,7 +2344,7 @@ def set_goal(body: GoalContractInput) -> GoalContract:
     race = GoalRace(date=race_date.isoformat(), distance_m=body.race.distance_m, name=body.race.name)
     conn = db.get_connection()
     try:
-        target = _projection(conn, now, zone, today, race, body.target_time_s)
+        target = _projection(conn, now, zone, today, race, body.target_time_s, reference_date=today)
         row = db.write_goal(
             conn,
             name=body.race.name,
@@ -2374,12 +2379,7 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
     config = db._load_config_cached()
     zone = ZoneInfo(config.athlete_timezone)
     now = _utcnow()
-    try:
-        instant = parse_as_of(as_of, zone, now)
-    except ValueError as exc:
-        raise RequestValidationError(
-            [{"type": "value_error", "loc": ("query", "as_of"), "msg": f"Value error, {exc}", "input": as_of}]
-        ) from exc
+    instant = _query_as_of(as_of, zone, now)
     today = now.astimezone(zone).date()
     reference_date = _as_of_local_date(instant, zone, as_of)
     conn = db.get_connection()
@@ -2388,7 +2388,7 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
         if row is None:
             raise HTTPException(404, "no_goal")
         race = GoalRace(date=row["race_date"], distance_m=row["distance_m"], name=row["name"])
-        target = _projection(conn, instant, zone, today, race, row["target_time_s"])
+        target = _projection(conn, instant, zone, today, race, row["target_time_s"], reference_date=reference_date)
     finally:
         conn.close()
     return _goal_contract(row, race, target, reference_date)

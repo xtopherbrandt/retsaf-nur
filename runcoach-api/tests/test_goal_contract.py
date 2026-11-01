@@ -10,8 +10,8 @@ components the served OpenAPI names the same way as the contract are walked with
 ``tests/support/contract_walk.py``; ``PaceTarget`` and ``GoalContract`` are compared by hand because
 the contract's ``ConfidenceValue`` is the served ``PaceTargetValue``.
 
-Races are stored as ``test_goal_preview_route.py`` stores them (its helpers are loaded by path:
-the suite runs under ``--import-mode=importlib``), under the autouse isolated store, with the clock
+Races are stored by ``support/goal_seed.py``'s helpers (loaded by path, as the other
+``tests/support`` modules are: the suite runs under ``--import-mode=importlib``), under the autouse isolated store, with the clock
 frozen through ``main._utcnow``.
 """
 
@@ -64,7 +64,7 @@ def _load_by_path(name: str, path: Path):
 
 contract_validate = _load_by_path("contract_validate", HERE / "support" / "contract_validate.py")
 contract_walk = _load_by_path("contract_walk", HERE / "support" / "contract_walk.py")
-preview = _load_by_path("goal_preview_route_helpers", HERE / "test_goal_preview_route.py")
+preview = _load_by_path("goal_seed", HERE / "support" / "goal_seed.py")
 
 NOW = preview.NOW
 TODAY = preview.TODAY
