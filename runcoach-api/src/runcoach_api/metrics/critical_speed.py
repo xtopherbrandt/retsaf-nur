@@ -22,9 +22,10 @@ it, the first failing step names the exclusion:
 2. ``declared_capture``: the tag is one of ``session_load.DECLARED_CAPTURE_TAGS``;
 3. ``quality_flags_unreadable``: the stored flags are not a JSON list (or ``unreadable`` says so);
 4. ``distance_regressed``, then 5. ``smart_recording``, in the stored flags (source ``stored``);
-6. ``features_unavailable``: ``unreadable`` says so, F013's ``flags`` are not a list, or the
-   ``segments`` are not a list of segments ``gap_stretches.best_stretches`` can read;
-7. ``distance_regressed``, ``smart_recording``, ``grade_clamped`` in F013's flags (source ``f013``).
+6. ``features_unavailable``: ``unreadable`` says so, or F013's ``flags`` are not a list;
+7. ``distance_regressed``, ``smart_recording``, ``grade_clamped`` in F013's flags (source ``f013``);
+8. ``features_unavailable``: the ``segments`` are not a list of segments
+   ``gap_stretches.best_stretches`` can read (read only for a row that passes steps 1 to 7).
 
 ``needs_records`` answers steps 1 to 5 from the stored values alone (it reads no ``flags`` and no
 ``segments``), so the reader reads a session's records only when they can decide it. It never
@@ -41,8 +42,10 @@ raises: it runs inside the ``GET /state`` snapshot, where an exception is a 500 
 2. Shape check: a stretch is dropped, ``beaten_by_longer``, when a longer stretch (dropped or kept)
    has a higher average speed; ``beaten_by_s`` is the shortest such length. Speeds are compared by
    cross-multiplication, so nothing is divided here.
-3. Any served stretch whose distance is not a finite number above 0: ``estimate_not_finite`` (no
-   pace can be read from it).
+3. Any best stretch distance in the input that is not a finite number, chosen or not (a run's
+   best at a length it was not used at included): ``estimate_not_finite``, the stretches served.
+   A kept stretch at or below 0 m: ``estimate_not_finite`` (no pace can be read from it). A
+   dropped stretch at or below 0 m is served as dropped and otherwise ignored.
 4. Spread: fewer than ``MIN_STRETCHES`` kept is ``too_few_stretches``; the shortest kept over
    ``MAX_SHORTEST_S`` or the longest kept under ``MIN_LONGEST_S`` is ``spread_too_narrow``. No
    candidate run at all is ``no_candidate_runs``.
@@ -440,7 +443,9 @@ def fit(bests: Sequence[RunBests], instant: Any) -> CriticalSpeedEstimate:
 
     if not bests:
         return unavailable(NO_CANDIDATE_RUNS)
-    if not all(_usable(stretch.distance_m) for stretch in stretches):
+    if not all(math.isfinite(best.distance_m) for run in bests for best in run.bests.values()):
+        return unavailable(ESTIMATE_NOT_FINITE)
+    if not all(_usable(stretch.distance_m) for stretch, _run in kept):
         return unavailable(ESTIMATE_NOT_FINITE)
     if len(kept) < MIN_STRETCHES:
         return unavailable(TOO_FEW_STRETCHES)

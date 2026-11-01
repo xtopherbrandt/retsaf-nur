@@ -2253,7 +2253,7 @@ def preview_goal(body: GoalPreviewInput, as_of: str | None = Query(None)) -> Pac
     instant = _query_as_of(as_of, zone, now)
     today = now.astimezone(zone).date()
     reference_date = _as_of_local_date(instant, zone, as_of)
-    race_date =reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
+    race_date = reference_date if body.race.date is None else datetime.date.fromisoformat(body.race.date)
     if race_date < reference_date:
         raise _body_validation_error(
             ("race", "date"),

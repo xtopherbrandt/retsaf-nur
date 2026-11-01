@@ -614,6 +614,48 @@ def test_non_finite_input_is_estimate_not_finite(bad: float, where: int) -> None
     assert again.unavailable == cs.ESTIMATE_NOT_FINITE
 
 
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_a_non_finite_best_of_a_run_used_longer_is_estimate_not_finite(bad: float) -> None:
+    # Run a is chosen at 1200 s, so its 720 s best is never chosen; it is still input to the fit.
+    runs = [
+        _run("a", {1200: 4800.0, 720: bad}, days_ago=1.0),
+        _run("b", {720: 2952.0}, days_ago=2.0),
+        _run("c", {300: 1290.0}, days_ago=3.0),
+        _run("d", {120: 540.0}, days_ago=4.0),
+    ]
+    result = _fit(runs)
+    assert result.unavailable == cs.ESTIMATE_NOT_FINITE
+    assert result.cs_m_per_s is None and result.far_off_excess_s_per_km is None
+    stretches = _by_length(result)
+    assert sorted(stretches) == [120, 300, 720, 1200]
+    assert stretches[720].session_id == "b" and stretches[1200].session_id == "a"
+    # The same runs with a finite 720 s best in run a serve an estimate.
+    runs[0] = _run("a", {1200: 4800.0, 720: 2900.0}, days_ago=1.0)
+    _available(_fit(runs))
+
+
+def test_a_dropped_stretch_at_or_below_zero_metres_is_ignored() -> None:
+    # Reference section 4 step 2 drops the 0 m stretch (beaten by 180 s); step 7 names no cause
+    # it meets, so the fit is served without it.
+    points = [(120, 0.0), (180, 4.4 * 180), (300, 4.3 * 300), (480, 4.2 * 480), (720, 4.1 * 720)]
+    result = _fit(_points(points))
+    stretches = _by_length(result)
+    assert stretches[120].drop_reason == "beaten_by_longer" and stretches[120].beaten_by_s == 180
+    assert stretches[120].pace_s_per_km is None and stretches[120].distance_m == 0.0
+    _available(result)
+    kept = [(float(length), d) for length, d in points if length != 120]
+    assert abs(result.cs_m_per_s - cs_oracle.line(kept).cs) <= 1e-9
+    assert abs(result.cs_s_per_km - 250.27) <= 0.01
+    negative = _fit(_points([(120, -5.0), *points[1:]]))
+    assert _by_length(negative)[120].drop_reason == "beaten_by_longer"
+    _available(negative)
+    # A kept stretch at or below 0 m still refuses: no pace can be served from it.
+    for distance in (0.0, -1.0):
+        kept_bad = _fit(_points([*points[1:4], (720, distance)]))
+        assert _by_length(kept_bad)[720].drop_reason is None
+        assert kept_bad.unavailable == cs.ESTIMATE_NOT_FINITE
+
+
 # ---------------------------------------------------------------------------- independence
 
 
