@@ -15,6 +15,9 @@ These tests pin the dispatch table ratified in the task spec::
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from runcoach_api import cli
@@ -113,3 +116,18 @@ def test_unknown_flag_on_serve_errors_without_serving(no_serve):
 
     assert exc_info.value.code == 2
     assert no_serve == []
+
+
+def test_python_dash_m_runs_the_parser():
+    """``python -m runcoach_api.cli`` reaches ``main()``: without the module guard it printed
+    nothing and exited 0. ``--help`` exits in argparse, before config or uvicorn, so no server
+    starts."""
+    result = subprocess.run(
+        [sys.executable, "-m", "runcoach_api.cli", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage: runcoach-api" in result.stdout

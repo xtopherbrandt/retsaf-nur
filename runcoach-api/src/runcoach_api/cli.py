@@ -282,3 +282,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
 
     serve()
+
+
+if __name__ == "__main__":
+    main()

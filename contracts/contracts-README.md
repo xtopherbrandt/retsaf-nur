@@ -78,7 +78,13 @@ anchors; entered profile values, display_name and units). Everything else is
   so the two never disagree.
 - **Additive and versioned.** Prefer additive changes; bump `info.version` on a
   breaking one. The UI targets the contract, so a silent breaking edit breaks the
-  UI.
+  UI. The two version fields differ on purpose: the served `/openapi.json`
+  `info.version` is the engine's own (`main.py` passes no `version` to
+  `FastAPI`, so it serves FastAPI's default, which is not read from
+  `runcoach_api.__version__` and only equals it while both are `0.1.0`), the
+  contract's `info.version` is the target contract's, and `check_drift.py`
+  compares neither. Serving the contract's version would claim the backend
+  implements the whole target contract.
 - **Reconcile before committing a refresh.** Diff the built surface against this
   file first; so far every backend change has been additive (no contradictions).
 - **Don't hand-edit generated output.** This file is authored, not generated;
