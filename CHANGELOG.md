@@ -7,8 +7,9 @@
 F033: `GET /state` serves a third determinant, `critical_speed`, after `riegel_exponent`: critical
 speed (CS) and D′ fitted from the best grade-adjusted stretches of the last 90 days of runs, with
 D′ inside the same entry (spec/04 sections 4.2.1 and 4.3.6, `research/00` REG-34 and H-49). Unlike
-threshold pace and the endurance exponent, it reads no tag to choose its efforts: the stretches are
-mined from every run, tagged or not. It is recomputed on every read and never stored.
+threshold pace and the endurance exponent, it needs no tag to choose its efforts: the stretches are
+mined from every run, tagged or not (a tag only leaves out a declared resting capture, and the Race
+tag only lifts the label). It is recomputed on every read and never stored.
 
 **What it reads.** Every session that starts in the 90 days ending at the moment asked for (`--as-of`,
 else now), measured as elapsed time, so a run leaves the window at the time of day it started.
@@ -68,7 +69,8 @@ IDEA-188 (a per-session features cache) holds the fix.
 `runcoach goal` and `runcoach state` round their signed percentages half away from zero, so a
 -0.05 % gap or residual prints `-0.1 %` as +0.05 % prints `+0.1 %`, and a fitness change of
 -0.5 % reads `rose 1 %` as +0.5 % reads `fell 1 %`: a fall and a rise of the same size read alike. A
-figure that rounds to zero still prints `0.0 %`, never `-0.0 %`.
+gap or residual that rounds to zero still prints `0.0 %`, never `-0.0 %`, and a fitness change
+that rounds to zero prints `no change over 4 weeks`.
 
 `runcoach goal`'s line for `projection_not_finite` names the goal too: `the projection is out of
 range for this goal; check its distance and time, and the races listed`.
@@ -77,7 +79,9 @@ range for this goal; check its distance and time, and the races listed`.
 
 The `State & Metrics` tag of `contracts/openapi.yaml` names the three determinants `getState`
 serves. `contracts/contracts-README.md` says that the served `/openapi.json` `info.version` is the
-engine package's, not the contract's, and that `check_drift.py` compares neither.
+engine's own value, not the contract's: `main.py` passes no `version`, so it is FastAPI's default
+`0.1.0`, which equals the package version only while both are `0.1.0`; and that `check_drift.py`
+compares neither.
 
 ### Migration required
 
