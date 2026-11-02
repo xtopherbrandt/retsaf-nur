@@ -1069,7 +1069,8 @@ REVIEW_PROSE_SHA256 = (
     "a4e5252f9b6e", "4cf8113a2480", "a99cc87f595b", "76a184b14c1b", "dc852e60c644", "0734e515a8d0",
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
     "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "afe00eb5205d", "cab83feaf822",
-    "78230d41eec8", "06eac0481428", "37bbe528e395", "0170e02e7fbe", "27ebe42c2ece", "f46ad80a09ea",
+    "78230d41eec8", "06eac0481428", "37bbe528e395", "0170e02e7fbe", "27ebe42c2ece", "69684bc1b792",
+    "a87ff6f69924",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1112,6 +1113,7 @@ FROZEN_ROUNDS = {
     "30": "37bbe528e395",
     "31": "0170e02e7fbe",
     "32": "27ebe42c2ece",
+    "33": "69684bc1b792",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1151,6 +1153,7 @@ _FROZEN_ROUNDS_PIN = {
     "30": "37bbe528e395",
     "31": "0170e02e7fbe",
     "32": "27ebe42c2ece",
+    "33": "69684bc1b792",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1540,10 +1543,10 @@ REVIEW_LINE_SHA256 = {
     "REG-33/Scope": "f3f4c3222b3b",
     "REG-33/Not": "a63b9f64a75b",
     "REG-33/Why": "996235b8574b",
-    "REG-34": "a2f298ffc514",
-    "REG-34/Scope": "dbc0eab64b1a",
-    "REG-34/Not": "180283ad4beb",
-    "REG-34/Why": "556c892e887c",
+    "REG-34": "9b299543943d",
+    "REG-34/Scope": "7e9d56a5ca94",
+    "REG-34/Not": "983eefae77f2",
+    "REG-34/Why": "f37b52f5c678",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
@@ -1561,7 +1564,7 @@ REVIEW_LINE_SHA256 = {
     "IND-05": "69d2e6ae153a",
     "IND-05/Scope": "1ee9a7af3575",
     "IND-05/Not": "55afd92af766",
-    "IND-05/Why": "f3ee29318104",
+    "IND-05/Why": "f7d6b389cb7a",
     "IND-06": "acd850ac63c4",
     "IND-06/Scope": "8d9b6c1ca841",
     "IND-06/Not": "2d3fead522b7",
