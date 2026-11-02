@@ -33,6 +33,10 @@ stores three synthetic flat races instead (as ``test_riegel_b_route.py`` stores 
 with 1 Hz records, so F013's GAP pace is the pace run), the F029 reference section 4 set A, B, C
 (5,000 m in 1,200 s, 10,000 m in 2,520 s, 21,100 m in 5,600 s), whose b the reference gives as
 1.069870 with 80 % 1.068992 to 1.070748.
+
+Every output ends with the critical speed block (F033 reference section 6): with one or two runs
+stored it is unavailable for too few stretches and lists them; ``test_state_prints_cs_against_the_app``
+stores six flat synthetic runs, one per stretch length, so the served entry has an estimate.
 """
 
 from __future__ import annotations
@@ -187,6 +191,13 @@ def _ftp(client: TestClient) -> tuple[dict[str, Any], str]:
     return det, body["timezone"]
 
 
+def _cs(client: TestClient) -> dict[str, Any]:
+    body = client.get("/state").json()
+    [det] = [d for d in body["determinants"] if d["name"] == "critical_speed"]
+    print(f"  served critical_speed {det}")
+    return det
+
+
 def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no_network: list[Any]) -> None:
     """With no workout name listed (what ``runcoach-api init`` writes), the tagged ``sample_run`` is
     admitted by its tag alone and reads ``(tag)`` after the date."""
@@ -206,6 +217,15 @@ def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no
     assert effort["gain"] == 1.0
     assert effort["gps_degraded_fraction"] == 0.0
     day = start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
+    # One run gives one stretch (one run per length), so critical speed is unavailable.
+    cs = _cs(client)
+    [stretch] = cs["stretches"]
+    assert (cs["unavailable"], stretch["length_s"], stretch["session_id"], stretch["drop_reason"]) == (
+        "too_few_stretches",
+        1200,
+        workout,
+        None,
+    )
 
     result = _run("state")
     assert result.exit_code == 0, result.output
@@ -218,6 +238,8 @@ def test_state_against_the_app_prints_a_workout(cli_against_app: TestClient, _no
             "gain 1.00, degraded GPS 0.0 %, weight 100 %"
         ),
         *RIEGEL_NO_RACES,
+        "Critical speed unavailable: 1 stretch kept; 3 are needed",
+        f"Stretch 20:00 at {_mss(stretch['pace_s_per_km'])}/km, {day} Easy Run: kept",
     ], result.stdout
     assert _no_network == []
 
@@ -251,6 +273,14 @@ def test_runcoach_state_against_the_app_shows_tag_and_name_workouts(
     weight = int(Decimal(repr(gain * 100)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     day = start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
     named_day = named_start.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
+    # Two runs give two stretches, the longest length taking the faster run at it.
+    cs = _cs(client)
+    assert cs["unavailable"] == "too_few_stretches"
+    assert [(s["length_s"], s["session_id"], s["drop_reason"]) for s in cs["stretches"]] == [
+        (720, named, None),
+        (1200, workout, None),
+    ]
+    short, long = cs["stretches"]
 
     result = _run("state")
     assert result.exit_code == 0, result.output
@@ -267,6 +297,9 @@ def test_runcoach_state_against_the_app_shows_tag_and_name_workouts(
             f"GAP {_mss(by_name['gap_pace_s_per_km'])}/km, gain {gain:.2f}, degraded GPS 0.0 %, weight {weight} %"
         ),
         *RIEGEL_NO_RACES,
+        "Critical speed unavailable: 2 stretches kept; 3 are needed",
+        f"Stretch 12:00 at {_mss(short['pace_s_per_km'])}/km, {named_day} Easy Run: kept",
+        f"Stretch 20:00 at {_mss(long['pace_s_per_km'])}/km, {day} Easy Run: kept",
     ], result.stdout
     assert _no_network == []
 
@@ -355,5 +388,93 @@ def test_cli_prints_b_from_the_real_app(cli_against_app: TestClient, _no_network
         "0.0 % against the line",
         f"Race in b 2026-09-20: 21.1 km (21.1 km adjusted), 1:33:20, fitness {_whole(before[2])} (-), weight 1.00, "
         "0.0 % against the line",
+        # One run per length from the longest down: the 5K at 20:00, the 10K at 12:00, the half at
+        # 8:00; flat 1 Hz runs, so each stretch's pace is the run's (240, 252 and 265.4 s/km). The
+        # two shorter ones are slower than a longer one, so only the 5K's is kept.
+        "Critical speed unavailable: 1 stretch kept; 3 are needed",
+        "Stretch 8:00 at 4:25/km, 2026-09-20 unnamed: dropped, a longer stretch was faster (12:00)",
+        "Stretch 12:00 at 4:12/km, 2026-09-13 unnamed: dropped, a longer stretch was faster (20:00)",
+        "Stretch 20:00 at 4:00/km, 2026-09-06 unnamed: kept",
+    ], result.stdout
+    assert _no_network == []
+
+
+def _store_run(start: datetime, distance_m: float, duration_s: int, sport: str = "running", name: str | None = None) -> str:
+    """A running (or other) session of ``distance_m`` in ``duration_s`` with 1 Hz flat records, as
+    ``_store_race`` stores one, with an optional stored name."""
+    start_time = start.isoformat()
+    summary: dict[str, Any] = {"duration_s": float(duration_s), "distance_m": distance_m}
+    session = Session(
+        session_id=derive_session_id("fr945", start_time),
+        name=name,
+        sport=sport,
+        source_vendor="garmin",
+        start_time=start_time,
+        source_device="fr945",
+        timer_time_s=float(duration_s),
+        quality_flags=[],
+        summary=summary,
+        context=Context(),
+    )
+    speed = distance_m / duration_s
+    records = [
+        Record(t=float(t), distance=t * speed, speed=speed, altitude=100.0, heart_rate=150.0)
+        for t in range(duration_s + 1)
+    ]
+    conn = db.get_connection()
+    try:
+        db.init_schema(conn)
+        db.persist(conn, session, records, [], {})
+    finally:
+        conn.close()
+    return session.session_id
+
+
+def _away(value: float) -> str:
+    """A whole number rounded half away from zero, written here rather than taken from the CLI."""
+    return str(int(Decimal(repr(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
+
+
+def test_state_prints_cs_against_the_app(cli_against_app: TestClient, _no_network: list[Any]) -> None:
+    """Six flat 1 Hz runs in the 90 days, each exactly one stretch length long, on the line
+    distance = 4.0 m/s * time + 150 m nudged by a few metres (so the interval is not a point): one run
+    per length from the longest down takes each run at its own length, every stretch is kept and
+    none is tagged, so the served estimate is ``low``. A ride in the window is the one session that
+    is not a run. The block prints the served CS, D' and every stretch, in the athlete's zone."""
+    lengths_distances = [(120, 635.0), (180, 865.0), (300, 1350.0), (480, 2075.0), (720, 3025.0), (1200, 4950.0)]
+    ids = [
+        _store_run(datetime(2026, 9, 1 + n, 7, 0, tzinfo=UTC), distance, length, name=f"Effort {length}")
+        for n, (length, distance) in enumerate(lengths_distances)
+    ]
+    ride = _store_run(datetime(2026, 9, 10, 7, 0, tzinfo=UTC), 30000.0, 3600, sport="cycling")
+
+    cs = _cs(cli_against_app)
+    assert cs["unavailable"] is None
+    assert [(s["length_s"], s["session_id"], s["drop_reason"]) for s in cs["stretches"]] == [
+        (length, sid, None) for (length, _d), sid in zip(lengths_distances, ids, strict=True)
+    ]
+    assert [(e["session_id"], e["reason"]) for e in cs["excluded"]] == [(ride, "not_running")]
+    estimate, d_prime = cs["estimate"], cs["d_prime"]
+    assert estimate["confidence"] == "low"
+    assert cs["d_prime_not_positive"] is False
+    zone = ZoneInfo(cli_against_app.get("/state").json()["timezone"])
+
+    result = _run("state")
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("Critical speed"))
+    stretch_lines = [
+        f"Stretch {length // 60}:{length % 60:02d} at {_mss(1000 * length / distance)}/km, "
+        f"{datetime(2026, 9, 1 + n, 7, 0, tzinfo=UTC).astimezone(zone):%Y-%m-%d} Effort {length}: kept"
+        for n, (length, distance) in enumerate(lengths_distances)
+    ]
+    assert lines[first:] == [
+        (
+            f"Critical speed {_mss(estimate['value'])}/km (80 %: {_mss(estimate['interval']['low'])} to "
+            f"{_mss(estimate['interval']['high'])}), low"
+        ),
+        f"D' {_away(d_prime['value_m'])} m (80 %: {_away(d_prime['low_m'])} to {_away(d_prime['high_m'])} m)",
+        *stretch_lines,
+        "1 other session in the window is not a run",
     ], result.stdout
     assert _no_network == []

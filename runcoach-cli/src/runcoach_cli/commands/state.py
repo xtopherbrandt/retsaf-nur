@@ -1,5 +1,5 @@
-"""``runcoach state`` -- threshold pace and the endurance exponent from ``GET /state``, with the races
-and workouts used and excluded.
+"""``runcoach state`` -- threshold pace, the endurance exponent and critical speed from ``GET /state``,
+with the races, workouts and stretches used and excluded.
 
 The first line is the estimate: ``Threshold pace 4:22/km (80 %: 4:15-4:30), high, from 2 races and 1
 workout, the last on 2026-09-30``, the interval fast end first and a zero count left out. Then one
@@ -45,7 +45,19 @@ excluded with its reason in words. The labels differ
 from the threshold block's ``Race used`` and ``Race excluded``, so a race in both blocks is not
 printed twice under one label with different figures.
 An entry with ``estimate_not_finite`` says so and still lists the races. A body with no
-``riegel_exponent`` entry (an API from before it) ends with a line saying so, and exits 0.
+``riegel_exponent`` entry (an API from before it) prints a line saying so in its place, and exits 0.
+
+Last comes the critical speed block, from the ``critical_speed`` entry (F033 reference section 6):
+``Critical speed 4:29/km (80 %: 4:21 to 4:38), low``, the interval fast end first and the label
+counting the short races among the stretches kept, then ``D' 134 m (80 %: 59 to 209 m)``, with a
+note when D' is at or below 0. Unavailable, one line gives the reason in words (the far-off excess
+in s/km for ``longest_far_off``) and no D' line follows. Then one ``Stretch`` line per best stretch
+served, kept or dropped (length and pace as ``m:ss``, the run's date and name, ``unnamed`` when it
+has none, and ``kept`` or why it was dropped), one ``Left out of critical speed`` line per session
+excluded with its reason in words (and whether the stored quality flags or the pace features
+flagged it), and the sessions that are not runs counted on one line. A body with no
+``critical_speed`` entry (an API from before it) ends with a line saying so, and exits 0. D' and
+the far-off excess are signed figures, rounded half away from zero.
 
 Dates print in the response's ``timezone`` (the API's ``athlete_timezone``), not the computer's.
 Paces and durations are rounded half up, as ``runcoach sessions`` rounds them. ``--as-of`` is sent
@@ -172,6 +184,45 @@ RIEGEL_BELOW_ONE_LINE = (
 )
 RIEGEL_NOT_FINITE_LINE = "Endurance exponent unavailable: a race's figures are out of range; check the races listed"
 RIEGEL_NOT_SERVED_LINE = "Endurance exponent: not served by this API; update it and restart"
+
+CS_DETERMINANT = "critical_speed"
+
+# Each reason a session is left out of critical speed, in words (F033 reference section 2), and the
+# drop reason of a stretch. ``not_running`` prints as one count line, not per session. A flag
+# reason (``distance_regressed``, ``smart_recording``) can come from the stored quality flags or
+# from the pace features (F013): the served ``source`` is worded after the reason by
+# ``CS_SOURCE_WORDS``. ``{length}`` is the beating length as ``m:ss``. A reason not listed prints
+# as served.
+CS_NOT_RUNNING = "not_running"
+CS_BEATEN = "beaten_by_longer"
+CS_REASON_WORDS = {
+    "declared_capture": "a declared resting capture, not a run",
+    "quality_flags_unreadable": REASON_WORDS["quality_flags_unreadable"],
+    "distance_regressed": REASON_WORDS["distance_regressed"],
+    "smart_recording": REASON_WORDS["smart_recording"],
+    "features_unavailable": REASON_WORDS["features_unavailable"],
+    "grade_clamped": RIEGEL_REASON_WORDS["grade_clamped"],
+    CS_BEATEN: "a longer stretch was faster ({length})",
+}
+CS_SOURCE_WORDS = {"stored": "by its stored quality flags", "f013": "by its pace features"}
+
+# Each unavailable reason in words, after ``Critical speed unavailable: ``. ``{window}``,
+# ``{as_of}``, ``{min_stretches}``, ``{kept}``, ``{shortest}``, ``{longest}``, ``{excess}`` and
+# ``{far}`` are filled from the entry and its parameters.
+CS_UNAVAILABLE_WORDS = {
+    "no_candidate_runs": "no run in the {window} days to {as_of} could be read",
+    "too_few_stretches": "{kept} kept; {min_stretches} are needed",
+    "spread_too_narrow": (
+        "the stretches kept do not span far enough: the shortest must be {shortest} or less and the "
+        "longest {longest} or more"
+    ),
+    "longest_far_off": (
+        "the longest stretch kept is {excess} s/km slower than the next-longest predicts, more than {far}; "
+        "a long stretch run below its best is the usual cause"
+    ),
+    "estimate_not_finite": "the fit's figures are out of range; check the stretches listed",
+}
+CS_NOT_SERVED_LINE = "Critical speed: not served by this API; update it and restart"
 
 
 def _number(value: Any, what: str) -> float:
@@ -515,6 +566,121 @@ def _riegel_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
     return lines
 
 
+def _away(value: float, places: int) -> float:
+    """``value`` rounded half away from zero to ``places`` decimals; a figure that rounds to zero is
+    ``0.0``, never ``-0.0``."""
+    scale = 10**places
+    rounded = math.copysign(math.floor(abs(value) * scale + 0.5), value) / scale
+    return rounded + 0.0
+
+
+def _metres(value: Any, what: str) -> str:
+    """Metres to a whole number, rounded half away from zero (D' can be negative)."""
+    return f"{_away(_number(value, what), 0):.0f}"
+
+
+def _excess(value: Any, far: float) -> str:
+    """The far-off excess in s/km to one decimal, rounded half away from zero. One over the bar that
+    rounds to it or under reads ``just over`` the bar, so the line never says 15.0 is too far."""
+    excess = _number(value, "far_off_excess_s_per_km")
+    tenths = _away(excess, 1)
+    if excess > far and tenths <= far:
+        return f"just over {far:g}"
+    return f"{tenths:.1f}"
+
+
+def _cs_stretch_line(row: dict, zone: ZoneInfo) -> str:
+    length = _number(row["length_s"], "length_s")
+    pace = row["pace_s_per_km"]
+    pace_words = "-" if pace is None else format_pace(_number(pace, "pace_s_per_km"))
+    name = row["name"]
+    run = _printable(name) if isinstance(name, str) and name else "unnamed"
+    drop = row["drop_reason"]
+    if drop is None:
+        kept = "kept"
+    elif drop == CS_BEATEN:
+        kept = "dropped, " + CS_REASON_WORDS[CS_BEATEN].format(length=_mss(_number(row["beaten_by_s"], "beaten_by_s")))
+    elif isinstance(drop, str):
+        kept = f"dropped, {_printable(drop)}"
+    else:
+        raise ValueError("drop_reason is not a string")
+    return f"Stretch {_mss(length)} at {pace_words}, {_date(row['start_time'], zone)} {run}: {kept}"
+
+
+def _cs_excluded_line(row: dict, zone: ZoneInfo) -> str:
+    reason = row["reason"]
+    if not isinstance(reason, str):
+        raise ValueError("reason is not a string")
+    words = CS_REASON_WORDS[reason] if reason in CS_REASON_WORDS else _printable(reason)
+    source = row.get("source")
+    if source is not None:
+        words += f", {CS_SOURCE_WORDS[source]}" if source in CS_SOURCE_WORDS else f", {_printable(str(source))}"
+    return f"Left out of critical speed {_date(row['start_time'], zone)}: {words}"
+
+
+def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
+    """The critical speed block for a ``critical_speed`` entry (F033 reference section 6)."""
+    stretches = det["stretches"]
+    excluded = det["excluded"]
+    if not isinstance(stretches, list) or not isinstance(excluded, list):
+        raise ValueError("stretches or excluded is not a list")
+    if not all(isinstance(row, dict) for row in [*stretches, *excluded]):
+        raise ValueError("an entry of stretches or excluded is not an object")
+    parameters = det["parameters"]
+    if not isinstance(parameters, dict):
+        raise ValueError("parameters is not an object")
+
+    estimate = det["estimate"]
+    if estimate is not None:
+        label = estimate["confidence"]
+        if label not in ("low", "medium", "high"):
+            raise ValueError("confidence is not low, medium or high")
+        low = _mss(_number(estimate["interval"]["low"], "interval.low"))
+        high = _mss(_number(estimate["interval"]["high"], "interval.high"))
+        lines = [f"Critical speed {format_pace(_number(estimate['value'], 'value'))} (80 %: {low} to {high}), {label}"]
+        d_prime = det["d_prime"]
+        if not isinstance(d_prime, dict):
+            raise ValueError("d_prime is not an object")
+        line = (
+            f"D' {_metres(d_prime['value_m'], 'd_prime.value_m')} m (80 %: {_metres(d_prime['low_m'], 'd_prime.low_m')} "
+            f"to {_metres(d_prime['high_m'], 'd_prime.high_m')} m)"
+        )
+        if _flag(det, "d_prime_not_positive"):
+            line += ", at or below 0: the short stretches were probably not run at their best"
+        lines.append(line)
+    else:
+        reason = det["unavailable"]
+        if not isinstance(reason, str):
+            raise ValueError("no estimate of critical speed and no unavailable reason")
+        if reason in CS_UNAVAILABLE_WORDS:
+            kept = sum(1 for row in stretches if row["drop_reason"] is None)
+            far = _number(parameters["far_off_s_per_km"], "far_off_s_per_km")
+            excess = det["far_off_excess_s_per_km"]
+            words = CS_UNAVAILABLE_WORDS[reason].format(
+                window=f"{_number(parameters['window_days'], 'window_days'):g}",
+                as_of=_date(as_of, zone),
+                kept="1 stretch" if kept == 1 else f"{kept} stretches",
+                min_stretches=f"{_number(parameters['min_stretches'], 'min_stretches'):g}",
+                shortest=_mss(_number(parameters["max_shortest_s"], "max_shortest_s")),
+                longest=_mss(_number(parameters["min_longest_s"], "min_longest_s")),
+                far=f"{far:g}",
+                excess=_excess(excess, far) if reason == "longest_far_off" else "",
+            )
+            lines = [f"Critical speed unavailable: {words}"]
+        else:
+            lines = [f"Critical speed unavailable: {_printable(reason)}."]
+    lines += [_cs_stretch_line(row, zone) for row in stretches]
+    lines += [_cs_excluded_line(row, zone) for row in excluded if row["reason"] != CS_NOT_RUNNING]
+    others = sum(1 for row in excluded if row["reason"] == CS_NOT_RUNNING)
+    if others:
+        lines.append(
+            "1 other session in the window is not a run"
+            if others == 1
+            else f"{others} other sessions in the window are not runs"
+        )
+    return lines
+
+
 def render(body: Any) -> list[str]:
     """The lines for a ``GET /state`` body, or raise ``KeyError``/``TypeError``/``ValueError`` (or
     ``ZoneInfoNotFoundError``/``OverflowError``/``OSError``) on a body that cannot be read."""
@@ -527,6 +693,11 @@ def render(body: Any) -> list[str]:
         lines += _riegel_lines(riegel[0], body["as_of"], zone)
     else:
         lines.append(RIEGEL_NOT_SERVED_LINE)
+    cs = [d for d in body["determinants"] if isinstance(d, dict) and d.get("name") == CS_DETERMINANT]
+    if cs:
+        lines += _cs_lines(cs[0], body["as_of"], zone)
+    else:
+        lines.append(CS_NOT_SERVED_LINE)
     return lines
 
 
@@ -571,8 +742,10 @@ def state(
         "default now.",
     ),
 ) -> None:
-    """Show threshold pace estimated from your tagged races and threshold workouts, with those used and
-    excluded.
+    """Show threshold pace, the endurance exponent and critical speed, with what each used and left
+    out.
+
+    Threshold pace is estimated from your tagged races and threshold workouts.
 
     A run is a threshold workout when it is tagged Training in Garmin Connect or its workout name is
     listed in the API's threshold_workout_names; each workout line says which after its date. Only
@@ -591,6 +764,12 @@ def state(
     is left out. A race's age is counted to the second, so it leaves the window at the time of day
     it started, 1095 days on: with no --as-of, a race on its last day can be in this morning and
     out this evening.
+
+    Last, critical speed (CS) and D', fitted to the best grade-adjusted stretches of 2 to 20 minutes
+    in your runs of the last 90 days, one run per length, whatever their tag: no stretch spans a
+    pause over 10 s. A stretch beaten by a longer, faster one is dropped. CS is labelled by the short
+    races (30 minutes or less) among the stretches kept: none low, one medium, two or more high. Each
+    stretch is listed, kept or dropped, with the sessions left out.
 
     This is the training state; for whether the API is running, see runcoach status.
     """

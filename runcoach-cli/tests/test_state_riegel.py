@@ -60,6 +60,7 @@ PARAMETERS = {
 }
 
 OLDER_API_LINE = "Endurance exponent: not served by this API; update it and restart"
+CS_OLDER_API_LINE = "Critical speed: not served by this API; update it and restart"
 TAGGING_LINE = "Mark a race as Race in Garmin Connect and run runcoach sync tags --since <its date>"
 POPULATION = "Endurance exponent b 1.06 (population default, 80 %: 0.996 to 1.124), low: "
 
@@ -176,13 +177,16 @@ def _serve(install_mock_client, body: Any, seen: list[httpx.Request] | None = No
 
 
 def _riegel_lines(install_mock_client, body: Any, *args: str) -> list[str]:
-    """The lines after the one threshold line; the command must exit 0."""
+    """The lines between the one threshold line and the last; the command must exit 0. The bodies
+    here serve no ``critical_speed`` entry, so the last line must be ``CS_OLDER_API_LINE`` (F033
+    reference section 6), and it is cut so each comparison below reads the b block alone."""
     _serve(install_mock_client, body)
     result = runner.invoke(app, ["state", *args])
     assert result.exit_code == 0, result.output
     lines = result.stdout.splitlines()
     assert lines[0].startswith("Threshold pace unavailable: "), result.stdout
-    return lines[1:]
+    assert lines[-1] == CS_OLDER_API_LINE, result.stdout
+    return lines[1:-1]
 
 
 def _refused(install_mock_client, body: Any) -> None:
@@ -556,6 +560,7 @@ def test_b_block_race_lines_name_b(install_mock_client) -> None:
     assert b_block[2:] == [
         "Race in b 2024-05-05: 5.0 km (5.0 km adjusted), 0:20:00, fitness 36, fell 3 % over 4 weeks, weight 1.00",
         "Race left out of b 2025-11-02: recorded in smart or irregular recording mode",
+        CS_OLDER_API_LINE,
     ], result.stdout
     assert not any(line.startswith(("Race in b", "Race left out of b")) for line in threshold), result.stdout
     assert not any(line.startswith(("Race used", "Race excluded")) for line in b_block), result.stdout
