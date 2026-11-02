@@ -1,10 +1,24 @@
 """A critical-speed oracle outside the code: the F033 reference's fit, restated another way.
 
-Written from the F033 reference (section 1's constants, section 4's steps 4 to 6, section 5's
-worked examples), not from ``metrics.critical_speed``. It imports nothing from ``runcoach_api``;
+Written alongside the estimator, in the same commit, from the F033 reference (section 1's
+constants, section 4's steps 4 to 6, section 5's worked examples) rather than by reading
+``metrics.critical_speed``. It imports nothing from ``runcoach_api``;
 ``test_critical_speed_estimator.py`` pins that by parsing this file's imports, so the expected
 values it produces cannot share code with the module they check
-(``.claude/rules/learnings/contract-tables-need-an-independent-oracle.md``).
+(``.claude/rules/learnings/contract-tables-need-an-independent-oracle.md``). What that is worth,
+part by part:
+
+- **Independent cross-checks.** The line (raw sums and Cramer's rule against the estimator's
+  centred sums) and Student's t (``riegel_oracle.t_quantile``, an incomplete-beta quantile written
+  for an earlier feature) compute the same figures by a different method, so a centring or
+  degrees-of-freedom slip in the estimator shows here.
+- **Restatements of the reference.** The far-off excess and the label repeat the reference's
+  formulas as written, so they catch a slip in transcribing the reference, never a misreading of
+  it; only the section 5 figures pin them.
+- **Not covered.** The screen, the stretch search, one run per length, the shape check and the
+  spread are not in this oracle. The section 5 figures come from the planning script, which uses
+  the same window search and selection design as the estimator, so a match with them shows two
+  implementations of one design agreeing, not that the design is right.
 
 It takes the kept stretches already chosen, as ``(length_s, distance_m)`` pairs; it selects and
 screens nothing.

@@ -7,7 +7,8 @@ Expected values come from two places that share no code with ``metrics.critical_
 - **The oracle** (``tests/support/cs_oracle.py``): ordinary least squares by the 2x2 normal
   equations in raw sums, the far-off excess and the label rule, with Student's t from
   ``tests/support/riegel_oracle.py``'s incomplete-beta quantile.
-  ``test_the_oracle_imports_nothing_from_the_estimator`` parses its imports to pin that.
+  ``test_the_oracle_imports_nothing_from_the_estimator`` parses its imports to pin that. It was
+  written alongside the estimator; its docstring says which of its parts are independent.
 - **The reference's section 5 figures**, typed into the oracle module by hand at full precision.
 
 The edge rows (reference section 5's synthetic list) were written from the reference before the
