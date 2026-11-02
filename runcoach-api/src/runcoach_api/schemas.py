@@ -2157,13 +2157,15 @@ class CriticalSpeedDeterminant(BaseModel):
         description="`no_candidate_runs`, `too_few_stretches` (fewer than 3 kept), `spread_too_narrow` (the shortest "
         "kept over 300 s or the longest under 720 s), `longest_far_off` (the longest kept stretch more than 15 s/km "
         "slower than the next-longest predicts at b 1.06; the excess served), `estimate_not_finite` (a figure not "
-        "finite, CS not positive or its slow bound at or below 0 speed). `estimate`, `d_prime` and the fit figures "
-        "are then null; `stretches`, `excluded` and `parameters` are still served. Null with an estimate."
+        "finite, a kept stretch at or below 0 m, CS not positive or its slow bound at or below 0 speed). `estimate`, "
+        "`d_prime` and the fit figures are then null; `stretches`, `excluded` and `parameters` are still served. Null "
+        "with an estimate."
     )
     trend: DeterminantTrend
     d_prime: DPrime | None = Field(description="D' in metres with its 80 % interval; null when unavailable.")
     d_prime_not_positive: bool | None = Field(
-        description="D' at or below 0, served as computed (non-maximal short stretches are the usual cause); null "
+        description="D' at or below 0, served as computed; it arises only when every kept stretch runs at the same "
+        "average speed, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is then 0); null "
         "when unavailable."
     )
     error_m_per_s: float | None = Field(description="The standard error of CS in m/s; null when unavailable.")

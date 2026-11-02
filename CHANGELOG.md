@@ -77,6 +77,14 @@ range for this goal; check its distance and time, and the races listed`.
 
 `python -m runcoach_api.cli --help` prints the API's usage; it printed nothing and exited 0.
 
+`runcoach state --help` says a race's age in the endurance exponent's window is elapsed time, so
+across a daylight-saving change a race leaves an hour off its start's clock time; it said the race
+left at the time of day it started.
+
+A Race-tagged run whose stored summary is nested too deeply to decode no longer makes `GET /state`,
+`GET /goal`, `PUT /goal` or `POST /goal/preview` fail with a server error: the endurance exponent
+reads the summary as unreadable (`summary_unreadable` when the duration has to come from it).
+
 The `State & Metrics` tag of `contracts/openapi.yaml` names the three determinants `getState`
 serves. `contracts/contracts-README.md` says that the served `/openapi.json` `info.version` is the
 engine's own value, not the contract's: `main.py` passes no `version`, so it is FastAPI's default
