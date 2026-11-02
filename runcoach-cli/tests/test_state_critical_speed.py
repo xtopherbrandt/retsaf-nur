@@ -95,12 +95,12 @@ def _excluded(start: str, reason: str, source: str | None = None, session_id: st
 
 # Section 5, today (as of 2026-10-31): six stretches, all kept, no short race.
 TODAY = [
-    _stretch(120, 523.5537014471311, "2026-10-07T12:00:00Z", "threshold workout", "threshold_workout"),
+    _stretch(120, 523.5537014471311, "2026-10-07T12:00:00Z", None, "threshold_workout"),
     _stretch(180, 784.548392069948, "2026-10-16T12:00:00Z", "Speed Repeats", "threshold_workout"),
     _stretch(300, 1243.5530061433337, "2026-09-23T12:00:00Z", None),
     _stretch(480, 1973.681523449879, "2026-10-22T12:00:00Z", "Progression Run"),
     _stretch(720, 2905.6868789866103, "2026-08-20T12:00:00Z", "Run"),
-    _stretch(1200, 4526.608531191341, "2026-09-30T12:00:00Z", "threshold workout", "threshold_workout"),
+    _stretch(1200, 4526.608531191341, "2026-09-30T12:00:00Z", None, "threshold_workout"),
 ]
 
 # Section 5, 2025-01-31: the 720 s stretch (4:14/km) dropped, beaten by the 1200 s one.
@@ -225,12 +225,12 @@ def test_d_prime_prints_with_its_interval(install_mock_client) -> None:
 
     negative = _cs(d_prime=(-12.5, -40.5, 15.5))
     assert _cs_lines(install_mock_client, _body(negative))[1] == (
-        "D' -13 m (80 %: -41 to 16 m), at or below 0: the short stretches were probably not run at their best"
+        "D' -13 m (80 %: -41 to 16 m), at or below 0: every kept stretch ran at the same average speed"
     )
 
     zero = _cs(d_prime=(-0.4, -0.5, 0.5))
     assert _cs_lines(install_mock_client, _body(zero))[1] == (
-        "D' 0 m (80 %: -1 to 1 m), at or below 0: the short stretches were probably not run at their best"
+        "D' 0 m (80 %: -1 to 1 m), at or below 0: every kept stretch ran at the same average speed"
     )
 
     # The note follows the served flag, not the sign: a positive D' served without it prints none.
@@ -243,12 +243,12 @@ def test_one_line_per_stretch_kept_or_dropped_in_words(install_mock_client) -> N
     stretch, 2831.33 m (254.29 s/km, 4:14), was beaten by the 1200 s one."""
     lines = _cs_lines(install_mock_client, _body(_cs()))
     assert lines[2:] == [
-        "Stretch 2:00 at 3:49/km, 2026-10-07 threshold workout: kept",
+        "Stretch 2:00 at 3:49/km, 2026-10-07 unnamed: kept",
         "Stretch 3:00 at 3:49/km, 2026-10-16 Speed Repeats: kept",
         "Stretch 5:00 at 4:01/km, 2026-09-23 unnamed: kept",
         "Stretch 8:00 at 4:03/km, 2026-10-22 Progression Run: kept",
         "Stretch 12:00 at 4:08/km, 2026-08-20 Run: kept",
-        "Stretch 20:00 at 4:25/km, 2026-09-30 threshold workout: kept",
+        "Stretch 20:00 at 4:25/km, 2026-09-30 unnamed: kept",
     ], "\n".join(lines)
 
     jan = _cs(JAN_2025, 242.8470975270634, 241.25141196259918, 244.46403200937243, "medium")

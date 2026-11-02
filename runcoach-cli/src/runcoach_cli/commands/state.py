@@ -646,7 +646,7 @@ def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
             f"to {_metres(d_prime['high_m'], 'd_prime.high_m')} m)"
         )
         if _flag(det, "d_prime_not_positive"):
-            line += ", at or below 0: the short stretches were probably not run at their best"
+            line += ", at or below 0: every kept stretch ran at the same average speed"
         lines.append(line)
     else:
         reason = det["unavailable"]
@@ -761,15 +761,16 @@ def state(
     the last 1095 days (the population 1.06 until three races span a twofold distance, a race in
     the last 182 days of the window counted by its fading weight), with each race used and
     excluded. A race run while your fitness had fallen more than 30 % in the four weeks before it
-    is left out. A race's age is counted to the second, so it leaves the window at the time of day
-    it started, 1095 days on: with no --as-of, a race on its last day can be in this morning and
-    out this evening.
+    is left out. A race's age is counted to the second as elapsed time, so it leaves the window 1095
+    days on at the clock time it started, an hour off across a daylight-saving change: with no
+    --as-of, a race on its last day can be in this morning and out this evening.
 
     Last, critical speed (CS) and D', fitted to the best grade-adjusted stretches of 2 to 20 minutes
-    in your runs of the last 90 days, one run per length, whatever their tag: no stretch spans a
-    pause over 10 s. A stretch beaten by a longer, faster one is dropped. CS is labelled by the short
-    races (30 minutes or less) among the stretches kept: none low, one medium, two or more high. Each
-    stretch is listed, kept or dropped, with the sessions left out.
+    in your runs of the last 90 days, one run per length, tagged or not (a declared resting capture
+    is left out): no stretch spans a pause over 10 s. A stretch beaten by a longer, faster one is
+    dropped. CS is labelled by the short races (30 minutes or less) among the stretches kept: none
+    low, one medium, two or more high. Each stretch is listed, kept or dropped, with the sessions
+    left out.
 
     This is the training state; for whether the API is running, see runcoach status.
     """

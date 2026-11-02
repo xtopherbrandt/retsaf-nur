@@ -767,11 +767,13 @@ def test_help_states_the_within_day_window_edge() -> None:
     what ``metrics/riegel_b.py`` implements: ``_screen_stored`` ages a race as
     ``(instant - start_time).total_seconds()`` in fractional days, ``weight_at`` is 0 once that age
     reaches ``WINDOW_DAYS`` (1095), and with no ``--as-of`` the instant is now, so a race leaves the
-    window at its own start time of day, 1095 days on. Two fragments are pinned, not the sentence,
-    so a reword that keeps the meaning words still passes."""
+    window 1095 days on at its start's clock time, an hour off across a daylight-saving change
+    (elapsed time, not the local clock). Fragments are pinned, not the sentence, so a reword that
+    keeps the meaning words still passes."""
     result = runner.invoke(app, ["state", "--help"])
     assert result.exit_code == 0, result.output
     text = " ".join(result.stdout.split())
     assert "counted to the second" in text, text
+    assert "elapsed time" in text and "daylight-saving" in text, text
     assert "1095 days on" in text, text
     assert "out this evening" in text, text
