@@ -140,7 +140,7 @@ def _ftp(client: TestClient) -> dict:
     response = client.get("/state")
     assert response.status_code == 200, response.text
     determinants = response.json()["determinants"]
-    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent"]
+    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     [determinant] = [d for d in determinants if d["name"] == "functional_threshold_pace"]
     return determinant
 

@@ -2052,7 +2052,138 @@ class RiegelDeterminant(BaseModel):
     parameters: RiegelExponentParameters
 
 
-Determinant = Annotated[ThresholdDeterminant | RiegelDeterminant, Field(discriminator="name")]
+# GET /state (F033): critical speed (CS) and D' from the best stretches of the last 90 days of runs.
+
+
+class CriticalSpeedInterval(BaseModel):
+    """The 80 % interval of CS on speed, `CS +/- t se`, served as pace: `low` the fast end."""
+
+    low: float
+    high: float
+
+
+class CriticalSpeedValue(BaseModel):
+    """The contract's ``ConfidenceValue`` for critical speed."""
+
+    value: float = Field(description="Critical speed as pace in s/km: 1000 / CS, CS the fitted slope in m/s.")
+    unit: Literal["s/km"]
+    interval: CriticalSpeedInterval
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="By the kept stretches whose run is tagged Race, is not admitted as a workout by a listed name "
+        "and lasted 1800 s or less: 0 `low`, 1 `medium`, 2 or more `high` (F033 reference section 4 step 6). "
+        "The fit error is not an input."
+    )
+    provisional: bool = Field(description="Always false: no population CS stands in.")
+
+
+class DPrime(BaseModel):
+    """D', the fitted line's intercept, with its 80 % interval `D' +/- t se_D`."""
+
+    value_m: float
+    low_m: float
+    high_m: float
+
+
+class CriticalSpeedStretch(BaseModel):
+    """One run's best stretch at one length: GAP distance over a window of consecutive segments that
+    spans no pause over 10 s and no moving gap, scaled to exactly the length."""
+
+    length_s: int
+    distance_m: float | None = Field(description="The GAP distance in metres over exactly `length_s`; null when not finite.")
+    pace_s_per_km: float | None = Field(description="`1000 * length_s / distance_m`; null when the distance is not a finite number above 0.")
+    session_id: str
+    start_time: datetime.datetime
+    activity_tag: str | None = Field(description="The run's stored tag (`race` lifts the label); null when none.")
+    name: str | None = Field(description="The run's stored name; null when none.")
+    duration_s: float | None = Field(
+        description="The run's `timer_time_s`, else the summary's `duration_s`, as the label reads it; null when unknown."
+    )
+    drop_reason: Literal["beaten_by_longer"] | None = Field(
+        description="Null for a kept stretch; `beaten_by_longer` when a longer stretch has a higher average speed."
+    )
+    beaten_by_s: int | None = Field(description="For `beaten_by_longer`, the shortest longer, faster length; else null.")
+
+
+class CriticalSpeedExclusion(BaseModel):
+    """A session in the 90 days at or before `as_of` that is not a candidate, and why."""
+
+    session_id: str
+    start_time: datetime.datetime
+    reason: Literal[
+        "not_running",
+        "declared_capture",
+        "quality_flags_unreadable",
+        "distance_regressed",
+        "smart_recording",
+        "features_unavailable",
+        "grade_clamped",
+    ] = Field(
+        description="The first of the F033 reference section 2 steps the session fails: `not_running`, "
+        "`declared_capture`, `quality_flags_unreadable`, a stored flag (`distance_regressed`, `smart_recording`), "
+        "`features_unavailable`, or an F013 flag (`distance_regressed`, `smart_recording`, `grade_clamped`)."
+    )
+    source: Literal["stored", "f013"] | None = Field(
+        description="For a flag reason, `stored` (the stored quality flags) or `f013` (F013's flags); else null."
+    )
+
+
+class CriticalSpeedParameters(BaseModel):
+    """The constants CS was computed with (F033 reference section 1), so it can be redone by hand."""
+
+    window_days: int
+    stretch_lengths_s: list[int]
+    pause_break_s: int
+    population_b: float
+    far_off_s_per_km: int
+    min_stretches: int
+    max_shortest_s: int
+    min_longest_s: int
+    short_race_max_s: int
+    coverage: float
+
+
+class CriticalSpeedDeterminant(BaseModel):
+    """The `critical_speed` entry: CS and D' fitted by least squares of distance on time over the best
+    GAP stretches (2 to 20 minutes) of the running sessions of the 90 days at or before `as_of`, one
+    run per length. Recomputed on every read; no population value stands in. Its interval covers
+    scatter about the line, not bias: stretches run below maximal effort read slow."""
+
+    name: Literal["critical_speed"]
+    estimate: CriticalSpeedValue | None
+    unavailable: (
+        Literal["no_candidate_runs", "too_few_stretches", "spread_too_narrow", "longest_far_off", "estimate_not_finite"]
+        | None
+    ) = Field(
+        description="`no_candidate_runs`, `too_few_stretches` (fewer than 3 kept), `spread_too_narrow` (the shortest "
+        "kept over 300 s or the longest under 720 s), `longest_far_off` (the longest kept stretch more than 15 s/km "
+        "slower than the next-longest predicts at b 1.06; the excess served), `estimate_not_finite` (a figure not "
+        "finite, CS not positive or its slow bound at or below 0 speed). `estimate`, `d_prime` and the fit figures "
+        "are then null; `stretches`, `excluded` and `parameters` are still served. Null with an estimate."
+    )
+    trend: DeterminantTrend
+    d_prime: DPrime | None = Field(description="D' in metres with its 80 % interval; null when unavailable.")
+    d_prime_not_positive: bool | None = Field(
+        description="D' at or below 0, served as computed (non-maximal short stretches are the usual cause); null "
+        "when unavailable."
+    )
+    error_m_per_s: float | None = Field(description="The standard error of CS in m/s; null when unavailable.")
+    t_multiplier: float | None = Field(
+        description="Student's t at 0.90 for the kept stretches less 2 degrees of freedom; null when unavailable."
+    )
+    far_off_excess_s_per_km: float | None = Field(
+        description="The longest kept stretch's pace less the pace the next-longest predicts at b 1.06, s/km; null "
+        "when unavailable for another reason."
+    )
+    stretches: list[CriticalSpeedStretch] = Field(description="The chosen stretches, kept or dropped, shortest first.")
+    excluded: list[CriticalSpeedExclusion] = Field(
+        description="Every session in the 90 days at or before `as_of` that is not a candidate, in start-time order."
+    )
+    parameters: CriticalSpeedParameters
+
+
+Determinant = Annotated[
+    ThresholdDeterminant | RiegelDeterminant | CriticalSpeedDeterminant, Field(discriminator="name")
+]
 """One determinant of the state model, told apart by ``name``."""
 
 

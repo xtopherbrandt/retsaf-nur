@@ -219,8 +219,8 @@ def _read_back_section_4() -> dict[str, tuple[load_chart.Day, load_chart.Day, lo
 def _riegel(client: TestClient) -> dict:
     response = client.get("/state")
     assert response.status_code == 200, response.text
-    threshold, riegel = response.json()["determinants"]
-    assert (threshold["name"], riegel["name"]) == ("functional_threshold_pace", "riegel_exponent")
+    threshold, riegel, cs = response.json()["determinants"]
+    assert (threshold["name"], riegel["name"], cs["name"]) == ("functional_threshold_pace", "riegel_exponent", "critical_speed")
     print(f"  efforts {[(e['session_id'], e['fitness_before'], e['fitness_earlier']) for e in riegel['efforts']]}")
     print(f"  excluded {riegel['excluded']}")
     return riegel

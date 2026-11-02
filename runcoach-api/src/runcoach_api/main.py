@@ -1832,10 +1832,10 @@ def _riegel_determinant(result: riegel_b.RiegelEstimate) -> RiegelDeterminant:
     responses={500: {"description": "The load chart could not be built; the detail is the chart's message"}},
 )
 def get_state(as_of: str | None = Query(None)) -> StateModel:
-    """The determinant profile at ``as_of`` (F024, F026, F027, F029): threshold pace from the tagged
-    races and the threshold workouts' counted work reps, with its 80 % interval and confidence,
-    then the endurance exponent b from the tagged races, on the contract's path
-    (``operationId: getState``).
+    """The determinant profile at ``as_of`` (F024, F026, F027, F029, F033): threshold pace from the
+    tagged races and the threshold workouts' counted work reps, with its 80 % interval and
+    confidence, then the endurance exponent b from the tagged races, then critical speed and D'
+    from the best stretches of the run history, on the contract's path (``operationId: getState``).
 
     The zone and the workout names are read per request from the config cached at startup, so a
     changed list needs a restart. ``parse_as_of`` reads
@@ -1863,7 +1863,15 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     bound to the instant, the chart's fitness lookup and the zone, decides which races' F013
     features are read (each at most once per request, shared with the threshold read).
     ``metrics.riegel_b.estimate`` then screens and fits the races (F029 reference sections 2 and
-    3), and the two entries are served threshold first.
+    3), and the entries are served threshold first, then b.
+
+    Critical speed (F033) comes third. Its predicate (``critical_speed.needs_records``, bound to
+    the instant and the zone) decides, from the stored values alone, which sessions of the 90 days
+    at or before the instant have their records read in the same snapshot; it never raises, since
+    an exception there would fail the whole response. ``critical_speed.estimate`` then screens the
+    rows and fits CS and D' over each candidate run's best GAP stretches, recomputed on every
+    request (F033 reference sections 2 to 4), and ``_cs_determinant`` serves the result with D'
+    inside the entry. The goal routes do not read it.
     """
     config = db._load_config_cached()
     zone = ZoneInfo(config.athlete_timezone)
@@ -1873,7 +1881,7 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
 
     conn = db.get_connection()
     try:
-        at = _riegel_at(conn, instant, zone, today)
+        at = _riegel_at(conn, instant, zone, today, cs_needs_records=_cs_needs_records(instant, zone))
     finally:
         conn.close()
 
@@ -1881,7 +1889,11 @@ def get_state(as_of: str | None = Query(None)) -> StateModel:
     return StateModel(
         as_of=result.as_of,
         timezone=zone.key,
-        determinants=[_threshold_determinant(result, at.threshold_unreadable), _riegel_determinant(at.estimate)],
+        determinants=[
+            _threshold_determinant(result, at.threshold_unreadable),
+            _riegel_determinant(at.estimate),
+            _cs_determinant(critical_speed.estimate(at.cs_rows, instant, zone)),
+        ],
         readiness=None,
         gap_to_goal=None,
     )
@@ -2011,17 +2023,24 @@ import sqlite3
 class RiegelAt:
     """What one request knows about b: the estimate at the instant, the load chart it was screened
     against, the threshold rows and unreadable list from the same snapshot (``threshold_pace``
-    reads them), and the raw Riegel rows."""
+    reads them), the raw Riegel rows, and the critical-speed rows (empty unless the caller passed
+    ``cs_needs_records``)."""
 
     estimate: riegel_b.RiegelEstimate
     chart: load_chart.LoadChart
     threshold_rows: list[dict]
     threshold_unreadable: list[dict]
     riegel_rows: list[dict]
+    cs_rows: list[dict] = dataclasses.field(default_factory=list)
 
 
 def _riegel_at(
-    conn: sqlite3.Connection, instant: datetime.datetime, zone: ZoneInfo, today: datetime.date
+    conn: sqlite3.Connection,
+    instant: datetime.datetime,
+    zone: ZoneInfo,
+    today: datetime.date,
+    *,
+    cs_needs_records: Callable[[dict], bool] | None = None,
 ) -> RiegelAt:
     """b and the load chart at ``instant`` from one ``db.read_state_inputs`` snapshot on ``conn``.
 
@@ -2033,6 +2052,9 @@ def _riegel_at(
     which races' F013 features the snapshot reads; ``riegel_b.estimate`` then screens and fits the
     Riegel rows against that same lookup. The workout names come from the config cached at
     startup. Nothing is written; the caller owns ``conn``.
+
+    ``cs_needs_records`` (F033, ``GET /state`` only) is handed to the snapshot only when given, so
+    it also reads the critical-speed rows; the goal routes never pass it and read none.
     """
     config = db._load_config_cached()
     charts: list[load_chart.LoadChart] = []
@@ -2045,7 +2067,8 @@ def _riegel_at(
         charts.append(chart)
         return functools.partial(riegel_b.needs_features, instant=instant, fitness=_riegel_fitness(chart), zone=zone)
 
-    inputs = db.read_state_inputs(conn, config.threshold_workout_names, make_needs_features)
+    cs = {} if cs_needs_records is None else {"cs_needs_records": cs_needs_records}
+    inputs = db.read_state_inputs(conn, config.threshold_workout_names, make_needs_features, **cs)
     (chart,) = charts
     estimate = riegel_b.estimate(inputs.riegel_rows, instant, _riegel_fitness(chart), zone)
     return RiegelAt(
@@ -2054,6 +2077,7 @@ def _riegel_at(
         threshold_rows=inputs.threshold_rows,
         threshold_unreadable=inputs.threshold_unreadable,
         riegel_rows=inputs.riegel_rows,
+        cs_rows=inputs.cs_rows,
     )
 
 
@@ -2392,3 +2416,95 @@ def get_goal(as_of: str | None = Query(None)) -> GoalContract:
     finally:
         conn.close()
     return _goal_contract(row, race, target, reference_date)
+
+
+# ---------------------------------------------------------------------------
+# Critical speed and D' for GET /state (F033)
+#
+# Appended below the earlier routes, as the routes above are, so the lines
+# cited by number stay in place. The screen and the fit are
+# metrics.critical_speed's, pure; GET /state binds its predicate to the
+# instant, reads the rows through _riegel_at's snapshot and serves the
+# result through _cs_determinant. The goal routes do not read it.
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics import critical_speed
+from runcoach_api.schemas import CriticalSpeedDeterminant
+
+
+def _cs_needs_records(instant: datetime.datetime, zone: ZoneInfo) -> Callable[[dict], bool]:
+    """``critical_speed.needs_records`` bound to the instant and the zone: the snapshot's
+    critical-speed predicate. It reads stored values only and never raises on a row."""
+    return functools.partial(critical_speed.needs_records, instant=instant, zone=zone)
+
+
+def _text_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _cs_determinant(result: critical_speed.CriticalSpeedEstimate) -> CriticalSpeedDeterminant:
+    """The ``critical_speed`` entry: the estimator's result mapped field by field to the served
+    schema, so a field the schema does not list (D''s standard error) is never served.
+
+    A fitted figure that is not finite (the estimator already withholds one) is served as
+    ``estimate_not_finite`` with the estimate, D' and the fit figures null, never as a value JSON
+    cannot carry; a stretch distance or pace that is not finite is served null. A run name or tag
+    that is not text (only a write from outside the API could leave one) is served null. The
+    stretches, the exclusions and the parameters are served whatever the outcome."""
+    figures = (
+        result.cs_s_per_km,
+        result.interval_low_s_per_km,
+        result.interval_high_s_per_km,
+        result.d_prime_m,
+        result.d_prime_low_m,
+        result.d_prime_high_m,
+        result.error_m_per_s,
+        result.t_multiplier,
+    )
+    unavailable = result.unavailable
+    if unavailable is None and not all(_finite_or_none(value) is not None for value in figures):
+        unavailable = critical_speed.ESTIMATE_NOT_FINITE
+    fitted = unavailable is None
+    estimate = d_prime = None
+    if fitted:
+        estimate = {
+            "value": result.cs_s_per_km,
+            "unit": "s/km",
+            "interval": {"low": result.interval_low_s_per_km, "high": result.interval_high_s_per_km},
+            "confidence": result.label,
+            "provisional": False,
+        }
+        d_prime = {"value_m": result.d_prime_m, "low_m": result.d_prime_low_m, "high_m": result.d_prime_high_m}
+    stretches = [
+        {
+            "length_s": s.length_s,
+            "distance_m": _finite_or_none(s.distance_m),
+            "pace_s_per_km": _finite_or_none(s.pace_s_per_km),
+            "session_id": s.session_id,
+            "start_time": s.start_time,
+            "activity_tag": _text_or_none(s.activity_tag),
+            "name": _text_or_none(s.run_name),
+            "duration_s": _finite_or_none(s.run_duration_s),
+            "drop_reason": s.drop_reason,
+            "beaten_by_s": s.beaten_by_s,
+        }
+        for s in result.stretches
+    ]
+    excluded = [
+        {"session_id": e.session_id, "start_time": e.start_time, "reason": e.reason, "source": e.source}
+        for e in result.excluded
+    ]
+    excess_served = unavailable in (None, critical_speed.LONGEST_FAR_OFF)
+    return CriticalSpeedDeterminant(
+        name="critical_speed",
+        estimate=estimate,
+        unavailable=unavailable,
+        trend={"direction": "unknown", "rate": None},
+        d_prime=d_prime,
+        d_prime_not_positive=result.d_prime_not_positive if fitted else None,
+        error_m_per_s=result.error_m_per_s if fitted else None,
+        t_multiplier=result.t_multiplier if fitted else None,
+        far_off_excess_s_per_km=_finite_or_none(result.far_off_excess_s_per_km) if excess_served else None,
+        stretches=stretches,
+        excluded=excluded,
+        parameters=dict(result.parameters),
+    )

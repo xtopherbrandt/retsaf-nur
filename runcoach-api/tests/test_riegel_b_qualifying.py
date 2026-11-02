@@ -242,7 +242,7 @@ def _riegel(client: TestClient, as_of: str | None = None) -> dict:
     response = client.get("/state", params={} if as_of is None else {"as_of": as_of})
     assert response.status_code == 200, response.text
     determinants = response.json()["determinants"]
-    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent"]
+    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     return determinants[1]
 
 
@@ -267,8 +267,8 @@ def _patch_features(monkeypatch: pytest.MonkeyPatch, patches: dict[str, Patch]) 
     its result passed through its patch (``None`` makes it a computation that failed)."""
     real = db_module._race_features
 
-    def patched(conn, session_id):
-        body = real(conn, session_id)
+    def patched(conn, session_id, *blocks):  # GET /state's snapshot also hands it the CS blocks
+        body = real(conn, session_id, *blocks)
         if session_id in patches and body is not None:
             return patches[session_id](body)
         return body

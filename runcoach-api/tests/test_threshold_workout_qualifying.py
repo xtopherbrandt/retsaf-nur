@@ -212,7 +212,7 @@ def _ftp(client: TestClient) -> dict:
     response = client.get("/state")
     assert response.status_code == 200, response.text
     determinants = response.json()["determinants"]
-    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent"]
+    assert [d["name"] for d in determinants] == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     [determinant] = [d for d in determinants if d["name"] == "functional_threshold_pace"]
     return determinant
 
@@ -587,6 +587,8 @@ def test_records_are_read_only_for_workouts_past_orders_1_to_5(monkeypatch: pyte
     used = _store(datetime(2026, 9, 5, 7, 0, tzinfo=UTC))
     monkeypatch.setattr(db_module, "read_session_feature_inputs", counted_inputs)
     monkeypatch.setattr(db_module, "read_workout_laps", counted_laps)
+    # The threshold read alone is counted: critical speed's predicate declines every session here.
+    monkeypatch.setattr(main_module, "_cs_needs_records", lambda instant, zone: lambda row: False)
     with TestClient(app) as client:
         determinant = _ftp(client)
     print(f"  feature reads {calls}; lap reads {lap_reads}")

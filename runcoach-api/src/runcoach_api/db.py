@@ -2095,7 +2095,7 @@ def _decoded(value):
     """``json.loads(value)``, or ``_UNREADABLE`` when it does not decode (``None`` reads as ``None``)."""
     try:
         return _json_load(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):  # RecursionError: JSON nested past the decoder's depth
         return _UNREADABLE
 
 

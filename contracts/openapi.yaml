@@ -918,16 +918,16 @@ paths:
       operationId: getState
       summary: Physiological state model + gap-to-goal, each with confidence
       x-readiness: implemented
-      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026, F027, F029"
+      x-owner-spec: "spec/04 (determinant profile, confidence); spec/04 §4.7 / spec/01 §1.4 (gap-to-goal); runcoach-api F024 (2026-10-15), F026, F027, F029, F033"
       x-story: [view-state]
       description: >
-        Computed on read from the tagged races and the threshold workouts (tagged Training or named in
-        `threshold_workout_names`); nothing is stored or written. Two determinants are served, in this
-        order: `functional_threshold_pace` (F024, F026, F027) and `riegel_exponent`, the endurance
-        exponent b from the tagged races (F029), each with its 80 % interval, its confidence and the
-        efforts it was computed from. `readiness` and `gap_to_goal` are null; the other determinants are absent.
-        The load chart is built on every request for the fitness screen; a store whose chart cannot be
-        built is a 500.
+        Computed on read from the tagged races, the threshold workouts (tagged Training or named in
+        `threshold_workout_names`) and the best stretches of the last 90 days of runs; nothing is stored
+        or written. Three determinants are served, in this order: `functional_threshold_pace` (F024,
+        F026, F027), `riegel_exponent`, the endurance exponent b from the tagged races (F029), and
+        `critical_speed`, critical speed with D' inside the entry, mined from the run history (F033), each with its
+        80 % interval, its confidence and what it was computed from. `readiness` and `gap_to_goal` are null; the other
+        determinants are absent. The load chart is built on every request for the fitness screen; a store whose chart cannot be built is a 500.
       parameters:
         - name: as_of
           in: query
@@ -2200,19 +2200,19 @@ components:
 
     Determinant:
       description: >
-        One determinant with its estimate and trend, told apart by `name`: `functional_threshold_pace`
-        (`ThresholdDeterminant`) and `riegel_exponent` (`RiegelDeterminant`) are served, and each
-        branch's `name` enum holds its one name so a client can narrow on it. The other names
-        (`critical_speed`, `d_prime`, `vvo2max`, `running_economy`, `durability`) are planned; each
-        gets its own branch and mapping entry when it ships.
+        One determinant with its estimate and trend, told apart by `name`; each branch's `name` enum holds its one name so a client can narrow on it. Served: `functional_threshold_pace` (`ThresholdDeterminant`),
+        `riegel_exponent` (`RiegelDeterminant`) and `critical_speed` (`CriticalSpeedDeterminant`), with D' inside that entry (one fit, one provenance).
+        The other names (`vvo2max`, `running_economy`, `durability`) are planned; each gets its own branch and mapping entry when it ships.
       oneOf:
         - $ref: "#/components/schemas/ThresholdDeterminant"
         - $ref: "#/components/schemas/RiegelDeterminant"
+        - $ref: "#/components/schemas/CriticalSpeedDeterminant"
       discriminator:
         propertyName: name
         mapping:
           functional_threshold_pace: "#/components/schemas/ThresholdDeterminant"
           riegel_exponent: "#/components/schemas/RiegelDeterminant"
+          critical_speed: "#/components/schemas/CriticalSpeedDeterminant"
 
     ThresholdDeterminant:
       type: object
@@ -3650,6 +3650,104 @@ components:
           type: array
           items: { $ref: "#/components/schemas/LapCandidateItemResult" }
           description: "One per request item, in request order."
+    CriticalSpeedDeterminant:
+      type: object
+      description: >
+        getState: the `critical_speed` entry (F033), critical speed (CS) and D' fitted by least
+        squares of distance on time over the best GAP stretches (2 to 20 minutes) of the running
+        sessions of the 90 days at or before `as_of`, one run per length, recomputed on every read;
+        no population value stands in. D' rides inside this entry: one fit, one provenance. Beside
+        the estimate it carries what reproduces it by hand: `d_prime`, `error_m_per_s`,
+        `t_multiplier`, `far_off_excess_s_per_km`, the stretches (`stretches`, kept or dropped), the
+        sessions not used (`excluded`) and the constants (`parameters`). Its interval covers
+        scatter about the line, not bias: stretches run below maximal effort read slow. Its `trend`
+        is not computed yet: `direction` is `unknown` and `rate` null.
+      required: [name, estimate, unavailable, trend, d_prime, d_prime_not_positive, error_m_per_s, t_multiplier, far_off_excess_s_per_km, stretches, excluded, parameters]
+      properties:
+        name: { type: string, enum: [critical_speed] }
+        estimate:
+          allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
+          nullable: true
+          description: "CS as pace with its 80 % interval (fast end `low`), `unit` `s/km`, `provisional` false; the label counts the kept stretches from a Race-tagged run of 1800 s or less not admitted as a workout (0 `low`, 1 `medium`, 2 or more `high`); null when `unavailable` is set."
+        unavailable:
+          type: string
+          enum: [no_candidate_runs, too_few_stretches, spread_too_narrow, longest_far_off, estimate_not_finite]
+          nullable: true
+          description: >
+            Null with an estimate. `no_candidate_runs`; `too_few_stretches` (fewer than 3 kept);
+            `spread_too_narrow` (the shortest kept over 300 s or the longest under 720 s);
+            `longest_far_off` (the longest kept stretch more than 15 s/km slower than the
+            next-longest predicts at b 1.06, the excess served); `estimate_not_finite` (a figure not
+            finite, CS not positive or its slow bound at or below 0 speed). `estimate`, `d_prime`
+            and the fit figures are then null; `stretches`, `excluded` and `parameters` are served.
+        trend: { $ref: "#/components/schemas/Trend" }
+        d_prime:
+          allOf: [{ $ref: "#/components/schemas/DPrime" }]
+          nullable: true
+          description: "D' in metres with its 80 % interval; null when unavailable."
+        d_prime_not_positive: { type: boolean, nullable: true, description: "D' at or below 0, served as computed (non-maximal short stretches are the usual cause); null when unavailable." }
+        error_m_per_s: { type: number, nullable: true, description: "The standard error of CS in m/s; null when unavailable." }
+        t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for the kept stretches less 2 degrees of freedom; null when unavailable." }
+        far_off_excess_s_per_km: { type: number, nullable: true, description: "The longest kept stretch's pace less the pace the next-longest predicts at b 1.06, s/km; null when unavailable for another reason." }
+        stretches:
+          type: array
+          description: "The chosen stretches, kept or dropped, shortest first."
+          items: { $ref: "#/components/schemas/CriticalSpeedStretch" }
+        excluded:
+          type: array
+          description: "Every session in the 90 days at or before `as_of` that is not a candidate, in start-time order."
+          items: { $ref: "#/components/schemas/CriticalSpeedExclusion" }
+        parameters: { $ref: "#/components/schemas/CriticalSpeedParameters" }
+    CriticalSpeedExclusion:
+      type: object
+      description: "getState: a session in the 90 days at or before `as_of` that critical speed did not use, and why."
+      required: [session_id, start_time, reason, source]
+      properties:
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        reason:
+          type: string
+          enum: [not_running, declared_capture, quality_flags_unreadable, distance_regressed, smart_recording, features_unavailable, grade_clamped]
+          description: "The first of the F033 reference section 2 steps the session fails: `not_running`, `declared_capture`, `quality_flags_unreadable`, a stored flag (`distance_regressed`, `smart_recording`), `features_unavailable`, or an F013 flag (`distance_regressed`, `smart_recording`, `grade_clamped`)."
+        source: { type: string, enum: [stored, f013], nullable: true, description: "For a flag reason, `stored` (the stored quality flags) or `f013` (F013's flags); else null." }
+    CriticalSpeedParameters:
+      type: object
+      description: "getState: the constants critical speed was computed with (F033 reference section 1), so it can be redone by hand."
+      required: [window_days, stretch_lengths_s, pause_break_s, population_b, far_off_s_per_km, min_stretches, max_shortest_s, min_longest_s, short_race_max_s, coverage]
+      properties:
+        window_days: { type: integer }
+        stretch_lengths_s: { type: array, items: { type: integer } }
+        pause_break_s: { type: integer }
+        population_b: { type: number }
+        far_off_s_per_km: { type: integer }
+        min_stretches: { type: integer }
+        max_shortest_s: { type: integer }
+        min_longest_s: { type: integer }
+        short_race_max_s: { type: integer }
+        coverage: { type: number }
+    CriticalSpeedStretch:
+      type: object
+      description: "getState: one run's best stretch at one length, the GAP distance over a window of consecutive segments that spans no pause over 10 s and no moving gap, scaled to exactly the length."
+      required: [length_s, distance_m, pace_s_per_km, session_id, start_time, activity_tag, name, duration_s, drop_reason, beaten_by_s]
+      properties:
+        length_s: { type: integer }
+        distance_m: { type: number, nullable: true, description: "The GAP distance in metres over exactly `length_s`; null when not finite." }
+        pace_s_per_km: { type: number, nullable: true, description: "`1000 * length_s / distance_m`; null when the distance is not a finite number above 0." }
+        session_id: { type: string }
+        start_time: { type: string, format: date-time }
+        activity_tag: { type: string, nullable: true, description: "The run's stored tag (`race` lifts the label); null when none." }
+        name: { type: string, nullable: true, description: "The run's stored name; null when none." }
+        duration_s: { type: number, nullable: true, description: "The run's `timer_time_s`, else the summary's `duration_s`, as the label reads it; null when unknown." }
+        drop_reason: { type: string, enum: [beaten_by_longer], nullable: true, description: "Null for a kept stretch; `beaten_by_longer` when a longer stretch has a higher average speed." }
+        beaten_by_s: { type: integer, nullable: true, description: "For `beaten_by_longer`, the shortest longer, faster length; else null." }
+    DPrime:
+      type: object
+      description: "getState: D', the critical-speed line's intercept in metres, with its 80 % interval `D' +/- t se_D`."
+      required: [value_m, low_m, high_m]
+      properties:
+        value_m: { type: number }
+        low_m: { type: number }
+        high_m: { type: number }
     RiegelDeterminant:
       type: object
       description: >

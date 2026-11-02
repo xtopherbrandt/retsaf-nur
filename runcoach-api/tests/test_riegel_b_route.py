@@ -189,8 +189,8 @@ def _body(client: TestClient, as_of: str | None = None) -> dict:
 
 
 def _entries(body: dict) -> tuple[dict, dict]:
-    threshold, riegel = body["determinants"]
-    assert (threshold["name"], riegel["name"]) == ("functional_threshold_pace", "riegel_exponent")
+    threshold, riegel, cs = body["determinants"]
+    assert (threshold["name"], riegel["name"], cs["name"]) == ("functional_threshold_pace", "riegel_exponent", "critical_speed")
     return threshold, riegel
 
 
@@ -203,15 +203,15 @@ def _riegel(body: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_state_serves_two_determinants_in_order() -> None:
-    """Threshold pace first, b second; b is the fit of the three races, its interval around it, its
-    trend unknown, each race at weight 1 with its GAP-equivalent distance the distance run."""
+def test_state_serves_three_determinants_in_order() -> None:
+    """Threshold pace, b, then critical speed; b is the fit of the three races, its interval around it,
+    its trend unknown, each race at weight 1 with its GAP-equivalent distance the distance run."""
     with TestClient(app) as client:
         ids = _races(client, FIVE_K, TEN_K, HALF)
         body = _body(client)
     names = [d["name"] for d in body["determinants"]]
     print(f"  names {names}")
-    assert names == ["functional_threshold_pace", "riegel_exponent"]
+    assert names == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     riegel = body["determinants"][1]
     estimate = riegel["estimate"]
     print(f"  riegel estimate {estimate}; error {riegel['error']}; t {riegel['t_multiplier']}")
@@ -619,8 +619,8 @@ def test_a_not_finite_response_validates(contract: dict, monkeypatch: pytest.Mon
     with TestClient(app) as client:
         five, ten, half = _races(client, FIVE_K, TEN_K, HALF)
 
-        def absurd(conn, session_id):
-            body = real(conn, session_id)
+        def absurd(conn, session_id, *blocks):  # GET /state's snapshot also hands it the CS blocks
+            body = real(conn, session_id, *blocks)
             if session_id == half:
                 body["features"]["gap_avg_pace_s_per_km"] = {"value": 1e-320, "unavailable": None}
             return body

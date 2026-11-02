@@ -137,7 +137,7 @@ def _assert_valid(contract: dict, body: dict) -> dict:
         errors = contract_validate.validate(contract, state["properties"][name], value, f"$.{name}")
         print(f"  StateModel.{name} = {value!r}: {errors or 'valid'}")
         assert errors == [], errors
-    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent"]
+    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     for index, determinant in enumerate(body["determinants"]):
         errors = contract_validate.validate(
             contract, _schema(contract, "Determinant"), determinant, f"$.determinants[{index}]"
@@ -563,8 +563,8 @@ THRESHOLD_NAMES = ["functional_threshold_pace"]
 
 
 def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
-    """F029 AC6, the contract half. ``Determinant`` is a ``oneOf`` of ``ThresholdDeterminant`` and
-    ``RiegelDeterminant`` discriminated on ``name``, as FastAPI serves the union; the threshold
+    """F029 AC6 and F033 AC6, the contract half. ``Determinant`` is a ``oneOf`` of ``ThresholdDeterminant``,
+    ``RiegelDeterminant`` and ``CriticalSpeedDeterminant`` discriminated on ``name``, as FastAPI serves the union; the threshold
     schema's ``name`` enum is ``functional_threshold_pace`` alone, as served; ``info.version`` is
     unmoved. The strict half walks the three components only ``RiegelDeterminant`` uses with ``contract_walk.walk`` (``normalised`` cannot read
     a ``oneOf`` node, so the branches are walked, not the union); ``RiegelDeterminant`` itself and
@@ -578,12 +578,14 @@ def test_contract_determinant_is_a_discriminated_one_of(contract: dict) -> None:
     assert union["oneOf"] == [
         {"$ref": "#/components/schemas/ThresholdDeterminant"},
         {"$ref": "#/components/schemas/RiegelDeterminant"},
+        {"$ref": "#/components/schemas/CriticalSpeedDeterminant"},
     ]
     assert union["discriminator"] == {
         "propertyName": "name",
         "mapping": {
             "functional_threshold_pace": "#/components/schemas/ThresholdDeterminant",
             "riegel_exponent": "#/components/schemas/RiegelDeterminant",
+            "critical_speed": "#/components/schemas/CriticalSpeedDeterminant",
         },
     }
     assert union == {**union, **schemas["StateModel"]["properties"]["determinants"]["items"]}

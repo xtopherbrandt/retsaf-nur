@@ -115,7 +115,7 @@ def _state(client: TestClient, as_of: str | None = None):
 
 
 def _ftp(body: dict) -> dict:
-    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent"]
+    assert [d["name"] for d in body["determinants"]] == ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
     [determinant] = [d for d in body["determinants"] if d["name"] == "functional_threshold_pace"]
     return determinant
 
