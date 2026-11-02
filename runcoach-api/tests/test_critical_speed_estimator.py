@@ -196,8 +196,8 @@ def test_a_run_best_at_two_lengths_is_used_at_the_longer() -> None:
 
 
 def test_ties_go_to_the_later_start_then_the_larger_session_id() -> None:
-    later = _fit([_run("x", {720: 2900.0}, days_ago=5), _run("y", {720: 2900.0}, days_ago=3)])
-    assert _by_length(later)[720].session_id == "y"
+    later = _fit([_run("b", {720: 2900.0}, days_ago=5), _run("a", {720: 2900.0}, days_ago=3)])
+    assert _by_length(later)[720].session_id == "a"  # the later start wins over the larger id
     same = _fit([_run("x2", {720: 2900.0}, days_ago=4), _run("x1", {720: 2900.0}, days_ago=4)])
     assert _by_length(same)[720].session_id == "x2"
 
@@ -255,14 +255,14 @@ def test_candidates_screen_in_reference_order() -> None:
         _row("06-qf-marked", 6, quality_flags="[]", unreadable="quality_flags_unreadable"),
         _row("07-stored-dr", 7, quality_flags='["smart_recording", "distance_regressed"]'),
         _row("08-stored-smart", 8, quality_flags='["smart_recording"]', flags=["distance_regressed"]),
-        _row("09-features", 9, unreadable="features_unavailable", flags=None, segments=None),
+        _row("09-features", 9, unreadable="features_unavailable", flags=[]),
         _row("10-features-not-list", 10, flags="grade_clamped"),
         _row("11-f013-dr", 11, flags=["grade_clamped", "smart_recording", "distance_regressed"]),
         _row("12-f013-smart", 12, flags=["grade_clamped", "smart_recording"]),
         _row("13-f013-clamped", 13, flags=["grade_clamped", "gps_degraded"]),
         _row("14-used", 14, flags=["gps_degraded"]),
     ]
-    rows[8]["segments"] = None
+    # Row 09's flags are a list and its stream is there: the reader's marker alone excludes it.
     result = cs.estimate(rows, INSTANT)
     got = {e.session_id: (e.reason, e.source) for e in result.excluded}
     assert got == {
@@ -348,6 +348,10 @@ def test_window_edges_at_90_days() -> None:
     flagged = cs.estimate([edge_out, edge_in, after], INSTANT)
     assert [e.session_id for e in flagged.excluded] == ["in-89.99"]
     assert flagged.unavailable == cs.NO_CANDIDATE_RUNS
+    # A run that starts at the instant itself is inside (age 0 is in the window).
+    at = _row("at", start=INSTANT_UTC.isoformat())
+    assert cs.needs_records(at, INSTANT) is True
+    assert [s.session_id for s in cs.estimate([at], INSTANT).stretches] == ["at"]
 
 
 def test_outside_the_window_is_never_listed() -> None:
