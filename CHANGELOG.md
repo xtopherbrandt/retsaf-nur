@@ -12,7 +12,7 @@ mined from every run, tagged or not (a tag only leaves out a declared resting ca
 tag only lifts the label). It is recomputed on every read and never stored.
 
 **What it reads.** Every session that starts in the 90 days ending at the moment asked for (`--as-of`,
-else now), measured as elapsed time, so a run leaves the window at the time of day it started.
+else now), measured as elapsed time, so across a daylight-saving change a run leaves an hour off its start's clock time.
 A session is left out, with the first reason that applies, when
 it is not a run, is a declared resting capture, has stored quality flags that cannot be read or
 that say `distance_regressed` or `smart_recording`, or has pace features (F013) that cannot be
@@ -45,12 +45,12 @@ below its best reads slow and leans CS slow.
 
     Critical speed 4:29/km (80 %: 4:21 to 4:38), low
     D' 134 m (80 %: 59 to 209 m)
-    Stretch 2:00 at 3:49/km, 2026-10-07 threshold workout: kept
+    Stretch 2:00 at 3:49/km, 2026-10-07 unnamed: kept
     Stretch 3:00 at 3:49/km, 2026-10-16 Speed Repeats: kept
     Stretch 5:00 at 4:01/km, 2026-09-23 unnamed: kept
     Stretch 8:00 at 4:03/km, 2026-10-22 Progression Run: kept
     Stretch 12:00 at 4:08/km, 2026-08-20 Run: kept
-    Stretch 20:00 at 4:25/km, 2026-09-30 threshold workout: kept
+    Stretch 20:00 at 4:25/km, 2026-09-30 unnamed: kept
 
 A dropped stretch reads `dropped, a longer stretch was faster (20:00)`; each session left out
 prints a `Left out of critical speed <date>: <reason>` line saying whether its stored quality flags
