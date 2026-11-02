@@ -564,9 +564,10 @@ def test_an_excluded_workout_changes_nothing() -> None:
 
 
 def test_records_are_read_only_for_workouts_past_orders_1_to_5(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Orders 1 to 5 decide from the session row, laps and steps: such workouts cost no record
-    read; a workout past them, the short one included (its counted time is order 10, after the
-    record read), reads its records once, for both the flags and the segment stream."""
+    """Orders 1 to 5 decide from the session row, laps and steps: such workouts cost the threshold
+    read no record read (critical speed, which reads its own, is made to decline every row here);
+    a workout past them, the short one included (its counted time is order 10, after the record
+    read), reads its records once, for both the flags and the segment stream."""
     calls: list[str] = []
     lap_reads: list[str] = []
     real_inputs = db_module.read_session_feature_inputs

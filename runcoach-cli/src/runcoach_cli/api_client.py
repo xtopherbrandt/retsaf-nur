@@ -275,13 +275,13 @@ def put_race_tags(base_url: str, items: list[dict]) -> httpx.Response:
 
 
 def get_state(base_url: str, as_of: str | None) -> httpx.Response:
-    """Call GET {base_url}/state (threshold pace from the tagged races and threshold workouts) and
-    return the raw response.
+    """Call GET {base_url}/state (the determinant profile: threshold pace, the endurance exponent and
+    critical speed) and return the raw response.
 
-    ``as_of`` is sent as given; ``None`` omits it (the API's default is now). The API replays every
-    tagged race and threshold workout on each read, so the call gets the list call's timeout. Only
-    network-layer failures are translated into ApiUnreachableError; status and body are the caller's
-    job.
+    ``as_of`` is sent as given; ``None`` omits it (the API's default is now). The API replays the
+    tagged races, threshold workouts and recent runs on each read, so the call gets the list call's
+    timeout. Only network-layer failures are translated into ApiUnreachableError; status and body
+    are the caller's job.
     """
     params = {} if as_of is None else {"as_of": as_of}
     try:

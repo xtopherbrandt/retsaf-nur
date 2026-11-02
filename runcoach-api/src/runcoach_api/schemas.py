@@ -2464,8 +2464,8 @@ class GoalContract(BaseModel):
 
 
 class StateModel(BaseModel):
-    """``GET /state``: the determinant profile, computed on read from the tagged races and threshold
-    workouts; nothing is stored."""
+    """``GET /state``: the determinant profile, computed on read from the tagged races, the threshold
+    workouts and the best stretches of the last 90 days of runs; nothing is stored."""
 
     as_of: datetime.datetime = Field(description="The instant the estimate is for.")
     timezone: str = Field(description="The configured `athlete_timezone`, which an `as_of` date was read in.")
