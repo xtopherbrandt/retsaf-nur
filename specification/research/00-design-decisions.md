@@ -388,7 +388,7 @@ Not: the derivations behind a default, which the mechanism docs hold (DOC-04).
 Pinned: none
 
 **DOC-08.** Every spec-introduced register row MUST name its research basis, or say it is a pure engineering default, and MUST ship with graceful degradation.
-Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, REG-31, the threshold-pace constants, REG-32, the endurance-exponent constants, and REG-33, the goal-projection constants.
+Scope: the spec-introduced rows of the Part 3 register, REG-10, REG-11, REG-12, REG-13, REG-14, REG-15, REG-17 and REG-18, the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, REG-31, the threshold-pace constants, REG-32, the endurance-exponent constants, REG-33, the goal-projection constants, and REG-34, the critical-speed constants.
 Not: a row ratified from the cited research, which DOC-18 governs.
 Pinned: none
 
@@ -397,7 +397,7 @@ Scope: every rule that research/00 names as a design invariant.
 Not: a heuristic default, which DOC-06 governs.
 Pinned: none
 
-**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10 to REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, REG-32, as H-45 and H-46 record, and REG-33, as H-47 and H-48 record.
+**DOC-18.** Register rows MUST be ratified from the cited research, except the §3.1–§3.4 resolutions and the spec-introduced rows REG-10 to REG-15, REG-17 and REG-18 and the rules split off them, REG-25, REG-26, REG-28, REG-29 and REG-30, whose batches were ratified as H-04 and H-05 record, REG-31, as H-42, H-43 and H-44 record, and REG-32 to REG-34, as H-45 to H-49 record.
 Scope: every row of the Part 3 register.
 Not: a row's tuning per athlete, which IND-01 governs.
 Pinned: none
@@ -561,7 +561,7 @@ Pinned: none
 
 **REG-31.** Threshold pace MUST be estimated by the spec/04 section 4.3 filter, with the spec-introduced constants of spec/04 section 4.3.4, from qualifying 20-60 min races and from the sustained work reps of threshold workouts admitted by the athlete's tag or a configured workout name: reps of at least 290 s each, within 10 % of the fastest, totalling at least 590 s.
 Scope: the threshold pace served, from `race` runs of 1200 to 3600 s or workouts admitted by tag or listed name, read over counted reps of 290 s or more within 10 % of the fastest, 590 s or more in all, none flagged `distance_regressed` or `smart_recording`, with a finite positive GAP pace; constants are engineering defaults, a workout's error is a race's, and unavailable before any such effort.
-Not: a population threshold pace before the first qualifying effort, which IND-03 asks for and IDEA-161 holds open; the CS fit and its blend by confidence, whose constants IDEA-157 holds open; an effort excluded for degraded GPS, a per-record fraction and never a session flag; and a rep inferred from pace alone, which only the tag or listed name admits and the watch's targeted work steps mark.
+Not: a population threshold pace before the first qualifying effort, which IND-03 asks for and IDEA-161 holds open; the blend with REG-34's CS fit by confidence, which IDEA-214 holds open; an effort excluded for degraded GPS, a per-record fraction and never a session flag; and a rep inferred from pace alone, which only the tag or listed name admits and the watch's targeted work steps mark.
 Pinned: runcoach-api/tests/test_threshold_pace_estimator.py::test_right_after_b_gain_is_0_8
 Pinned: runcoach-api/tests/test_threshold_workout_qualifying.py::test_active_time_599_600_and_7200
 Pinned: runcoach-api/tests/test_threshold_workout_active_block.py::test_counted_reps_at_589_99_and_590
@@ -597,6 +597,26 @@ Pinned: runcoach-api/tests/test_pace_target_label.py::test_fitness_gap_lowers_on
 Pinned: runcoach-api/tests/test_pace_target_label.py::test_time_is_unchanged_by_the_fitness_gap
 Why: spec/01 sections 1.4.2 and 1.4.6 ask for a projection with a lower-confidence flag on a wide extrapolation, and research/01 section 4.3 finds a long race under-predicted from short ones; the values are engineering defaults the athlete chose (H-47), and the projection degrades to the closest race below the bar, then to `no_races`, `riegel_unavailable` or `projection_not_finite`.
 
+**REG-34.** Critical speed and D′ MUST be the slope and intercept of the least-squares line of GAP distance on time over the best 2-20 min stretches of the last 90 days of runs, one run per length, with a Student's t interval, from 3 or more kept stretches reaching 5 min or less and 12 min or more, the longest within 15 s/km of its prediction at b 1.06; labelled by short races; no filter step.
+Scope: the CS and D′ served, from `running` sessions in the 90 days to the instant, not declared captures, flagged none of `distance_regressed`, `smart_recording` or `grade_clamped`; stretches of 120 to 1200 s crossing no moving gap or pause over 10 s, any a longer one outpaces dropped; labelled by kept stretches of Race runs of 1800 s or less not admitted as workouts: 0 low, 1 medium, 2+ high.
+Not: a population CS, none being held under IND-03, so the entry is unavailable with its stretches served until the rules pass; the spec/04 section 4.3 filter, the window being its staleness rule; a blend with threshold pace (IDEA-214), vVO2max (IDEA-215) or a heart-rate check or fallback (IDEA-213); and a stored fit, each read refitting it.
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_worked_examples_match_the_reference
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_a_run_best_at_two_lengths_is_used_at_the_longer
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_window_edges_at_90_days
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_a_stretch_beaten_by_a_longer_one_is_dropped
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_far_off_edges
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_spread_edges
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_two_kept_stretches_are_too_few
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_label_counts_short_races_only
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_a_slow_bound_at_zero_speed_is_not_finite
+Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_d_prime_not_positive_is_flagged
+Pinned: runcoach-api/tests/test_gap_stretches.py::test_a_pause_of_10_0_s_is_spanned_and_10_1_s_breaks
+Pinned: runcoach-api/tests/test_gap_stretches.py::test_a_moving_gap_window_is_not_eligible
+Pinned: runcoach-api/tests/test_critical_speed_qualifying.py::test_each_candidate_row_lands_on_its_reason
+Pinned: runcoach-api/tests/test_critical_speed_qualifying.py::test_each_rule_edge_serves_through_the_route
+Pinned: runcoach-api/tests/test_critical_speed_route.py::test_critical_speed_parameters_equal_the_reference
+Why: spec/04 section 4.2.1 makes CS and D′ the anchor of threshold-to-10K pace and section 4.4.1 step 2 mines them from the history, no tagged effort of the athlete spanning 2-20 min; the values are engineering defaults the athlete chose (H-49), and the fit degrades to `no_candidate_runs`, `too_few_stretches`, `spread_too_narrow`, `longest_far_off` or `estimate_not_finite`.
+
 **HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
 Scope: every per-tier dataset's SWC band, as `build_band` builds it.
 Not: a coefficient of variation (CV) of rMSSD or of ln rMSSD, which is never the SWC band's statistic.
@@ -627,11 +647,11 @@ Not: a constant tuned per athlete outside rule IND-01.
 Pinned: none
 Why: decision C31 makes the constants defaults while §3.1 governs their tuning, and keeps design invariants such as §1.7 out of it.
 
-**IND-05.** The endurance exponent and the CS profile MUST individualize once enough qualifying maximal efforts exist, a qualifying effort being a run the athlete tags Race, their word on effort rather than a measured maximum (H-47).
+**IND-05.** The endurance exponent and the CS profile MUST individualize once enough qualifying maximal efforts exist, a qualifying effort for the endurance exponent being a run the athlete tags Race, their word on effort rather than a measured maximum (H-47), and for the CS profile a stretch mined from the run history, a fit from training stretches alone being served at `low` (H-49).
 Scope: every athlete's endurance exponent and CS profile.
 Not: an individual fit before those efforts exist.
 Pinned: none
-Why: rule REG-32 states, as H-45 and H-46 record, the endurance exponent's enough: tagged races counting three by their weights and spanning a twofold GAP-equivalent distance ratio; the CS profile's count stays open (IDEA-157).
+Why: rule REG-32 states, as H-45 and H-46 record, the endurance exponent's enough: tagged races counting three by their weights and spanning a twofold GAP-equivalent distance ratio; rule REG-34 states, as H-49 records, the CS profile's: at least three kept mined stretches reaching from 5 min or less to 12 min or more, its label counting the short races among them.
 
 **IND-06.** The fitness/fatigue constants MUST stay at 42/7.
 Scope: every CTL and ATL computation.
