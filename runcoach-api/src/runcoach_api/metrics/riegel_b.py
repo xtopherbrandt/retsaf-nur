@@ -309,7 +309,7 @@ def _decoded(value: Any) -> tuple[bool, Any]:
     if isinstance(value, str | bytes | bytearray):
         try:
             return True, json.loads(value)
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, RecursionError):  # also JSONDecodeError, UnicodeDecodeError; and nesting too deep
             return False, None
     return True, value
 

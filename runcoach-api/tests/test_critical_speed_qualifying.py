@@ -768,3 +768,29 @@ def test_a_tagged_race_with_nested_json_flags_is_excluded_not_a_500() -> None:
         reasons = [(e["session_id"], e["reason"]) for e in determinant["excluded"]]
         print(f"  {determinant['name']}: {reasons}")
         assert reasons == [(race, "quality_flags_unreadable")]
+
+
+def test_a_tagged_race_with_a_nested_json_summary_is_excluded_not_a_500() -> None:
+    """A Race-tagged running session in the Riegel window whose ``summary`` is ``{"a":`` repeated
+    50000 times and whose timer is null, so its duration must come from the summary: ``GET /state``
+    and ``POST /goal/preview`` are 200, and the Riegel entry excludes the race
+    ``summary_unreadable``. A second race with the same summary and a timer reads its duration from
+    the timer, and both routes are still 200."""
+    with TestClient(app) as client:
+        race = _store(_sept(20), _flat(2400.0, 260.0), tag="race")
+        timed = _store(_sept(22), _flat(2400.0, 260.0), tag="race")
+        nested = '{"a":' * 50000
+        _sql("UPDATE sessions SET summary = ?, timer_time_s = NULL WHERE session_id = ?", nested, race)
+        _sql("UPDATE sessions SET summary = ? WHERE session_id = ?", nested, timed)
+        _plant_every_load()
+        response = client.get("/state")
+        previewed = client.post("/goal/preview", json={"race": {"distance_m": 21097.5}})
+    print(f"  state {response.status_code} {response.text[:200]}")
+    print(f"  preview {previewed.status_code} {previewed.text[:200]}")
+    assert response.status_code == 200, response.text
+    assert previewed.status_code == 200, previewed.text
+    riegel = response.json()["determinants"][1]
+    reasons = [(e["session_id"], e["reason"]) for e in riegel["excluded"]]
+    print(f"  riegel excluded: {reasons}")
+    assert (race, "summary_unreadable") in reasons
+    assert timed not in [session_id for session_id, _ in reasons]
