@@ -75,7 +75,7 @@ tags:
   - name: Subjective
     description: "Session-RPE, wellness, pain reports. x-readiness: planned. Owner: research/03, routed per spec/08 §8.4."
   - name: State & Metrics
-    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getState (GET /state, threshold pace and the endurance exponent b), getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
+    description: "Physiological state model + derived metrics, with confidence. x-readiness: implemented for getState (GET /state, threshold pace, the endurance exponent b, and critical speed with D'), getHrvTrend (GET /metrics/hrv) and getLoadChart (GET /metrics/load, the fitness, fatigue and form chart); planned otherwise. Owner: spec/03, spec/04."
   - name: Decisions & Changes
     description: "Decision log (explainability) + apply-and-notify change feed. x-readiness: planned. Owner: spec/09, spec/06 §6.8."
   - name: Coach

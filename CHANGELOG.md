@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+### Critical speed and D′ from the run history: `GET /state` and `runcoach state`
+
+F033: `GET /state` serves a third determinant, `critical_speed`, after `riegel_exponent`: critical
+speed (CS) and D′ fitted from the best grade-adjusted stretches of the last 90 days of runs, with
+D′ inside the same entry (spec/04 sections 4.2.1 and 4.3.6, `research/00` REG-34 and H-49). Unlike
+threshold pace and the endurance exponent, it reads no tag to choose its efforts: the stretches are
+mined from every run, tagged or not. It is recomputed on every read and never stored.
+
+**What it reads.** Every session that starts in the 90 days ending at the moment asked for (`--as-of`,
+else now), measured as elapsed time, so a run leaves the window at the time of day it started.
+A session is left out, with the first reason that applies, when
+it is not a run, is a declared resting capture, has stored quality flags that cannot be read or
+that say `distance_regressed` or `smart_recording`, or has pace features (F013) that cannot be
+computed or that say `distance_regressed`, `smart_recording` or `grade_clamped`. From each run
+left, the best grade-adjusted (GAP) stretch is read at 2, 3, 5, 8, 12 and 20 minutes: the farthest
+GAP distance over that much counted time. A stretch never spans a pause over 10 s or a moving gap in
+the recording; a pause of 10 s or less is spanned and its time is not counted. A run shorter than
+a length has no stretch at it.
+
+**The fit.** From 20 minutes down, each length takes the best stretch among the runs not yet used,
+so one run supplies at most one stretch. A stretch is dropped when a longer one was run at a higher
+average speed. CS is the slope and D′ the intercept of the least-squares line of distance on time
+over the stretches kept, each with an 80 % interval (Student's t). The entry is unavailable, its
+stretches and the sessions left out still served, when no run can be read (`no_candidate_runs`),
+fewer than 3 stretches are kept (`too_few_stretches`), the shortest kept is over 5 minutes or the
+longest under 12 (`spread_too_narrow`), the longest kept is more than 15 s/km slower than the
+next-longest predicts at b 1.06 (`longest_far_off`, the excess served), or a figure is out of range
+(`estimate_not_finite`). No population CS stands in. D′ at or below 0 is served as computed with
+`d_prime_not_positive` true.
+
+**The label.** `low`, `medium` or `high` counts the stretches kept whose run is tagged Race, is not
+a threshold workout by a listed workout name, and lasted 30 minutes (1800 s) or less: none `low`,
+one `medium`, two or more `high`. A stretch from a longer Race-tagged run, such as a marathon or a
+5K recorded with its warm-up, does not count, and the interval's width does not set the label. So a
+fit from training runs alone reads `low` however narrow its interval, and a training stretch run
+below its best reads slow and leans CS slow.
+
+**`runcoach state`** prints a critical speed block after the endurance exponent's, in this form
+(the worked example as of 2026-10-31, computed at planning on a copy of the athlete's store):
+
+    Critical speed 4:29/km (80 %: 4:21 to 4:38), low
+    D' 134 m (80 %: 59 to 209 m)
+    Stretch 2:00 at 3:49/km, 2026-10-07 threshold workout: kept
+    Stretch 3:00 at 3:49/km, 2026-10-16 Speed Repeats: kept
+    Stretch 5:00 at 4:01/km, 2026-09-23 unnamed: kept
+    Stretch 8:00 at 4:03/km, 2026-10-22 Progression Run: kept
+    Stretch 12:00 at 4:08/km, 2026-08-20 Run: kept
+    Stretch 20:00 at 4:25/km, 2026-09-30 threshold workout: kept
+
+A dropped stretch reads `dropped, a longer stretch was faster (20:00)`; each session left out
+prints a `Left out of critical speed <date>: <reason>` line saying whether its stored quality flags
+or its pace features flagged it, and the sessions that are not runs are counted on one line.
+Unavailable, one `Critical speed unavailable: ...` line gives the reason in words and no D′ line
+follows. An API from before this release prints `Critical speed: not served by this API; update it
+and restart` and exits 0.
+
+**Time.** Reading every run's records makes `GET /state`, and so `runcoach state`, about 12 s
+slower on the athlete's store: measured at planning with 49 runs in the window, on top of about 3 s
+for the rest of the response. The goal routes do not read critical speed and are not slowed.
+IDEA-188 (a per-session features cache) holds the fix.
+
+### Changed
+
+`runcoach goal` and `runcoach state` round their signed percentages half away from zero, so a
+-0.05 % gap or residual prints `-0.1 %` as +0.05 % prints `+0.1 %`, and a fitness change of
+-0.5 % reads `rose 1 %` as +0.5 % reads `fell 1 %`: a fall and a rise of the same size read alike. A
+figure that rounds to zero still prints `0.0 %`, never `-0.0 %`.
+
+`runcoach goal`'s line for `projection_not_finite` names the goal too: `the projection is out of
+range for this goal; check its distance and time, and the races listed`.
+
+`python -m runcoach_api.cli --help` prints the API's usage; it printed nothing and exited 0.
+
+The `State & Metrics` tag of `contracts/openapi.yaml` names the three determinants `getState`
+serves. `contracts/contracts-README.md` says that the served `/openapi.json` `info.version` is the
+engine package's, not the contract's, and that `check_drift.py` compares neither.
+
+### Migration required
+
+None. The store and `api.toml` are unchanged. `contracts/openapi.yaml` adds the
+`CriticalSpeedDeterminant` branch to the `Determinant` `oneOf` and its discriminator mapping, with
+its components `CriticalSpeedStretch`, `CriticalSpeedExclusion`, `CriticalSpeedParameters` and
+`DPrime`; `info.version` stays `0.6.0-draft`, because the contract already named `critical_speed`
+as planned and tells clients to narrow each `determinants[]` entry on `name`. The planned `d_prime`
+determinant name is withdrawn: D′ is served inside the `critical_speed` entry. The CLI and API are
+released together.
+
 ## 2026-10-29 through 2026-10-30 — Sprint 023: A goal race and its projected finish
 
 ### The goal race and its projected finish: `/goal` and `runcoach goal`
