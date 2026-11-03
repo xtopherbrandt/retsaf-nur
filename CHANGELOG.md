@@ -37,8 +37,12 @@ next-longest predicts at b 1.06 (`longest_far_off`, the excess served), or a fig
 a threshold workout by a listed workout name, and lasted 30 minutes (1800 s) or less: none `low`,
 one `medium`, two or more `high`. A stretch from a longer Race-tagged run, such as a marathon or a
 5K recorded with its warm-up, does not count, and the interval's width does not set the label. So a
-fit from training runs alone reads `low` however narrow its interval, and a training stretch run
-below its best reads slow and leans CS slow.
+fit from training runs alone reads `low` however narrow its interval. A stretch run below its best
+leans CS one way or the other by its length: one longer than the mean length of the stretches kept
+pulls CS slow, and one shorter (the 2 to 5 minute end) pulls CS slightly fast and shrinks D′. As of
+2024-11-30, the 2, 3 and 5 minute stretches run 3 % faster would read CS 244.11 s/km and D′ 73.8 m
+against the served 242.56 s/km and 47.6 m. A small D′, well under 100 m, is a sign the short end
+was not all-out.
 
 **`runcoach state`** prints a critical speed block after the endurance exponent's, in this form
 (the worked example as of 2026-10-31, computed at planning on a copy of the athlete's store):

@@ -2146,7 +2146,9 @@ class CriticalSpeedDeterminant(BaseModel):
     """The `critical_speed` entry: CS and D' fitted by least squares of distance on time over the best
     GAP stretches (2 to 20 minutes) of the running sessions of the 90 days at or before `as_of`, one
     run per length. Recomputed on every read; no population value stands in. Its interval covers
-    scatter about the line, not bias: stretches run below maximal effort read slow."""
+    scatter about the line, not bias: a stretch run below maximal effort pulls CS slow when it is
+    longer than the mean length of the stretches kept, and slightly fast, with a smaller D', when it
+    is shorter; a D' well under 100 m is a sign the short end was not all-out."""
 
     name: Literal["critical_speed"]
     estimate: CriticalSpeedValue | None

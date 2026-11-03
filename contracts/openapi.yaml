@@ -3660,8 +3660,10 @@ components:
         the estimate it carries what reproduces it by hand: `d_prime`, `error_m_per_s`,
         `t_multiplier`, `far_off_excess_s_per_km`, the stretches (`stretches`, kept or dropped), the
         sessions the screen left out (`excluded`) and the constants (`parameters`). Its interval
-        covers scatter about the line, not bias: stretches run below maximal effort read slow. Its
-        `trend` is not computed yet: `direction` is `unknown` and `rate` null.
+        covers scatter about the line, not bias: a stretch run below maximal effort pulls CS slow
+        when it is longer than the mean length of the stretches kept, and slightly fast, with a
+        smaller D', when it is shorter; a D' well under 100 m is a sign the short end was not
+        all-out. Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
       required: [name, estimate, unavailable, trend, d_prime, d_prime_not_positive, error_m_per_s, t_multiplier, far_off_excess_s_per_km, stretches, excluded, parameters]
       properties:
         name: { type: string, enum: [critical_speed] }
