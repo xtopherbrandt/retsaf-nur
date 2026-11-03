@@ -265,12 +265,12 @@ def test_d_prime_prints_with_its_interval(install_mock_client) -> None:
 
     negative = _cs(d_prime=(-12.5, -40.5, 15.5))
     assert _cs_lines(install_mock_client, _body(negative))[2] == (
-        "D' -13 m (80 %: -41 to 16 m), at or below 0: every kept stretch ran at the same average speed"
+        "D' -13 m (80 %: -41 to 16 m), at or below 0: every kept stretch ran at the same average speed to rounding"
     )
 
     zero = _cs(d_prime=(-0.4, -0.5, 0.5))
     assert _cs_lines(install_mock_client, _body(zero))[2] == (
-        "D' 0 m (80 %: -1 to 1 m), at or below 0: every kept stretch ran at the same average speed"
+        "D' 0 m (80 %: -1 to 1 m), at or below 0: every kept stretch ran at the same average speed to rounding"
     )
 
     # The note follows the served flag, not the sign: a positive D' served without it prints none.

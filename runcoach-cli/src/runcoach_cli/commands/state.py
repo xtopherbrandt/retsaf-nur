@@ -666,7 +666,7 @@ def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo, threshold: float | None = N
             f"to {_metres(d_prime['high_m'], 'd_prime.high_m')} m)"
         )
         if _flag(det, "d_prime_not_positive"):
-            line += ", at or below 0: every kept stretch ran at the same average speed"
+            line += ", at or below 0: every kept stretch ran at the same average speed to rounding"
         lines.append(line)
     else:
         reason = det["unavailable"]

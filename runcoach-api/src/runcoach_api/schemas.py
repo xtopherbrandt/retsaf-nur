@@ -2167,8 +2167,8 @@ class CriticalSpeedDeterminant(BaseModel):
     d_prime: DPrime | None = Field(description="D' in metres with its 80 % interval; null when unavailable.")
     d_prime_not_positive: bool | None = Field(
         description="D' at or below 0, served as computed; it arises only when every kept stretch runs at the same "
-        "average speed, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is then 0); null "
-        "when unavailable."
+        "average speed to rounding, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is "
+        "then 0 to rounding); null when unavailable."
     )
     error_m_per_s: float | None = Field(description="The standard error of CS in m/s; null when unavailable.")
     t_multiplier: float | None = Field(

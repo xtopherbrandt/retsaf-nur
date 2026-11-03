@@ -3687,7 +3687,7 @@ components:
           allOf: [{ $ref: "#/components/schemas/DPrime" }]
           nullable: true
           description: "D' in metres with its 80 % interval; null when unavailable."
-        d_prime_not_positive: { type: boolean, nullable: true, description: "D' at or below 0, served as computed; it arises only when every kept stretch runs at the same average speed, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is then 0); null when unavailable." }
+        d_prime_not_positive: { type: boolean, nullable: true, description: "D' at or below 0, served as computed; it arises only when every kept stretch runs at the same average speed to rounding, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is then 0 to rounding); null when unavailable." }
         error_m_per_s: { type: number, nullable: true, description: "The standard error of CS in m/s; null when unavailable." }
         t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for the kept stretches less 2 degrees of freedom; null when unavailable." }
         far_off_excess_s_per_km: { type: number, nullable: true, description: "The longest kept stretch's pace less the pace the next-longest predicts at b 1.06, s/km; null when unavailable for another reason." }
