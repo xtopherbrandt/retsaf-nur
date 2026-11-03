@@ -394,3 +394,33 @@ def test_the_laps_calls_return_a_non_2xx_reply_unchanged(install_mock_client) ->
 
     assert api_client.put_session_laps("http://example.test", "s1", b"x").status_code == 409
     assert api_client.post_laps_candidates("http://example.test", []).status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# GET /state, the determinant profile
+# ---------------------------------------------------------------------------
+
+
+def test_get_state_waits_120_seconds_and_the_list_call_keeps_30(install_mock_client) -> None:
+    # GET /state re-reads every run in the 90-day window for critical speed, so its cost grows
+    # with the runs in the window: 20 to 30 s through a server at 50 to 75 runs, past the list
+    # call's 30 s. The state call carries its own 120 s timeout; the list call's stays 30 s.
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        if request.url.path == "/state":
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"items": [], "next_cursor": None})
+
+    install_mock_client(handler)
+
+    api_client.get_state("http://example.test", as_of=None)
+    api_client.list_sessions("http://example.test", since=None, limit=50)
+
+    assert [r.url.path for r in captured] == ["/state", "/sessions"]
+    state_timeout, list_timeout = (r.extensions["timeout"] for r in captured)
+    assert state_timeout == {"connect": 120.0, "read": 120.0, "write": 120.0, "pool": 120.0}
+    assert list_timeout == {"connect": 30.0, "read": 30.0, "write": 30.0, "pool": 30.0}
+    assert api_client.STATE_TIMEOUT == 120.0
+    assert api_client.LIST_TIMEOUT == 30.0

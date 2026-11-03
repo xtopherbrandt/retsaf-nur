@@ -105,6 +105,12 @@ def patch_me(base_url: str, changes: dict) -> httpx.Response:
 # timeout rather than the shared client's 5 s (as the upload call does).
 LIST_TIMEOUT = 30.0
 
+# GET /state re-reads every run in the 90-day window for critical speed, so its cost grows with
+# the runs in the window. Measured through a server on a copy of the athlete's store on
+# 2026-11-02: 20.7 s with 50 runs, 29.0 s with 61 and 28.1 s with 75, at or near the list call's
+# 30 s. The state call therefore gets its own, longer timeout.
+STATE_TIMEOUT = 120.0
+
 
 def list_sessions(
     base_url: str, since: str | None, limit: int, include_nights: bool = False
@@ -279,13 +285,13 @@ def get_state(base_url: str, as_of: str | None) -> httpx.Response:
     critical speed) and return the raw response.
 
     ``as_of`` is sent as given; ``None`` omits it (the API's default is now). The API replays the
-    tagged races, threshold workouts and recent runs on each read, so the call gets the list call's
-    timeout. Only network-layer failures are translated into ApiUnreachableError; status and body
-    are the caller's job.
+    tagged races, threshold workouts and recent runs on each read, and re-reads every run in the
+    90-day window for critical speed, so the call gets ``STATE_TIMEOUT`` (120 s). Only network-layer
+    failures are translated into ApiUnreachableError; status and body are the caller's job.
     """
     params = {} if as_of is None else {"as_of": as_of}
     try:
-        return client.get(f"{base_url}/state", params=params, timeout=LIST_TIMEOUT)
+        return client.get(f"{base_url}/state", params=params, timeout=STATE_TIMEOUT)
     except httpx.TransportError as exc:
         raise ApiUnreachableError(base_url) from exc
 

@@ -59,10 +59,12 @@ Unavailable, one `Critical speed unavailable: ...` line gives the reason in word
 follows. An API from before this release prints `Critical speed: not served by this API; update it
 and restart` and exits 0.
 
-**Time.** Reading every run's records makes `GET /state`, and so `runcoach state`, about 12 s
-slower on the athlete's store: measured at planning with 49 runs in the window, on top of about 3 s
-for the rest of the response. The goal routes do not read critical speed and are not slowed.
-IDEA-188 (a per-session features cache) holds the fix.
+**Time.** Reading every run's records makes `GET /state`, and so `runcoach state`, slower, and the
+cost grows with the runs in the window: about 12 s on the athlete's store at planning with 49 runs in
+the window, on top of about 3 s for the rest of the response, and 20 to 30 s for the whole request
+through the server with 50 to 75 runs (measured on a copy of the athlete's store on 2026-11-02).
+`runcoach state` therefore waits up to 120 s for `GET /state`, where it waited 30 s. The goal routes
+do not read critical speed and are not slowed. IDEA-188 (a per-session features cache) holds the fix.
 
 ### Changed
 
