@@ -48,6 +48,45 @@ THRESHOLD_UNAVAILABLE = {
 
 RIEGEL_OLDER_API_LINE = "Endurance exponent: not served by this API; update it and restart"
 CS_OLDER_API_LINE = "Critical speed: not served by this API; update it and restart"
+CS_LOW_LINE = (
+    "No short race among the stretches kept: critical speed likely reads slow, as training stretches are "
+    "rarely all-out; a race of 30 minutes or less tagged Race would correct it."
+)
+
+
+def _slower_than_threshold(n: str) -> str:
+    return f"Critical speed normally reads a little faster than threshold pace; here it reads {n} s/km slower."
+
+
+def _threshold_at(value: float) -> dict[str, Any]:
+    """A served threshold entry with an estimate of ``value`` s/km from one race."""
+    return {
+        **copy.deepcopy(THRESHOLD_UNAVAILABLE),
+        "estimate": {
+            "value": value,
+            "unit": "s/km",
+            "interval": {"low": value - 6.0, "high": value + 6.0},
+            "confidence": "high",
+            "provisional": False,
+        },
+        "unavailable": None,
+        "error": 0.02,
+        "efforts": [
+            {
+                "session_id": "s-race",
+                "start_time": "2026-09-13T12:00:00Z",
+                "kind": "race",
+                "duration_s": 2500.0,
+                "gap_pace_s_per_km": value,
+                "gap_coverage": 1.0,
+                "gps_degraded_fraction": 0.0,
+                "gain": 1.0,
+                "active_blocks": None,
+                "admitted_by": None,
+                "workout_name": None,
+            }
+        ],
+    }
 
 PARAMETERS = {
     "window_days": 90,
@@ -205,7 +244,8 @@ def test_cs_line_prints_pace_interval_and_label(install_mock_client) -> None:
     242.85 s/km, 241.25 to 244.46, is ``medium``."""
     lines = _cs_lines(install_mock_client, _body(_cs()))
     assert lines[0] == "Critical speed 4:29/km (80 %: 4:21 to 4:38), low", "\n".join(lines)
-    assert len(lines) == 2 + 6, "\n".join(lines)
+    # The CS line, the low fit's direction line, D' and six stretches.
+    assert len(lines) == 3 + 6, "\n".join(lines)
 
     jan = _cs(JAN_2025, 242.8470975270634, 241.25141196259918, 244.46403200937243, "medium")
     assert _cs_lines(install_mock_client, _body(jan))[0] == "Critical speed 4:03/km (80 %: 4:01 to 4:04), medium"
@@ -219,22 +259,23 @@ def test_d_prime_prints_with_its_interval(install_mock_client) -> None:
     """Section 5's today: D' 133.87 m, 80 % 58.94 to 208.81 m, to whole metres. D' at or below 0 is
     served as computed with ``d_prime_not_positive``, and the line says so; a signed figure rounds
     half away from zero (-12.5 reads -13, 15.5 reads 16) and one that rounds to zero reads 0, never
-    -0."""
+    -0. These fits are ``low``, so D' follows the CS line and its direction line."""
     lines = _cs_lines(install_mock_client, _body(_cs()))
-    assert lines[1] == "D' 134 m (80 %: 59 to 209 m)", "\n".join(lines)
+    assert lines[2] == "D' 134 m (80 %: 59 to 209 m)", "\n".join(lines)
 
     negative = _cs(d_prime=(-12.5, -40.5, 15.5))
-    assert _cs_lines(install_mock_client, _body(negative))[1] == (
+    assert _cs_lines(install_mock_client, _body(negative))[2] == (
         "D' -13 m (80 %: -41 to 16 m), at or below 0: every kept stretch ran at the same average speed"
     )
 
     zero = _cs(d_prime=(-0.4, -0.5, 0.5))
-    assert _cs_lines(install_mock_client, _body(zero))[1] == (
+    assert _cs_lines(install_mock_client, _body(zero))[2] == (
         "D' 0 m (80 %: -1 to 1 m), at or below 0: every kept stretch ran at the same average speed"
     )
 
     # The note follows the served flag, not the sign: a positive D' served without it prints none.
-    assert "at or below 0" not in _cs_lines(install_mock_client, _body(_cs(d_prime=(0.4, -1.0, 2.0))))[1]
+    positive = _cs_lines(install_mock_client, _body(_cs(d_prime=(0.4, -1.0, 2.0))))[2]
+    assert positive.startswith("D' 0 m") and "at or below 0" not in positive
 
 
 def test_one_line_per_stretch_kept_or_dropped_in_words(install_mock_client) -> None:
@@ -242,7 +283,7 @@ def test_one_line_per_stretch_kept_or_dropped_in_words(install_mock_client) -> N
     and name (``unnamed`` when it has none), and ``kept`` or why it was dropped. 2025-01-31's 720 s
     stretch, 2831.33 m (254.29 s/km, 4:14), was beaten by the 1200 s one."""
     lines = _cs_lines(install_mock_client, _body(_cs()))
-    assert lines[2:] == [
+    assert lines[3:] == [
         "Stretch 2:00 at 3:49/km, 2026-10-07 unnamed: kept",
         "Stretch 3:00 at 3:49/km, 2026-10-16 Speed Repeats: kept",
         "Stretch 5:00 at 4:01/km, 2026-09-23 unnamed: kept",
@@ -383,7 +424,7 @@ def test_not_running_sessions_print_as_one_count_line(install_mock_client) -> No
         _excluded("2026-08-14T12:00:00Z", "not_running"),
     ]
     lines = _cs_lines(install_mock_client, _body(_cs(excluded=excluded)))
-    assert lines[8:] == [
+    assert lines[9:] == [
         "Left out of critical speed 2026-08-04: a declared resting capture, not a run",
         "Left out of critical speed 2026-08-05: its stored quality flags could not be read",
         "Left out of critical speed 2026-08-06: its distance went backwards in the recording, by its stored quality flags",
@@ -397,9 +438,90 @@ def test_not_running_sessions_print_as_one_count_line(install_mock_client) -> No
     ], "\n".join(lines)
 
     one = _cs_lines(install_mock_client, _body(_cs(excluded=excluded[:1])))
-    assert one[8:] == ["1 other session in the window is not a run"]
+    assert one[9:] == ["1 other session in the window is not a run"]
 
-    assert len(_cs_lines(install_mock_client, _body(_cs(excluded=excluded[1:2])))) == 9
+    assert len(_cs_lines(install_mock_client, _body(_cs(excluded=excluded[1:2])))) == 10
+
+
+def _from_cs(install_mock_client, body: Any) -> list[str]:
+    """The lines from the critical speed line on, whatever the threshold block printed; exit 0."""
+    _serve(install_mock_client, body)
+    result = runner.invoke(app, ["state"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("Critical speed"))
+    return lines[first:]
+
+
+def test_a_low_fit_says_it_likely_reads_slow(install_mock_client) -> None:
+    """A ``low`` fit (no short race among the stretches kept) prints one direction line after the
+    CS line, as threshold pace's all-short-races line does; ``medium`` and ``high`` print none, and
+    neither does an unavailable entry."""
+    lines = _cs_lines(install_mock_client, _body(_cs()))
+    assert lines[:3] == [
+        "Critical speed 4:29/km (80 %: 4:21 to 4:38), low",
+        CS_LOW_LINE,
+        "D' 134 m (80 %: 59 to 209 m)",
+    ], "\n".join(lines)
+
+    for label in ("medium", "high"):
+        lines = _cs_lines(install_mock_client, _body(_cs(confidence=label)))
+        assert lines[0] == f"Critical speed 4:29/km (80 %: 4:21 to 4:38), {label}", "\n".join(lines)
+        assert lines[1] == "D' 134 m (80 %: 59 to 209 m)", "\n".join(lines)
+        assert CS_LOW_LINE not in lines
+
+    assert CS_LOW_LINE not in _cs_lines(install_mock_client, _body(_unavailable("too_few_stretches", TODAY[:2])))
+
+
+def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> None:
+    """With both served and CS pace slower than threshold pace, a note after the CS line (and after
+    the low line, when there is one) says by how much, in whole s/km rounded half away from zero.
+    Today's demo copy: CS 268.95 s/km against threshold 260.56 s/km reads 8 s/km slower, beside the
+    low line. No note when CS is faster, when the difference rounds to 0 (2025-01-31's 242.85 against
+    242.70), or when threshold pace is unavailable."""
+    cs_today, threshold_today = 268.95250569663716, 260.56157884265895
+    body = _body(_cs(value=cs_today))
+    body["determinants"][0] = _threshold_at(threshold_today)
+    assert _from_cs(install_mock_client, body)[:4] == [
+        "Critical speed 4:29/km (80 %: 4:21 to 4:38), low",
+        CS_LOW_LINE,
+        _slower_than_threshold("8"),
+        "D' 134 m (80 %: 59 to 209 m)",
+    ]
+
+    # Both absent: a high fit faster than threshold pace (2024-11-30: 242.56 against 242.70).
+    body = _body(_cs(value=242.56172071408272, low=241.6051418736522, high=243.52590436267354, confidence="high"))
+    body["determinants"][0] = _threshold_at(242.70097421862755)
+    assert _from_cs(install_mock_client, body)[:2] == [
+        "Critical speed 4:03/km (80 %: 4:02 to 4:04), high",
+        "D' 134 m (80 %: 59 to 209 m)",
+    ]
+
+    # A medium fit 0.15 s/km slower rounds to 0: no note.
+    body = _body(_cs(JAN_2025, 242.8470975270634, 241.25141196259918, 244.46403200937243, "medium"))
+    body["determinants"][0] = _threshold_at(242.70097421862755)
+    assert _from_cs(install_mock_client, body)[1].startswith("D' ")
+
+    # Half a second rounds away from zero: 1.5 reads 2, 0.5 reads 1; a medium fit has no low line.
+    for slower, words in ((1.5, "2"), (0.5, "1")):
+        body = _body(_cs(value=260.0 + slower, confidence="medium"))
+        body["determinants"][0] = _threshold_at(260.0)
+        assert _from_cs(install_mock_client, body)[1] == _slower_than_threshold(words)
+
+    # Threshold pace unavailable: the low line only.
+    lines = _cs_lines(install_mock_client, _body(_cs(value=cs_today)))
+    assert lines[1:3] == [CS_LOW_LINE, "D' 134 m (80 %: 59 to 209 m)"]
+    assert not any("threshold pace" in line for line in lines)
+
+
+def test_help_names_the_two_direction_lines() -> None:
+    """``runcoach state --help`` says a low fit likely reads slow and what corrects it, and that a
+    note prints when critical speed reads slower than threshold pace. Fragments are pinned."""
+    result = runner.invoke(app, ["state", "--help"])
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.stdout.split())
+    assert "likely reads slow" in text and "30 minutes or less tagged Race" in text, text
+    assert "slower than threshold pace" in text, text
 
 
 @pytest.mark.parametrize(

@@ -473,6 +473,10 @@ def test_state_prints_cs_against_the_app(cli_against_app: TestClient, _no_networ
             f"Critical speed {_mss(estimate['value'])}/km (80 %: {_mss(estimate['interval']['low'])} to "
             f"{_mss(estimate['interval']['high'])}), low"
         ),
+        (
+            "No short race among the stretches kept: critical speed likely reads slow, as training stretches "
+            "are rarely all-out; a race of 30 minutes or less tagged Race would correct it."
+        ),
         f"D' {_away(d_prime['value_m'])} m (80 %: {_away(d_prime['low_m'])} to {_away(d_prime['high_m'])} m)",
         *stretch_lines,
         "1 other session in the window is not a run",

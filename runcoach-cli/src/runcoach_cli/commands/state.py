@@ -224,6 +224,17 @@ CS_UNAVAILABLE_WORDS = {
 }
 CS_NOT_SERVED_LINE = "Critical speed: not served by this API; update it and restart"
 
+# The direction lines after the CS line. A ``low`` fit has no short race among its stretches, and a
+# training stretch is rarely all-out. CS normally reads a little faster than threshold pace; the
+# note prints when CS reads slower by 1 s/km or more, rounded half away from zero.
+CS_LOW_LINE = (
+    "No short race among the stretches kept: critical speed likely reads slow, as training stretches are "
+    "rarely all-out; a race of 30 minutes or less tagged Race would correct it."
+)
+CS_SLOWER_THAN_THRESHOLD_LINE = (
+    "Critical speed normally reads a little faster than threshold pace; here it reads {n} s/km slower."
+)
+
 
 def _number(value: Any, what: str) -> float:
     """``value`` as a finite float; a bool, a string, a null or a non-finite number is malformed."""
@@ -618,8 +629,9 @@ def _cs_excluded_line(row: dict, zone: ZoneInfo) -> str:
     return f"Left out of critical speed {_date(row['start_time'], zone)}: {words}"
 
 
-def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
-    """The critical speed block for a ``critical_speed`` entry (F033 reference section 6)."""
+def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo, threshold: float | None = None) -> list[str]:
+    """The critical speed block for a ``critical_speed`` entry (F033 reference section 6).
+    ``threshold`` is the served threshold pace in s/km, ``None`` when it is unavailable."""
     stretches = det["stretches"]
     excluded = det["excluded"]
     if not isinstance(stretches, list) or not isinstance(excluded, list):
@@ -637,7 +649,14 @@ def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo) -> list[str]:
             raise ValueError("confidence is not low, medium or high")
         low = _mss(_number(estimate["interval"]["low"], "interval.low"))
         high = _mss(_number(estimate["interval"]["high"], "interval.high"))
-        lines = [f"Critical speed {format_pace(_number(estimate['value'], 'value'))} (80 %: {low} to {high}), {label}"]
+        value = _number(estimate["value"], "value")
+        lines = [f"Critical speed {format_pace(value)} (80 %: {low} to {high}), {label}"]
+        if label == "low":
+            lines.append(CS_LOW_LINE)
+        if threshold is not None:
+            slower = _away(value - threshold, 0)
+            if slower >= 1:
+                lines.append(CS_SLOWER_THAN_THRESHOLD_LINE.format(n=f"{slower:.0f}"))
         d_prime = det["d_prime"]
         if not isinstance(d_prime, dict):
             raise ValueError("d_prime is not an object")
@@ -695,10 +714,18 @@ def render(body: Any) -> list[str]:
         lines.append(RIEGEL_NOT_SERVED_LINE)
     cs = [d for d in body["determinants"] if isinstance(d, dict) and d.get("name") == CS_DETERMINANT]
     if cs:
-        lines += _cs_lines(cs[0], body["as_of"], zone)
+        lines += _cs_lines(cs[0], body["as_of"], zone, _threshold_value(body))
     else:
         lines.append(CS_NOT_SERVED_LINE)
     return lines
+
+
+def _threshold_value(body: dict) -> float | None:
+    """The served threshold pace in s/km, ``None`` when it is unavailable; ``_threshold_lines`` has
+    already read the entry."""
+    det = next(d for d in body["determinants"] if isinstance(d, dict) and d.get("name") == DETERMINANT)
+    estimate = det["estimate"]
+    return None if estimate is None else _number(estimate["value"], "value")
 
 
 def _threshold_lines(body: dict, zone: ZoneInfo) -> list[str]:
@@ -769,8 +796,11 @@ def state(
     in your runs of the last 90 days, one run per length, tagged or not (a declared resting capture
     is left out): no stretch spans a pause over 10 s. A stretch beaten by a longer, faster one is
     dropped. CS is labelled by the short races (30 minutes or less) among the stretches kept: none
-    low, one medium, two or more high. Each stretch is listed, kept or dropped, with the sessions
-    left out.
+    low, one medium, two or more high. A low fit says it likely reads slow, since training stretches
+    are rarely all-out, and that a race of 30 minutes or less tagged Race would correct it. When
+    critical speed reads 1 s/km or more slower than threshold pace, a note says by how much: it
+    normally reads a little faster. Each stretch is listed, kept or dropped, with the sessions left
+    out.
 
     This is the training state; for whether the API is running, see runcoach status.
     """

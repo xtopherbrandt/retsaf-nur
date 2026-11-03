@@ -45,9 +45,12 @@ against the served 242.56 s/km and 47.6 m. A small D′, well under 100 m, is a 
 was not all-out.
 
 **`runcoach state`** prints a critical speed block after the endurance exponent's, in this form
-(the worked example as of 2026-10-31, computed at planning on a copy of the athlete's store):
+(the release demo's, as of 2026-11-02 on a copy of the athlete's store, with threshold pace at
+4:21/km, 260.56 s/km; the stretches are the same as at planning, as of 2026-10-31):
 
     Critical speed 4:29/km (80 %: 4:21 to 4:38), low
+    No short race among the stretches kept: critical speed likely reads slow, as training stretches are rarely all-out; a race of 30 minutes or less tagged Race would correct it.
+    Critical speed normally reads a little faster than threshold pace; here it reads 8 s/km slower.
     D' 134 m (80 %: 59 to 209 m)
     Stretch 2:00 at 3:49/km, 2026-10-07 unnamed: kept
     Stretch 3:00 at 3:49/km, 2026-10-16 Speed Repeats: kept
@@ -56,7 +59,10 @@ was not all-out.
     Stretch 12:00 at 4:08/km, 2026-08-20 Run: kept
     Stretch 20:00 at 4:25/km, 2026-09-30 unnamed: kept
 
-A dropped stretch reads `dropped, a longer stretch was faster (20:00)`; each session left out
+The second line prints for a `low` fit only. The third prints when critical speed reads 1 s/km or
+more slower than threshold pace (the difference of the served paces, 268.95 less 260.56 s/km here,
+rounded half away from zero); it is absent when threshold pace is unavailable. A dropped stretch
+reads `dropped, a longer stretch was faster (20:00)`; each session left out
 prints a `Left out of critical speed <date>: <reason>` line saying whether its stored quality flags
 or its pace features flagged it, and the sessions that are not runs are counted on one line.
 Unavailable, one `Critical speed unavailable: ...` line gives the reason in words and no D′ line
