@@ -218,7 +218,8 @@ CS_UNAVAILABLE_WORDS = {
     ),
     "longest_far_off": (
         "the longest stretch kept is {excess} s/km slower than the next-longest predicts, more than {far}; "
-        "a long stretch run below its best is the usual cause"
+        "a long stretch run below its best, or a shorter one read fast (for example a GPS over-read or an "
+        "unmarked descent), can cause it"
     ),
     "estimate_not_finite": "the fit's figures are out of range; check the stretches listed",
 }

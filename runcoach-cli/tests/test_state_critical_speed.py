@@ -333,12 +333,14 @@ def test_each_unavailable_reason_prints_in_words(install_mock_client) -> None:
         (
             _unavailable("longest_far_off", TODAY, 20.25),
             "the longest stretch kept is 20.3 s/km slower than the next-longest predicts, more than 15; a long "
-            "stretch run below its best is the usual cause",
+            "stretch run below its best, or a shorter one read fast (for example a GPS over-read or an unmarked "
+            "descent), can cause it",
         ),
         (
             _unavailable("longest_far_off", TODAY, 15.04),
             "the longest stretch kept is just over 15 s/km slower than the next-longest predicts, more than 15; "
-            "a long stretch run below its best is the usual cause",
+            "a long stretch run below its best, or a shorter one read fast (for example a GPS over-read or an "
+            "unmarked descent), can cause it",
         ),
         (
             _unavailable("estimate_not_finite", TODAY),
