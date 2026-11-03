@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-11-01 through 2026-11-03 — Sprint 025: Critical speed and D′ from the run history
+
 ### Critical speed and D′ from the run history: `GET /state` and `runcoach state`
 
 F033: `GET /state` serves a third determinant, `critical_speed`, after `riegel_exponent`: critical
