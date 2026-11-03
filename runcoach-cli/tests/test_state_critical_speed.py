@@ -50,7 +50,8 @@ RIEGEL_OLDER_API_LINE = "Endurance exponent: not served by this API; update it a
 CS_OLDER_API_LINE = "Critical speed: not served by this API; update it and restart"
 CS_LOW_LINE = (
     "No short race among the stretches kept: critical speed likely reads slow, as training stretches are "
-    "rarely all-out; a race of 30 minutes or less tagged Race would correct it."
+    "rarely all-out; one short race (30 minutes or less, tagged Race, with its stretch kept) would raise "
+    "the label."
 )
 
 
@@ -332,14 +333,14 @@ def test_each_unavailable_reason_prints_in_words(install_mock_client) -> None:
         ),
         (
             _unavailable("longest_far_off", TODAY, 20.25),
-            "the longest stretch kept is 20.3 s/km slower than the next-longest predicts, more than 15; a long "
-            "stretch run below its best, or a shorter one read fast (for example a GPS over-read or an unmarked "
-            "descent), can cause it",
+            "the longest stretch kept is 20.3 s/km slower than the next-longest predicts, more than 15; the "
+            "longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
+            "unmarked descent), can cause it",
         ),
         (
             _unavailable("longest_far_off", TODAY, 15.04),
             "the longest stretch kept is just over 15 s/km slower than the next-longest predicts, more than 15; "
-            "a long stretch run below its best, or a shorter one read fast (for example a GPS over-read or an "
+            "the longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
             "unmarked descent), can cause it",
         ),
         (
@@ -479,8 +480,9 @@ def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> Non
     """With both served and CS pace slower than threshold pace, a note after the CS line (and after
     the low line, when there is one) says by how much, in whole s/km rounded half away from zero.
     Today's demo copy: CS 268.95 s/km against threshold 260.56 s/km reads 8 s/km slower, beside the
-    low line. No note when CS is faster, when the difference rounds to 0 (2025-01-31's 242.85 against
-    242.70), or when threshold pace is unavailable."""
+    low line. No note when CS is faster (5 s/km, and 0.5 s/km, which rounds to 1 faster), when the
+    difference rounds to 0 (2025-01-31's 242.85 against 242.70), or when threshold pace is
+    unavailable."""
     cs_today, threshold_today = 268.95250569663716, 260.56157884265895
     body = _body(_cs(value=cs_today))
     body["determinants"][0] = _threshold_at(threshold_today)
@@ -510,6 +512,15 @@ def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> Non
         body["determinants"][0] = _threshold_at(260.0)
         assert _from_cs(install_mock_client, body)[1] == _slower_than_threshold(words)
 
+    # CS faster than threshold pace by 1 s/km or more after rounding: no note, whatever the size.
+    for faster in (5.0, 0.5):
+        cs = 260.0 - faster
+        body = _body(_cs(value=cs, low=cs - 8.0, high=cs + 8.0, confidence="medium"))
+        body["determinants"][0] = _threshold_at(260.0)
+        lines = _from_cs(install_mock_client, body)
+        assert lines[1] == "D' 134 m (80 %: 59 to 209 m)", "\n".join(lines)
+        assert not any("threshold pace" in line for line in lines), "\n".join(lines)
+
     # Threshold pace unavailable: the low line only.
     lines = _cs_lines(install_mock_client, _body(_cs(value=cs_today)))
     assert lines[1:3] == [CS_LOW_LINE, "D' 134 m (80 %: 59 to 209 m)"]
@@ -517,12 +528,14 @@ def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> Non
 
 
 def test_help_names_the_two_direction_lines() -> None:
-    """``runcoach state --help`` says a low fit likely reads slow and what corrects it, and that a
-    note prints when critical speed reads slower than threshold pace. Fragments are pinned."""
+    """``runcoach state --help`` says a low fit likely reads slow and what would raise its label, and
+    that a note prints when critical speed reads slower than threshold pace. Fragments are pinned."""
     result = runner.invoke(app, ["state", "--help"])
     assert result.exit_code == 0, result.output
     text = " ".join(result.stdout.split())
-    assert "likely reads slow" in text and "30 minutes or less tagged Race" in text, text
+    assert "likely reads slow" in text, text
+    assert "one short race (30 minutes or less, tagged Race, with its stretch kept) would raise the label" in text, text
+    assert "correct it" not in text.split("Last, critical speed")[1], text
     assert "slower than threshold pace" in text, text
 
 

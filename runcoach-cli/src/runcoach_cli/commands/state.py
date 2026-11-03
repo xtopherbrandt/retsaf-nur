@@ -218,7 +218,7 @@ CS_UNAVAILABLE_WORDS = {
     ),
     "longest_far_off": (
         "the longest stretch kept is {excess} s/km slower than the next-longest predicts, more than {far}; "
-        "a long stretch run below its best, or a shorter one read fast (for example a GPS over-read or an "
+        "the longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
         "unmarked descent), can cause it"
     ),
     "estimate_not_finite": "the fit's figures are out of range; check the stretches listed",
@@ -230,7 +230,8 @@ CS_NOT_SERVED_LINE = "Critical speed: not served by this API; update it and rest
 # note prints when CS reads slower by 1 s/km or more, rounded half away from zero.
 CS_LOW_LINE = (
     "No short race among the stretches kept: critical speed likely reads slow, as training stretches are "
-    "rarely all-out; a race of 30 minutes or less tagged Race would correct it."
+    "rarely all-out; one short race (30 minutes or less, tagged Race, with its stretch kept) would raise "
+    "the label."
 )
 CS_SLOWER_THAN_THRESHOLD_LINE = (
     "Critical speed normally reads a little faster than threshold pace; here it reads {n} s/km slower."
@@ -798,7 +799,8 @@ def state(
     is left out): no stretch spans a pause over 10 s. A stretch beaten by a longer, faster one is
     dropped. CS is labelled by the short races (30 minutes or less) among the stretches kept: none
     low, one medium, two or more high. A low fit says it likely reads slow, since training stretches
-    are rarely all-out, and that a race of 30 minutes or less tagged Race would correct it. When
+    are rarely all-out, and that one short race (30 minutes or less, tagged Race, with its stretch
+    kept) would raise the label. When
     critical speed reads 1 s/km or more slower than threshold pace, a note says by how much: it
     normally reads a little faster. Each stretch is listed, kept or dropped, with the sessions left
     out.

@@ -403,8 +403,8 @@ def test_the_laps_calls_return_a_non_2xx_reply_unchanged(install_mock_client) ->
 
 def test_get_state_waits_120_seconds_and_the_list_call_keeps_30(install_mock_client) -> None:
     # GET /state re-reads every run in the 90-day window for critical speed, so its cost grows
-    # with the runs in the window: 20 to 30 s through a server at 50 to 75 runs, past the list
-    # call's 30 s. The state call carries its own 120 s timeout; the list call's stays 30 s.
+    # with the runs in the window: 20.7 to 29.0 s through a server at 50 to 75 runs, within about
+    # 1 s of the list call's 30 s. The state call carries its own 120 s timeout; the list call's stays 30 s.
     captured: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -39,17 +39,17 @@ one `medium`, two or more `high`. A stretch from a longer Race-tagged run, such 
 5K recorded with its warm-up, does not count, and the interval's width does not set the label. So a
 fit from training runs alone reads `low` however narrow its interval. A stretch run below its best
 leans CS one way or the other by its length: one longer than the mean length of the stretches kept
-pulls CS slow, and one shorter (the 2 to 5 minute end) pulls CS slightly fast and shrinks D′. As of
-2024-11-30, the 2, 3 and 5 minute stretches run 3 % faster would read CS 244.11 s/km and D′ 73.8 m
-against the served 242.56 s/km and 47.6 m. A small D′, well under 100 m, is a sign the short end
-was not all-out.
+pulls CS slow, and one shorter pulls CS slightly fast and shrinks D′; with all six lengths kept that
+mean is 500 s, so the shorter side runs up to the 8-minute stretch. As of 2024-11-30, the 2, 3 and 5
+minute stretches run 3 % faster would read CS 244.11 s/km and D′ 73.8 m against the served
+242.56 s/km and 47.6 m. A small D′, well under 100 m, is a sign the short end was not all-out.
 
 **`runcoach state`** prints a critical speed block after the endurance exponent's, in this form
 (the release demo's, as of 2026-11-02 on a copy of the athlete's store, with threshold pace at
 4:21/km, 260.56 s/km; the stretches are the same as at planning, as of 2026-10-31):
 
     Critical speed 4:29/km (80 %: 4:21 to 4:38), low
-    No short race among the stretches kept: critical speed likely reads slow, as training stretches are rarely all-out; a race of 30 minutes or less tagged Race would correct it.
+    No short race among the stretches kept: critical speed likely reads slow, as training stretches are rarely all-out; one short race (30 minutes or less, tagged Race, with its stretch kept) would raise the label.
     Critical speed normally reads a little faster than threshold pace; here it reads 8 s/km slower.
     D' 134 m (80 %: 59 to 209 m)
     Stretch 2:00 at 3:49/km, 2026-10-07 unnamed: kept
