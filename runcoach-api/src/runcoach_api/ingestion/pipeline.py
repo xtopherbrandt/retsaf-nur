@@ -37,6 +37,19 @@ class IngestResult:
     # True when ``keep`` refused the session: nothing was written and no
     # connection was opened; ``session_id`` is the unstored session's id.
     skipped: bool = False
+    # True when an ``override`` was given and applied (the file's canonical
+    # sport was not running); False otherwise, an unused override included.
+    retyped: bool = False
+
+
+@dataclass(frozen=True)
+class SportOverride:
+    """F030's retype of a Strava ``Run`` row's file: the sport, name and flag
+    ``ingest_fit_bytes`` stores when the file's canonical sport is not running."""
+
+    name: str
+    sport: str = "running"
+    flag: str = "sport_retyped_by_strava"
 
 
 def ingest_fit_bytes(
@@ -49,6 +62,7 @@ def ingest_fit_bytes(
     zone: ZoneInfo | None = None,
     timeout: float | None = None,
     after_write: Callable[[sqlite3.Connection], None] | None = None,
+    override: SportOverride | None = None,
 ) -> IngestResult:
     """Ingest one FIT file's bytes and persist the session it describes.
 
@@ -71,6 +85,16 @@ def ingest_fit_bytes(
       ``resting_hrv_profile_names``.
     - ``zone`` and ``after_write`` go to ``db.persist``: ``after_write(conn)``
       runs inside the session's transaction, so a fault in it stores nothing.
+
+    ``override`` is F030's sport override for a Strava ``Run`` row's file. Every
+    step above runs on the watch's own sport (``mapping.to_canonical``,
+    ``hrv_classification.classify``, ``quality_gates.apply``); then, only when
+    the canonical sport is not running, the session takes the override's
+    ``sport`` and ``name`` and its ``flag`` is appended to the quality flags.
+    ``keep`` runs after that, so it reads the overridden sport. Provenance keeps
+    the watch's ``raw_sport_value`` and ``sport_profile_name`` as mapping wrote
+    them. The result's ``retyped`` says whether the override applied; a running
+    file is stored as an upload stores it.
     """
     messages = fit_parser.decode(raw)
     session, records = mapping.to_canonical(messages)
@@ -119,8 +143,17 @@ def ingest_fit_bytes(
     quality_gates.apply(session, records)
     quarantine_values = quarantine.extract(messages)
 
+    retyped = False
+    if override is not None and session.sport != "running":
+        retyped = True
+        session.sport = override.sport
+        session.name = override.name
+        session.quality_flags.append(override.flag)
+
     if keep is not None and not keep(session):
-        return IngestResult(session_id=session.session_id, quality_flags=session.quality_flags, skipped=True)
+        return IngestResult(
+            session_id=session.session_id, quality_flags=session.quality_flags, skipped=True, retyped=retyped
+        )
 
     # Only the arguments given are passed, so a one-file upload calls
     # get_connection() and persist() exactly as before this seam existed.
@@ -155,7 +188,7 @@ def ingest_fit_bytes(
     finally:
         conn.close()
 
-    return IngestResult(session_id=session.session_id, quality_flags=session.quality_flags)
+    return IngestResult(session_id=session.session_id, quality_flags=session.quality_flags, retyped=retyped)
 
 
 class LapsRead(NamedTuple):
