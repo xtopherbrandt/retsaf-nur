@@ -1607,7 +1607,8 @@ def recompute_session_load(session_id: str) -> SessionLoadRecompute:
     ``changed`` compares the new body with the old read through ``SessionLoad``, so a body saved
     before dated entries existed differs only where a value does. An unknown ``session_id`` is the
     404 ``get_session`` raises, writing nothing. An anchor version log out of step is the named 500
-    ``GET /me`` serves, writing nothing. This route is the only path that replaces a saved load.
+    ``GET /me`` serves, writing nothing. A saved load is replaced here and by a Strava import's
+    reconcile (``db.reconcile_strava_load``), both through ``db.recompute_session_load``.
     The response is built inside the transaction, before the write, so a computed body that does
     not read as a ``SessionLoad`` is a 500 that writes nothing.
     """

@@ -3116,3 +3116,111 @@ def sessions_at_second(conn: sqlite3.Connection, start_time: str) -> list[tuple[
     ``distance_m`` is the summary's, None when absent or the summary is not JSON. Read-only."""
     rows = conn.execute(SESSIONS_AT_SECOND_SQL, (start_time,)).fetchall()
     return [(row[0], row[1], row[2]) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# F031: after a Strava import, recompute each saved load that disagrees with the rule
+# (user ruling 2026-10-25: recompute on disagreement).
+# ---------------------------------------------------------------------------
+from runcoach_api.metrics.session_load import STRAVA_NOT_RUNNING as _STRAVA_NOT_RUNNING
+from runcoach_api.metrics.session_load import strava_exclusion as _strava_exclusion
+
+# Every running session, and any session whose saved reason is strava_not_running, with its saved
+# load and its live Strava link (one row per session: strava_one_row_per_session). A body that is
+# not JSON names no row.
+STRAVA_RECONCILE_SQL = f"""
+    SELECT s.session_id, s.sport, s.activity_tag, s.start_time, l.load_reason,
+           CASE WHEN json_valid(l.body) THEN json_extract(l.body, '$.strava_activity_id') END,
+           a.activity_id, a.activity_type
+    FROM sessions s
+    JOIN {SESSION_LOADS_TABLE} l ON l.session_id = s.session_id
+    LEFT JOIN {STRAVA_ACTIVITIES_TABLE} a
+      ON a.linked_session_id = s.session_id AND a.deleted_in_strava = 0
+    WHERE s.sport = 'running' OR l.load_reason = '{_STRAVA_NOT_RUNNING}'
+    ORDER BY s.start_time, s.session_id
+"""
+
+
+@dataclasses.dataclass(frozen=True)
+class ReconcileResult:
+    """What ``reconcile_strava_load`` did: the sessions it recomputed, in start order, and one
+    ``changes`` entry (``ImportLoadChange``'s fields) per session whose body moved into
+    (``excluded``) or out of (``restored``) ``strava_not_running``."""
+
+    recomputed: tuple[str, ...]
+    changes: tuple[dict, ...]
+
+    @property
+    def excluded(self) -> int:
+        return sum(1 for change in self.changes if change["change"] == "excluded")
+
+    @property
+    def restored(self) -> int:
+        return sum(1 for change in self.changes if change["change"] == "restored")
+
+
+def _strava_disagrees(row: sqlite3.Row | tuple) -> bool:
+    """Whether a ``STRAVA_RECONCILE_SQL`` row's saved load disagrees with the rule: the saved reason
+    is ``strava_not_running`` exactly when ``session_load.strava_exclusion`` says no, or the other
+    way round, or the saved excluded body names another row than the live link. Never compares
+    whole bodies: a counted body naming a superseded anchor version agrees."""
+    _, sport, tag, _, reason, saved_id, link_id, link_type = row
+    link = None if link_id is None else {"activity_type": link_type, "activity_id": link_id}
+    should = _strava_exclusion(sport, tag, link)
+    saved = reason == _STRAVA_NOT_RUNNING
+    return saved != should or (saved and saved_id != link_id)
+
+
+def _reason_of(body: Mapping | None) -> object:
+    load = (body or {}).get("session_load") or {}
+    return load.get("unavailable") if isinstance(load, Mapping) else None
+
+
+def reconcile_strava_load(conn_factory: Callable[[], sqlite3.Connection], zone: ZoneInfo) -> ReconcileResult:
+    """Recompute every stored session whose saved load disagrees with F031's rule (F031 AC3, AC4).
+
+    One read of ``STRAVA_RECONCILE_SQL`` selects the sessions ``_strava_disagrees`` names: a
+    running session linked to a live non-running row whose body is not excluded, an excluded body
+    whose link is gone (unlinked, ``deleted_in_strava``, moved to another session) or now running
+    family, and an excluded body naming another row than the live link. Each is recomputed through
+    ``recompute_session_load``, its own ``BEGIN IMMEDIATE`` transaction, never inside a row's, so
+    the reconcile reads committed rows only and an interrupted pass is healed by the next Strava
+    import. A recompute whose old body was not ``strava_not_running`` and whose new body is, is an
+    ``excluded`` change; the reverse a ``restored`` one; each names the session, its local date in
+    ``zone``, the live link's ``Activity Type`` (None when unlinked) and the old body's load value.
+    A session deleted since the read is skipped. ``conn_factory`` opens one connection, closed
+    here; any fault propagates, leaving every earlier recompute committed."""
+    conn = conn_factory()
+    try:
+        rows = [tuple(row) for row in conn.execute(STRAVA_RECONCILE_SQL).fetchall()]
+        recomputed: list[str] = []
+        changes: list[dict] = []
+        for row in rows:
+            if not _strava_disagrees(row):
+                continue
+            session_id, _, _, start_time, _, _, _, _ = row
+            result = recompute_session_load(conn, session_id, zone=zone)
+            if result is None:
+                continue
+            recomputed.append(session_id)
+            old_body, new_body = result
+            was = _reason_of(old_body) == _STRAVA_NOT_RUNNING
+            now = _reason_of(new_body) == _STRAVA_NOT_RUNNING
+            if was == now:
+                continue
+            link = conn.execute(
+                f"SELECT activity_type FROM {STRAVA_ACTIVITIES_TABLE}"
+                " WHERE linked_session_id = ? AND deleted_in_strava = 0",
+                (session_id,),
+            ).fetchone()
+            old_load = ((old_body or {}).get("session_load") or {}).get("value")
+            changes.append({
+                "session_id": session_id,
+                "local_date": _local_day(session_id, start_time, zone)[0].isoformat(),
+                "strava_type": None if link is None else link[0],
+                "old_load": old_load,
+                "change": "excluded" if now else "restored",
+            })
+        return ReconcileResult(tuple(recomputed), tuple(changes))
+    finally:
+        conn.close()

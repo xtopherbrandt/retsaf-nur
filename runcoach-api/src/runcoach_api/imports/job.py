@@ -48,7 +48,11 @@ statement that reads or writes them lives here.
   one folder; if so the job is ``imports.strava.run_strava``'s, before the
   Garmin scan, and any other archive takes the path above unchanged.
   ``set_source`` records the kind ``POST /imports`` recognised. A report row
-  carries a Strava row's ``strava_activity_id``; a Garmin row's is null.
+  carries a Strava row's ``strava_activity_id``; a Garmin row's is null. Once
+  every Strava row has committed, and before the job is ``completed``, the
+  branch runs ``db.reconcile_strava_load`` (F031): ``counts.strava``'s
+  ``excluded_from_load`` and ``restored_to_load`` and ``imports.load_changes``
+  come from it; ``files[]`` is unchanged.
 - **Counts.** ``replaced`` and ``no_night`` count those rows; a job stored
   before they existed holds counts without them, which ``ImportCounts``
   serves as 0.

@@ -3485,8 +3485,8 @@ components:
         updated: { type: integer, default: 0 }
         deleted_in_strava: { type: integer, default: 0, description: "Stored rows absent from this archive, marked and unlinked." }
         distance_differs: { type: integer, default: 0, description: "Linked rows carrying the distance_differs warning." }
-        excluded_from_load: { type: integer, default: 0, description: "Linked sessions whose saved load the import excluded." }
-        restored_to_load: { type: integer, default: 0, description: "Linked sessions whose saved load the import restored." }
+        excluded_from_load: { type: integer, default: 0, description: "Sessions whose saved load the import's reconcile recomputed into strava_not_running." }
+        restored_to_load: { type: integer, default: 0, description: "Sessions whose saved load the import's reconcile recomputed out of strava_not_running." }
     ImportLoadChange:
       type: object
       description: "One linked session whose saved load a Strava import excluded or restored."
@@ -3495,7 +3495,7 @@ components:
         session_id: { type: string }
         local_date: { type: string, description: "The session's date in the athlete's zone, YYYY-MM-DD." }
         strava_type: { type: string, nullable: true, description: "The linked row's Activity Type; null when the session is no longer linked." }
-        old_load: { type: number, nullable: true, description: "The saved load value before the change; null when it had none." }
+        old_load: { type: number, nullable: true, description: "The saved load value before the recompute; null when it had none (always, for restored)." }
         change: { type: string, enum: [excluded, restored] }
     ImportFile:
       type: object

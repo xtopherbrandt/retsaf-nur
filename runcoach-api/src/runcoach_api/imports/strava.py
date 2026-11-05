@@ -59,6 +59,12 @@
   ``counts.strava`` counts each outcome and the ``distance_differs`` rows; the top-level
   ``stored``, ``already_stored`` and ``failed`` count the rows with those outcomes and ``not_fit``
   the GPX and TCX runs by kind; the rest stay 0.
+- **The load reconcile (F031).** After every row has committed, ``_reconcile_load`` runs
+  ``db.reconcile_strava_load`` in the job's zone: each stored session whose saved load disagrees
+  with the Strava rule is recomputed in its own transaction, ``counts.strava``'s
+  ``excluded_from_load`` and ``restored_to_load`` count the bodies that moved into or out of
+  ``strava_not_running``, and ``imports.load_changes`` lists them (served as
+  ``Import.load_changes``). A job interrupted before it is healed by the next Strava import.
 """
 
 from __future__ import annotations
@@ -102,6 +108,9 @@ from runcoach_api.models import Session
 # The largest value SQLite's INTEGER holds: an Activity ID past it cannot be stored.
 SQLITE_INTEGER_MAX = 2**63 - 1
 DUPLICATE_ACTIVITY_ID = "duplicate_activity_id"
+# counts.strava's load keys, written once the rows have committed (``_reconcile_load``).
+EXCLUDED_FROM_LOAD = "excluded_from_load"
+RESTORED_TO_LOAD = "restored_to_load"
 # The top-level counts a Strava row's outcome also moves (the Garmin import's names).
 _TOP_LEVEL = frozenset({STORED, ALREADY_STORED, FAILED})
 
@@ -596,6 +605,21 @@ def run_strava(work: job._Job, path: Path, prefix: str) -> None:
                 "UPDATE imports SET activities_processed = ?, counts = ? WHERE import_id = ?",
                 (total, json.dumps(work.counts), work.import_id),
             )
+    _reconcile_load(work)
+
+
+def _reconcile_load(work: job._Job) -> None:
+    """After every row has committed: ``db.reconcile_strava_load`` in the job's zone, its counts
+    into ``counts.strava`` and its changes into ``imports.load_changes`` (``Import.load_changes``)."""
+    result = db.reconcile_strava_load(work.connect, work.zone)
+    counts = json.loads(json.dumps(work.counts))
+    counts["strava"][EXCLUDED_FROM_LOAD] = result.excluded
+    counts["strava"][RESTORED_TO_LOAD] = result.restored
+    work.update(
+        "UPDATE imports SET counts = ?, load_changes = ? WHERE import_id = ?",
+        (json.dumps(counts), json.dumps(list(result.changes)), work.import_id),
+    )
+    work.counts = counts
 
 
 def _mark_deleted(work: job._Job, activity_id: int, seq: int) -> None:

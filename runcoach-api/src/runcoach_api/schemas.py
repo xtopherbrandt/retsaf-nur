@@ -1460,8 +1460,8 @@ class ImportStravaCounts(BaseModel):
     updated: int = 0
     deleted_in_strava: int = Field(default=0, description="Stored rows absent from this archive, marked and unlinked.")
     distance_differs: int = Field(default=0, description="Linked rows carrying the distance_differs warning.")
-    excluded_from_load: int = Field(default=0, description="Linked sessions whose saved load the import excluded.")
-    restored_to_load: int = Field(default=0, description="Linked sessions whose saved load the import restored.")
+    excluded_from_load: int = Field(default=0, description="Sessions whose saved load the import's reconcile recomputed into strava_not_running.")
+    restored_to_load: int = Field(default=0, description="Sessions whose saved load the import's reconcile recomputed out of strava_not_running.")
 
 
 class ImportCounts(BaseModel):
@@ -1488,7 +1488,7 @@ class ImportLoadChange(BaseModel):
     session_id: str
     local_date: str = Field(description="The session's date in the athlete's zone, YYYY-MM-DD.")
     strava_type: str | None = Field(description="The linked row's Activity Type; null when the session is no longer linked.")
-    old_load: float | None = Field(description="The saved load value before the change; null when it had none.")
+    old_load: float | None = Field(description="The saved load value before the recompute; null when it had none (always, for restored).")
     change: Literal["excluded", "restored"]
 
 
