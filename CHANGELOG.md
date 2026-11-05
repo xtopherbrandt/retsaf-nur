@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Critical speed
+
+F034 changes two of critical speed's rules (spec/04 section 4.3.6; register row REG-34, history entry H-50).
+
+- **`high` needs a short race at the 2-5 minute end.** The label still counts the stretches kept
+  from short races (tagged Race, 30 minutes or less, not admitted as a workout): none `low`, one
+  `medium`. Two or more now read `high` only when one of them is the 2, 3 or 5 minute stretch;
+  otherwise the label is held at `medium`, because a training run at the short end can read critical
+  speed 1-2 s/km fast. CS, D′ and their intervals do not move. `GET /state` serves
+  `label_held_at_medium` on the `critical_speed` entry: `true` when held, `false` on any other
+  fitted entry, `null` when the entry is unavailable. `runcoach state` prints a line right under the
+  CS line when it is held; an older API without the key prints none.
+- **The far-off cut drops from 15 to 4 s/km.** A fit is refused, `longest_far_off`, when its
+  20-minute stretch runs more than 4 s/km slower than the next-longest predicts (4.00 passes);
+  `parameters.far_off_s_per_km` serves 4. The 15 s/km cut had refused no Sunday since 2023, while
+  every 20-minute stretch the athlete called not all-out or controlled ran 5.15 s/km or more over.
+- **The athlete's critical speed is not served at this release.** The window ending 2026-11-04 has a
+  far-off excess of +10.04 s/km, so `runcoach state` shows critical speed refused as
+  `longest_far_off`, with the excess and the stretches, where the last release showed 4:29/km `low`. Threshold pace, the endurance
+  exponent and the goal routes do not read critical speed and are unchanged.
+
 ## 2026-11-01 through 2026-11-03 — Sprint 025: Critical speed and D′ from the run history
 
 ### Critical speed and D′ from the run history: `GET /state` and `runcoach state`
