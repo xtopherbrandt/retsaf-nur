@@ -1531,6 +1531,37 @@ def get_import(import_id: str) -> Import:
 
 
 # ---------------------------------------------------------------------------
+# GET /strava-activities/{activity_id} (F030)
+# ---------------------------------------------------------------------------
+from runcoach_api.schemas import StravaActivity
+
+#: SQLite's integer range: an id outside it names no row and is never bound.
+_SQLITE_INTEGER_RANGE = range(-(2**63), 2**63)
+
+
+@app.get(
+    "/strava-activities/{activity_id}",
+    response_model=StravaActivity,
+    operation_id="getStravaActivity",
+    tags=["Sessions"],
+    responses={404: {"description": 'No row has that Activity ID: `{"detail": "no_strava_activity"}`.'}},
+)
+def get_strava_activity(activity_id: int) -> StravaActivity:
+    """One Strava archive row with every column, whatever its outcome or link; 404
+    ``{"detail": "no_strava_activity"}`` for an Activity ID no row has. Nothing is written."""
+    row = None
+    if activity_id in _SQLITE_INTEGER_RANGE:
+        conn = db.get_connection()
+        try:
+            row = db.read_strava_row(conn, activity_id)
+        finally:
+            conn.close()
+    if row is None:
+        raise HTTPException(404, "no_strava_activity")
+    return StravaActivity.model_validate(row)
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions/{session_id}/load/recompute (F021)
 #
 # Appended below the earlier routes with its own imports, as the routes

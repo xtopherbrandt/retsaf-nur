@@ -279,9 +279,10 @@ def test_session_detail_is_unchanged_by_the_name_column() -> None:
     assert detail.status_code == 200
     # F020 adds exactly one key on purpose: the archive import that stored
     # the session (null here, a POST /sessions upload). F025 adds three: the
-    # laps, the workout steps and laps_read_at. Named explicitly so any other
-    # added key, the saved name included, still fails.
-    assert set(detail.json()) == DETAIL_KEYS | {"import_id", "laps", "workout_steps", "laps_read_at"}
+    # laps, the workout steps and laps_read_at. F030 adds the linked Strava
+    # row's block. Named explicitly so any other added key, the saved name
+    # included, still fails.
+    assert set(detail.json()) == DETAIL_KEYS | {"import_id", "laps", "workout_steps", "laps_read_at", "strava"}
     assert {frozenset(lap) for lap in detail.json()["laps"]} == {
         frozenset(
             {

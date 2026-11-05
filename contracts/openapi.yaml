@@ -1236,6 +1236,41 @@ paths:
               schema: { $ref: "#/components/schemas/Import" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /strava-activities/{activity_id}:
+    get:
+      tags: [Sessions]
+      operationId: getStravaActivity
+      summary: One Strava archive row with every column
+      description: >
+        F030. One row of an imported Strava archive, kept whatever its outcome:
+        every CSV cell as text under columns, its link to a stored session, how
+        it was linked, its warnings and whether a later archive lacked it. A
+        session's linked row is also served, without columns, as
+        SessionDetail.strava. Nothing is written.
+      x-readiness: implemented
+      x-owner-spec: "runcoach-api F030"
+      parameters:
+        - name: activity_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The row
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StravaActivity" }
+        "404":
+          description: 'No row has that Activity ID: `{"detail": "no_strava_activity"}` (an API without the route answers `Not Found`, which a client tells apart by `detail`)'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [detail]
+                properties:
+                  detail: { type: string, enum: [no_strava_activity] }
+        "422": { $ref: "#/components/responses/RequestValidationError" }
+
   /race-tags:
     put:
       tags: [Sessions]
@@ -1547,7 +1582,7 @@ components:
     SessionDetail:
       type: object
       description: Canonical session as GET /sessions/{id} returns it (quarantine sidecar excluded).
-      required: [session_id, start_time, sport, source_vendor, records, rr_intervals, laps, workout_steps, laps_read_at]
+      required: [session_id, start_time, sport, source_vendor, records, rr_intervals, laps, workout_steps, laps_read_at, strava]
       properties:
         session_id: { type: string }
         athlete_id: { type: string, nullable: true }
@@ -1617,6 +1652,10 @@ components:
           type: string
           nullable: true
           description: "When the laps were last read from a file (UTC, ISO-8601); null means never read, not no laps."
+        strava:
+          allOf: [{ $ref: "#/components/schemas/SessionStrava" }]
+          nullable: true
+          description: "The Strava archive row linked to the session and not deleted in Strava (F030); null when none."
 
     Record:
       type: object
@@ -3515,6 +3554,38 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Import" }
           description: "Newest first by created_at; no item carries files."
+    StravaActivity:
+      type: object
+      description: "getStravaActivity: one row of an imported Strava archive, kept whatever its outcome (F030 reference section 4)."
+      required: [activity_id, start_time, activity_type, name, description, private_note, filename, columns, linked_session_id, match, warnings, deleted_in_strava]
+      properties:
+        activity_id: { type: integer, format: int64, description: "The Activity ID." }
+        start_time: { type: string, nullable: true, description: "The Activity Date as UTC, ISO 8601; null when it did not parse (a failed row)." }
+        activity_type: { type: string, nullable: true, description: "Strava's Activity Type; null when the row has no such cell." }
+        name: { type: string, nullable: true, description: "The Activity Name cell; null when the row has no such cell." }
+        description: { type: string, nullable: true, description: "The Activity Description cell; \"\" when empty, null when absent." }
+        private_note: { type: string, nullable: true, description: "The Activity Private Note cell; \"\" when empty, null when absent." }
+        filename: { type: string, nullable: true, description: "The Filename cell; \"\" or null when the row names no file." }
+        columns:
+          type: object
+          additionalProperties: { type: string }
+          description: "Every cell as the text the CSV holds, an empty cell as \"\", keyed by the header name; a repeated name's later copies keyed `<name> (2)`, `<name> (3)`, in header order. Strava's scores (Relative Effort, Training Load, Intensity, Perceived Relative Effort) are display-only."
+        linked_session_id: { type: string, nullable: true, description: "The stored session the row describes; null when none." }
+        match: { type: string, nullable: true, enum: [csv_start, file_start, stored], description: "How the row was linked, as SessionStrava.match; null when unlinked." }
+        warnings: { type: array, items: { type: string }, description: "The row's warnings (distance_differs); empty when none." }
+        deleted_in_strava: { type: boolean, description: "True when a later archive lacked the row: it is kept and unlinked, and served here only." }
+    SessionStrava:
+      type: object
+      description: "SessionDetail.strava: the Strava archive row linked to the session and not deleted in Strava (F030)."
+      required: [activity_id, activity_type, name, description, private_note, match, warnings]
+      properties:
+        activity_id: { type: integer, format: int64, description: "The row's Activity ID." }
+        activity_type: { type: string, nullable: true, description: "Strava's Activity Type, as the CSV holds it." }
+        name: { type: string, nullable: true, description: "The Activity Name cell." }
+        description: { type: string, nullable: true, description: "The Activity Description cell, as text; \"\" when empty." }
+        private_note: { type: string, nullable: true, description: "The Activity Private Note cell, as text; \"\" when empty." }
+        match: { type: string, nullable: true, enum: [csv_start, file_start, stored], description: "How the row was linked: csv_start (its Activity Date second), file_start (its file's start), stored (the import stored the run)." }
+        warnings: { type: array, items: { type: string }, description: "The row's warnings (distance_differs); empty when none." }
     SessionLoadRecompute:
       type: object
       description: >

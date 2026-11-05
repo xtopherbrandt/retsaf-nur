@@ -1062,6 +1062,8 @@ def get_session_detail(conn: sqlite3.Connection, session_id: str) -> dict | None
         "laps": laps,
         "workout_steps": workout_steps,
         "laps_read_at": row["laps_read_at"],
+        # F030: the linked strava_activities row not deleted in Strava, or null.
+        "strava": _session_strava(conn, session_id),
     }
 
 
@@ -3069,6 +3071,24 @@ def read_strava_rows(conn: sqlite3.Connection) -> list[dict]:
         f"SELECT {_STRAVA_COLUMN_LIST} FROM {STRAVA_ACTIVITIES_TABLE} ORDER BY activity_id"
     )
     return [_strava_row(row) for row in rows]
+
+
+#: The keys of ``GET /sessions/{id}``'s ``strava`` block (F030 reference section 4).
+SESSION_STRAVA_KEYS = ("activity_id", "activity_type", "name", "description", "private_note", "match", "warnings")
+
+
+def _session_strava(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """The ``strava_activities`` row linked to ``session_id`` and not ``deleted_in_strava``, as
+    ``SESSION_STRAVA_KEYS``, or None. ``strava_one_row_per_session`` allows one linked row. Read-only."""
+    row = _strava_cursor(conn).execute(
+        f"SELECT {_STRAVA_COLUMN_LIST} FROM {STRAVA_ACTIVITIES_TABLE}"
+        " WHERE linked_session_id = ? AND deleted_in_strava = 0",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    full = _strava_row(row)
+    return {key: full[key] for key in SESSION_STRAVA_KEYS}
 
 
 def write_strava_row(conn: sqlite3.Connection, row: Mapping) -> None:

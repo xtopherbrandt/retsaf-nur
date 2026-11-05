@@ -1837,6 +1837,61 @@ class LapCandidatesResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# GET /strava-activities/{activity_id} and the session's Strava block (F030)
+#
+# Inserted before the F024 block so the anchors at the file's tail stay in
+# place. Named exactly as the contract's components. ``GET /sessions/{id}``
+# serves a dict; its ``strava`` value has ``SessionStrava``'s keys.
+# ---------------------------------------------------------------------------
+
+_StravaMatch = Literal["csv_start", "file_start", "stored"]
+# Activity IDs are 64-bit integers (the export's own values pass 2**31).
+_INT64 = {"format": "int64"}
+
+
+class SessionStrava(BaseModel):
+    """The ``strava_activities`` row linked to a session and not deleted in Strava, as
+    ``GET /sessions/{id}`` serves it under ``strava``."""
+
+    activity_id: int = Field(json_schema_extra=_INT64, description="The row's Activity ID.")
+    activity_type: str | None = Field(description="Strava's Activity Type, as the CSV holds it.")
+    name: str | None = Field(description="The Activity Name cell.")
+    description: str | None = Field(description="The Activity Description cell, as text; \"\" when empty.")
+    private_note: str | None = Field(description="The Activity Private Note cell, as text; \"\" when empty.")
+    match: _StravaMatch | None = Field(
+        description="How the row was linked: csv_start (its Activity Date second), file_start (its file's start), "
+        "stored (the import stored the run)."
+    )
+    warnings: list[str] = Field(description="The row's warnings (distance_differs); empty when none.")
+
+
+class StravaActivity(BaseModel):
+    """``GET /strava-activities/{activity_id}``: one row of a Strava archive, kept whatever its
+    outcome (F030 reference section 4)."""
+
+    activity_id: int = Field(json_schema_extra=_INT64, description="The Activity ID.")
+    start_time: str | None = Field(
+        description="The Activity Date as UTC, ISO 8601; null when it did not parse (a failed row)."
+    )
+    activity_type: str | None = Field(description="Strava's Activity Type; null when the row has no such cell.")
+    name: str | None = Field(description="The Activity Name cell; null when the row has no such cell.")
+    description: str | None = Field(description="The Activity Description cell; \"\" when empty, null when absent.")
+    private_note: str | None = Field(description="The Activity Private Note cell; \"\" when empty, null when absent.")
+    filename: str | None = Field(description="The Filename cell; \"\" or null when the row names no file.")
+    columns: dict[str, str] = Field(
+        description="Every cell as the text the CSV holds, an empty cell as \"\", keyed by the header name; a "
+        "repeated name's later copies keyed `<name> (2)`, `<name> (3)`, in header order. Strava's scores "
+        "(Relative Effort, Training Load, Intensity, Perceived Relative Effort) are display-only."
+    )
+    linked_session_id: str | None = Field(description="The stored session the row describes; null when none.")
+    match: _StravaMatch | None = Field(description="How the row was linked, as SessionStrava.match; null when unlinked.")
+    warnings: list[str] = Field(description="The row's warnings (distance_differs); empty when none.")
+    deleted_in_strava: bool = Field(
+        description="True when a later archive lacked the row: it is kept and unlinked, and served here only."
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /state (F024, F026): threshold pace from tagged races and threshold workouts
 #
 # Appended at the end so the lines cited above stay in place.

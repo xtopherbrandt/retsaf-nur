@@ -145,8 +145,10 @@ def test_session_detail_keys_match_the_pre_f007_set(post_fit) -> None:
     # F020 adds exactly one key on purpose: the archive import that stored
     # the session (null here, a POST /sessions upload). F025 adds three:
     # the file's laps, its workout steps and when they were read. Named
-    # explicitly so any other added key still fails.
-    assert set(body) == SESSION_KEYS_AT_C2839B6 | {"import_id", "laps", "workout_steps", "laps_read_at"}
+    # explicitly so any other added key still fails. F030 adds one: the linked
+    # Strava row's block (null here, no archive imported).
+    assert set(body) == SESSION_KEYS_AT_C2839B6 | {"import_id", "laps", "workout_steps", "laps_read_at", "strava"}
+    assert body["strava"] is None
     assert LEAK_FIELD not in body
 
     # A strap RR capture has both records and beats, so the nested levels
@@ -245,6 +247,7 @@ def test_a_night_detail_has_no_series(post_fit_bytes) -> None:
         "laps",
         "workout_steps",
         "laps_read_at",
+        "strava",
     }
     assert (body["records"], body["rr_intervals"], body["laps"], body["workout_steps"]) == ([], [], [], [])
     assert "overnight_hrv_values" not in night.text
