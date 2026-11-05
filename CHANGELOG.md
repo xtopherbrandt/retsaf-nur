@@ -25,10 +25,6 @@ F034 changes two of critical speed's rules (spec/04 section 4.3.6; register row 
 
 ### Strava import
 
-<!-- Release demo: each sentence marked "demo" tells the athlete to act or says what a rule keeps,
-skips, includes or excludes; try each on the real archive in the demo copy of the store and list
-the activities it touches (rule changelog-claims-are-tried-on-real-activities). -->
-
 F030: `runcoach import PATH` and `POST /imports` take the archive Strava's "Download your data"
 sends, as they take a Garmin export. An archive with `activities.csv` at its root, or whose only
 top-level entry is one folder holding it, is read as a Strava archive, and its import is served
@@ -59,8 +55,8 @@ another sport is stored as a run (`stored_retyped`): named from the row's `Activ
 **What it skips.** A run whose file is GPX or TCX is kept as a row and not stored (`not_fit`), and a
 run with no file is `no_file`. A multisport file (more than one `session` message, as
 a triathlon's) in a running row stores nothing and is reported `multisport_not_stored`.
-A row of any other type is `not_running`: kept, linked when a stored session starts on
-its second, its file never read. <!-- demo --> The Race tag is not in the archive (its `Competition`
+A row of any other type is kept and its file never read: linked when a stored session starts on
+its second (and then `attached`, like a running row), otherwise `not_running`. The Race tag is not in the archive (its `Competition`
 column is empty on every row), so race tags still come from Garmin Connect through `runcoach sync
 tags`; reading them from Strava is IDEA-196.
 
@@ -83,14 +79,15 @@ unavailable with the reason `strava_not_running`, and the body's new `strava_act
 row (null on every other body). `GET /metrics/load` puts the session in its day's `excluded` group:
 it adds nothing and does not mark the day. A declared resting capture keeps
 `declared_capture`. The session, its records and its other readers (pace features, threshold pace,
-the endurance exponent, critical speed) are unchanged. <!-- demo --> Every path that saves a load
+the endurance exponent, critical speed) are unchanged. Every path that saves a load
 reads the link, so an upload, the HR-settings recompute and a Strava import give the same body.
 Each Strava import ends by recomputing every running session whose saved load disagrees with this
 rule (`db.reconcile_strava_load`, through the same replace path as `POST
 /sessions/{id}/load/recompute`), so a job interrupted after its rows committed is healed by the
 next Strava import. The import's `counts.strava` gains `excluded_from_load` and `restored_to_load`,
 and `GET /imports/{import_id}` serves `load_changes`: each session excluded or restored, with its
-local date, Strava type and old load. A re-import of the same archive excludes and restores
+local date, Strava type, old load and `new_load`, the load a restored session counts again (null on
+an excluded one). A re-import of the same archive excludes and restores
 nothing.
 
 **To put a session back in load**, change its type to Run in Strava, request a new export and
@@ -101,12 +98,23 @@ A row deleted in Strava restores its session the same way.
 N, attached_by_file_start N, ...`), then one line per `failed`, `ambiguous`,
 `multisport_not_stored` and `deleted_in_strava` row with its local date and Strava name (for a row
 that did not parse, its entry and raw cells), then, when a load moved, `Load: excluded_from_load
-N, restored_to_load N` and one line per session: `excluded` or `restored`, its date, Strava type
-and old load. It exits 0 when the import completes, failed rows included.
+N, restored_to_load N` and one line per session: `excluded`, its date, Strava type and old load
+(`excluded  2018-12-30  Alpine Ski  21.6`), or `restored`, its date, Strava type and the load it
+counts again (`restored  2021-02-07  Run  now 0.5`; against an older API, which serves no
+`new_load`, the old load as before). A Strava import's progress lines count "activities", not
+"activities and nights". It exits 0 when the import completes, failed rows included.
 
-<!-- Release demo: list here, from the demo copy, each session the import excluded from load (date,
-Strava type, old load), the sessions it stored, the rows linked by file start, and the rows
-reported multisport, ambiguous or failed, as the demo finds them. -->
+**On the athlete's archive** (a copy of the store, export of 3,326 rows), the import excluded 15
+sessions from load by their Strava type, 11 of them with a load, 235.41 in all: Alpine Ski on
+2017-01-14 (no load), 2017-03-26 (no load), 2018-02-12 (no load) and 2018-12-30 (21.64); Nordic Ski
+on 2019-01-19 (18.46); Hike on 2017-12-31 (no load), 2020-12-20 (29.78) and 2022-08-27 (33.01);
+Stair-Stepper on 2021-02-03 (1.77), 2021-02-04 (6.56) and 2021-02-07 (0.50); Kayaking on 2022-11-21
+(7.57) and 2022-11-25 (30.69); E-Bike Ride on 2022-11-25 (34.81) and 2022-11-26 (50.62). It stored
+two sessions, both `stored_retyped`: Walk Run #4 on 2021-11-10 and Walk Run #5 on 2021-11-12, which
+the watch recorded on its Cycling profile, and which now count 21.64 and 26.69 load. It linked one
+row by its file's start, the Afternoon Walk/Run of 2023-01-03, and reported one row
+`multisport_not_stored`, the St. George 70.3 run leg of 2023-05-06. No row was ambiguous or
+failed.
 
 ### Migration required
 
