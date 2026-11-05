@@ -1071,7 +1071,7 @@ REVIEW_PROSE_SHA256 = (
     "6e818f8a9193", "b42d87f9dcd2", "6a0fb2c5487d", "4cb5f213b40d", "11ab99f7096b", "bf9bb7e2ebee",
     "f525c1426b61", "e1042d5f25d3", "f2824d0fdaf4", "41d592e87044", "afe00eb5205d", "cab83feaf822",
     "78230d41eec8", "06eac0481428", "37bbe528e395", "0170e02e7fbe", "27ebe42c2ece", "69684bc1b792",
-    "a87ff6f69924",
+    "e0c704ade75f", "6ae4043b50c0",
 )
 
 #: ``FROZEN_ROUNDS`` (review cycle 2, S1): each ``Round N:`` paragraph under ``## Rounds`` that a commit
@@ -1115,6 +1115,7 @@ FROZEN_ROUNDS = {
     "31": "0170e02e7fbe",
     "32": "27ebe42c2ece",
     "33": "69684bc1b792",
+    "34": "e0c704ade75f",
 }
 
 #: A second copy of ``FROZEN_ROUNDS``, as ``_NON_C_AUTHORITIES_PIN`` is of its map: a hand edit that
@@ -1155,6 +1156,7 @@ _FROZEN_ROUNDS_PIN = {
     "31": "0170e02e7fbe",
     "32": "27ebe42c2ece",
     "33": "69684bc1b792",
+    "34": "e0c704ade75f",
 }
 
 #: ``REVIEW_LINE_SHA256`` (S3): each verdict line of 00-meaning-review.md, label, verdict, judged digest
@@ -1331,7 +1333,7 @@ REVIEW_LINE_SHA256 = {
     "DOC-17": "ece275d2641d",
     "DOC-17/Scope": "9306e2d5632c",
     "DOC-17/Not": "bfafc2622828",
-    "DOC-18": "ae87935da868",
+    "DOC-18": "2f38fabb57f8",
     "DOC-18/Scope": "6d7583bae7ec",
     "DOC-18/Not": "fc35a93d094d",
     "DOC-15": "c7b926b15355",
@@ -1544,10 +1546,10 @@ REVIEW_LINE_SHA256 = {
     "REG-33/Scope": "f3f4c3222b3b",
     "REG-33/Not": "a63b9f64a75b",
     "REG-33/Why": "996235b8574b",
-    "REG-34": "9b299543943d",
-    "REG-34/Scope": "7e9d56a5ca94",
+    "REG-34": "ed39ebb38155",
+    "REG-34/Scope": "891a00749146",
     "REG-34/Not": "983eefae77f2",
-    "REG-34/Why": "f37b52f5c678",
+    "REG-34/Why": "a2089050bc9b",
     "IND-01": "6e18d1684f41",
     "IND-01/Scope": "6a06baeeb954",
     "IND-01/Not": "778408a7bc91",
@@ -1565,7 +1567,7 @@ REVIEW_LINE_SHA256 = {
     "IND-05": "69d2e6ae153a",
     "IND-05/Scope": "1ee9a7af3575",
     "IND-05/Not": "55afd92af766",
-    "IND-05/Why": "f7d6b389cb7a",
+    "IND-05/Why": "7d1c8115172e",
     "IND-06": "acd850ac63c4",
     "IND-06/Scope": "8d9b6c1ca841",
     "IND-06/Not": "2d3fead522b7",
