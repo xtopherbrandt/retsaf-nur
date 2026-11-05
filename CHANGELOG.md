@@ -23,6 +23,104 @@ F034 changes two of critical speed's rules (spec/04 section 4.3.6; register row 
   `longest_far_off`, with the excess and the stretches, where the last release showed 4:29/km `low`. Threshold pace, the endurance
   exponent and the goal routes do not read critical speed and are unchanged.
 
+### Strava import
+
+<!-- Release demo: each sentence marked "demo" tells the athlete to act or says what a rule keeps,
+skips, includes or excludes; try each on the real archive in the demo copy of the store and list
+the activities it touches (rule changelog-claims-are-tried-on-real-activities). -->
+
+F030: `runcoach import PATH` and `POST /imports` take the archive Strava's "Download your data"
+sends, as they take a Garmin export. An archive with `activities.csv` at its root, or whose only
+top-level entry is one folder holding it, is read as a Strava archive, and its import is served
+`source` `strava`; every other archive, and every import stored before this release, is served
+`garmin`. <!-- demo -->
+
+**What it keeps.** Every row of `activities.csv`, whatever its type or outcome, is kept in the new
+`strava_activities` table with every column as the text the CSV holds (a repeated column name's
+second copy keyed `<name> (2)`, an empty cell as `""`). <!-- demo --> `GET
+/strava-activities/{activity_id}` serves one row with its `columns`. A row is linked to the stored
+session of any sport that starts on its `Activity Date` to the second; with two there, to the one
+whose distance is within 1 % of the row's `Distance (2)`, else the row is `ambiguous` and links
+nothing. A running row with no session at its CSV start is linked by its FIT file's own start
+(`attached_by_file_start`). One row links one session. <!-- demo --> `GET /sessions/{id}` gains
+`strava`: the linked row's `activity_id`, `activity_type`, `name`, `description`, `private_note`,
+`match` and `warnings`, or null. A linked row whose session's distance is more than 1 % off carries
+the warning `distance_differs` and stays linked. Strava's own scores (`Relative Effort`, `Training
+Load`, `Intensity`, `Perceived Relative Effort`) are stored and served, and nothing computes with
+them. <!-- demo -->
+
+**What it stores.** A `Run`, `Trail Run` or `Virtual Run` row whose FIT file (gzipped or not)
+matches no stored session at either start is stored as `POST /sessions` would store the file
+(`stored`), rows oldest first by `Activity Date`; a file the store already holds under its device
+and start is `already_stored` and linked there. A running row whose file the watch recorded as
+another sport is stored as a run (`stored_retyped`): named from the row's `Activity Name`, flagged
+`sport_retyped_by_strava`, the watch's sport and profile name kept in its provenance. <!-- demo -->
+
+**What it skips.** A run whose file is GPX or TCX is kept as a row and not stored (`not_fit`), and a
+run with no file is `no_file`. <!-- demo --> A multisport file (more than one `session` message, as
+a triathlon's) in a running row stores nothing and is reported `multisport_not_stored`.
+<!-- demo --> A row of any other type is `not_running`: kept, linked when a stored session starts on
+its second, its file never read. <!-- demo --> The Race tag is not in the archive (its `Competition`
+column is empty on every row), so race tags still come from Garmin Connect through `runcoach sync
+tags`; reading them from Strava is IDEA-196. <!-- demo -->
+
+**What fails.** A row that does not parse, repeats an `Activity ID`, or names a file that is
+missing, does not decompress or decode, holds no `session` message, or expands past 50 MB (status
+413) is `failed`, and the next row is read; a failed row keeps any link it had. An `activities.csv`
+over 50 MB, not UTF-8 or missing a required column fails the job naming the cause, before any row
+is written.
+
+**Importing again.** The same archive again changes nothing: every row reads `unchanged`. A newer
+export replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
+`deleted_in_strava`, unlinked and kept, and reported once; an unlinked row whose cells changed is
+matched again. <!-- demo -->
+
+F031: **Strava's type corrects load.** A stored running session linked to a Strava row, not
+`deleted_in_strava`, whose `Activity Type` is not `Run`, `Trail Run` or `Virtual Run` (a ski, hike,
+paddle, stair session, ride, walk or elliptical session recorded on the watch's Run profile) carries
+no load. <!-- demo --> `GET /sessions/{id}/load` serves `session_load`, `hr_trimp`, rtss and srpe
+unavailable with the reason `strava_not_running`, and the body's new `strava_activity_id` names the
+row (null on every other body). `GET /metrics/load` puts the session in its day's `excluded` group:
+it adds nothing and does not mark the day. <!-- demo --> A declared resting capture keeps
+`declared_capture`. The session, its records and its other readers (pace features, threshold pace,
+the endurance exponent, critical speed) are unchanged. <!-- demo --> Every path that saves a load
+reads the link, so an upload, the HR-settings recompute and a Strava import give the same body.
+Each Strava import ends by recomputing every running session whose saved load disagrees with this
+rule (`db.reconcile_strava_load`, through the same replace path as `POST
+/sessions/{id}/load/recompute`), so a job interrupted after its rows committed is healed by the
+next Strava import. The import's `counts.strava` gains `excluded_from_load` and `restored_to_load`,
+and `GET /imports/{import_id}` serves `load_changes`: each session excluded or restored, with its
+local date, Strava type and old load. A re-import of the same archive excludes and restores
+nothing. <!-- demo -->
+
+**To put a session back in load**, change its type to Run in Strava, request a new export and
+import it with `runcoach import`: the session is recomputed, counted again and listed as restored.
+A row deleted in Strava restores its session the same way. <!-- demo -->
+
+**`runcoach import`** of a Strava archive prints the Strava counts on one line (`Strava: attached
+N, attached_by_file_start N, ...`), then one line per `failed`, `ambiguous`,
+`multisport_not_stored` and `deleted_in_strava` row with its local date and Strava name (for a row
+that did not parse, its entry and raw cells), then, when a load moved, `Load: excluded_from_load
+N, restored_to_load N` and one line per session: `excluded` or `restored`, its date, Strava type
+and old load. It exits 0 when the import completes, failed rows included. <!-- demo -->
+
+<!-- Release demo: list here, from the demo copy, each session the import excluded from load (date,
+Strava type, old load), the sessions it stored, the rows linked by file start, and the rows
+reported multisport, ambiguous or failed, as the demo finds them. -->
+
+### Migration required
+
+None to run. At its first start the API adds the `strava_activities` table and its one-row-per-session
+index, the `imports` columns `source` and `load_changes`, the `import_files` column
+`strava_activity_id` and an index on `sessions.start_time`; existing rows are unchanged. The
+`contracts/openapi.yaml` `info.version` stays `0.6.0-draft`; its additions are `getStravaActivity`
+(implemented), `Import.source` and `Import.load_changes`, `ImportCounts.strava`, the `files[]`
+`strava_activity_id` and the Strava outcomes, `SessionDetail.strava`, the load body's
+`strava_activity_id`, and `strava_not_running` in every load reason enum. Update the CLI with the
+API: only this release's `runcoach import` prints a Strava import's report. Rollback warning: an
+API older than this release has no `strava_not_running` in its reason enums, so once a Strava
+import has excluded a run, that API cannot serve the run's saved load.
+
 ## 2026-11-01 through 2026-11-03 — Sprint 025: Critical speed and D′ from the run history
 
 ### Critical speed and D′ from the run history: `GET /state` and `runcoach state`

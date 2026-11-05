@@ -1265,7 +1265,7 @@ class LoadChartDay(BaseModel):
 
 class LoadChartGap(BaseModel):
     """A gap in history (IDEA-143, user ruling 2026-10-10): a stretch of more than 21 consecutive empty
-    local days (no counted and no uncounted run; an excluded ride or capture does not end it) that ended
+    local days (no counted and no uncounted run; an excluded session does not end it) that ended
     in a running day on or before `today`. The HRV trend's coverage-gap silence, also strict. A stretch
     still open today is not listed and marks nothing."""
 

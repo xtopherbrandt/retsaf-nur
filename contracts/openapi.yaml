@@ -3379,7 +3379,7 @@ components:
       type: object
       description: >
         A gap in history: a stretch of more than 21 consecutive empty local
-        days (no counted and no uncounted run; an excluded ride or capture
+        days (no counted and no uncounted run; an excluded session
         does not end it) that ended in a running day on or before today. The
         HRV trend's coverage-gap silence, also strict. A stretch still open
         today is not listed and marks nothing.
