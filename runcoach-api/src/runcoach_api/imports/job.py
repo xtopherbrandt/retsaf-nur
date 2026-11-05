@@ -43,6 +43,12 @@ statement that reads or writes them lives here.
   file), and the night's load is dated in the zone the job captured. A
   night's row names ``sport`` ``other`` and ``activity_tag``
   ``overnight_hrv``, as a ``no_night`` row does.
+- **A Strava archive (F030).** ``run`` first asks ``strava_prefix`` (entry
+  names only) whether ``activities.csv`` sits at the archive's root or in its
+  one folder; if so the job is ``imports.strava.run_strava``'s, before the
+  Garmin scan, and any other archive takes the path above unchanged.
+  ``set_source`` records the kind ``POST /imports`` recognised. A report row
+  carries a Strava row's ``strava_activity_id``; a Garmin row's is null.
 - **Counts.** ``replaced`` and ``no_night`` count those rows; a job stored
   before they existed holds counts without them, which ``ImportCounts``
   serves as 0.
@@ -67,6 +73,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import zipfile
 from collections.abc import Iterable
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -75,7 +82,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from runcoach_api import db
-from runcoach_api.imports import archive
+from runcoach_api.imports import archive, strava_csv
 from runcoach_api.ingestion import overnight, pipeline
 from runcoach_api.ingestion.exceptions import DuplicateSessionError, http_status_detail
 from runcoach_api.models import Session
@@ -173,6 +180,23 @@ def discard_job(conn: sqlite3.Connection, data_dir: Path, import_id: str) -> Non
             conn.execute("DELETE FROM imports WHERE import_id = ?", (import_id,))
     finally:
         shutil.rmtree(job_dir(data_dir, import_id), ignore_errors=True)
+
+
+def strava_prefix(path: Path) -> str | None:
+    """The folder prefix of a Strava archive's ``activities.csv`` (``strava_csv.recognise``: entry
+    names only), or None for any other archive, one that does not open as a zip included, which
+    the Garmin path then reports as it always has."""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            return strava_csv.recognise(zf)
+    except (zipfile.BadZipFile, OSError, EOFError, ValueError, NotImplementedError):
+        return None
+
+
+def set_source(conn: sqlite3.Connection, import_id: str, source: str) -> None:
+    """Record the archive's kind (``garmin`` or ``strava``), recognised before the job is queued."""
+    with conn:
+        conn.execute("UPDATE imports SET source = ? WHERE import_id = ?", (source, import_id))
 
 
 def _import_body(row: sqlite3.Row) -> dict:
@@ -282,12 +306,15 @@ class FileRow:
     quality_flags: list[str] | None = None
     status: int | None = None
     detail: str | None = None
+    # A Strava row's Activity ID (F030); None on a Garmin row.
+    strava_activity_id: int | None = None
 
 
 def _insert_file_row(conn: sqlite3.Connection, import_id: str, row: FileRow) -> None:
     conn.execute(
         "INSERT INTO import_files (import_id, seq, entry, time_created, outcome, stored_session_id,"
-        " sport, activity_tag, quality_flags, status, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " sport, activity_tag, quality_flags, status, detail, strava_activity_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             import_id,
             row.seq,
@@ -300,6 +327,7 @@ def _insert_file_row(conn: sqlite3.Connection, import_id: str, row: FileRow) -> 
             None if row.quality_flags is None else json.dumps(row.quality_flags),
             row.status,
             row.detail,
+            row.strava_activity_id,
         ),
     )
 
@@ -350,7 +378,16 @@ class _Job:
             (_now(), self.import_id),
         )
         work = job_dir(self.data_dir, self.import_id)
-        scan = archive.scan(archive_path(self.data_dir, self.import_id), work, progress=self.scanned)
+        path = archive_path(self.data_dir, self.import_id)
+        prefix = strava_prefix(path)
+        if prefix is not None:
+            # F030: a Strava archive branches before the Garmin scan, which would count every
+            # .fit.gz as not_fit. Imported here: the Strava module builds on this one's rows.
+            from runcoach_api.imports import strava
+
+            strava.run_strava(self, path, prefix)
+            return
+        scan = archive.scan(path, work, progress=self.scanned)
         order = scan.processing_order()
         self.counts["non_activity"] = dict(scan.non_activity)
         self.counts["not_fit"] = dict(scan.not_fit)

@@ -1427,7 +1427,8 @@ def _check_zip(path) -> None:
     },
 )
 def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastAPI's parameter idiom
-    """Start an import of a Garmin export archive, or any zip of FIT files (F020 reference section 2.1).
+    """Start an import of a Garmin export archive, any zip of FIT files (F020 reference section 2.1),
+    or a Strava bulk export (F030 reference section 2.1).
 
     The checks run in the reference's order: the middleware refuses a declared
     length over ``IMPORT_MAX_BYTES``; an active job is a 409 naming it (the
@@ -1435,7 +1436,11 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
     ``import_job.create_job``); the part is copied to the job's temp dir,
     counting bytes, 413 past the cap; a copy that does not open as a zip is a
     400. Any refusal, and a failure to write the copy or read it back (a 500
-    naming the cause), removes the row and the temp dir. Then the worker starts with the
+    naming the cause), removes the row and the temp dir. The copy is then
+    recognised from its entry names alone (``import_job.strava_prefix``:
+    ``activities.csv`` at the root or in the one top-level folder) and the
+    job's ``source`` written, ``strava`` or ``garmin``, so the 202 body names
+    it. Then the worker starts with the
     data dir, ``resting_hrv_profile_names`` and ``athlete_timezone`` read here,
     once, and the response is the job as it was before the worker ran:
     ``queued``, with ``files`` empty. A worker that cannot start is a 500
@@ -1466,6 +1471,8 @@ def start_import(file: UploadFile = File(...)) -> Import:  # noqa: B008 -- FastA
                     500, f"the archive could not be stored: {type(exc).__name__}: {exc}"
                 ) from exc
             import_job.set_archive_bytes(conn, import_id, archive_bytes)
+            strava = import_job.strava_prefix(target) is not None
+            import_job.set_source(conn, import_id, "strava" if strava else "garmin")
             body = import_job.read_import(conn, import_id)
         except BaseException:
             import_job.discard_job(conn, data_dir, import_id)
