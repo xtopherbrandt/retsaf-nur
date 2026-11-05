@@ -1421,6 +1421,7 @@ from runcoach_api.metrics import session_features
 from runcoach_api.metrics.session_load import ANCHOR_FIELDS as _LOAD_FIELDS
 from runcoach_api.metrics.session_load import EMPTY_VALUE as _EMPTY_LOAD_VALUE
 from runcoach_api.metrics.session_load import compute_session_load
+from runcoach_api.metrics.session_load import strava_link_can_exclude as _strava_link_can_exclude
 
 # The saved-load table's name, for callers and tests that address it.
 SESSION_LOADS_TABLE = "session_loads"
@@ -1454,7 +1455,8 @@ def read_session_load_inputs(conn: sqlite3.Connection, session_id: str) -> dict 
     ``strava_activities`` row linked to the session and not
     ``deleted_in_strava``, as ``{activity_type, activity_id}``, or None (F031;
     every path that builds a load body reads it here, so the upload, the
-    recompute and the one-time fill agree). Read-only, and it runs inside an
+    recompute and the one-time fill agree). It is None, unread, for a session
+    ``session_load.strava_link_can_exclude`` says no link can exclude. Read-only, and it runs inside an
     open transaction when ``persist`` calls it, so it opens none itself and
     sees the uncommitted rows.
     """
@@ -1482,11 +1484,15 @@ def read_session_load_inputs(conn: sqlite3.Connection, session_id: str) -> dict 
     }
     for field_name in _LOAD_FIELDS:
         inputs[field_name] = _from_session_file(row[field_name], row["session_id"])
-    strava = conn.execute(
-        "SELECT activity_type, activity_id FROM strava_activities"
-        " WHERE linked_session_id = ? AND deleted_in_strava = 0",
-        (session_id,),
-    ).fetchone()
+    # A link cannot change the body of a session the rule never excludes (not running, or a declared
+    # capture: a night among them), so its read is skipped and ``strava`` is None.
+    strava = None
+    if _strava_link_can_exclude(row["sport"], row["activity_tag"]):
+        strava = conn.execute(
+            "SELECT activity_type, activity_id FROM strava_activities"
+            " WHERE linked_session_id = ? AND deleted_in_strava = 0",
+            (session_id,),
+        ).fetchone()
     inputs["strava"] = None if strava is None else {"activity_type": strava[0], "activity_id": strava[1]}
     return inputs
 
@@ -2037,6 +2043,11 @@ def _write_race_tag(conn: sqlite3.Connection, session_id: str, tag: str | None) 
     conn.execute("UPDATE sessions SET activity_tag = ? WHERE session_id = ?", (tag, session_id))
 
 
+# What a stored run is, by sport, written once: the race-tag apply, the lap-candidate read and the
+# Strava load reconcile (``STRAVA_RECONCILE_SQL``, which prefixes its table alias) all read it.
+_SPORT_IS_RUNNING = "sport = 'running'"
+
+
 def _running_sessions_at(columns: str, starts: Sequence[str]) -> tuple[str, tuple]:
     """The ``SELECT`` and its parameters for the stored running sessions at any of ``starts``: the
     one prefilter ``apply_race_tag_decisions`` and ``read_lap_candidate_rows`` both read through.
@@ -2048,7 +2059,7 @@ def _running_sessions_at(columns: str, starts: Sequence[str]) -> tuple[str, tupl
     capture_tags = tuple(_race_tags.RESTING_CAPTURE_TAGS)
     sql = (
         f"SELECT {columns} FROM sessions"
-        " WHERE sport = 'running'"
+        f" WHERE {_SPORT_IS_RUNNING}"
         f" AND (activity_tag IS NULL OR activity_tag NOT IN ({', '.join('?' * len(capture_tags))}))"
         f" AND start_time IN ({', '.join('?' * len(starts))})"
     )
@@ -3136,7 +3147,7 @@ STRAVA_RECONCILE_SQL = f"""
     JOIN {SESSION_LOADS_TABLE} l ON l.session_id = s.session_id
     LEFT JOIN {STRAVA_ACTIVITIES_TABLE} a
       ON a.linked_session_id = s.session_id AND a.deleted_in_strava = 0
-    WHERE s.sport = 'running' OR l.load_reason = '{_STRAVA_NOT_RUNNING}'
+    WHERE s.{_SPORT_IS_RUNNING} OR l.load_reason = '{_STRAVA_NOT_RUNNING}'
     ORDER BY s.start_time, s.session_id
 """
 

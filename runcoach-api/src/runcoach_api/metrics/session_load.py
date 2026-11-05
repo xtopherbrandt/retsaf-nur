@@ -218,6 +218,13 @@ def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
     return {key: block.get(key, default) for key, default in EMPTY_VALUE.items()}
 
 
+def strava_link_can_exclude(sport: object, activity_tag: object) -> bool:
+    """Whether a Strava link could make ``strava_exclusion`` true for a session of this ``sport`` and
+    ``activity_tag``: a ``running`` session whose tag is not a declared capture. When False the link
+    cannot change the body, so a reader may skip looking it up."""
+    return sport == RUNNING and activity_tag not in DECLARED_CAPTURE_TAGS
+
+
 def strava_exclusion(sport: object, activity_tag: object, strava: Mapping[str, object] | None) -> bool:
     """True exactly when the gate chain serves ``strava_not_running``: a ``running`` session that
     gates 1 and 2 do not stop (its tag is not a declared capture), linked to a Strava row (``strava``,
@@ -228,7 +235,7 @@ def strava_exclusion(sport: object, activity_tag: object, strava: Mapping[str, o
     if not isinstance(strava, Mapping):
         # A ValueError, as every writer defect in this module is.
         raise ValueError(f"inputs.strava is not a Strava block: {type(strava).__name__} {strava!r}")  # noqa: TRY004
-    if sport != RUNNING or activity_tag in DECLARED_CAPTURE_TAGS:
+    if not strava_link_can_exclude(sport, activity_tag):
         return False
     return strava.get("activity_type") not in STRAVA_RUNNING_TYPES
 

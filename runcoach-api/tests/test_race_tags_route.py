@@ -477,5 +477,6 @@ def test_race_tags_and_lap_candidates_share_one_running_prefilter(persist_sessio
         assert [row["session_id"] for row in rows] == [_sid("fr945")]
     assert _tag(_sid("fr945")) == "race" and _tag(ride.session_id) is None
 
-    # One copy of the rule in the store module, not one per reader.
+    # One copy of the rule in the store module, not one per reader: ``db._SPORT_IS_RUNNING``, which
+    # the Strava load reconcile reads too, so no reader of the store has its own idea of a run.
     assert inspect.getsource(db_module).count("sport = 'running'") == 1
