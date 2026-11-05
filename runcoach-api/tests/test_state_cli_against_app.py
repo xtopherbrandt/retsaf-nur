@@ -36,7 +36,9 @@ with 1 Hz records, so F013's GAP pace is the pace run), the F029 reference secti
 
 Every output ends with the critical speed block (F033 reference section 6): with one or two runs
 stored it is unavailable for too few stretches and lists them; ``test_state_prints_cs_against_the_app``
-stores six flat synthetic runs, one per stretch length, so the served entry has an estimate.
+stores six flat synthetic runs, one per stretch length, so the served entry has an estimate;
+``test_a_held_fit_prints_against_the_app`` tags the 720 s and 1200 s ones Race, so the fit is held
+at ``medium`` and the held line of F034 reference section 4 prints.
 """
 
 from __future__ import annotations
@@ -481,5 +483,83 @@ def test_state_prints_cs_against_the_app(cli_against_app: TestClient, _no_networ
         f"D' {_away(d_prime['value_m'])} m (80 %: {_away(d_prime['low_m'])} to {_away(d_prime['high_m'])} m)",
         *stretch_lines,
         "1 other session in the window is not a run",
+    ], result.stdout
+    assert _no_network == []
+
+
+def test_a_held_fit_prints_against_the_app(cli_against_app: TestClient, _no_network: list[Any]) -> None:
+    """The six runs of ``test_state_prints_cs_against_the_app`` with the 720 s and 1200 s ones tagged
+    Race through ``PUT /race-tags`` (each lasts 30 minutes or less, so each counts as a short race):
+    two short races are kept, neither at a stretch of 5 minutes or less, so the app serves ``medium``
+    with ``label_held_at_medium`` true, and the command prints F034 reference section 4's line right
+    after the CS line. Any slower-than-threshold note and the D' line follow it."""
+    lengths_distances = [(120, 635.0), (180, 865.0), (300, 1350.0), (480, 2075.0), (720, 3025.0), (1200, 4950.0)]
+    starts = [datetime(2026, 9, 1 + n, 7, 0, tzinfo=UTC) for n in range(len(lengths_distances))]
+    ids = [
+        _store_run(start, distance, length, name=f"Effort {length}")
+        for start, (length, distance) in zip(starts, lengths_distances, strict=True)
+    ]
+    races = [(starts[n], *lengths_distances[n]) for n in (4, 5)]
+    tagged = cli_against_app.put(
+        "/race-tags",
+        json={
+            "items": [
+                {
+                    "connect_activity_id": 8000 + n,
+                    "start_time": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "distance_m": distance,
+                    "duration_s": float(length),
+                    "race": True,
+                }
+                for n, (start, length, distance) in enumerate(races)
+            ]
+        },
+    )
+    assert tagged.status_code == 200, tagged.text
+    assert [(i["outcome"], i["session_id"]) for i in tagged.json()["items"]] == [("tagged", s) for s in ids[4:]]
+
+    body = cli_against_app.get("/state").json()
+    [cs] = [d for d in body["determinants"] if d["name"] == "critical_speed"]
+    [ftp] = [d for d in body["determinants"] if d["name"] == "functional_threshold_pace"]
+    print(f"  served critical_speed {cs}\n  served threshold estimate {ftp['estimate']}")
+    assert cs["unavailable"] is None
+    assert [(s["length_s"], s["session_id"], s["drop_reason"], s["activity_tag"]) for s in cs["stretches"]] == [
+        (length, sid, None, "race" if length in (720, 1200) else None)
+        for (length, _d), sid in zip(lengths_distances, ids, strict=True)
+    ]
+    estimate, d_prime = cs["estimate"], cs["d_prime"]
+    assert estimate["confidence"] == "medium"
+    assert cs["label_held_at_medium"] is True
+    zone = ZoneInfo(body["timezone"])
+
+    # The note, worked here from the served figures: CS slower than threshold pace by 1 s/km or more.
+    note = []
+    if ftp["estimate"] is not None:
+        slower = int(Decimal(repr(estimate["value"] - ftp["estimate"]["value"])).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        if slower >= 1:
+            note = [f"Critical speed normally reads a little faster than threshold pace; here it reads {slower} s/km slower."]
+
+    result = _run("state")
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("Critical speed"))
+    stretch_lines = [
+        f"Stretch {length // 60}:{length % 60:02d} at {_mss(1000 * length / distance)}/km, "
+        f"{start.astimezone(zone):%Y-%m-%d} Effort {length}: kept"
+        for start, (length, distance) in zip(starts, lengths_distances, strict=True)
+    ]
+    assert lines[first:] == [
+        (
+            f"Critical speed {_mss(estimate['value'])}/km (80 %: {_mss(estimate['interval']['low'])} to "
+            f"{_mss(estimate['interval']['high'])}), medium"
+        ),
+        (
+            "Two or more short races are kept, but none fills a 2-5 minute stretch: held at medium, as a "
+            "training short end can read critical speed 1-2 s/km fast; a short race kept at a 2-5 minute "
+            "stretch (a mile, 1500 m or 3K race is the likeliest) would lift it."
+        ),
+        *note,
+        f"D' {_away(d_prime['value_m'])} m (80 %: {_away(d_prime['low_m'])} to {_away(d_prime['high_m'])} m)",
+        *stretch_lines,
     ], result.stdout
     assert _no_network == []

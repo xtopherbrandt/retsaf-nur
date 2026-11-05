@@ -4,8 +4,9 @@ Every test runs the real command against ``install_mock_client``'s fake API, wit
 the API's ``CriticalSpeedDeterminant`` serves them (``as_of`` and start times in UTC with a ``Z``).
 The threshold entry is the unavailable one and no ``riegel_exponent`` entry is served, so the first
 two lines are the threshold line and the endurance exponent's older-API line, and the critical
-speed block starts at line 2. The lines compared are F033 reference section 6's, written from its
-text; the figures are its section 5 worked examples (today, as of 2026-10-31, and 2025-01-31 with
+speed block starts at line 2. The lines compared are F033 reference section 6's and F034 reference
+section 4's, written from their text; the figures are F033 reference section 5's worked examples
+(as of 2026-10-31, served by F033 and refused by F034's 4 s/km far-off cut, and 2025-01-31 with
 its 720 s stretch dropped), the paces worked by hand from the distances there.
 """
 
@@ -53,6 +54,12 @@ CS_LOW_LINE = (
     "rarely all-out; one short race (30 minutes or less, tagged Race, with its stretch kept) would raise "
     "the label."
 )
+# F034 reference section 4: printed after the CS line when ``label_held_at_medium`` is true.
+CS_HELD_LINE = (
+    "Two or more short races are kept, but none fills a 2-5 minute stretch: held at medium, as a training "
+    "short end can read critical speed 1-2 s/km fast; a short race kept at a 2-5 minute stretch (a mile, "
+    "1500 m or 3K race is the likeliest) would lift it."
+)
 
 
 def _slower_than_threshold(n: str) -> str:
@@ -94,7 +101,7 @@ PARAMETERS = {
     "stretch_lengths_s": [120, 180, 300, 480, 720, 1200],
     "pause_break_s": 10,
     "population_b": 1.06,
-    "far_off_s_per_km": 15,
+    "far_off_s_per_km": 4,
     "min_stretches": 3,
     "max_shortest_s": 300,
     "min_longest_s": 720,
@@ -133,7 +140,7 @@ def _excluded(start: str, reason: str, source: str | None = None, session_id: st
     return {"session_id": session_id, "start_time": start, "reason": reason, "source": source}
 
 
-# Section 5, today (as of 2026-10-31): six stretches, all kept, no short race.
+# F033 reference section 5 as of 2026-10-31: six stretches, all kept, no short race.
 TODAY = [
     _stretch(120, 523.5537014471311, "2026-10-07T12:00:00Z", None, "threshold_workout"),
     _stretch(180, 784.548392069948, "2026-10-16T12:00:00Z", "Speed Repeats", "threshold_workout"),
@@ -162,8 +169,9 @@ def _cs(
     confidence: str = "low",
     d_prime: tuple[float, float, float] = (133.87437866999107, 58.94298122682967, 208.8057761131525),
     excluded: list[dict[str, Any]] | None = None,
+    held: bool = False,
 ) -> dict[str, Any]:
-    """A served entry with an estimate; section 5's today figures unless given."""
+    """A served entry with an estimate; F033 section 5's 2026-10-31 figures unless given."""
     return {
         "name": "critical_speed",
         "estimate": {
@@ -177,6 +185,7 @@ def _cs(
         "trend": {"direction": "unknown", "rate": None},
         "d_prime": {"value_m": d_prime[0], "low_m": d_prime[1], "high_m": d_prime[2]},
         "d_prime_not_positive": d_prime[0] <= 0,
+        "label_held_at_medium": held,
         "error_m_per_s": 0.07850030789562032,
         "t_multiplier": 1.533206274059,
         "far_off_excess_s_per_km": 10.03983535916143,
@@ -193,6 +202,7 @@ def _unavailable(reason: str, stretches: list[dict[str, Any]], excess: float | N
         unavailable=reason,
         d_prime=None,
         d_prime_not_positive=None,
+        label_held_at_medium=None,
         error_m_per_s=None,
         t_multiplier=None,
         far_off_excess_s_per_km=excess,
@@ -240,7 +250,7 @@ def _refused(install_mock_client, body: Any) -> None:
 
 
 def test_cs_line_prints_pace_interval_and_label(install_mock_client) -> None:
-    """Section 5's today: CS 268.95 s/km, 80 % 260.52 to 277.95 s/km, each rounded half up to m:ss
+    """F033 section 5's 2026-10-31 fit: CS 268.95 s/km, 80 % 260.52 to 277.95 s/km, each rounded half up to m:ss
     (4:29, 4:20.52 reads 4:21, 4:37.95 reads 4:38), the fast end first, then the label. 2025-01-31's
     242.85 s/km, 241.25 to 244.46, is ``medium``."""
     lines = _cs_lines(install_mock_client, _body(_cs()))
@@ -257,7 +267,7 @@ def test_cs_line_prints_pace_interval_and_label(install_mock_client) -> None:
 
 
 def test_d_prime_prints_with_its_interval(install_mock_client) -> None:
-    """Section 5's today: D' 133.87 m, 80 % 58.94 to 208.81 m, to whole metres. D' at or below 0 is
+    """F033 section 5's 2026-10-31 fit: D' 133.87 m, 80 % 58.94 to 208.81 m, to whole metres. D' at or below 0 is
     served as computed with ``d_prime_not_positive``, and the line says so; a signed figure rounds
     half away from zero (-12.5 reads -13, 15.5 reads 16) and one that rounds to zero reads 0, never
     -0. These fits are ``low``, so D' follows the CS line and its direction line."""
@@ -320,7 +330,8 @@ def test_one_line_per_stretch_kept_or_dropped_in_words(install_mock_client) -> N
 def test_each_unavailable_reason_prints_in_words(install_mock_client) -> None:
     """Each of the five reasons of section 6 in words, the figures from the served parameters; the
     stretches still listed and no D' line. The far-off excess rounds half away from zero to one
-    decimal (20.25 reads 20.3); one over 15 that rounds to 15.0 reads ``just over 15``, never 15.0."""
+    decimal (20.25 reads 20.3); one over the served cut of 4 that rounds to 4.0 reads ``just over 4``,
+    never 4.0, and F033 reference section 5's 2026-10-31 excess, +10.04, reads 10.0."""
     two = TODAY[:2]
     cases = [
         (_unavailable("no_candidate_runs", []), "no run in the 90 days to 2026-10-31 could be read"),
@@ -333,13 +344,19 @@ def test_each_unavailable_reason_prints_in_words(install_mock_client) -> None:
         ),
         (
             _unavailable("longest_far_off", TODAY, 20.25),
-            "the longest stretch kept is 20.3 s/km slower than the next-longest predicts, more than 15; the "
+            "the longest stretch kept is 20.3 s/km slower than the next-longest predicts, more than 4; the "
             "longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
             "unmarked descent), can cause it",
         ),
         (
-            _unavailable("longest_far_off", TODAY, 15.04),
-            "the longest stretch kept is just over 15 s/km slower than the next-longest predicts, more than 15; "
+            _unavailable("longest_far_off", TODAY, 10.03983535916143),
+            "the longest stretch kept is 10.0 s/km slower than the next-longest predicts, more than 4; the "
+            "longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
+            "unmarked descent), can cause it",
+        ),
+        (
+            _unavailable("longest_far_off", TODAY, 4.04),
+            "the longest stretch kept is just over 4 s/km slower than the next-longest predicts, more than 4; "
             "the longest run below its best, or the next-longest read fast (for example a GPS over-read or an "
             "unmarked descent), can cause it",
         ),
@@ -479,8 +496,8 @@ def test_a_low_fit_says_it_likely_reads_slow(install_mock_client) -> None:
 def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> None:
     """With both served and CS pace slower than threshold pace, a note after the CS line (and after
     the low line, when there is one) says by how much, in whole s/km rounded half away from zero.
-    Today's demo copy: CS 268.95 s/km against threshold 260.56 s/km reads 8 s/km slower, beside the
-    low line. No note when CS is faster (5 s/km, and 0.5 s/km, which rounds to 1 faster), when the
+    F033's 2026-10-31 demo copy: CS 268.95 s/km against threshold 260.56 s/km reads 8 s/km slower,
+    beside the low line. No note when CS is faster (5 s/km, and 0.5 s/km, which rounds to 1 faster), when the
     difference rounds to 0 (2025-01-31's 242.85 against 242.70), or when threshold pace is
     unavailable."""
     cs_today, threshold_today = 268.95250569663716, 260.56157884265895
@@ -493,7 +510,8 @@ def test_cs_slower_than_threshold_pace_prints_a_note(install_mock_client) -> Non
         "D' 134 m (80 %: 59 to 209 m)",
     ]
 
-    # Both absent: a high fit faster than threshold pace (2024-11-30: 242.56 against 242.70).
+    # Both absent: a high fit faster than threshold pace (F033's 2024-11-30 fit, 242.56 against
+    # 242.70, served high before F034 held it at medium).
     body = _body(_cs(value=242.56172071408272, low=241.6051418736522, high=243.52590436267354, confidence="high"))
     body["determinants"][0] = _threshold_at(242.70097421862755)
     assert _from_cs(install_mock_client, body)[:2] == [
@@ -537,6 +555,81 @@ def test_help_names_the_two_direction_lines() -> None:
     assert "one short race (30 minutes or less, tagged Race, with its stretch kept) would raise the label" in text, text
     assert "correct it" not in text.split("Last, critical speed")[1], text
     assert "slower than threshold pace" in text, text
+    # F034: the label rule keeps "two or more high" and names the hold at medium.
+    assert "two or more high." not in text, text
+    assert "two or more high, unless none of them fills a stretch of 5 minutes or less: then medium" in text, text
+
+
+def _held_body(confidence: str = "medium", held: bool | None = True, threshold: float | None = 242.70097421862755) -> dict[str, Any]:
+    """F033's 2024-11-30 fit (CS 242.56 s/km, 80 % 241.61 to 243.53), served ``medium`` with
+    ``label_held_at_medium`` as given (F034 reference section 5), with a threshold pace served at
+    ``threshold`` s/km."""
+    cs = _cs(value=242.56172071408272, low=241.6051418736522, high=243.52590436267354, confidence=confidence, held=bool(held))
+    cs["label_held_at_medium"] = held
+    body = _body(cs)
+    if threshold is not None:
+        body["determinants"][0] = _threshold_at(threshold)
+    return body
+
+
+def test_a_held_fit_prints_its_line_after_the_cs_line(install_mock_client) -> None:
+    """A held fit prints F034 reference section 4's line right after the CS line, before the
+    slower-than-threshold note and before the D' line. The 2024-11-30 fit served against a threshold
+    3 s/km faster (239.56) prints all three in that order; against 2024-11-30's own threshold
+    (242.70) CS is faster and no note prints."""
+    lines = _from_cs(install_mock_client, _held_body(threshold=239.56))
+    assert lines[:4] == [
+        "Critical speed 4:03/km (80 %: 4:02 to 4:04), medium",
+        CS_HELD_LINE,
+        _slower_than_threshold("3"),
+        "D' 134 m (80 %: 59 to 209 m)",
+    ], "\n".join(lines)
+    assert CS_LOW_LINE not in lines
+
+    lines = _from_cs(install_mock_client, _held_body())
+    assert lines[:3] == [
+        "Critical speed 4:03/km (80 %: 4:02 to 4:04), medium",
+        CS_HELD_LINE,
+        "D' 134 m (80 %: 59 to 209 m)",
+    ], "\n".join(lines)
+    assert lines.count(CS_HELD_LINE) == 1
+
+
+def test_an_unheld_fit_prints_no_held_line(install_mock_client) -> None:
+    """``label_held_at_medium`` false: a ``medium`` or ``high`` fit prints the D' line straight after
+    the CS line, and a ``low`` fit keeps F033's likely-reads-slow line. An unavailable entry (the key
+    served null) prints none either."""
+    for label in ("medium", "high"):
+        lines = _from_cs(install_mock_client, _held_body(label, held=False))
+        assert lines[:2] == [
+            f"Critical speed 4:03/km (80 %: 4:02 to 4:04), {label}",
+            "D' 134 m (80 %: 59 to 209 m)",
+        ], "\n".join(lines)
+        assert CS_HELD_LINE not in lines
+
+    lines = _cs_lines(install_mock_client, _body(_cs()))
+    assert lines[:3] == ["Critical speed 4:29/km (80 %: 4:21 to 4:38), low", CS_LOW_LINE, "D' 134 m (80 %: 59 to 209 m)"]
+    assert CS_HELD_LINE not in lines
+
+    lines = _cs_lines(install_mock_client, _body(_unavailable("longest_far_off", TODAY, 10.03983535916143)))
+    assert CS_HELD_LINE not in lines and lines[0].startswith("Critical speed unavailable: ")
+
+
+def test_an_older_api_prints_no_held_line(install_mock_client) -> None:
+    """An API from before F034 serves no ``label_held_at_medium`` key: no held line, and every line
+    is the one the same entry with the key false prints, for each label and for an unavailable
+    entry."""
+    entries = [
+        _cs(value=242.56172071408272, low=241.6051418736522, high=243.52590436267354, confidence=label)
+        for label in ("low", "medium", "high")
+    ]
+    entries.append(_unavailable("longest_far_off", TODAY, 10.03983535916143))
+    for entry in entries:
+        older = copy.deepcopy(entry)
+        del older["label_held_at_medium"]
+        printed = _cs_lines(install_mock_client, _body(older))
+        assert printed == _cs_lines(install_mock_client, _body(entry)), "\n".join(printed)
+        assert CS_HELD_LINE not in printed
 
 
 @pytest.mark.parametrize(
@@ -560,6 +653,16 @@ def test_help_names_the_two_direction_lines() -> None:
         pytest.param(lambda c: c.update(d_prime=None), id="estimate_without_d_prime"),
         pytest.param(lambda c: c["d_prime"].update(value_m=None), id="d_prime_value_null"),
         pytest.param(lambda c: c.update(d_prime_not_positive=None), id="d_prime_not_positive_not_a_bool"),
+        pytest.param(
+            lambda c: c.update(label_held_at_medium="yes", estimate={**c["estimate"], "confidence": "medium"}),
+            id="held_not_a_bool",
+        ),
+        pytest.param(lambda c: c.update(label_held_at_medium=None), id="held_null_on_fitted"),
+        pytest.param(
+            lambda c: c.update(label_held_at_medium=True, estimate={**c["estimate"], "confidence": "high"}),
+            id="held_true_on_high",
+        ),
+        pytest.param(lambda c: c.update(label_held_at_medium=True), id="held_true_on_low"),
         pytest.param(lambda c: c.pop("parameters"), id="parameters_missing"),
         pytest.param(
             lambda c: c.update(estimate=None, unavailable="longest_far_off", far_off_excess_s_per_km=None),

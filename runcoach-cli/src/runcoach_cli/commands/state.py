@@ -49,9 +49,13 @@ An entry with ``estimate_not_finite`` says so and still lists the races. A body 
 
 Last comes the critical speed block, from the ``critical_speed`` entry (F033 reference section 6):
 ``Critical speed 4:29/km (80 %: 4:21 to 4:38), low``, the interval fast end first and the label
-counting the short races among the stretches kept, then ``D' 134 m (80 %: 59 to 209 m)``, with a
-note when D' is at or below 0. Unavailable, one line gives the reason in words (the far-off excess
-in s/km for ``longest_far_off``) and no D' line follows. Then one ``Stretch`` line per best stretch
+counting the short races among the stretches kept (F034 reference section 1: two or more read
+``high`` only when one of them is kept at a stretch of 5 minutes or less, else ``medium``). A
+``low`` fit's direction line, or the held line when the API serves ``label_held_at_medium`` true
+(F034 reference section 4), follows the CS line; an API from before that key prints no held line.
+Then ``D' 134 m (80 %: 59 to 209 m)``, with a note when D' is at or below 0. Unavailable, one line
+gives the reason in words (the far-off excess in s/km for ``longest_far_off``, over the served cut
+of 4 s/km) and no D' line follows. Then one ``Stretch`` line per best stretch
 served, kept or dropped (length and pace as ``m:ss``, the run's date and name, ``unnamed`` when it
 has none, and ``kept`` or why it was dropped), one ``Left out of critical speed`` line per session
 excluded with its reason in words (and whether the stored quality flags or the pace features
@@ -233,6 +237,14 @@ CS_LOW_LINE = (
     "rarely all-out; one short race (30 minutes or less, tagged Race, with its stretch kept) would raise "
     "the label."
 )
+# Printed in the low line's place when the API serves ``label_held_at_medium`` true (F034 reference
+# section 4): two or more short races are kept, none at a stretch of ``max_shortest_s`` or less.
+CS_HELD_LINE = (
+    "Two or more short races are kept, but none fills a 2-5 minute stretch: held at medium, as a training "
+    "short end can read critical speed 1-2 s/km fast; a short race kept at a 2-5 minute stretch (a mile, "
+    "1500 m or 3K race is the likeliest) would lift it."
+)
+CS_HELD_KEY = "label_held_at_medium"
 CS_SLOWER_THAN_THRESHOLD_LINE = (
     "Critical speed normally reads a little faster than threshold pace; here it reads {n} s/km slower."
 )
@@ -594,7 +606,8 @@ def _metres(value: Any, what: str) -> str:
 
 def _excess(value: Any, far: float) -> str:
     """The far-off excess in s/km to one decimal, rounded half away from zero. One over the bar that
-    rounds to it or under reads ``just over`` the bar, so the line never says 15.0 is too far."""
+    rounds to it or under reads ``just over`` the bar, so the line never says the served bar itself
+    (4.0 when the API serves a cut of 4) is too far."""
     excess = _number(value, "far_off_excess_s_per_km")
     tenths = _away(excess, 1)
     if excess > far and tenths <= far:
@@ -631,6 +644,18 @@ def _cs_excluded_line(row: dict, zone: ZoneInfo) -> str:
     return f"Left out of critical speed {_date(row['start_time'], zone)}: {words}"
 
 
+def _held(det: dict, label: str) -> bool:
+    """Whether a fitted entry is held at ``medium``. An API from before the hold serves no key and
+    holds nothing; a served value that is not true or false, or true on a ``low`` or ``high`` fit,
+    is malformed."""
+    if CS_HELD_KEY not in det:
+        return False
+    held = _flag(det, CS_HELD_KEY)
+    if held and label != "medium":
+        raise ValueError(f"{CS_HELD_KEY} is true on a {label} fit")
+    return held
+
+
 def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo, threshold: float | None = None) -> list[str]:
     """The critical speed block for a ``critical_speed`` entry (F033 reference section 6).
     ``threshold`` is the served threshold pace in s/km, ``None`` when it is unavailable."""
@@ -655,6 +680,8 @@ def _cs_lines(det: dict, as_of: Any, zone: ZoneInfo, threshold: float | None = N
         lines = [f"Critical speed {format_pace(value)} (80 %: {low} to {high}), {label}"]
         if label == "low":
             lines.append(CS_LOW_LINE)
+        if _held(det, label):
+            lines.append(CS_HELD_LINE)
         if threshold is not None:
             slower = _away(value - threshold, 0)
             if slower >= 1:
@@ -798,9 +825,10 @@ def state(
     in your runs of the last 90 days, one run per length, tagged or not (a declared resting capture
     is left out): no stretch spans a pause over 10 s. A stretch beaten by a longer, faster one is
     dropped. CS is labelled by the short races (30 minutes or less) among the stretches kept: none
-    low, one medium, two or more high. A low fit says it likely reads slow, since training stretches
-    are rarely all-out, and that one short race (30 minutes or less, tagged Race, with its stretch
-    kept) would raise the label. When
+    low, one medium, two or more high, unless none of them fills a stretch of 5 minutes or less:
+    then medium, and a line says the label is held there and what would lift it. A low fit says it
+    likely reads slow, since training stretches are rarely all-out, and that one short race (30
+    minutes or less, tagged Race, with its stretch kept) would raise the label. When
     critical speed reads 1 s/km or more slower than threshold pace, a note says by how much: it
     normally reads a little faster. Each stretch is listed, kept or dropped, with the sessions left
     out.
