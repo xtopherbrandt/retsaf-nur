@@ -598,7 +598,7 @@ Pinned: runcoach-api/tests/test_pace_target_label.py::test_time_is_unchanged_by_
 Why: spec/01 sections 1.4.2 and 1.4.6 ask for a projection with a lower-confidence flag on a wide extrapolation, and research/01 section 4.3 finds a long race under-predicted from short ones; the values are engineering defaults the athlete chose (H-47), and the projection degrades to the closest race below the bar, then to `no_races`, `riegel_unavailable` or `projection_not_finite`.
 
 **REG-34.** Critical speed and D′ MUST be the slope and intercept of the least-squares line of GAP distance on time over the best stretches of 2, 3, 5, 8, 12 and 20 min of the last 90 days of runs, one run per length, with a Student's t interval, from 3+ kept stretches reaching 5 min or less and 12 min or more, refused if the longest is over 4 s/km slower than the next-longest predicts at b 1.06.
-Scope: `running` sessions, no declared capture, none flagged `distance_regressed`, `smart_recording` or `grade_clamped`; a stretch's length is counted time, no moving gap or pause over 10 s inside, shorter pauses spanned, their time uncounted; a stretch a longer one outpaces is dropped; label: kept stretches of Race runs of 1800 s or less not admitted as workouts, 0 low, 1 medium, 2 or more high only when one of them is a kept stretch of 5 min or less, else medium with `label_held_at_medium` true.
+Scope: `running` sessions, no declared capture, none flagged `distance_regressed`, `smart_recording` or `grade_clamped`; length counts time, not pauses ≤ 10 s, no moving gap or longer pause inside; one a longer one outpaces is dropped; label: kept stretches of Race runs ≤ 1800 s not admitted as workouts, 0 low, 1 medium, 2 or more high if one is ≤ 5 min, else medium, `label_held_at_medium` true.
 Not: a population CS, which IND-03 asks for but none is held (H-49), so the entry is unavailable with its stretches served until the rules pass; the spec/04 section 4.3 filter, the window being its staleness rule; a blend with threshold pace (IDEA-214), vVO2max (IDEA-215) or a heart-rate check or fallback (IDEA-213); and a stored fit, each read refitting it.
 Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_worked_examples_match_the_reference
 Pinned: runcoach-api/tests/test_critical_speed_estimator.py::test_a_run_best_at_two_lengths_is_used_at_the_longer
@@ -616,7 +616,7 @@ Pinned: runcoach-api/tests/test_gap_stretches.py::test_a_moving_gap_window_is_no
 Pinned: runcoach-api/tests/test_critical_speed_qualifying.py::test_each_candidate_row_lands_on_its_reason
 Pinned: runcoach-api/tests/test_critical_speed_qualifying.py::test_each_rule_edge_serves_through_the_route
 Pinned: runcoach-api/tests/test_critical_speed_route.py::test_critical_speed_parameters_equal_the_reference
-Why: spec/04 section 4.2.1 makes CS and D′ the anchor of threshold-to-10K pace and section 4.4.1 step 2 mines them from the history, no tagged effort spanning 2-20 min; the values are engineering defaults the athlete chose (H-49, H-50), the label held at medium because a training short end can read CS 1-2 s/km fast, and the fit degrades to `no_candidate_runs`, `too_few_stretches`, `spread_too_narrow`, `longest_far_off` or `estimate_not_finite`, a D′ at or below 0 served flagged.
+Why: spec/04 section 4.2.1 bases threshold-to-10K pace on CS/D′, mined from runs by section 4.4.1 step 2 as no tagged effort is 2-20 min; the athlete's engineering defaults (H-49, H-50), high held at medium as a training short end can read CS 1-2 s/km fast; degrades to `no_candidate_runs`, `too_few_stretches`, `spread_too_narrow`, `longest_far_off` or `estimate_not_finite`, D′ ≤ 0 served flagged.
 
 **HRV-07.** The HRV trend MUST compare the 7-day mean of ln rMSSD over the judged week against the smallest-worthwhile-change (SWC) band, centred on the baseline mean with half-width `max(0.5 · SD(ln rMSSD), 0.01)`, where SD is the sample (n−1) standard deviation of the athlete's own baseline ln rMSSD.
 Scope: every per-tier dataset's SWC band, as `build_band` builds it.
@@ -652,7 +652,7 @@ Why: decision C31 makes the constants defaults while §3.1 governs their tuning,
 Scope: every athlete's endurance exponent and CS profile.
 Not: an individual fit before those efforts exist.
 Pinned: none
-Why: rule REG-32 states, as H-45 and H-46 record, the endurance exponent's enough: tagged races counting three by their weights and spanning a twofold GAP-equivalent distance ratio; rule REG-34 states, as H-49 and H-50 record, the CS profile's: three or more kept mined stretches from 5 min or less to 12 min or more, the longest not refused as far off, its label set by the short races among them and held at medium when two or more count but none is a kept stretch of 5 min or less.
+Why: REG-32 states (H-45, H-46) the endurance exponent's enough: tagged races counting three by weight and spanning a twofold GAP-equivalent distance ratio; REG-34 (H-49, H-50) the CS profile's: 3+ kept mined stretches from 5 min or less to 12 min or more, the longest not refused as far off, the label from its short races, held at medium if 2+ count but none is a kept stretch of 5 min or less.
 
 **IND-06.** The fitness/fatigue constants MUST stay at 42/7.
 Scope: every CTL and ATL computation.
