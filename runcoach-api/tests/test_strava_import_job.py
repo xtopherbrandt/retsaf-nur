@@ -421,6 +421,35 @@ def test_a_copy_with_an_unreadable_start_is_already_stored(
     )
 
 
+def test_an_already_stored_session_another_row_links_is_ambiguous(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes
+) -> None:
+    """One row per session on the store's duplicate key: a Run row on the session's own second
+    (no file) attaches first; the catalogue's ``already_stored`` row, 50 minutes later with an
+    unreadable file start, is refused by the ``(source_device, start_time)`` key on that same
+    session, which the first row holds, so it is ``ambiguous`` and links nothing."""
+    case = SA.by_key("already_stored")
+    session_start = SA.session_start(case.stored[0][1])
+    holder = _run_row(session_start, "holder", **{"Activity ID": "41"})
+    with TestClient(app) as client:
+        ids = _upload(client, post_fit_bytes, SA.stored_files([case]))
+        report = _import(client, SA.strava_zip(tmp_path / "held.zip", [case.cells, holder], [case.file]))
+    assert report["status"] == "completed", report["error"]
+    session = ids["already_stored.fit"]
+    print("  rows:", [(r["strava_activity_id"], r["outcome"], r["session_id"], r["detail"]) for r in report["files"]])
+    first, second = report["files"]
+    assert (first["strava_activity_id"], first["outcome"], first["session_id"]) == (41, "attached", session)
+    assert (second["strava_activity_id"], second["outcome"], second["session_id"]) == (
+        _case_id(case), "ambiguous", None)
+    assert second["detail"] == f"candidates: {session}"
+    rows = _strava_rows(isolated_data_dir)
+    assert (rows[41]["linked_session_id"], rows[41]["match"], rows[41]["outcome"]) == (session, "csv_start", "attached")
+    late = rows[_case_id(case)]
+    assert (late["outcome"], late["linked_session_id"], late["match"]) == ("ambiguous", None, None)
+    assert len(_sessions(isolated_data_dir)) == 1
+    assert report["counts"]["already_stored"] == 0 and report["counts"]["strava"]["ambiguous"] == 1
+
+
 # --- AC4: a Strava-only run is stored, oldest first; retyped --------------------------------------
 
 
@@ -653,6 +682,59 @@ def test_an_activity_id_past_64_bits_is_a_failed_row(isolated_data_dir: Path, tm
     ok = next(r for r in report["files"] if r["outcome"] == "not_running")
     assert ok["strava_activity_id"] == 2**63 - 1
     assert list(_strava_rows(isolated_data_dir)) == [2**63 - 1]
+
+
+def test_an_activity_id_past_64_bits_on_a_row_that_does_not_parse_fails_that_row_only(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """``Activity ID`` 2**63 on a row whose ``Activity Date`` does not parse: the row is ``failed``
+    with a null ``strava_activity_id`` and no ``strava_activities`` row, and the next row that
+    does not parse (file order) is still processed and keeps its row."""
+    bad_date = "18 avr. 2022 14:26:14"
+    rows = [
+        SA.row(**{"Activity ID": str(2**63), "Activity Date": bad_date, "Activity Type": "Run"}),
+        SA.row(**{"Activity ID": "88", "Activity Date": bad_date, "Activity Type": "Ride"}),
+    ]
+    with TestClient(app) as client:
+        report = _import(client, SA.strava_zip(tmp_path / "huge_unparsed.zip", rows))
+    assert report["status"] == "completed", report["error"]
+    print("  rows:", [(r["entry"], r["outcome"], r["strava_activity_id"], r["detail"]) for r in report["files"]])
+    huge, after = report["files"]
+    assert (huge["entry"], huge["outcome"], huge["strava_activity_id"]) == (f"{CSV} line 2", "failed", None)
+    # It fails for its own cause, not for an overflow writing the ID.
+    assert huge["detail"].startswith("Activity Date does not parse:") and "Overflow" not in huge["detail"]
+    assert (after["entry"], after["outcome"], after["strava_activity_id"]) == (f"{CSV} line 3", "failed", 88)
+    assert list(_strava_rows(isolated_data_dir)) == [88]
+    assert report["counts"]["failed"] == 2
+
+
+def test_an_error_on_a_row_that_does_not_parse_fails_that_row_only(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exception while a row that did not parse is checked against the store fails that row
+    only (``failed``, no ``strava_activities`` row written for it); the next row is processed."""
+    bad_date = "18 avr. 2022 14:26:14"
+    rows = [
+        SA.row(**{"Activity ID": "66", "Activity Date": bad_date, "Activity Type": "Run"}),
+        SA.row(**{"Activity ID": "67", "Activity Date": bad_date, "Activity Type": "Ride"}),
+    ]
+    real = db.read_strava_row
+
+    def failing(conn, activity_id):
+        if activity_id == 66:
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(conn, activity_id)
+
+    monkeypatch.setattr(db, "read_strava_row", failing)
+    with TestClient(app) as client:
+        report = _import(client, SA.strava_zip(tmp_path / "erring.zip", rows))
+    assert report["status"] == "completed", report["error"]
+    print("  rows:", [(r["entry"], r["outcome"], r["strava_activity_id"], r["detail"]) for r in report["files"]])
+    erred, after = report["files"]
+    assert (erred["outcome"], erred["strava_activity_id"]) == ("failed", 66)
+    assert "disk I/O error" in erred["detail"]
+    assert (after["outcome"], after["strava_activity_id"]) == ("failed", 67)
+    assert list(_strava_rows(isolated_data_dir)) == [67]
 
 
 class _Stop(BaseException):

@@ -49,7 +49,9 @@
   SQLite's 64-bit ``INTEGER`` is a row that does not parse: ``failed``, ``entry`` ``activities.csv
   line <n>``, no ``strava_activities`` row and a null ``strava_activity_id``. A row that did not
   parse writes its ``strava_activities`` row when its ``Activity ID`` parsed and was not seen.
-  An exception while a row is decided or written fails that row only.
+  An exception while a row is decided or written fails that row only: ``failed``, a stored live
+  link kept with its ``match`` and warnings; on a row that did not parse, its ``detail`` is the
+  parse failure and the exception's, and no ``strava_activities`` row is written.
 - **The report.** ``imports.source`` ``strava``; each ``files[]`` row's ``entry`` is the
   ``Filename`` (``activities.csv#<Activity ID>`` with none; ``activities.csv line <n>`` for a row
   that did not parse), ``time_created`` the ``Activity Date``, ``sport`` the ``Activity Type``,
@@ -287,7 +289,22 @@ class _Run:
                 self.decide(row, base)
         except Exception as exc:  # noqa: BLE001 -- any per-row error fails that row only
             status, detail = http_status_detail(exc)
-            self.finish(self.record(row, FAILED), job.FileRow(**base, outcome=FAILED, status=status, detail=detail))
+            self.fail(row, base, status, detail)
+
+    def fail(self, row: CsvRow, base: dict, status: int | None, detail: str) -> None:
+        """A row an exception failed while it was decided or written: ``failed``, its cells
+        replaced, and a stored live link kept with its ``match`` and warnings."""
+        with closing(self.work.connect()) as conn:
+            stored = db.read_strava_row(conn, row.activity_id)
+            link = None if stored is None or stored["deleted_in_strava"] else stored["linked_session_id"]
+            live = link is not None and _session_exists(conn, link)
+        if live:
+            record = self.record(row, FAILED, link, stored["match"], stored["warnings"])  # type: ignore[index]
+            file_row = job.FileRow(**base, outcome=FAILED, session_id=link, status=status, detail=detail)
+        else:
+            record = self.record(row, FAILED)
+            file_row = job.FileRow(**base, outcome=FAILED, status=status, detail=detail)
+        self.finish(record, file_row)
 
     def already(self, row: CsvRow, base: dict) -> bool:
         """Step 0 for a row whose ``Activity ID`` is stored. True when it is settled here (the
@@ -450,6 +467,27 @@ class _Run:
     # --- rows that did not parse --------------------------------------------------------------
 
     def failed(self, seq: int, failed: strava_csv.FailedRow) -> None:
+        try:
+            self.unparsed(seq, failed)
+        except Exception as exc:  # noqa: BLE001 -- any per-row error fails that row only
+            status, detail = http_status_detail(exc)
+            activity_id = failed.activity_id
+            if activity_id is not None and activity_id > SQLITE_INTEGER_MAX:
+                activity_id = None
+            file_row = job.FileRow(
+                seq,
+                failed.entry,
+                None,
+                FAILED,
+                status=status,
+                detail=f"{failed.detail}; {detail}",
+                strava_activity_id=activity_id,
+            )
+            self.finish(None, file_row)
+
+    def unparsed(self, seq: int, failed: strava_csv.FailedRow) -> None:
+        """A row that did not parse: ``failed``, unless step 0 finds its stored cells unchanged."""
+
         def cell(key: str) -> str | None:
             index = self.keys.index(key) if key in self.keys else len(failed.cells)
             return failed.cells[index] if index < len(failed.cells) else None

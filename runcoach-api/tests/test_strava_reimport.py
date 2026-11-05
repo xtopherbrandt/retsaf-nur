@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
-from runcoach_api.imports import archive, job, strava_files
+from runcoach_api.imports import archive, job, strava, strava_files
 from runcoach_api.ingestion import pipeline
 from runcoach_api.main import app
 
@@ -236,6 +236,87 @@ def test_a_newer_archive_updates_one_row_and_keeps_its_link(
     assert (new[a]["linked_session_id"], new[a]["match"]) == (ids["attached.fit"], "csv_start")
     assert new[a]["import_id"] == second["import_id"] and new[a]["updated_at"] != old[a]["updated_at"]
     assert new[s] == old[s] and new[s]["import_id"] == first["import_id"]
+
+
+def test_an_error_on_a_linked_row_in_step_0_fails_it_and_keeps_its_link(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
+) -> None:
+    """A live link is kept whatever steps 1-3 would find (reference section 3, step 0), and one
+    bad row fails one row (AC8): an exception while step 0 handles a linked row whose cells
+    changed makes that row ``failed`` with its link, ``match`` and warnings kept; the next row is
+    processed."""
+    attached, differs = _cases("attached", "attached_distance_differs")
+    with TestClient(app) as client:
+        ids = _upload(client, post_fit_bytes, SA.stored_files([attached, differs]))
+        _import(client, _zip(tmp_path / "a.zip", [attached, differs]))
+        old = _strava_rows(isolated_data_dir)
+        a, d = _case_id(attached), _case_id(differs)
+        real = strava._same_cells
+
+        def failing(stored, columns):
+            if stored["activity_id"] in (a, d):
+                raise RuntimeError("step 0 broke")
+            return real(stored, columns)
+
+        monkeypatch.setattr(strava, "_same_cells", failing)
+        newer = [_with(c, **{"Activity Description": "Bailed due to calf problems."}) for c in (attached, differs)]
+        second = _import(client, _zip(tmp_path / "b.zip", newer))
+    rows = _by_id(second)
+    print("  second report:", _summary(second))
+    assert (rows[a]["outcome"], rows[a]["session_id"]) == ("failed", ids["attached.fit"])
+    assert (rows[d]["outcome"], rows[d]["session_id"]) == ("failed", ids["differs.fit"])
+    assert rows[a]["detail"] == "RuntimeError: step 0 broke"
+    new = _strava_rows(isolated_data_dir)
+    for aid, name in ((a, "attached.fit"), (d, "differs.fit")):
+        assert new[aid]["outcome"] == "failed"
+        assert (new[aid]["linked_session_id"], new[aid]["match"], new[aid]["warnings"]) == (
+            ids[name], "csv_start", old[aid]["warnings"])
+    assert new[d]["warnings"] == ["distance_differs"]
+    assert second["counts"]["failed"] == 2
+
+
+BAD_DATE = "18 avr. 2022 14:26:14"
+
+
+def test_a_linked_row_that_no_longer_parses_is_failed_and_keeps_its_link(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes
+) -> None:
+    """A linked row whose ``Activity Date`` no longer parses, its cells changed: rewritten
+    ``failed`` with the new cells, its live link, ``match`` and warnings kept, reported on its
+    ``activities.csv line <n>`` entry with that session."""
+    differs = SA.by_key("attached_distance_differs")
+    with TestClient(app) as client:
+        ids = _upload(client, post_fit_bytes, SA.stored_files([differs]))
+        _import(client, _zip(tmp_path / "a.zip", [differs]))
+        second = _import(client, _zip(tmp_path / "b.zip", [_with(differs, **{"Activity Date": BAD_DATE})]))
+    print("  second:", _summary(second))
+    aid, session = _case_id(differs), ids["differs.fit"]
+    assert _summary(second) == [(1, aid, "failed", session, f"{CSV} line 2")]
+    stored = _strava_rows(isolated_data_dir)[aid]
+    assert stored["outcome"] == "failed"
+    assert stored["columns"]["Activity Date"] == BAD_DATE
+    assert (stored["linked_session_id"], stored["match"], stored["warnings"]) == (
+        session, "csv_start", ["distance_differs"])
+    assert stored["import_id"] == second["import_id"]
+
+
+def test_an_unlinked_row_that_no_longer_parses_is_failed_with_no_link(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """An unlinked ``no_file`` row whose ``Activity Date`` no longer parses: rewritten ``failed``
+    with the new cells and no link."""
+    no_file = SA.by_key("no_file")
+    with TestClient(app) as client:
+        _import(client, _zip(tmp_path / "a.zip", [no_file]))
+        second = _import(client, _zip(tmp_path / "b.zip", [_with(no_file, **{"Activity Date": BAD_DATE})]))
+    print("  second:", _summary(second))
+    aid = _case_id(no_file)
+    assert _summary(second) == [(1, aid, "failed", None, f"{CSV} line 2")]
+    stored = _strava_rows(isolated_data_dir)[aid]
+    assert (stored["outcome"], stored["linked_session_id"], stored["match"], stored["warnings"]) == (
+        "failed", None, None, [])
+    assert stored["columns"]["Activity Date"] == BAD_DATE
+    assert stored["import_id"] == second["import_id"]
 
 
 def test_a_row_absent_from_a_newer_archive_is_unlinked_and_reported_once(

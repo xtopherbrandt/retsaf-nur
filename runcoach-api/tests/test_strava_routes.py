@@ -249,6 +249,9 @@ def test_session_detail_strava_is_null_without_a_link(tmp_path: Path, isolated_d
 
 
 def test_an_updated_row_serves_its_new_text_with_the_link_unchanged(tmp_path: Path) -> None:
+    """AC7 through the routes: a newer archive with a new description on a linked row reports that
+    row ``updated``, and ``GET /sessions/{id}`` and ``GET /strava-activities/{id}`` serve the new
+    text with the link and ``match`` unchanged."""
     with TestClient(app) as client:
         _report, ids, cases = _import_kept(client, tmp_path)
         before = client.get(f"/sessions/{ids['attached.fit']}").json()["strava"]
@@ -257,10 +260,14 @@ def test_an_updated_row_serves_its_new_text_with_the_link_unchanged(tmp_path: Pa
         cells["Activity Description"] = "Felt strong; negative split."
         newer[0] = newer[0]._replace(cells=cells)
         path = SA.strava_zip(tmp_path / "newer.zip", [c.cells for c in newer], [c.file for c in newer if c.file])
-        _import(client, path)
+        report = _import(client, path)
         after = client.get(f"/sessions/{ids['attached.fit']}").json()["strava"]
         row = client.get(f"/strava-activities/{_id(cases[0])}").json()
     print("  before:", before["description"], "after:", after["description"])
+    # Step 0 names a linked row whose cells changed ``updated``; the others read ``unchanged``.
+    reported = {r["strava_activity_id"]: (r["outcome"], r["session_id"]) for r in report["files"]}
+    assert reported.pop(_id(cases[0])) == ("updated", ids["attached.fit"])
+    assert {outcome for outcome, _ in reported.values()} == {"unchanged"}
     assert before["description"] == ""
     assert after["description"] == row["description"] == "Felt strong; negative split."
     assert row["columns"]["Activity Description"] == "Felt strong; negative split."

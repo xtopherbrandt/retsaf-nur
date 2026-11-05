@@ -236,6 +236,10 @@ def test_a_run_linked_to_alpine_ski_is_strava_not_running_on_every_metric() -> N
     assert body["inputs"] == before["inputs"]
     assert body["metrics"]["hr_trimp"]["coefficients"] is None
     assert _session_rows(session_id) == rows_before
+    # The session's detail is unchanged but for its ``strava`` block, which now names the row.
+    strava_before, strava_after = detail_before.pop("strava"), detail_after.pop("strava")
+    assert strava_before is None
+    assert (strava_after["activity_id"], strava_after["activity_type"]) == (101, "Alpine Ski")
     assert detail_after == detail_before
 
 
