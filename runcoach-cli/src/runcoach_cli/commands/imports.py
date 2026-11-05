@@ -12,7 +12,14 @@ a line when the status changes and a line each time ``activities_processed`` pas
 by the stored rows' ``activity_tag``; the nights only when there are any), replaced night summaries
 and files with no night (each only when non-zero), already stored, skipped by sport, failed (then
 one line per failed row: entry, status, detail), the non-activity total, not-FIT by extension,
-unreadable inner archives. An API that stores nights counts them in its progress total, so the
+unreadable inner archives. A Strava archive's import (``source`` ``strava``) reports instead the
+``counts.strava`` figures on one line, in the F030 reference section 3 order, then one line per
+``failed``, ``ambiguous``, ``multisport_not_stored`` and ``deleted_in_strava`` row: its outcome,
+its ``time_created`` as a local date (``sync._local_date``), its Strava name (read from
+``GET /strava-activities/{id}``; ``-`` when that answers 404 or the name is null), and for a failed
+row its status and detail, for another its detail when it has one. A row that did not parse (entry
+``activities.csv line <n>``) prints its entry and the raw cells its ``detail`` holds. An API that
+stores nights counts them in its progress total, so the
 progress lines then say "activities and nights"; an older API's lines read "activities".
 
 Exit codes: 0 when the import ends ``completed`` (failed rows included); 1 when it ends ``failed`` or
@@ -42,7 +49,14 @@ import httpx
 import typer
 
 from runcoach_cli import config
-from runcoach_cli.api_client import ApiUnreachableError, get_import, list_imports, start_import
+from runcoach_cli.api_client import (
+    ApiUnreachableError,
+    get_import,
+    get_strava_activity,
+    list_imports,
+    start_import,
+)
+from runcoach_cli.commands import sync
 from runcoach_cli.commands.profile import _fail
 from runcoach_cli.commands.sessions import _printable, _unparseable, _write_utf8
 
@@ -57,6 +71,31 @@ NIGHT_TAG = "overnight_hrv"
 # The count keys an API that stores nights always serves (0 when none); an older API serves neither.
 NIGHT_COUNT_KEYS = ("replaced", "no_night")
 NULL = "-"
+# A Strava archive's import (``Import.source``).
+STRAVA_SOURCE = "strava"
+# The ``counts.strava`` figures the report prints, in the F030 reference section 3 order: each row
+# outcome, then the warned rows.
+STRAVA_COUNT_KEYS = (
+    "attached",
+    "attached_by_file_start",
+    "stored",
+    "stored_retyped",
+    "already_stored",
+    "ambiguous",
+    "multisport_not_stored",
+    "not_fit",
+    "no_file",
+    "not_running",
+    "failed",
+    "unchanged",
+    "updated",
+    "deleted_in_strava",
+    "distance_differs",
+)
+# The Strava row outcomes the report lists one line each for.
+STRAVA_LISTED = frozenset({"failed", "ambiguous", "multisport_not_stored", "deleted_in_strava"})
+# The ``entry`` of a Strava row that did not parse: ``activities.csv line <n>``.
+UNPARSED_ENTRY = "activities.csv line "
 
 sleep = time.sleep
 
@@ -157,8 +196,12 @@ def _count(counts: dict[str, Any], key: str) -> int:
     return value
 
 
-def _report_lines(body: dict[str, Any]) -> list[str]:
-    """The summary of an ``Import`` body, or raise ``ValueError``/``KeyError``/``TypeError``."""
+def _is_strava(body: dict[str, Any]) -> bool:
+    return body.get("source") == STRAVA_SOURCE
+
+
+def _report_rows(body: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], bool]:
+    """The body's ``counts`` (``{}`` when null), its ``files[]`` rows and whether ``files`` was served."""
     counts = body.get("counts")
     if counts is None:
         counts = {}
@@ -167,10 +210,82 @@ def _report_lines(body: dict[str, Any]) -> list[str]:
     files = body.get("files")
     if files is not None and not isinstance(files, list):
         raise TypeError("files")
-    rows = [row for row in (files or []) if isinstance(row, dict)]
+    return counts, [row for row in (files or []) if isinstance(row, dict)], files is not None
+
+
+def _unparsed(row: dict[str, Any]) -> bool:
+    """A Strava row that did not parse: its ``entry`` names the CSV line, its ``detail`` the cells."""
+    return str(row.get("entry")).startswith(UNPARSED_ENTRY)
+
+
+def _listed_strava_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if row.get("outcome") in STRAVA_LISTED]
+
+
+def _name_ids(body: dict[str, Any]) -> list[int]:
+    """The Activity IDs whose names a Strava report prints, once each, in row order."""
+    _, rows, _ = _report_rows(body)
+    ids: list[int] = []
+    for row in _listed_strava_rows(rows):
+        aid = _int(row.get("strava_activity_id"))
+        if aid is not None and not _unparsed(row) and aid not in ids:
+            ids.append(aid)
+    return ids
+
+
+def _strava_lines(
+    counts: dict[str, Any], rows: list[dict[str, Any]], names: dict[int, str | None]
+) -> list[str]:
+    """A Strava import's report: the ``counts.strava`` figures on one line, then one line per
+    failed, ambiguous, multisport and deleted row (its local date and name; a row that did not
+    parse, its entry and the raw cells its ``detail`` holds)."""
+    strava = counts.get("strava")
+    if strava is None:
+        strava = {}
+    if not isinstance(strava, dict):
+        raise TypeError("counts.strava")
+    lines = ["Strava: " + ", ".join(f"{key} {_count(strava, key)}" for key in STRAVA_COUNT_KEYS)]
+    for row in _listed_strava_rows(rows):
+        outcome = str(row["outcome"])
+        detail = row.get("detail")
+        if _unparsed(row):
+            cells = [
+                outcome,
+                _printable(str(row.get("entry"))),
+                NULL if detail is None else _printable(str(detail)),
+            ]
+            lines.append("  " + "  ".join(cells))
+            continue
+        when = row.get("time_created")
+        aid = _int(row.get("strava_activity_id"))
+        name = names.get(aid) if aid is not None else None
+        cells = [
+            outcome,
+            NULL if when is None else sync._local_date(when).isoformat(),
+            _printable(name) if name else NULL,
+        ]
+        if outcome == "failed":
+            status = row.get("status")
+            cells.append(NULL if status is None else str(status))
+            cells.append(NULL if detail is None else _printable(str(detail)))
+        elif detail is not None:
+            cells.append(_printable(str(detail)))
+        lines.append("  " + "  ".join(cells))
+    return lines
+
+
+def _report_lines(body: dict[str, Any], names: dict[int, str | None] | None = None) -> list[str]:
+    """The summary of an ``Import`` body, or raise ``ValueError``/``KeyError``/``TypeError``.
+
+    A Strava import's summary is ``_strava_lines``, naming each listed row from ``names`` (its
+    Activity ID to the row's ``name``); any other import's is the Garmin report.
+    """
+    counts, rows, served = _report_rows(body)
+    if _is_strava(body):
+        return _strava_lines(counts, rows, names or {})
 
     stored = _count(counts, "stored")
-    if files is None:
+    if not served:
         stored_line = f"Stored: {stored}"
     else:
         stored_tags = [row.get("activity_tag") for row in rows if row.get("outcome") == "stored"]
@@ -229,18 +344,48 @@ def _report_lines(body: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _print_report(body: dict[str, Any]) -> None:
+def _strava_name(api_url: str, activity_id: int) -> str | None:
+    """The ``name`` ``GET /strava-activities/{id}`` serves; ``None`` on a 404 or a null name."""
     try:
-        lines = _report_lines(body)
+        resp = get_strava_activity(api_url, activity_id)
+    except ApiUnreachableError:
+        raise _fail(_unreachable_message(api_url)) from None
+    if resp.status_code == 404:
+        return None
+    try:
+        body = _ok_body(resp)
+    except _PollFailed as exc:
+        raise _fail(str(exc)) from None
+    name = body.get("name") if isinstance(body, dict) else None
+    if name is not None and not isinstance(name, str):
+        raise _unparseable(f"strava activity {activity_id} name")
+    return name
+
+
+def _ok_body(resp: httpx.Response) -> Any:
+    """A 2xx response's JSON body, or raise ``_PollFailed`` naming what went wrong."""
+    if not 200 <= resp.status_code < 300:
+        raise _PollFailed(f"API returned {resp.status_code}: {resp.text}")
+    return _body(resp)
+
+
+def _print_report(body: dict[str, Any], api_url: str) -> None:
+    try:
+        ids = _name_ids(body) if _is_strava(body) else []
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _unparseable(f"missing or malformed {exc}") from None
+    names = {aid: _strava_name(api_url, aid) for aid in ids}
+    try:
+        lines = _report_lines(body, names)
     except (KeyError, TypeError, ValueError) as exc:
         raise _unparseable(f"missing or malformed {exc}") from None
     for line in lines:
         _write_utf8(line)
 
 
-def _end(body: dict[str, Any]) -> None:
+def _end(body: dict[str, Any], api_url: str) -> None:
     """Print the final report of a terminal import and exit with its code."""
-    _print_report(body)
+    _print_report(body, api_url)
     import_id = body["import_id"]
     if body["status"] == "failed":
         raise _fail(f"import {import_id} failed: {_printable(str(body.get('error')))}")
@@ -345,7 +490,7 @@ def import_archive(
     except KeyboardInterrupt:
         _write_utf8(_hint(import_id))
         raise typer.Exit(code=130) from None
-    _end(body)
+    _end(body, cfg.api_url)
 
 
 def _newest_id(api_url: str) -> str | None:
@@ -394,6 +539,6 @@ def import_status(
     if body["status"] == "running" and processed is not None:
         _write_utf8(_processed_line(body, processed, total))
     if body["status"] in TERMINAL:
-        _end(body)
+        _end(body, cfg.api_url)
     else:
-        _print_report(body)
+        _print_report(body, cfg.api_url)

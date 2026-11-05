@@ -169,6 +169,19 @@ def get_import(base_url: str, import_id: str) -> httpx.Response:
         raise ApiUnreachableError(base_url) from exc
 
 
+def get_strava_activity(base_url: str, activity_id: int) -> httpx.Response:
+    """Call GET {base_url}/strava-activities/{activity_id} (one Strava archive row) and return the raw
+    response.
+
+    Only network-layer failures are translated into ApiUnreachableError; status and body are the
+    caller's job.
+    """
+    try:
+        return client.get(f"{base_url}/strava-activities/{activity_id}")
+    except httpx.TransportError as exc:
+        raise ApiUnreachableError(base_url) from exc
+
+
 def list_imports(base_url: str) -> httpx.Response:
     """Call GET {base_url}/imports (newest first, without per-file rows) and return the raw response.
 
