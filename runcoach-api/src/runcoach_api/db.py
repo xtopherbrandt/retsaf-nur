@@ -3198,7 +3198,8 @@ def reconcile_strava_load(conn_factory: Callable[[], sqlite3.Connection], zone: 
     the reconcile reads committed rows only and an interrupted pass is healed by the next Strava
     import. A recompute whose old body was not ``strava_not_running`` and whose new body is, is an
     ``excluded`` change; the reverse a ``restored`` one; each names the session, its local date in
-    ``zone``, the live link's ``Activity Type`` (None when unlinked) and the old body's load value.
+    ``zone``, the live link's ``Activity Type`` (None when unlinked), the old body's load value and
+    the new body's (``new_load``; None on an excluded change).
     A session deleted since the read is skipped. ``conn_factory`` opens one connection, closed
     here; any fault propagates, leaving every earlier recompute committed."""
     conn = conn_factory()
@@ -3225,11 +3226,13 @@ def reconcile_strava_load(conn_factory: Callable[[], sqlite3.Connection], zone: 
                 (session_id,),
             ).fetchone()
             old_load = ((old_body or {}).get("session_load") or {}).get("value")
+            new_load = None if now else ((new_body or {}).get("session_load") or {}).get("value")
             changes.append({
                 "session_id": session_id,
                 "local_date": _local_day(session_id, start_time, zone)[0].isoformat(),
                 "strava_type": None if link is None else link[0],
                 "old_load": old_load,
+                "new_load": new_load,
                 "change": "excluded" if now else "restored",
             })
         return ReconcileResult(tuple(recomputed), tuple(changes))

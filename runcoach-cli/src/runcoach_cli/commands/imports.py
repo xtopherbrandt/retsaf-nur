@@ -22,9 +22,11 @@ row its status and detail, for another its detail when it has one. A row that di
 ``excluded_from_load`` and ``restored_to_load`` are both 0 and ``load_changes`` is empty, a line
 with those two counts and one line per ``load_changes`` entry in the served order: ``excluded`` or
 ``restored``, the served ``local_date`` (already the athlete's date), the Strava type (``-`` when
-the run is no longer linked) and the old load to 1 decimal (``no load`` when null). An API that
-stores nights counts them in its progress total, so the
-progress lines then say "activities and nights"; an older API's lines read "activities".
+the run is no longer linked) and, for an excluded entry, the old load to 1 decimal (``no load``
+when null); a restored entry prints ``now`` and its ``new_load``, the load the run counts again, the
+same way (``now no load`` when null), or, from an older API that serves no ``new_load``, its old
+load. An API that stores nights counts them in its progress total, so a Garmin job's progress lines
+then say "activities and nights"; a Strava job's, and an older API's, read "activities".
 
 Exit codes: 0 when the import ends ``completed`` (failed rows included); 1 when it ends ``failed`` or
 ``interrupted``, when a file under a directory cannot be read, when the upload is refused (non-2xx),
@@ -100,8 +102,12 @@ STRAVA_COUNT_KEYS = (
 STRAVA_LISTED = frozenset({"failed", "ambiguous", "multisport_not_stored", "deleted_in_strava"})
 # The ``entry`` of a Strava row that did not parse: ``activities.csv line <n>``.
 UNPARSED_ENTRY = "activities.csv line "
-# A load change's old load when the saved body had none (a ``no_hr`` run; every restored entry).
+# A load change's load when the body had none (an excluded ``no_hr`` run's old load; a restored
+# entry's old load from an older API, which serves no ``new_load``).
 NO_LOAD = "no load"
+# The ``load_changes`` entry kind whose line shows the load the run counts again, and its key.
+RESTORED = "restored"
+NEW_LOAD_KEY = "new_load"
 
 sleep = time.sleep
 
@@ -153,13 +159,15 @@ def _int(value: Any) -> int | None:
 
 
 def _counts_nights(body: dict[str, Any]) -> bool:
-    """Whether the API stores nights, so its progress counts nights among the activities."""
+    """Whether the API stores nights, so its progress names what it counts."""
     counts = body.get("counts")
     return isinstance(counts, dict) and any(key in counts for key in NIGHT_COUNT_KEYS)
 
 
 def _total_noun(body: dict[str, Any]) -> str:
-    return "activities and nights" if _counts_nights(body) else "activities"
+    """What the progress total counts: a Garmin job's includes nights when the API stores them; a
+    Strava archive holds no nights, so a Strava job's counts activities only."""
+    return "activities and nights" if _counts_nights(body) and not _is_strava(body) else "activities"
 
 
 def _status_line(body: dict[str, Any]) -> str:
@@ -284,8 +292,19 @@ def _strava_lines(
     return lines + _load_lines(strava, body_changes)
 
 
+def _is_load(value: Any) -> bool:
+    """A load value as served: null or a number (never a bool)."""
+    return value is None or (not isinstance(value, bool) and isinstance(value, int | float))
+
+
+def _load_text(value: int | float | None) -> str:
+    return NO_LOAD if value is None else f"{value:.1f}"
+
+
 def _load_change_line(change: Any) -> str:
-    """``  <change>  <local_date>  <strava_type>  <old_load>`` for one ``load_changes`` entry."""
+    """``  <change>  <local_date>  <strava_type>  <load>`` for one ``load_changes`` entry: an
+    excluded entry's old load; a restored entry's ``now <new_load>``, the load the run counts again,
+    or its old load when the API serves no ``new_load`` key (an older API)."""
     if not isinstance(change, dict):
         raise TypeError("load_changes")
     kind, local_date = change.get("change"), change.get("local_date")
@@ -294,14 +313,19 @@ def _load_change_line(change: Any) -> str:
         not isinstance(kind, str)
         or not isinstance(local_date, str)
         or (strava_type is not None and not isinstance(strava_type, str))
-        or (old_load is not None and (isinstance(old_load, bool) or not isinstance(old_load, int | float)))
+        or not _is_load(old_load)
+        or not _is_load(change.get("new_load"))
     ):
         raise TypeError("load_changes")
+    if kind == RESTORED and NEW_LOAD_KEY in change:
+        load = f"now {_load_text(change[NEW_LOAD_KEY])}"
+    else:
+        load = _load_text(old_load)
     cells = [
         _printable(kind),
         _printable(local_date),
         NULL if strava_type is None else _printable(strava_type),
-        NO_LOAD if old_load is None else f"{old_load:.1f}",
+        load,
     ]
     return "  " + "  ".join(cells)
 

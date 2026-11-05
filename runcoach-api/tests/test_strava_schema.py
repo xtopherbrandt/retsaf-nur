@@ -240,9 +240,10 @@ def test_an_old_import_row_has_no_source_and_is_served_garmin(isolated_data_dir:
         new = client.get("/imports/strava-job").json()
         assert new["source"] == "strava"
         assert new["files"][0]["strava_activity_id"] == 7012345678901
+        # An entry stored before ``new_load`` existed serves it null.
         assert new["load_changes"] == [
             {"session_id": "s1", "local_date": "2026-11-03", "strava_type": "Alpine Ski", "old_load": 41.5,
-             "change": "excluded"}
+             "new_load": None, "change": "excluded"}
         ]
         listed = {item["import_id"]: item["source"] for item in client.get("/imports").json()["items"]}
         assert listed == {"old-job": "garmin", "strava-job": "strava"}
@@ -390,7 +391,7 @@ def test_an_import_report_validates_with_strava_outcomes_and_counts() -> None:
         "source": "strava",
         "load_changes": [
             {"session_id": "s1", "local_date": "2026-11-03", "strava_type": "Alpine Ski", "old_load": None,
-             "change": "restored"}
+             "new_load": 33.01, "change": "restored"}
         ],
     }
     report = Import.model_validate(body).model_dump()
@@ -399,6 +400,7 @@ def test_an_import_report_validates_with_strava_outcomes_and_counts() -> None:
     assert report["files"][0]["strava_activity_id"] == 7012345678901
     assert report["counts"]["strava"] == strava_counts
     assert report["load_changes"][0]["change"] == "restored"
+    assert report["load_changes"][0]["new_load"] == 33.01
     # A job stored before Strava: every strava key 0, source garmin, no load changes.
     old = {k: v for k, v in body.items() if k not in {"source", "load_changes", "files"}}
     old["counts"] = GARMIN_COUNTS

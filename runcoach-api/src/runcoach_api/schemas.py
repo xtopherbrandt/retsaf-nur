@@ -1489,6 +1489,10 @@ class ImportLoadChange(BaseModel):
     local_date: str = Field(description="The session's date in the athlete's zone, YYYY-MM-DD.")
     strava_type: str | None = Field(description="The linked row's Activity Type; null when the session is no longer linked.")
     old_load: float | None = Field(description="The saved load value before the recompute; null when it had none (always, for restored).")
+    new_load: float | None = Field(
+        default=None,
+        description="The saved load value after the recompute, the load a restored run counts again; null on excluded, when the new body has none, and for an entry stored before the key existed.",
+    )
     change: Literal["excluded", "restored"]
 
 

@@ -3496,6 +3496,7 @@ components:
         local_date: { type: string, description: "The session's date in the athlete's zone, YYYY-MM-DD." }
         strava_type: { type: string, nullable: true, description: "The linked row's Activity Type; null when the session is no longer linked." }
         old_load: { type: number, nullable: true, description: "The saved load value before the recompute; null when it had none (always, for restored)." }
+        new_load: { type: number, nullable: true, default: null, description: "The saved load value after the recompute, the load a restored run counts again; null on excluded, when the new body has none, and for an entry stored before the key existed." }
         change: { type: string, enum: [excluded, restored] }
     ImportFile:
       type: object

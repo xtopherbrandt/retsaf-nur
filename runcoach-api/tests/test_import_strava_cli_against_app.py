@@ -240,6 +240,7 @@ def test_the_load_lines_against_the_real_app(cli_against_app: TestClient, tmp_pa
     assert (change["session_id"], change["strava_type"], change["change"]) == (sid, "Run", "restored")
     assert report[-2:] == [
         "Load: excluded_from_load 0, restored_to_load 1",
-        f"  restored  {change['local_date']}  Run  no load",
+        f"  restored  {change['local_date']}  Run  now {old:.1f}",
     ], report
+    assert change["new_load"] == old, change
     assert client.get(f"/sessions/{sid}/load").json()["session_load"]["value"] == old

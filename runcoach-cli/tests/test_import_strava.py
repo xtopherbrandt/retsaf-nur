@@ -28,11 +28,16 @@ body's ``load_changes`` entries, each printed as served (no lookup, no re-zoning
 |---|---|
 | both counts 0 and ``load_changes`` ``[]`` or absent | no load lines |
 | both counts 0 but ``load_changes`` non-empty | the load lines (a change is never hidden) |
-| ``old_load`` null (a ``no_hr`` run; every restored entry) | ``no load`` |
+| an excluded entry's ``old_load`` null (a ``no_hr`` run) | ``no load`` |
 | ``old_load`` 0.0 | ``0.0``, not ``no load`` |
 | ``old_load`` 42.35 / 7 (an int) | ``42.4`` / ``7.0`` |
+| a restored entry's ``new_load`` 0.5 / 33.01 / 7 / 0.0 | ``now 0.5`` / ``now 33.0`` / ``now 7.0`` / ``now 0.0`` |
+| a restored entry's ``new_load`` null | ``now no load`` |
+| a restored entry with no ``new_load`` key (an older API) | its old load as before: ``no load`` |
+| an excluded entry's ``new_load`` | not printed; the line names the old load |
 | ``strava_type`` null (the run is no longer linked) | ``-`` |
-| ``load_changes`` not a list, an entry not an object, ``old_load`` a string or a bool, ``local_date`` null | exit 1, the body could not be understood |
+| ``load_changes`` not a list, an entry not an object, ``old_load`` or ``new_load`` a string or a bool, ``local_date`` null | exit 1, the body could not be understood |
+| a Strava job's progress, its counts carrying the night keys | "activities", never "and nights" |
 """
 
 from __future__ import annotations
@@ -362,14 +367,23 @@ def test_a_strava_import_exits_0(tmp_path: Path, install_mock_client) -> None:
     assert f"Import {IMPORT_ID} started (export_1347737.zip)." in result.output.splitlines()
 
 
-def _change(sid: str, local_date: Any, strava_type: Any, old_load: Any, change: str) -> dict:
-    return {
+_ABSENT = object()
+
+
+def _change(
+    sid: str, local_date: Any, strava_type: Any, old_load: Any, change: str, new_load: Any = _ABSENT
+) -> dict:
+    """A ``load_changes`` entry; without ``new_load`` it is an older API's entry, which has no key."""
+    entry = {
         "session_id": sid,
         "local_date": local_date,
         "strava_type": strava_type,
         "old_load": old_load,
         "change": change,
     }
+    if new_load is not _ABSENT:
+        entry["new_load"] = new_load
+    return entry
 
 
 ATTENTION_LINES = [
@@ -440,6 +454,88 @@ def test_the_line_names_local_date_strava_type_and_old_load(
     ], result.output
 
 
+@pytest.mark.parametrize(
+    ("entry", "line"),
+    [
+        (
+            _change("s1", "2021-02-07", "Run", None, "restored", 0.5),
+            "  restored  2021-02-07  Run  now 0.5",
+        ),
+        (
+            _change("s1", "2022-08-27", None, None, "restored", 33.01),
+            "  restored  2022-08-27  -  now 33.0",
+        ),
+        (_change("s1", "2022-08-27", "Run", None, "restored", 7), "  restored  2022-08-27  Run  now 7.0"),
+        (_change("s1", "2022-08-27", "Run", None, "restored", 0.0), "  restored  2022-08-27  Run  now 0.0"),
+        (
+            _change("s1", "2022-08-27", "Run", None, "restored", None),
+            "  restored  2022-08-27  Run  now no load",
+        ),
+        # An excluded line is unchanged: it names the old load, whatever new_load says.
+        (
+            _change("s1", "2018-12-30", "Alpine Ski", 21.64, "excluded", None),
+            "  excluded  2018-12-30  Alpine Ski  21.6",
+        ),
+        # An older API serves no new_load key: the restored line keeps its earlier wording.
+        (_change("s1", "2021-02-07", "Run", None, "restored"), "  restored  2021-02-07  Run  no load"),
+    ],
+)
+def test_a_restored_line_prints_the_load_it_counts_again(
+    tmp_path: Path, install_mock_client, entry: dict, line: str
+) -> None:
+    """Athlete ruling 2026-11-05: a restored line shows the load the run counts again,
+    ``now <new_load>`` to 1 decimal (``now no load`` when null), not the old load it carried while
+    excluded."""
+    excluded, restored = (1, 0) if entry["change"] == "excluded" else (0, 1)
+    files = [_row(1, "activities/101.fit.gz", "attached", "2022-04-02T15:00:00+00:00", 101, session_id="s1")]
+    counts = _counts(_strava_counts(attached=1, excluded_from_load=excluded, restored_to_load=restored))
+    api = _Api(_body(counts, files, load_changes=[entry]))
+
+    result = _import(tmp_path, install_mock_client, api)
+
+    assert result.exit_code == 0, result.output
+    print("[slice compared] load lines:", _report(result.output)[1:])
+    assert _report(result.output)[1:] == [
+        f"Load: excluded_from_load {excluded}, restored_to_load {restored}",
+        line,
+    ], result.output
+
+
+def test_a_strava_import_progress_names_no_nights(tmp_path: Path, install_mock_client) -> None:
+    """A Strava archive holds no nights, so a Strava job's progress lines say "activities", though
+    its counts carry the night keys an API that stores nights always serves."""
+
+    def running(processed: int) -> dict:
+        body = _body(COUNTS, FILES, status="running")
+        body["counts"] = dict(COUNTS, replaced=0, no_night=0)
+        body["progress"] = {"fit_files_scanned": 0, "activities_total": 250, "activities_processed": processed}
+        return body
+
+    final = _body(dict(COUNTS, replaced=0, no_night=0), FILES)
+    bodies = [running(0), running(120), final]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "POST" and path == "/imports":
+            return httpx.Response(202, json=dict(running(0), status="queued", files=None))
+        if request.method == "GET" and path.startswith("/imports/"):
+            return httpx.Response(200, json=bodies.pop(0) if len(bodies) > 1 else bodies[0])
+        return _Api(final)(request)
+
+    install_mock_client(handler)
+    result = runner.invoke(app, ["import", str(_archive(tmp_path))])
+
+    assert result.exit_code == 0, result.output
+    progress = [line for line in result.output.splitlines() if line.startswith(("Status: running", "Processed"))]
+    print("[slice compared] progress lines:", progress)
+    assert progress == ["Status: running (250 activities)", "Processed 120 of 250 activities"]
+    assert "nights" not in result.output
+    # A Garmin job from an API that stores nights still names them.
+    garmin = dict(running(5), source="garmin")
+    assert imports._status_line(garmin) == "Status: running (250 activities and nights)"
+    assert imports._processed_line(garmin, 5, 250) == "Processed 5 of 250 activities and nights"
+
+
 @pytest.mark.parametrize("load_changes", [[], None, "absent"])
 def test_no_load_lines_when_nothing_changed(tmp_path: Path, install_mock_client, load_changes: Any) -> None:
     body = _body(COUNTS, FILES, load_changes=load_changes)
@@ -472,6 +568,8 @@ def test_load_changes_with_zero_counts_are_still_printed(tmp_path: Path, install
         [_change("s1", "2022-03-01", "Hike", "12.5", "excluded")],
         [_change("s1", "2022-03-01", "Hike", True, "excluded")],
         [_change("s1", None, "Hike", 1.0, "excluded")],
+        [_change("s1", "2022-03-01", "Run", None, "restored", "0.5")],
+        [_change("s1", "2022-03-01", "Run", None, "restored", True)],
     ],
 )
 def test_malformed_load_changes_exit_1(tmp_path: Path, install_mock_client, load_changes: Any) -> None:

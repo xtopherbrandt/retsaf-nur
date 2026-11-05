@@ -26,7 +26,8 @@ selection reads, and what each degenerate form does.
 | counted body, link typed ``Alpine Ski`` | recomputed, ``excluded`` | the rule says exclude |
 | ``no_hr`` body, link typed non-run | recomputed, ``excluded``, ``old_load`` null | the gate runs before ``no_hr`` |
 | ``declared_capture`` body, link typed non-run | never recomputed | gate 2 wins, so the saved reason agrees |
-| excluded body, link now ``Run`` | recomputed, ``restored`` | the rule says count |
+| excluded body, link now ``Run`` | recomputed, ``restored``, ``new_load`` the restored body's value | the rule says count |
+| counted body excluded | ``new_load`` null | the excluded body carries no value |
 | excluded body, row ``deleted_in_strava`` (unlinked) | recomputed, ``restored``, ``strava_type`` null | no live link |
 | excluded body, link moved to another session | old session ``restored``; new one ``excluded`` | the link is read from the session's side |
 | excluded body naming another row than the live non-run link | recomputed, no entry | still excluded; the body names the live row |
@@ -177,12 +178,16 @@ def _execute(data_dir: Path, sql: str, params: tuple = ()) -> None:
         conn.close()
 
 
-def _change(session_id: str, start, strava_type: str | None, old_load: float | None, change: str) -> dict:
+def _change(
+    session_id: str, start, strava_type: str | None, old_load: float | None, change: str,
+    new_load: float | None = None,
+) -> dict:
     return {
         "session_id": session_id,
         "local_date": start.date().isoformat(),
         "strava_type": strava_type,
         "old_load": old_load,
+        "new_load": new_load,
         "change": change,
     }
 
@@ -246,7 +251,31 @@ def test_a_second_archive_typing_it_run_restores_the_body_and_counts_it(
     assert restored == saved
     assert restored["strava_activity_id"] is None
     assert _counts(second) == (0, 1)
-    assert second["load_changes"] == [_change(sid, start, "Run", None, "restored")]
+    assert second["load_changes"] == [
+        _change(sid, start, "Run", None, "restored", saved["session_load"]["value"])
+    ]
+
+
+def test_a_restored_entry_serves_its_new_load(isolated_data_dir: Path, tmp_path: Path, post_fit_bytes) -> None:
+    """Athlete ruling 2026-11-05: a restored entry serves ``new_load``, the saved load value after
+    the recompute (the load the run counts again), read from the saved body; an excluded entry
+    serves ``new_load`` null, its new body carrying no value."""
+    [(fit, start)] = _runs(1)
+    with TestClient(app) as client:
+        sid = _upload(client, post_fit_bytes, fit, "run.fit")
+        counted = _body(sid)["session_load"]["value"]
+        first = _import(client, tmp_path / "ski.zip", [_row(SKI_ID, start, "Alpine Ski")])
+        second = _import(client, tmp_path / "run.zip", [_row(SKI_ID, start, "Run")])
+        now = _body(sid)["session_load"]["value"]
+        served = client.get(f"/imports/{second['import_id']}").json()["load_changes"]
+    print(f"  counted {counted}; restored body value {now}; excluded {first['load_changes']}; restored {served}")
+    assert counted is not None and counted > 0
+    [excluded] = first["load_changes"]
+    assert (excluded["change"], excluded["old_load"], excluded["new_load"]) == ("excluded", counted, None)
+    [restored] = served
+    assert restored["change"] == "restored"
+    assert restored["old_load"] is None
+    assert restored["new_load"] == now == counted
 
 
 def test_a_deleted_in_strava_row_restores_its_session(
@@ -265,7 +294,9 @@ def test_a_deleted_in_strava_row_restores_its_session(
     assert outcomes == {UNRELATED_ID: "no_file", SKI_ID: "deleted_in_strava"}
     assert restored == saved
     assert _counts(second) == (0, 1)
-    assert second["load_changes"] == [_change(sid, start, None, None, "restored")]
+    assert second["load_changes"] == [
+        _change(sid, start, None, None, "restored", saved["session_load"]["value"])
+    ]
 
 
 def test_a_link_moved_to_another_session_restores_the_old_one(
@@ -293,7 +324,7 @@ def test_a_link_moved_to_another_session_restores_the_old_one(
     assert sorted(recomputes) == sorted([sid_a, sid_b])
     assert _counts(second) == (1, 1)
     expected = [
-        _change(sid_a, start_a, None, None, "restored"),
+        _change(sid_a, start_a, None, None, "restored", saved_a["session_load"]["value"]),
         _change(sid_b, start_b, "Alpine Ski", saved_b["session_load"]["value"], "excluded"),
     ]
     assert sorted(second["load_changes"], key=lambda c: c["session_id"]) == sorted(
