@@ -770,7 +770,7 @@ PINNED_SHA256 = {
     "REG-31/Pinned": "dcd9dd3c915e.88c5791ed487.6c48a4794dba",
     "REG-32/Pinned": "0dce9981d74c.c6a9b8ebb202.f0d3ccf75cb1.3776571e3026.a03d22903888.bcecd2f1c203.d89aba1f1c27.a99a36360c06.449d2aaf610a.dd7f54419317",
     "REG-33/Pinned": "d90c7d6ea813.60c897436887.648cbc80473b.24c86ce98046.81a06ec66892.3124d65c9604.a34d6a90fb58.fb19941ff787.527545f6a9f9.64b908c90bd9.ca1670f4f435.7e1dc2a966d6",
-    "REG-34/Pinned": "9b5f549a5a9a.244454604b06.44fec3cc16c7.bc4e9c34de4b.9028df95eb7d.bbe582cb2898.15244fbd2317.2d0fd2633eac.90f8f619dd80.55f3cadb5105.4ce2932a5267.1435788e1aaf.2e4a1c4c2a1c.f3f920f53578.0eedd130d9c2",
+    "REG-34/Pinned": "9b5f549a5a9a.244454604b06.44fec3cc16c7.bc4e9c34de4b.9028df95eb7d.bbe582cb2898.15244fbd2317.2d0fd2633eac.008d76193573.90f8f619dd80.55f3cadb5105.4ce2932a5267.1435788e1aaf.2e4a1c4c2a1c.f3f920f53578.0eedd130d9c2",
     "HRV-07/Pinned": "4094322b60da",
     "IND-01/Pinned": "6f6a2e0e1e2d",
     "IND-02/Pinned": "6f6a2e0e1e2d",
@@ -1052,6 +1052,7 @@ HISTORY_SHA256 = {
     "H-47": "d545679a28bf",
     "H-48": "b17cb7c32a17",
     "H-49": "fa4816d454af",
+    "H-50": "50dd066faf0c",
     "## Retired IDs": "df75a433ff9c",
     "PRIN-16 retired": "44a1c18ceea9",
 }
