@@ -12,6 +12,22 @@
 - **Order.** The rows that parsed are processed oldest first (``Activity Date``, ties by
   ``Activity ID``, the reader's order), then the rows that did not parse, in file order. ``seq``
   counts both.
+- **Step 0, absent rows.** Before any row is matched, every stored, not-yet-marked
+  ``strava_activities`` row whose ``Activity ID`` this archive does not give (parsed or not) is
+  marked ``deleted_in_strava`` and unlinked (``match`` and ``warnings`` cleared, ``outcome``
+  ``deleted_in_strava``, every cell kept), each with its report row (``entry``
+  ``activities.csv#<Activity ID>``, ``seq`` after the CSV's rows, in ``Activity ID`` order) in one
+  transaction. A row already marked and still absent is neither changed nor reported.
+- **Step 0, stored rows** (``_Run.already``), for a row whose ``Activity ID`` is stored and not
+  marked: a live link is kept with its ``match``, reading ``unchanged`` (nothing written) when every
+  cell equals the stored one in header order, else ``updated`` (cells replaced, ``distance_differs``
+  re-checked, ``import_id`` and ``updated_at`` this import's). A link to a session no longer stored,
+  or an unlinked row whose cells changed, is matched from step 1 and the row rewritten. An unlinked,
+  unchanged ``ambiguous`` row re-runs step 1 on the sessions at its CSV start, reading no file: it
+  links when the tie is resolved, else reads ``unchanged``. Any other unlinked unchanged row reads
+  ``unchanged``: nothing is read, decoded or written. A marked row present again is matched from
+  step 1, which clears the mark. A row that did not parse reads ``unchanged`` when its stored cells
+  equal its cells, and otherwise keeps a live link when it is rewritten as ``failed``.
 - **Each row** goes through ``strava_match.decide`` with the stored sessions on its second
   (``db.sessions_at_second``, projected to ``(session_id, distance_m)``), a file reader
   (``strava_files.read_activity_file`` then ``session_starts``, each start passed as its
@@ -50,7 +66,7 @@ import sqlite3
 import zipfile
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -59,16 +75,22 @@ from runcoach_api.imports import archive, job, strava_csv, strava_files, strava_
 from runcoach_api.imports.strava_types import (
     ALREADY_STORED,
     AMBIGUOUS,
+    ATTACHED,
+    DELETED_IN_STRAVA,
     DESCRIPTION_COLUMN,
     DISTANCE_DIFFERS,
     FAILED,
+    MATCH_CSV_START,
     MATCH_STORED,
     NOT_FIT,
     PRIVATE_NOTE_COLUMN,
     STORED,
     STORED_RETYPED,
     STRAVA_OUTCOMES,
+    UNCHANGED,
+    UPDATED,
     CsvRow,
+    Decision,
     FileError,
 )
 from runcoach_api.ingestion import pipeline
@@ -111,6 +133,23 @@ class _LinkedByOthers(Collection[str]):
 
     def __len__(self) -> int:
         return sum(1 for _ in self)
+
+
+def _same_cells(stored: Mapping, columns: Mapping[str, str]) -> bool:
+    """Every stored cell equals the new row's, in the same header order."""
+    return list((stored["columns"] or {}).items()) == list(columns.items())
+
+
+def _session_exists(conn: sqlite3.Connection, session_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone() is not None
+
+
+def _absent_ids(conn: sqlite3.Connection, present: Collection[int]) -> list[int]:
+    """The stored, not-yet-marked rows whose ``Activity ID`` this archive does not give, by ID."""
+    rows = conn.execute(
+        f"SELECT activity_id FROM {db.STRAVA_ACTIVITIES_TABLE} WHERE deleted_in_strava = 0 ORDER BY activity_id"
+    )
+    return [row[0] for row in rows if row[0] not in present]
 
 
 def _read_links(conn: sqlite3.Connection) -> dict[str, int]:
@@ -244,10 +283,61 @@ class _Run:
             return
         self.seen.add(row.activity_id)
         try:
-            self.decide(row, base)
+            if not self.already(row, base):
+                self.decide(row, base)
         except Exception as exc:  # noqa: BLE001 -- any per-row error fails that row only
             status, detail = http_status_detail(exc)
             self.finish(self.record(row, FAILED), job.FileRow(**base, outcome=FAILED, status=status, detail=detail))
+
+    def already(self, row: CsvRow, base: dict) -> bool:
+        """Step 0 for a row whose ``Activity ID`` is stored. True when it is settled here (the
+        report row written); False when the row is matched from step 1 (``decide``), which then
+        replaces the stored row whole, a ``deleted_in_strava`` mark and a stale link included."""
+        # Read with the connection closed before any write (``finish`` opens its own).
+        live = False
+        warnings: tuple[str, ...] = ()
+        candidates: list[tuple[str, float | None]] = []
+        with closing(self.work.connect()) as conn:
+            stored = db.read_strava_row(conn, row.activity_id)
+            if stored is None or stored["deleted_in_strava"]:
+                return False
+            same = _same_cells(stored, row.columns)
+            link = stored["linked_session_id"]
+            if link is not None:
+                live = _session_exists(conn, link)
+                if live:
+                    warnings = tuple(stored["warnings"]) if same else _warnings(conn, link, row)
+            elif same and stored["outcome"] == AMBIGUOUS:
+                candidates = _candidates(conn, row.start_time)
+        if link is not None:
+            if not live:
+                # A link to a deleted session is cleared: matched again from step 1.
+                if self.links.get(link) == row.activity_id:
+                    del self.links[link]
+                return False
+            if same:
+                file_row = job.FileRow(**base, outcome=UNCHANGED, session_id=link, detail=_warning_detail(warnings))
+                self.finish(None, file_row, warnings)
+                return True
+            # A live link is kept whatever steps 1-3 would now find; the cells are replaced.
+            record = self.record(row, stored["outcome"], link, stored["match"], warnings)
+            file_row = job.FileRow(**base, outcome=UPDATED, session_id=link, detail=_warning_detail(warnings))
+            self.finish(record, file_row, warnings)
+            return True
+        if not same:
+            return False
+        detail = None
+        if candidates:
+            # An unchanged ambiguous row: step 1 again, no file read; it links when the tie is resolved.
+            decision = strava_match._link(
+                candidates, row, _LinkedByOthers(self.links, row.activity_id), ATTACHED, MATCH_CSV_START
+            )
+            if decision.outcome != AMBIGUOUS:
+                self.conclude(row, base, decision, None)
+                return True
+            detail = decision.detail
+        self.finish(None, job.FileRow(**base, outcome=UNCHANGED, detail=detail))
+        return True
 
     def decide(self, row: CsvRow, base: dict) -> None:
         read: dict[str, object] = {}
@@ -275,7 +365,10 @@ class _Run:
         if decision.store:
             self.store(row, base, read["bytes"])  # type: ignore[arg-type]
             return
-        error = read.get("error")
+        self.conclude(row, base, decision, read.get("error"))
+
+    def conclude(self, row: CsvRow, base: dict, decision: Decision, error: object) -> None:
+        """A decision that stores no session: the row's record and report row."""
         status = error.status if decision.outcome == FAILED and isinstance(error, FileError) else None
         kind = None
         if decision.outcome == NOT_FIT:
@@ -366,26 +459,6 @@ class _Run:
             activity_id = None
         start_time = strava_csv.parse_activity_date(cell(strava_csv.ACTIVITY_DATE) or "")
         record = None
-        if activity_id is not None and activity_id not in self.seen:
-            self.seen.add(activity_id)
-            columns = dict(zip(self.keys, failed.cells, strict=False))
-            record = {
-                "activity_id": activity_id,
-                "start_time": start_time,
-                "activity_type": cell(strava_csv.ACTIVITY_TYPE),
-                "name": cell(strava_csv.ACTIVITY_NAME),
-                "description": columns.get(DESCRIPTION_COLUMN),
-                "private_note": columns.get(PRIVATE_NOTE_COLUMN),
-                "filename": cell(strava_csv.FILENAME),
-                "columns": columns,
-                "linked_session_id": None,
-                "match": None,
-                "outcome": FAILED,
-                "warnings": [],
-                "deleted_in_strava": False,
-                "import_id": self.work.import_id,
-                "updated_at": _now(),
-            }
         file_row = job.FileRow(
             seq,
             failed.entry,
@@ -395,6 +468,46 @@ class _Run:
             detail=failed.detail,
             strava_activity_id=activity_id,
         )
+        if activity_id is not None and activity_id not in self.seen:
+            self.seen.add(activity_id)
+            columns = dict(zip(self.keys, failed.cells, strict=False))
+            # Step 0: a stored row whose cells are unchanged reads unchanged and writes nothing; a
+            # live link survives a row that no longer parses.
+            with closing(self.work.connect()) as conn:
+                stored = db.read_strava_row(conn, activity_id)
+                link = None if stored is None else stored["linked_session_id"]
+                live = link is not None and _session_exists(conn, link)
+            if stored is not None and not stored["deleted_in_strava"] and _same_cells(stored, columns):
+                unchanged = job.FileRow(
+                    seq,
+                    failed.entry,
+                    start_time,
+                    UNCHANGED,
+                    session_id=link if live else None,
+                    sport=cell(strava_csv.ACTIVITY_TYPE),
+                    strava_activity_id=activity_id,
+                )
+                self.finish(None, unchanged, tuple(stored["warnings"]) if live else ())
+                return
+            record = {
+                "activity_id": activity_id,
+                "start_time": start_time,
+                "activity_type": cell(strava_csv.ACTIVITY_TYPE),
+                "name": cell(strava_csv.ACTIVITY_NAME),
+                "description": columns.get(DESCRIPTION_COLUMN),
+                "private_note": columns.get(PRIVATE_NOTE_COLUMN),
+                "filename": cell(strava_csv.FILENAME),
+                "columns": columns,
+                "linked_session_id": link if live else None,
+                "match": stored["match"] if live else None,  # type: ignore[index]
+                "outcome": FAILED,
+                "warnings": list(stored["warnings"]) if live else [],  # type: ignore[index]
+                "deleted_in_strava": False,
+                "import_id": self.work.import_id,
+                "updated_at": _now(),
+            }
+            if live:
+                file_row = replace(file_row, session_id=link)
         self.finish(record, file_row)
 
 
@@ -415,14 +528,23 @@ def run_strava(work: job._Job, path: Path, prefix: str) -> None:
     with zipfile.ZipFile(path) as zf:
         result = _read_csv(zf, prefix)
         work.counts["strava"] = _empty_strava_counts()
-        total = len(result.rows) + len(result.failed)
+        rows_total = len(result.rows) + len(result.failed)
+        present = {row.activity_id for row in result.rows} | {
+            failed.activity_id for failed in result.failed if failed.activity_id is not None
+        }
         with closing(work.connect()) as conn:
-            links = _read_links(conn)
+            absent = _absent_ids(conn, present)
+        total = rows_total + len(absent)
         work.update(
             "UPDATE imports SET status = 'running', source = 'strava', activities_total = ?, counts = ?"
             " WHERE import_id = ?",
             (total, json.dumps(work.counts), work.import_id),
         )
+        # Step 0's first part, before any row is matched, so a re-upload can take a freed link.
+        for offset, activity_id in enumerate(absent, start=1):
+            _mark_deleted(work, activity_id, rows_total + offset)
+        with closing(work.connect()) as conn:
+            links = _read_links(conn)
         run = _Run(work, zf, prefix, result.keys, links=links)
         seq = 0
         for row in result.rows:
@@ -431,3 +553,40 @@ def run_strava(work: job._Job, path: Path, prefix: str) -> None:
         for failed in result.failed:
             seq += 1
             run.failed(seq, failed)
+        if absent:
+            work.update(
+                "UPDATE imports SET activities_processed = ?, counts = ? WHERE import_id = ?",
+                (total, json.dumps(work.counts), work.import_id),
+            )
+
+
+def _mark_deleted(work: job._Job, activity_id: int, seq: int) -> None:
+    """A stored row absent from this archive: marked ``deleted_in_strava`` and unlinked, its cells
+    kept, and its report row (``seq`` after the CSV's rows) written in the same transaction."""
+    counts = _bumped(work.counts, DELETED_IN_STRAVA)
+    with closing(work.connect()) as conn, conn:
+        stored = db.read_strava_row(conn, activity_id)
+        if stored is None:  # gone since it was listed: nothing to mark
+            return
+        record = {
+            **stored,
+            "linked_session_id": None,
+            "match": None,
+            "outcome": DELETED_IN_STRAVA,
+            "warnings": [],
+            "deleted_in_strava": True,
+            "import_id": work.import_id,
+            "updated_at": _now(),
+        }
+        db.write_strava_row(conn, record)
+        file_row = job.FileRow(
+            seq,
+            f"{strava_csv.CSV_NAME}#{activity_id}",
+            stored["start_time"],
+            DELETED_IN_STRAVA,
+            sport=stored["activity_type"],
+            strava_activity_id=activity_id,
+        )
+        job._insert_file_row(conn, work.import_id, file_row)
+        conn.execute("UPDATE imports SET counts = ? WHERE import_id = ?", (json.dumps(counts), work.import_id))
+    work.counts = counts
