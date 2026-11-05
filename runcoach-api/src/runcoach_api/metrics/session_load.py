@@ -39,7 +39,12 @@ set only when TRIMP is computed. Equality at the bounds is computed: ``r =
 
 **Gates, in order, first match wins** (reference "Gates"). Built here:
 1 ``sport_not_running`` (rtss and srpe carry it too), 2 ``declared_capture``
-for ``resting_hrv_check`` or ``health_snapshot`` (rtss and srpe too), 3
+for ``resting_hrv_check`` or ``health_snapshot`` (rtss and srpe too), then
+the named gate ``strava_not_running`` (F031; rtss and srpe too) when
+``strava_exclusion`` holds: the running session is linked to a Strava row,
+not deleted in Strava, whose ``Activity Type`` is not running family
+(``STRAVA_RUNNING_TYPES``), and the body's ``strava_activity_id`` names that
+row (null under every other outcome), then 3
 ``no_hr`` when ``hr_time_s`` is 0, 4 ``missing_anchor`` when resting or max
 has no value (``unavailable_fields`` names them), 5 ``order_conflict`` when
 resting >= max among the values used (equality included), 6
@@ -59,7 +64,8 @@ either bound included) gives ``threshold_order_conflict``;
 ``float(threshold) - float(resting)`` not a positive finite float gives
 ``not_representable``; TRIMP is still
 served. When TRIMP is unavailable ``session_load`` carries the same reason
-and ``driver`` is null; under gates 1 and 2 the inputs are still reported.
+and ``driver`` is null; under gates 1 and 2 and ``strava_not_running`` the
+inputs are still reported.
 
 **The wrist path.** ``hr_source`` is ``chest_strap``, ``wrist_ppg`` or null;
 anything other than ``chest_strap`` (null and an unknown string included)
@@ -98,7 +104,10 @@ is a plain mapping: ``session_id``, ``sport``, ``activity_tag``,
 effective_from, out_of_period}`` holding the value used and where it came
 from; those four blocks are echoed in ``inputs`` with ``EMPTY_VALUE``'s keys,
 a missing key at its default. A block that is absent or not a mapping is the
-writer's defect and raises ``ValueError`` naming the field.
+writer's defect and raises ``ValueError`` naming the field. ``strava`` is the
+linked Strava row not deleted in Strava, as ``{activity_type, activity_id}``,
+or None (or absent) when no such row links the session; any other value
+raises ``ValueError``.
 """
 
 from __future__ import annotations
@@ -142,12 +151,17 @@ first five only). Read-only; a writer copies it (``dict(EMPTY_VALUE)`` or ``{**E
 
 NO_THRESHOLD_PACE = "no_threshold_pace"
 NO_RPE = "no_rpe"
-SESSION_WIDE_REASONS = ("sport_not_running", "declared_capture")
-"""Gates 1 and 2: the reasons rtss and srpe carry as well as hr_trimp."""
+STRAVA_NOT_RUNNING = "strava_not_running"
+STRAVA_RUNNING_TYPES = frozenset({"Run", "Trail Run", "Virtual Run"})
+"""Strava's running family (F030 reference section 3), compared exactly as the export spells it."""
+
+SESSION_WIDE_REASONS = ("sport_not_running", "declared_capture", STRAVA_NOT_RUNNING)
+"""Gates 1 and 2 and ``strava_not_running``: the reasons rtss and srpe carry as well as hr_trimp."""
 
 SERVED_REASONS = (
     "sport_not_running",
     "declared_capture",
+    STRAVA_NOT_RUNNING,
     "no_hr",
     "missing_anchor",
     "order_conflict",
@@ -204,6 +218,21 @@ def _value_block(inputs: Mapping[str, object], field_name: str) -> dict:
     return {key: block.get(key, default) for key, default in EMPTY_VALUE.items()}
 
 
+def strava_exclusion(sport: object, activity_tag: object, strava: Mapping[str, object] | None) -> bool:
+    """True exactly when the gate chain serves ``strava_not_running``: a ``running`` session that
+    gates 1 and 2 do not stop (its tag is not a declared capture), linked to a Strava row (``strava``,
+    the reader passes only a row not deleted in Strava) whose ``activity_type`` is not running family.
+    ``strava`` None is no link; anything other than a mapping is the writer's defect (``ValueError``)."""
+    if strava is None:
+        return False
+    if not isinstance(strava, Mapping):
+        # A ValueError, as every writer defect in this module is.
+        raise ValueError(f"inputs.strava is not a Strava block: {type(strava).__name__} {strava!r}")  # noqa: TRY004
+    if sport != RUNNING or activity_tag in DECLARED_CAPTURE_TAGS:
+        return False
+    return strava.get("activity_type") not in STRAVA_RUNNING_TYPES
+
+
 def _hr_time_s(segment_rows: Iterable[Mapping[str, object]]) -> float:
     """The sum of ``dt`` over counted segments, a moving gap included, whose start HR is usable."""
     total = 0.0
@@ -235,6 +264,8 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
     features = inputs.get("features") or {}
     segment_rows = inputs.get("segment_rows") or []
     values = {field_name: _value_block(inputs, field_name) for field_name in ANCHOR_FIELDS}
+    strava = inputs.get("strava")
+    excluded_by_strava = strava_exclusion(sport, inputs.get("activity_tag"), strava)  # type: ignore[arg-type]
 
     hr_time_s = _hr_time_s(segment_rows)  # type: ignore[arg-type]
     timer_time_s = inputs.get("timer_time_s")
@@ -259,7 +290,7 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
     }
     load_reason: str | None = None
 
-    # Gates 1-9, in the reference's order; exact integers only.
+    # Gates 1-9 and the named strava_not_running gate, in the reference's order; exact integers only.
     resting = values["resting_hr_bpm"]["value"]
     max_hr = values["max_hr_bpm"]["value"]
     threshold = values["threshold_hr_bpm"]["value"]
@@ -271,6 +302,8 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
         hr_trimp["unavailable"] = "sport_not_running"
     elif inputs.get("activity_tag") in DECLARED_CAPTURE_TAGS:
         hr_trimp["unavailable"] = "declared_capture"
+    elif excluded_by_strava:
+        hr_trimp["unavailable"] = STRAVA_NOT_RUNNING
     elif hr_time_s == 0.0:
         hr_trimp["unavailable"] = "no_hr"
     elif resting is None or max_hr is None:
@@ -336,4 +369,5 @@ def compute_session_load(inputs: Mapping[str, object]) -> dict:
             "srpe": _metric(None, session_wide or NO_RPE),
         },
         "inputs": body_inputs,
+        "strava_activity_id": strava["activity_id"] if trimp_reason == STRAVA_NOT_RUNNING else None,  # type: ignore[index]
     }

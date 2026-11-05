@@ -63,8 +63,8 @@ RUN_FIXTURES = (
     "hilly_long_run_17k_fr945.fit",
 )
 WALK_FIXTURE = "strap_cool_down_walk.fit"
-EXCLUSION_REASONS = {"sport_not_running", "declared_capture"}
-#: F017's closed reason enum minus the two exclusion reasons: what an uncounted run may carry.
+EXCLUSION_REASONS = {"sport_not_running", "declared_capture", "strava_not_running"}
+#: F017's closed reason enum minus the exclusion reasons: what an uncounted run may carry.
 CHART_REASONS = (
     "no_hr",
     "missing_anchor",
@@ -919,7 +919,7 @@ def test_the_chart_blocks_of_the_contract_are_ascii_only() -> None:
     assert tag["description"].isascii()
 
 
-def test_the_reason_enum_is_f017s_minus_the_two_exclusions() -> None:
+def test_the_reason_enum_is_f017s_minus_the_exclusions() -> None:
     served = app.openapi()["components"]["schemas"]
     contract = _contract()["components"]["schemas"]
     f017 = set(contract["SessionLoadReason"]["enum"])
@@ -958,7 +958,7 @@ def test_every_chart_component_matches_the_served_model_property_by_property() -
     excluded = _normalised(contract["components"]["schemas"]["LoadChartDay"]["properties"]["excluded"])
     assert excluded["items"]["ref"] == "LoadChartExcluded", excluded
     reason = _normalised(contract["components"]["schemas"]["LoadChartExcluded"]["properties"]["reason"])
-    assert reason["enum"] == ["declared_capture", "sport_not_running"], reason
+    assert reason["enum"] == ["declared_capture", "sport_not_running", "strava_not_running"], reason
 
 
 def test_the_walker_opens_array_items() -> None:

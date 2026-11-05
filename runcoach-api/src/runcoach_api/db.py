@@ -1448,7 +1448,11 @@ def read_session_load_inputs(conn: sqlite3.Connection, session_id: str) -> dict 
     the records ``read_session_feature_inputs`` returns), and per HR field
     (``resting_hr_bpm``, ``max_hr_bpm``, ``threshold_hr_bpm``, ``sex``) the
     value the session's own file carried as a ``session_file`` block, or an
-    empty block when the file carried none. Read-only, and it runs inside an
+    empty block when the file carried none, and ``strava``: the
+    ``strava_activities`` row linked to the session and not
+    ``deleted_in_strava``, as ``{activity_type, activity_id}``, or None (F031;
+    every path that builds a load body reads it here, so the upload, the
+    recompute and the one-time fill agree). Read-only, and it runs inside an
     open transaction when ``persist`` calls it, so it opens none itself and
     sees the uncommitted rows.
     """
@@ -1476,6 +1480,12 @@ def read_session_load_inputs(conn: sqlite3.Connection, session_id: str) -> dict 
     }
     for field_name in _LOAD_FIELDS:
         inputs[field_name] = _from_session_file(row[field_name], row["session_id"])
+    strava = conn.execute(
+        "SELECT activity_type, activity_id FROM strava_activities"
+        " WHERE linked_session_id = ? AND deleted_in_strava = 0",
+        (session_id,),
+    ).fetchone()
+    inputs["strava"] = None if strava is None else {"activity_type": strava[0], "activity_id": strava[1]}
     return inputs
 
 

@@ -43,6 +43,7 @@ TOLERANCE = 0.01
 GATE_REASONS = (
     "sport_not_running",
     "declared_capture",
+    "strava_not_running",
     "no_hr",
     "missing_anchor",
     "order_conflict",
@@ -54,7 +55,7 @@ GATE_REASONS = (
     "no_threshold_hr",
     "threshold_order_conflict",
 )
-RESPONSE_KEYS = {"session_id", "sport", "session_load", "flags", "input_flags", "metrics", "inputs"}
+RESPONSE_KEYS = {"session_id", "sport", "session_load", "flags", "input_flags", "metrics", "inputs", "strava_activity_id"}
 INPUT_KEYS = {
     "hr_time_s",
     "recorded_time_s",

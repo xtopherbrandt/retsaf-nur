@@ -11,8 +11,9 @@ Rows are read **by key** (``session_id``, ``start_time``, ``load_value``, ``load
 **Every session is in exactly one group** (F018 reference, "What it reads"):
 
 - *counted*: the saved load is a number; it adds to the day's load.
-- *excluded*: the saved load is unavailable ``sport_not_running`` or ``declared_capture``; it
-  adds nothing and does not mark the day (not running load, by design).
+- *excluded*: the saved load is unavailable ``sport_not_running``, ``declared_capture`` or
+  ``strava_not_running`` (a stored run Strava types as another sport, F031); it adds nothing and
+  does not mark the day (not running load, by design).
 - *uncounted*: the saved load is unavailable for any other reason (a running session the load
   computation could not price); it adds nothing and the day is **marked**. A run without a load
   is never served as 0 (user ruling C4): the chart's recursion cannot drop a day, so an
@@ -50,7 +51,7 @@ shorter than that the seed moves each day, and every value after it moves with i
 **A long gap in history** (IDEA-143; user ruling 2026-10-10, "carry on and mark"): the recursion
 runs on through a break, so every served value is what the formulas give and the return-to-running
 spike stays visible to the later ACWR. What the chart adds is a mark. An **empty day** holds no
-counted and no uncounted run; an excluded session (a ride, a resting or declared capture) does not
+counted and no uncounted run; an excluded session (a ride, a declared capture, a Strava non-run) does not
 end a stretch of empty days, a day with only an uncounted run does. A stretch of **more than**
 ``GAP_MARK_DAYS`` empty days that ends in a running day on or before ``today`` is a ``Gap`` in
 ``gaps`` (first and last empty day, and their count); the first running day after it and the
@@ -80,11 +81,11 @@ K_ATL = 1 - math.exp(-1 / ATL_DAYS)
 SEED_WINDOW_DAYS = CTL_DAYS
 """The seed averages this many days of history; ``uncounted_in_window`` counts over the same span."""
 
-EXCLUSION_REASONS = frozenset({"sport_not_running", "declared_capture"})
-"""The two unavailable-load reasons that exclude a session without marking its day."""
+EXCLUSION_REASONS = frozenset({"sport_not_running", "declared_capture", "strava_not_running"})
+"""The three unavailable-load reasons that exclude a session without marking its day."""
 
 #: A stretch of **more than** this many consecutive empty local days (no counted and no
-#: uncounted run; an excluded ride or capture does not end it) is a gap in history (IDEA-143,
+#: uncounted run; an excluded session does not end it) is a gap in history (IDEA-143,
 #: user ruling 2026-10-10). 21 empty days are not a gap; 22 are. It is the same silence the HRV
 #: trend calls a break (``hrv_trend.GAP_RESET_DAYS``, also strict), so the two series agree on
 #: how long an absence has to be before it is one.

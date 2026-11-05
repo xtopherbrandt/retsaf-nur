@@ -1000,11 +1000,13 @@ from enum import Enum
 
 class SessionLoadReason(str, Enum):
     """Why HR-TRIMP, and with it `session_load`, has no value: the F017 reference's gates in order (first match
-    wins), then the reference step's no_threshold_hr, threshold_order_conflict and not_representable, which leave
+    wins; `strava_not_running`, F031, comes after gate 2: a running session linked to a Strava activity of
+    another sport), then the reference step's no_threshold_hr, threshold_order_conflict and not_representable, which leave
     `hr_trimp.value` served while `session_load` is unavailable (not_representable is also gate 9's reason)."""
 
     SPORT_NOT_RUNNING = "sport_not_running"
     DECLARED_CAPTURE = "declared_capture"
+    STRAVA_NOT_RUNNING = "strava_not_running"
     NO_HR = "no_hr"
     MISSING_ANCHOR = "missing_anchor"
     ORDER_CONFLICT = "order_conflict"
@@ -1018,8 +1020,8 @@ class SessionLoadReason(str, Enum):
 
 
 _SESSION_WIDE_REASON_DESCRIPTION = (
-    "`sport_not_running` and `declared_capture` (gates 1 and 2) are carried by every metric; otherwise "
-    "the metric's own reason."
+    "`sport_not_running`, `declared_capture` (gates 1 and 2) and `strava_not_running` are carried by every "
+    "metric; otherwise the metric's own reason."
 )
 _LOAD_SOURCE_DESCRIPTION = (
     "`session_file` when the session's own FIT file carried the value. Otherwise, for an HR value, the setting in "
@@ -1069,7 +1071,7 @@ class Rtss(BaseModel):
     """rTSS: unavailable until threshold pace exists (`no_threshold_pace`)."""
 
     value: float | None = Field(description="Always null today: no threshold pace exists to compute it from.")
-    unavailable: Literal["no_threshold_pace", "sport_not_running", "declared_capture"] = Field(
+    unavailable: Literal["no_threshold_pace", "sport_not_running", "declared_capture", "strava_not_running"] = Field(
         description=f"`no_threshold_pace` on a counted running session. {_SESSION_WIDE_REASON_DESCRIPTION}"
     )
 
@@ -1078,7 +1080,7 @@ class Srpe(BaseModel):
     """sRPE-load: unavailable until an RPE input exists (`no_rpe`)."""
 
     value: float | None = Field(description="Always null today: no RPE input path exists.")
-    unavailable: Literal["no_rpe", "sport_not_running", "declared_capture"] = Field(
+    unavailable: Literal["no_rpe", "sport_not_running", "declared_capture", "strava_not_running"] = Field(
         description=f"`no_rpe` on a counted running session. {_SESSION_WIDE_REASON_DESCRIPTION}"
     )
 
@@ -1174,7 +1176,12 @@ class SessionLoad(BaseModel):
         description="F013's feature flags and the session's stored `quality_flags`, passed through, each at most once."
     )
     metrics: SessionLoadMetrics
-    inputs: SessionLoadInputs = Field(description="The values used and their sources, reported under every gate, gates 1 and 2 included.")
+    inputs: SessionLoadInputs = Field(description="The values used and their sources, reported under every gate, gates 1 and 2 and `strava_not_running` included.")
+    strava_activity_id: int | None = Field(
+        default=None,
+        description="The Strava Activity ID of the linked row that excludes the session, set only when the reason is "
+        "`strava_not_running`; null otherwise, and on a body saved before the field existed.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1187,7 +1194,8 @@ class SessionLoad(BaseModel):
 
 class LoadChartReason(str, Enum):
     """Why an uncounted run's saved load is unavailable: F017's `SessionLoadReason` minus the two
-    exclusion reasons (`sport_not_running` and `declared_capture` exclude a session instead)."""
+    exclusion reasons (`sport_not_running`, `declared_capture` and `strava_not_running` exclude a
+    session instead)."""
 
     NO_HR = "no_hr"
     MISSING_ANCHOR = "missing_anchor"
@@ -1210,18 +1218,19 @@ class LoadChartCounted(BaseModel):
 
 class LoadChartUncounted(BaseModel):
     """A running session the day could not count: its saved load is unavailable for a reason other
-    than the two exclusions. It adds nothing and marks the day; it is never served as a 0."""
+    than the exclusions. It adds nothing and marks the day; it is never served as a 0."""
 
     session_id: str
     reason: LoadChartReason = Field(description="The saved `session_load.unavailable` reason.")
 
 
 class LoadChartExcluded(BaseModel):
-    """A session that is not running load by design: a non-running sport or a declared resting
-    capture. It adds nothing and does not mark the day."""
+    """A session that is not running load by design: a non-running sport, a declared resting
+    capture, or a stored run whose linked Strava activity is another sport (`strava_not_running`).
+    It adds nothing and does not mark the day."""
 
     session_id: str
-    reason: Literal["sport_not_running", "declared_capture"]
+    reason: Literal["sport_not_running", "declared_capture", "strava_not_running"]
 
 
 class LoadChartSeed(BaseModel):

@@ -260,11 +260,13 @@ def test_max_two_to_the_63_gives_a_tiny_finite_trimp() -> None:
 
 
 def test_every_served_reason_is_in_the_reference_order() -> None:
-    """The module's own list of the reasons it can serve: gates 1-9 and the two reference
-    reasons, in the reference's order."""
+    """The module's own list of the reasons it can serve: gates 1-9, the named
+    ``strava_not_running`` gate after gate 2, and the two reference reasons, in the reference's
+    order."""
     assert session_load.SERVED_REASONS == (
         "sport_not_running",
         "declared_capture",
+        "strava_not_running",
         "no_hr",
         "missing_anchor",
         "order_conflict",

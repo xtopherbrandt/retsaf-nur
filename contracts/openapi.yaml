@@ -3100,7 +3100,9 @@ components:
         Why HR-TRIMP, and with it session_load, has no value. The F017
         reference's gates in order, first match wins: `sport_not_running`,
         `declared_capture` (a resting_hrv_check or health_snapshot tag),
-        `no_hr` (no running time with usable HR), `missing_anchor` (resting or
+        `strava_not_running` (F031: a running session linked to a Strava
+        activity, not deleted in Strava, whose Activity Type is not Run,
+        Trail Run or Virtual Run), `no_hr` (no running time with usable HR), `missing_anchor` (resting or
         max HR has no value used; unavailable_fields names them),
         `order_conflict` (resting >= max among the values used),
         `avg_hr_below_resting` and `avg_hr_above_max` (average HR outside the
@@ -3114,6 +3116,7 @@ components:
       enum:
         - sport_not_running
         - declared_capture
+        - strava_not_running
         - no_hr
         - missing_anchor
         - order_conflict
@@ -3157,14 +3160,14 @@ components:
       required: [value, unavailable]
       properties:
         value: { type: number, nullable: true, description: "Always null today: no threshold pace exists to compute it from." }
-        unavailable: { type: string, enum: [no_threshold_pace, sport_not_running, declared_capture], description: "no_threshold_pace on a counted running session; gates 1 and 2 are carried by every metric." }
+        unavailable: { type: string, enum: [no_threshold_pace, sport_not_running, declared_capture, strava_not_running], description: "no_threshold_pace on a counted running session; gates 1 and 2 and strava_not_running are carried by every metric." }
     Srpe:
       type: object
       description: "sRPE-load: unavailable until an RPE input exists."
       required: [value, unavailable]
       properties:
         value: { type: number, nullable: true, description: "Always null today: no RPE input path exists." }
-        unavailable: { type: string, enum: [no_rpe, sport_not_running, declared_capture], description: "no_rpe on a counted running session; gates 1 and 2 are carried by every metric." }
+        unavailable: { type: string, enum: [no_rpe, sport_not_running, declared_capture, strava_not_running], description: "no_rpe on a counted running session; gates 1 and 2 and strava_not_running are carried by every metric." }
     SessionLoadMetrics:
       type: object
       description: "The three load metrics of spec/03 section 3.4; only HR-TRIMP is computed."
@@ -3243,15 +3246,17 @@ components:
         metrics: { $ref: "#/components/schemas/SessionLoadMetrics" }
         inputs:
           allOf: [ { $ref: "#/components/schemas/SessionLoadInputs" } ]
-          description: "The values used and their sources, reported under every gate, gates 1 and 2 included."
+          description: "The values used and their sources, reported under every gate, gates 1 and 2 and strava_not_running included."
+        strava_activity_id: { type: integer, nullable: true, default: null, description: "The Strava Activity ID of the linked row that excludes the session, set only when the reason is strava_not_running; null otherwise, and on a body saved before the field existed." }
 
     # ---- Load chart (F018, implemented) --------------------------------
     LoadChartReason:
       type: string
       description: >
         Why an uncounted run's saved load is unavailable: SessionLoadReason
-        minus the two exclusion reasons (sport_not_running and
-        declared_capture exclude a session instead of marking its day).
+        minus the three exclusion reasons (sport_not_running,
+        declared_capture and strava_not_running exclude a session instead of
+        marking its day).
       enum:
         - no_hr
         - missing_anchor
@@ -3274,7 +3279,7 @@ components:
       type: object
       description: >
         A running session the day could not count: its saved load is
-        unavailable for a reason other than the two exclusions. It adds
+        unavailable for a reason other than the exclusions. It adds
         nothing and marks the day; it is never served as a 0.
       required: [session_id, reason]
       properties:
@@ -3285,12 +3290,14 @@ components:
     LoadChartExcluded:
       type: object
       description: >
-        A session that is not running load by design: a non-running sport or
-        a declared resting capture. It adds nothing and does not mark the day.
+        A session that is not running load by design: a non-running sport, a
+        declared resting capture, or a stored run whose linked Strava activity
+        is another sport (strava_not_running). It adds nothing and does not
+        mark the day.
       required: [session_id, reason]
       properties:
         session_id: { type: string }
-        reason: { type: string, enum: [sport_not_running, declared_capture] }
+        reason: { type: string, enum: [sport_not_running, declared_capture, strava_not_running] }
     LoadChartSeed:
       type: object
       description: >
@@ -3530,6 +3537,7 @@ components:
         inputs:
           allOf: [ { $ref: "#/components/schemas/SessionLoadInputs" } ]
           description: "As SessionLoad.inputs; each HR block carries out_of_period."
+        strava_activity_id: { type: integer, nullable: true, default: null, description: "As SessionLoad.strava_activity_id." }
         changed: { type: boolean, description: "Whether any field of the new body differs from the body saved before, compared after filling the dated-entry input keys' defaults on the old body; true when the session had no saved load." }
     RaceTagsUpdate:
       type: object
