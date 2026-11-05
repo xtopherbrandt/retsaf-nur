@@ -58,13 +58,14 @@ NOW = goal_seed.NOW  # 2026-10-14 12:00 UTC
 NAMES = ["functional_threshold_pace", "riegel_exponent", "critical_speed"]
 UNAVAILABLE = ["no_candidate_runs", "too_few_stretches", "spread_too_narrow", "longest_far_off", "estimate_not_finite"]
 
-# F033 reference section 1, typed in from the reference (not read from the estimator).
+# F033 reference section 1, typed in from the reference (not read from the estimator), with the
+# far-off cut of the F034 reference section 1.
 REFERENCE_PARAMETERS = {
     "window_days": 90,
     "stretch_lengths_s": [120, 180, 300, 480, 720, 1200],
     "pause_break_s": 10,
     "population_b": 1.06,
-    "far_off_s_per_km": 15,
+    "far_off_s_per_km": 4,
     "min_stretches": 3,
     "max_shortest_s": 300,
     "min_longest_s": 720,
@@ -79,9 +80,10 @@ def _sept(day: int) -> datetime:
 
 # Six flat runs, (start, pace s/km, time s): each one's best at its expected length is the only
 # choice there, from the longest length down (one run per length), and each shorter stretch is
-# faster than every longer one, so all six are kept. The far-off excess is about +7.8 s/km.
+# faster than every longer one, so all six are kept. The far-off excess is about +2.8 s/km, under
+# the 4 s/km cut (the 720 s pace of 245 predicts about 252.19 at 1200 s).
 CURVE = (
-    (_sept(1), 260.0, 1300.0),  # 1200 s
+    (_sept(1), 255.0, 1300.0),  # 1200 s
     (_sept(3), 245.0, 800.0),  # 720 s
     (_sept(5), 235.0, 500.0),  # 480 s
     (_sept(7), 225.0, 320.0),  # 300 s
@@ -166,7 +168,8 @@ def test_the_critical_speed_entry_carries_exactly_the_schema_keys(contract: dict
         goal_seed._plant_every_load()
         _sql("UPDATE sessions SET quality_flags = ? WHERE session_id = ?", '["smart_recording"]', ids[0])
         flagged = ids[0]
-        extra = _run(_sept(2), 262.0, 1300.0)  # takes the 1200 s length in the flagged run's place
+        # Takes the 1200 s length in the flagged run's place (excess about +3.8, under the cut).
+        extra = _run(_sept(2), 256.0, 1300.0)
         goal_seed._plant_every_load()
         entry = _cs(_state(client))
     _print_stretches(entry)
@@ -188,7 +191,7 @@ def test_the_critical_speed_entry_carries_exactly_the_schema_keys(contract: dict
     assert entry["estimate"]["unit"] == "s/km" and entry["estimate"]["provisional"] is False
     assert entry["estimate"]["confidence"] == "low"
     expected = dict(zip(CURVE_LENGTHS, [extra, *ids[1:]], strict=True))
-    paces = dict(zip(CURVE_LENGTHS, [262.0] + [p for _s, p, _t in CURVE[1:]], strict=True))
+    paces = dict(zip(CURVE_LENGTHS, [256.0] + [p for _s, p, _t in CURVE[1:]], strict=True))
     assert [s["length_s"] for s in entry["stretches"]] == sorted(CURVE_LENGTHS)
     for s in entry["stretches"]:
         assert s["session_id"] == expected[s["length_s"]]
@@ -246,16 +249,23 @@ def test_critical_speed_parameters_equal_the_reference() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("tagged", "label"), [(0, "low"), (1, "medium"), (2, "high")])
-def test_the_label_and_each_stretch_s_run_are_served_as_the_estimator_reads_them(tagged: int, label: str) -> None:
-    """The ``CURVE`` runs with the 1200 s and 720 s runs named, and ``tagged`` of them tagged Race
-    (1300 s and 800 s, both 1800 s or less): the label counts them (0 ``low``, 1 ``medium``, 2
-    ``high``), and each stretch carries its run's tag, name and duration."""
+@pytest.mark.parametrize(
+    ("tagged", "label"), [((), "low"), ((1200,), "medium"), ((1200, 720), "medium"), ((1200, 720, 300), "high")]
+)
+def test_the_label_and_each_stretch_s_run_are_served_as_the_estimator_reads_them(
+    tagged: tuple[int, ...], label: str
+) -> None:
+    """The ``CURVE`` runs with the 1200 s and 720 s runs named, and the runs at the ``tagged``
+    lengths tagged Race (1300 s, 800 s and 320 s, all 1800 s or less): the label counts them (0
+    ``low``, 1 ``medium``, 2 or more ``high``), and ``high`` is held at ``medium`` unless a race
+    fills a stretch of 300 s or less (F034 reference section 1); each stretch carries its run's
+    tag, name and duration."""
     names = ("Threshold workout", "Speed Repeats")
     with TestClient(app) as client:
         ids = [_run(*CURVE[0], name=names[0]), _run(*CURVE[1], name=names[1]), *_runs(*CURVE[2:])]
+        by_id = dict(zip(CURVE_LENGTHS, ids, strict=True))
         if tagged:
-            goal_seed._put_tags(client, ids[:tagged])
+            goal_seed._put_tags(client, [by_id[length] for length in tagged])
         goal_seed._plant_every_load()
         entry = _cs(_state(client))
     _print_stretches(entry)
@@ -266,9 +276,11 @@ def test_the_label_and_each_stretch_s_run_are_served_as_the_estimator_reads_them
         stretch = by_length[length]
         assert stretch["session_id"] == ids[n]
         assert stretch["name"] == names[n]
-        assert stretch["activity_tag"] == ("race" if n < tagged else None)
         assert stretch["duration_s"] == CURVE[n][2]
-    assert all(by_length[length]["name"] is None and by_length[length]["activity_tag"] is None for length in (480, 300, 180, 120))
+    for length in CURVE_LENGTHS:
+        assert by_length[length]["session_id"] == by_id[length]
+        assert by_length[length]["activity_tag"] == ("race" if length in tagged else None)
+    assert all(by_length[length]["name"] is None for length in (480, 300, 180, 120))
 
 
 def _goal_bodies(client: TestClient) -> tuple[bytes, bytes]:
@@ -453,7 +465,7 @@ def test_each_unavailable_response_validates(contract: dict, reason: str) -> Non
     else:
         assert entry["stretches"]
     if reason == "longest_far_off":
-        assert entry["far_off_excess_s_per_km"] > 15
+        assert entry["far_off_excess_s_per_km"] > 4
     else:
         assert entry["far_off_excess_s_per_km"] is None
     _assert_validates(contract, entry)

@@ -51,7 +51,7 @@ raises: it runs inside the ``GET /state`` snapshot, where an exception is a 500 
    candidate run at all is ``no_candidate_runs``.
 5. Far off: the excess ``p_long - p_prev * (L_long / L_prev) ** ((b - 1) / b)`` at b
    ``POPULATION_B``, paces in s/km, over the two longest kept stretches; over ``FAR_OFF_S_PER_KM``
-   is ``longest_far_off``, the excess served (exactly 15 passes).
+   is ``longest_far_off``, the excess served (exactly 4 passes; F034 reference section 1).
 6. The line: ordinary least squares of distance on time over the kept stretches by centred sums;
    CS the slope (m/s), D' the intercept (m); ``s2 = SSR / (n - 2)``, ``se = sqrt(s2 / Sxx)``,
    ``se_D = sqrt(s2 * (1/n + mean_t^2 / Sxx))``, t from ``riegel_b.t_multiplier(n - 2)``. The CS
@@ -59,7 +59,12 @@ raises: it runs inside the ``GET /state`` snapshot, where an exception is a 500 
 7. The label: kept stretches whose run is tagged ``race``, is not admitted as a workout by a listed
    name and lasted ``SHORT_RACE_MAX_S`` or less (``timer_time_s``, else the summary's
    ``duration_s``; a real, finite number above 0, else unknown and not counted): 0 ``low``, 1
-   ``medium``, 2 or more ``high``. The fit error is not an input.
+   ``medium``, 2 or more ``high``. Then ``high`` is held at ``medium``, ``label_held_at_medium``
+   true, unless a kept stretch of ``MAX_SHORTEST_S`` (300 s) or less comes from a run that counts
+   (F034 reference section 1): the short end of the line must be backed by a short race. A
+   dropped stretch backs nothing. Every other served fit has ``label_held_at_medium`` false. The
+   hold comes after every figure is computed and moves none of them. The fit error is not an
+   input.
 8. CS, D', se, se_D, an interval end or a pace not finite, CS not positive, or the slow speed bound
    ``CS - t se`` at or below 0: ``estimate_not_finite``. D' at or below 0 is served as computed
    with ``d_prime_not_positive``.
@@ -87,7 +92,7 @@ WINDOW_DAYS = 90
 STRETCH_LENGTHS_S = gap_stretches.STRETCH_LENGTHS_S
 PAUSE_BREAK_S = gap_stretches.PAUSE_BREAK_S
 POPULATION_B = 1.06
-FAR_OFF_S_PER_KM = 15
+FAR_OFF_S_PER_KM = 4
 MIN_STRETCHES = 3
 MAX_SHORTEST_S = 300
 MIN_LONGEST_S = 720
@@ -182,7 +187,10 @@ class Stretch:
 @dataclass(frozen=True)
 class CriticalSpeedEstimate:
     """CS and D' at ``as_of``. Every figure is ``None`` when ``unavailable`` is set, except
-    ``far_off_excess_s_per_km``, which is served with ``longest_far_off``."""
+    ``far_off_excess_s_per_km``, which is served with ``longest_far_off``.
+    ``label_held_at_medium`` is true when two or more short races are kept but none at a stretch
+    of 300 s or less (the label is then ``medium``), false on any other served fit, and ``None``
+    when ``unavailable`` is set, as ``d_prime_not_positive`` is."""
 
     as_of: Any
     stretches: tuple[Stretch, ...]
@@ -197,6 +205,7 @@ class CriticalSpeedEstimate:
     d_prime_high_m: float | None
     d_prime_error_m: float | None
     d_prime_not_positive: bool | None
+    label_held_at_medium: bool | None
     error_m_per_s: float | None
     t_multiplier: float | None
     far_off_excess_s_per_km: float | None
@@ -435,6 +444,7 @@ def fit(bests: Sequence[RunBests], instant: Any) -> CriticalSpeedEstimate:
             d_prime_high_m=None,
             d_prime_error_m=None,
             d_prime_not_positive=None,
+            label_held_at_medium=None,
             error_m_per_s=None,
             t_multiplier=None,
             far_off_excess_s_per_km=excess,
@@ -484,6 +494,10 @@ def fit(bests: Sequence[RunBests], instant: Any) -> CriticalSpeedEstimate:
     if not all(math.isfinite(value) for value in (pace, pace_low, pace_high)):
         return unavailable(ESTIMATE_NOT_FINITE)
     races = sum(1 for _stretch, run in kept if _counts_as_short_race(run))
+    short_end_backed = any(
+        stretch.length_s <= MAX_SHORTEST_S and _counts_as_short_race(run) for stretch, run in kept
+    )
+    held = races >= 2 and not short_end_backed
     return CriticalSpeedEstimate(
         as_of=instant,
         stretches=tuple(stretches),
@@ -492,12 +506,13 @@ def fit(bests: Sequence[RunBests], instant: Any) -> CriticalSpeedEstimate:
         cs_s_per_km=pace,
         interval_low_s_per_km=pace_low,
         interval_high_s_per_km=pace_high,
-        label=LABELS[min(races, 2)],
+        label="medium" if held else LABELS[min(races, 2)],
         d_prime_m=d_prime,
         d_prime_low_m=d_low,
         d_prime_high_m=d_high,
         d_prime_error_m=se_d,
         d_prime_not_positive=d_prime <= 0,
+        label_held_at_medium=held,
         error_m_per_s=se,
         t_multiplier=t,
         far_off_excess_s_per_km=excess,

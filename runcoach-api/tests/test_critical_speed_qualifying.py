@@ -250,9 +250,10 @@ def _counted_reads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 # Six flat runs, (start, pace s/km, time s): each one's best at its length is the only choice there,
 # from the longest length down (one run per length), and each shorter stretch is faster than every
-# longer one, so all six are kept.
+# longer one, so all six are kept. The far-off excess is about +2.8 s/km, under the 4 s/km cut (the
+# 720 s pace of 245 predicts about 252.19 at 1200 s).
 CURVE = (
-    (_sept(1), 260.0, 1300.0),  # 1200 s
+    (_sept(1), 255.0, 1300.0),  # 1200 s
     (_sept(3), 245.0, 800.0),  # 720 s
     (_sept(5), 235.0, 500.0),  # 480 s
     (_sept(7), 225.0, 320.0),  # 300 s
@@ -345,7 +346,7 @@ def test_each_candidate_row_lands_on_its_reason(monkeypatch: pytest.MonkeyPatch)
     with its reason and source, in start order; the old cycling session is not listed; the six
     ``CURVE`` runs are the six stretches; the response is a 200."""
     with TestClient(app) as client:
-        curve = _curve((NOW - timedelta(days=89.99), 260.0, 1300.0), *CURVE[1:])
+        curve = _curve((NOW - timedelta(days=89.99), 255.0, 1300.0), *CURVE[1:])
         at_90 = _store(NOW - timedelta(days=90), _flat(1300.0, 200.0))
         ids: list[str] = []
         f013: dict[str, list[str] | None] = {}
@@ -618,7 +619,7 @@ def _seed_race(time_s: float, *, listed: bool = False) -> Callable[..., list[str
     def seed(declare) -> list[str]:
         if listed:
             declare(threshold_workout_names=[LISTED])
-        race = _store(_sept(1), _flat(time_s, 260.0), tag="race", workout_name=LISTED if listed else None)
+        race = _store(_sept(1), _flat(time_s, 255.0), tag="race", workout_name=LISTED if listed else None)
         return [race, *_curve(*CURVE[1:])]
 
     return seed
@@ -635,24 +636,33 @@ EDGES = [
         {"dropped": {300: 480}},
     ),
     (
-        "excess_14.99",
-        _seed_curve((_sept(1), _pace_for_excess(14.99), 1300.0), *CURVE[1:]),
+        "excess_3.99",
+        _seed_curve((_sept(1), _pace_for_excess(3.99), 1300.0), *CURVE[1:]),
         None,
         LENGTHS,
         "low",
-        {"excess": 14.99},
+        {"excess": 3.99},
     ),
     (
-        "excess_15.01",
-        _seed_curve((_sept(1), _pace_for_excess(15.01), 1300.0), *CURVE[1:]),
+        "excess_4.01",
+        _seed_curve((_sept(1), _pace_for_excess(4.01), 1300.0), *CURVE[1:]),
         "longest_far_off",
         LENGTHS,
         None,
-        {"excess": 15.01},
+        {"excess": 4.01},
     ),
     ("shortest_300", _seed_curve(*CURVE[:4]), None, (300, 480, 720, 1200), "low", {}),
     ("shortest_480", _seed_curve(*CURVE[:3]), "spread_too_narrow", (480, 720, 1200), None, {}),
-    ("longest_720", _seed_curve(*CURVE[1:]), None, (120, 180, 300, 480, 720), "low", {}),
+    # The 720 s run at 244 (not ``CURVE``'s 245): against 480 s at 235 its excess is about +3.5,
+    # under the 4 s/km cut (245 would be about +4.5 and refused).
+    (
+        "longest_720",
+        _seed_curve((_sept(3), 244.0, 800.0), *CURVE[2:]),
+        None,
+        (120, 180, 300, 480, 720),
+        "low",
+        {},
+    ),
     ("longest_480", _seed_curve(*CURVE[2:]), "spread_too_narrow", (120, 180, 300, 480), None, {}),
     ("two_kept", _seed_curve(*CURVE[:2]), "too_few_stretches", (720, 1200), None, {}),
     ("race_1800", _seed_race(1800.0), None, LENGTHS, "medium", {}),
@@ -679,7 +689,7 @@ def test_each_rule_edge_serves_through_the_route(
     the lengths served (an unavailable entry still serves its stretches), the label, and for a
     served fit every figure is the independent oracle's fit of the served kept stretches. A dropped
     stretch carries ``beaten_by_longer`` and the length that beat it; the far-off excess is served
-    either side of 15; a fit whose kept stretches all run at one speed has D' 0 and is flagged
+    either side of the 4 s/km cut; a fit whose kept stretches all run at one speed has D' 0 and is flagged
     ``d_prime_not_positive`` (with a speed that never rises with length, D' is never below 0)."""
     with TestClient(app) as client:
         seed(declared_config)

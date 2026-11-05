@@ -34,10 +34,13 @@ screens nothing.
   imports nothing from the app either.
 - **The far-off excess** is ``p_long - p_prev * (L_long / L_prev) ** ((b - 1) / b)`` at b 1.06, the
   paces in s/km.
-- **The label** counts the stretches whose run is tagged ``race``, not admitted as a workout, and
-  lasted 1800 s or less: 0 ``low``, 1 ``medium``, 2 or more ``high``.
+- **The label** counts the kept stretches whose run is tagged ``race``, not admitted as a workout,
+  and lasted 1800 s or less: 0 ``low``, 1 ``medium``, 2 or more ``high``; then (F034 reference
+  section 1) ``high`` is held at ``medium`` unless one of those counted stretches is 300 s or
+  shorter. It returns the label and whether it was held.
 
-``WORKED_EXAMPLES`` is the reference's section 5 typed in by hand.
+``WORKED_EXAMPLES`` is the F033 reference's section 5 typed in by hand, re-pointed and extended
+by the F034 reference's section 5.
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ from pathlib import Path
 
 POPULATION_B = 1.06
 SHORT_RACE_MAX_S = 1800
+SHORT_END_MAX_S = 300
 
 _RIEGEL_PATH = Path(__file__).parent / "riegel_oracle.py"
 if "riegel_oracle" in sys.modules:
@@ -113,19 +117,30 @@ def far_off_excess(prev: tuple[float, float], longest: tuple[float, float]) -> f
     return p_long - p_prev * (l_long / l_prev) ** exponent
 
 
-def label(runs: list[tuple[str | None, bool, float | None]]) -> str:
-    """The label from ``(tag, admitted_as_workout, duration_s)`` of each kept stretch's run."""
-    races = sum(
-        1
-        for tag, admitted, duration in runs
+def label(points: list[tuple[str | None, bool, float | None, float]]) -> tuple[str, bool]:
+    """``(label, held)`` from ``(tag, admitted_as_workout, run duration_s, stretch length_s)`` of
+    each kept stretch: the short races counted, and ``high`` held at ``medium`` when no counted
+    race fills a stretch of 300 s or less."""
+    counted = [
+        length
+        for tag, admitted, duration, length in points
         if tag == "race" and not admitted and duration is not None and duration <= SHORT_RACE_MAX_S
-    )
-    return ("low", "medium", "high")[min(races, 2)]
+    ]
+    if len(counted) < 2:
+        return ("low", "medium")[len(counted)], False
+    if min(counted) <= SHORT_END_MAX_S:
+        return "high", False
+    return "medium", True
 
 
 # Reference section 5, typed in by hand. Each stretch: (length_s, distance_m, local date, tag,
 # name, run duration s, admitted_as_workout, kept). The run durations and session tags are the
-# planning re-measure's (cs_planning.out.txt); the reference prints the race ones.
+# planning re-measure's (cs_planning.out.txt for F033's three, f034_gate_scan.out.txt for
+# 2024-11-24); the reference prints the race ones. ``unavailable``, ``label`` and ``held`` are what
+# the F034 estimator serves; the line figures are the fit of the kept stretches (on 2026-10-31 the
+# fit F033 served, which the 4 s/km cut now refuses: only its excess is served). On 2024-11-24 the
+# reference gives CS, D', their intervals and the excess; ``se``, ``se_d`` and ``t`` were computed
+# here with ``line`` over its six points.
 WORKED_EXAMPLES: dict[str, dict] = {
     "2026-10-31": {
         "stretches": [
@@ -147,7 +162,9 @@ WORKED_EXAMPLES: dict[str, dict] = {
         "se_d": 48.87235247530557,
         "t": 1.533206274059,
         "excess": 10.03983535916143,
-        "label": "low",
+        "unavailable": "longest_far_off",
+        "label": None,
+        "held": None,
     },
     "2024-11-30": {
         "stretches": [
@@ -169,7 +186,9 @@ WORKED_EXAMPLES: dict[str, dict] = {
         "se_d": 6.628017232181781,
         "t": 1.533206274059,
         "excess": -6.754016294736289,
-        "label": "high",
+        "unavailable": None,
+        "label": "medium",
+        "held": True,
     },
     "2025-01-31": {
         "stretches": [
@@ -191,6 +210,32 @@ WORKED_EXAMPLES: dict[str, dict] = {
         "se_d": 9.998078242460206,
         "t": 1.637744353696,
         "excess": -5.320321156985159,
+        "unavailable": None,
         "label": "medium",
+        "held": False,
+    },
+    "2024-11-24": {
+        "stretches": [
+            (120, 545.5606237053062, "2024-10-26", "race", "Run", 1232.761, False, True),
+            (180, 798.0449387851238, "2024-10-13", "race", "Run", 11138.164, False, True),
+            (300, 1289.9311782327204, "2024-09-13", None, "Run", 3826.657, False, True),
+            (480, 2022.988052762574, "2024-08-30", None, "Tempo", 4520.216, False, True),
+            (720, 3005.017767267197, "2024-09-26", None, "Run", 4900.816, False, True),
+            (1200, 5002.6202330825545, "2024-11-09", "race", "Run", 1205.641, False, True),
+        ],
+        "cs": 4.1204029285798445,
+        "pace": 242.6947114962527,
+        "pace_low": 241.86534325693816,
+        "pace_high": 243.52978719625918,
+        "d_prime": 50.4923346826572,
+        "d_prime_low": 41.69592742154184,
+        "d_prime_high": 59.288741943772564,
+        "se": 0.009215371685769224,
+        "se_d": 5.737262761016404,
+        "t": 1.5332062740589434,
+        "excess": -6.754016294736289,
+        "unavailable": None,
+        "label": "high",
+        "held": False,
     },
 }

@@ -126,27 +126,12 @@ def test_worked_examples_match_the_reference(day: str) -> None:
     example = cs_oracle.WORKED_EXAMPLES[day]
     instant = datetime.combine(date.fromisoformat(day), datetime.max.time(), tzinfo=ZONE)
     result = cs.fit(_worked_runs(example), instant)
-    _available(result)
 
     kept_rows = [row for row in example["stretches"] if row[7]]
     points = [(float(row[0]), row[1]) for row in kept_rows]
     oracle = cs_oracle.line(points)
     excess = cs_oracle.far_off_excess(points[-2], points[-1])
-    label = cs_oracle.label([(row[3], row[6], row[5]) for row in kept_rows])
-
-    served = {
-        "cs": result.cs_m_per_s,
-        "pace": result.cs_s_per_km,
-        "pace_low": result.interval_low_s_per_km,
-        "pace_high": result.interval_high_s_per_km,
-        "d_prime": result.d_prime_m,
-        "d_prime_low": result.d_prime_low_m,
-        "d_prime_high": result.d_prime_high_m,
-        "se": result.error_m_per_s,
-        "se_d": result.d_prime_error_m,
-        "t": result.t_multiplier,
-        "excess": result.far_off_excess_s_per_km,
-    }
+    label, held = cs_oracle.label([(row[3], row[6], row[5], float(row[0])) for row in kept_rows])
     expected = {
         "cs": oracle.cs,
         "pace": oracle.pace,
@@ -160,13 +145,9 @@ def test_worked_examples_match_the_reference(day: str) -> None:
         "t": oracle.t,
         "excess": excess,
     }
-    for key, value in served.items():
-        assert value is not None, key
-        assert abs(value - expected[key]) <= 1e-9, (key, value, expected[key])
+    # The oracle's figures are the reference's, whether or not the fit is served.
+    for key, value in expected.items():
         assert abs(value - example[key]) <= 1e-6, (key, value, example[key])
-    assert result.interval_low_s_per_km < result.cs_s_per_km < result.interval_high_s_per_km
-    assert result.label == label == example["label"]
-    assert result.d_prime_not_positive is False
 
     stretches = _by_length(result)
     assert len(stretches) == 6
@@ -179,6 +160,40 @@ def test_worked_examples_match_the_reference(day: str) -> None:
         assert stretches[720].drop_reason == cs.BEATEN_BY_LONGER
         assert stretches[720].beaten_by_s == 1200
     assert [s.length_s for s in result.stretches] == [120, 180, 300, 480, 720, 1200]
+
+    if example["unavailable"] is not None:
+        # 2026-10-31: the excess is over the 4 s/km cut; it is served, every other figure is not.
+        assert result.unavailable == example["unavailable"] == cs.LONGEST_FAR_OFF
+        assert excess > cs.FAR_OFF_S_PER_KM
+        assert abs(result.far_off_excess_s_per_km - excess) <= 1e-9
+        assert abs(result.far_off_excess_s_per_km - example["excess"]) <= 1e-6
+        assert result.cs_m_per_s is None and result.d_prime_m is None and result.label is None
+        assert result.label_held_at_medium is None and result.d_prime_not_positive is None
+        assert example["label"] is None and example["held"] is None
+        return
+
+    _available(result)
+    served = {
+        "cs": result.cs_m_per_s,
+        "pace": result.cs_s_per_km,
+        "pace_low": result.interval_low_s_per_km,
+        "pace_high": result.interval_high_s_per_km,
+        "d_prime": result.d_prime_m,
+        "d_prime_low": result.d_prime_low_m,
+        "d_prime_high": result.d_prime_high_m,
+        "se": result.error_m_per_s,
+        "se_d": result.d_prime_error_m,
+        "t": result.t_multiplier,
+        "excess": result.far_off_excess_s_per_km,
+    }
+    for key, value in served.items():
+        assert value is not None, key
+        assert abs(value - expected[key]) <= 1e-9, (key, value, expected[key])
+        assert abs(value - example[key]) <= 1e-6, (key, value, example[key])
+    assert result.interval_low_s_per_km < result.cs_s_per_km < result.interval_high_s_per_km
+    assert result.label == label == example["label"]
+    assert result.label_held_at_medium is held is example["held"]
+    assert result.d_prime_not_positive is False
 
 
 def test_a_run_best_at_two_lengths_is_used_at_the_longer() -> None:
@@ -432,21 +447,22 @@ def _exact_excess_points(target: float) -> list[tuple[float, float]]:
 
 
 def test_far_off_edges() -> None:
-    at = _fit(_points(_exact_excess_points(15.0)))
-    assert at.far_off_excess_s_per_km == 15.0
+    # F034 reference section 1: the cut is 4 s/km; exactly 4.00 passes, 4.01 is refused.
+    at = _fit(_points(_exact_excess_points(4.0)))
+    assert at.far_off_excess_s_per_km == 4.0
     _available(at)
 
     over_points = [
         *BASE[:3],
-        (720, 1000.0 * 720 / (1000.0 * 480 / BASE[2][1] * 1.5 ** (0.06 / 1.06) + 15.01)),
+        (720, 1000.0 * 720 / (1000.0 * 480 / BASE[2][1] * 1.5 ** (0.06 / 1.06) + 4.01)),
     ]
     over = _fit(_points(over_points))
     assert over.unavailable == cs.LONGEST_FAR_OFF
-    assert abs(over.far_off_excess_s_per_km - 15.01) < 1e-9
+    assert abs(over.far_off_excess_s_per_km - 4.01) < 1e-9
     assert (
         abs(over.far_off_excess_s_per_km - cs_oracle.far_off_excess(over_points[-2], over_points[-1])) <= 1e-9
     )
-    assert over.cs_m_per_s is None and over.label is None
+    assert over.cs_m_per_s is None and over.label is None and over.label_held_at_medium is None
     assert len(over.stretches) == 4
 
 
@@ -496,7 +512,8 @@ def test_no_candidate_runs() -> None:
         ([{"tag": "race", "duration": 1800.0, "admitted": True, "name": "Threshold"}], "low"),
         ([{"tag": "race", "duration": None}], "low"),
         ([{"tag": "training", "duration": 1500.0}], "low"),
-        ([{"tag": "race", "duration": 1206.0}, {"tag": "race", "duration": 1233.0}], "high"),
+        # Two counted races at 720 and 480 s, none at 300 s or less: held at medium.
+        ([{"tag": "race", "duration": 1206.0}, {"tag": "race", "duration": 1233.0}], "medium"),
         ([{"tag": "race", "duration": 1206.0}, {"tag": "race", "duration": 11138.0}], "medium"),
         (
             [
@@ -506,19 +523,156 @@ def test_no_candidate_runs() -> None:
             ],
             "high",
         ),
+        # Two counted races, one at 300 s: the short end is backed.
+        ([{"tag": "race", "duration": 1206.0}, {"tag": "race", "duration": 1233.0, "at": 300}], "high"),
     ],
 )
 def test_label_counts_short_races_only(races: list[dict], label: str) -> None:
     lengths = [720, 480, 300]
-    meta = {lengths[k]: race for k, race in enumerate(races)}
+    meta = {}
+    for k, race in enumerate(races):
+        race = dict(race)
+        meta[race.pop("at", lengths[k])] = race
     result = _fit(_points(BASE, meta))
     _available(result)
     assert result.label == label
-    oracle_runs = [(r.get("tag"), r.get("admitted", False), r.get("duration")) for r in races]
-    assert cs_oracle.label(oracle_runs) == label
+    oracle_points = [
+        (m.get("tag"), m.get("admitted", False), m.get("duration"), float(length))
+        for length, m in meta.items()
+    ]
+    oracle_label, oracle_held = cs_oracle.label(oracle_points)
+    assert oracle_label == label
+    assert result.label_held_at_medium is oracle_held
     # The fit error is not a label input: a noisier line with the same runs keeps the label.
     noisy = [(120, 4.9 * 120), (300, 4.3 * 300), (480, 4.2 * 480), (720, 4.1 * 720)]
     assert _fit(_points(noisy, meta)).label == label
+
+
+RACE_A = {"tag": "race", "duration": 1206.0}
+RACE_B = {"tag": "race", "duration": 1233.0}
+SLOW_120 = (120, 4.0 * 120)  # slower than the 300 s stretch: dropped, beaten_by_longer
+WITH_1200 = [*BASE, (1200, 4.0 * 1200)]
+
+
+# F034 reference section 5's synthetic rows, written from the reference before the hold:
+# (id, points, {length: run keywords}, label, held, the lengths dropped).
+SHORT_END_ROWS = [
+    ("two_races_one_at_300", BASE, {720: RACE_A, 300: RACE_B}, "high", False, ()),
+    ("two_races_one_at_120", BASE, {720: RACE_A, 120: RACE_B}, "high", False, ()),
+    ("two_races_at_720_and_480", BASE, {720: RACE_A, 480: RACE_B}, "medium", True, ()),
+    (
+        "a_counted_race_at_120_dropped",
+        [SLOW_120, *BASE[1:]],
+        {720: RACE_A, 480: RACE_B, 120: {"tag": "race", "duration": 900.0}},
+        "medium",
+        True,
+        (120,),
+    ),
+    (
+        "a_race_over_1800_s_at_120",
+        BASE,
+        {720: RACE_A, 480: RACE_B, 120: {"tag": "race", "duration": 1801.0}},
+        "medium",
+        True,
+        (),
+    ),
+    (
+        "a_race_admitted_as_a_workout_at_120",
+        BASE,
+        {
+            720: RACE_A,
+            480: RACE_B,
+            120: {"tag": "race", "duration": 900.0, "admitted": True, "name": "Progression Run"},
+        },
+        "medium",
+        True,
+        (),
+    ),
+    (
+        "a_race_of_unknown_duration_at_120",
+        BASE,
+        {720: RACE_A, 480: RACE_B, 120: {"tag": "race", "duration": None}},
+        "medium",
+        True,
+        (),
+    ),
+    (
+        "a_race_of_nan_duration_at_120",
+        BASE,
+        {720: RACE_A, 480: RACE_B, 120: {"tag": "race", "duration": math.nan}},
+        "medium",
+        True,
+        (),
+    ),
+    (
+        "three_races_none_at_300_or_less",
+        WITH_1200,
+        {1200: RACE_A, 720: RACE_B, 480: {"tag": "race", "duration": 900.0}},
+        "medium",
+        True,
+        (),
+    ),
+    ("one_race_at_120", BASE, {120: RACE_A}, "medium", False, ()),
+    ("one_race_at_480", BASE, {480: RACE_A}, "medium", False, ()),
+    ("no_race", BASE, {}, "low", False, ()),
+]
+
+
+@pytest.mark.parametrize(
+    ("points", "meta", "label", "held", "dropped"),
+    [r[1:] for r in SHORT_END_ROWS],
+    ids=[r[0] for r in SHORT_END_ROWS],
+)
+def test_the_short_end_holds_high_at_medium(
+    points: list[tuple[float, float]], meta: dict, label: str, held: bool, dropped: tuple
+) -> None:
+    """Two or more counted short races with none kept at 300 s or less serve ``medium``, held; the
+    hold sits after every figure, so CS, D', their intervals and the excess are the oracle's fit of
+    the same kept points whether held or not."""
+    result = _fit(_points(points, meta))
+    _available(result)
+    stretches = _by_length(result)
+    print(
+        f"  {result.label} held={result.label_held_at_medium} CS {result.cs_s_per_km} D' {result.d_prime_m}"
+    )
+    assert {length for length, s in stretches.items() if s.drop_reason is not None} == set(dropped)
+    assert result.label == label
+    assert result.label_held_at_medium is held
+    kept = [(float(length), d) for length, d in points if length not in dropped]
+    oracle_label, oracle_held = cs_oracle.label(
+        [
+            (m.get("tag"), m.get("admitted", False), m.get("duration"), float(length))
+            for length, m in meta.items()
+            if length not in dropped
+        ]
+    )
+    assert (oracle_label, oracle_held) == (label, held)
+    line = cs_oracle.line(kept)
+    assert abs(result.cs_m_per_s - line.cs) <= 1e-9
+    assert abs(result.d_prime_m - line.d_prime) <= 1e-9
+    assert abs(result.cs_s_per_km - line.pace) <= 1e-9
+    assert abs(result.interval_low_s_per_km - line.pace_low) <= 1e-9
+    assert abs(result.interval_high_s_per_km - line.pace_high) <= 1e-9
+    assert abs(result.d_prime_low_m - line.d_prime_low) <= 1e-9
+    assert abs(result.d_prime_high_m - line.d_prime_high) <= 1e-9
+    assert abs(result.far_off_excess_s_per_km - cs_oracle.far_off_excess(kept[-2], kept[-1])) <= 1e-9
+
+
+def test_a_held_fit_through_estimate_serves_medium() -> None:
+    """The real path, rows through the screen and ``best_stretches``: the base set's 5K at 720 s
+    and a second Race at 480 s, none at 300 s or less, serve ``medium`` held; the same second race
+    at 120 s serves ``high``."""
+    rows = _base_rows()
+    rows[2].update(activity_tag="race", name="5K", timer_time_s=1250.0)
+    held = cs.estimate(rows, INSTANT)
+    _available(held)
+    assert (held.label, held.label_held_at_medium) == ("medium", True)
+    rows = _base_rows()
+    rows[0].update(activity_tag="race", name="1500 m", timer_time_s=300.0)
+    backed = cs.estimate(rows, INSTANT)
+    _available(backed)
+    assert (backed.label, backed.label_held_at_medium) == ("high", False)
+    assert backed.cs_m_per_s == held.cs_m_per_s
 
 
 def test_a_dropped_race_does_not_lift_the_label() -> None:
@@ -603,7 +757,7 @@ def test_parameters_equal_the_reference() -> None:
         "stretch_lengths_s": (120, 180, 300, 480, 720, 1200),
         "pause_break_s": 10,
         "population_b": 1.06,
-        "far_off_s_per_km": 15,
+        "far_off_s_per_km": 4,
         "min_stretches": 3,
         "max_shortest_s": 300,
         "min_longest_s": 720,
