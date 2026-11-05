@@ -3719,13 +3719,13 @@ components:
         when it is longer than the mean length of the stretches kept, and slightly fast, with a
         smaller D', when it is shorter; a D' well under 100 m is a sign the short end was not
         all-out. Its `trend` is not computed yet: `direction` is `unknown` and `rate` null.
-      required: [name, estimate, unavailable, trend, d_prime, d_prime_not_positive, error_m_per_s, t_multiplier, far_off_excess_s_per_km, stretches, excluded, parameters]
+      required: [name, estimate, unavailable, trend, d_prime, d_prime_not_positive, label_held_at_medium, error_m_per_s, t_multiplier, far_off_excess_s_per_km, stretches, excluded, parameters]
       properties:
         name: { type: string, enum: [critical_speed] }
         estimate:
           allOf: [{ $ref: "#/components/schemas/ConfidenceValue" }]
           nullable: true
-          description: "CS as pace with its 80 % interval (fast end `low`), `unit` `s/km`, `provisional` false; the label counts the kept stretches from a Race-tagged run of 1800 s or less not admitted as a workout (0 `low`, 1 `medium`, 2 or more `high`); null when `unavailable` is set."
+          description: "CS as pace with its 80 % interval (fast end `low`), `unit` `s/km`, `provisional` false; the label counts the kept stretches from a Race-tagged run of 1800 s or less not admitted as a workout (0 `low`, 1 `medium`, 2 or more `high` when one of them fills a stretch of 300 s or less, else `medium`, `label_held_at_medium`); null when `unavailable` is set."
         unavailable:
           type: string
           enum: [no_candidate_runs, too_few_stretches, spread_too_narrow, longest_far_off, estimate_not_finite]
@@ -3733,7 +3733,7 @@ components:
           description: >
             Null with an estimate. `no_candidate_runs`; `too_few_stretches` (fewer than 3 kept);
             `spread_too_narrow` (the shortest kept over 300 s or the longest under 720 s);
-            `longest_far_off` (the longest kept stretch more than 15 s/km slower than the next-longest
+            `longest_far_off` (the longest kept stretch more than 4 s/km slower than the next-longest
             predicts at b 1.06, the excess served); `estimate_not_finite` (a figure not finite, a kept
             stretch at or below 0 m, CS not positive or its slow bound at or below 0 speed). `estimate`,
             `d_prime` and the fit figures are then null; `stretches`, `excluded` and `parameters` are served.
@@ -3743,6 +3743,7 @@ components:
           nullable: true
           description: "D' in metres with its 80 % interval; null when unavailable."
         d_prime_not_positive: { type: boolean, nullable: true, description: "D' at or below 0, served as computed; it arises only when every kept stretch runs at the same average speed to rounding, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is then 0 to rounding); null when unavailable." }
+        label_held_at_medium: { type: boolean, nullable: true, description: "True when 2 or more kept stretches count as short races but none of them fills a stretch of 300 s or less, so the label is held at `medium`; false on any other served fit; null when unavailable." }
         error_m_per_s: { type: number, nullable: true, description: "The standard error of CS in m/s; null when unavailable." }
         t_multiplier: { type: number, nullable: true, description: "Student's t at 0.90 for the kept stretches less 2 degrees of freedom; null when unavailable." }
         far_off_excess_s_per_km: { type: number, nullable: true, description: "The longest kept stretch's pace less the pace the next-longest predicts at b 1.06, s/km; null when unavailable for another reason." }
@@ -3792,7 +3793,7 @@ components:
         pace_s_per_km: { type: number, nullable: true, description: "`1000 * length_s / distance_m`; null when the distance is not a finite number above 0." }
         session_id: { type: string }
         start_time: { type: string, format: date-time }
-        activity_tag: { type: string, nullable: true, description: "The run's stored tag (`race` lifts the label); null when none." }
+        activity_tag: { type: string, nullable: true, description: "The run's stored tag (`race` counts toward the label); null when none." }
         name: { type: string, nullable: true, description: "The run's stored name; null when none." }
         duration_s: { type: number, nullable: true, description: "The run's `timer_time_s`, else the summary's `duration_s`, as the label reads it; null when unknown." }
         drop_reason: { type: string, enum: [beaten_by_longer], nullable: true, description: "Null for a kept stretch; `beaten_by_longer` when a longer stretch has a higher average speed." }

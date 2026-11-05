@@ -2501,6 +2501,7 @@ def _cs_determinant(result: critical_speed.CriticalSpeedEstimate) -> CriticalSpe
         trend={"direction": "unknown", "rate": None},
         d_prime=d_prime,
         d_prime_not_positive=result.d_prime_not_positive if fitted else None,
+        label_held_at_medium=result.label_held_at_medium if fitted else None,
         error_m_per_s=result.error_m_per_s if fitted else None,
         t_multiplier=result.t_multiplier if fitted else None,
         far_off_excess_s_per_km=_finite_or_none(result.far_off_excess_s_per_km) if excess_served else None,

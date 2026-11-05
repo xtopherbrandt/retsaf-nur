@@ -15,8 +15,11 @@ the reference section 1 constants are typed in here from the reference.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import importlib.util
 import json
+import math
+import re
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,6 +30,7 @@ from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
 from runcoach_api import main as main_module
 from runcoach_api.main import app
+from runcoach_api.metrics import critical_speed
 from runcoach_api.schemas import (
     CriticalSpeedDeterminant,
     CriticalSpeedExclusion,
@@ -201,6 +205,7 @@ def test_the_critical_speed_entry_carries_exactly_the_schema_keys(contract: dict
         assert s["activity_tag"] is None and s["name"] is None
     assert entry["stretches"][-1]["duration_s"] == 1300.0
     assert entry["d_prime_not_positive"] is False
+    assert entry["label_held_at_medium"] is False
 
 
 def test_critical_speed_interval_brackets_cs_and_d_prime() -> None:
@@ -272,6 +277,8 @@ def test_the_label_and_each_stretch_s_run_are_served_as_the_estimator_reads_them
     by_length = {s["length_s"]: s for s in entry["stretches"]}
     print(f"  label {entry['estimate']['confidence']}; tags {[s['activity_tag'] for s in entry['stretches']]}")
     assert entry["estimate"]["confidence"] == label
+    # Two races, both at 720 s or longer: held. Three with one at 300 s, one, or none: not held.
+    assert entry["label_held_at_medium"] is (tagged == (1200, 720))
     for n, length in enumerate((1200, 720)):
         stretch = by_length[length]
         assert stretch["session_id"] == ids[n]
@@ -290,11 +297,16 @@ def _goal_bodies(client: TestClient) -> tuple[bytes, bytes]:
     return read.content, previewed.content
 
 
-def test_other_entries_and_goal_bodies_are_byte_identical_with_and_without_cs(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("held", [False, True], ids=["unheld", "held"])
+def test_other_entries_and_goal_bodies_are_byte_identical_with_and_without_cs(
+    monkeypatch: pytest.MonkeyPatch, held: bool
+) -> None:
     """One store with tagged races and CS candidates. Off: ``main._riegel_at`` is wrapped so no
     predicate reaches the reader (``db._read_cs_rows`` is never called, and the CS entry is built
     from no rows). On: the CS entry is served from the runs. The threshold and Riegel entries and
-    the ``GET /goal`` and ``POST /goal/preview`` bodies are byte-identical."""
+    the ``GET /goal`` and ``POST /goal/preview`` bodies are byte-identical. Unheld, the 5K race
+    fills the 1200 s stretch alone (``medium``); held, the ``CURVE`` 480 s run is tagged Race as
+    well, so two races are kept and none at 300 s or less (``medium``, ``label_held_at_medium``)."""
     calls: list[int] = []
     real_read = db_module._read_cs_rows
 
@@ -310,8 +322,10 @@ def test_other_entries_and_goal_bodies_are_byte_identical_with_and_without_cs(mo
         return real_at(*args, **kwargs)
 
     with TestClient(app) as client:
-        goal_seed._races(client, *goal_seed.E2)
-        _runs(*CURVE)
+        races = goal_seed._races(client, *goal_seed.E2)
+        curve = _runs(*CURVE)
+        if held:
+            goal_seed._put_tags(client, [*races, curve[CURVE_LENGTHS.index(480)]])
         goal_seed._plant_every_load()
         assert client.put("/goal", json=goal_seed._goal(goal_seed.HALF_M, race_date="2027-01-01")).status_code == 200
         on_state = client.get("/state")
@@ -325,8 +339,13 @@ def test_other_entries_and_goal_bodies_are_byte_identical_with_and_without_cs(mo
     on_cs, off_cs = _cs(on), _cs(off)
     print(f"  _read_cs_rows calls: on {on_calls}, off {off_calls}")
     print(f"  on CS {on_cs['estimate']} with {len(on_cs['stretches'])} stretches; off {off_cs['unavailable']}")
+    _print_stretches(on_cs)
+    print(f"  on label {on_cs['estimate']['confidence']}, held {on_cs['label_held_at_medium']}")
     assert on_calls == 1 and off_calls == 0
     assert on_cs["unavailable"] is None and len(on_cs["stretches"]) == 6
+    assert on_cs["estimate"]["confidence"] == "medium"
+    assert on_cs["label_held_at_medium"] is held
+    assert off_cs["label_held_at_medium"] is None
     assert off_cs["unavailable"] == "no_candidate_runs" and off_cs["stretches"] == [] and off_cs["excluded"] == []
     on_two = json.dumps(on["determinants"][:2], sort_keys=False)
     off_two = json.dumps(off["determinants"][:2], sort_keys=False)
@@ -459,6 +478,7 @@ def test_each_unavailable_response_validates(contract: dict, reason: str) -> Non
     assert entry["unavailable"] == reason
     assert entry["estimate"] is None and entry["d_prime"] is None
     assert entry["error_m_per_s"] is None and entry["t_multiplier"] is None and entry["d_prime_not_positive"] is None
+    assert entry["label_held_at_medium"] is None
     assert entry["parameters"] == REFERENCE_PARAMETERS
     if reason == "no_candidate_runs":
         assert entry["stretches"] == []
@@ -469,6 +489,97 @@ def test_each_unavailable_response_validates(contract: dict, reason: str) -> Non
     else:
         assert entry["far_off_excess_s_per_km"] is None
     _assert_validates(contract, entry)
+
+
+@pytest.mark.parametrize("case", [*UNAVAILABLE, "turned_not_finite_flag_false", "turned_not_finite_flag_true"])
+def test_label_held_at_medium_is_null_whenever_unavailable(monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+    """``label_held_at_medium`` is null on every ``unavailable`` entry: each of the five reasons
+    through the route, and a fitted result that ``main._cs_determinant`` turns into
+    ``estimate_not_finite`` (an infinite interval end) whatever the estimator's flag says, false or
+    true. The field is gated on the served outcome, not on the estimator's ``unavailable``."""
+    if case in UNAVAILABLE:
+        reason = case
+        with TestClient(app) as client:
+            _seed_unavailable(reason)
+            entry = _cs(_state(client))
+    else:
+        reason = "estimate_not_finite"
+        flag = case.endswith("true")
+        real_estimate = critical_speed.estimate
+        seen: list[tuple[object, object]] = []
+
+        def infinite_end(*args, **kwargs):
+            result = real_estimate(*args, **kwargs)
+            seen.append((result.unavailable, result.label_held_at_medium))
+            return dataclasses.replace(result, interval_high_s_per_km=math.inf, label_held_at_medium=flag)
+
+        monkeypatch.setattr(main_module.critical_speed, "estimate", infinite_end)
+        with TestClient(app) as client:
+            _runs(*CURVE)
+            goal_seed._plant_every_load()
+            entry = _cs(_state(client))
+        print(f"  estimator (unavailable, held) {seen}; replaced with an infinite interval end, held {flag}")
+        assert seen == [(None, False)]
+        assert entry["d_prime_not_positive"] is None and entry["far_off_excess_s_per_km"] is None
+    print(f"  {case}: unavailable {entry['unavailable']}, label_held_at_medium {entry['label_held_at_medium']!r}")
+    assert entry["unavailable"] == reason and entry["estimate"] is None
+    assert entry["label_held_at_medium"] is None
+
+
+def test_a_held_response_validates(contract: dict) -> None:
+    """The ``CURVE`` runs with the 1200 s and 720 s runs tagged Race (two counted races, none at a
+    stretch of 300 s or less): ``medium`` with ``label_held_at_medium`` true, and the entry
+    validates against the contract's ``Determinant``. The same entry with the key missing, or a
+    non-boolean in it, goes red."""
+    with TestClient(app) as client:
+        ids = _runs(*CURVE)
+        goal_seed._put_tags(client, ids[:2])
+        goal_seed._plant_every_load()
+        body = _state(client)
+    entry = _cs(body)
+    _print_stretches(entry)
+    print(f"  label {entry['estimate']['confidence']}, held {entry['label_held_at_medium']!r}")
+    assert entry["estimate"]["confidence"] == "medium"
+    assert entry["label_held_at_medium"] is True
+    for determinant in body["determinants"]:
+        _assert_validates(contract, determinant)
+    union = contract["components"]["schemas"]["Determinant"]
+    missing = {k: v for k, v in entry.items() if k != "label_held_at_medium"}
+    errors = contract_validate.validate(contract, union, missing)
+    print(f"  without label_held_at_medium: {errors}")
+    assert any("label_held_at_medium" in e for e in errors), errors
+    errors = contract_validate.validate(contract, union, {**entry, "label_held_at_medium": "yes"})
+    print(f"  label_held_at_medium 'yes': {errors}")
+    assert any("label_held_at_medium" in e for e in errors), errors
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_the_served_far_off_wording_names_the_cut(contract: dict) -> None:
+    """The ``unavailable`` description, as served and in the contract, states the far-off cut as
+    ``critical_speed.FAR_OFF_S_PER_KM`` and no other number of s/km; the label descriptions name
+    the hold (``label_held_at_medium``) and its 300 s short end, ``MAX_SHORTEST_S``."""
+    cut, short_end = critical_speed.FAR_OFF_S_PER_KM, critical_speed.MAX_SHORTEST_S
+    schemas = app.openapi()["components"]["schemas"]
+    ours = contract["components"]["schemas"]
+    unavailable = {
+        "served": _flat(schemas["CriticalSpeedDeterminant"]["properties"]["unavailable"]["description"]),
+        "contract": _flat(ours["CriticalSpeedDeterminant"]["properties"]["unavailable"]["description"]),
+    }
+    labels = {
+        "served": _flat(schemas["CriticalSpeedValue"]["properties"]["confidence"]["description"]),
+        "contract": _flat(ours["CriticalSpeedDeterminant"]["properties"]["estimate"]["description"]),
+    }
+    for where, text in unavailable.items():
+        cuts = re.findall(r"more than (\S+) s/km", text)
+        print(f"  {where} unavailable: cuts {cuts}; {text}")
+        assert cuts == [str(cut)], (where, cuts)
+    for where, text in labels.items():
+        print(f"  {where} label: {text}")
+        assert "label_held_at_medium" in text and f"{short_end} s or less" in text, where
+        assert not re.search(r"2 or more `high`\)", text), where
 
 
 CS_COMPONENTS = {"CriticalSpeedStretch", "CriticalSpeedExclusion", "CriticalSpeedParameters", "DPrime"}
@@ -496,8 +607,8 @@ def test_contract_critical_speed_components_match_the_served(contract: dict) -> 
     assert built["estimate"]["anyOf"] == [{"$ref": "#/components/schemas/CriticalSpeedValue"}, {"type": "null"}]
     assert props["trend"] == {"$ref": "#/components/schemas/Trend"}
     assert built["trend"] == {"$ref": "#/components/schemas/DeterminantTrend"}
-    hand = ("unavailable", "d_prime", "d_prime_not_positive", "error_m_per_s", "t_multiplier",
-            "far_off_excess_s_per_km", "stretches", "excluded", "parameters")  # fmt: skip
+    hand = ("unavailable", "d_prime", "d_prime_not_positive", "label_held_at_medium", "error_m_per_s",
+            "t_multiplier", "far_off_excess_s_per_km", "stretches", "excluded", "parameters")  # fmt: skip
     assert set(hand) | {"name", "estimate", "trend"} == set(props)
     for field in hand:
         got, want = contract_walk.normalised(props[field]), contract_walk.normalised(built[field])

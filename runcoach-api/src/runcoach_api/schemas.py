@@ -2157,7 +2157,8 @@ class CriticalSpeedValue(BaseModel):
     interval: CriticalSpeedInterval
     confidence: Literal["low", "medium", "high"] = Field(
         description="By the kept stretches whose run is tagged Race, is not admitted as a workout by a listed name "
-        "and lasted 1800 s or less: 0 `low`, 1 `medium`, 2 or more `high` (F033 reference section 4 step 6). "
+        "and lasted 1800 s or less: 0 `low`, 1 `medium`, 2 or more `high` when one of them fills a stretch of 300 s "
+        "or less, else `medium` (`label_held_at_medium`; F033 reference section 4 step 6, F034 reference section 1). "
         "The fit error is not an input."
     )
     provisional: bool = Field(description="Always false: no population CS stands in.")
@@ -2180,7 +2181,7 @@ class CriticalSpeedStretch(BaseModel):
     pace_s_per_km: float | None = Field(description="`1000 * length_s / distance_m`; null when the distance is not a finite number above 0.")
     session_id: str
     start_time: datetime.datetime
-    activity_tag: str | None = Field(description="The run's stored tag (`race` lifts the label); null when none.")
+    activity_tag: str | None = Field(description="The run's stored tag (`race` counts toward the label); null when none.")
     name: str | None = Field(description="The run's stored name; null when none.")
     duration_s: float | None = Field(
         description="The run's `timer_time_s`, else the summary's `duration_s`, as the label reads it; null when unknown."
@@ -2244,7 +2245,7 @@ class CriticalSpeedDeterminant(BaseModel):
         | None
     ) = Field(
         description="`no_candidate_runs`, `too_few_stretches` (fewer than 3 kept), `spread_too_narrow` (the shortest "
-        "kept over 300 s or the longest under 720 s), `longest_far_off` (the longest kept stretch more than 15 s/km "
+        "kept over 300 s or the longest under 720 s), `longest_far_off` (the longest kept stretch more than 4 s/km "
         "slower than the next-longest predicts at b 1.06; the excess served), `estimate_not_finite` (a figure not "
         "finite, a kept stretch at or below 0 m, CS not positive or its slow bound at or below 0 speed). `estimate`, "
         "`d_prime` and the fit figures are then null; `stretches`, `excluded` and `parameters` are still served. Null "
@@ -2256,6 +2257,10 @@ class CriticalSpeedDeterminant(BaseModel):
         description="D' at or below 0, served as computed; it arises only when every kept stretch runs at the same "
         "average speed to rounding, since the shape check drops a slower short stretch as `beaten_by_longer` (D' is "
         "then 0 to rounding); null when unavailable."
+    )
+    label_held_at_medium: bool | None = Field(
+        description="True when 2 or more kept stretches count as short races but none of them fills a stretch of "
+        "300 s or less, so the label is held at `medium`; false on any other served fit; null when unavailable."
     )
     error_m_per_s: float | None = Field(description="The standard error of CS in m/s; null when unavailable.")
     t_multiplier: float | None = Field(
