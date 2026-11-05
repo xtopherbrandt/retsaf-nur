@@ -462,7 +462,7 @@ def test_the_module_is_pure():
 # --- A long gap in history (IDEA-143, ruled option B: carry on and mark) ----------------------
 #
 # The gap oracle below is written by hand from the ruling and never reads the module: an empty day
-# has no counted and no uncounted run (an excluded ride or capture does not end a stretch, an
+# has no counted and no uncounted run (an excluded session does not end a stretch, an
 # uncounted-only day does); a stretch of MORE than 21 empty days that ends in a running day on or
 # before today is a gap; the first running day after it and the 41 days after that are after_gap.
 # The recursion is untouched, so oracle_series stays the oracle for every served value.

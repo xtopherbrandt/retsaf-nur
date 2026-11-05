@@ -64,7 +64,9 @@
   with the Strava rule is recomputed in its own transaction, ``counts.strava``'s
   ``excluded_from_load`` and ``restored_to_load`` count the bodies that moved into or out of
   ``strava_not_running``, and ``imports.load_changes`` lists them (served as
-  ``Import.load_changes``). A job interrupted before it is healed by the next Strava import.
+  ``Import.load_changes``). A job interrupted after its rows commit but before the reconcile runs
+  leaves those loads as they were; the next Strava import's reconcile, which reads every stored
+  session and not only that import's rows, recomputes them.
 """
 
 from __future__ import annotations

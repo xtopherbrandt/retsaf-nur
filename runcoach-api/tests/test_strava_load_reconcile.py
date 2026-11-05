@@ -12,7 +12,7 @@ of ``strava_not_running`` is one ``imports.load_changes`` entry and one ``exclud
 version is not rewritten.
 
 Every test posts archives built in ``tmp_path`` with ``tests/support/strava_archive.py`` to the
-real app (the store is the autouse ``isolated_data_dir``, zone UTC) and links rows by their CSV
+real app (the store is the autouse ``isolated_data_dir``, zone UTC unless a test sets another) and links rows by their CSV
 start (step 1), so no archive carries an activity file. Sessions are ``sample_run`` (README
 provenance: real run, run proof yes) and copies re-dated by whole days. The expectations are
 written from F031's AC3, AC4 and the task text before the reconcile; the same author wrote both.
@@ -31,7 +31,9 @@ selection reads, and what each degenerate form does.
 | excluded body, link moved to another session | old session ``restored``; new one ``excluded`` | the link is read from the session's side |
 | excluded body naming another row than the live non-run link | recomputed, no entry | still excluded; the body names the live row |
 | a body that is not JSON | its ``strava_activity_id`` reads null, so an excluded one is recomputed | the recompute writes a valid body |
-| a session with no saved load row | not selected | only a saved load can disagree; the upload and the one-time fill save one |
+| a session with no saved load row | not selected (``test_a_running_session_with_no_saved_load_row_is_not_reconciled``) | only a saved load can disagree; the upload and the one-time fill save one |
+| a run near midnight UTC, athlete in America/Vancouver | its change dated on the Vancouver day | ``local_date`` is the athlete's day, read in the job's zone |
+| a Garmin archive import over a disagreeing body | nothing recomputed, ``load_changes`` empty | only a Strava import reconciles |
 | the same archive again | nothing recomputed, ``session_loads`` byte-equal | every saved reason already agrees |
 """
 
@@ -40,12 +42,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from runcoach_api import db
+from runcoach_api.config import AppConfig
 from runcoach_api.imports import job
 from runcoach_api.main import app
 
@@ -59,6 +62,7 @@ def _load(name: str):
 
 
 SA = _load("strava_archive")
+IA = _load("import_archive")
 
 DRAIN_TIMEOUT_S = 120.0
 REASON = "strava_not_running"
@@ -417,3 +421,81 @@ def test_an_excluded_body_naming_another_row_is_recomputed_to_name_the_live_one(
     assert recomputes == [sid]
     assert after["session_load"]["unavailable"] == REASON and after["strava_activity_id"] == SKI_ID
     assert _counts(second) == (0, 0) and second["load_changes"] == []
+
+
+def test_a_running_session_with_no_saved_load_row_is_not_reconciled(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, recomputes: list[str]
+) -> None:
+    """A running session linked to an ``Alpine Ski`` row whose ``session_loads`` row was deleted
+    first is not selected: only a saved load can disagree, so the import writes no load row for it
+    and lists no change."""
+    [(fit, start)] = _runs(1)
+    with TestClient(app) as client:
+        sid = _upload(client, post_fit_bytes, fit, "run.fit")
+        _execute(isolated_data_dir, f"DELETE FROM {db.SESSION_LOADS_TABLE} WHERE session_id = ?", (sid,))
+        assert _loads(isolated_data_dir) == []
+        report = _import(client, tmp_path / "ski.zip", [_row(SKI_ID, start, "Alpine Ski")])
+    rows = _loads(isolated_data_dir)
+    print(f"  session_loads rows after: {len(rows)}")
+    assert report["files"][0]["outcome"] == "attached" and report["files"][0]["session_id"] == sid
+    assert rows == []
+    assert recomputes == []
+    assert _counts(report) == (0, 0) and report["load_changes"] == []
+
+
+def test_a_change_is_dated_in_the_athletes_zone_not_utc(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the athlete in America/Vancouver, a run starting 2024-06-02 03:30 UTC (20:30 on
+    2024-06-01 there) is listed as excluded on its local date, 2024-06-01, not its UTC date."""
+    config = AppConfig(
+        host="127.0.0.1",
+        port=8000,
+        data_dir=isolated_data_dir,
+        resting_hrv_profile_names=[],
+        threshold_workout_names=[],
+        athlete_timezone="America/Vancouver",
+    )
+    monkeypatch.setattr(db.config_module, "load_config", lambda *a, **k: config)
+    db._load_config_cached.cache_clear()
+    assert db._load_config_cached().athlete_timezone == "America/Vancouver"
+    sample = SA.fixture("sample_run")
+    target = datetime(2024, 6, 2, 3, 30, tzinfo=UTC)
+    fit = SA.shifted(sample, int((target - SA.session_start(sample)).total_seconds()))
+    start = SA.session_start(fit)
+    assert start == target
+    with TestClient(app) as client:
+        sid = _upload(client, post_fit_bytes, fit, "run.fit")
+        report = _import(client, tmp_path / "ski.zip", [_row(SKI_ID, start, "Alpine Ski")])
+    print(f"  start {start.isoformat()}; load_changes {report['load_changes']}")
+    assert [(c["session_id"], c["change"]) for c in report["load_changes"]] == [(sid, "excluded")]
+    assert report["load_changes"][0]["local_date"] == "2024-06-01"
+
+
+def test_a_garmin_archive_import_never_runs_the_reconcile(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, recomputes: list[str]
+) -> None:
+    """A linked run whose saved load disagrees with the rule (the counted body written back over
+    the excluded one) is left as it is by a Garmin archive import, which lists no load change; only
+    a Strava import reconciles."""
+    [(fit, start)] = _runs(1)
+    with TestClient(app) as client:
+        sid = _upload(client, post_fit_bytes, fit, "run.fit")
+        saved = _body(sid)
+        _import(client, tmp_path / "ski.zip", [_row(SKI_ID, start, "Alpine Ski")])
+        _write_body(isolated_data_dir, sid, saved)
+        recomputes.clear()
+        path = IA.build_archive(tmp_path)
+        with path.open("rb") as fh:
+            started = client.post("/imports", files={"file": (path.name, fh, "application/zip")})
+        assert started.status_code == 202, started.text
+        assert job.wait_idle(DRAIN_TIMEOUT_S), "the import worker did not finish"
+        report = client.get(f"/imports/{started.json()['import_id']}").json()
+        after = _body(sid)
+    print(f"  garmin: status {report['status']} source {report['source']} load_changes {report['load_changes']}")
+    print(f"  after: session_load {after['session_load']}")
+    assert report["source"] == "garmin" and report["status"] == "completed", report["error"]
+    assert after == saved
+    assert sid not in recomputes
+    assert report["load_changes"] == []
+    assert _counts(report) == (0, 0)
