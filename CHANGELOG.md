@@ -117,9 +117,13 @@ index, the `imports` columns `source` and `load_changes`, the `import_files` col
 (implemented), `Import.source` and `Import.load_changes`, `ImportCounts.strava`, the `files[]`
 `strava_activity_id` and the Strava outcomes, `SessionDetail.strava`, the load body's
 `strava_activity_id`, and `strava_not_running` in every load reason enum. Update the CLI with the
-API: only this release's `runcoach import` prints a Strava import's report. Rollback warning: an
-API older than this release has no `strava_not_running` in its reason enums, so once a Strava
-import has excluded a run, that API cannot serve the run's saved load.
+API: only this release's `runcoach import` prints a Strava import's report. Rollback warning: once
+a Strava import has excluded a run, an API older than this release breaks in two ways. Its load
+chart does not know `strava_not_running` as a reason that excludes a session, so it lists the run
+as an uncounted run with a reason its own reason list rejects, and `GET /metrics/load` answers 500
+for any window holding that run's day. And its load recompute (`POST
+/sessions/{id}/load/recompute`, which `runcoach loads recompute` calls for every run) rebuilds the
+load without reading Strava and puts the run back in load without saying so.
 
 ## 2026-11-01 through 2026-11-03 — Sprint 025: Critical speed and D′ from the run history
 
