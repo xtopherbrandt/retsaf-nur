@@ -20,6 +20,19 @@ Degenerate inputs the report reads, each driven through the command:
 | two attention rows with one Activity ID | one lookup |
 | ``GET /strava-activities`` answering 500 | exit 1 naming the status |
 | a Garmin body (``source`` ``garmin`` or absent) | the Garmin report, no Strava line, no lookup |
+
+The load lines (F031 AC4) read ``counts.strava.excluded_from_load`` / ``restored_to_load`` and the
+body's ``load_changes`` entries, each printed as served (no lookup, no re-zoning of ``local_date``):
+
+| input | printed |
+|---|---|
+| both counts 0 and ``load_changes`` ``[]`` or absent | no load lines |
+| both counts 0 but ``load_changes`` non-empty | the load lines (a change is never hidden) |
+| ``old_load`` null (a ``no_hr`` run; every restored entry) | ``no load`` |
+| ``old_load`` 0.0 | ``0.0``, not ``no load`` |
+| ``old_load`` 42.35 / 7 (an int) | ``42.4`` / ``7.0`` |
+| ``strava_type`` null (the run is no longer linked) | ``-`` |
+| ``load_changes`` not a list, an entry not an object, ``old_load`` a string or a bool, ``local_date`` null | exit 1, the body could not be understood |
 """
 
 from __future__ import annotations
@@ -347,6 +360,127 @@ def test_a_strava_import_exits_0(tmp_path: Path, install_mock_client) -> None:
 
     assert result.exit_code == 0, result.output
     assert f"Import {IMPORT_ID} started (export_1347737.zip)." in result.output.splitlines()
+
+
+def _change(sid: str, local_date: Any, strava_type: Any, old_load: Any, change: str) -> dict:
+    return {
+        "session_id": sid,
+        "local_date": local_date,
+        "strava_type": strava_type,
+        "old_load": old_load,
+        "change": change,
+    }
+
+
+ATTENTION_LINES = [
+    "  failed  2022-04-02  Big Long Run  413  file_over_cap",
+    "  ambiguous  2022-04-04  Twin Run  candidates: s7, s8",
+    "  multisport_not_stored  2023-05-06  Ironman 70.3",
+    f"  failed  activities.csv line 9  {UNPARSED_DETAIL}",
+    "  deleted_in_strava  2021-12-31  Old Walk",
+]
+
+
+def _load_counts(excluded: int, restored: int) -> dict[str, Any]:
+    strava = dict(COUNTS["strava"], excluded_from_load=excluded, restored_to_load=restored)
+    return dict(COUNTS, strava=strava)
+
+
+def test_one_line_per_run_excluded_or_restored(tmp_path: Path, install_mock_client) -> None:
+    changes = [
+        _change("s1", "2022-03-01", "Alpine Ski", 61.25, "excluded"),
+        _change("s2", "2022-03-05", "Hike", None, "excluded"),
+        _change("s3", "2022-02-27", "Run", None, "restored"),
+    ]
+    api = _Api(_body(_load_counts(2, 1), FILES, load_changes=changes))
+
+    result = _import(tmp_path, install_mock_client, api)
+
+    assert result.exit_code == 0, result.output
+    # After the Strava block: the two counts, then one line per entry in the served order.
+    assert _report(result.output)[1:] == ATTENTION_LINES + [
+        "Load: excluded_from_load 2, restored_to_load 1",
+        "  excluded  2022-03-01  Alpine Ski  61.2",
+        "  excluded  2022-03-05  Hike  no load",
+        "  restored  2022-02-27  Run  no load",
+    ], result.output
+    # The load lines look nothing up: the names read are the attention rows' only.
+    assert api.strava_gets() == [f"/strava-activities/{aid}" for aid in (102, 103, 105, 108)]
+
+
+@pytest.mark.parametrize(
+    ("entry", "line"),
+    [
+        (
+            _change("s1", "2022-03-01", "Alpine Ski", 42.35, "excluded"),
+            "  excluded  2022-03-01  Alpine Ski  42.4",
+        ),
+        (_change("s1", "2022-03-01", "Alpine Ski", 7, "excluded"), "  excluded  2022-03-01  Alpine Ski  7.0"),
+        (_change("s1", "2022-03-01", "Walk", 0.0, "excluded"), "  excluded  2022-03-01  Walk  0.0"),
+        (_change("s1", "2022-03-01", "Hike", None, "excluded"), "  excluded  2022-03-01  Hike  no load"),
+        (_change("s1", "2021-12-31", None, None, "restored"), "  restored  2021-12-31  -  no load"),
+    ],
+)
+def test_the_line_names_local_date_strava_type_and_old_load(
+    tmp_path: Path, install_mock_client, entry: dict, line: str
+) -> None:
+    excluded, restored = (1, 0) if entry["change"] == "excluded" else (0, 1)
+    files = [_row(1, "activities/101.fit.gz", "attached", "2022-04-02T15:00:00+00:00", 101, session_id="s1")]
+    counts = _counts(_strava_counts(attached=1, excluded_from_load=excluded, restored_to_load=restored))
+    api = _Api(_body(counts, files, load_changes=[entry]))
+
+    result = _import(tmp_path, install_mock_client, api)
+
+    assert result.exit_code == 0, result.output
+    # local_date is the served athlete-zone date, printed as is (the CLI's zone is Vancouver here,
+    # and the date is not converted again).
+    assert _report(result.output)[1:] == [
+        f"Load: excluded_from_load {excluded}, restored_to_load {restored}",
+        line,
+    ], result.output
+
+
+@pytest.mark.parametrize("load_changes", [[], None, "absent"])
+def test_no_load_lines_when_nothing_changed(tmp_path: Path, install_mock_client, load_changes: Any) -> None:
+    body = _body(COUNTS, FILES, load_changes=load_changes)
+    if load_changes == "absent":
+        del body["load_changes"]
+
+    result = _import(tmp_path, install_mock_client, _Api(body))
+
+    assert result.exit_code == 0, result.output
+    assert _report(result.output)[1:] == ATTENTION_LINES, result.output
+    assert not any(line.startswith("Load:") for line in result.output.splitlines())
+
+
+def test_load_changes_with_zero_counts_are_still_printed(tmp_path: Path, install_mock_client) -> None:
+    changes = [_change("s1", "2022-03-01", "Alpine Ski", 3.0, "excluded")]
+    result = _import(tmp_path, install_mock_client, _Api(_body(COUNTS, FILES, load_changes=changes)))
+
+    assert result.exit_code == 0, result.output
+    assert _report(result.output)[len(ATTENTION_LINES) + 1 :] == [
+        "Load: excluded_from_load 0, restored_to_load 0",
+        "  excluded  2022-03-01  Alpine Ski  3.0",
+    ], result.output
+
+
+@pytest.mark.parametrize(
+    "load_changes",
+    [
+        {"s1": "excluded"},
+        ["excluded"],
+        [_change("s1", "2022-03-01", "Hike", "12.5", "excluded")],
+        [_change("s1", "2022-03-01", "Hike", True, "excluded")],
+        [_change("s1", None, "Hike", 1.0, "excluded")],
+    ],
+)
+def test_malformed_load_changes_exit_1(tmp_path: Path, install_mock_client, load_changes: Any) -> None:
+    api = _Api(_body(_load_counts(1, 0), FILES, load_changes=load_changes))
+
+    result = _import(tmp_path, install_mock_client, api)
+
+    assert result.exit_code == 1, result.output
+    assert "load_changes" in result.output, result.output
 
 
 GARMIN_FILES = [

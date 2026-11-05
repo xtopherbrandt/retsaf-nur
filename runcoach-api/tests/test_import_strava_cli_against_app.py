@@ -15,6 +15,10 @@ other-device copy) and a short row (did not parse). A second archive without the
 ``deleted_in_strava``. The expected lines are built from the CSV cells written here and the served
 body's fields, with the dates converted in the test through ``ZoneInfo``, so the fake API's shape
 in the CLI tests cannot drift from the served one unseen.
+
+The load lines (F031 AC4) are run the same way: ``sample_run`` alone, an archive typing its row
+``Alpine Ski`` (excluded), the same archive again (nothing changes) and one typing it ``Run``
+(restored).
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ SA = _load_by_path("strava_archive", HERE / "support" / "strava_archive.py")
 cli_against_app = against_app.cli_against_app
 _run = against_app._run
 
-RIDE_ID, LOST_ID, TWIN_ID = 9_100_000_001, 9_100_000_002, 9_100_000_003
+RIDE_ID, LOST_ID, TWIN_ID, SKI_ID = 9_100_000_001, 9_100_000_002, 9_100_000_003, 9_100_000_004
 RIDE_DATE = datetime(2022, 3, 1, 3, 15, 0, tzinfo=ZoneInfo("UTC"))  # the evening before, in Vancouver
 LOST_DATE = datetime(2022, 3, 2, 18, 0, 0, tzinfo=ZoneInfo("UTC"))
 SHORT_ROW = ["77", "Apr 1, 2022, 1:00:00 PM", "Short"]
@@ -182,3 +186,60 @@ def test_the_strava_report_against_the_real_app(cli_against_app: TestClient, tmp
     # 03:15 UTC on 1 March is the evening of 28 February in Vancouver.
     assert _local(RIDE_DATE) == "2022-02-28"
     assert "  deleted_in_strava  2022-02-28  Lunch Ride" in report, report
+
+
+def _ski_rows(start: datetime, activity_type: str) -> list:
+    return [
+        SA.row(
+            **{
+                "Activity ID": str(SKI_ID),
+                "Activity Date": SA.strava_date(start),
+                "Activity Name": "Ski Day",
+                "Activity Type": activity_type,
+            }
+        )
+    ]
+
+
+def test_the_load_lines_against_the_real_app(cli_against_app: TestClient, tmp_path: Path) -> None:
+    """F031 AC4 through the command: a run linked to an ``Alpine Ski`` row prints one excluded
+    line with its old load (read from ``GET /sessions/{id}/load`` before the import, not from the
+    report), a re-import of the same archive prints no load lines, and an archive typing the row
+    ``Run`` prints one restored line."""
+    client = cli_against_app
+    sample = SA.fixture("sample_run")
+    start = SA.session_start(sample)
+    stored = client.post("/sessions", files={"file": ("sample_run.fit", sample)})
+    assert stored.status_code == 201, stored.text
+    sid = stored.json()["session_id"]
+    before = client.get(f"/sessions/{sid}/load").json()["session_load"]
+    old = before["value"]
+    assert old is not None and before["unavailable"] is None, before
+
+    ski = SA.strava_zip(tmp_path / "ski.zip", _ski_rows(start, "Alpine Ski"))
+    report, body = _import(client, ski)
+
+    [change] = body["load_changes"]
+    assert (change["session_id"], change["strava_type"], change["change"]) == (sid, "Alpine Ski", "excluded")
+    assert change["old_load"] == old, change
+    strava = body["counts"]["strava"]
+    assert (strava["excluded_from_load"], strava["restored_to_load"]) == (1, 0), strava
+    assert report[-2:] == [
+        "Load: excluded_from_load 1, restored_to_load 0",
+        f"  excluded  {change['local_date']}  Alpine Ski  {old:.1f}",
+    ], report
+
+    report, body = _import(client, ski)
+    assert body["load_changes"] == [], body["load_changes"]
+    assert not any(line.startswith("Load:") for line in report), report
+
+    run = SA.strava_zip(tmp_path / "run.zip", _ski_rows(start, "Run"))
+    report, body = _import(client, run)
+
+    [change] = body["load_changes"]
+    assert (change["session_id"], change["strava_type"], change["change"]) == (sid, "Run", "restored")
+    assert report[-2:] == [
+        "Load: excluded_from_load 0, restored_to_load 1",
+        f"  restored  {change['local_date']}  Run  no load",
+    ], report
+    assert client.get(f"/sessions/{sid}/load").json()["session_load"]["value"] == old

@@ -18,7 +18,11 @@ unreadable inner archives. A Strava archive's import (``source`` ``strava``) rep
 its ``time_created`` as a local date (``sync._local_date``), its Strava name (read from
 ``GET /strava-activities/{id}``; ``-`` when that answers 404 or the name is null), and for a failed
 row its status and detail, for another its detail when it has one. A row that did not parse (entry
-``activities.csv line <n>``) prints its entry and the raw cells its ``detail`` holds. An API that
+``activities.csv line <n>``) prints its entry and the raw cells its ``detail`` holds. Then, unless
+``excluded_from_load`` and ``restored_to_load`` are both 0 and ``load_changes`` is empty, a line
+with those two counts and one line per ``load_changes`` entry in the served order: ``excluded`` or
+``restored``, the served ``local_date`` (already the athlete's date), the Strava type (``-`` when
+the run is no longer linked) and the old load to 1 decimal (``no load`` when null). An API that
 stores nights counts them in its progress total, so the
 progress lines then say "activities and nights"; an older API's lines read "activities".
 
@@ -96,6 +100,8 @@ STRAVA_COUNT_KEYS = (
 STRAVA_LISTED = frozenset({"failed", "ambiguous", "multisport_not_stored", "deleted_in_strava"})
 # The ``entry`` of a Strava row that did not parse: ``activities.csv line <n>``.
 UNPARSED_ENTRY = "activities.csv line "
+# A load change's old load when the saved body had none (a ``no_hr`` run; every restored entry).
+NO_LOAD = "no load"
 
 sleep = time.sleep
 
@@ -234,11 +240,15 @@ def _name_ids(body: dict[str, Any]) -> list[int]:
 
 
 def _strava_lines(
-    counts: dict[str, Any], rows: list[dict[str, Any]], names: dict[int, str | None]
+    counts: dict[str, Any],
+    rows: list[dict[str, Any]],
+    names: dict[int, str | None],
+    body_changes: Any = None,
 ) -> list[str]:
     """A Strava import's report: the ``counts.strava`` figures on one line, then one line per
     failed, ambiguous, multisport and deleted row (its local date and name; a row that did not
-    parse, its entry and the raw cells its ``detail`` holds)."""
+    parse, its entry and the raw cells its ``detail`` holds), then ``_load_lines`` for
+    ``body_changes`` (the body's ``load_changes``)."""
     strava = counts.get("strava")
     if strava is None:
         strava = {}
@@ -271,7 +281,43 @@ def _strava_lines(
         elif detail is not None:
             cells.append(_printable(str(detail)))
         lines.append("  " + "  ".join(cells))
-    return lines
+    return lines + _load_lines(strava, body_changes)
+
+
+def _load_change_line(change: Any) -> str:
+    """``  <change>  <local_date>  <strava_type>  <old_load>`` for one ``load_changes`` entry."""
+    if not isinstance(change, dict):
+        raise TypeError("load_changes")
+    kind, local_date = change.get("change"), change.get("local_date")
+    strava_type, old_load = change.get("strava_type"), change.get("old_load")
+    if (
+        not isinstance(kind, str)
+        or not isinstance(local_date, str)
+        or (strava_type is not None and not isinstance(strava_type, str))
+        or (old_load is not None and (isinstance(old_load, bool) or not isinstance(old_load, int | float)))
+    ):
+        raise TypeError("load_changes")
+    cells = [
+        _printable(kind),
+        _printable(local_date),
+        NULL if strava_type is None else _printable(strava_type),
+        NO_LOAD if old_load is None else f"{old_load:.1f}",
+    ]
+    return "  " + "  ".join(cells)
+
+
+def _load_lines(strava: dict[str, Any], changes: Any) -> list[str]:
+    """The ``excluded_from_load`` and ``restored_to_load`` counts and one line per ``load_changes``
+    entry, in the served order; nothing when both counts are 0 and there is no entry."""
+    if changes is None:
+        changes = []
+    if not isinstance(changes, list):
+        raise TypeError("load_changes")
+    excluded, restored = _count(strava, "excluded_from_load"), _count(strava, "restored_to_load")
+    if not (excluded or restored or changes):
+        return []
+    lines = [f"Load: excluded_from_load {excluded}, restored_to_load {restored}"]
+    return lines + [_load_change_line(change) for change in changes]
 
 
 def _report_lines(body: dict[str, Any], names: dict[int, str | None] | None = None) -> list[str]:
@@ -282,7 +328,7 @@ def _report_lines(body: dict[str, Any], names: dict[int, str | None] | None = No
     """
     counts, rows, served = _report_rows(body)
     if _is_strava(body):
-        return _strava_lines(counts, rows, names or {})
+        return _strava_lines(counts, rows, names or {}, body.get("load_changes"))
 
     stored = _count(counts, "stored")
     if not served:
