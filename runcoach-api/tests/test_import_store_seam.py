@@ -306,6 +306,8 @@ def test_the_import_tables_have_the_reference_columns() -> None:
         "activities_total",
         "activities_processed",
         "counts",
+        "source",
+        "load_changes",
     }
     assert set(schema["import_files"]) == {
         "import_id",
@@ -319,6 +321,7 @@ def test_the_import_tables_have_the_reference_columns() -> None:
         "quality_flags",
         "status",
         "detail",
+        "strava_activity_id",
     }
 
 

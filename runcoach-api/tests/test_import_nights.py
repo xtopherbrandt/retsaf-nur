@@ -308,7 +308,8 @@ def test_a_faulty_night_is_a_failed_row_and_writes_nothing(isolated_data_dir: Pa
 
 
 def test_an_old_jobs_counts_serve_without_the_new_keys(isolated_data_dir: Path) -> None:
-    """A job stored before ``no_night`` and ``replaced`` existed serves them as 0."""
+    """A job stored before ``no_night``, ``replaced`` and ``strava`` existed serves them as 0 (every
+    ``strava`` key 0)."""
     old_counts = {
         "stored": 2,
         "already_stored": 1,
@@ -336,7 +337,29 @@ def test_an_old_jobs_counts_serve_without_the_new_keys(isolated_data_dir: Path) 
     assert one.status_code == 200, one.text
     assert listed.status_code == 200, listed.text
     print("[slice compared] served counts:", one.json()["counts"])
-    expected = {**old_counts, "no_night": 0, "replaced": 0}
+    strava_zero = dict.fromkeys(
+        (
+            "attached",
+            "attached_by_file_start",
+            "stored",
+            "stored_retyped",
+            "already_stored",
+            "ambiguous",
+            "multisport_not_stored",
+            "not_fit",
+            "no_file",
+            "not_running",
+            "failed",
+            "unchanged",
+            "updated",
+            "deleted_in_strava",
+            "distance_differs",
+            "excluded_from_load",
+            "restored_to_load",
+        ),
+        0,
+    )
+    expected = {**old_counts, "no_night": 0, "replaced": 0, "strava": strava_zero}
     assert one.json()["counts"] == expected
     (item,) = listed.json()["items"]
     assert item["counts"] == expected

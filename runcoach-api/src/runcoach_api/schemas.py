@@ -1391,7 +1391,27 @@ class HrHistoryEntry(BaseModel):
 # ---------------------------------------------------------------------------
 
 ImportStatus = Literal["queued", "scanning", "running", "completed", "failed", "interrupted"]
-ImportOutcome = Literal["stored", "replaced", "already_stored", "no_night", "skipped_sport", "failed"]
+ImportOutcome = Literal[
+    "stored",
+    "replaced",
+    "already_stored",
+    "no_night",
+    "skipped_sport",
+    "failed",
+    # A Strava archive's rows (F030 reference section 3; ``imports.strava_types.STRAVA_OUTCOMES``).
+    "attached",
+    "attached_by_file_start",
+    "stored_retyped",
+    "ambiguous",
+    "multisport_not_stored",
+    "not_fit",
+    "no_file",
+    "not_running",
+    "unchanged",
+    "updated",
+    "deleted_in_strava",
+]
+ImportSource = Literal["garmin", "strava"]
 
 
 class ImportProgress(BaseModel):
@@ -1411,6 +1431,30 @@ class ImportUnreadableArchive(BaseModel):
     reason: str = Field(description="Why it was not read.")
 
 
+class ImportStravaCounts(BaseModel):
+    """A Strava import's tallies (F030 reference section 3): one count per row outcome, the warned
+    rows, and the sessions the import excluded from or restored to load. Every key is 0 when absent,
+    so a Garmin job, or one stored before a key existed, serves 0."""
+
+    attached: int = 0
+    attached_by_file_start: int = 0
+    stored: int = 0
+    stored_retyped: int = 0
+    already_stored: int = 0
+    ambiguous: int = 0
+    multisport_not_stored: int = 0
+    not_fit: int = 0
+    no_file: int = 0
+    not_running: int = 0
+    failed: int = 0
+    unchanged: int = 0
+    updated: int = 0
+    deleted_in_strava: int = Field(default=0, description="Stored rows absent from this archive, marked and unlinked.")
+    distance_differs: int = Field(default=0, description="Linked rows carrying the distance_differs warning.")
+    excluded_from_load: int = Field(default=0, description="Linked sessions whose saved load the import excluded.")
+    restored_to_load: int = Field(default=0, description="Linked sessions whose saved load the import restored.")
+
+
 class ImportCounts(BaseModel):
     """The job's tallies (reference section 4). The three maps are keyed by name and count files."""
 
@@ -1423,6 +1467,20 @@ class ImportCounts(BaseModel):
     non_activity: dict[str, int] = Field(description="FIT files that are not activities, by file type name (a number for a Garmin-private type).")
     not_fit: dict[str, int] = Field(description="Entries that are not FIT files, by lower-cased extension without the dot; `(none)` without one.")
     unreadable_archives: list[ImportUnreadableArchive]
+    strava: ImportStravaCounts = Field(
+        default_factory=ImportStravaCounts,
+        description="A Strava import's tallies; every key 0 for a Garmin job and for a job stored before the key existed.",
+    )
+
+
+class ImportLoadChange(BaseModel):
+    """One linked session whose saved load a Strava import excluded or restored."""
+
+    session_id: str
+    local_date: str = Field(description="The session's date in the athlete's zone, YYYY-MM-DD.")
+    strava_type: str | None = Field(description="The linked row's Activity Type; null when the session is no longer linked.")
+    old_load: float | None = Field(description="The saved load value before the change; null when it had none.")
+    change: Literal["excluded", "restored"]
 
 
 class ImportFile(BaseModel):
@@ -1438,6 +1496,9 @@ class ImportFile(BaseModel):
     quality_flags: list[str] | None = Field(description="The stored or replacing session's quality flags ([] for a night); null for other outcomes.")
     status: int | None = Field(description="On failed: for a file the pipeline refused, the status POST /sessions answers for it (413 for a FIT entry over its 50 MB cap); null for a candidate that could not be screened, and otherwise.")
     detail: str | None = Field(description="On failed: for a file the pipeline refused, the message POST /sessions answers; for a candidate that could not be screened, the scan's reason (the entry is encrypted or could not be read, file_id carries no type, file_id could not be read); otherwise \"database is locked\", or the exception's type and message.")
+    strava_activity_id: int | None = Field(
+        default=None, description="A Strava row's Activity ID (a 64-bit integer); null on a Garmin row."
+    )
 
 
 class Import(BaseModel):
@@ -1456,6 +1517,23 @@ class Import(BaseModel):
     files: list[ImportFile] | None = Field(
         None, description="Every processed row in seq order; absent from listImports."
     )
+    source: ImportSource = Field(
+        default="garmin",
+        description="The archive's kind: strava when activities.csv sits at its root or in its one folder; a job stored before the field is served garmin.",
+    )
+    load_changes: list[ImportLoadChange] = Field(
+        default_factory=list, description="The linked sessions a Strava import excluded from or restored to load; empty otherwise."
+    )
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _null_source_is_garmin(cls, value):
+        return "garmin" if value is None else value
+
+    @field_validator("load_changes", mode="before")
+    @classmethod
+    def _null_load_changes_is_empty(cls, value):
+        return [] if value is None else value
 
 
 class ImportPage(BaseModel):

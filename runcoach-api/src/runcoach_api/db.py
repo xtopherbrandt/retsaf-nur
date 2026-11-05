@@ -244,7 +244,11 @@ _SCHEMA_DDL = """
       import_id TEXT PRIMARY KEY, archive_name TEXT, archive_bytes INTEGER,
       status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL,
       started_at TEXT, finished_at TEXT, fit_files_scanned INTEGER,
-      activities_total INTEGER, activities_processed INTEGER, counts TEXT
+      activities_total INTEGER, activities_processed INTEGER, counts TEXT,
+      -- F030: garmin or strava; NULL on a job stored before the column,
+      -- served garmin. load_changes is JSON text, the per-session load
+      -- changes a Strava import made. _reconcile_columns lands both.
+      source TEXT, load_changes TEXT
     );
     CREATE TABLE IF NOT EXISTS import_files (
       -- F020: one report row per activity file of an import; quality_flags
@@ -254,6 +258,8 @@ _SCHEMA_DDL = """
       import_id TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT,
       time_created TEXT, outcome TEXT, stored_session_id TEXT, sport TEXT,
       activity_tag TEXT, quality_flags TEXT, status INTEGER, detail TEXT,
+      -- F030: the Strava row's Activity ID; NULL on a Garmin row.
+      strava_activity_id INTEGER,
       PRIMARY KEY (import_id, seq)
     );
     CREATE TABLE IF NOT EXISTS hr_history (
@@ -321,6 +327,23 @@ _SCHEMA_DDL = """
     -- the expression (superseded_at IS NULL), filtered to the active rows.
     CREATE UNIQUE INDEX IF NOT EXISTS goals_one_active
       ON goals((superseded_at IS NULL)) WHERE superseded_at IS NULL;
+    CREATE TABLE IF NOT EXISTS strava_activities (
+      -- F030: one row per Activity ID of a Strava archive, kept whatever its
+      -- outcome. columns is a JSON object of every cell as text, in header
+      -- order; warnings a JSON list. The link is linked_session_id, never
+      -- session_id, and carries no foreign key, so _child_tables does not
+      -- list this table and the row outlives a deleted session. match is
+      -- csv_start, file_start, stored or NULL; outcome the row's last step
+      -- outcome. Written by write_strava_row.
+      activity_id INTEGER PRIMARY KEY, start_time TEXT, activity_type TEXT,
+      name TEXT, description TEXT, private_note TEXT, filename TEXT,
+      columns TEXT, linked_session_id TEXT, match TEXT, outcome TEXT,
+      warnings TEXT, deleted_in_strava INTEGER NOT NULL DEFAULT 0,
+      import_id TEXT, updated_at TEXT
+    );
+    -- One Strava row per session: unique over the linked rows only.
+    CREATE UNIQUE INDEX IF NOT EXISTS strava_one_row_per_session
+      ON strava_activities(linked_session_id) WHERE linked_session_id IS NOT NULL;
 """
 
 # The entered-values table's name, for callers and tests that address it.
@@ -467,9 +490,11 @@ def _ensure_session_lookup_indexes(conn: sqlite3.Connection) -> None:
     has it dropped and rebuilt); and,
     per ``profile.FIT_FIELDS`` column, one on ``(start_time, upload_order)`` over the sessions
     carrying it (the latest carrying session, read by ``_run_date_candidates`` and
-    ``_resolve_profile_latest``). Created after ``_reconcile_columns``, since an older store gains
-    these columns there."""
+    ``_resolve_profile_latest``); and one on ``start_time`` (``sessions_at_second``, the Strava
+    import's per-row lookup, and ``read_hrv_rows``' range). Created after ``_reconcile_columns``,
+    since an older store gains these columns there."""
     conn.execute("CREATE INDEX IF NOT EXISTS sessions_upload_order ON sessions (upload_order)")
+    conn.execute("CREATE INDEX IF NOT EXISTS sessions_start_time ON sessions (start_time)")
     existing = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'sessions_series_start'"
     ).fetchone()
@@ -1071,10 +1096,8 @@ def read_hrv_rows(conn: sqlite3.Connection, start_iso: str, end_iso: str) -> lis
     its response, the unserved inputs being PRIN-12's OPEN exceptions
     (PRIN-24, PRIN-27). Selection is the consumer's decision.
 
-    No index serves this scan: the composite indexes are ``UNIQUE
-    (source_device, start_time)`` and the list's ``records (session_id, t)``,
-    neither led by ``start_time`` -- irrelevant at single-athlete scale and
-    noted so nobody adds a speculative one.
+    The ``sessions_start_time`` index (``_ensure_session_lookup_indexes``)
+    can serve this range.
     """
     cur = conn.execute(
         """
@@ -2966,3 +2989,100 @@ def read_session_names(conn: sqlite3.Connection, session_ids: Sequence[str]) -> 
     placeholders = ", ".join("?" for _ in ids)
     rows = conn.execute(f"SELECT session_id, name FROM sessions WHERE session_id IN ({placeholders})", ids)
     return {row["session_id"]: row["name"] for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# F030: Strava archive rows (``strava_activities``) and the per-row session lookup.
+# ---------------------------------------------------------------------------
+
+STRAVA_ACTIVITIES_TABLE = "strava_activities"
+_STRAVA_FIELDS = (
+    "activity_id",
+    "start_time",
+    "activity_type",
+    "name",
+    "description",
+    "private_note",
+    "filename",
+    "columns",
+    "linked_session_id",
+    "match",
+    "outcome",
+    "warnings",
+    "deleted_in_strava",
+    "import_id",
+    "updated_at",
+)
+_STRAVA_COLUMN_LIST = ", ".join(f'"{name}"' for name in _STRAVA_FIELDS)
+
+# The stored sessions starting on one second, as ``sessions_at_second`` reads them;
+# ``sessions_start_time`` serves the lookup.
+SESSIONS_AT_SECOND_SQL = (
+    "SELECT session_id, sport,"
+    " CASE WHEN json_valid(summary) THEN json_extract(summary, '$.distance_m') END AS distance_m"
+    " FROM sessions WHERE start_time = ? ORDER BY upload_order, session_id"
+)
+
+
+def _strava_json(value) -> str:
+    """The fixed encoding of ``columns`` and ``warnings``: key order kept, no ASCII escaping and no
+    spaces, so writing the same row twice writes the same bytes."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _strava_row(row: sqlite3.Row) -> dict:
+    out = {name: row[name] for name in _STRAVA_FIELDS}
+    out["columns"] = json.loads(row["columns"]) if row["columns"] is not None else None
+    out["warnings"] = json.loads(row["warnings"]) if row["warnings"] is not None else []
+    out["deleted_in_strava"] = bool(row["deleted_in_strava"])
+    return out
+
+
+def _strava_cursor(conn: sqlite3.Connection) -> sqlite3.Cursor:
+    cursor = conn.cursor()
+    cursor.row_factory = sqlite3.Row
+    return cursor
+
+
+def read_strava_row(conn: sqlite3.Connection, activity_id: int) -> dict | None:
+    """One ``strava_activities`` row as ``write_strava_row`` takes it (``columns`` a dict in header
+    order, ``warnings`` a list, ``deleted_in_strava`` a bool), or None. Read-only."""
+    row = _strava_cursor(conn).execute(
+        f"SELECT {_STRAVA_COLUMN_LIST} FROM {STRAVA_ACTIVITIES_TABLE} WHERE activity_id = ?", (activity_id,)
+    ).fetchone()
+    return None if row is None else _strava_row(row)
+
+
+def read_strava_rows(conn: sqlite3.Connection) -> list[dict]:
+    """Every ``strava_activities`` row, by ``activity_id``, as ``read_strava_row`` returns one. Read-only."""
+    rows = _strava_cursor(conn).execute(
+        f"SELECT {_STRAVA_COLUMN_LIST} FROM {STRAVA_ACTIVITIES_TABLE} ORDER BY activity_id"
+    )
+    return [_strava_row(row) for row in rows]
+
+
+def write_strava_row(conn: sqlite3.Connection, row: Mapping) -> None:
+    """Insert one ``strava_activities`` row, or replace every column of the row with its
+    ``activity_id``. ``row`` carries every field ``read_strava_row`` returns. Commits nothing: the
+    caller's transaction holds it with the row's report row and any session it stores. A link to a
+    session another row already links raises ``sqlite3.IntegrityError``
+    (``strava_one_row_per_session``)."""
+    values = dict(row)
+    values["columns"] = None if values["columns"] is None else _strava_json(values["columns"])
+    values["warnings"] = _strava_json(list(values["warnings"] or []))
+    values["deleted_in_strava"] = int(bool(values["deleted_in_strava"]))
+    updates = ", ".join(f'"{name}" = excluded."{name}"' for name in _STRAVA_FIELDS if name != "activity_id")
+    conn.execute(
+        f"INSERT INTO {STRAVA_ACTIVITIES_TABLE} ({_STRAVA_COLUMN_LIST})"
+        f" VALUES ({', '.join('?' for _ in _STRAVA_FIELDS)})"
+        f" ON CONFLICT (activity_id) DO UPDATE SET {updates}",
+        tuple(values[name] for name in _STRAVA_FIELDS),
+    )
+
+
+def sessions_at_second(conn: sqlite3.Connection, start_time: str) -> list[tuple[str, str, float | None]]:
+    """``(session_id, sport, distance_m)`` of every stored session whose ``start_time`` equals
+    ``start_time`` (the store's UTC ISO spelling, ``+00:00``), any sport, in upload order.
+    ``distance_m`` is the summary's, None when absent or the summary is not JSON. Read-only."""
+    rows = conn.execute(SESSIONS_AT_SECOND_SQL, (start_time,)).fetchall()
+    return [(row[0], row[1], row[2]) for row in rows]

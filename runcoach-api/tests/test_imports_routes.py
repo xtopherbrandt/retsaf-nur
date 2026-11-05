@@ -63,6 +63,8 @@ IMPORT_KEYS = {
     "finished_at",
     "progress",
     "counts",
+    "source",
+    "load_changes",
 }
 FILE_KEYS = {
     "seq",
@@ -75,6 +77,7 @@ FILE_KEYS = {
     "quality_flags",
     "status",
     "detail",
+    "strava_activity_id",
 }
 
 

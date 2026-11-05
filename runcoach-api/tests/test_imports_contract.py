@@ -38,7 +38,16 @@ SUCCESS_SCHEMA = {
     ("/imports", "get"): ("200", "ImportPage"),
     ("/imports/{import_id}", "get"): ("200", "Import"),
 }
-COMPONENTS = {"Import", "ImportPage", "ImportFile", "ImportCounts", "ImportProgress", "ImportUnreadableArchive"}
+COMPONENTS = {
+    "Import",
+    "ImportPage",
+    "ImportFile",
+    "ImportCounts",
+    "ImportProgress",
+    "ImportUnreadableArchive",
+    "ImportStravaCounts",
+    "ImportLoadChange",
+}
 
 
 def _load_support(name: str):

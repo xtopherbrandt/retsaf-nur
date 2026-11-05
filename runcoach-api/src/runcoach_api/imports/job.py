@@ -191,6 +191,8 @@ def _import_body(row: sqlite3.Row) -> dict:
             "activities_processed": row["activities_processed"],
         },
         "counts": json.loads(row["counts"]) if row["counts"] else _empty_counts(),
+        "source": row["source"],
+        "load_changes": json.loads(row["load_changes"]) if row["load_changes"] else [],
     }
 
 
@@ -206,6 +208,7 @@ def _file_body(row: sqlite3.Row) -> dict:
         "quality_flags": json.loads(row["quality_flags"]) if row["quality_flags"] is not None else None,
         "status": row["status"],
         "detail": row["detail"],
+        "strava_activity_id": row["strava_activity_id"],
     }
 
 

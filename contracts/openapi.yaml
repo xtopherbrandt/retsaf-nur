@@ -3417,6 +3417,40 @@ components:
         unreadable_archives:
           type: array
           items: { $ref: "#/components/schemas/ImportUnreadableArchive" }
+        strava:
+          $ref: "#/components/schemas/ImportStravaCounts"
+          description: "A Strava import's tallies; every key 0 for a Garmin job and for a job stored before the key existed."
+    ImportStravaCounts:
+      type: object
+      description: "A Strava import's tallies (F030): one count per row outcome, the warned rows, and the sessions excluded from or restored to load. Every key is 0 when absent."
+      properties:
+        attached: { type: integer, default: 0 }
+        attached_by_file_start: { type: integer, default: 0 }
+        stored: { type: integer, default: 0 }
+        stored_retyped: { type: integer, default: 0 }
+        already_stored: { type: integer, default: 0 }
+        ambiguous: { type: integer, default: 0 }
+        multisport_not_stored: { type: integer, default: 0 }
+        not_fit: { type: integer, default: 0 }
+        no_file: { type: integer, default: 0 }
+        not_running: { type: integer, default: 0 }
+        failed: { type: integer, default: 0 }
+        unchanged: { type: integer, default: 0 }
+        updated: { type: integer, default: 0 }
+        deleted_in_strava: { type: integer, default: 0, description: "Stored rows absent from this archive, marked and unlinked." }
+        distance_differs: { type: integer, default: 0, description: "Linked rows carrying the distance_differs warning." }
+        excluded_from_load: { type: integer, default: 0, description: "Linked sessions whose saved load the import excluded." }
+        restored_to_load: { type: integer, default: 0, description: "Linked sessions whose saved load the import restored." }
+    ImportLoadChange:
+      type: object
+      description: "One linked session whose saved load a Strava import excluded or restored."
+      required: [session_id, local_date, strava_type, old_load, change]
+      properties:
+        session_id: { type: string }
+        local_date: { type: string, description: "The session's date in the athlete's zone, YYYY-MM-DD." }
+        strava_type: { type: string, nullable: true, description: "The linked row's Activity Type; null when the session is no longer linked." }
+        old_load: { type: number, nullable: true, description: "The saved load value before the change; null when it had none." }
+        change: { type: string, enum: [excluded, restored] }
     ImportFile:
       type: object
       description: "One processed activity or HRV_STATUS file (or unreadable FIT candidate), in processing order."
@@ -3425,13 +3459,17 @@ components:
         seq: { type: integer, description: "Processing order from 1: oldest time_created first." }
         entry: { type: string, description: "The entry's path, or <outer path>!<inner path> inside an inner zip." }
         time_created: { type: string, nullable: true, description: "file_id.time_created, ISO 8601 in UTC." }
-        outcome: { type: string, enum: [stored, replaced, already_stored, no_night, skipped_sport, failed] }
+        outcome:
+          type: string
+          enum: [stored, replaced, already_stored, no_night, skipped_sport, failed, attached, attached_by_file_start, stored_retyped, ambiguous, multisport_not_stored, not_fit, no_file, not_running, unchanged, updated, deleted_in_strava]
+          description: "The first six are a Garmin archive's; a Strava archive's rows report stored, already_stored, failed and the rest (F030 reference section 3)."
         session_id: { type: string, nullable: true, description: "Kept after that session is deleted." }
         sport: { type: string, nullable: true, description: "Canonical sport when stored; `other` on a night's row (stored, replaced or no_night); the FIT file's sport when skipped_sport." }
         activity_tag: { type: string, nullable: true, description: "resting_hrv_check and health_snapshot mark resting captures; overnight_hrv a night's stored, replaced or no_night row." }
         quality_flags: { type: array, nullable: true, items: { type: string }, description: "The stored or replacing session's quality flags ([] for a night); null for other outcomes." }
         status: { type: integer, nullable: true, description: "On failed: for a file the pipeline refused, the status POST /sessions answers for it (413 for a FIT entry over its 50 MB cap); null for a candidate that could not be screened, and otherwise." }
         detail: { type: string, nullable: true, description: "On failed: for a file the pipeline refused, the message POST /sessions answers; for a candidate that could not be screened, the scan's reason (the entry is encrypted or could not be read, file_id carries no type, file_id could not be read); otherwise \"database is locked\", or the exception's type and message." }
+        strava_activity_id: { type: integer, nullable: true, default: null, description: "A Strava row's Activity ID (a 64-bit integer); null on a Garmin row." }
     Import:
       type: object
       description: "One archive import job (F020). files is served by getImport and startImport only."
@@ -3452,6 +3490,15 @@ components:
           nullable: true
           items: { $ref: "#/components/schemas/ImportFile" }
           description: "Every processed row in seq order; absent from listImports."
+        source:
+          type: string
+          enum: [garmin, strava]
+          default: garmin
+          description: "The archive's kind: strava when activities.csv sits at its root or in its one folder; a job stored before the field is served garmin."
+        load_changes:
+          type: array
+          items: { $ref: "#/components/schemas/ImportLoadChange" }
+          description: "The linked sessions a Strava import excluded from or restored to load; empty otherwise."
     ImportPage:
       type: object
       description: "listImports: every import job, newest first, without files."
