@@ -46,6 +46,7 @@ from fastapi.testclient import TestClient
 from runcoach_api import db as db_module
 from runcoach_api import main as main_module
 from runcoach_api import schemas
+from runcoach_api.imports import strava_match
 from runcoach_api.ingestion.mapping import derive_session_id
 from runcoach_api.main import app
 from runcoach_api.metrics import load_chart, session_load
@@ -534,3 +535,28 @@ def test_both_load_routes_validate_for_an_excluded_session(freeze, persist_sessi
     day = _day(chart.json(), start.date())
     excluded = [schemas.LoadChartExcluded(**e) for e in day["excluded"]]
     assert [(e.session_id, e.reason) for e in excluded] == [(session_id, REASON)]
+
+
+_COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+
+
+def test_the_served_chart_reason_counts_the_exclusion_reasons_load_chart_holds() -> None:
+    """The ``LoadChartReason`` description ``app.openapi()`` serves (its docstring) and the
+    contract's each name how many exclusion reasons there are; that count word equals
+    ``len(load_chart.EXCLUSION_REASONS)``, and each exclusion reason is named."""
+    served = app.openapi()["components"]["schemas"]["LoadChartReason"]["description"]
+    written = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))["components"]["schemas"]["LoadChartReason"][
+        "description"
+    ]
+    for text in (served, written):
+        flat = " ".join(text.split())
+        print(flat)
+        counts = [n for word, n in _COUNT_WORDS.items() if f" {word} exclusion" in flat]
+        assert counts == [len(load_chart.EXCLUSION_REASONS)], flat
+        assert all(reason in flat for reason in load_chart.EXCLUSION_REASONS), flat
+
+
+def test_session_load_and_strava_match_hold_the_same_running_family() -> None:
+    """``session_load`` stays a pure module, so it keeps its own copy of Strava's running family;
+    the copy equals the matcher's."""
+    assert session_load.STRAVA_RUNNING_TYPES == strava_match.RUNNING_FAMILY

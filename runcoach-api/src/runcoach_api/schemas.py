@@ -1193,7 +1193,7 @@ class SessionLoad(BaseModel):
 
 
 class LoadChartReason(str, Enum):
-    """Why an uncounted run's saved load is unavailable: F017's `SessionLoadReason` minus the two
+    """Why an uncounted run's saved load is unavailable: F017's `SessionLoadReason` minus the three
     exclusion reasons (`sport_not_running`, `declared_capture` and `strava_not_running` exclude a
     session instead)."""
 

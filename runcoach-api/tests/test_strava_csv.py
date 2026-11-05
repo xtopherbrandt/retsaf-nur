@@ -338,6 +338,19 @@ def test_a_short_row_is_failed_with_its_raw_cells() -> None:
     assert '"8"' in tiny.detail and 'Activity Name ""' in tiny.detail
 
 
+def test_an_activity_id_in_non_ascii_digits_is_a_failed_row() -> None:
+    """``int()`` reads Arabic-Indic or full-width digits as a number; the ``Activity ID`` cell is
+    read as ASCII digits only, so such a row fails quoting the raw cell."""
+    raw_ids = ["١٢٣", "４５６"]
+    result = _read([_run("1"), *(_run(raw) for raw in raw_ids)])
+    assert [r.activity_id for r in result.rows] == [1]
+    assert [f.entry for f in result.failed] == ["activities.csv line 3", "activities.csv line 4"]
+    for failed, raw in zip(result.failed, raw_ids, strict=True):
+        print(failed.entry, "|", failed.detail)
+        assert f'"{raw}"' in failed.detail and "Activity ID" in failed.detail
+        assert failed.activity_id is None
+
+
 def test_line_n_counts_the_lines_of_a_multiline_cell() -> None:
     rows = [
         _run("1", **{"Activity Description": "a\nb\r\nc"}),  # lines 2-4
