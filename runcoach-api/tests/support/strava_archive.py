@@ -461,8 +461,8 @@ def outcome_rows() -> tuple[Case, ...]:
     fit, start = base()
     add("not_running_undecodable_file", "not_running", cells={**dated(start), "Activity Type": "Ride"},
         file_bytes=b"these bytes are not a FIT file")
-    start = when()
-    ride_id = add("not_running", "not_running", cells={**dated(start), "Activity Type": "Ride"})
+    ride_start = when()
+    ride_id = add("not_running", "not_running", cells={**dated(ride_start), "Activity Type": "Ride"})
     fit, start = base()
     add("not_fit_gpx", "not_fit", cells=dated(start), file_ext=".gpx.gz",
         file_bytes=gz(b'<?xml version="1.0"?><gpx version="1.1"></gpx>\n'))
@@ -488,9 +488,10 @@ def outcome_rows() -> tuple[Case, ...]:
         cells={"Activity Date": "18 avr. 2022 14:26:14"}, failure="bad_activity_date")
     add("failed_bad_activity_id", "failed", activity_id=0,
         cells={**dated(start), "Activity ID": "not-an-id"}, failure="bad_activity_id")
-    start = when()
+    # The same Activity ID an hour after the ``not_running`` row: rows run oldest first, so this
+    # later row is the one failed.
     add("failed_duplicate_activity_id", "failed", activity_id=ride_id,
-        cells={**dated(start), "Activity Type": "Ride"}, failure="duplicate_activity_id")
+        cells={**dated(ride_start + timedelta(hours=1)), "Activity Type": "Ride"}, failure="duplicate_activity_id")
 
     # Cells the CSV must carry intact (on non-running rows with no file: their outcome is fixed).
     start = when()

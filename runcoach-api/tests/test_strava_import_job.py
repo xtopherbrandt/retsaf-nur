@@ -189,13 +189,12 @@ def test_a_strava_archive_reports_every_outcome_with_source_strava(
     assert len(pair) == 2
     later = max(pair, key=lambda c: strava.strava_csv.parse_activity_date(c.cells["Activity Date"]))
     print("  duplicate pair (key, date):", [(c.key, c.cells["Activity Date"]) for c in pair], "later:", later.key)
+    assert later.key == "failed_duplicate_activity_id"
 
     by_id = _by_id(report)
     expected_counts: Counter[str] = Counter()
     for case in cases:
         outcome = case.outcome
-        if case in pair:
-            outcome = "failed" if case is later else "not_running"
         expected_counts[outcome] += 1
         if case.key == "failed_bad_activity_id":
             row = next(r for r in by_id[None] if r["outcome"] == "failed")
