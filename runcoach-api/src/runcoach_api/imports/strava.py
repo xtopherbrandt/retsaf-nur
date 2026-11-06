@@ -21,16 +21,22 @@
 - **Step 0, stored rows** (``_Run.already``), for a row whose ``Activity ID`` is stored and not
   marked: a live link is kept with its ``match``, reading ``unchanged`` (nothing written) when every
   cell equals the stored one in header order, else ``updated`` (cells replaced, ``distance_differs``
-  re-checked, ``import_id`` and ``updated_at`` this import's). A link to a session no longer stored,
+  re-checked, ``import_id`` and ``updated_at`` this import's). A linked row stored ``failed`` is
+  processed again whether or not its cells changed: ``updated``, its link and ``match`` kept, its
+  stored outcome the one its link gives (``_linked_outcome``) and ``distance_differs`` re-checked
+  (athlete ruling 2026-11-06). A link to a session no longer stored,
   or an unlinked row whose cells changed, is matched from step 1 and the row rewritten. An unlinked
   stored ``failed`` row is matched from step 1 whether or not its cells changed, its file read
   again, and reports what it gives (``failed`` again when it still fails). Every other unlinked,
   unchanged row re-runs step 1 on the sessions at its CSV start, reading no file: it links when
   step 1 finds one free session (a session stored since, a tie resolved), else reads ``unchanged``,
   nothing decoded or written (athlete rulings 2026-11-06). A marked row present again is matched
-  from step 1, which clears the mark. A row that did not parse is ``failed`` again whenever its
-  stored row is (``unchanged`` only for a stored row of another outcome whose cells equal its
-  cells); a live link survives it, keeping the fields its row parsed and replacing only ``columns``.
+  from step 1, which clears the mark. A row that did not parse is ``failed`` whatever its stored
+  row holds, never ``unchanged`` (a row one cell longer than the header keyed by the header reads
+  equal to its stored cells, and is still a row that did not parse); a live link survives it,
+  keeping the fields its row parsed and replacing only ``columns``. A row whose ``Activity ID``
+  does not parse cannot be found by it, so its stored row reads absent and is marked
+  ``deleted_in_strava``.
 - **Each row** goes through ``strava_match.decide`` with the stored sessions on its second
   (``db.sessions_at_second``, projected to ``(session_id, distance_m)``), a file reader
   (``strava_files.read_activity_file`` then ``session_starts``, each start passed as its
@@ -89,11 +95,13 @@ from runcoach_api.imports.strava_types import (
     ALREADY_STORED,
     AMBIGUOUS,
     ATTACHED,
+    ATTACHED_BY_FILE_START,
     DELETED_IN_STRAVA,
     DESCRIPTION_COLUMN,
     DISTANCE_DIFFERS,
     FAILED,
     MATCH_CSV_START,
+    MATCH_FILE_START,
     MATCH_STORED,
     NOT_FIT,
     PRIVATE_NOTE_COLUMN,
@@ -185,6 +193,27 @@ def _warnings(conn: sqlite3.Connection, session_id: str, row: CsvRow) -> tuple[s
     found = conn.execute(_SESSION_DISTANCE_SQL, (session_id,)).fetchone()
     distance = None if found is None else found[0]
     return (DISTANCE_DIFFERS,) if strava_match._differs(distance, row.distance_m) else ()
+
+
+# The outcome a live link's ``match`` gives, for a linked row stored ``failed`` that is processed
+# again; ``stored`` reads its outcome from the report row that made the link when there is one.
+_OUTCOME_OF_MATCH = {MATCH_CSV_START: ATTACHED, MATCH_FILE_START: ATTACHED_BY_FILE_START, MATCH_STORED: STORED}
+_LINKING_OUTCOMES = (ATTACHED, ATTACHED_BY_FILE_START, STORED, STORED_RETYPED, ALREADY_STORED)
+
+
+def _linked_outcome(conn: sqlite3.Connection, activity_id: int, session_id: str, match: str | None) -> str:
+    """The outcome of the row's link to ``session_id``: the latest report row that linked them
+    with a linking outcome (so ``stored_retyped`` and ``already_stored`` are kept apart from
+    ``stored``), else the one ``match`` gives (``attached`` when ``match`` is unknown)."""
+    placeholders = ", ".join("?" for _ in _LINKING_OUTCOMES)
+    found = conn.execute(
+        "SELECT outcome FROM import_files WHERE strava_activity_id = ? AND stored_session_id = ?"
+        f" AND outcome IN ({placeholders}) ORDER BY rowid DESC LIMIT 1",
+        (activity_id, session_id, *_LINKING_OUTCOMES),
+    ).fetchone()
+    if found is not None:
+        return found[0]
+    return _OUTCOME_OF_MATCH.get(match, ATTACHED)  # type: ignore[arg-type]
 
 
 def _warning_detail(warnings: Sequence[str]) -> str | None:
@@ -325,7 +354,8 @@ class _Run:
         report row written); False when the row is matched from step 1 (``decide``), which then
         replaces the stored row whole, a ``deleted_in_strava`` mark and a stale link included."""
         # Read with the connection closed before any write (``finish`` opens its own).
-        live = False
+        live = retry = False
+        outcome = None
         warnings: tuple[str, ...] = ()
         candidates: list[tuple[str, float | None]] = []
         with closing(self.work.connect()) as conn:
@@ -337,7 +367,11 @@ class _Run:
             if link is not None:
                 live = _session_exists(conn, link)
                 if live:
-                    warnings = tuple(stored["warnings"]) if same else _warnings(conn, link, row)
+                    # A linked row stored failed is processed again, its cells changed or not
+                    # (ruling 2026-11-06): its outcome from its link, its warning checked again.
+                    retry = stored["outcome"] == FAILED
+                    warnings = tuple(stored["warnings"]) if same and not retry else _warnings(conn, link, row)
+                    outcome = _linked_outcome(conn, row.activity_id, link, stored["match"]) if retry else stored["outcome"]
             elif same and stored["outcome"] != FAILED:
                 candidates = _candidates(conn, row.start_time)
         if link is not None:
@@ -346,12 +380,12 @@ class _Run:
                 if self.links.get(link) == row.activity_id:
                     del self.links[link]
                 return False
-            if same:
+            if same and not retry:
                 file_row = job.FileRow(**base, outcome=UNCHANGED, session_id=link, detail=_warning_detail(warnings))
                 self.finish(None, file_row, warnings)
                 return True
             # A live link is kept whatever steps 1-3 would now find; the cells are replaced.
-            record = self.record(row, stored["outcome"], link, stored["match"], warnings)
+            record = self.record(row, outcome, link, stored["match"], warnings)  # type: ignore[arg-type]
             file_row = job.FileRow(**base, outcome=UPDATED, session_id=link, detail=_warning_detail(warnings))
             self.finish(record, file_row, warnings)
             return True
@@ -502,7 +536,8 @@ class _Run:
             self.finish(None, file_row)
 
     def unparsed(self, seq: int, failed: strava_csv.FailedRow) -> None:
-        """A row that did not parse: ``failed``, unless step 0 finds its stored cells unchanged."""
+        """A row that did not parse: ``failed`` whatever its stored row holds (reference section 2
+        item 4); a stored live link is kept with the fields its row parsed before."""
 
         def cell(key: str) -> str | None:
             index = self.keys.index(key) if key in self.keys else len(failed.cells)
@@ -524,26 +559,15 @@ class _Run:
         )
         if activity_id is not None and activity_id not in self.seen:
             self.seen.add(activity_id)
+            # The cells keyed by the header, as many as both have: a row longer than the header loses
+            # its extra cells here, which is why such a row is never compared with its stored cells
+            # (it would read equal to them); it is failed, as every row that did not parse is.
             columns = dict(zip(self.keys, failed.cells, strict=False))
-            # Step 0: a stored row (not failed) whose cells are unchanged reads unchanged and writes
-            # nothing; a failed one is failed again; a live link survives a row that no longer parses.
+            # Step 0: a live link survives a row that no longer parses.
             with closing(self.work.connect()) as conn:
                 stored = db.read_strava_row(conn, activity_id)
                 link = None if stored is None else stored["linked_session_id"]
                 live = link is not None and _session_exists(conn, link)
-            if (stored is not None and not stored["deleted_in_strava"] and stored["outcome"] != FAILED
-                    and _same_cells(stored, columns)):
-                unchanged = job.FileRow(
-                    seq,
-                    failed.entry,
-                    start_time,
-                    UNCHANGED,
-                    session_id=link if live else None,
-                    sport=cell(strava_csv.ACTIVITY_TYPE),
-                    strava_activity_id=activity_id,
-                )
-                self.finish(None, unchanged, tuple(stored["warnings"]) if live else ())
-                return
             parsed = {
                 "start_time": start_time,
                 "activity_type": cell(strava_csv.ACTIVITY_TYPE),

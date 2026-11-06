@@ -545,15 +545,23 @@ def _long(row: dict[str, str]) -> list[str]:
     return [*cells[:at], "Morning", " Run", *cells[at + 1:]]
 
 
-@pytest.mark.parametrize("cut", [_short, _long], ids=["short_row", "long_row"])
+def _trailing(row: dict[str, str]) -> list[str]:
+    """The same cells plus one empty trailing cell (a stray trailing comma): its first cells equal
+    the stored columns, so only the cell count tells it from the row that parsed (review
+    2026-11-06, reference section 2 item 4)."""
+    return [*row.values(), ""]
+
+
+@pytest.mark.parametrize("cut", [_short, _long, _trailing], ids=["short_row", "long_row", "trailing_cell"])
 def test_a_linked_run_whose_row_no_longer_parses_keeps_its_type_and_its_load(
     isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, cut
 ) -> None:
     """A run linked to a ``Run`` row, then a newer export whose row for it does not parse (cut
-    short before ``Activity Type``, or one cell too long): the row is ``failed`` with its live
-    link, only its raw ``columns`` are replaced, and the fields it parsed before (type, name,
-    description, note, filename, start) are kept, so the run's load stays counted and the
-    session's ``strava`` block keeps its text."""
+    short before ``Activity Type``, one cell too long by a split name, or the same cells plus an
+    empty trailing one): the row is ``failed`` with its live link, never ``unchanged``, only its
+    raw ``columns`` are replaced, and the fields it parsed before (type, name, description, note,
+    filename, start) are kept, so the run's load stays counted and the session's ``strava`` block
+    keeps its text."""
     sample = SA.fixture("sample_run")
     start = SA.session_start(sample)
     good = _linked_run_row(start)
@@ -582,6 +590,29 @@ def test_a_linked_run_whose_row_no_longer_parses_keeps_its_type_and_its_load(
         assert stored[key] == before_row[key], key
     assert (block["activity_type"], block["name"], block["description"], block["private_note"]) == (
         "Run", "Morning Run", "Easy loop", "calf fine")
+
+
+def test_a_linked_row_whose_activity_id_no_longer_parses_reads_absent(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes
+) -> None:
+    """A linked row, then a newer export whose row for it has ``Activity ID`` ``<id>x``: the row
+    cannot be found by its ID, so it is ``failed`` with no ``strava_activity_id``, and its stored
+    row reads absent: marked ``deleted_in_strava`` and unlinked, reported once (review 2026-11-06,
+    reference section 3 step 0)."""
+    sample = SA.fixture("sample_run")
+    good = _linked_run_row(SA.session_start(sample))
+    with TestClient(app) as client:
+        (sid,) = _upload(client, post_fit_bytes, [("run.fit", sample)]).values()
+        _import(client, SA.strava_zip(tmp_path / "a.zip", [good]))
+        bad = dict(good, **{"Activity ID": f"{LINKED_ID}x"})
+        second = _import(client, SA.strava_zip(tmp_path / "b.zip", [bad]))
+    print("  second:", _summary(second))
+    assert [(r["strava_activity_id"], r["outcome"], r["session_id"], r["entry"]) for r in second["files"]] == [
+        (None, "failed", None, f"{CSV} line 2"), (LINKED_ID, "deleted_in_strava", None, f"{CSV}#{LINKED_ID}")]
+    stored = _strava_rows(isolated_data_dir)
+    assert list(stored) == [LINKED_ID]
+    assert (stored[LINKED_ID]["deleted_in_strava"], stored[LINKED_ID]["linked_session_id"]) == (True, None)
+    assert sid
 
 
 # --- the 2026-11-06 rulings: failed rows are retried, unlinked rows re-run step 1 ------------------
@@ -705,3 +736,53 @@ def test_an_updated_row_rechecks_its_distance_warning_both_ways(
     assert (third["files"][0]["outcome"], third["files"][0]["detail"]) == ("updated", None)
     assert third["counts"]["strava"]["distance_differs"] == 0
     assert _strava_rows(isolated_data_dir)[aid]["warnings"] == []
+
+
+# --- a linked row stored failed is processed again (ruling of 2026-11-06, critic B2) --------------
+
+
+def test_a_linked_row_failed_by_a_fault_is_processed_again_with_the_same_cells(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
+) -> None:
+    """Ruling (2) covers a linked row stored ``failed``. A newer export moves a linked row's
+    ``Distance (2)`` 50 % off its session, and a fault raised while its warning is read fails the
+    row (link kept, old warnings kept, stored ``failed``). The same export again, the fault gone:
+    the row is processed again, not read ``unchanged``: ``updated`` with its link, its stored
+    outcome back to the one its ``match`` gives (``attached``) and ``distance_differs`` now
+    checked. A third import of it reads ``unchanged``."""
+    attached = SA.by_key("attached")
+    far = _with(attached, **{"Distance (2)": str(float(attached.cells["Distance (2)"]) * 1.5)})
+    aid = _case_id(attached)
+    with TestClient(app) as client:
+        ids = _upload(client, post_fit_bytes, SA.stored_files([attached]))
+        session = ids["attached.fit"]
+        first = _import(client, _zip(tmp_path / "a.zip", [attached]))
+        real = strava._warnings
+
+        def faulty(conn, session_id, row):
+            raise RuntimeError("transient fault in the warning read")
+
+        monkeypatch.setattr(strava, "_warnings", faulty)
+        faulted = _import(client, _zip(tmp_path / "b.zip", [far]))
+        after_fault = _strava_rows(isolated_data_dir)[aid]
+        monkeypatch.setattr(strava, "_warnings", real)
+        retried = _import(client, _zip(tmp_path / "b.zip", [far]))
+        after_retry = _strava_rows(isolated_data_dir)[aid]
+        third = _import(client, _zip(tmp_path / "b.zip", [far]))
+    print("  first:", _summary(first), " faulted:", _summary(faulted), " retried:", _summary(retried),
+          " third:", _summary(third))
+    print("  stored after the fault:", {k: after_fault[k] for k in ("outcome", "linked_session_id", "warnings")},
+          " after the retry:", {k: after_retry[k] for k in ("outcome", "linked_session_id", "warnings")})
+    assert (first["files"][0]["outcome"], first["files"][0]["session_id"]) == ("attached", session)
+    assert (faulted["files"][0]["outcome"], faulted["files"][0]["session_id"]) == ("failed", session)
+    assert (after_fault["outcome"], after_fault["linked_session_id"], after_fault["warnings"]) == (
+        "failed", session, [])
+    assert (retried["files"][0]["outcome"], retried["files"][0]["session_id"]) == ("updated", session)
+    assert retried["files"][0]["detail"] == "warnings: distance_differs"
+    assert retried["counts"]["strava"]["distance_differs"] == 1 and retried["counts"]["failed"] == 0
+    assert (after_retry["outcome"], after_retry["linked_session_id"], after_retry["match"]) == (
+        "attached", session, "csv_start")
+    assert after_retry["warnings"] == ["distance_differs"]
+    assert after_retry["import_id"] == retried["import_id"]
+    assert (third["files"][0]["outcome"], third["files"][0]["session_id"]) == ("unchanged", session)
+    assert _strava_rows(isolated_data_dir)[aid] == after_retry

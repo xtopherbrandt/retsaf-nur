@@ -193,6 +193,25 @@ def test_the_strava_report_against_the_real_app(cli_against_app: TestClient, tmp
     assert any(line.startswith("  failed  activities.csv line 4  ") for line in report), report
 
 
+def test_a_row_one_cell_long_on_a_reimport_is_listed_against_the_real_app(
+    cli_against_app: TestClient, tmp_path: Path
+) -> None:
+    """Reference section 2 item 4 on a re-import (review 2026-11-06): a row that parsed, then the
+    same cells plus one empty trailing cell, is ``failed`` (not ``unchanged``, though its first
+    cells equal the stored ones), and the command lists it with its raw cells."""
+    row = SA.row(**{"Activity ID": str(RIDE_ID), "Activity Date": SA.strava_date(RIDE_DATE),
+                    "Activity Name": "Lunch Ride", "Activity Type": "Ride"})
+    _report, body = _import(cli_against_app, SA.strava_zip(tmp_path / "a.zip", [row]))
+    assert body["files"][0]["outcome"] == "not_running", body["files"]
+    report, body = _import(cli_against_app, SA.strava_zip(tmp_path / "b.zip", [[*row.values(), ""]]))
+    print("  report:", report)
+    [failed] = body["files"]
+    assert (failed["outcome"], failed["strava_activity_id"], failed["entry"]) == (
+        "failed", RIDE_ID, "activities.csv line 2"), failed
+    assert failed["detail"].startswith(f"row has {len(SA.KEYS) + 1} cells, the header {len(SA.KEYS)}"), failed
+    assert f"  failed  activities.csv line 2  {failed['detail']}" in report, report
+
+
 def _ski_rows(start: datetime, activity_type: str) -> list:
     return [
         SA.row(
