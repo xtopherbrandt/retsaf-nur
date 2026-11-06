@@ -125,13 +125,28 @@ index, the `imports` columns `source` and `load_changes`, the `import_files` col
 (implemented), `Import.source` and `Import.load_changes`, `ImportCounts.strava`, the `files[]`
 `strava_activity_id` and the Strava outcomes, `SessionDetail.strava`, the load body's
 `strava_activity_id`, and `strava_not_running` in every load reason enum. Update the CLI with the
-API: only this release's `runcoach import` prints a Strava import's report. Rollback warning: once
-a Strava import has excluded a run, an API older than this release breaks in two ways. Its load
-chart does not know `strava_not_running` as a reason that excludes a session, so it lists the run
-as an uncounted run with a reason its own reason list rejects, and `GET /metrics/load` answers 500
-for any window holding that run's day. And its load recompute (`POST
-/sessions/{id}/load/recompute`, which `runcoach loads recompute` calls for every run) rebuilds the
-load without reading Strava and puts the run back in load without saying so.
+API: only this release's `runcoach import` prints a Strava import's report.
+
+Rollback warning: an API older than this release, run on a store this release's Strava import has
+written, fails or misreads in five ways (each tried with the previous release's code on a scratch
+store this release wrote):
+
+- **Every Strava import's report.** `GET /imports/{id}` answers 500 for every Strava import,
+  whether or not it excluded a run, since its rows' outcomes (`attached`, `not_running`, ...) are
+  not in the older outcome list. The older `runcoach import-status` then prints `Error: API
+  returned 500` and exits 1. `GET /imports`, the list, still answers.
+- **An excluded run's load.** `GET /sessions/{id}/load` answers 500 for every run excluded by its
+  Strava type: the older reason list lacks `strava_not_running`.
+- **The load chart.** `GET /metrics/load` answers 500 for any window holding an excluded run's day;
+  a window that does not hold one answers.
+- **The state.** `GET /state` answers, but its chart counts each excluded run as an uncounted run
+  in the running history, so the chart's first day, gaps and marked days, and the fitness the
+  endurance exponent's race screen reads, can differ from this release's.
+- **A recompute.** `POST /sessions/{id}/load/recompute` (which `runcoach loads recompute` calls for
+  every run) rebuilds an excluded run's load without reading Strava, and the run is back in load
+  without a word. Moving to this release again does not undo it: the run stays counted until a
+  recompute by this release, or the next Strava import (even of the same archive, which then lists
+  it as `excluded`), takes it out again.
 
 ## 2026-11-01 through 2026-11-03 — Sprint 025: Critical speed and D′ from the run history
 
