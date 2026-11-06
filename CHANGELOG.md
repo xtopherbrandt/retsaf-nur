@@ -16,8 +16,11 @@ F034 changes two of critical speed's rules (spec/04 section 4.3.6; register row 
   CS line when it is held; an older API without the key prints none.
 - **The far-off cut drops from 15 to 4 s/km.** A fit is refused, `longest_far_off`, when its
   20-minute stretch runs more than 4 s/km slower than the next-longest predicts (4.00 passes);
-  `parameters.far_off_s_per_km` serves 4. The 15 s/km cut had refused no Sunday since 2023, while
-  every 20-minute stretch the athlete called not all-out or controlled ran 5.15 s/km or more over.
+  `parameters.far_off_s_per_km` serves 4. The 15 s/km cut had refused no Sunday since 2023. At the
+  ruling, every 20-minute stretch the athlete had called not all-out or controlled ran 5.15 s/km or
+  more over. At the release demo the athlete also called not all-out the 20-minute effort behind the
+  Sundays 2026-08-02 to 2026-08-30, which runs 3.40-3.44 s/km over: inside the 4 s/km cut, so those
+  weeks still serve critical speed, which likely reads slow. Revisiting the cut is IDEA-220.
 - **The athlete's critical speed is not served at this release.** The window ending 2026-11-04 has a
   far-off excess of +10.04 s/km, so `runcoach state` shows critical speed refused as
   `longest_far_off`, with the excess and the stretches, where the last release showed 4:29/km `low`. Threshold pace, the endurance
