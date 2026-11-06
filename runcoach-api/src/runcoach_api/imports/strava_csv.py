@@ -230,11 +230,12 @@ def read_activities(zf: zipfile.ZipFile, prefix: str) -> CsvResult:
 def _activity_id(raw: str) -> int | None:
     """``raw`` (ASCII digits) as an int, or ``None``. Past 19 significant digits the value is past
     any 64-bit integer, so ``PAST_64_BITS`` stands for it without converting the digits (CPython
-    refuses to convert more than 4300): the job fails such a row as past the 64-bit range."""
+    refuses to convert more than 4300): the job fails such a row as past the 64-bit range. Only
+    the significant digits are converted, so leading zeros of any count read by their value."""
     if not _ID.fullmatch(raw):
         return None
     digits = raw.lstrip("0")
-    return PAST_64_BITS if len(digits) > _MAX_SIGNIFICANT_DIGITS else int(raw)
+    return PAST_64_BITS if len(digits) > _MAX_SIGNIFICANT_DIGITS else int(digits or "0")
 
 
 def _row(keys: list[str], at: dict[str, int], line: int, cells: list[str]) -> CsvRow | FailedRow:

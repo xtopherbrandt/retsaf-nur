@@ -878,7 +878,8 @@ def test_an_oversized_cell_and_a_long_activity_id_fail_one_row_not_the_job(
 ) -> None:
     """A 200,000-character ``Activity Description`` (past ``csv``'s default 131,072 field limit)
     is read and kept; an ``Activity ID`` of 5,000 digits is the past-64-bit ``failed`` row, not a
-    job failure; an ID with 30 leading zeros parses by its value. Every other row is processed."""
+    job failure; an ID with 30 leading zeros, or with 5,000 (past the 4,300 digits CPython converts),
+    parses by its value. Every other row is processed."""
     start = SA.session_start(SA.fixture("sample_run"))
     note = "x" * 200_000
     rows = [
@@ -889,6 +890,9 @@ def test_an_oversized_cell_and_a_long_activity_id_fail_one_row_not_the_job(
                   "Activity Type": "Ride"}),
         SA.row(**{"Activity ID": "0" * 30 + "104", "Activity Date": SA.strava_date(start + timedelta(days=3)),
                   "Activity Type": "Ride"}),
+        # Past the 4,300 digits CPython converts, all but three of them zeros (review 2026-11-06).
+        SA.row(**{"Activity ID": "0" * 5000 + "105", "Activity Date": SA.strava_date(start + timedelta(days=4)),
+                  "Activity Type": "Ride"}),
     ]
     with TestClient(app) as client:
         report = _import(client, SA.strava_zip(tmp_path / "big.zip", rows))
@@ -896,12 +900,12 @@ def test_an_oversized_cell_and_a_long_activity_id_fail_one_row_not_the_job(
     print("  status:", report["status"], report["error"], "rows:", got)
     assert report["status"] == "completed", report["error"]
     assert [(o, i) for _, o, i, _ in got] == [
-        ("not_running", 101), ("not_running", 102), ("failed", None), ("not_running", 104)]
+        ("not_running", 101), ("not_running", 102), ("failed", None), ("not_running", 104), ("not_running", 105)]
     failed = report["files"][2]
     assert failed["entry"] == f"{CSV} line 4"
     assert failed["detail"].startswith("Activity ID is past the 64-bit integer range")
     stored = _strava_rows(isolated_data_dir)
-    assert sorted(stored) == [101, 102, 104]
+    assert sorted(stored) == [101, 102, 104, 105]
     assert stored[102]["description"] == note
 
 
