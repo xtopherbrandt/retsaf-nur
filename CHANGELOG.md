@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-11-05 through 2026-11-06 — Sprint 026: The Strava archive, its non-runs out of load, and critical speed held without a short race
+
 ### Critical speed
 
 F034 changes two of critical speed's rules (spec/04 section 4.3.6; register row REG-34, history entry H-50).
