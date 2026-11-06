@@ -673,7 +673,8 @@ def row_reimport(client, data_dir, tmp_path, monkeypatch) -> None:
     description ``updated`` (link kept); an unlinked row with a new description matched again
     (``not_running``); a missing row ``deleted_in_strava`` and unlinked (reported once); a linked
     row whose ``Activity Date`` no longer parses ``failed`` keeping its live link; an unlinked one
-    ``failed`` with no link. That newer archive again: every row ``unchanged``, the deleted row not
+    ``failed`` with no link. That newer archive again: every row ``unchanged`` but the two failed
+    ones, processed again and ``failed`` again (athlete ruling 2026-11-06), the deleted row not
     reported."""
     sids = {}
     rows1 = []
@@ -712,8 +713,12 @@ def row_reimport(client, data_dir, tmp_path, monkeypatch) -> None:
 
     third = _completed(client, SA.strava_zip(tmp_path / "two_again.zip", rows2))
     assert sorted(f["strava_activity_id"] for f in third["files"]) == [1, 2, 3, 4, 6]
-    assert {f["outcome"] for f in third["files"]} == {"unchanged"}
+    # The two failed rows are processed again and fail again (athlete ruling 2026-11-06).
+    assert {a: _outcome(third, a) for a in (1, 2, 3, 4, 6)} == {
+        1: "unchanged", 2: "unchanged", 3: "unchanged", 4: "failed", 6: "failed"}
     assert _file(third, 4)["session_id"] == sids[4]
+    assert _file(third, 6)["session_id"] is None
+    assert _strava_count(third, "deleted_in_strava") == 0
 
 
 ROWS: dict[str, Callable] = {
