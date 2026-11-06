@@ -786,3 +786,45 @@ def test_a_linked_row_failed_by_a_fault_is_processed_again_with_the_same_cells(
     assert after_retry["import_id"] == retried["import_id"]
     assert (third["files"][0]["outcome"], third["files"][0]["session_id"]) == ("unchanged", session)
     assert _strava_rows(isolated_data_dir)[aid] == after_retry
+
+
+@pytest.mark.parametrize("key", ["stored_retyped", "already_stored"])
+def test_a_linked_row_failed_by_a_fault_keeps_the_outcome_that_made_its_link(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes, key: str
+) -> None:
+    """Ruling (2) for a row whose link was made in step 3: its ``match`` is ``stored`` for
+    ``stored``, ``stored_retyped`` and ``already_stored`` alike, so the outcome a retried row gets
+    back is read from the report row that made its link. A newer export changes the row's
+    ``Distance (2)`` and a fault in the warning read fails it (link kept); the same export again,
+    the fault gone, reads ``updated`` and the stored outcome is the first import's ``key`` again,
+    not ``stored``."""
+    case = SA.by_key(key)
+    changed = _with(case, **{"Distance (2)": "12345.0"})
+    aid = _case_id(case)
+    with TestClient(app) as client:
+        _upload(client, post_fit_bytes, SA.stored_files([case]))
+        first = _import(client, _zip(tmp_path / "a.zip", [case]))
+        session = first["files"][0]["session_id"]
+        after_first = _strava_rows(isolated_data_dir)[aid]
+        real = strava._warnings
+
+        def faulty(conn, session_id, row):
+            raise RuntimeError("transient fault in the warning read")
+
+        monkeypatch.setattr(strava, "_warnings", faulty)
+        faulted = _import(client, _zip(tmp_path / "b.zip", [changed]))
+        after_fault = _strava_rows(isolated_data_dir)[aid]
+        monkeypatch.setattr(strava, "_warnings", real)
+        retried = _import(client, _zip(tmp_path / "b.zip", [changed]))
+        after_retry = _strava_rows(isolated_data_dir)[aid]
+    print("  first:", _summary(first), " faulted:", _summary(faulted), " retried:", _summary(retried))
+    print("  stored after the first import:", {k: after_first[k] for k in ("outcome", "linked_session_id", "match")},
+          " after the fault:", {k: after_fault[k] for k in ("outcome", "linked_session_id", "match")},
+          " after the retry:", {k: after_retry[k] for k in ("outcome", "linked_session_id", "match")})
+    assert session is not None
+    assert (first["files"][0]["outcome"], after_first["outcome"], after_first["match"]) == (key, key, "stored")
+    assert (faulted["files"][0]["outcome"], faulted["files"][0]["session_id"]) == ("failed", session)
+    assert (after_fault["outcome"], after_fault["linked_session_id"]) == ("failed", session)
+    assert (retried["files"][0]["outcome"], retried["files"][0]["session_id"]) == ("updated", session)
+    assert (after_retry["outcome"], after_retry["linked_session_id"], after_retry["match"]) == (
+        key, session, "stored")
