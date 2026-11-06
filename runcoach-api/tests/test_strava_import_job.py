@@ -796,6 +796,115 @@ def test_an_interrupted_job_leaves_no_half_written_row(
     assert status == ("running", 1)
 
 
+def _staged_job(isolated_data_dir: Path, path: Path) -> str:
+    """A job created for ``path`` with its archive in place, for ``job.run_job`` to run here."""
+    with TestClient(app):
+        pass  # the schema
+    conn = db.get_connection(isolated_data_dir)
+    try:
+        import_id = job.create_job(conn, path.name, path.stat().st_size)
+    finally:
+        conn.close()
+    target = job.archive_path(isolated_data_dir, import_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(path, target)
+    return import_id
+
+
+@pytest.mark.parametrize("where", ["_insert_file_row", "_write_stored_row"])
+def test_a_row_stopped_after_its_strava_row_is_written_leaves_none_of_it(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    """One transaction per row, inside the row's writes: the second row's report-row write (a
+    ``Ride`` row's ``import_files`` row, or a stored run's inside its session's transaction) stops
+    the process after its ``strava_activities`` row was written. That row, and for the run its
+    session, are absent; the first row's are present."""
+    sample = SA.fixture("sample_run")
+    base = SA.session_start(sample)
+    first = SA.row(**{"Activity ID": "1", "Activity Date": SA.strava_date(base - timedelta(days=90)),
+                      "Activity Type": "Ride"})
+    if where == "_insert_file_row":
+        second = SA.row(**{"Activity ID": "2", "Activity Date": SA.strava_date(base - timedelta(days=80)),
+                           "Activity Type": "Ride"})
+        files = []
+    else:
+        second = _run_row(base - timedelta(days=80), **{"Activity ID": "2", "Filename": "activities/2.fit.gz"})
+        files = [("activities/2.fit.gz", SA.gz(SA.shifted(sample, -80 * SA.DAY_S)))]
+    import_id = _staged_job(isolated_data_dir, SA.strava_zip(tmp_path / "stop.zip", [first, second], files))
+    real = getattr(job, where)
+    written: list[int] = []
+
+    def stopping(*args, **kwargs):
+        file_row = next(a for a in args if isinstance(a, job.FileRow))
+        if file_row.seq == 2:
+            conn = args[0]
+            # The strava row is already written inside this transaction.
+            written.extend(r[0] for r in conn.execute("SELECT activity_id FROM strava_activities WHERE activity_id = 2"))
+            raise _Stop
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(job, where, stopping)
+    with pytest.raises(_Stop):
+        job.run_job(import_id, isolated_data_dir, [], ZoneInfo("UTC"))
+    print(f"  {where}: strava row 2 seen inside the row's transaction: {written}")
+    assert written == [2]
+    assert list(_strava_rows(isolated_data_dir)) == [1]
+    assert _sessions(isolated_data_dir) == []
+
+
+def test_a_second_row_on_a_session_this_import_stored_is_ambiguous(isolated_data_dir: Path, tmp_path: Path) -> None:
+    """One row per session for a link the import's own store made: two ``Run`` rows on one second
+    carrying the same Strava-only FIT (one run uploaded to Strava twice). The first stores it; the
+    second, refused by the store's key on that session, is ``ambiguous`` and links nothing."""
+    sample = SA.fixture("sample_run")
+    start = SA.session_start(sample)
+    rows, files = [], []
+    for aid in ("801", "802"):
+        rows.append(_run_row(start, f"dup {aid}", **{"Activity ID": aid, "Filename": f"activities/{aid}.fit.gz"}))
+        files.append((f"activities/{aid}.fit.gz", SA.gz(sample)))
+    with TestClient(app) as client:
+        report = _import(client, SA.strava_zip(tmp_path / "dup.zip", rows, files))
+    got = [(r["strava_activity_id"], r["outcome"], r["session_id"], r["detail"]) for r in report["files"]]
+    print("  rows:", got)
+    assert report["status"] == "completed", report["error"]
+    (session,) = [s["session_id"] for s in _sessions(isolated_data_dir)]
+    assert got == [(801, "stored", session, None), (802, "ambiguous", None, f"candidates: {session}")]
+    stored = _strava_rows(isolated_data_dir)
+    assert (stored[801]["linked_session_id"], stored[802]["linked_session_id"]) == (session, None)
+
+
+def test_an_oversized_cell_and_a_long_activity_id_fail_one_row_not_the_job(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """A 200,000-character ``Activity Description`` (past ``csv``'s default 131,072 field limit)
+    is read and kept; an ``Activity ID`` of 5,000 digits is the past-64-bit ``failed`` row, not a
+    job failure; an ID with 30 leading zeros parses by its value. Every other row is processed."""
+    start = SA.session_start(SA.fixture("sample_run"))
+    note = "x" * 200_000
+    rows = [
+        SA.row(**{"Activity ID": "101", "Activity Date": SA.strava_date(start), "Activity Type": "Ride"}),
+        SA.row(**{"Activity ID": "102", "Activity Date": SA.strava_date(start + timedelta(days=1)),
+                  "Activity Type": "Ride", "Activity Description": note}),
+        SA.row(**{"Activity ID": "9" * 5000, "Activity Date": SA.strava_date(start + timedelta(days=2)),
+                  "Activity Type": "Ride"}),
+        SA.row(**{"Activity ID": "0" * 30 + "104", "Activity Date": SA.strava_date(start + timedelta(days=3)),
+                  "Activity Type": "Ride"}),
+    ]
+    with TestClient(app) as client:
+        report = _import(client, SA.strava_zip(tmp_path / "big.zip", rows))
+    got = [(r["entry"], r["outcome"], r["strava_activity_id"], (r["detail"] or "")[:60]) for r in report["files"]]
+    print("  status:", report["status"], report["error"], "rows:", got)
+    assert report["status"] == "completed", report["error"]
+    assert [(o, i) for _, o, i, _ in got] == [
+        ("not_running", 101), ("not_running", 102), ("failed", None), ("not_running", 104)]
+    failed = report["files"][2]
+    assert failed["entry"] == f"{CSV} line 4"
+    assert failed["detail"].startswith("Activity ID is past the 64-bit integer range")
+    stored = _strava_rows(isolated_data_dir)
+    assert sorted(stored) == [101, 102, 104]
+    assert stored[102]["description"] == note
+
+
 # --- AC1: a Garmin archive is unchanged ------------------------------------------------------------
 
 

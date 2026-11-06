@@ -12,7 +12,8 @@
   ``archive.FIT_ENTRY_CAP + 1`` bytes, the cap read at call time. Three failures are the job's,
   raised as ``StravaCsvError`` before any row is returned: the file past the cap (naming the
   limit), bytes that are not UTF-8 (naming the byte offset in the file, a BOM counted), and a
-  header without one of ``REQUIRED_KEYS`` (naming each one missing).
+  header without one of ``REQUIRED_KEYS`` (naming each one missing). The ``csv`` module's field
+  limit is raised to the cap first, so no single cell of a file within the cap fails the file.
 - Parsing: ``csv.reader`` over ``io.StringIO(text, newline="")``. Not ``DictReader``, which keeps
   only one cell of a repeated header name, and not default newline translation, which would turn
   a CR inside a quoted cell into LF. A repeated name's later copies are keyed ``<name> (2)``,
@@ -26,7 +27,9 @@
   ``<n>`` the physical line it starts on (``reader.line_num`` before reading it, plus 1, so the
   lines of an earlier multi-line cell are counted), ``detail`` quoting the raw ``Activity ID``,
   ``Activity Date`` and ``Activity Name`` cells (``""`` for a cell a short row lacks). The next
-  row is read. A record with no cells at all (a blank line) is not a row and is skipped.
+  row is read. A record with no cells at all (a blank line) is not a row and is skipped. An
+  ``Activity ID`` of more than 19 significant digits reads as ``PAST_64_BITS`` without being
+  converted, so the job fails that row as past the 64-bit range.
 - ``distance_m`` is ``Distance (2)`` in metres; empty, ``0.0`` or a cell that is not a finite
   number reads as no distance (``None``).
 """
@@ -69,6 +72,10 @@ _DATE = re.compile(
     r"(?P<hour>[0-9]{1,2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2}) (?P<ampm>AM|PM)"
 )
 _ID = re.compile(r"[0-9]+")
+# 2**63 - 1, the largest 64-bit integer, has 19 digits; an ID with more significant digits is past it.
+_MAX_SIGNIFICANT_DIGITS = 19
+# The value an Activity ID past 19 significant digits reads as: past SQLite's INTEGER range.
+PAST_64_BITS = 2**63
 
 
 class StravaCsvError(ValueError):
@@ -188,6 +195,9 @@ def _decode(data: bytes) -> str:
 def read_activities(zf: zipfile.ZipFile, prefix: str) -> CsvResult:
     """Read ``<prefix>activities.csv``: its rows in processing order and its failed rows."""
     text = _decode(_read_bytes(zf, prefix))
+    # The byte cap is the only size bound: no cell of a file within it is past the field limit.
+    # ``field_size_limit`` is the ``csv`` module's own, process-wide; it is only ever raised here.
+    csv.field_size_limit(max(csv.field_size_limit(), archive.FIT_ENTRY_CAP + 1))
     reader = csv.reader(io.StringIO(text, newline=""))
     try:
         try:
@@ -217,13 +227,23 @@ def read_activities(zf: zipfile.ZipFile, prefix: str) -> CsvResult:
     return CsvResult(keys=tuple(keys), rows=tuple(rows), failed=tuple(failed))
 
 
+def _activity_id(raw: str) -> int | None:
+    """``raw`` (ASCII digits) as an int, or ``None``. Past 19 significant digits the value is past
+    any 64-bit integer, so ``PAST_64_BITS`` stands for it without converting the digits (CPython
+    refuses to convert more than 4300): the job fails such a row as past the 64-bit range."""
+    if not _ID.fullmatch(raw):
+        return None
+    digits = raw.lstrip("0")
+    return PAST_64_BITS if len(digits) > _MAX_SIGNIFICANT_DIGITS else int(raw)
+
+
 def _row(keys: list[str], at: dict[str, int], line: int, cells: list[str]) -> CsvRow | FailedRow:
     def raw(key: str) -> str:
         index = at[key]
         return cells[index] if index < len(cells) else ""
 
     raw_id, raw_date, raw_name = raw(ACTIVITY_ID), raw(ACTIVITY_DATE), raw(ACTIVITY_NAME)
-    activity_id = int(raw_id) if _ID.fullmatch(raw_id) else None
+    activity_id = _activity_id(raw_id)
     start_time = parse_activity_date(raw_date)
     if len(cells) != len(keys):
         reason = f"row has {len(cells)} cells, the header {len(keys)}"
