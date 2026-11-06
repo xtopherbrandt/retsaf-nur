@@ -1998,7 +1998,7 @@ def recompute_session_load(
 ) -> tuple[dict | None, dict] | None:
     """Recompute one stored session's load with the current files, dated entries and anchors, and
     replace its saved row (F021 AC5). Returns ``(old_body, new_body)``, ``old_body`` being the body
-    saved before (JSON-decoded) or ``None`` when the session had none; or ``None`` when
+    saved before (JSON-decoded; None if none or not a JSON object); or ``None`` when
     ``session_id`` is not stored, having written nothing.
 
     One ``BEGIN IMMEDIATE`` transaction holds the write lock from the existence check to the commit,
@@ -2017,7 +2017,7 @@ def recompute_session_load(
         if not session_exists(conn, session_id):
             conn.rollback()
             return None
-        old_body = read_session_load_body(conn, session_id)
+        old_body = _old_session_load_body(conn, session_id)
         new_body = _session_load_body(conn, session_id, zone=zone)
         if build is not None:
             build(old_body, new_body)
@@ -3210,13 +3210,13 @@ def reconcile_strava_load(conn_factory: Callable[[], sqlite3.Connection], zone: 
         for row in rows:
             if not _strava_disagrees(row):
                 continue
-            session_id, _, _, start_time, _, _, _, _ = row
+            session_id, _, _, start_time, reason, _, _, _ = row
             result = recompute_session_load(conn, session_id, zone=zone)
             if result is None:
                 continue
             recomputed.append(session_id)
-            old_body, new_body = result
-            was = _reason_of(old_body) == _STRAVA_NOT_RUNNING
+            old_body, new_body = result  # old_body None: the saved body was unreadable; its reason column says
+            was = (reason if old_body is None else _reason_of(old_body)) == _STRAVA_NOT_RUNNING
             now = _reason_of(new_body) == _STRAVA_NOT_RUNNING
             if was == now:
                 continue
@@ -3238,3 +3238,15 @@ def reconcile_strava_load(conn_factory: Callable[[], sqlite3.Connection], zone: 
         return ReconcileResult(tuple(recomputed), tuple(changes))
     finally:
         conn.close()
+
+
+def _old_session_load_body(conn: sqlite3.Connection, session_id: str) -> dict | None:
+    """``read_session_load_body`` for ``recompute_session_load``: a saved body that is not a JSON
+    object (an outside write, a damaged store) reads as ``None``, an unknown old load, so the
+    recompute replaces it with a valid body instead of failing on it (and with it a Strava import's
+    reconcile). Appended at the end so the lines cited above stay in place."""
+    try:
+        body = read_session_load_body(conn, session_id)
+    except ValueError:  # json.JSONDecodeError is a ValueError
+        return None
+    return body if isinstance(body, dict) else None

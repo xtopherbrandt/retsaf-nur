@@ -31,7 +31,7 @@ selection reads, and what each degenerate form does.
 | excluded body, row ``deleted_in_strava`` (unlinked) | recomputed, ``restored``, ``strava_type`` null | no live link |
 | excluded body, link moved to another session | old session ``restored``; new one ``excluded`` | the link is read from the session's side |
 | excluded body naming another row than the live non-run link | recomputed, no entry | still excluded; the body names the live row |
-| a body that is not JSON | its ``strava_activity_id`` reads null, so an excluded one is recomputed | the recompute writes a valid body |
+| a body that is not JSON | its ``strava_activity_id`` reads null, so an excluded one is recomputed; no change listed (``test_a_saved_body_that_is_not_json_is_recomputed_to_a_valid_one``) | the recompute reads the old body as unknown and writes a valid body; the saved ``load_reason`` says it was excluded already |
 | a session with no saved load row | not selected (``test_a_running_session_with_no_saved_load_row_is_not_reconciled``) | only a saved load can disagree; the upload and the one-time fill save one |
 | a run near midnight UTC, athlete in America/Vancouver | its change dated on the Vancouver day | ``local_date`` is the athlete's day, read in the job's zone |
 | a Garmin archive import over a disagreeing body | nothing recomputed, ``load_changes`` empty | only a Strava import reconciles |
@@ -451,6 +451,32 @@ def test_an_excluded_body_naming_another_row_is_recomputed_to_name_the_live_one(
         after = _body(sid)
     assert recomputes == [sid]
     assert after["session_load"]["unavailable"] == REASON and after["strava_activity_id"] == SKI_ID
+    assert _counts(second) == (0, 0) and second["load_changes"] == []
+
+
+def test_a_saved_body_that_is_not_json_is_recomputed_to_a_valid_one(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, recomputes: list[str]
+) -> None:
+    """The probe table's non-JSON row, driven: an excluded run whose saved body is replaced by
+    text that is not JSON (an outside write or a damaged store). The next import of the same
+    archive completes, recomputes that session (its ``strava_activity_id`` reads null), writes a
+    valid excluded body, and lists no change: the old load is unknown, so it is neither an
+    exclusion nor a restore."""
+    [(fit, start)] = _runs(1)
+    rows = [_row(SKI_ID, start, "Alpine Ski")]
+    with TestClient(app) as client:
+        sid = _upload(client, post_fit_bytes, fit, "run.fit")
+        _import(client, tmp_path / "a.zip", rows)
+        _execute(isolated_data_dir, f"UPDATE {db.SESSION_LOADS_TABLE} SET body = 'not json' WHERE session_id = ?",
+                 (sid,))
+        recomputes.clear()
+        second = _import(client, tmp_path / "b.zip", rows)
+        after = _body(sid)
+        served = client.get(f"/sessions/{sid}/load")
+    print(f"  after: {after['session_load']} names {after['strava_activity_id']}; served {served.status_code}")
+    assert recomputes == [sid]
+    assert after["session_load"]["unavailable"] == REASON and after["strava_activity_id"] == SKI_ID
+    assert served.status_code == 200 and served.json()["session_load"]["unavailable"] == REASON
     assert _counts(second) == (0, 0) and second["load_changes"] == []
 
 
