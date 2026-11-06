@@ -6,8 +6,11 @@ reference section 2 item 5). Pure: no store, no file system, no HTTP.
 - ``read_activity_file(zf, prefix, filename)``: the bytes of the entry named ``prefix + filename``,
   or a ``FileError``. The name is a label: it is compared as text with each ``ZipInfo.filename``
   (directory entries skipped, the first of two same-named entries taken), never joined to a path
-  or normalised, so ``..``, an absolute path or a back slash names no entry and opens nothing on
-  disk. No match is ``file_not_in_archive``. A name ending in ``.gz`` (any case) is decompressed in
+  or normalised, so ``..`` or an absolute path names no entry and opens nothing on disk. A back
+  slash is compared as written, but ``zipfile`` itself turns a member name's ``os.sep`` into
+  ``/`` when it reads the archive: on Windows a back-slashed member reads with forward slashes, on
+  Linux it keeps its back slashes; either way nothing reaches a path. No match is
+  ``file_not_in_archive``. A name ending in ``.gz`` (any case) is decompressed in
   memory. Either way at most ``archive.FIT_ENTRY_CAP + 1`` bytes are read (the cap read at call
   time); more than the cap is a ``FileError`` with status 413 and ``POST /sessions``' message. An
   error the read raises (``archive._ENTRY_READ_ERRORS``: a bad gzip header, a stream that does not
