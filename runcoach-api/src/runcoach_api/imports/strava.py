@@ -37,6 +37,11 @@
   keeping the fields its row parsed and replacing only ``columns``. A row whose ``Activity ID``
   does not parse cannot be found by it, so its stored row reads absent and is marked
   ``deleted_in_strava``.
+- **The athlete.** Before anything is written, ``strava_csv.read_athlete_id`` reads ``profile.csv``
+  beside ``activities.csv``. An id that differs from the one ``db.read_strava_athlete_id`` holds
+  fails the job (``StravaAthleteError``, naming both ids) with no row written; the first id read is
+  recorded (``db.record_strava_athlete_id``); no id read blocks nothing and records nothing
+  (athlete ruling 2026-11-06).
 - **Each row** goes through ``strava_match.decide`` with the stored sessions on its second
   (``db.sessions_at_second``, projected to ``(session_id, distance_m)``), a file reader
   (``strava_files.read_activity_file`` then ``session_starts``, each start passed as its
@@ -609,10 +614,28 @@ def _read_csv(zf: zipfile.ZipFile, prefix: str) -> strava_csv.CsvResult:
         ) from exc
 
 
+def _check_athlete(work: job._Job, athlete_id: str | None) -> None:
+    """The athlete guard (ruling 2026-11-06), before any row is written: an archive whose
+    ``Athlete ID`` differs from the recorded one fails the job naming both; the first id read is
+    recorded; an archive with none (``None``) passes and records nothing."""
+    if athlete_id is None:
+        return
+    with closing(work.connect()) as conn, conn:
+        recorded = db.read_strava_athlete_id(conn)
+        if recorded is None:
+            db.record_strava_athlete_id(conn, athlete_id, work.import_id, _now())
+        elif recorded != athlete_id:
+            raise strava_csv.StravaAthleteError(
+                f"this export's {strava_csv.PROFILE_NAME} names Strava athlete {athlete_id}, but this"
+                f" store's Strava imports are athlete {recorded}'s; nothing was imported"
+            )
+
+
 def run_strava(work: job._Job, path: Path, prefix: str) -> None:
     """Import the Strava archive at ``path`` whose ``activities.csv`` sits under ``prefix``."""
     with zipfile.ZipFile(path) as zf:
         result = _read_csv(zf, prefix)
+        _check_athlete(work, strava_csv.read_athlete_id(zf, prefix))
         work.counts["strava"] = _empty_strava_counts()
         rows_total = len(result.rows) + len(result.failed)
         present = {row.activity_id for row in result.rows} | {

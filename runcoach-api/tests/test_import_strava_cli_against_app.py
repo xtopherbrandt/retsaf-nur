@@ -193,6 +193,23 @@ def test_the_strava_report_against_the_real_app(cli_against_app: TestClient, tmp
     assert any(line.startswith("  failed  activities.csv line 4  ") for line in report), report
 
 
+def test_another_athletes_export_prints_the_refusal_against_the_real_app(
+    cli_against_app: TestClient, tmp_path: Path
+) -> None:
+    """The athlete ruling of 2026-11-06 (4) through the command: an export whose ``profile.csv``
+    ``Athlete ID`` differs from the one the first Strava import recorded fails the job, and the
+    command prints the served error, naming both ids, and exits 1."""
+    rows = [SA.row(**{"Activity ID": str(RIDE_ID), "Activity Date": SA.strava_date(RIDE_DATE),
+                      "Activity Name": "Lunch Ride", "Activity Type": "Ride"})]
+    _report, body = _import(cli_against_app, SA.strava_zip(tmp_path / "ours.zip", rows, profile="1347737"))
+    assert body["counts"]["strava"]["not_running"] == 1, body
+    result = _run("import", str(SA.strava_zip(tmp_path / "theirs.zip", rows, profile="2468024")))
+    print("  output:", result.output)
+    assert result.exit_code == 1, result.output
+    [failed] = [line for line in result.output.splitlines() if " failed: " in line]
+    assert "1347737" in failed and "2468024" in failed, failed
+
+
 def test_a_row_one_cell_long_on_a_reimport_is_listed_against_the_real_app(
     cli_against_app: TestClient, tmp_path: Path
 ) -> None:

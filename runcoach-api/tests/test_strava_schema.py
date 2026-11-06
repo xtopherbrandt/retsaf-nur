@@ -96,7 +96,7 @@ def _pre_strava_store(path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(db._SCHEMA_DDL)
     conn.executescript(
-        "DROP TABLE strava_activities; DROP TABLE imports; DROP TABLE import_files;"
+        "DROP TABLE strava_activities; DROP TABLE strava_athlete; DROP TABLE imports; DROP TABLE import_files;"
         "DROP INDEX IF EXISTS sessions_start_time;" + PRE_STRAVA_IMPORTS
     )
     conn.execute(
@@ -152,6 +152,10 @@ def test_strava_tables_are_reconciled_onto_a_pre_strava_store(tmp_path: Path) ->
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert "strava_activities" in tables
         assert _columns(conn, "strava_activities") == STRAVA_COLUMNS
+        # The athlete guard's one-row table (ruling 2026-11-06), empty until an import records an id.
+        assert "strava_athlete" in tables
+        assert _columns(conn, "strava_athlete") == {"slot", "athlete_id", "import_id", "recorded_at"}
+        assert db.read_strava_athlete_id(conn) is None
         assert {"source", "load_changes"} <= _columns(conn, "imports")
         assert "strava_activity_id" in _columns(conn, "import_files")
         indexes = _indexes(conn)

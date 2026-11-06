@@ -254,6 +254,20 @@ LAYOUTS = ("root", "folder", "macosx")
 _APPLEDOUBLE = b"\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        " + bytes(8)
 
 
+PROFILE_NAME = "profile.csv"
+# The first columns of the athlete's profile.csv header (12 in all on the 2026-10-24 export).
+PROFILE_HEADER = ("Athlete ID", "Email Address", "First Name", "Last Name", "Sex", "Description")
+
+
+def profile_csv(athlete_id: str, *, bom: bool = False) -> bytes:
+    """``profile.csv`` with ``PROFILE_HEADER`` and one row whose ``Athlete ID`` is ``athlete_id``."""
+    out = io.StringIO(newline="")
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(PROFILE_HEADER)
+    writer.writerow([athlete_id, "runner@example.com", "Test", "Runner", "M", ""])
+    return (b"\xef\xbb\xbf" if bom else b"") + out.getvalue().encode("utf-8")
+
+
 def strava_zip(
     path: Path,
     rows: Iterable[Mapping[str, str] | Sequence[str]],
@@ -265,8 +279,11 @@ def strava_zip(
     bom: bool = False,
     lineterminator: str = "\n",
     extra: Iterable[tuple[str, bytes]] = (),
+    profile: str | bytes | None = None,
 ) -> Path:
-    """Write a Strava archive at ``path`` and return it."""
+    """Write a Strava archive at ``path`` and return it. ``profile``: none written when ``None``;
+    a ``str`` writes ``profile.csv`` beside ``activities.csv`` as the athlete's export holds it (a
+    header starting ``Athlete ID`` and one row holding that id); ``bytes`` are written as the file."""
     if layout not in LAYOUTS:
         raise ValueError(f"layout {layout!r} is not one of {LAYOUTS}")
     prefix = "" if layout == "root" else f"{folder}/"
@@ -280,6 +297,8 @@ def strava_zip(
             archive.writestr(f"{prefix}{name}", data)
         archive.writestr(f"{prefix}media/", b"")
         archive.writestr(f"{prefix}activities.csv", csv_bytes)
+        if profile is not None:
+            archive.writestr(f"{prefix}{PROFILE_NAME}", profile_csv(profile) if isinstance(profile, str) else profile)
         if layout == "macosx":
             archive.writestr("__MACOSX/", b"")
             archive.writestr(f"__MACOSX/{folder}/", b"")

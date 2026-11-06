@@ -30,6 +30,8 @@
   row is read. A record with no cells at all (a blank line) is not a row and is skipped. An
   ``Activity ID`` of more than 19 significant digits reads as ``PAST_64_BITS`` without being
   converted, so the job fails that row as past the 64-bit range.
+- ``read_athlete_id(zf, prefix)``: the ``Athlete ID`` of ``profile.csv`` beside ``activities.csv``,
+  read under the same cap, UTF-8 with an optional BOM, or ``None`` when there is none to read.
 - ``distance_m`` is ``Distance (2)`` in metres; empty, ``0.0`` or a cell that is not a finite
   number reads as no distance (``None``).
 """
@@ -49,6 +51,8 @@ from runcoach_api.imports import archive
 from runcoach_api.imports.strava_types import CsvRow
 
 CSV_NAME = "activities.csv"
+PROFILE_NAME = "profile.csv"
+ATHLETE_ID = "Athlete ID"
 MACOSX = "__MACOSX"
 
 ACTIVITY_ID = "Activity ID"
@@ -80,6 +84,11 @@ PAST_64_BITS = 2**63
 
 class StravaCsvError(ValueError):
     """``activities.csv`` cannot be read as a whole: the import job fails with this message."""
+
+
+class StravaAthleteError(ValueError):
+    """The archive's ``profile.csv`` names another athlete than the store's Strava imports: the
+    import job fails with this message before any row is written."""
 
 
 @dataclass(frozen=True)
@@ -225,6 +234,37 @@ def read_activities(zf: zipfile.ZipFile, prefix: str) -> CsvResult:
         raise StravaCsvError(f"{CSV_NAME} line {reader.line_num}: {err}") from err
     rows.sort(key=lambda r: (r.start_time, r.activity_id))
     return CsvResult(keys=tuple(keys), rows=tuple(rows), failed=tuple(failed))
+
+
+def read_athlete_id(zf: zipfile.ZipFile, prefix: str) -> str | None:
+    """The ``Athlete ID`` of ``<prefix>profile.csv`` (beside ``activities.csv``), stripped, or
+    ``None`` when there is none to read: no such entry, an entry past ``archive.FIT_ENTRY_CAP`` or
+    whose bytes do not read, not UTF-8 (a BOM allowed), not CSV, no ``Athlete ID`` column, no row
+    under the header, or an empty cell. ``None`` blocks no import (athlete ruling 2026-11-06)."""
+    name = f"{prefix}{PROFILE_NAME}"
+    info = next((i for i in zf.infolist() if i.filename == name), None)
+    if info is None:
+        return None
+    cap = archive.FIT_ENTRY_CAP
+    try:
+        with zf.open(info) as handle:
+            data = handle.read(cap + 1)
+    except archive._ENTRY_READ_ERRORS:
+        return None
+    if len(data) > cap:
+        return None
+    try:
+        text = data[len(_BOM) if data.startswith(_BOM) else 0 :].decode("utf-8")
+        reader = csv.reader(io.StringIO(text, newline=""))
+        header = next(reader, [])
+        row = next(reader, [])
+    except (UnicodeDecodeError, csv.Error):
+        return None
+    if ATHLETE_ID not in header:
+        return None
+    at = header.index(ATHLETE_ID)
+    value = row[at].strip() if at < len(row) else ""
+    return value or None
 
 
 def _activity_id(raw: str) -> int | None:

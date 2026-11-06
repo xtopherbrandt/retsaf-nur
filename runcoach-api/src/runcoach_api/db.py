@@ -344,6 +344,14 @@ _SCHEMA_DDL = """
     -- One Strava row per session: unique over the linked rows only.
     CREATE UNIQUE INDEX IF NOT EXISTS strava_one_row_per_session
       ON strava_activities(linked_session_id) WHERE linked_session_id IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS strava_athlete (
+      -- F030: the Athlete ID of profile.csv that the first Strava import
+      -- reading one recorded, as text; at most one row (slot 1). A later
+      -- Strava export whose id differs is refused (athlete ruling
+      -- 2026-11-06). Written by record_strava_athlete_id.
+      slot INTEGER PRIMARY KEY CHECK (slot = 1), athlete_id TEXT NOT NULL,
+      import_id TEXT, recorded_at TEXT
+    );
 """
 
 # The entered-values table's name, for callers and tests that address it.
@@ -3118,6 +3126,23 @@ def write_strava_row(conn: sqlite3.Connection, row: Mapping) -> None:
         f" VALUES ({', '.join('?' for _ in _STRAVA_FIELDS)})"
         f" ON CONFLICT (activity_id) DO UPDATE SET {updates}",
         tuple(values[name] for name in _STRAVA_FIELDS),
+    )
+
+
+STRAVA_ATHLETE_TABLE = "strava_athlete"
+
+
+def read_strava_athlete_id(conn: sqlite3.Connection) -> str | None:
+    """The Strava ``Athlete ID`` recorded by the first Strava import that read one, or None. Read-only."""
+    row = conn.execute(f"SELECT athlete_id FROM {STRAVA_ATHLETE_TABLE} WHERE slot = 1").fetchone()
+    return None if row is None else row[0]
+
+
+def record_strava_athlete_id(conn: sqlite3.Connection, athlete_id: str, import_id: str, recorded_at: str) -> None:
+    """Record ``athlete_id`` when none is recorded; a recorded id is never replaced. Commits nothing."""
+    conn.execute(
+        f"INSERT OR IGNORE INTO {STRAVA_ATHLETE_TABLE} (slot, athlete_id, import_id, recorded_at) VALUES (1, ?, ?, ?)",
+        (athlete_id, import_id, recorded_at),
     )
 
 
