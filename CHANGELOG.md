@@ -77,16 +77,20 @@ the cause, before any row is written.
 **Another athlete's export is refused.** The first Strava import whose archive holds `profile.csv`
 with an `Athlete ID` records that id in the store (the new `strava_athlete` table). A later export
 whose `Athlete ID` differs fails the job before any row is written, and `runcoach import` prints
-the error naming both ids and exits 1. An export with no `profile.csv`, or with an empty id, is
-imported as before and records nothing.
+the error naming both ids and exits 1. An id of digits is compared by its value, so `01347737`
+is the same athlete as `1347737`. The id is recorded when it is first read, before any row, so it
+stays recorded even if that import then fails. An export with no `profile.csv`, or with an empty
+id, is imported as before and records nothing.
 
 **Importing again.** The same archive again, with no session stored in between, changes nothing but
 its `failed` rows: every other row reads `unchanged`, and every table but the import's report is
 unchanged except the `failed` rows' `import_id` and `updated_at`, which become the new import's (an
 edited copy of the athlete's archive with one row repeated printed `failed 1, unchanged 3325` on
-its second import). A `failed` row, linked or not, is processed again on every import, its file
-read again, so a file added since or an error that has passed clears it (a linked one reads
-`updated`, its link kept); a row that still fails is reported `failed` and listed again. A newer
+its second import). A `failed` row is processed again on every import. An unlinked one is matched
+again and its file read again, so a file added since or an error that has passed clears it; a row
+that still fails is reported `failed` and listed again. A linked one reads no file: it keeps its
+link and reads `updated`, its outcome back to the one its link gives and its distance warning
+checked again (a row that no longer parses is `failed` again, its link kept). A newer
 export replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
 `deleted_in_strava`, unlinked and kept, and reported once; an unlinked row whose cells changed is
 matched again. An unlinked row whose cells are unchanged is matched again by its start time on every
