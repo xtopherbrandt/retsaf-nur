@@ -54,7 +54,10 @@ matches no stored session at either start is stored as `POST /sessions` would st
 (`stored`), rows oldest first by `Activity Date`; a file the store already holds under its device
 and start is `already_stored` and linked there. A running row whose file the watch recorded as
 another sport is stored as a run (`stored_retyped`): named from the row's `Activity Name`, flagged
-`sport_retyped_by_strava`, the watch's sport and profile name kept in its provenance.
+`sport_retyped_by_strava`, the watch's sport and profile name kept in its provenance. Every reader
+reads a `stored_retyped` session as a run, as it reads any running session: its load, critical
+speed, threshold pace and the endurance exponent. Nothing reads the flag, so a ride a future export
+types `Run` would enter them too.
 
 **What it skips.** A run whose file is GPX or TCX is kept as a row and not stored (`not_fit`), and a
 run with no file is `no_file`. A multisport file (more than one `session` message, as
@@ -66,21 +69,40 @@ tags`; reading them from Strava is IDEA-196.
 
 **What fails.** A row that does not parse, repeats an `Activity ID`, or names a file that is
 missing, does not decompress or decode, holds no `session` message, or expands past 50 MB (status
-413) is `failed`, and the next row is read; a failed row keeps any link it had. An `activities.csv`
-over 50 MB, not UTF-8 or missing a required column fails the job naming the cause, before any row
-is written.
+413) is `failed`, and the next row is read; a failed row keeps any link it had. A row with more or
+fewer cells than the header is `failed` on every import, also when its first cells equal the ones
+stored. An `activities.csv` over 50 MB, not UTF-8 or missing a required column fails the job naming
+the cause, before any row is written.
 
-**Importing again.** The same archive again, with no session stored in between, changes nothing:
-every row whose `Activity ID` parsed and is not a repeat reads `unchanged`, and a row that failed
-before fails again (an edited copy of the athlete's archive with one row repeated printed
-`failed 1, unchanged 3325` on its second import). A `failed` row is processed again on every
-import, its file read again, so a file added since or an error that has passed clears it; a row
-that still fails is reported `failed` and listed again. A newer export
-replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
+**Another athlete's export is refused.** The first Strava import whose archive holds `profile.csv`
+with an `Athlete ID` records that id in the store (the new `strava_athlete` table). A later export
+whose `Athlete ID` differs fails the job before any row is written, and `runcoach import` prints
+the error naming both ids and exits 1. An export with no `profile.csv`, or with an empty id, is
+imported as before and records nothing.
+
+**Importing again.** The same archive again, with no session stored in between, changes nothing but
+its `failed` rows: every other row reads `unchanged`, and every table but the import's report is
+unchanged except the `failed` rows' `import_id` and `updated_at`, which become the new import's (an
+edited copy of the athlete's archive with one row repeated printed `failed 1, unchanged 3325` on
+its second import). A `failed` row, linked or not, is processed again on every import, its file
+read again, so a file added since or an error that has passed clears it (a linked one reads
+`updated`, its link kept); a row that still fails is reported `failed` and listed again. A newer
+export replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
 `deleted_in_strava`, unlinked and kept, and reported once; an unlinked row whose cells changed is
 matched again. An unlinked row whose cells are unchanged is matched again by its start time on every
 import, reading no file, so a session stored after an earlier Strava import is linked at the next
-one (and its load follows the Strava type, below).
+one (and its load follows the Strava type, below). A row whose `Activity ID` cell no longer parses
+cannot be found by its ID, so its stored row reads absent and is marked `deleted_in_strava`.
+
+**An older export unlinks what came after it.** Importing an export older than the last one marks
+every row added since `deleted_in_strava` and unlinks it (a run Strava typed otherwise counts load
+again); importing a newer export links them again.
+
+**A run deleted in runcoach comes back.** Deleting a session with `DELETE /sessions/{id}` whose
+Strava row has a FIT file does not survive the next Strava import: the row's link is cleared and
+the file is stored again, with the same session id and its load. To remove such a run for good,
+delete it in Strava too, then import a newer export. Making a deletion in runcoach stick is an
+idea for later.
 
 F031: **Strava's type corrects load.** A stored running session linked to a Strava row, not
 `deleted_in_strava`, whose `Activity Type` is not `Run`, `Trail Run` or `Virtual Run` (a ski, hike,
@@ -135,7 +157,8 @@ failed.
 ### Migration required
 
 None to run. At its first start the API adds the `strava_activities` table and its one-row-per-session
-index, the `imports` columns `source` and `load_changes`, the `import_files` column
+index, the one-row `strava_athlete` table (empty until a Strava import records an `Athlete ID`),
+the `imports` columns `source` and `load_changes`, the `import_files` column
 `strava_activity_id` and an index on `sessions.start_time`; existing rows are unchanged. The
 `contracts/openapi.yaml` `info.version` stays `0.6.0-draft`; its additions are `getStravaActivity`
 (implemented), `Import.source` and `Import.load_changes`, `ImportCounts.strava`, the `files[]`
