@@ -617,14 +617,16 @@ def _read_csv(zf: zipfile.ZipFile, prefix: str) -> strava_csv.CsvResult:
 def _check_athlete(work: job._Job, athlete_id: str | None) -> None:
     """The athlete guard (ruling 2026-11-06), before any row is written: an archive whose
     ``Athlete ID`` differs from the recorded one fails the job naming both; the first id read is
-    recorded; an archive with none (``None``) passes and records nothing."""
+    recorded; an archive with none (``None``) passes and records nothing. An id of ASCII digits is
+    compared by its value (``strava_csv.canonical_athlete_id``, applied to the recorded id too), any
+    other id as text."""
     if athlete_id is None:
         return
     with closing(work.connect()) as conn, conn:
         recorded = db.read_strava_athlete_id(conn)
         if recorded is None:
             db.record_strava_athlete_id(conn, athlete_id, work.import_id, _now())
-        elif recorded != athlete_id:
+        elif strava_csv.canonical_athlete_id(recorded) != athlete_id:
             raise strava_csv.StravaAthleteError(
                 f"this export's {strava_csv.PROFILE_NAME} names Strava athlete {athlete_id}, but this"
                 f" store's Strava imports are athlete {recorded}'s; nothing was imported"

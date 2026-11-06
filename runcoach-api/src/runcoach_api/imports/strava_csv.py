@@ -237,7 +237,8 @@ def read_activities(zf: zipfile.ZipFile, prefix: str) -> CsvResult:
 
 
 def read_athlete_id(zf: zipfile.ZipFile, prefix: str) -> str | None:
-    """The ``Athlete ID`` of ``<prefix>profile.csv`` (beside ``activities.csv``), stripped, or
+    """The ``Athlete ID`` of ``<prefix>profile.csv`` (beside ``activities.csv``), stripped and in
+    its ``canonical_athlete_id`` form, or
     ``None`` when there is none to read: no such entry, an entry past ``archive.FIT_ENTRY_CAP`` or
     whose bytes do not read, not UTF-8 (a BOM allowed), not CSV, no ``Athlete ID`` column, no row
     under the header, or an empty cell. ``None`` blocks no import (athlete ruling 2026-11-06)."""
@@ -264,7 +265,14 @@ def read_athlete_id(zf: zipfile.ZipFile, prefix: str) -> str | None:
         return None
     at = header.index(ATHLETE_ID)
     value = row[at].strip() if at < len(row) else ""
-    return value or None
+    return canonical_athlete_id(value) if value else None
+
+
+def canonical_athlete_id(value: str) -> str:
+    """``value`` with its leading zeros dropped when it is all ASCII digits, so the id reads by its
+    value as an ``Activity ID`` does (``01347737`` is ``1347737``, ``000`` is ``0``); any other
+    text as it is."""
+    return (value.lstrip("0") or "0") if _ID.fullmatch(value) else value
 
 
 def _activity_id(raw: str) -> int | None:

@@ -351,6 +351,21 @@ def test_an_activity_id_in_non_ascii_digits_is_a_failed_row() -> None:
         assert failed.activity_id is None
 
 
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [("1347737", "1347737"), ("01347737", "1347737"), (" 0001347737 ", "1347737"), ("000", "0"),
+     ("01347737x", "01347737x"), ("٠١٢٣", "٠١٢٣"), ("-01347737", "-01347737")],
+)
+def test_the_athlete_id_reads_by_value_when_all_ascii_digits(cell: str, expected: str) -> None:
+    """``read_athlete_id`` drops the leading zeros of an id of ASCII digits, as an ``Activity ID``
+    is read; any other id keeps its (stripped) text."""
+    zf = _zip_bytes([("activities.csv", SA.activities_csv([_run("1")])),
+                     ("profile.csv", f"Athlete ID\n{cell}\n".encode())])
+    got = strava_csv.read_athlete_id(zf, "")
+    print(repr(cell), "->", repr(got))
+    assert got == expected
+
+
 def test_line_n_counts_the_lines_of_a_multiline_cell() -> None:
     rows = [
         _run("1", **{"Activity Description": "a\nb\r\nc"}),  # lines 2-4

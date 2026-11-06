@@ -196,3 +196,37 @@ def test_the_id_is_read_with_a_bom_and_in_the_one_folder(
     print("  recorded:", recorded, " refused:", refused["status"], refused["error"])
     assert recorded == OURS
     assert refused["status"] == "failed" and THEIRS in refused["error"]
+
+
+@pytest.mark.parametrize(("first_id", "later_id"), [(OURS, "0" + OURS), ("000" + OURS, OURS)],
+                         ids=["padded_later", "padded_first"])
+def test_an_id_of_ascii_digits_is_compared_by_its_value(
+    isolated_data_dir: Path, tmp_path: Path, first_id: str, later_id: str
+) -> None:
+    """An ``Athlete ID`` of ASCII digits reads by its value, as an ``Activity ID`` does: leading
+    zeros are dropped, the id is recorded in that form, and an export whose id differs only by
+    them is imported."""
+    start = SA.session_start(SA.fixture("sample_run"))
+    with TestClient(app) as client:
+        _import(client, SA.strava_zip(tmp_path / "a.zip", _rows(start), profile=first_id))
+        recorded = _recorded(isolated_data_dir)
+        later = _post(client, SA.strava_zip(tmp_path / "b.zip", _rows(start, description="Edited"), profile=later_id))
+    print("  recorded:", recorded, " later:", later["status"], later["error"],
+          [(r["strava_activity_id"], r["outcome"]) for r in later["files"]])
+    assert recorded == OURS
+    assert later["status"] == "completed", later["error"]
+    assert [r["strava_activity_id"] for r in later["files"]] == [RUN_ID, RIDE_ID]
+    assert _recorded(isolated_data_dir) == OURS
+
+
+def test_an_id_not_all_ascii_digits_is_compared_as_text(isolated_data_dir: Path, tmp_path: Path) -> None:
+    """An id that is not all ASCII digits keeps its text: recorded as read, and refused against
+    the same digits without its letter."""
+    start = SA.session_start(SA.fixture("sample_run"))
+    with TestClient(app) as client:
+        _import(client, SA.strava_zip(tmp_path / "a.zip", _rows(start), profile="0" + OURS + "x"))
+        recorded = _recorded(isolated_data_dir)
+        refused = _post(client, SA.strava_zip(tmp_path / "b.zip", _rows(start), profile=OURS))
+    print("  recorded:", recorded, " refused:", refused["status"], refused["error"])
+    assert recorded == "0" + OURS + "x"
+    assert refused["status"] == "failed" and OURS in refused["error"]
