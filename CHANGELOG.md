@@ -89,9 +89,14 @@ no load. `GET /sessions/{id}/load` serves `session_load`, `hr_trimp`, rtss and s
 unavailable with the reason `strava_not_running`, and the body's new `strava_activity_id` names the
 row (null on every other body). `GET /metrics/load` puts the session in its day's `excluded` group:
 it adds nothing and does not mark the day. A declared resting capture keeps
-`declared_capture`. The session, its records and its other readers (pace features, threshold pace,
-the endurance exponent, critical speed) are unchanged. Every path that saves a load
-reads the link, so an upload, the HR-settings recompute and a Strava import give the same body.
+`declared_capture`. The session and its records are unchanged, and it still enters its other
+readers (pace features, threshold pace, the endurance exponent, critical speed) as before. Its load
+leaves fitness (CTL), though, and the endurance exponent's fitness screen and `GET /goal`'s
+`fitness_at_races` read CTL, so their fitness figures can move, and with a large enough load near a
+race the screen's verdict too. On the athlete's copy the CTL the screen reads moved by up to 0.55
+before the 2019 to 2023 races and by about 0.00001 before the eight races b uses, and
+`fitness_at_races` by under 0.000001; b, its `high` label and every race's verdict were unchanged.
+Every path that saves a load reads the link, so an upload, the HR-settings recompute and a Strava import give the same body.
 Each Strava import ends by recomputing every running session whose saved load disagrees with this
 rule (`db.reconcile_strava_load`, through the same replace path as `POST
 /sessions/{id}/load/recompute`), so a job interrupted after its rows committed is healed by the
