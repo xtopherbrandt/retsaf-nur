@@ -145,11 +145,11 @@ Critical speed and D′ of section 4.2.1 are fitted with the constants below, ru
 | `stretch_lengths_s` | 120, 180, 300, 480, 720, 1200 | Section 4.2.1's 2–20 min band; the lengths the rulings were measured on. |
 | `pause_break_s` | 10 | User ruling: a stretch never spans a pause over 10 s. On the athlete's 2024-11-30 window, spanning pauses read a 2024-09-24 fartlek's 120 s stretch at 3:20/km across a 78 s pause. |
 | `population_b` | 1.06 | COLD-05 and REG-32's population exponent, for the far-off test only. |
-| `far_off_s_per_km` | 4 | User ruling: refuse rather than drop the longest stretch; dropping it swung CS from 4:41 to 3:53/km on a 2024-02 window. User ruling 2026-11-04 (F034), in place of 15, which refused no Sunday since 2023: every 20-minute stretch the athlete called not all-out or controlled ran 5.15 s/km or more over, while the tagged 5Ks that filled it ran -2.31 s/km or less. |
+| `far_off_s_per_km` | 4 | User ruling: refuse rather than drop the longest stretch; dropping it swung CS from 4:41 to 3:53/km on a 2024-02 window. User ruling 2026-11-04 (F034), in place of 15, which refused no Sunday since 2023: at that ruling every 20-minute stretch the athlete had called not all-out or controlled ran 5.15 s/km or more over, while the tagged 5Ks that filled it ran -2.31 s/km or less. User ruling 2026-11-05 (F034 release demo): the 20-minute effort behind the Sundays 2026-08-02 to 2026-08-30, 3.40-3.44 s/km over, was not all-out too; it passes the 4 s/km cut, so those weeks serve critical speed that likely reads slow (IDEA-220 revisits the cut). |
 | `min_stretches` | 3 | User ruling: a two-point fit has no residual to size its error. |
-| `max_shortest_s` | 300 | User ruling: the shortest kept stretch 5 min or less. |
+| `max_shortest_s` | 300 | User ruling: the shortest kept stretch 5 min or less. Since F034 the same 300 s is also the label's short end: `high` needs a kept stretch of 300 s or less from a run that counts (no new constant). |
 | `min_longest_s` | 720 | User ruling: the longest kept stretch 12 min or more. |
-| `short_race_max_s` | 1800 | User ruling: a Race-tagged run of 30 min or less lifts the label; the same value as threshold pace's `short_race_s` edge (section 4.3.4), inclusive here where `short_races_only` reads under 1800 s. |
+| `short_race_max_s` | 1800 | User ruling: a Race-tagged run of 30 min or less counts toward the label: one lifts it to `medium`; since F034 two or more lift it to `high` only when one of them backs the short end (a kept stretch of `max_shortest_s` or less), else the label is held at `medium`. The same value as threshold pace's `short_race_s` edge (section 4.3.4), inclusive here where `short_races_only` reads under 1800 s. |
 | `coverage` | 0.80 | As threshold pace and the endurance exponent. |
 | before the bar | unavailable, with its reason | No document supplies a population CS: in tension with IND-03's population default, as threshold pace is (section 4.4.4). |
 
