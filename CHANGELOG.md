@@ -34,8 +34,9 @@ top-level entry is one folder holding it, is read as a Strava archive, and its i
 `source` `strava`; every other archive, and every import stored before this release, is served
 `garmin`.
 
-**What it keeps.** Every row of `activities.csv`, whatever its type or outcome, is kept in the new
-`strava_activities` table with every column as the text the CSV holds (a repeated column name's
+**What it keeps.** Every row of `activities.csv` whose `Activity ID` parsed and is not a repeat of
+an earlier row's, whatever its type or outcome, is kept in the new `strava_activities` table with
+every column as the text the CSV holds (a repeated column name's
 second copy keyed `<name> (2)`, an empty cell as `""`). `GET
 /strava-activities/{activity_id}` serves one row with its `columns`. A row is linked to the stored
 session of any sport that starts on its `Activity Date` to the second; with two there, to the one
@@ -69,10 +70,17 @@ missing, does not decompress or decode, holds no `session` message, or expands p
 over 50 MB, not UTF-8 or missing a required column fails the job naming the cause, before any row
 is written.
 
-**Importing again.** The same archive again changes nothing: every row reads `unchanged`. A newer
-export replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
+**Importing again.** The same archive again, with no session stored in between, changes nothing:
+every row whose `Activity ID` parsed and is not a repeat reads `unchanged`, and a row that failed
+before fails again (an edited copy of the athlete's archive with one row repeated printed
+`failed 1, unchanged 3325` on its second import). A `failed` row is processed again on every
+import, its file read again, so a file added since or an error that has passed clears it; a row
+that still fails is reported `failed` and listed again. A newer export
+replaces a changed row's cells and keeps its link (`updated`); a row absent from it is marked
 `deleted_in_strava`, unlinked and kept, and reported once; an unlinked row whose cells changed is
-matched again.
+matched again. An unlinked row whose cells are unchanged is matched again by its start time on every
+import, reading no file, so a session stored after an earlier Strava import is linked at the next
+one (and its load follows the Strava type, below).
 
 F031: **Strava's type corrects load.** A stored running session linked to a Strava row, not
 `deleted_in_strava`, whose `Activity Type` is not `Run`, `Trail Run` or `Virtual Run` (a ski, hike,
