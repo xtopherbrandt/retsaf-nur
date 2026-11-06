@@ -186,6 +186,11 @@ def test_the_strava_report_against_the_real_app(cli_against_app: TestClient, tmp
     # 03:15 UTC on 1 March is the evening of 28 February in Vancouver.
     assert _local(RIDE_DATE) == "2022-02-28"
     assert "  deleted_in_strava  2022-02-28  Lunch Ride" in report, report
+    # The two failed rows, their cells unchanged, are processed again and still fail (athlete
+    # ruling 2026-11-06), so the command lists them again.
+    assert {row["strava_activity_id"] for row in _by_outcome(body, "failed")} == {LOST_ID, int(SHORT_ROW[0])}
+    assert any(line.startswith(f"  failed  {_local(LOST_DATE)}  Lost Run  ") for line in report), report
+    assert any(line.startswith("  failed  activities.csv line 4  ") for line in report), report
 
 
 def _ski_rows(start: datetime, activity_type: str) -> list:

@@ -22,12 +22,15 @@
   marked: a live link is kept with its ``match``, reading ``unchanged`` (nothing written) when every
   cell equals the stored one in header order, else ``updated`` (cells replaced, ``distance_differs``
   re-checked, ``import_id`` and ``updated_at`` this import's). A link to a session no longer stored,
-  or an unlinked row whose cells changed, is matched from step 1 and the row rewritten. An unlinked,
-  unchanged ``ambiguous`` row re-runs step 1 on the sessions at its CSV start, reading no file: it
-  links when the tie is resolved, else reads ``unchanged``. Any other unlinked unchanged row reads
-  ``unchanged``: nothing is read, decoded or written. A marked row present again is matched from
-  step 1, which clears the mark. A row that did not parse reads ``unchanged`` when its stored cells
-  equal its cells, and otherwise keeps a live link when it is rewritten as ``failed``.
+  or an unlinked row whose cells changed, is matched from step 1 and the row rewritten. An unlinked
+  stored ``failed`` row is matched from step 1 whether or not its cells changed, its file read
+  again, and reports what it gives (``failed`` again when it still fails). Every other unlinked,
+  unchanged row re-runs step 1 on the sessions at its CSV start, reading no file: it links when
+  step 1 finds one free session (a session stored since, a tie resolved), else reads ``unchanged``,
+  nothing decoded or written (athlete rulings 2026-11-06). A marked row present again is matched
+  from step 1, which clears the mark. A row that did not parse is ``failed`` again whenever its
+  stored row is (``unchanged`` only for a stored row of another outcome whose cells equal its
+  cells); a live link survives it, keeping the fields its row parsed and replacing only ``columns``.
 - **Each row** goes through ``strava_match.decide`` with the stored sessions on its second
   (``db.sessions_at_second``, projected to ``(session_id, distance_m)``), a file reader
   (``strava_files.read_activity_file`` then ``session_starts``, each start passed as its
@@ -335,7 +338,7 @@ class _Run:
                 live = _session_exists(conn, link)
                 if live:
                     warnings = tuple(stored["warnings"]) if same else _warnings(conn, link, row)
-            elif same and stored["outcome"] == AMBIGUOUS:
+            elif same and stored["outcome"] != FAILED:
                 candidates = _candidates(conn, row.start_time)
         if link is not None:
             if not live:
@@ -352,11 +355,13 @@ class _Run:
             file_row = job.FileRow(**base, outcome=UPDATED, session_id=link, detail=_warning_detail(warnings))
             self.finish(record, file_row, warnings)
             return True
-        if not same:
+        if not same or stored["outcome"] == FAILED:
+            # Changed cells, or a failed row (ruling 2026-11-06): matched again from step 1, file read.
             return False
         detail = None
         if candidates:
-            # An unchanged ambiguous row: step 1 again, no file read; it links when the tie is resolved.
+            # An unchanged unlinked row: step 1 again, no file read (ruling 2026-11-06); it links when
+            # step 1 now finds one free session, as a tie that is resolved.
             decision = strava_match._link(
                 candidates, row, _LinkedByOthers(self.links, row.activity_id), ATTACHED, MATCH_CSV_START
             )
@@ -520,13 +525,14 @@ class _Run:
         if activity_id is not None and activity_id not in self.seen:
             self.seen.add(activity_id)
             columns = dict(zip(self.keys, failed.cells, strict=False))
-            # Step 0: a stored row whose cells are unchanged reads unchanged and writes nothing; a
-            # live link survives a row that no longer parses.
+            # Step 0: a stored row (not failed) whose cells are unchanged reads unchanged and writes
+            # nothing; a failed one is failed again; a live link survives a row that no longer parses.
             with closing(self.work.connect()) as conn:
                 stored = db.read_strava_row(conn, activity_id)
                 link = None if stored is None else stored["linked_session_id"]
                 live = link is not None and _session_exists(conn, link)
-            if stored is not None and not stored["deleted_in_strava"] and _same_cells(stored, columns):
+            if (stored is not None and not stored["deleted_in_strava"] and stored["outcome"] != FAILED
+                    and _same_cells(stored, columns)):
                 unchanged = job.FileRow(
                     seq,
                     failed.entry,
@@ -538,14 +544,21 @@ class _Run:
                 )
                 self.finish(None, unchanged, tuple(stored["warnings"]) if live else ())
                 return
-            record = {
-                "activity_id": activity_id,
+            parsed = {
                 "start_time": start_time,
                 "activity_type": cell(strava_csv.ACTIVITY_TYPE),
                 "name": cell(strava_csv.ACTIVITY_NAME),
                 "description": columns.get(DESCRIPTION_COLUMN),
                 "private_note": columns.get(PRIVATE_NOTE_COLUMN),
                 "filename": cell(strava_csv.FILENAME),
+            }
+            if live:
+                # The cells are misaligned or missing: a live link keeps what its row parsed (the
+                # type F031's load rule reads, the session's text); only the raw cells are replaced.
+                parsed = {key: stored[key] for key in parsed}  # type: ignore[index]
+            record = {
+                "activity_id": activity_id,
+                **parsed,
                 "columns": columns,
                 "linked_session_id": link if live else None,
                 "match": stored["match"] if live else None,  # type: ignore[index]

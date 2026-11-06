@@ -8,10 +8,11 @@ Step 0 as the reference states it (athlete ruling 2026-10-31): before any row is
 stored, not-yet-marked row absent from the archive is marked ``deleted_in_strava``, unlinked and
 reported once after the CSV's rows in ``Activity ID`` order; then a stored row with a live link
 keeps it (``unchanged`` or ``updated``), a link to a deleted session is cleared and the row matched
-from step 1, an unlinked row whose cells changed is matched from step 1, an unlinked unchanged
-``ambiguous`` row re-runs step 1 without reading its file, and any other unlinked unchanged row
-reads ``unchanged`` with nothing decoded or stored. A marked row present again is cleared and
-matched from step 1.
+from step 1, an unlinked row whose cells changed is matched from step 1, and a marked row present
+again is cleared and matched from step 1. The athlete's rulings of 2026-11-06 refine the rest: an
+unlinked ``failed`` row is matched from step 1 on every import, its file read again, and any other
+unlinked unchanged row re-runs step 1 without reading its file, linking when step 1 now finds one
+free session and otherwise reading ``unchanged`` with nothing decoded or stored.
 
 The expectations are written from the reference's section 3 text, before the job's step 0; the
 same author wrote both, so they are not an independent oracle. The catalogue's two rows sharing one
@@ -144,44 +145,67 @@ def _summary(report: dict) -> list[tuple]:
 # --- the same archive again ------------------------------------------------------------------------
 
 
-def test_reimport_reads_every_row_unchanged_and_tables_are_byte_equal(
+def _without_strava_rows(dump: dict[str, list[str]]) -> dict[str, list[str]]:
+    return {name: rows for name, rows in dump.items() if name != "strava_activities"}
+
+
+def test_reimport_reads_every_row_unchanged_but_a_failed_one_and_tables_are_byte_equal(
     isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
 ) -> None:
     """The catalogue (every outcome, rows that did not parse included) imported twice: every row
-    of the second report is ``unchanged``, the stored run keeps ``match`` ``stored``, and every
-    table but ``imports`` and ``import_files`` is byte-equal to before."""
+    of the second report is ``unchanged`` but the ``failed`` ones, which are processed again and
+    fail again (athlete ruling 2026-11-06); the stored run keeps ``match`` ``stored``; every table
+    but ``imports`` and ``import_files`` is byte-equal to before, but the failed rows'
+    ``import_id`` and ``updated_at``, now the second import's."""
     cases = [c for c in SA.outcome_rows() if c.key not in LEFT_OUT]
     monkeypatch.setattr(archive, "FIT_ENTRY_CAP", SA.GZ_BOMB_CAP)
     with TestClient(app) as client:
         _upload(client, post_fit_bytes, SA.stored_files(cases))
         first = _import(client, _zip(tmp_path / "a.zip", cases))
         before = _dump(isolated_data_dir)
+        before_rows = _strava_rows(isolated_data_dir)
         second = _import(client, _zip(tmp_path / "b.zip", cases))
     after = _dump(isolated_data_dir)
+    after_rows = _strava_rows(isolated_data_dir)
     first_outcomes = sorted({r["outcome"] for r in first["files"]})
     print("  first import outcomes:", first_outcomes)
     print("  second import:", sorted({(r["outcome"]) for r in second["files"]}), len(second["files"]), "rows")
     # The first import exercised every outcome the step-0 branches read.
     assert {"attached", "stored", "stored_retyped", "ambiguous", "failed", "not_running"} <= set(first_outcomes)
     assert len(second["files"]) == len(first["files"]) == len(cases)
-    assert [r["outcome"] for r in second["files"]] == ["unchanged"] * len(cases)
+    failed = [r["outcome"] == "failed" for r in first["files"]]
+    assert sum(failed) >= 5
+    assert [r["outcome"] for r in second["files"]] == ["failed" if f else "unchanged" for f in failed]
+    assert [r["detail"] for r, f in zip(second["files"], failed, strict=True) if f] == [
+        r["detail"] for r, f in zip(first["files"], failed, strict=True) if f]
     # A linked row reports its link; an unlinked one none.
     assert [r["session_id"] for r in second["files"]] == [r["session_id"] for r in first["files"]]
-    assert second["counts"]["strava"]["unchanged"] == len(cases)
-    assert second["counts"]["stored"] == 0 and second["counts"]["failed"] == 0
-    stored = _strava_rows(isolated_data_dir)[_case_id(SA.by_key("stored"))]
+    assert second["counts"]["strava"]["unchanged"] == len(cases) - sum(failed)
+    assert second["counts"]["stored"] == 0 and second["counts"]["failed"] == sum(failed)
+    stored = after_rows[_case_id(SA.by_key("stored"))]
     assert (stored["outcome"], stored["match"]) == ("stored", "stored")
     assert stored["import_id"] == first["import_id"]
     print("  tables compared:", sorted(before), {k: len(v) - 1 for k, v in before.items() if len(v) > 1})
     assert "strava_activities" in before and "sessions" in before
-    assert before == after
+    assert _without_strava_rows(before) == _without_strava_rows(after)
+    retried = {r["strava_activity_id"] for r, f in zip(first["files"], failed, strict=True) if f} - {None}
+    assert retried and set(after_rows) == set(before_rows)
+    moved = ("import_id", "updated_at")
+    for aid, row in after_rows.items():
+        if aid in retried:
+            assert row["import_id"] == second["import_id"] and row["outcome"] == "failed", aid
+            assert {k: v for k, v in row.items() if k not in moved} == {
+                k: v for k, v in before_rows[aid].items() if k not in moved}, aid
+        else:
+            assert row == before_rows[aid], aid
 
 
-def test_reimport_decodes_and_stores_nothing(
+def test_reimport_reads_only_the_failed_rows_files_and_stores_nothing(
     isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
 ) -> None:
-    """Rows whose first import read their file (stored, retyped, multisport, no session message,
-    by file start, a corrupt ``.gz``) are not read, decoded or stored again."""
+    """Rows whose first import read their file (stored, retyped, multisport, by file start) are not
+    read, decoded or stored again; the two ``failed`` ones (no session message, a corrupt ``.gz``)
+    are processed again (athlete ruling 2026-11-06): their files read, one decoded, nothing stored."""
     cases = _cases("stored", "stored_retyped", "multisport_not_stored", "failed_no_session_message",
                    "attached_by_file_start", "failed_corrupt_gz", "ambiguous_neither_within", "attached")
     calls: list[str] = []
@@ -204,8 +228,10 @@ def test_reimport_decodes_and_stores_nothing(
     print("  first import's reads and decodes:", sorted(set(first_calls)), len(first_calls))
     # The spies are live: the first import read, decoded and stored through them.
     assert {"read_activity_file", "session_starts", "ingest_fit_bytes"} <= set(first_calls)
-    assert calls == []
-    assert [r["outcome"] for r in second["files"]] == ["unchanged"] * len(cases)
+    print("  second import's reads and decodes:", calls)
+    assert sorted(calls) == ["read_activity_file", "read_activity_file", "session_starts"]
+    expected = {_case_id(c): "failed" if c.key.startswith("failed_") else "unchanged" for c in cases}
+    assert {r["strava_activity_id"]: r["outcome"] for r in second["files"]} == expected
     assert _session_ids(isolated_data_dir) == sessions
 
 
@@ -487,3 +513,195 @@ def test_a_deleted_session_clears_its_link_and_the_row_is_matched_again(
     stored = _strava_rows(isolated_data_dir)[_case_id(case)]
     assert (stored["linked_session_id"], stored["match"], stored["outcome"]) == (session, "stored", "stored")
     assert stored["import_id"] == second["import_id"]
+
+
+# --- a linked row that no longer parses keeps what it parsed (review 2026-11-06) -------------------
+
+LINKED_ID = 9_100_000_555
+
+
+def _linked_run_row(start) -> dict[str, str]:
+    return SA.row(**{
+        "Activity ID": str(LINKED_ID),
+        "Activity Date": SA.strava_date(start),
+        "Activity Type": "Run",
+        "Activity Name": "Morning Run",
+        "Activity Description": "Easy loop",
+        "Activity Private Note": "calf fine",
+    })
+
+
+def _short(row: dict[str, str]) -> list[str]:
+    """The row cut before ``Activity Type``: ``Activity ID``, ``Activity Date``, ``Activity Name``."""
+    cells = list(row.values())
+    assert SA.KEYS[:3] == ("Activity ID", "Activity Date", "Activity Name"), SA.KEYS[:4]
+    return cells[:3]
+
+
+def _long(row: dict[str, str]) -> list[str]:
+    """The row with an unquoted comma in ``Activity Name``: every later cell one key to the right."""
+    cells = list(row.values())
+    at = SA.KEYS.index("Activity Name")
+    return [*cells[:at], "Morning", " Run", *cells[at + 1:]]
+
+
+@pytest.mark.parametrize("cut", [_short, _long], ids=["short_row", "long_row"])
+def test_a_linked_run_whose_row_no_longer_parses_keeps_its_type_and_its_load(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes, cut
+) -> None:
+    """A run linked to a ``Run`` row, then a newer export whose row for it does not parse (cut
+    short before ``Activity Type``, or one cell too long): the row is ``failed`` with its live
+    link, only its raw ``columns`` are replaced, and the fields it parsed before (type, name,
+    description, note, filename, start) are kept, so the run's load stays counted and the
+    session's ``strava`` block keeps its text."""
+    sample = SA.fixture("sample_run")
+    start = SA.session_start(sample)
+    good = _linked_run_row(start)
+    with TestClient(app) as client:
+        (sid,) = _upload(client, post_fit_bytes, [("run.fit", sample)]).values()
+        first = _import(client, SA.strava_zip(tmp_path / "a.zip", [good]))
+        assert (first["files"][0]["outcome"], first["files"][0]["session_id"]) == ("attached", sid)
+        before_load = client.get(f"/sessions/{sid}/load").json()
+        before_row = _strava_rows(isolated_data_dir)[LINKED_ID]
+        bad = cut(good)
+        second = _import(client, SA.strava_zip(tmp_path / "b.zip", [bad]))
+        after_load = client.get(f"/sessions/{sid}/load").json()
+        block = client.get(f"/sessions/{sid}").json()["strava"]
+    print("  second:", _summary(second), "load_changes", second["load_changes"])
+    print("  load before", before_load["session_load"], "after", after_load["session_load"])
+    assert before_load["session_load"]["value"] is not None
+    assert _summary(second) == [(1, LINKED_ID, "failed", sid, f"{CSV} line 2")]
+    assert after_load == before_load
+    assert second["load_changes"] == []
+    assert second["counts"]["strava"]["excluded_from_load"] == 0
+    stored = _strava_rows(isolated_data_dir)[LINKED_ID]
+    assert stored["outcome"] == "failed"
+    assert stored["columns"] == dict(zip(SA.KEYS, bad, strict=False))
+    for key in ("activity_type", "name", "description", "private_note", "filename", "start_time",
+                "linked_session_id", "match", "warnings"):
+        assert stored[key] == before_row[key], key
+    assert (block["activity_type"], block["name"], block["description"], block["private_note"]) == (
+        "Run", "Morning Run", "Easy loop", "calf fine")
+
+
+# --- the 2026-11-06 rulings: failed rows are retried, unlinked rows re-run step 1 ------------------
+
+
+def test_a_failed_row_whose_file_arrives_later_is_stored(
+    isolated_data_dir: Path, tmp_path: Path
+) -> None:
+    """Ruling (2): a Strava-only run whose file is missing from the first archive is ``failed``;
+    the same ``activities.csv`` with the file present stores it, though the row's cells are
+    unchanged."""
+    sample = SA.fixture("sample_run")
+    fit = SA.shifted(sample, -40 * SA.DAY_S)
+    row = SA.row(**{"Activity ID": "201", "Activity Date": SA.strava_date(SA.session_start(fit)),
+                    "Activity Type": "Run", "Activity Name": "strava only",
+                    "Filename": "activities/201.fit.gz"})
+    with TestClient(app) as client:
+        first = _import(client, SA.strava_zip(tmp_path / "a.zip", [row]))
+        second = _import(client, SA.strava_zip(tmp_path / "b.zip", [row], [("activities/201.fit.gz", SA.gz(fit))]))
+    print("  first:", _summary(first), " second:", _summary(second))
+    assert first["files"][0]["outcome"] == "failed"
+    (session,) = _session_ids(isolated_data_dir)
+    assert (second["files"][0]["outcome"], second["files"][0]["session_id"]) == ("stored", session)
+    stored = _strava_rows(isolated_data_dir)[201]
+    assert (stored["outcome"], stored["linked_session_id"], stored["match"]) == ("stored", session, "stored")
+
+
+def test_a_row_that_still_fails_is_reported_failed_again(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling (2): the same archive twice, its row's file still missing and a short row still
+    short: each is processed again (the file looked for again) and reported ``failed`` both times,
+    so ``runcoach import`` keeps listing it; nothing is stored."""
+    row = SA.row(**{"Activity ID": "202", "Activity Type": "Run", "Activity Name": "missing file",
+                    "Filename": "activities/202.fit.gz"})
+    short = ["203", SA.strava_date(SA.session_start(SA.fixture("sample_run"))), "short"]
+    reads: list[str] = []
+    real = strava_files.read_activity_file
+
+    def counting(zf, prefix, filename):
+        reads.append(filename)
+        return real(zf, prefix, filename)
+
+    monkeypatch.setattr(strava_files, "read_activity_file", counting)
+    with TestClient(app) as client:
+        first = _import(client, SA.strava_zip(tmp_path / "a.zip", [row, short]))
+        reads.clear()
+        second = _import(client, SA.strava_zip(tmp_path / "b.zip", [row, short]))
+    print("  first:", _summary(first), " second:", _summary(second))
+    assert [(r["strava_activity_id"], r["outcome"]) for r in first["files"]] == [(202, "failed"), (203, "failed")]
+    assert [(r["strava_activity_id"], r["outcome"], r["session_id"]) for r in second["files"]] == [
+        (202, "failed", None), (203, "failed", None)]
+    assert second["files"][0]["detail"] == first["files"][0]["detail"]
+    assert reads == ["activities/202.fit.gz"]
+    assert second["counts"]["failed"] == 2 and second["counts"]["strava"]["unchanged"] == 0
+    rows = _strava_rows(isolated_data_dir)
+    assert rows[202]["import_id"] == rows[203]["import_id"] == second["import_id"]
+    assert _session_ids(isolated_data_dir) == []
+
+
+def test_an_unlinked_row_links_a_session_stored_after_it_and_excludes_its_load(
+    isolated_data_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_fit_bytes
+) -> None:
+    """Ruling (1): an ``Alpine Ski`` row imported before its session is stored is ``not_running``;
+    the session the watch stored as running is uploaded; the same archive again re-runs step 1
+    (no file read), attaches the row, and F031 excludes the run's load."""
+    sample = SA.fixture("sample_run")
+    fit = SA.shifted(sample, -50 * SA.DAY_S)
+    ski = SA.row(**{"Activity ID": "301", "Activity Date": SA.strava_date(SA.session_start(fit)),
+                    "Activity Type": "Alpine Ski", "Activity Name": "Ski day",
+                    "Filename": "activities/301.fit.gz", "Distance (2)": "10000.0"})
+    path = SA.strava_zip(tmp_path / "ski.zip", [ski], [("activities/301.fit.gz", SA.gz(fit))])
+    reads: list[str] = []
+    real = strava_files.read_activity_file
+
+    def counting(zf, prefix, filename):
+        reads.append(filename)
+        return real(zf, prefix, filename)
+
+    monkeypatch.setattr(strava_files, "read_activity_file", counting)
+    with TestClient(app) as client:
+        first = _import(client, path)
+        (sid,) = _upload(client, post_fit_bytes, [("ski.fit", fit)]).values()
+        counted = client.get(f"/sessions/{sid}/load").json()["session_load"]
+        second = _import(client, path)
+        load = client.get(f"/sessions/{sid}/load").json()
+    print("  first:", _summary(first), " second:", _summary(second), "load", load["session_load"])
+    assert (first["files"][0]["outcome"], first["files"][0]["session_id"]) == ("not_running", None)
+    assert (second["files"][0]["outcome"], second["files"][0]["session_id"]) == ("attached", sid)
+    assert reads == []
+    stored = _strava_rows(isolated_data_dir)[301]
+    assert (stored["outcome"], stored["linked_session_id"], stored["match"]) == ("attached", sid, "csv_start")
+    assert counted["value"] is not None
+    assert load["session_load"]["unavailable"] == "strava_not_running" and load["strava_activity_id"] == 301
+    assert second["counts"]["strava"]["excluded_from_load"] == 1
+
+
+# --- an updated row's distance warning is checked again --------------------------------------------
+
+
+def test_an_updated_row_rechecks_its_distance_warning_both_ways(
+    isolated_data_dir: Path, tmp_path: Path, post_fit_bytes
+) -> None:
+    """A newer export moves a linked row's ``Distance (2)`` 50 % off its session: ``updated`` with
+    ``distance_differs``; the export after it moves it back: ``updated`` with the warning gone."""
+    attached = SA.by_key("attached")
+    far = _with(attached, **{"Distance (2)": str(float(attached.cells["Distance (2)"]) * 1.5)})
+    with TestClient(app) as client:
+        ids = _upload(client, post_fit_bytes, SA.stored_files([attached]))
+        first = _import(client, _zip(tmp_path / "a.zip", [attached]))
+        second = _import(client, _zip(tmp_path / "b.zip", [far]))
+        warned = _strava_rows(isolated_data_dir)[_case_id(attached)]
+        third = _import(client, _zip(tmp_path / "c.zip", [attached]))
+    print("  first:", _summary(first), " second:", _summary(second), " third:", _summary(third))
+    aid, session = _case_id(attached), ids["attached.fit"]
+    assert first["files"][0]["detail"] is None
+    assert (second["files"][0]["outcome"], second["files"][0]["session_id"]) == ("updated", session)
+    assert second["files"][0]["detail"] == "warnings: distance_differs"
+    assert second["counts"]["strava"]["distance_differs"] == 1
+    assert warned["warnings"] == ["distance_differs"]
+    assert (third["files"][0]["outcome"], third["files"][0]["detail"]) == ("updated", None)
+    assert third["counts"]["strava"]["distance_differs"] == 0
+    assert _strava_rows(isolated_data_dir)[aid]["warnings"] == []
